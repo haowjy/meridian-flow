@@ -161,7 +161,7 @@ Yjs document session. It must stay structurally aligned with
   would leave every later expiry with a placeholder. A failure arriving while a
   load is in flight is ignored: a refresh keeps the expiring URL on screen, and
   the request already running is the answer.
-- A picture in flight is a document node. `images/ImageIngressExtension` inserts
+- A picture in flight is a document node. `images/` inserts
   the `image` node with `src: ""` before the upload starts and sets `src` on that
   same node when the bytes land, so nothing is inserted at completion and the
   manuscript does not reflow. The hold on the slot is an `EditorAnchor` plus a

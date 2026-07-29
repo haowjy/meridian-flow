@@ -24,14 +24,10 @@ if (typeof globalThis.ClipboardEvent === "undefined") {
   Object.defineProperty(globalThis, "ClipboardEvent", { value: StubClipboardEvent });
 }
 
-import {
-  insertImageFile,
-  pendingImages,
-  registerImageIngressHost,
-  removePendingImage,
-  retryPendingImage,
-} from "./ImageIngressExtension";
 import type { ImageUploadPort, UploadedImage } from "./image-ingress-ports";
+import { pendingImages, registerImageIngressHost } from "./image-ingress-runtime";
+import { insertImageFile, removePendingImage, retryPendingImage } from "./image-uploads";
+import type { PendingImage } from "./pending-images";
 
 type HeldUpload = {
   file: File;
@@ -116,7 +112,7 @@ function mount(text = "The gate opened."): {
   const calls: string[] = [];
   registerImageIngressHost(pair.local, {
     upload: port,
-    fetchBytes: ({ url }) => {
+    fetchBytes: ({ url }: { url: string }) => {
       calls.push(url);
       return new Promise((resolve) => waiting.set(url, resolve));
     },
@@ -284,7 +280,7 @@ describe("two pictures arriving together are two lifecycles", () => {
     insertImageFile(editor, imageFile("second.png"), 1);
     await settle();
 
-    expect(pendingImages(editor).map((entry) => entry.filename)).toEqual([
+    expect(pendingImages(editor).map((entry: PendingImage) => entry.filename)).toEqual([
       "first.png",
       "second.png",
     ]);
@@ -310,13 +306,16 @@ describe("two pictures arriving together are two lifecycles", () => {
     // the project does not own.
     expect(imageNodes(editor)).toEqual([]);
     expect(bytes.calls).toEqual(["https://example.test/one.png", "https://example.test/two.png"]);
-    expect(pendingImages(editor).map((entry) => entry.kind)).toEqual(["import", "import"]);
+    expect(pendingImages(editor).map((entry: PendingImage) => entry.kind)).toEqual([
+      "import",
+      "import",
+    ]);
 
     // One site hands over its bytes; the other refuses. The refusal must not
     // touch the import that is still working.
     bytes.settle("https://example.test/two.png", null);
     await settle();
-    expect(pendingImages(editor).map((entry) => entry.kind)).toEqual(["import"]);
+    expect(pendingImages(editor).map((entry: PendingImage) => entry.kind)).toEqual(["import"]);
 
     bytes.settle("https://example.test/one.png", imageFile("one.png"));
     await settle();

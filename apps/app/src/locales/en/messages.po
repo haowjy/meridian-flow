@@ -98,12 +98,12 @@ msgid "{0} documents"
 msgstr "{0} documents"
 
 #. placeholder {0}: entry.filename
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-imports.ts
 msgid "{0} imported, but its link had moved on."
 msgstr "{0} imported, but its link had moved on."
 
 #. placeholder {0}: file.name
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
@@ -133,11 +133,11 @@ msgstr "{days}d"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr "{documents, plural, one {# document} other {# documents}}"
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-imports.ts
 msgid "{filename} could not be read from that site. It stayed a link."
 msgstr "{filename} could not be read from that site. It stayed a link."
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-imports.ts
 msgid "{filename} did not import. It stayed a link."
 msgstr "{filename} did not import. It stayed a link."
 
@@ -205,7 +205,7 @@ msgstr "A folder named {0} already exists in this location."
 msgid "A folder named {trimmed} already exists in this location."
 msgstr "A folder named {trimmed} already exists in this location."
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
@@ -1256,7 +1256,7 @@ msgstr "Image downloaded"
 #~ msgid "Image upload failed."
 #~ msgstr "Image upload failed."
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "Images need a project before they can be uploaded."
 msgstr "Images need a project before they can be uploaded."
 
@@ -2494,7 +2494,7 @@ msgstr "That document couldn't be found."
 msgid "That image could not be read."
 msgstr "That image could not be read."
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "That image did not upload."
 msgstr "That image did not upload."
 
@@ -2684,7 +2684,7 @@ msgstr "This diagram stopped parsing. The preview is the last version that rende
 msgid "This document changed elsewhere. Reopen it and try again."
 msgstr "This document changed elsewhere. Reopen it and try again."
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "This document is not taking changes right now."
 msgstr "This document is not taking changes right now."
 

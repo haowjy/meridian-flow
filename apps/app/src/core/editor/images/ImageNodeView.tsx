@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "../asset-image-render-state";
-import { removePendingImage, retryPendingImage } from "./ImageIngressExtension";
+import { removePendingImage, retryPendingImage } from "./image-uploads";
 import {
   type PendingImageFrame,
   type PendingImageUpload,

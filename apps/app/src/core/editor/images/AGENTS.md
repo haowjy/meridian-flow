@@ -18,12 +18,25 @@ Three homes, and nothing lives in two of them:
 | Fact | Home | Why |
 |---|---|---|
 | The slot, its `alt`, its final `src` | the document | It is content, and peers must see it |
-| Which upload owns which slot, progress, failure, the bytes, the abort | `ImageIngressExtension`'s plugin state | Position must survive a peer's write; a percent must never reach the wire |
+| Which upload owns which slot, progress, failure, the bytes, the abort | the ingress plugin's state (`image-ingress-runtime.ts`) | Position must survive a peer's write; a percent must never reach the wire |
 | A drag in the air, a refusal | `image-ingress-store.ts` | Neither produced a document change, and law 5 still wants the reason in view |
 
 The app's half is `features/editor/surfaces/images/` — it registers the two
 ports (upload, fetch-bytes) and feeds the asset index. Until a host registers,
 every door refuses out loud rather than opening onto nothing.
+
+## Layout
+
+| File | What it owns |
+|---|---|
+| `ImageIngressExtension.ts` | The wiring: storage, the plugin, the drop and clipboard props, decorations |
+| `image-ingress-runtime.ts` | The editor's record of what is in flight, and the one way to write to it |
+| `image-uploads.ts` | A picture from this machine: picker, insert, upload, land, Retry, Remove |
+| `image-imports.ts` | A picture the clipboard pointed at: fetch, upload, replace the link |
+| `pending-images.ts` | What the document knows about a picture in flight, and how it is drawn |
+| `image-workflow.ts` | Pure answers: what a drop means, what a paste carries, asset paths |
+| `ImageNodeView.tsx` | An inline picture at every point in its life |
+| `measure-image.ts` | The picture's own size, read from the local file |
 
 ## Key rules
 

@@ -1,23 +1,26 @@
 /** Public surface of the editor's image lane: ingress, pending state, assets. */
-export {
-  canUploadImages,
-  editorAssetIndex,
-  ImageIngressExtension,
-  imageIngressStatus,
-  insertImageFile,
-  openImagePicker,
-  pendingImages,
-  registerImageIngressHost,
-  removePendingImage,
-  retryPendingImage,
-} from "./ImageIngressExtension";
+export { ImageIngressExtension } from "./ImageIngressExtension";
+export { ImageNodeView } from "./ImageNodeView";
 export type {
   ImageBytesPort,
   ImageIngressHost,
   ImageUploadPort,
   UploadedImage,
 } from "./image-ingress-ports";
+export {
+  canUploadImages,
+  editorAssetIndex,
+  imageIngressStatus,
+  pendingImages,
+  registerImageIngressHost,
+} from "./image-ingress-runtime";
 export type { ImageIngressNotice, ImageIngressStatus } from "./image-ingress-store";
+export {
+  insertImageFile,
+  openImagePicker,
+  removePendingImage,
+  retryPendingImage,
+} from "./image-uploads";
 export {
   assetDocumentIdFromSrc,
   createEditorAssetPathResolver,
@@ -35,4 +38,5 @@ export {
   type PendingImage,
   type PendingImageUpload,
   pendingImageFromDecorations,
+  pendingImageSignature,
 } from "./pending-images";

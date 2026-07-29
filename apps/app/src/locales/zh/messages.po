@@ -98,12 +98,12 @@ msgid "{0} documents"
 msgstr ""
 
 #. placeholder {0}: entry.filename
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-imports.ts
 msgid "{0} imported, but its link had moved on."
 msgstr ""
 
 #. placeholder {0}: file.name
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
 
@@ -133,11 +133,11 @@ msgstr "{days}天"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr ""
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-imports.ts
 msgid "{filename} could not be read from that site. It stayed a link."
 msgstr ""
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-imports.ts
 msgid "{filename} did not import. It stayed a link."
 msgstr ""
 
@@ -205,7 +205,7 @@ msgstr ""
 msgid "A folder named {trimmed} already exists in this location."
 msgstr ""
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
 msgstr ""
 
@@ -1256,7 +1256,7 @@ msgstr ""
 #~ msgid "Image upload failed."
 #~ msgstr ""
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "Images need a project before they can be uploaded."
 msgstr ""
 
@@ -2494,7 +2494,7 @@ msgstr ""
 msgid "That image could not be read."
 msgstr ""
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "That image did not upload."
 msgstr ""
 
@@ -2684,7 +2684,7 @@ msgstr ""
 msgid "This document changed elsewhere. Reopen it and try again."
 msgstr ""
 
-#: src/core/editor/images/ImageIngressExtension.ts
+#: src/core/editor/images/image-uploads.ts
 msgid "This document is not taking changes right now."
 msgstr ""
 

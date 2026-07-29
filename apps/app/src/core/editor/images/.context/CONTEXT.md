@@ -16,7 +16,7 @@ flowchart TD
 
 Each step's rule:
 
-- **Insert first.** `insertImageFile` opens the slot and only then calls the
+- **Insert first.** `image-uploads.ts`'s `insertImageFile` opens the slot and only then calls the
   port. `image` is an inline atom (§5.6), so it goes inline where the position
   can hold one and in a paragraph of its own after the block where it cannot.
   A position that can take neither is the one refusal.
@@ -32,7 +32,7 @@ Each step's rule:
   its bytes and leaving an empty frame. The fence is re-read here because an
   upload outlives the connection that started it; a fenced document turns the
   entry to `failed` with Retry instead of writing.
-- **Settling.** The orphan sweep and the paste-import start run in a microtask
+- **Settling.** The extension's orphan sweep and paste-import start run in a microtask
   after the view updates, never inside `update` itself: a plugin must not
   dispatch from its own update, and identity can only be read once the Yjs
   binding has finished describing the new document (`../../anchors.ts`).
