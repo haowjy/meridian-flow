@@ -4,8 +4,10 @@ The destination hint, the right-click menu, the form, the `[[` menu, and the
 runtime that gives an internal link somewhere to go. Two entries in
 `EDITOR_CHROME_SURFACES` plus one component `EditorView` mounts directly;
 policy and state live in
-[`core/editor/links/`](../../../../core/editor/links/AGENTS.md) and
-[`core/editor/extensions/wikilink/`](../../../../core/editor/extensions/wikilink/AGENTS.md).
+[`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
+[`core/editor/extensions/wikilink/`](../../../../core/editor/extensions/wikilink/AGENTS.md),
+and — for the rows and their ranking, which the chat composer will share —
+[`core/completion/`](../../../../core/completion/AGENTS.md).
 
 ## Mental model
 

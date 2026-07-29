@@ -59,6 +59,17 @@ change-trail events, not manuscript content.
   rules, and consume a closing keystroke it is not certain it wrote. See
   [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md).
 
+- **A menu the writer types underneath is a spec, not a plugin.**
+  `extensions/suggestion/` holds one mechanism that wires `@tiptap/suggestion`,
+  the kernel keymap, and the catalog fence for every lane; `/` and `[[` each
+  declare a spec (char, envelope predicate, matches, row projection, choice) and
+  nothing else, so a third trigger is a spec rather than a third copy of the
+  lifecycle. The presentation-neutral half — the open-menu store and the document
+  catalog's ranking — sits in [`../completion/`](../completion/AGENTS.md) rather
+  than here, because the chat composer completes references into a textarea and
+  must not import the editor to do it. See
+  [`extensions/suggestion/suggestion-lane.ts`](extensions/suggestion/suggestion-lane.ts).
+
 - Control-surface policy is the chrome kernel's, not an extension's private
   habit. `ChromeKernelExtension` owns the Esc chain, the right-click claim
   table, deepest-context resolution, and gesture suppression; object physics
@@ -121,6 +132,8 @@ and navigation contracts.
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
 → [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers the editor writes
 → [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
+→ [`extensions/wikilink/AGENTS.md`](extensions/wikilink/AGENTS.md) — the `[[` trigger
+→ [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store and reference catalog
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
 → [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag
 → [`links/AGENTS.md`](links/AGENTS.md) — the link system

@@ -1,7 +1,8 @@
 # core/completion — the headless half of a menu the writer types underneath
 
 The open-menu store every trigger publishes through, and the catalog that ranks
-the documents a `[[…]]` may name. Two hosts drive it: the editor's TipTap lanes
+the documents a `[[…]]` may name. Two hosts drive it: the editor's lane
+mechanism
 ([`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts))
 and, next, the chat composer's textarea. Neither one is visible from here.
 
@@ -18,32 +19,42 @@ header in [`index.ts`](index.ts).
 what a choice writes, and how a row looks all belong to the host. What arrives
 here is a session: rows, the query, a label, and the two callbacks that take a
 choice or a dismissal. The store's own judgment is narrow and deliberate — a
-menu is open only while it has rows, the highlight sits on the first row the
-host will accept, and a row the host refuses is stepped over rather than
-handed a key that does nothing.
+menu is open only while it has rows, the highlight sits on the first row the host
+will accept, and a row the host refuses is stepped over rather than handed a key
+that does nothing.
 
-**The catalog agrees with the resolver or it is wrong.** Rows rank titles and
-aliases because that is what `POST …/links/resolve` matches on, and names are
-normalized the way the server normalizes them. A second normalizer is how a
-menu starts offering documents the resolver refuses.
+**The catalog offers what the resolver can find.** Rows rank titles and aliases
+because that is what `POST …/links/resolve` matches on, and names normalize the
+way the server normalizes them. A host that offers a document the resolver has no
+candidate for hands the writer a link that lands dashed the instant it is
+inserted; the host's job is to offer the manuscript and the work's scratch, which
+is the resolver's own candidate set.
+
+**Ambiguity is shown, not resolved.** Two documents with one title resolve to
+nothing, so a row whose name is shared says so and is still offered. Renaming one
+of them is the writer's fix, and the menu never guesses which they meant.
 
 ## Key rules
 
-- **No import from `editor/`, `features/`, or a rendering library.** A
-  completion that needs the editor belongs in the editor's lane, not here. The
-  reverse direction is fine and expected.
-- **Host callbacks, never host state.** `choose`, `dismiss`, and `anchorRect`
-  are read live; the store holds no copy of a document, a catalog, or a rect.
+- **No import from `editor/`, `features/`, or a rendering library.** A completion
+  that needs the editor belongs in the editor's lane, not here. The reverse
+  direction is fine and expected.
+- **Host callbacks, never host state.** `choose`, `dismiss`, and `anchorRect` are
+  read live; the store holds no copy of a document, a catalog, or a rect.
 - **A withdrawn session closes rather than freezes.** Hosts can lose their
   catalog mid-menu (a schema fence, a read-only surface), and `close()` is the
   one door for it.
+- **The create row is a row, not a footer**, because the keyboard has to reach
+  it, and it steps aside for an exact match: naming a document that already
+  exists is how a writer makes their own link ambiguous.
 
 ## Anti-patterns
 
 - Growing the snapshot with something only one surface renders. That is `TMeta`,
   or it is the host's own state.
-- Ranking documents anywhere else. Two ranking rules is two menus that disagree
-  about the same query.
+- A second title-matching rule anywhere. Two ranking implementations is two
+  menus that disagree about one query, and one of them disagrees with the
+  resolver.
 
 → [`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts) —
   the TipTap adapter that drives this from a lane spec

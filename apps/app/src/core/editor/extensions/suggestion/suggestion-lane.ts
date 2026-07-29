@@ -26,6 +26,11 @@
  *   transaction, so using it to keep remote writes from opening a menu would
  *   also close an open menu every time a collaborator typed anywhere in the
  *   chapter. A lane's own predicate already needs the local caret.
+ *
+ * One thing it inherits rather than decides: a dismissal stays dismissed. The
+ * suggestion plugin maps the dismissed range forward, so a second trigger typed
+ * against a dismissed one is the same trigger — the menu comes back when the
+ * trigger text is deleted, not when it is repeated.
  */
 
 import { type Editor, Extension, type Range } from "@tiptap/core";
