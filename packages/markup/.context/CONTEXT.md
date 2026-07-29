@@ -79,9 +79,21 @@ markdown; only a styled block gains a wrapper. Parsing goes through
 `parseRecognizedBlockAst()` and falls back to inert raw text when the wrapper is
 malformed. `layout` is therefore excluded from `mdxRequiredBlockNames`.
 
-Table serialization rejects what GFM cannot represent rather than dropping it:
-cell `colspan`/`rowspan` other than 1, and `colwidth` values that are not a
-single positive integer, throw.
+Tables use the minimal wire spelling that preserves their structure. A table
+with one header row, unit spans, single-line cell text, and consistent
+per-column alignment stays in GFM pipes. Spans, headerless or mixed-header
+rows, literal newlines, ragged rows, and per-cell alignment overrides escalate
+to canonical raw HTML. Both spellings parse to the same `table` node. Hard
+breaks remain GFM-expressible through the canonical backslash-newline spelling;
+pipe-table ingress folds that continuation before remark parsing and restores
+the `hard_break` node.
+
+The HTML table path accepts positive `colspan` and `rowspan`, inline marks,
+links, images, and `<br>` while declining unknown table structure as inert raw
+text. Invalid PM span/alignment attrs and malformed `Layout` column widths
+still throw rather than serialize lossily. `Layout` wrapping is applied by the
+runtime block hook even through list and blockquote child serializers, so
+alignment on nested paragraphs round-trips.
 
 ## Preprocessed source invariant
 

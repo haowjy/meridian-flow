@@ -476,21 +476,149 @@ describe("mdx codec round-trip corpus", () => {
     expect(nonTable?.attrs.align).toBeNull();
   });
 
-  it("throws rather than silently serializing table spans", () => {
+  it("escalates table spans to canonical HTML and parses them back", () => {
     const table = firstParsedBlock(codec, "| A | B |\n| - | - |\n| 1 | 2 |");
     const firstRow = table.child(0);
     const firstCell = firstRow.child(0);
     const spanned = firstCell.type.create({ ...firstCell.attrs, colspan: 2 }, firstCell.content);
-    const changedRow = firstRow.type.create(firstRow.attrs, [spanned, firstRow.child(1)]);
+    const changedRow = firstRow.type.create(firstRow.attrs, [spanned]);
     const changedTable = table.type.create(table.attrs, [changedRow, table.child(1)]);
-    expect(() => codec.serializeBlock(changedTable)).toThrow(
-      "table cell spans are not representable",
-    );
+    const html = [
+      "<table>",
+      "  <thead>",
+      "    <tr>",
+      '      <th colspan="2">A</th>',
+      "    </tr>",
+      "  </thead>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>1</td>",
+      "      <td>2</td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
 
-    const zeroSpan = firstCell.type.create({ ...firstCell.attrs, colspan: 0 }, firstCell.content);
-    const zeroRow = firstRow.type.create(firstRow.attrs, [zeroSpan, firstRow.child(1)]);
-    const zeroTable = table.type.create(table.attrs, [zeroRow, table.child(1)]);
-    expect(() => codec.serializeBlock(zeroTable)).toThrow("table cell spans are not representable");
+    expect(codec.serializeBlock(changedTable)).toBe(html);
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+    expect(firstParsedBlock(codec, html).child(0).child(0).attrs.colspan).toBe(2);
+  });
+
+  it("escalates literal multi-line cell text to canonical HTML", () => {
+    const table = firstParsedBlock(codec, "| A |\n| - |\n| one |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const multiLineCell = bodyCell.type.create(bodyCell.attrs, [paragraph(t("one\nand two"))]);
+    const changedTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [multiLineCell]),
+    ]);
+    const html = [
+      "<table>",
+      "  <thead>",
+      "    <tr>",
+      "      <th>A</th>",
+      "    </tr>",
+      "  </thead>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>one&#10;and two</td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+
+    expect(codec.serializeBlock(changedTable)).toBe(html);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(changedTable.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips headerless HTML tables with per-column alignment", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td align="left">Skill</td>',
+      '      <td align="right">Rank</td>',
+      "    </tr>",
+      "    <tr>",
+      '      <td align="left">Iron Body</td>',
+      '      <td align="right">7</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const table = firstParsedBlock(codec, html);
+
+    expect(table.child(0).child(0).type.name).toBe("table_cell");
+    expect(table.child(0).child(1).attrs.alignment).toBe("right");
+    expect(codec.serializeBlock(table)).toBe(html);
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("preserves inline formatting on the HTML table path", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td><strong>Iron</strong> <a href="chapter-7.md">Body</a><br />Rank 7</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const table = firstParsedBlock(codec, html);
+    const paragraph = table.child(0).child(0).child(0);
+
+    expect(paragraph.child(0).marks[0]?.type.name).toBe("strong");
+    expect(paragraph.child(2).marks[0]?.type.name).toBe("link");
+    expect(paragraph.child(3).type.name).toBe("hard_break");
+    expect(codec.serializeBlock(table)).toBe(html);
+  });
+
+  it("keeps aligned GFM tables in pipes", () => {
+    const gfm = "| Skill     | Rank |\n| :-------- | ---: |\n| Iron Body |    7 |\n";
+    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(gfm);
+    expect(codec.serialize(codec.parse(gfm).blocks)).not.toContain("<table>");
+  });
+
+  it("round-trips hard breaks inside pipe cells as backslash-newline", () => {
+    const table = firstParsedBlock(codec, "| Detail |\n| - |\n| one |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const breakCell = bodyCell.type.create(bodyCell.attrs, [
+      paragraph(t("one"), schema.node("hard_break"), t("two")),
+    ]);
+    const changedTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [breakCell]),
+    ]);
+    const gfm = "| Detail      |\n| ----------- |\n| one\\\ntwo |\n";
+
+    expect(codec.serializeBlock(changedTable)).toBe(gfm.trimEnd());
+    expect(firstParsedBlock(codec, gfm).toJSON()).toEqual(changedTable.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, gfm))).toBe(gfm.trimEnd());
+  });
+
+  it("keeps a plain-GFM LitRPG status screen in pipes", () => {
+    const gfm = [
+      "| Stat | Value |",
+      "| ---- | ----: |",
+      "| Level | 42 |",
+      "| Health | 810 |",
+      "| Mana | 275 |",
+      "",
+    ].join("\n");
+
+    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(
+      [
+        "| Stat   | Value |",
+        "| ------ | ----: |",
+        "| Level  |    42 |",
+        "| Health |   810 |",
+        "| Mana   |   275 |",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("throws rather than silently dropping malformed column widths", () => {

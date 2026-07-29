@@ -17,6 +17,7 @@ import {
   paragraphCodec,
   tableCodec,
 } from "./blocks/index.js";
+import { normalizeGfmTableHardBreaks } from "./blocks/table.js";
 import {
   codeMarkCodec,
   emMarkCodec,
@@ -54,6 +55,7 @@ export function markdown(): MarkupPlugin {
   return {
     blocks: markdownBlockCodecs,
     marks: markdownMarkCodecs,
+    preprocess: normalizeGfmTableHardBreaks,
     postParse: demoteAutolinks,
   };
 }

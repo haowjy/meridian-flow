@@ -7,6 +7,8 @@ import { createMarkupCodec } from "../codec.js";
 import type { ComponentRegistry } from "../components.js";
 import { escapeProseForMdxIngress } from "../escape.js";
 import { demoteAutolinks } from "../helpers.js";
+import { tableCodec } from "../markdown/blocks/index.js";
+import { normalizeGfmTableHardBreaks } from "../markdown/blocks/table.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
 import type { AssetPathResolver, BlockCodec, MarkupPlugin } from "../types.js";
 import {
@@ -21,9 +23,10 @@ export function mdxBlockCodecs(components?: ComponentRegistry): readonly BlockCo
   return [
     createLayoutCodec(),
     createFigureCodec(),
+    tableCodec,
     createJsxContainerCodec(components),
     createJsxLeafCodec(components),
-    ...markdownBlockCodecs,
+    ...markdownBlockCodecs.filter((codec) => codec.name !== "table"),
   ];
 }
 
@@ -32,7 +35,7 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
     blocks: mdxBlockCodecs(options?.components),
     marks: markdownMarkCodecs,
     remarkPlugins: [remarkMdx],
-    preprocess: escapeProseForMdxIngress,
+    preprocess: (text) => escapeProseForMdxIngress(normalizeGfmTableHardBreaks(text)),
     postParse: demoteAutolinks,
     postSerializeBlock: serializeLayoutBlock,
   };

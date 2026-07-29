@@ -5,8 +5,10 @@ export function escapeProseForMdxIngress(text: string): string {
   const out: string[] = [];
   let inCodeFence = false;
   let fenceMarker = "";
+  let htmlTableEnd = -1;
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
     if (inCodeFence) {
       out.push(line);
       if (line.trimStart().startsWith(fenceMarker)) {
@@ -14,6 +16,23 @@ export function escapeProseForMdxIngress(text: string): string {
         fenceMarker = "";
       }
       continue;
+    }
+
+    if (index <= htmlTableEnd) {
+      out.push(line);
+      continue;
+    }
+
+    if (/^\s*<table(?:\s|>)/i.test(line)) {
+      const end = lines.findIndex(
+        (candidate, candidateIndex) =>
+          candidateIndex >= index && /<\/table>\s*$/i.test(candidate ?? ""),
+      );
+      if (end >= index) {
+        htmlTableEnd = end;
+        out.push(line);
+        continue;
+      }
     }
 
     const fence = line.match(/^(`{3,}|~{3,})(.*)$/);
@@ -145,6 +164,11 @@ function escapeProseSegment(segment: string): string {
       }
     }
     if (segment[i] === "<") {
+      if (segment.startsWith("<br/>", i)) {
+        out += "<br/>";
+        i += "<br/>".length;
+        continue;
+      }
       const len = tryConsumeJsxTag(segment, i);
       if (len !== null) {
         out += segment.slice(i, i + len);
