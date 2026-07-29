@@ -82,6 +82,9 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 
 - A verb that takes a row or column index. Select, then run.
 - Hover timing from a local `setTimeout` instead of `chrome.createHoverIntent`.
+- Watching the pointer from the editor's DOM. The grips are portalled outside
+  it, so that listener cannot see the pointer reach them, and pairing it with a
+  React handler on the portal is a race the grips lose.
 - Rendering anything inside the table. Grips, tabs, and menus are portalled and
   measured; the frame stays clean.
 - Reaching for prosemirror-tables' `toggleHeaderRow`. It toggles the SELECTED

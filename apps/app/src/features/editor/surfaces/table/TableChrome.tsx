@@ -62,6 +62,9 @@ import {
 } from "./table-commands";
 import { tableChromeCopy } from "./table-copy";
 
+/** What the pointer question asks about: this lane's own portalled chrome. */
+const TABLE_CHROME_SELECTOR = "[data-table-chrome]";
+
 type Axis = "row" | "column";
 /** The four shapes a table menu takes, each a different thing to act on. */
 type TableMenuShape = Axis | "cells" | "table";
@@ -121,19 +124,30 @@ export function TableChrome({ editor }: { editor: Editor }) {
     });
     intentRef.current = intent;
 
-    const dom = editor.view.dom;
+    // One pointer source for the whole approach, on the document rather than
+    // the editor: the grips live in a portal OUTSIDE the editor's DOM, so a
+    // listener bound to the prose sees the pointer leave and never sees it
+    // arrive. Pairing that leave with a React `onMouseEnter` on the portal put
+    // two mechanisms in a 120ms race across a tree boundary, and the race is
+    // why a grip stopped being clickable a moment after it appeared.
+    //
+    // Asking one question of one event removes the race: is the pointer over a
+    // cell of this editor, or over this table's own chrome?
     const onMove = (event: MouseEvent) => {
       const cell = tableCellUnder(editor.view, event.target);
-      if (cell) intent.enter(cell);
-      else intent.leave();
+      if (cell) {
+        intent.enter(cell);
+        return;
+      }
+      // Over the grips the reveal holds: the writer is travelling to a control
+      // this hover put there.
+      if (event.target instanceof Element && event.target.closest(TABLE_CHROME_SELECTOR)) return;
+      intent.leave();
     };
-    const onLeave = () => intent.leave();
 
-    dom.addEventListener("mousemove", onMove);
-    dom.addEventListener("mouseleave", onLeave);
+    document.addEventListener("mousemove", onMove, { passive: true });
     return () => {
-      dom.removeEventListener("mousemove", onMove);
-      dom.removeEventListener("mouseleave", onLeave);
+      document.removeEventListener("mousemove", onMove);
       intentRef.current = null;
       intent.dispose();
     };
@@ -155,6 +169,9 @@ export function TableChrome({ editor }: { editor: Editor }) {
     return chrome.registerContextClaim({
       id: "grip",
       claim: (target) => {
+        // Mid-sweep or mid-drag the writer is doing something else with this
+        // pointer, and every surface stands down for it.
+        if (chrome.suppressed) return false;
         const grip = target.element.closest("[data-table-grip]");
         if (!(grip instanceof HTMLElement)) return false;
         const axis: Axis = grip.dataset.tableGrip === "row" ? "row" : "column";
@@ -177,6 +194,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
     return chrome.registerContextClaim({
       id: "cell-selection",
       claim: (target) => {
+        if (chrome.suppressed) return false;
         if (!claimsTableCellMenu(editor, target)) return false;
         setCellMenuAt({ x: target.event.clientX, y: target.event.clientY });
         return true;
@@ -200,16 +218,11 @@ export function TableChrome({ editor }: { editor: Editor }) {
         ? createPortal(
             <div
               className="meridian-table-chrome"
-              // A group of controls, not decoration: the pointer crossing from
-              // the table onto them must keep the reveal alive.
               role="toolbar"
               aria-label={tableChromeCopy.tableControls()}
+              data-table-chrome=""
               data-state={visible ? "open" : "closed"}
               {...editorChromeAttributes(chrome)}
-              onMouseEnter={() => {
-                if (anchorCell) intentRef.current?.enter(anchorCell);
-              }}
-              onMouseLeave={() => intentRef.current?.leave()}
             >
               <EditorMenu
                 editor={editor}
