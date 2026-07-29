@@ -167,8 +167,10 @@ Yjs document session. It must stay structurally aligned with
   takes over table DOM once `resizable` is on.
 - `table-operations.ts` owns the table transforms prosemirror-tables omits (row
   and column moves, whole-column alignment, layout reset). All of them refuse a
-  table containing spans, because GFM cannot represent one and the codec throws
-  on serialization. Row zero is the structural GFM header and never moves.
+  table containing spans — not for the wire (spans serialize fine since the
+  codec's GFM-to-HTML escalation) but because row/column moves over merged
+  cells would break prosemirror-tables' rectangular invariants. Row zero is
+  the structural GFM header and never moves.
 - The slash trigger lives under `extensions/slash/` and is summarized below.
 - Enter on a whole-block selection is object physics', not the base keymap's
   (§4). What it means comes from the block: a registered object with a
