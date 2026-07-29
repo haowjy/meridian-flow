@@ -55,6 +55,14 @@ change-trail events, not manuscript content.
   than binding it. See [`chrome/AGENTS.md`](chrome/AGENTS.md) and
   [`objects/AGENTS.md`](objects/AGENTS.md).
 
+- **A key the editor owns is owned on its refusals too.** Undo
+  (`UndoRedoKeymapExtension`) and Tab (`TabKeymapExtension`) both consume
+  their key whether or not the verb had anything to do, because a binding
+  that declines hands the key to the browser: Mod-z becomes whatever the page
+  does, and Tab moves DOM focus out of the manuscript while the ProseMirror
+  selection stays put, discarding every keystroke after it in silence. Where
+  the verb means something, do it; everywhere else consume the no-op.
+
 - What an href means is `links/`, once. A link is four kinds — wikilink,
   scheme, relative, external — and every consumer (the click, the hover hint,
   the menu, the mark's own rendering, the paste sanitizer) reads the same
