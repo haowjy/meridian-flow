@@ -8,8 +8,11 @@ belong under `core/editor`; project context owns pane and tab composition.
 The interaction layer is being rebuilt against a design of record. Its trunk
 is [`chrome/`](chrome/AGENTS.md): the primitives every surface renders from,
 and the one host they all mount through. The persistent document toolbar is
-[`surfaces/toolbar/`](surfaces/toolbar/AGENTS.md); the contextual bubbles were
-deleted whole and their replacements are anchored to the blocks they serve.
+[`surfaces/toolbar/`](surfaces/toolbar/AGENTS.md), and it owns the command
+layer the contextual surfaces share; the first of those is
+[`surfaces/formatting/`](surfaces/formatting/AGENTS.md), the menu a writer asks
+for over a selection. The contextual bubbles were deleted whole and their
+replacements are anchored to the blocks they serve.
 Do not restore the old surfaces or grow new ones ad hoc here — build against
 the design, from the primitives.
 
@@ -30,9 +33,12 @@ the design, from the primitives.
 - Anything opened over the manuscript hands the caret back on close
   (`onCloseAutoFocus` → prose) and defers Escape to the kernel's chain. Both
   come free from the `chrome/` wrappers; a hand-rolled Radix root does not get
-  them.
+  them. A surface that opens a SECOND surface from the first waits for that
+  focus to land, or the new one reads it as focus leaving and dismisses itself
+  ([`surfaces/formatting/.context/CONTEXT.md`](surfaces/formatting/.context/CONTEXT.md)).
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`chrome/AGENTS.md`](chrome/AGENTS.md)
 → [`surfaces/toolbar/AGENTS.md`](surfaces/toolbar/AGENTS.md)
+→ [`surfaces/formatting/AGENTS.md`](surfaces/formatting/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)
