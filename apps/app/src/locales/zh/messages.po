@@ -2815,7 +2815,7 @@ msgstr ""
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent
 #: src/features/editor/EditorView.tsx
-msgid "Uploading {0} — {1}%"
+msgid "Uploading {0} ({1}%)"
 msgstr ""
 
 #. placeholder {0}: state.filename

@@ -980,7 +980,7 @@ function ImageUploadStatus({ state }: { state: ImageUploadState }) {
             <Trans>Uploading {state.filename}…</Trans>
           ) : (
             <Trans>
-              Uploading {state.filename} — {state.percent}%
+              Uploading {state.filename} ({state.percent}%)
             </Trans>
           )
         ) : null}

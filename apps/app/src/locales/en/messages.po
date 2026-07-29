@@ -2815,8 +2815,8 @@ msgstr "Upload or paste"
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent
 #: src/features/editor/EditorView.tsx
-msgid "Uploading {0} — {1}%"
-msgstr "Uploading {0} — {1}%"
+msgid "Uploading {0} ({1}%)"
+msgstr "Uploading {0} ({1}%)"
 
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
