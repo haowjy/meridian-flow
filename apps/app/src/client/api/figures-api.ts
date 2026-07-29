@@ -11,7 +11,7 @@ import {
   type UploadFigureAssetResponse,
 } from "@meridian/contracts/protocol";
 
-import { signedUrlRefreshDelayMs } from "@/core/editor/image-workflow";
+import { signedUrlRefreshDelayMs } from "@/core/editor/images";
 
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 
@@ -28,6 +28,11 @@ export type UploadFigureInput = {
   label?: string | null;
   caption?: string | null;
   onProgress?: (progress: { loaded: number; total: number | null; percent: number | null }) => void;
+  /**
+   * Stops the request. A writer who deletes a picture mid-upload has cancelled
+   * it, and the bytes still going up would be paid for by their connection.
+   */
+  signal?: AbortSignal;
 };
 
 export type GetFigureSignedUrlInput = AssetRouteInput & {
@@ -168,6 +173,14 @@ export function uploadFigure(input: UploadFigureInput): Promise<UploadFigureAsse
     const xhr = new XMLHttpRequest();
     xhr.open("POST", figurePath(input.projectId, input.hostDocumentId));
 
+    if (input.signal) {
+      if (input.signal.aborted) {
+        reject(new DOMException("Figure upload was cancelled.", "AbortError"));
+        return;
+      }
+      input.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+
     xhr.upload.onprogress = (event) => {
       const total = event.lengthComputable ? event.total : null;
       input.onProgress?.({
@@ -179,7 +192,7 @@ export function uploadFigure(input: UploadFigureInput): Promise<UploadFigureAsse
 
     xhr.onerror = () =>
       reject(new Error("Figure upload failed. Check your connection and try again."));
-    xhr.onabort = () => reject(new Error("Figure upload was cancelled."));
+    xhr.onabort = () => reject(new DOMException("Figure upload was cancelled.", "AbortError"));
     xhr.onload = () => {
       const payload = parseXhrPayload(xhr);
       if (xhr.status < 200 || xhr.status >= 300) {
