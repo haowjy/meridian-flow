@@ -38,6 +38,8 @@ passed over last.
 last). A code block gets the chip cluster (ruling 15, the Notion reference):
 same inside-corner physics, one card, because its language is a labeled
 control and a labeled control floating alone over code reads as part of it.
+Both shapes cap at one line of the text they decorate (human ruling), so every
+control in them is the dense `xs` button size.
 
 ## Key rules
 

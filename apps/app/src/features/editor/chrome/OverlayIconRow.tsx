@@ -9,9 +9,10 @@
  * would have to reserve space for it, and the ruling is that it must not.
  *
  * Each button is its own compact rounded-square card chip so it reads over
- * diagram lines, with its label in a tooltip and the row ending in ⋮. The
- * occlusion trade is accepted (the human's "literally basically inside the
- * diagram").
+ * diagram lines, with its label in a tooltip and the row ending in ⋮. They are
+ * the dense `xs` size because the row may not stand taller than one line of
+ * the text it decorates (see overlay-icon-row.css). The occlusion trade is
+ * accepted (the human's "literally basically inside the diagram").
  *
  * Approach chrome, not an active surface: `anchor` says which object is being
  * approached, `visible` fades the row in and out over it, and the kernel
@@ -31,12 +32,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 import { editorChromeAttributes } from "@/core/editor/chrome";
 
+import { objectOverlayStyle } from "./object-overlay";
 import { useAnchorRect } from "./useAnchorRect";
 import { useChromeSuppressed, useEditorChrome } from "./useEditorChrome";
 import "./overlay-icon-row.css";
-
-/** Matches mockup 03b: the row sits inside the bounds, not on the edge. */
-const OVERLAY_INSET_PX = 10;
 
 export type OverlayIconRowItem = {
   id: string;
@@ -88,13 +87,8 @@ export function OverlayIconRow({
         data-overlay-icon-row={kind}
         {...chromeAttributes}
         data-state={visible && !suppressed ? "open" : "closed"}
-        className="meridian-overlay-icon-row"
-        style={{
-          top: rect.top + OVERLAY_INSET_PX,
-          // Anchored to the right edge so a row that gains a verb keeps its
-          // outermost chip where the pointer already learned to find it.
-          left: rect.right - OVERLAY_INSET_PX,
-        }}
+        className="meridian-object-overlay meridian-overlay-icon-row"
+        style={objectOverlayStyle(rect)}
       >
         {items.map((item) => (
           <OverlayIconChip
@@ -146,7 +140,7 @@ function OverlayIconChip({
       {...rest}
       type="button"
       variant="ghost"
-      size="sm"
+      size="xs"
       aria-label={label}
       className="meridian-overlay-icon-chip"
       onClick={asTrigger ? rest.onClick : onSelect}

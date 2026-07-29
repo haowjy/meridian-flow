@@ -12,6 +12,10 @@
  * The block's own context surface, so no prose formatting verb appears here
  * (law 4): the caret is in code, and the persistent toolbar keeps its own fixed
  * geometry rather than growing a contextual segment.
+ *
+ * Every control here is the dense `xs` size, including the language: the
+ * cluster may not stand taller than one line of the code it decorates (see
+ * overlay-icon-row.css), and the label is what drives that height.
  */
 
 import { t } from "@lingui/core/macro";
@@ -30,6 +34,7 @@ import {
   EditorMenuRadioGroup,
   EditorMenuRadioItem,
   EditorMenuSeparator,
+  objectOverlayStyle,
   useAnchorRect,
   useChromeSuppressed,
   useEditorChrome,
@@ -37,9 +42,6 @@ import {
 import type { RunVerb } from "./ObjectControls";
 import type { ObjectSurfaceTarget } from "./object-anchors";
 import { copyText, deleteObject, duplicateObject, setFenceLanguage } from "./object-commands";
-
-/** Matches the object row's inset, so the two surfaces sit on one line. */
-const OVERLAY_INSET_PX = 10;
 
 const PLAIN_LANGUAGE = "plain";
 
@@ -121,7 +123,7 @@ export function CodeBlockChips({
   return createPortal(
     // biome-ignore lint/a11y/noStaticElementInteractions: the mousedown only keeps the caret where it was; every control inside is a button
     <div
-      className="meridian-code-chips"
+      className="meridian-object-overlay meridian-code-chips"
       data-code-chips=""
       data-state={visible && !suppressed ? "open" : "closed"}
       // Right-clicks on chrome route through the claim ladder like right-clicks
@@ -129,7 +131,7 @@ export function CodeBlockChips({
       // mark carries the kernel's id, so two editors on one page never claim
       // each other's overlays.
       {...editorChromeAttributes(chrome)}
-      style={{ top: rect.top + OVERLAY_INSET_PX, left: rect.right - OVERLAY_INSET_PX }}
+      style={objectOverlayStyle(rect)}
       // A press on the cluster must not move the caret out of the block the
       // cluster belongs to.
       onMouseDown={(event) => event.preventDefault()}
@@ -141,9 +143,9 @@ export function CodeBlockChips({
         onOpenChange={setLanguageOpen}
         align="end"
         trigger={
-          <Button type="button" size="sm" variant="ghost" className="meridian-code-chip-language">
+          <Button type="button" size="xs" variant="ghost" className="meridian-code-chip-language">
             {languageLabel(language)}
-            <ChevronDown className="size-3" aria-hidden />
+            <ChevronDown aria-hidden />
           </Button>
         }
       >
@@ -165,7 +167,7 @@ export function CodeBlockChips({
 
       <IconButton
         type="button"
-        size="sm"
+        size="xs"
         variant="ghost"
         aria-label={t`Copy code`}
         onClick={() => run(copyText(target.node.textContent), t`Code copied`)}
@@ -180,7 +182,7 @@ export function CodeBlockChips({
         onOpenChange={setOverflowOpen}
         align="end"
         trigger={
-          <IconButton type="button" size="sm" variant="ghost" aria-label={t`More`}>
+          <IconButton type="button" size="xs" variant="ghost" aria-label={t`More`}>
             <MoreVertical aria-hidden />
           </IconButton>
         }

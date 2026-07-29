@@ -10,7 +10,10 @@ Four primitives and one host.
 
 - **`OverlayIconRow`** — an object's verbs, overlaid just inside its top-right
   bounds (ruling 8; mockup 03b is the decision record). Portalled and
-  positioned from the object's measured rect, so it has zero footprint.
+  positioned from the object's measured rect, so it has zero footprint. The
+  corner itself is `objectOverlayStyle` + `.meridian-object-overlay`, worn by
+  every object overlay (the code fence's chip cluster too) so a new one never
+  re-hand-rolls the inset or the fade.
 - **`EditorMenu` / `EditorPopover` / `EditorDialog`** — Radix, subordinated.
   Each registers as a layer in the Esc chain, defers Escape when something
   deeper is open, and hands the caret back to the prose on every close path.
