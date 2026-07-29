@@ -18,6 +18,8 @@
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 
+import { FormattingMenu } from "../surfaces/formatting";
+
 export type EditorChromeSurfaceProps = {
   editor: Editor;
 };
@@ -29,7 +31,7 @@ export type EditorChromeSurface = {
 };
 
 export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
-  // L-A formatting menu (M4)
+  { id: "formatting-menu", render: ({ editor }) => <FormattingMenu editor={editor} /> },
   // L-B object controls + diagram (M5)
   // L-C table chrome (M6)
   // L-D slash (M8)
