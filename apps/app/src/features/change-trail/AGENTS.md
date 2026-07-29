@@ -20,5 +20,5 @@ in after the writer opens it.
 
 → [features/chat](../chat/AGENTS.md) — receipts render trail excerpts through
   the shared read policy, without importing the command policy.
-→ [features/editor](../editor/.context/CONTEXT.md) — `PeerMarkPopover.tsx`
-  reuses the same evidence surface for an anchored session mark.
+→ [features/editor](../editor/surfaces/peer-marks/AGENTS.md) — the peer-mark
+  popover reuses the same evidence surface for an anchored session mark.

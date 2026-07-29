@@ -5,11 +5,12 @@ ingress has something to say outside the document.
 
 ## Mental model
 
-`ImageIngressRuntime` is the seam, and it is `ProjectLinkRuntime`'s twin — it is
-mounted by `EditorView` for the same reason, that the project is the app's and a
-chrome surface is never given one. It registers the upload and fetch-bytes ports
-on the running editor and feeds the editor's asset index from the project tree
-the app already caches. It renders nothing.
+`ImageIngressRuntime` is the seam, and it is `ProjectLinkRuntime`'s twin — both
+are ports the app registers on the running editor, mounted by `EditorView` and
+rendering nothing. It registers the upload and fetch-bytes ports and feeds the
+editor's asset index from the project tree the app already caches. Anything the
+writer sees goes through the chrome host instead; a runtime that rendered a Radix
+root of its own would be a surface the kernel could not subordinate.
 
 `ImageIngressOverlay` renders what is not content: the pane's drop hint while a
 drag carries files, and one pill for a refusal (a file that is not an image, a

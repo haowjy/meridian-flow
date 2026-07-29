@@ -1,9 +1,9 @@
 # features/editor — app-facing editor surface
 
 This directory owns the TipTap host and its writer-facing chrome: shared frame,
-document toolbar, draft-review controls, synchronization status, and peer-mark
-detail. Document schemas, session infrastructure, and ProseMirror extensions
-belong under `core/editor`; project context owns pane and tab composition.
+document toolbar, draft-review controls, and synchronization status. Document
+schemas, session infrastructure, and ProseMirror extensions belong under
+`core/editor`; project context owns pane and tab composition.
 
 The interaction layer is being rebuilt against a design of record. Its trunk
 is [`chrome/`](chrome/AGENTS.md): the primitives every surface renders from,
@@ -30,19 +30,23 @@ the design, from the primitives.
 - Inline draft review mounts the server projection in an editable editor: the
   writer is a peer in the review branch room, and edits there land in that
   branch.
-- Peer-mark evidence reads delegate to `features/change-trail`; this directory
-  owns only the anchored popover and editor interaction.
+- Peer-mark evidence reads delegate to `features/change-trail`; the anchored
+  popover and the press it opens on are [`surfaces/peer-marks/`](surfaces/peer-marks/AGENTS.md).
 - A new control surface is a directory under `surfaces/` plus one entry in
   `chrome/chrome-surfaces.tsx`. `EditorView.tsx` mounts `EditorChromeHost` once
   and takes no further surfaces; a lane that edits it has taken a shared file
   hostage.
-- **A concern the project owns is a runtime, not a growing host.** Links and
-  images both need the project, which chrome surfaces are never given, so each
-  has one component `EditorView` mounts — `ProjectLinkRuntime`,
-  `ImageIngressRuntime` — that registers its ports and otherwise renders
-  nothing. Anything belonging to that concern (state, timers, editor props,
-  status) goes behind those ports; `EditorView` keeps session and mount lifetime
-  and composes.
+- **A concern the project owns is a runtime, and a runtime renders nothing.**
+  Links and images both need the project, so each has one component `EditorView`
+  mounts — `ProjectLinkRuntime`, `ImageIngressRuntime` — that registers its ports
+  and returns null. What the writer SEES from either lane is a chrome surface
+  like any other: an outcome dialog, a drop hint. A runtime that rendered its own
+  Radix root would be a transient surface the kernel never heard about, which is
+  exactly the bypass the host exists to prevent.
+- **What the app knows reaches a surface as scope, not as props.**
+  `EditorScopeProvider` carries `{ projectId, workId }` around the host, and
+  `useEditorScope()` is how a lane asks. It is runtime scope: a Work changing
+  never remounts the editor, and it never appears in `EditorMountIdentity`.
 - Anything opened over the manuscript hands the caret back on close
   (`onCloseAutoFocus` → prose) and defers Escape to the kernel's chain. Both
   come free from the `chrome/` wrappers; a hand-rolled Radix root does not get
@@ -61,4 +65,5 @@ the design, from the primitives.
 → [`surfaces/table/AGENTS.md`](surfaces/table/AGENTS.md)
 → [`surfaces/link/AGENTS.md`](surfaces/link/AGENTS.md)
 → [`surfaces/images/AGENTS.md`](surfaces/images/AGENTS.md)
+→ [`surfaces/peer-marks/AGENTS.md`](surfaces/peer-marks/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)

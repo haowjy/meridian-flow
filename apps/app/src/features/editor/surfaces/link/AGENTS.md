@@ -1,9 +1,9 @@
 # surfaces/link — everything a writer meets a link through
 
-The destination hint, the right-click menu, the form, the `[[` menu, and the
-runtime that gives an internal link somewhere to go. Two entries in
-`EDITOR_CHROME_SURFACES` plus one component `EditorView` mounts directly;
-policy and state live in
+The destination hint, the right-click menu, the form, the `[[` menu, what a
+follow says when it finds nothing, and the runtime that gives an internal link
+somewhere to go. Three entries in `EDITOR_CHROME_SURFACES` plus one headless
+runtime `EditorView` mounts; policy and state live in
 [`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
 [`core/editor/extensions/wikilink/`](../../../../core/editor/extensions/wikilink/AGENTS.md),
 and — for the rows and their ranking, which the chat composer will share —
@@ -24,17 +24,21 @@ Three summoned components, three physics, one store.
   button, and the menu's Edit link. It hangs at the caret, because the writer
   is looking at their own sentence.
 
-Beside them, two things that are not summoned surfaces:
+Beside them, three things that are not summoned surfaces:
 
 - **`WikilinkMenu`** — rows for the `[[` trigger, over the shared
-  `SuggestionMenu` the slash menu also renders through. Its documents come
-  from the context tree the app already caches (`useWikilinkDocuments`), so
-  opening it costs no request.
+  `SuggestionMenu` the slash menu also renders through. Its documents come from
+  the context trees the app already caches (`useWikilinkDocuments`), so opening
+  it costs no request: the manuscript and the active Work's scratch, which is the
+  resolver's candidate set and therefore the only honest offer.
+- **`FollowOutcomeDialog`** — what a follow says when the document is not there.
+  A chrome surface rather than the runtime's own dialog, and that is the whole
+  point: it can open a quarter second after the click, so the kernel has to know
+  it is the open transient.
 - **`ProjectLinkRuntime`** — the app's half of the link system, mounted by
-  `EditorView` because it needs the project a chrome surface is never given.
-  It registers the resolution port every internal link is drawn from and the
-  navigator a follow is handed to, and it owns the dialog an unresolved follow
-  opens.
+  `EditorView` and rendering nothing. It registers the resolution port every
+  internal link is drawn from and the navigator a follow is handed to, and it
+  reports what a follow found into the store the dialog reads.
 
 ## Key rules
 

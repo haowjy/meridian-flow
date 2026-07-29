@@ -16,6 +16,13 @@ current state it reads from the kernel, so the host has no growing prop list
 and a lane never has to ask for one. The host renders no element of its own;
 every surface portals or floats, so nothing here can push the manuscript.
 
+What a surface needs about the app rather than the document is the one exception,
+and it is a read rather than a prop: `useEditorScope()`
+(`features/editor/editor-scope.tsx`) answers which project and which Work the
+editor is open in. `EditorView` provides it around the host. This is what closed
+the last two bypasses — a dialog that needed the project used to mount beside the
+host, where the kernel could not see it.
+
 ## Mounting a surface, continued
 
 `EditorChromeHost` takes an `active` flag and `EditorView` passes it down. It
