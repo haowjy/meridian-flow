@@ -50,6 +50,7 @@ import { PassageHighlightExtension } from "./extensions/PassageHighlightExtensio
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
+import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { LinkSurfaceExtension } from "./links";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { ObjectPhysicsExtension } from "./objects";
@@ -91,6 +92,8 @@ export type CreateEditorExtensionsOptions = {
   agentNames?: AgentNameStore;
   /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
+  /** Mounts the `[[` document menu; a surface with no project offers none. */
+  wikilinks?: WikilinkExtensionOptions;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -255,6 +258,7 @@ export function createEditorExtensions({
   markerStore,
   agentNames,
   slashCommands,
+  wikilinks,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -265,7 +269,12 @@ export function createEditorExtensions({
   });
 
   return [
-    ...createStandaloneEditorExtensions({ schemaType, assetRenderContext, slashCommands }),
+    ...createStandaloneEditorExtensions({
+      schemaType,
+      assetRenderContext,
+      slashCommands,
+      wikilinks,
+    }),
     ...collaboration,
     // Undo exists only alongside collaboration's UndoManager, so its owned key
     // bindings mount with it rather than in the standalone set.
@@ -280,9 +289,10 @@ export function createStandaloneEditorExtensions({
   schemaType = "document",
   assetRenderContext,
   slashCommands,
+  wikilinks,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands"
+  "schemaType" | "assetRenderContext" | "slashCommands" | "wikilinks"
 > = {}): Extensions {
   if (schemaType === "code") {
     return [
@@ -316,6 +326,7 @@ export function createStandaloneEditorExtensions({
       projectId: assetRenderContext?.projectId,
     }),
     ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
+    ...(wikilinks ? [WikilinkSuggestionExtension.configure(wikilinks)] : []),
     MarkdownAutoformatExtension,
     LiveRangeNavigationExtension,
     PassageHighlightExtension,
@@ -337,6 +348,7 @@ export function createEditorConfig({
   markerStore,
   agentNames,
   slashCommands,
+  wikilinks,
   editable = true,
   autofocus = false,
   placeholder,
@@ -370,6 +382,7 @@ export function createEditorConfig({
         markerStore,
         agentNames,
         slashCommands,
+        wikilinks,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],

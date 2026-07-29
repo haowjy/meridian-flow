@@ -20,6 +20,7 @@ import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { SlashCommandCatalog } from "./extensions/slash";
+import type { WikilinkCatalog } from "./extensions/wikilink";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
@@ -88,6 +89,13 @@ export type MountedEditorInput = {
    * they arrive through this getter instead of the mount key.
    */
   slashCommandCatalog?: () => SlashCommandCatalog | null;
+  /**
+   * Reads the project's documents when the `[[` menu opens. Same reason as the
+   * slash catalog: mounting the trigger is a construction fact, and the list it
+   * offers — which changes every time the writer creates or renames a file —
+   * is not.
+   */
+  wikilinkCatalog?: () => WikilinkCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
@@ -99,6 +107,7 @@ export function useMountedEditor({
   agentNames,
   placeholder,
   slashCommandCatalog,
+  wikilinkCatalog,
   surface,
   evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
@@ -107,6 +116,8 @@ export function useMountedEditor({
   // reads through.
   const catalogRef = useRef(slashCommandCatalog);
   catalogRef.current = slashCommandCatalog;
+  const wikilinkCatalogRef = useRef(wikilinkCatalog);
+  wikilinkCatalogRef.current = wikilinkCatalog;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
@@ -124,6 +135,7 @@ export function useMountedEditor({
       placeholder,
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
+      wikilinks: { catalog: () => wikilinkCatalogRef.current?.() ?? null },
     });
     return {
       editorConfig,
