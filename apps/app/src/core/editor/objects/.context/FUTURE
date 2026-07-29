@@ -1,0 +1,11 @@
+- Rendered-fence framework: mermaid is deliberately the ONLY renderer.
+  Physics, lightbox, and wire are already generic (a rendered language is
+  one EDITOR_OBJECT_TYPES row; the fence round-trips markdown natively).
+  What is mermaid-specific is MermaidCodeBlock.tsx: the parse/render
+  call, measured-token theming, and the three-face presentation model
+  (render, last-good, error card). Extract that shell into a generic
+  async-rendered-fence component when the SECOND renderer arrives, not
+  before. Most plausible second: KaTeX math (LitRPG stat blocks,
+  client-side like mermaid). Note mermaid alone already covers timeline,
+  mindmap, flowchart, sequence, and ER families — surface those to
+  writers before adding renderers. (Human asked 2026-07-29.)
