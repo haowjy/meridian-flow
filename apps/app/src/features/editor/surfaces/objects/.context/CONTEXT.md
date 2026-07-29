@@ -67,11 +67,26 @@ the pane rendered was never in the writer's textarea, so the diff reads it as a
 deletion and Yjs merges that faithfully.
 
 `fence-draft.ts` holds the base the writer actually edited — what the pane
-rendered — plus a `Mapping` of everything that has landed since, and carries
-the diff's offsets forward through it. With nobody else typing the mapping is
-empty and this is one `insertText`. The write refuses a fence that has been
-deleted or turned into another language while the pane was open: writing
-Mermaid into a TypeScript block is worse than doing nothing.
+rendered — plus a `Mapping` of every LOCAL change that has landed since, and
+carries the diff's offsets forward through it. With nobody else typing the
+mapping is empty and this is one `insertText`. The write refuses a fence that
+has been deleted or turned into another language while the pane was open:
+writing Mermaid into a TypeScript block is worse than doing nothing.
+
+A peer's write is the one thing a mapping cannot carry. It arrives as a
+replacement of the whole document (see
+[the position contract](../../../../../core/editor/.context/CONTEXT.md)), so
+every offset in the base maps to a boundary — which is how a source pane came
+to stop accepting keystrokes entirely after a peer wrote below the fence, until
+something else moved the fence. `fenceRebaseAfterRemote` answers instead, by
+asking whether the writer's base is still true:
+
+- the fence's text is untouched and only its position moved: re-read where it
+  sits, keep the base, and a keystroke in the same frame still applies;
+- the fence's text changed underneath the writer: there is no usable base until
+  the next render supplies one, and the pane refuses. Diffing the stale base
+  against the merged text would read the peer's new line as the writer's
+  deletion, which is the exact thing this module exists to prevent.
 
 The rebase resets on every render that shows new document text, and again
 immediately after a dispatch, so the base and the mapping can never disagree

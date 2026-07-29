@@ -33,12 +33,20 @@ somewhere to type.
 
 ## The drag
 
-The held position lives in the document, in
+The held block lives in the document, in
 [`core/editor/blocks/`](../../../../../core/editor/blocks/index.ts), not in
 React state. Two reasons, and the second is the one that bites: a peer's edit
 or an AI write can land while the pointer is down (law 9 gates nothing), and
-the block the writer grabbed has to be the block that lands. One mapped
-position beats one per consumer.
+the block the writer grabbed has to be the block that lands. One hold beats one
+per consumer.
+
+It is an `EditorAnchor` over the block's two seams, not a number. A peer's
+write arrives as a replacement of the whole document (see
+[the position contract](../../../../../core/editor/.context/CONTEXT.md)), so a
+mapped number reports the grab deleted on every peer keystroke — which used to
+cancel the drag mid-gesture, drop line and all. Both seams collapsing onto one
+is what "a peer deleted the block under my pointer" actually looks like, and
+that is still the signal the gesture ends on.
 
 **The drop target is never stored.** A child index is stale the moment a peer
 inserts a block above: the jade line would go on naming a seam the drop no

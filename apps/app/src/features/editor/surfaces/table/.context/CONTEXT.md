@@ -60,8 +60,13 @@ up over it has already left the port. A grip keeps its element while out of
 view — Radix needs a trigger to anchor an open menu to — and stops painting
 and hit-testing; the add tabs simply unmount.
 
-When the hovered cell itself leaves the port the hover intent is cancelled, so
-the approach ends with the pointer where it is rather than where it was.
+When the hovered cell itself leaves the port — scrolled away, or taken by a
+peer deleting the row — the anchor is released whole: hover intent cancelled,
+anchor dropped, and any open grip menu closed with it. Closing the menu is the
+load-bearing part. An open menu holds the anchor still so a stray hover cannot
+move the grips out from under it, so a menu that outlived its own row would
+pin the surface to a dead element and no later hover could replace it: the
+table's chrome never came back.
 
 Opacity on the container fades all four together. Opacity makes a stacking
 context but **not** a containing block, so the fixed children still resolve
