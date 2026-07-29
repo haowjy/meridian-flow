@@ -3,12 +3,24 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Fragment } from "@tiptap/pm/model";
 import type { Command, EditorState, Transaction } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
-import { addRowAfter, addRowBefore, CellSelection } from "@tiptap/pm/tables";
+import {
+  addRowAfter,
+  addRowBefore,
+  CellSelection,
+  isInTable,
+  mergeCells,
+  selectedRect,
+  selectionCell,
+  TableMap,
+  tableNodeTypes,
+} from "@tiptap/pm/tables";
 
 export type TableSelection = {
   table: ProseMirrorNode;
   tablePos: number;
+  /** Grid row of the cell the caret is in, not its index among row children. */
   row: number;
+  /** Grid column of that cell. Diverges from the child index once spans exist. */
   column: number;
   rowFrom: number;
   rowTo: number;
@@ -16,53 +28,89 @@ export type TableSelection = {
   columnTo: number;
 };
 
-function tablePoint($pos: EditorState["selection"]["$from"]) {
-  let tableDepth = -1;
-  let rowDepth = -1;
-  for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    const role = $pos.node(depth).type.spec.tableRole;
-    if (rowDepth < 0 && role === "row") rowDepth = depth;
-    if (role === "table") {
-      tableDepth = depth;
-      break;
-    }
-  }
-  if (tableDepth < 0 || rowDepth < 0) return null;
-  return {
-    table: $pos.node(tableDepth),
-    tablePos: $pos.before(tableDepth),
-    row: $pos.index(tableDepth),
-    column: $pos.index(rowDepth),
-  };
-}
-
+/**
+ * Where the selection stands in a table, in GRID coordinates.
+ *
+ * Grid rather than child index is the point: a spanned cell occupies several
+ * columns, so `row.child(2)` and "column 2" stop meaning the same thing the
+ * moment a writer merges anything. `TableMap` is what knows the difference, so
+ * every reading here goes through it.
+ */
 export function tableSelection(state: EditorState): TableSelection | null {
-  const point = tablePoint(state.selection.$from);
-  if (!point) return null;
+  if (!isInTable(state)) return null;
 
-  if (state.selection instanceof CellSelection) {
-    const anchor = tablePoint(state.selection.$anchorCell);
-    const head = tablePoint(state.selection.$headCell);
-    if (!anchor || !head || anchor.tablePos !== head.tablePos) return null;
-    return {
-      ...point,
-      rowFrom: Math.min(anchor.row, head.row),
-      rowTo: Math.max(anchor.row, head.row),
-      columnFrom: Math.min(anchor.column, head.column),
-      columnTo: Math.max(anchor.column, head.column),
-    };
-  }
+  const $cell = selectionCell(state);
+  const table = $cell.node(-1);
+  const tableStart = $cell.start(-1);
+  const map = TableMap.get(table);
+  const current = map.findCell($cell.pos - tableStart);
+
+  const { selection } = state;
+  const rect =
+    selection instanceof CellSelection
+      ? map.rectBetween(
+          selection.$anchorCell.pos - tableStart,
+          selection.$headCell.pos - tableStart,
+        )
+      : current;
 
   return {
-    ...point,
-    rowFrom: point.row,
-    rowTo: point.row,
-    columnFrom: point.column,
-    columnTo: point.column,
+    table,
+    tablePos: tableStart - 1,
+    row: current.top,
+    column: current.left,
+    rowFrom: rect.top,
+    rowTo: rect.bottom - 1,
+    columnFrom: rect.left,
+    columnTo: rect.right - 1,
   };
 }
 
-function hasSpans(table: ProseMirrorNode): boolean {
+/**
+ * Turn the table's header row on or off (law 6: one control, both directions).
+ *
+ * prosemirror-tables' `toggleHeaderRow` toggles header-ness of whatever ROWS
+ * are selected, so with the table selected it makes every row a header, and
+ * with the caret in the last row it makes THAT row a header. "Header row" names
+ * one row — the first — and means the same thing from wherever it is pressed.
+ */
+export const toggleTableHeaderRow: Command = (state, dispatch) => {
+  const selection = tableSelection(state);
+  if (!selection) return false;
+  if (!dispatch) return true;
+
+  const types = tableNodeTypes(state.schema);
+  const target = hasHeaderRow(selection.table) ? types.cell : types.header_cell;
+  const map = TableMap.get(selection.table);
+  const tableStart = selection.tablePos + 1;
+  const tr = state.tr;
+
+  for (const cellPos of map.cellsInRect({ left: 0, right: map.width, top: 0, bottom: 1 })) {
+    const cell = selection.table.nodeAt(cellPos);
+    if (!cell || cell.type === target) continue;
+    tr.setNodeMarkup(tableStart + cellPos, target, cell.attrs);
+  }
+
+  if (!tr.docChanged) return false;
+  dispatch(tr);
+  return true;
+};
+
+/**
+ * Whether row zero is a header row.
+ *
+ * The header is a real toggleable thing (§5.4 requirement 3), not a structural
+ * given: plenty of status screens have none. Transforms that must not disturb
+ * it ask this rather than assuming row zero is sacred, or a headerless table's
+ * first row becomes unreachable to insert-above and to moves.
+ */
+export function hasHeaderRow(table: ProseMirrorNode): boolean {
+  const first = table.firstChild?.firstChild;
+  return first?.type.spec.tableRole === "header_cell";
+}
+
+/** Any merged cell in the table. Row and column moves refuse across one. */
+export function tableHasSpans(table: ProseMirrorNode): boolean {
   let found = false;
   table.descendants((node) => {
     if (
@@ -109,11 +157,13 @@ function replaceTable(
 export function moveTableRow(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
-    // Row zero is the structural GFM header and never participates in moves.
+    if (!selection || tableHasSpans(selection.table)) return false;
+    // Where a header row exists it is structural: it never moves, and no body
+    // row moves above it. A headerless table has no such floor.
+    const floor = hasHeaderRow(selection.table) ? 1 : 0;
     if (
-      selection.rowFrom === 0 ||
-      (direction === -1 && selection.rowFrom <= 1) ||
+      selection.rowFrom < floor ||
+      (direction === -1 && selection.rowFrom <= floor) ||
       (direction === 1 && selection.rowTo >= selection.table.childCount - 1)
     ) {
       return false;
@@ -141,7 +191,7 @@ export function moveTableRow(direction: -1 | 1): Command {
 export function moveTableColumn(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
+    if (!selection || tableHasSpans(selection.table)) return false;
     const columnCount = selection.table.firstChild?.childCount ?? 0;
     if (
       (direction === -1 && selection.columnFrom === 0) ||
@@ -176,24 +226,26 @@ export function moveTableColumn(direction: -1 | 1): Command {
   };
 }
 
+/** Text alignment for every cell in the selected columns, spanned cells included. */
 export function alignTableColumn(alignment: "left" | "center" | "right"): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
+    if (!selection) return false;
     if (!dispatch) return true;
 
+    const map = TableMap.get(selection.table);
+    const tableStart = selection.tablePos + 1;
     const tr = state.tr;
-    let rowPos = selection.tablePos + 1;
-    selection.table.forEach((row) => {
-      let cellPos = rowPos + 1;
-      row.forEach((cell, _offset, column) => {
-        if (column >= selection.columnFrom && column <= selection.columnTo) {
-          tr.setNodeMarkup(cellPos, undefined, { ...cell.attrs, alignment });
-        }
-        cellPos += cell.nodeSize;
-      });
-      rowPos += row.nodeSize;
-    });
+    for (const cellPos of map.cellsInRect({
+      left: selection.columnFrom,
+      right: selection.columnTo + 1,
+      top: 0,
+      bottom: map.height,
+    })) {
+      const cell = selection.table.nodeAt(cellPos);
+      if (!cell || cell.attrs.alignment === alignment) continue;
+      tr.setNodeMarkup(tableStart + cellPos, undefined, { ...cell.attrs, alignment });
+    }
     dispatch(tr);
     return true;
   };
@@ -203,42 +255,62 @@ export function alignTableColumn(alignment: "left" | "center" | "right"): Comman
 export function addTableRow(direction: "above" | "below"): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
-    if (direction === "above" && selection.rowFrom === 0) return false;
+    if (!selection) return false;
+    if (direction === "above" && selection.rowFrom < (hasHeaderRow(selection.table) ? 1 : 0)) {
+      return false;
+    }
 
     const command = direction === "above" ? addRowBefore : addRowAfter;
     return command(state, (tr) => {
       const table = tr.doc.nodeAt(selection.tablePos);
       if (!table) return;
       const insertedRow = direction === "above" ? selection.rowFrom : selection.rowTo + 1;
-      const row = table.child(insertedRow);
-      const header = table.firstChild;
-      if (!header) return;
+      const map = TableMap.get(table);
+      const tableStart = selection.tablePos + 1;
 
-      let rowPos = selection.tablePos + 1;
-      for (let index = 0; index < insertedRow; index += 1) rowPos += table.child(index).nodeSize;
-      let cellPos = rowPos + 1;
-      row.forEach((cell, _offset, column) => {
-        const alignment = header.child(column).attrs.alignment;
-        if (alignment !== cell.attrs.alignment) {
-          tr.setNodeMarkup(cellPos, undefined, { ...cell.attrs, alignment });
-        }
-        cellPos += cell.nodeSize;
-      });
+      for (const cellPos of map.cellsInRect({
+        left: 0,
+        right: map.width,
+        top: insertedRow,
+        bottom: insertedRow + 1,
+      })) {
+        // A rowspan from above reaches into the new row without belonging to
+        // it; only cells that BEGIN here are the row this insert created.
+        const rect = map.findCell(cellPos);
+        if (rect.top !== insertedRow) continue;
+        const cell = table.nodeAt(cellPos);
+        if (!cell) continue;
+        const alignment = table.nodeAt(map.map[rect.left])?.attrs.alignment ?? null;
+        if (alignment === cell.attrs.alignment) continue;
+        tr.setNodeMarkup(tableStart + cellPos, undefined, { ...cell.attrs, alignment });
+      }
       dispatch?.(tr);
     });
   };
 }
 
-export const resetTableLayout: Command = (state, dispatch) => {
+/**
+ * Where the table sits in the measure (§5.4). `null` is the default flow,
+ * which is what "left" means for a block that is already left-aligned.
+ */
+export function setTablePlacement(align: "center" | "right" | null): Command {
+  return (state, dispatch) => {
+    const selection = tableSelection(state);
+    if (!selection) return false;
+    if (selection.table.attrs.align === align) return true;
+    dispatch?.(
+      state.tr.setNodeMarkup(selection.tablePos, undefined, { ...selection.table.attrs, align }),
+    );
+    return true;
+  };
+}
+
+/** Drops every persisted column width so the table sizes to its content again. */
+export const resetTableColumnWidths: Command = (state, dispatch) => {
   const selection = tableSelection(state);
   if (!selection) return false;
-  if (!dispatch) return true;
 
-  const tr = state.tr.setNodeMarkup(selection.tablePos, undefined, {
-    ...selection.table.attrs,
-    align: null,
-  });
+  const tr = state.tr;
   let rowPos = selection.tablePos + 1;
   selection.table.forEach((row) => {
     let cellPos = rowPos + 1;
@@ -250,6 +322,138 @@ export const resetTableLayout: Command = (state, dispatch) => {
     });
     rowPos += row.nodeSize;
   });
-  dispatch(tr);
+
+  if (!tr.docChanged) return false;
+  dispatch?.(tr);
   return true;
+};
+
+/**
+ * prosemirror-tables' own definition of an empty cell: one childless text
+ * block. The join below MUST agree with it, because the library's merge skips
+ * exactly these cells — and a cell the two disagree about is one whose content
+ * the join leaves behind and the merge then appends as a second paragraph,
+ * which the schema fit ejects out of the table entirely.
+ *
+ * `textContent` is not that test. A cell holding only a hard break or only an
+ * inline image carries no text and is not empty.
+ */
+function isEmptyCell(cell: ProseMirrorNode): boolean {
+  const content = cell.content;
+  return (
+    content.childCount === 1 && content.child(0).isTextblock && content.child(0).childCount === 0
+  );
+}
+
+/** The cells in the selected rectangle that hold something, in reading order. */
+function filledCellsInSelection(state: EditorState): { positions: number[]; tableStart: number } {
+  const rect = selectedRect(state);
+  const seen = new Set<number>();
+  const positions: number[] = [];
+
+  for (let row = rect.top; row < rect.bottom; row += 1) {
+    for (let column = rect.left; column < rect.right; column += 1) {
+      const cellPos = rect.map.map[row * rect.map.width + column];
+      if (seen.has(cellPos)) continue;
+      seen.add(cellPos);
+      const cell = rect.table.nodeAt(cellPos);
+      if (cell && !isEmptyCell(cell)) positions.push(cellPos);
+    }
+  }
+
+  return { positions, tableStart: rect.tableStart };
+}
+
+/**
+ * Whether merging here will run two cells' text together — the one thing about
+ * the verb a writer cannot see before pressing it, so the menu says so.
+ */
+export function mergeJoinsCellText(state: EditorState): boolean {
+  if (!isInTable(state) || !(state.selection instanceof CellSelection)) return false;
+  return filledCellsInSelection(state).positions.length > 1;
+}
+
+/**
+ * Would this merge swallow the header row into the body?
+ *
+ * prosemirror-tables merges any rectangle and keeps the FIRST cell's type, so
+ * a whole-column merge on a headed table yields one header cell spanning every
+ * row: the header stops being a row and the table stops having one. Merging
+ * the header row across itself is a different thing and stays allowed — that
+ * is a title row.
+ */
+export function mergeCrossesHeader(state: EditorState): boolean {
+  if (!isInTable(state) || !(state.selection instanceof CellSelection)) return false;
+  const rect = selectedRect(state);
+  return hasHeaderRow(rect.table) && rect.top === 0 && rect.bottom > 1;
+}
+
+/**
+ * Merge, under a schema where a cell holds exactly one paragraph.
+ *
+ * prosemirror-tables appends every filled cell's content into the merged cell,
+ * which is two paragraphs where this schema allows one. The replace is then
+ * fitted to the schema: the cell closes, a new row opens, and a cell's text is
+ * simply gone. Running the text together into one paragraph FIRST leaves a
+ * single filled cell, which the library merges cleanly.
+ *
+ * When cells hold several paragraphs on the wire (the codec escalation), this
+ * join is what goes away, and `mergeCells` stands on its own.
+ */
+export const mergeTableCells: Command = (state, dispatch) => {
+  // The greyed menu item is the first fence and this is the second, which is
+  // the load-bearing one: nothing else stops a programmatic merge from taking
+  // the header row with it.
+  if (!mergeCells(state) || mergeCrossesHeader(state)) return false;
+  if (!dispatch) return true;
+
+  const { positions, tableStart } = filledCellsInSelection(state);
+  if (positions.length < 2) return mergeCells(state, dispatch);
+
+  const table = selectedRect(state).table;
+  const paragraph = state.schema.nodes.paragraph;
+  if (!paragraph) return mergeCells(state, dispatch);
+
+  // Every inline node of every block of every filled cell, in reading order,
+  // with a space between the runs. Blocks, not just the first: a cell that can
+  // hold several paragraphs must not lose the ones after the first, and the
+  // order the writer sees is the order they land in.
+  const space = state.schema.text(" ");
+  let joined = Fragment.empty;
+  for (const cellPos of positions) {
+    table.nodeAt(cellPos)?.content.forEach((block) => {
+      if (block.content.size === 0) return;
+      joined =
+        joined.size === 0
+          ? block.content
+          : joined.append(Fragment.from(space)).append(block.content);
+    });
+  }
+
+  // Back to front: rewriting a cell moves everything after it, nothing before.
+  // Each cell's WHOLE content is replaced, so no block survives to be appended
+  // by the merge and fitted back out of the table.
+  const tr = state.tr;
+  for (const cellPos of [...positions].reverse()) {
+    const cell = table.nodeAt(cellPos);
+    if (!cell) continue;
+    const from = tableStart + cellPos + 1;
+    const to = from + cell.content.size;
+    const attrs = cell.firstChild?.attrs ?? null;
+    tr.replaceWith(
+      from,
+      to,
+      cellPos === positions[0] ? paragraph.create(attrs, joined) : paragraph.create(attrs),
+    );
+  }
+
+  const withText = state.apply(tr);
+  // A plugin that rewrote the document underneath the join would invalidate
+  // the merge steps below; giving up on the join is better than mis-stepping.
+  if (withText.doc !== tr.doc) return mergeCells(state, dispatch);
+
+  return mergeCells(withText, (mergeTr) => {
+    for (const step of mergeTr.steps) tr.step(step);
+    dispatch(tr.scrollIntoView());
+  });
 };

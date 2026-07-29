@@ -10,7 +10,8 @@ import {
   alignTableColumn,
   moveTableColumn,
   moveTableRow,
-  resetTableLayout,
+  resetTableColumnWidths,
+  setTablePlacement,
   tableSelection,
 } from "./table-operations";
 
@@ -173,13 +174,15 @@ describe("table move transforms", () => {
     expect(table?.child(1).child(1).attrs.alignment).toBe("center");
     expect(table?.child(2).child(1).attrs.alignment).toBe("center");
 
-    if (!table) throw new Error("table is missing");
-    current.view.dispatch(
-      current.state.tr.setNodeMarkup(0, undefined, { ...table.attrs, align: "right" }),
-    );
-    expect(resetTableLayout(current.state, current.view.dispatch)).toBe(true);
+    expect(setTablePlacement("right")(current.state, current.view.dispatch)).toBe(true);
+    expect(current.state.doc.firstChild?.attrs.align).toBe("right");
+    expect(setTablePlacement(null)(current.state, current.view.dispatch)).toBe(true);
     expect(current.state.doc.firstChild?.attrs.align).toBeNull();
+
+    expect(resetTableColumnWidths(current.state, current.view.dispatch)).toBe(true);
     expect(current.state.doc.firstChild?.child(1).child(0).attrs.colwidth).toBeNull();
+    // Nothing left to reset is a refusal, so a menu item can grey rather than lie.
+    expect(resetTableColumnWidths(current.state, current.view.dispatch)).toBe(false);
   });
 
   it("models CellSelection rectangles and rejects header-crossing row transforms", () => {
@@ -325,7 +328,7 @@ describe("resizable table rendering", () => {
 
     expect(firstColumn?.style.width).toBe("302px");
     selectText(current, "H1");
-    expect(resetTableLayout(current.state, current.view.dispatch)).toBe(true);
+    expect(resetTableColumnWidths(current.state, current.view.dispatch)).toBe(true);
     const reset = current.state.doc.firstChild;
     if (!reset) throw new Error("reset table is missing");
     expect(view.update(reset)).toBe(true);

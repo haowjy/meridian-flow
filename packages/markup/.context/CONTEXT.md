@@ -96,7 +96,20 @@ so container composition does not change the table dialect.
 The HTML table path accepts positive `colspan` and `rowspan`, inline marks,
 links, images, and `<br>` while declining unknown table structure as inert raw
 text. Invalid PM span/alignment attrs and malformed `Layout` column widths
-still throw rather than serialize lossily. `Layout` keeps an HTML-spelled table
+still throw rather than serialize lossily.
+
+`widths` counts GRID columns, and so does `colwidth` (ruling, 2026-07-29). A
+cell's index among its row's children stops being its column the moment
+anything spans, so both sides walk the grid: `colwidth` holds one entry per
+column the cell covers, and **zero means that column has no width**. That is
+prosemirror-tables' own spelling — a resize sizes the array to the cell's
+colspan and fills only the slot it touched — and what the table view reads
+when it sizes the colgroup, so the codec follows it rather than the reverse.
+A `colwidth` whose length disagrees with its cell's colspan is malformed and
+throws; a zero is not, and neither is a fraction. Sizing a spanned column
+divides the cell's box by its colspan, so the document legitimately holds
+sub-pixel widths; the wire carries whole pixels and serialization rounds, which
+converges the document on the next load. `Layout` keeps an HTML-spelled table
 as raw text inside the wrapper instead of parsing and re-stringifying it as
 MDX, which preserves entity-encoded literal newlines and braces. `Layout`
 wrapping is applied by the runtime block hook even through list and blockquote

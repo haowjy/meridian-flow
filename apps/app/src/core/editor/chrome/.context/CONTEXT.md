@@ -67,11 +67,20 @@ closing surface — because "nobody is ever trapped" outranks it.
 1. a drag or sweep in flight → cancel it (the owner's `onCancel` runs)
 2. any layer open → close the topmost
 3. the selection is on an object, or a caret is in a source block → caret past it
-4. otherwise `at-home`, and the key is left unhandled
+4. the caret is in prose INSIDE an object (`context.objectPos`) → select that
+   object
+5. otherwise `at-home`, and the key is left unhandled
 
 Law 3's three-step walk (source → object selected → caret after) is not three
 cases: a diagram's source pane is a layer inside its dialog, so step 2 runs
 twice and step 3 once. Verified end to end in the browser.
+
+Step 4 is the same walk for an object whose insides are prose. A caret in a
+table cell is standing inside the table, so Esc selects the table and only the
+next Esc leaves it — which is also the keyboard route to the table's object
+controls (M6). `resolveChromeContext` carries the position of the nearest
+enclosing object as `objectPos` because nothing else in the ancestor walk keeps
+a position the chain could recover later.
 
 **Radix subordination (verdict: KEPT, 2026-07-29).** Radix owns its own
 dismissal and the kernel owns the policy. Two mechanisms make that work:

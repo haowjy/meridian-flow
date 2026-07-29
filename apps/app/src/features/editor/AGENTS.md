@@ -45,4 +45,5 @@ the design, from the primitives.
 → [`surfaces/slash/AGENTS.md`](surfaces/slash/AGENTS.md)
 → [`surfaces/blocks/AGENTS.md`](surfaces/blocks/AGENTS.md)
 → [`surfaces/formatting/AGENTS.md`](surfaces/formatting/AGENTS.md)
+→ [`surfaces/table/AGENTS.md`](surfaces/table/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)

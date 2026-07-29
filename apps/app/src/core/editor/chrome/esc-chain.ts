@@ -15,6 +15,10 @@
  * exception (§5.3) — its rendering IS its source, so there is no room to leave
  * and Esc goes straight to the caret after the block.
  *
+ * An object whose insides are prose walks the same three steps with a
+ * different first one: a caret in a table cell is standing INSIDE the object,
+ * so Esc selects the table, and only the next Esc leaves it.
+ *
  * Pure. `escStep` decides; the caller performs. `advanceEscSituation` models
  * the performance so the chain can be proved terminating without an editor.
  */
@@ -39,6 +43,8 @@ export type EscSituation = {
 export type EscStep =
   | { kind: "cancel-gesture"; gesture: "drag" | "sweep" }
   | { kind: "close-layer"; layerId: string }
+  /** Select the object the caret is standing inside, leaving its prose. */
+  | { kind: "select-object"; pos: number }
   /** Put the caret immediately after the block at `pos` and select nothing. */
   | { kind: "caret-after-block"; pos: number }
   /** Already home. The kernel must let the key through untouched. */
@@ -58,10 +64,14 @@ export function escStep(situation: EscSituation): EscStep {
   const topmost = situation.layers[situation.layers.length - 1];
   if (topmost) return { kind: "close-layer", layerId: topmost.id };
 
-  const { owner, pos } = situation.context;
+  const { owner, pos, objectPos } = situation.context;
   if ((owner === "source-block" || owner === "object") && pos !== null) {
     return { kind: "caret-after-block", pos };
   }
+
+  // Prose inside an object (a table cell) is one step further from home than
+  // prose in the document: leaving the sentence comes before leaving the table.
+  if (objectPos !== null) return { kind: "select-object", pos: objectPos };
 
   return { kind: "at-home" };
 }
@@ -78,6 +88,17 @@ export function advanceEscSituation(situation: EscSituation, step: EscStep): Esc
       return { ...situation, gesture: "idle" };
     case "close-layer":
       return { ...situation, layers: situation.layers.slice(0, -1) };
+    case "select-object":
+      return {
+        ...situation,
+        context: {
+          owner: "object",
+          nodeType: situation.context.nodeType,
+          pos: step.pos,
+          chain: ["document", "object"],
+          objectPos: null,
+        },
+      };
     case "caret-after-block":
       // The caret lands in prose beside the block, which is the document
       // context by definition — a block's next sibling is not inside it.
@@ -95,7 +116,7 @@ export function advanceEscSituation(situation: EscSituation, step: EscStep): Esc
 export function escWalkHome(situation: EscSituation): EscStep[] {
   const steps: EscStep[] = [];
   let current = situation;
-  const bound = situation.layers.length + 3;
+  const bound = situation.layers.length + 4;
 
   for (let taken = 0; taken <= bound; taken += 1) {
     const step = escStep(current);

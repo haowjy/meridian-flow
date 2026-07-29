@@ -177,6 +177,14 @@ msgstr "A folder named {trimmed} already exists in this location."
 msgid "A project is required before images can be uploaded."
 msgstr "A project is required before images can be uploaded."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "A table keeps at least one column."
+msgstr "A table keeps at least one column."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "A table keeps at least one row."
+msgstr "A table keeps at least one row."
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
 msgstr "Access lost (not saving to the server)"
@@ -207,10 +215,18 @@ msgstr "Actually…"
 msgid "Add a caption for this figure."
 msgstr "Add a caption for this figure."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Add column"
+msgstr "Add column"
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Add link"
 msgstr "Add link"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Add row"
+msgstr "Add row"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Added"
@@ -241,6 +257,18 @@ msgstr "AI edits wait here for your review."
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align center"
+msgstr "Align center"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align left"
+msgstr "Align left"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align right"
+msgstr "Align right"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Alignment applies to paragraphs, headings, and tables."
@@ -393,6 +421,10 @@ msgstr "Capture experiments, methods, and observations in a structured log."
 msgid "Center"
 msgstr "Center"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Centered"
+msgstr "Centered"
+
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr "Changed {relativeTime}"
@@ -526,6 +558,10 @@ msgstr "Collapse sidebar  ["
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
 msgstr "Color theme"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Column options"
+msgstr "Column options"
 
 #. placeholder {0}: proposal.contributingTurnIds.length
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -723,6 +759,10 @@ msgstr "Default alignment"
 msgid "Delete"
 msgstr "Delete"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete column"
+msgstr "Delete column"
+
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete file?"
 msgstr "Delete file?"
@@ -730,6 +770,14 @@ msgstr "Delete file?"
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete folder?"
 msgstr "Delete folder?"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete row"
+msgstr "Delete row"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete table"
+msgstr "Delete table"
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
@@ -1026,6 +1074,10 @@ msgstr "h2"
 msgid "h3"
 msgstr "h3"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Header row"
+msgstr "Header row"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
 msgstr "Heading"
@@ -1121,6 +1173,22 @@ msgstr "Insert"
 msgid "Insert block"
 msgstr "Insert block"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert column left"
+msgstr "Insert column left"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert column right"
+msgstr "Insert column right"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert row above"
+msgstr "Insert row above"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert row below"
+msgstr "Insert row below"
+
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
 msgid "Inserted {0}."
@@ -1194,6 +1262,10 @@ msgstr "Later edits build on this change. View the change instead of undoing it.
 #: src/features/project/context/context-entry-name.ts
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr "Leading or trailing whitespace detected in file or folder name."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Left"
+msgstr "Left"
 
 #: src/features/chat/placeholders.ts
 msgid "Let's work on it"
@@ -1313,9 +1385,21 @@ msgstr "Maximum is {0}."
 msgid "Medium"
 msgstr "Medium"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merge cells"
+msgstr "Merge cells"
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Merged"
 msgstr "Merged"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merged cells stay where they are."
+msgstr "Merged cells stay where they are."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merging works on a rectangle of cells."
+msgstr "Merging works on a rectangle of cells."
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
@@ -1350,6 +1434,14 @@ msgstr "Monthly usage"
 msgid "More"
 msgstr "More"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move column left"
+msgstr "Move column left"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move column right"
+msgstr "Move column right"
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move down"
 msgstr "Move down"
@@ -1357,6 +1449,14 @@ msgstr "Move down"
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move or change this block"
 msgstr "Move or change this block"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move row down"
+msgstr "Move row down"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move row up"
+msgstr "Move row up"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
@@ -1465,6 +1565,10 @@ msgstr "No billing activity yet."
 msgid "No chats yet — start one to get going."
 msgstr "No chats yet — start one to get going."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "No column has been resized yet."
+msgstr "No column has been resized yet."
+
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "No context files yet."
@@ -1544,6 +1648,10 @@ msgstr "ol"
 #: src/lib/date-groups.ts
 msgid "Older"
 msgstr "Older"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "One cell across the selection"
+msgstr "One cell across the selection"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
@@ -1702,6 +1810,10 @@ msgstr "Project"
 msgid "Protocol Designer"
 msgstr "Protocol Designer"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Put the caret in a table first."
+msgstr "Put the caret in a table first."
+
 #: src/features/chat/placeholders.ts
 msgid "Quick thought"
 msgstr "Quick thought"
@@ -1839,6 +1951,10 @@ msgstr "Reopens your last document and chat when you switch devices"
 msgid "Required"
 msgstr "Required"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Reset column widths"
+msgstr "Reset column widths"
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr "Resize right rail"
@@ -1893,9 +2009,14 @@ msgstr "Review draft"
 msgid "Rewrote"
 msgstr "Rewrote"
 
+#: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
 msgstr "Right"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Row options"
+msgstr "Row options"
 
 #: src/features/editor/EditorView.tsx
 msgid "rule"
@@ -1904,6 +2025,10 @@ msgstr "rule"
 #: src/features/project/home/HomeScreen.tsx
 msgid "Running"
 msgstr "Running"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Runs the text together in one cell"
+msgstr "Runs the text together in one cell"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
@@ -1953,6 +2078,10 @@ msgstr "section"
 msgid "Select a document."
 msgstr "Select a document."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Select more than one cell to merge them."
+msgstr "Select more than one cell to merge them."
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Select text to add a link."
 msgstr "Select text to add a link."
@@ -1964,6 +2093,10 @@ msgstr "Select text to change the block type."
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Select text to format it."
 msgstr "Select text to format it."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Select the merged cell on its own to split it."
+msgstr "Select the merged cell on its own to split it."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Select…"
@@ -2042,6 +2175,10 @@ msgstr "Something went wrong while making that change."
 #: src/features/project/home/HomeScreen.tsx
 msgid "Sorted {0}"
 msgstr "Sorted {0}"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Split cell"
+msgstr "Split cell"
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
@@ -2126,12 +2263,25 @@ msgid "Switch work"
 msgstr "Switch work"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
 msgstr "Table"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Table cells hold plain paragraphs."
 msgstr "Table cells hold plain paragraphs."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table controls"
+msgstr "Table controls"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table options"
+msgstr "Table options"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table placement"
+msgstr "Table placement"
 
 #: src/features/chat/placeholders.ts
 msgid "Talk it out"
@@ -2145,6 +2295,10 @@ msgstr "Task Assignment"
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Text"
 msgstr "Text"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Text alignment"
+msgstr "Text alignment"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Text size"
@@ -2206,6 +2360,14 @@ msgstr "The assistant referred to this document, but it isn't there now. It may 
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "The header row does not merge into the body."
+msgstr "The header row does not merge into the body."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "The header row stays first."
+msgstr "The header row stays first."
+
 #: src/features/editor/EditorView.tsx
 msgid "The image uploaded, but the editor could not insert it."
 msgstr "The image uploaded, but the editor could not insert it."
@@ -2251,6 +2413,10 @@ msgstr "This browser will not hand the clipboard to the page. Press {shortcut} t
 msgid "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
 msgstr "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This cell is not merged."
+msgstr "This cell is not merged."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."
@@ -2288,6 +2454,10 @@ msgstr "This chapter was opened in a newer version of Meridian. Refresh to keep 
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This column is already at the edge."
+msgstr "This column is already at the edge."
+
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
 msgstr "This device"
@@ -2296,6 +2466,7 @@ msgstr "This device"
 msgid "This document changed elsewhere. Reopen it and try again."
 msgstr "This document changed elsewhere. Reopen it and try again."
 
+#: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This document is read only right now."
 msgstr "This document is read only right now."
@@ -2340,6 +2511,10 @@ msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the
 #: src/features/project/chat/ChatScreen.tsx
 msgid "This project has no chats yet."
 msgstr "This project has no chats yet."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This row is already at the edge."
+msgstr "This row is already at the edge."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This skill is no longer available in this chat — start a new chat to use the current version."

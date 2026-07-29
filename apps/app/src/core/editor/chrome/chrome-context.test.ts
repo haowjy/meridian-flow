@@ -68,6 +68,7 @@ describe("resolveChromeContext", () => {
       nodeType: null,
       pos: null,
       chain: ["document"],
+      objectPos: null,
     });
   });
 
@@ -84,6 +85,8 @@ describe("resolveChromeContext", () => {
     expect(context.owner).toBe("table-cell");
     expect(context.chain).toEqual(["document", "table", "table-cell"]);
     expect(context.nodeType).toBe("table_cell");
+    // The table is the object the caret stands inside: Esc's first step out.
+    expect(context.objectPos).toBe(0);
   });
 
   it("gives a caret in a code fence to the source block", () => {
@@ -112,6 +115,7 @@ describe("resolveChromeContext", () => {
       nodeType: "figure",
       pos,
       chain: ["document", "object"],
+      objectPos: null,
     });
   });
 
