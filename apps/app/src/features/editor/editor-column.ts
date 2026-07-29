@@ -36,15 +36,40 @@ export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6
 export const editorColumnFill = "flex min-h-full flex-1 flex-col";
 
 /**
+ * Scroll past end: the manuscript keeps scrolling until the last block sits in
+ * the upper half of the pane, so a writer never has to type against the bottom
+ * edge of the screen (human ruling 2026-07-29; the reference is Notion).
+ *
+ * Half a viewport, which parks the last line just above the pane's midline at
+ * desktop geometry. Viewport-relative rather than a fixed height so the reserve
+ * stays proportional from a laptop to a large display.
+ *
+ * It belongs to the ProseMirror node itself rather than a wrapper: the reserve
+ * is click territory, and a press inside the editable element is ProseMirror's
+ * to answer with the caret at the end of the document. Chrome that measures the
+ * manuscript reads block boxes, never this one, because the prose node keeps
+ * answering `posAtCoords` far below the last line.
+ */
+export const editorProseScrollPastEnd = "pb-[50vh]";
+
+/**
  * ProseMirror node classes (TipTap `editorProps.attributes.class`).
  * The top inset depends on the toolbar: the docked row already provides the
  * breathing room, so the prose trims its own reserve. Chosen at editor
- * creation — hosts don't toggle the toolbar after mount. The bottom inset
- * keeps the active line away from the viewport edge in long manuscripts.
+ * creation — hosts don't toggle the toolbar after mount.
+ *
+ * `shrink-0` is load-bearing, not decoration. The prose node is the last link
+ * in the fill chain above, so it is a flex item in a column, and `min-h-full`
+ * replaces the automatic minimum size that would otherwise hold a flex item at
+ * its content height. Without it the flex algorithm squashes the box back down
+ * to the scroll viewport: the blocks overflow it and still scroll, but the
+ * scroll-past-end reserve ends up drawn behind them instead of below the last
+ * line, and the manuscript stops dead at its final block.
  */
 export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
-    "prose-tokens min-h-full px-6 pb-[50vh] md:px-10",
+    "prose-tokens min-h-full shrink-0 px-6 md:px-10",
+    editorProseScrollPastEnd,
     toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
   );
 }
