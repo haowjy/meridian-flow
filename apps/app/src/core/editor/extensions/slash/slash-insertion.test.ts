@@ -322,6 +322,51 @@ describe("slash insertion out of nested structures", () => {
     expect(cellAroundCaret(instance)).toBe("cell");
   });
 
+  /**
+   * An EMPTY cell is where the refusal used to leak. A cell holds one plain
+   * paragraph, and the image the host inserts is a paragraph too, so asking
+   * "may this block replace the empty one" answered yes — and the pick then
+   * went out through the host's picker and landed the image past the table.
+   * The question for an entry the host inserts is always "is there room for
+   * another block", and in a cell there is not.
+   */
+  it("refuses Image in an empty cell like every other entry", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
+    ]);
+
+    const refusals = slashRefusals(instance, range, [item("image"), item("heading-1")]);
+    expect(refusals.get("image")).toBe("table-cell");
+    expect(refusals.get("heading-1")).toBe("table-cell");
+  });
+
+  it("costs the writer nothing when Image is refused: no picker, no edit", () => {
+    const requestImageUpload = vi.fn();
+    const { editor: instance, range } = mountAround([
+      { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
+    ]);
+    const before = instance.state.doc.toJSON();
+
+    const applied = applySlashCommand(instance, range, item("image"), catalog(requestImageUpload));
+
+    expect(applied).toBe(false);
+    expect(requestImageUpload).not.toHaveBeenCalled();
+    expect(instance.state.doc.toJSON()).toEqual(before);
+    expect(cellAroundCaret(instance)).toBe("cell");
+  });
+
+  it("still opens the picker from an empty paragraph in prose", () => {
+    const requestImageUpload = vi.fn();
+    const { editor: instance, range } = mountWithTrigger("", "/image");
+
+    const applied = applySlashCommand(instance, range, item("image"), catalog(requestImageUpload));
+
+    expect(applied).toBe(true);
+    expect(requestImageUpload).toHaveBeenCalledTimes(1);
+    expect(blockTypes(instance)).toEqual(["paragraph"]);
+    expect(instance.state.doc.textContent).toBe("");
+  });
+
   it("names the refusal so the menu can render it", () => {
     const inCell = mountAround([
       { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },

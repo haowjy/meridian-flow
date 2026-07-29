@@ -44,6 +44,21 @@ type SlashInsertion = {
    * to keep typing on.
    */
   caret: "inside" | "after";
+  /**
+   * The host puts this one in the document: a picker, then an upload or a
+   * paste. Two things follow. The lane's own job ends at consuming the
+   * trigger, and the entry never CONVERTS — the host adds a block at the
+   * caret rather than retyping the block the writer is standing in, so an
+   * empty paragraph is a place to insert beside, not a thing to become.
+   *
+   * That second part is what makes `Image` refuse in an empty table cell
+   * (ruling). A cell holds one plain paragraph and the image lands in a
+   * paragraph too, so asking "may this replace the empty one" answered yes
+   * and sent the pick out through the picker, which put the image past the
+   * table. The honest question is whether the cell has room for another
+   * block, and it never does.
+   */
+  hostDispatched?: boolean;
 };
 
 const emptyParagraph: JSONContent = { type: "paragraph" };
@@ -66,10 +81,8 @@ function heading(level: 1 | 2 | 3): SlashInsertion {
 
 /**
  * One row per catalog id, `image` included. The picker is the host's and so is
- * the dispatch, but the SHAPE an image lands is known here — a paragraph
- * holding the image — and availability has to be answerable for every visible
- * row, including that one: a cell holds one paragraph, so `Image` refuses
- * there like the rest.
+ * the dispatch, but the SHAPE an image lands is known here — a paragraph — and
+ * availability has to be answerable for every visible row, including that one.
  */
 const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   "heading-1": heading(1),
@@ -98,7 +111,7 @@ const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
     caret: "inside",
   },
   code: { node: { type: "code_block" }, caret: "inside" },
-  image: { node: emptyParagraph, caret: "inside" },
+  image: { node: emptyParagraph, caret: "inside", hostDispatched: true },
 };
 
 /** The type an entry would put in the document, for asking whether it may. */
@@ -124,8 +137,10 @@ export function slashRefusals(
   const refusals = new Map<SlashCommandId, SlashRefusal>();
 
   for (const item of items) {
+    const insertion = SLASH_INSERTIONS[item.id];
     const type = insertionType(editor.schema, item.id);
-    const target = type && slashTarget(landing.doc, pos, type);
+    const target =
+      type && slashTarget(landing.doc, pos, type, { converts: !insertion.hostDispatched });
     if (target?.mode === "blocked") refusals.set(item.id, target.reason);
   }
   return refusals;
@@ -188,13 +203,19 @@ const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
  * the node, which no trigger position can produce; blocked is the refusal a
  * writer can read.
  */
-export function slashTarget(doc: PMNode, pos: number, type: NodeType): SlashTarget | null {
+export function slashTarget(
+  doc: PMNode,
+  pos: number,
+  type: NodeType,
+  { converts = true }: { converts?: boolean } = {},
+): SlashTarget | null {
   const $pos = doc.resolve(pos);
   const depth = $pos.depth;
   if (depth === 0) return null;
 
   const index = $pos.index(depth - 1);
   const convertible =
+    converts &&
     $pos.parent.type.name === "paragraph" &&
     $pos.parent.content.size === 0 &&
     $pos.node(depth - 1).canReplaceWith(index, index + 1, type);
@@ -251,10 +272,12 @@ export function applySlashCommand(
   // would let a refusal eat the trigger text and insert nothing in its place.
   // A refusal therefore costs the writer nothing — not even the `/` they typed.
   const deleted = editor.state.tr.delete(range.from, range.to);
-  const target = slashTarget(deleted.doc, deleted.mapping.map(range.from), node.type);
+  const target = slashTarget(deleted.doc, deleted.mapping.map(range.from), node.type, {
+    converts: !insertion.hostDispatched,
+  });
   if (!target || target.mode === "blocked") return false;
 
-  if (item.id === "image") {
+  if (insertion.hostDispatched) {
     const consumed = editor.chain().focus().deleteRange(range).run();
     catalog.requestImageUpload();
     return consumed;
