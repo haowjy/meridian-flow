@@ -18,13 +18,31 @@ export type AssetImageRetryState = {
 
 export type AssetImageLoadFailureTransition = {
   state: AssetImageRetryState;
-  action: "refresh" | "error";
+  action: "refresh" | "error" | "ignore";
 };
 
-/** One media failure may refresh its signed URL automatically; the next stops. */
+/**
+ * What an `<img>` failure means. One automatic signed-URL refresh per picture
+ * the writer has actually seen; the next failure shows the reason instead of
+ * looping.
+ *
+ * Two failures are not the picture's fault and must not reach the writer:
+ *
+ * - **A failure while a load is in flight.** A refresh keeps the previous URL
+ *   on screen so the picture does not blink, and that URL is expiring — which
+ *   is why a refresh is running. Its error is news about the URL being
+ *   replaced, and the load already running is the answer.
+ * - **A failure long after the last one.** The budget is spent per displayed
+ *   picture rather than per node view, because a node view lives as long as
+ *   the chapter is open: one blip in the first minute must not leave the
+ *   second hour's expiry with nothing but a placeholder. `imageDisplayed`
+ *   returns the budget, and only the browser can say the picture rendered.
+ */
 export function reduceAssetImageLoadFailure(
   state: AssetImageRetryState,
+  loadInFlight = false,
 ): AssetImageLoadFailureTransition {
+  if (loadInFlight) return { state, action: "ignore" };
   return state.automaticRefreshUsed
     ? { state, action: "error" }
     : { state: { automaticRefreshUsed: true }, action: "refresh" };
@@ -33,6 +51,8 @@ export function reduceAssetImageLoadFailure(
 export type AssetImageRenderActions = {
   retry: () => void;
   imageLoadFailed: () => void;
+  /** The picture is on screen. Report it, or the next expiry has no recovery. */
+  imageDisplayed: () => void;
 };
 
 export function useAssetImageRenderState(input: {
@@ -52,6 +72,10 @@ export function useAssetImageRenderState(input: {
       state: { automaticRefreshUsed: false },
     };
   }
+  // Whether a signed-URL load is running right now. A ref rather than the
+  // rendered state: an `<img>` error arrives between renders, and what it has
+  // to be judged against is the request in flight at that instant.
+  const loadInFlightRef = useRef(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [state, setState] = useState<AssetImageRenderState>(() => {
     if (!src) return { kind: "idle", url: null, message: t`Missing figure source` };
@@ -59,13 +83,20 @@ export function useAssetImageRenderState(input: {
   });
 
   const retry = useCallback(() => setRefreshToken((token) => token + 1), []);
+  const imageDisplayed = useCallback(() => {
+    retryStateRef.current.state = { automaticRefreshUsed: false };
+  }, []);
   const imageLoadFailed = useCallback(() => {
     if (!assetDocumentId) {
       setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
       return;
     }
-    const transition = reduceAssetImageLoadFailure(retryStateRef.current.state);
+    const transition = reduceAssetImageLoadFailure(
+      retryStateRef.current.state,
+      loadInFlightRef.current,
+    );
     retryStateRef.current.state = transition.state;
+    if (transition.action === "ignore") return;
     if (transition.action === "refresh") {
       setRefreshToken((token) => token + 1);
       return;
@@ -99,6 +130,10 @@ export function useAssetImageRenderState(input: {
     const routeAssetDocumentId = assetDocumentId;
 
     async function loadSignedUrl(skipCache: boolean) {
+      loadInFlightRef.current = true;
+      // The previous URL stays on screen: a refresh must not blink the picture
+      // out of the manuscript. It is also the URL about to expire, which is
+      // why an error arriving now belongs to the request, not to the picture.
       setState((current) => ({ kind: "loading", url: current.url }));
 
       try {
@@ -118,6 +153,8 @@ export function useAssetImageRenderState(input: {
           url: null,
           message: error instanceof Error ? error.message : t`Figure could not be loaded.`,
         });
+      } finally {
+        loadInFlightRef.current = false;
       }
     }
 
@@ -125,9 +162,10 @@ export function useAssetImageRenderState(input: {
 
     return () => {
       cancelled = true;
+      loadInFlightRef.current = false;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [assetDocumentId, projectId, refreshToken, src]);
 
-  return [state, { retry, imageLoadFailed }];
+  return [state, { retry, imageLoadFailed, imageDisplayed }];
 }
