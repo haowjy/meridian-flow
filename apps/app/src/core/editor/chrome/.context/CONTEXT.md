@@ -107,6 +107,13 @@ already does.
 both match, because a grip is chrome and an object is a node. Grip is spelled
 first as the more specific of the two.
 
+**The other two triggers are the claiming lane's.** §5.1 gives the formatting
+menu three doors — right-click, Menu key / Shift+F10, and long-press on touch.
+Only the first is a `contextmenu` event, so only the first routes here. The
+keyboard twin is a keymap contribution and the long-press is a pointer timer;
+both should end in the same open call the claim handler makes, so the surface
+has one entry point rather than three.
+
 ## Deepest-context resolution
 
 `resolveChromeContext(state)` → `{ owner, nodeType, pos, chain }`, recomputed
