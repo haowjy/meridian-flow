@@ -672,6 +672,24 @@ describe("mdx codec round-trip corpus", () => {
       "    | a<br />b |",
       "    ```",
     ].join("\n");
+    const padded = [
+      "-   outer",
+      "",
+      "      ```md",
+      "      | H |",
+      "      | - |",
+      "      | a<br />b |",
+      "      ```",
+    ].join("\n");
+    const tabPadded = [
+      "-\touter",
+      "",
+      "\t  ```md",
+      "\t  | H |",
+      "\t  | - |",
+      "\t  | a<br />b |",
+      "\t  ```",
+    ].join("\n");
 
     for (const activeCodec of [
       markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
@@ -681,17 +699,19 @@ describe("mdx codec round-trip corpus", () => {
       expect(block.type.name).toBe("code_block");
       expect(activeCodec.serializeBlock(block)).toBe(input);
 
-      const nestedBlock = firstParsedBlock(activeCodec, nested);
-      const nestedCode: PMNode[] = [];
-      nestedBlock.descendants((node) => {
-        if (node.type.name === "code_block") nestedCode.push(node);
-      });
-      expect(nestedCode[0]?.textContent).toContain("a<br />b");
-      const serializedNested = activeCodec.serializeBlock(nestedBlock);
-      expect(serializedNested).not.toContain("\\<br");
-      expect(firstParsedBlock(activeCodec, serializedNested).toJSON()).toEqual(
-        nestedBlock.toJSON(),
-      );
+      for (const nestedInput of [nested, padded, tabPadded]) {
+        const nestedBlock = firstParsedBlock(activeCodec, nestedInput);
+        const nestedCode: PMNode[] = [];
+        nestedBlock.descendants((node) => {
+          if (node.type.name === "code_block") nestedCode.push(node);
+        });
+        expect(nestedCode[0]?.textContent).toContain("a<br />b");
+        const serializedNested = activeCodec.serializeBlock(nestedBlock);
+        expect(serializedNested).not.toContain("\\<br");
+        expect(firstParsedBlock(activeCodec, serializedNested).toJSON()).toEqual(
+          nestedBlock.toJSON(),
+        );
+      }
     }
     expect(canonicalizeGfmTableHardBreaks(nested)).toBe(nested);
   });
@@ -724,6 +744,29 @@ describe("mdx codec round-trip corpus", () => {
     expect(code[0]?.textContent).toContain("a\\\nb |");
     const serialized = activeCodec.serializeBlock(block);
     expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(block.toJSON());
+  });
+
+  it("recognizes tables beneath padded list markers", () => {
+    const inputs = [
+      ["-   item", "", "      | H |", "      | - |", "      | a\\", "      b |"].join("\n"),
+      ["-\titem", "", "\t  | H |", "\t  | - |", "\t  | a\\", "\t  b |"].join("\n"),
+    ];
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      for (const input of inputs) {
+        const block = firstParsedBlock(activeCodec, input);
+        const hardBreaks: PMNode[] = [];
+        block.descendants((node) => {
+          if (node.type.name === "hard_break") hardBreaks.push(node);
+        });
+        expect(hardBreaks).toHaveLength(1);
+        const serialized = activeCodec.serializeBlock(block);
+        expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(block.toJSON());
+      }
+    }
   });
 
   it("keeps explicitly escaped HTML tables as prose", () => {

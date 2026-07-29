@@ -10,7 +10,7 @@ import {
 import type { BlockCodec, SerializeContext } from "../../types.js";
 import {
   closesFence,
-  hasListContainerAtIndent,
+  isContainerBlockPrefix,
   openingFenceAt,
   stripIndentedQuotePrefix,
 } from "../container.js";
@@ -333,9 +333,5 @@ function tableLinePrefix(lines: readonly string[], index: number): string | null
   if (pipe === -1) return null;
   const prefix = line.slice(0, pipe);
   const { remainder } = stripIndentedQuotePrefix(lines, index, prefix);
-  if (/^(?: {0,3}| {0,3}(?:[-+*] |\d+[.)] ))$/.test(remainder)) return prefix;
-  if (/^ {4,}$/.test(remainder) && hasListContainerAtIndent(lines, index, remainder.length)) {
-    return prefix;
-  }
-  return null;
+  return isContainerBlockPrefix(lines, index, remainder) ? prefix : null;
 }

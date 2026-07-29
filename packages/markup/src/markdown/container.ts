@@ -31,20 +31,40 @@ export function stripIndentedQuotePrefix(
   let depth = 0;
   let remainder = line;
   while (true) {
-    const quote = remainder.match(/^ {0,3}> ?/);
-    if (quote) {
+    const quote = quotePrefixLength(remainder, 3);
+    if (quote !== null) {
       depth++;
-      remainder = remainder.slice(quote[0].length);
+      remainder = remainder.slice(quote);
       continue;
     }
 
-    const indentedQuote = remainder.match(/^( {4,})> ?/);
-    if (!indentedQuote?.[1] || !hasListContainerAtIndent(lines, index, indentedQuote[1].length)) {
+    const indentation = leadingWhitespace(remainder);
+    if (
+      indentation.columns < 4 ||
+      remainder[indentation.offset] !== ">" ||
+      !hasListContainerAtIndent(lines, index, indentation.columns)
+    ) {
       return { depth, remainder };
     }
     depth++;
-    remainder = remainder.slice(indentedQuote[0].length);
+    remainder = remainder.slice(
+      indentation.offset + 1 + optionalQuotePadding(remainder, indentation.offset + 1),
+    );
   }
+}
+
+export function isContainerBlockPrefix(
+  lines: readonly string[],
+  index: number,
+  prefix: string,
+): boolean {
+  const indentation = leadingWhitespace(prefix);
+  if (indentation.offset === prefix.length) {
+    return indentation.columns <= 3 || hasListContainerAtIndent(lines, index, indentation.columns);
+  }
+
+  const marker = listMarker(prefix);
+  return marker !== null && marker.indentColumns <= 3 && marker.contentOffset === prefix.length;
 }
 
 export function hasListContainerAtIndent(
@@ -58,26 +78,24 @@ export function hasListContainerAtIndent(
     if (candidate.remainder.trim().length === 0) continue;
     if (candidate.depth !== blockQuoteDepth) return false;
 
-    const marker = candidate.remainder.match(/^( *)(?:[-+*] |\d+[.)] )/);
-    if (marker) {
-      const contentIndent = marker[0].length;
-      if (contentIndent <= blockIndent) return blockIndent - contentIndent <= 3;
+    const marker = listMarker(candidate.remainder);
+    if (marker && marker.contentColumn <= blockIndent) {
+      return blockIndent - marker.contentColumn <= 3;
     }
 
-    const indentation = candidate.remainder.match(/^ */)?.[0].length ?? 0;
-    if (indentation < blockIndent) return false;
+    if (leadingWhitespace(candidate.remainder).columns < blockIndent) return false;
   }
   return false;
 }
 
 function fenceLineContent(lines: readonly string[], index: number): string | null {
   const { remainder } = stripIndentedQuotePrefix(lines, index, lines[index] ?? "");
-  const listMarker = remainder.match(/^ {0,3}(?:[-+*] |\d+[.)] )/);
-  if (listMarker) return remainder.slice(listMarker[0].length).replace(/^ {0,3}/, "");
+  const marker = listMarker(remainder);
+  if (marker && marker.indentColumns <= 3) return remainder.slice(marker.contentOffset);
 
-  const indentation = remainder.match(/^ */)?.[0].length ?? 0;
-  if (indentation <= 3 || hasListContainerAtIndent(lines, index, indentation)) {
-    return remainder.slice(indentation);
+  const indentation = leadingWhitespace(remainder);
+  if (indentation.columns <= 3 || hasListContainerAtIndent(lines, index, indentation.columns)) {
+    return remainder.slice(indentation.offset);
   }
   return null;
 }
@@ -86,9 +104,77 @@ function stripQuotePrefix(line: string): { depth: number; remainder: string } {
   let depth = 0;
   let remainder = line;
   while (true) {
-    const quote = remainder.match(/^ {0,3}> ?/);
-    if (!quote) return { depth, remainder };
+    const quote = quotePrefixLength(remainder, 3);
+    if (quote === null) return { depth, remainder };
     depth++;
-    remainder = remainder.slice(quote[0].length);
+    remainder = remainder.slice(quote);
   }
+}
+
+function listMarker(line: string): {
+  contentColumn: number;
+  contentOffset: number;
+  indentColumns: number;
+} | null {
+  const indentation = leadingWhitespace(line);
+  const marker = line.slice(indentation.offset).match(/^(?:[-+*]|\d{1,9}[.)])/)?.[0];
+  if (!marker) return null;
+
+  const markerOffset = indentation.offset + marker.length;
+  const markerColumn = indentation.columns + marker.length;
+  const padding = whitespaceFrom(line, markerOffset, markerColumn);
+  if (padding.offset === markerOffset) return null;
+
+  const paddingColumns = padding.columns - markerColumn;
+  if (paddingColumns <= 4) {
+    return {
+      contentColumn: padding.columns,
+      contentOffset: padding.offset,
+      indentColumns: indentation.columns,
+    };
+  }
+
+  const firstPadding = whitespaceFrom(line, markerOffset, markerColumn, 1);
+  return {
+    contentColumn: firstPadding.columns,
+    contentOffset: firstPadding.offset,
+    indentColumns: indentation.columns,
+  };
+}
+
+function quotePrefixLength(line: string, maxIndent: number): number | null {
+  const indentation = leadingWhitespace(line);
+  if (indentation.columns > maxIndent || line[indentation.offset] !== ">") return null;
+  return indentation.offset + 1 + optionalQuotePadding(line, indentation.offset + 1);
+}
+
+function optionalQuotePadding(line: string, offset: number): number {
+  return line[offset] === " " || line[offset] === "\t" ? 1 : 0;
+}
+
+function leadingWhitespace(line: string): { columns: number; offset: number } {
+  return whitespaceFrom(line, 0, 0);
+}
+
+function whitespaceFrom(
+  line: string,
+  startOffset: number,
+  startColumn: number,
+  characterLimit = Number.POSITIVE_INFINITY,
+): { columns: number; offset: number } {
+  let columns = startColumn;
+  let offset = startOffset;
+  let consumed = 0;
+  while (offset < line.length && consumed < characterLimit) {
+    if (line[offset] === " ") {
+      columns++;
+    } else if (line[offset] === "\t") {
+      columns += 4 - (columns % 4);
+    } else {
+      break;
+    }
+    offset++;
+    consumed++;
+  }
+  return { columns, offset };
 }
