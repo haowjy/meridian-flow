@@ -9,16 +9,18 @@ import {
   isThreadPromptFrozen,
   rebakeComposedSystemPrompt,
 } from "../composed-system-prompt.js";
-import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../context-builder.js";
+import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/document-dialect.js";
+import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
 
 describe("composed-system-prompt", () => {
-  it("assembles base prompt, skills section, and URI guidance", () => {
+  it("assembles base prompt, skills section, document dialect, and URI guidance", () => {
     const composed = assembleComposedSystemPrompt({
       basePrompt: "Agent body.",
       skillsSystemPromptSection: `---\n${SKILLS_CATALOG_PROMPT_MARKER}\n- skill-one: Run\n---`,
     });
     expect(composed).toContain("Agent body.");
     expect(composed).toContain(SKILLS_CATALOG_PROMPT_MARKER);
+    expect(composed).toContain(DOCUMENT_DIALECT_CORE_INSTRUCTION);
     expect(composed).toContain(RUNTIME_URI_SYSTEM_INSTRUCTION);
     expect(bakedSkillSetAdvertisesInvoke(["skill-one"])).toBe(true);
   });

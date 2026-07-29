@@ -20,9 +20,10 @@
  *   content parts of the assistant message.
  *
  * - **Frozen system prompt**: on first attempt the orchestrator bakes agent body,
- *   skills catalog, and URI guidance into `composedSystemPrompt`. Later turns
- *   send that string verbatim (byte-identical). Subagent threads may arrive
- *   pre-frozen at creation. Autoprune is the only future re-bake trigger.
+ *   skills catalog, document dialect, and URI guidance into
+ *   `composedSystemPrompt`. Later turns send that string verbatim
+ *   (byte-identical). Subagent threads may arrive pre-frozen at creation.
+ *   Autoprune is the only future re-bake trigger.
  *
  * - **Runtime URI guidance**: the server appends storage-scheme instructions
  *   to every thread prompt so the model chooses `kb://` for knowledge-base
@@ -49,10 +50,7 @@ import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads
 import type { Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
-import { isThreadPromptFrozen } from "./composed-system-prompt.js";
-
-export const RUNTIME_URI_SYSTEM_INSTRUCTION =
-  "Context file URI rules: bare file paths resolve as `manuscript://` -- the writer's manuscript documents. `kb://` is the project knowledge base (durable reference: characters, places, canon). `scratch://` holds working files for this work item -- plans, notes, intermediate material; never the manuscript. It belongs to this work item only: switch work items and you are in a different scratch space. Anything meant to outlive this work item belongs in `kb://` or the manuscript. `uploads://` holds files the writer attached to this work item (same scoping). `user://` is the writer's personal files. Use `write` with command=create/read/insert/replace/undo/redo for document content; use `ls` and `search` for discovery.";
+import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 
 export interface BuildContextInput {
   thread: Thread;
@@ -80,9 +78,10 @@ export function buildContext(input: BuildContextInput): {
     const systemPrompt = composed ?? input.thread.systemPrompt;
     messages.push(
       system(
-        [systemPrompt, input.skillsSystemPromptSection, RUNTIME_URI_SYSTEM_INSTRUCTION]
-          .filter(Boolean)
-          .join("\n\n"),
+        assembleComposedSystemPrompt({
+          basePrompt: systemPrompt,
+          skillsSystemPromptSection: input.skillsSystemPromptSection,
+        }),
       ),
     );
   }
