@@ -8,6 +8,11 @@
  * the prose — the writer opened this from the middle of a sentence, and the
  * next keystroke belongs to that sentence. Deliberately no Ctrl+K binding:
  * that key belongs to the later link lane, which absorbs this popover.
+ *
+ * `useLinkDraft` and `LinkForm` are the reusable half: the formatting menu's
+ * "Add link" opens the same form at the pointer instead of under a button, and
+ * a second copy of the draft lifecycle would be a second answer to "which
+ * range does the commit rewrite".
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
@@ -23,25 +28,34 @@ import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./Too
 import type { ToolbarControlState } from "./toolbar-commands";
 import { blockedReasonMessage, toolbarControlLabel } from "./toolbar-copy";
 
-export function LinkControl({
-  editor,
-  state,
-}: {
-  editor: Editor | null;
-  state: ToolbarControlState;
-}) {
-  const [open, setOpen] = useState(false);
+/**
+ * The draft an open link form is editing: resolved from the selection the
+ * moment the surface opens, and kept pointing at that range afterwards.
+ *
+ * Both halves matter. Resolving at open time is what lets focus move into the
+ * form without losing the words the writer chose; `readDraft` is what the
+ * commit reads, because an open form outlives the positions it opened with —
+ * a peer types above the selection, an AI write lands — and render state would
+ * address whatever slid into their place.
+ */
+export function useLinkDraft(
+  editor: Editor | null,
+  open: boolean,
+): { draft: LinkDraft | null; readDraft: () => LinkDraft | null } {
   const [draft, setDraft] = useState<LinkDraft | null>(null);
-  // The commit reads the range from here, never from render state: an open
-  // popover outlives the positions it was opened with.
   const draftRef = useRef<LinkDraft | null>(null);
-  const label = toolbarControlLabel("link");
-  // Without an editor the matrix already says "still opening"; naming it here
-  // is what lets the rest of this component assume one.
-  const blockedReason = blockedReasonMessage("link", editor ? state.blockedBy : "editor-loading");
 
   useEffect(() => {
-    if (!open || !editor) return;
+    if (!open || !editor || editor.isDestroyed) {
+      draftRef.current = null;
+      setDraft(null);
+      return;
+    }
+
+    const resolved = resolveLinkDraft(editor);
+    draftRef.current = resolved;
+    setDraft(resolved);
+
     const followDocument = ({ transaction }: { transaction: Transaction }) => {
       if (!transaction.docChanged || !draftRef.current) return;
       draftRef.current = mapLinkDraft(draftRef.current, transaction.mapping);
@@ -52,6 +66,23 @@ export function LinkControl({
     };
   }, [open, editor]);
 
+  return { draft, readDraft: () => draftRef.current };
+}
+
+export function LinkControl({
+  editor,
+  state,
+}: {
+  editor: Editor | null;
+  state: ToolbarControlState;
+}) {
+  const [open, setOpen] = useState(false);
+  const { draft, readDraft } = useLinkDraft(editor, open);
+  const label = toolbarControlLabel("link");
+  // Without an editor the matrix already says "still opening"; naming it here
+  // is what lets the rest of this component assume one.
+  const blockedReason = blockedReasonMessage("link", editor ? state.blockedBy : "editor-loading");
+
   if (!editor || blockedReason) {
     return (
       <ToolbarButton label={label} blockedReason={blockedReason} active={state.active}>
@@ -61,19 +92,7 @@ export function LinkControl({
   }
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        // Resolve at open time: the selection the writer is looking at is the
-        // one the commit must rewrite, even after focus moves into the form.
-        if (next) {
-          const resolved = resolveLinkDraft(editor);
-          draftRef.current = resolved;
-          setDraft(resolved);
-        }
-        setOpen(next);
-      }}
-    >
+    <Popover open={open} onOpenChange={setOpen}>
       <ToolbarControlTooltip label={label}>
         <PopoverTrigger asChild>
           <Button
@@ -103,7 +122,7 @@ export function LinkControl({
           <LinkForm
             editor={editor}
             draft={draft}
-            readDraft={() => draftRef.current ?? draft}
+            readDraft={() => readDraft() ?? draft}
             onClose={() => setOpen(false)}
           />
         ) : null}
@@ -112,7 +131,7 @@ export function LinkControl({
   );
 }
 
-function LinkForm({
+export function LinkForm({
   editor,
   draft,
   readDraft,

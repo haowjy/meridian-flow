@@ -4,14 +4,18 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import {
+  type BlockTypeId,
+  blockTypeStates,
   canUndoDocument,
   documentToolbarControls,
   setToolbarAlignment,
   type ToolbarContext,
+  textMarkState,
   toggleBulletListBlock,
   toggleCodeBlockBlock,
   toggleHeadingBlock,
   toggleTextMark,
+  turnIntoBlockType,
 } from "./toolbar-commands";
 
 let editor: Editor | null = null;
@@ -461,5 +465,137 @@ describe("toolbar toggles reverse", () => {
     for (let index = 0; index < target.state.doc.childCount; index += 1) {
       expect(target.state.doc.child(index).attrs.align, `block ${index}`).toBe("center");
     }
+  });
+});
+
+describe("the block types Turn into offers", () => {
+  function blockedFor(target: Editor): Record<BlockTypeId, string | null> {
+    const states = blockTypeStates(target);
+    return Object.fromEntries(
+      Object.entries(states).map(([id, state]) => [id, state.blockedBy]),
+    ) as Record<BlockTypeId, string | null>;
+  }
+
+  it("offers every type in prose and checks the one the block already is", () => {
+    const target = editorWith("<h2>The Third Gate</h2>");
+    target.commands.setTextSelection(3);
+
+    const states = blockTypeStates(target);
+    for (const [id, state] of Object.entries(states)) {
+      expect(state.blockedBy, id).toBeNull();
+    }
+    expect(states.heading2.active).toBe(true);
+    expect(states.paragraph.active).toBe(false);
+  });
+
+  it("checks the list rather than the paragraph inside it", () => {
+    const target = editorWith("<ul><li><p>a rehearsal</p></li></ul>");
+    target.commands.setTextSelection(4);
+
+    const states = blockTypeStates(target);
+    expect(states.bulletList.active).toBe(true);
+    expect(states.paragraph.active).toBe(false);
+  });
+
+  it("converts in place and reverses on the second choice (law 6)", () => {
+    const target = editorWith("<p>Kael pressed</p>");
+    target.commands.setTextSelection(3);
+
+    expect(turnIntoBlockType(target, "heading3")).toBe(true);
+    expect(target.state.doc.firstChild?.type.name).toBe("heading");
+    expect(target.state.doc.firstChild?.attrs.level).toBe(3);
+
+    expect(turnIntoBlockType(target, "heading3")).toBe(true);
+    expect(target.state.doc.firstChild?.type.name).toBe("paragraph");
+  });
+
+  it("un-lists a numbered list the way it un-lists a bulleted one", () => {
+    const target = editorWith("<p>Kael pressed</p>");
+    target.commands.setTextSelection(3);
+
+    expect(turnIntoBlockType(target, "orderedList")).toBe(true);
+    expect(target.isActive("ordered_list")).toBe(true);
+
+    expect(turnIntoBlockType(target, "orderedList")).toBe(true);
+    expect(target.isActive("ordered_list")).toBe(false);
+  });
+
+  it("un-fences a plain code block through Paragraph", () => {
+    const target = editorWith("<pre><code>const gate = 3</code></pre>");
+    target.commands.setTextSelection(3);
+
+    const blocked = blockedFor(target);
+    expect(blocked.paragraph).toBeNull();
+    expect(blocked.codeBlock).toBeNull();
+    expect(blocked.heading1).toBe("code-block");
+    expect(blocked.blockquote).toBe("code-block");
+
+    expect(turnIntoBlockType(target, "paragraph")).toBe(true);
+    expect(target.state.doc.firstChild?.type.name).toBe("paragraph");
+  });
+
+  it("refuses every conversion inside a rendered mermaid fence (F6)", () => {
+    const target = editorWith(FENCE_DOC);
+    target.commands.setTextSelection(posInsideType(target, "code_block") + 1);
+
+    const blocked = blockedFor(target);
+    for (const [id, reason] of Object.entries(blocked)) {
+      expect(reason, id).toBe("embedded-block");
+    }
+    // The reversal a plain fence allows is exactly what would destroy this one.
+    expect(turnIntoBlockType(target, "paragraph")).toBe(false);
+    expect(turnIntoBlockType(target, "codeBlock")).toBe(false);
+    expect(toggleCodeBlockBlock(target)).toBe(false);
+
+    const fence = target.state.doc.child(1);
+    expect(fence.type.name).toBe("code_block");
+    expect(fence.attrs.language).toBe("mermaid");
+  });
+
+  it("refuses every conversion inside a table cell", () => {
+    const target = editorWith(TABLE_DOC);
+    target.commands.setTextSelection(posInsideType(target, "table_cell") + 1);
+
+    const blocked = blockedFor(target);
+    for (const [id, reason] of Object.entries(blocked)) {
+      expect(reason, id).toBe("table-cell");
+    }
+    expect(turnIntoBlockType(target, "heading1")).toBe(false);
+    expect(target.state.doc.firstChild?.type.name).toBe("table");
+  });
+
+  it("refuses the whole conversion when a select-all catches a fence", () => {
+    const target = editorWith(FENCE_DOC);
+    target.commands.selectAll();
+
+    const blocked = blockedFor(target);
+    for (const [id, reason] of Object.entries(blocked)) {
+      expect(reason, id).toBe("mixed-selection");
+    }
+  });
+});
+
+describe("the mark state a surface renders", () => {
+  it("lights strikethrough and takes it off again", () => {
+    const target = editorWith("<p>Kael pressed</p>");
+    target.commands.setTextSelection({ from: 1, to: 5 });
+
+    expect(textMarkState(target, "strike").active).toBe(false);
+    expect(toggleTextMark(target, "strike")).toBe(true);
+    expect(textMarkState(target, "strike").active).toBe(true);
+    expect(toggleTextMark(target, "strike")).toBe(true);
+    expect(textMarkState(target, "strike").active).toBe(false);
+  });
+
+  it("keeps an applied mark removable where the schema would refuse to add it", () => {
+    const target = editorWith("<p>the <code>third</code> gate</p>");
+    target.commands.setTextSelection({ from: 5, to: 10 });
+
+    // Inline code excludes every other mark, so bold cannot be added here.
+    expect(textMarkState(target, "strong").blockedBy).toBe("inline-code");
+    // The mark that IS applied always comes off (law 6).
+    const code = textMarkState(target, "code");
+    expect(code.active).toBe(true);
+    expect(code.blockedBy).toBeNull();
   });
 });

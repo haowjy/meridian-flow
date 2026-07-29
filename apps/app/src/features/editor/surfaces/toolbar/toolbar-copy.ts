@@ -8,6 +8,14 @@ import { t } from "@lingui/core/macro";
 
 import type { ToolbarBlockedReason, ToolbarControlId } from "./toolbar-commands";
 
+/**
+ * Who the reason is being said about. The toolbar names a control; a surface
+ * whose controls are not toolbar rows — the formatting menu's marks row and
+ * its Turn into list — names the family instead, because the copy only ever
+ * branches on family and a menu item is not a toolbar button.
+ */
+export type BlockedSubject = ToolbarControlId | "block-type" | "mark";
+
 export function toolbarControlLabel(control: ToolbarControlId): string {
   switch (control) {
     case "undo":
@@ -34,12 +42,17 @@ export function toolbarControlLabel(control: ToolbarControlId): string {
 }
 
 /** Heading, code block, and bullet list all rewrite the block they sit on. */
-function isBlockTypeControl(control: ToolbarControlId): boolean {
-  return control === "heading" || control === "codeBlock" || control === "bulletList";
+function isBlockTypeControl(control: BlockedSubject): boolean {
+  return (
+    control === "heading" ||
+    control === "codeBlock" ||
+    control === "bulletList" ||
+    control === "block-type"
+  );
 }
 
 export function blockedReasonMessage(
-  control: ToolbarControlId,
+  control: BlockedSubject,
   reason: ToolbarBlockedReason | null,
 ): string | null {
   if (!reason) return null;

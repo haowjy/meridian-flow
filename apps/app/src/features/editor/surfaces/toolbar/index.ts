@@ -7,12 +7,20 @@
  * must refuse the same targets.
  */
 export { DocumentToolbar, type DocumentToolbarProps } from "./DocumentToolbar";
+export { LinkForm, useLinkDraft } from "./LinkPopover";
 export {
+  BLOCK_TYPE_IDS,
+  type BlockTypeId,
+  blockTypeStates,
   documentToolbarControls,
   type ToolbarBlockedReason,
   type ToolbarControlId,
   type ToolbarControlState,
+  type ToolbarMarkName,
+  textMarkState,
   toggleBulletListBlock,
   toggleHeadingBlock,
   toggleTextMark,
+  turnIntoBlockType,
 } from "./toolbar-commands";
+export { type BlockedSubject, blockedReasonMessage } from "./toolbar-copy";

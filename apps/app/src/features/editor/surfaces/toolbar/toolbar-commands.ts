@@ -25,8 +25,11 @@
 
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
+import type { Level } from "@tiptap/extension-heading";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import { AllSelection, NodeSelection } from "@tiptap/pm/state";
+
+import { isEditorObject } from "@/core/editor/objects";
 
 import {
   alignableBlocksInSelection,
@@ -73,7 +76,41 @@ export type ToolbarControlState = {
 
 export type ToolbarControlStates = Record<ToolbarControlId, ToolbarControlState>;
 
-export type ToolbarMarkName = "strong" | "em" | "code";
+export type ToolbarMarkName = "strong" | "em" | "code" | "strike";
+
+/**
+ * The block types "Turn into" offers (§5.1). The toolbar carries three of them
+ * as buttons; the formatting menu and the block menu carry the whole list, and
+ * every one of them refuses through the fence below — which is why the set
+ * lives here rather than beside the menu that renders it.
+ */
+export type BlockTypeId =
+  | "paragraph"
+  | "heading1"
+  | "heading2"
+  | "heading3"
+  | "bulletList"
+  | "orderedList"
+  | "blockquote"
+  | "codeBlock";
+
+export const BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
+  "paragraph",
+  "heading1",
+  "heading2",
+  "heading3",
+  "bulletList",
+  "orderedList",
+  "blockquote",
+  "codeBlock",
+];
+
+/** The three heading levels "Turn into" offers; the schema allows six. */
+const BLOCK_TYPE_HEADING_LEVELS = {
+  heading1: 1,
+  heading2: 2,
+  heading3: 3,
+} as const satisfies Partial<Record<BlockTypeId, Level>>;
 
 /** Alignment as the dropdown speaks it: `null` on the wire reads as default. */
 export type ToolbarAlignmentValue = "default" | Exclude<BlockAlignment, null>;
@@ -132,28 +169,19 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       active: editor.isActive("heading", { level: TOOLBAR_HEADING_LEVEL }),
       blockedBy: readOnly ?? blockType,
     },
-    bold: {
-      active: editor.isActive("strong"),
-      blockedBy: readOnly ?? markBlocker(editor, "strong"),
-    },
-    italic: {
-      active: editor.isActive("em"),
-      blockedBy: readOnly ?? markBlocker(editor, "em"),
-    },
+    bold: blockedFirst(readOnly, textMarkState(editor, "strong")),
+    italic: blockedFirst(readOnly, textMarkState(editor, "em")),
     codeBlock: {
       active: editor.isActive("code_block"),
-      blockedBy: readOnly ?? codeBlockBlocker(editor),
+      blockedBy: readOnly ?? reversibleBlockTypeBlocker(editor),
     },
     bulletList: {
       active: editor.isActive("bullet_list"),
       blockedBy: readOnly ?? blockType,
     },
-    link: {
-      // No precondition on having a selection: a bare caret opens the
-      // two-field form instead (interaction model §5.5).
-      active: linkAttributesAtSelection(editor) !== null,
-      blockedBy: readOnly ?? markBlocker(editor, "link"),
-    },
+    // No precondition on having a selection: a bare caret opens the
+    // two-field form instead (interaction model §5.5).
+    link: blockedFirst(readOnly, textMarkState(editor, "link")),
     alignment: {
       active: alignment !== "default",
       blockedBy:
@@ -173,6 +201,97 @@ export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
   return align === "center" || align === "right" ? align : "default";
 }
 
+/**
+ * What a mark control should show: lit when applied, and the reason it cannot
+ * apply otherwise. The toolbar's own bold/italic/link rows read this, and so
+ * does every surface that carries the same marks, so a control can never
+ * advertise what `toggleTextMark` will refuse.
+ */
+export function textMarkState(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarControlState {
+  return { active: isMarkActive(editor, mark), blockedBy: markBlocker(editor, mark) };
+}
+
+/**
+ * The whole "Turn into" truth table for the current selection (law 6): which
+ * type the blocks already are, and why the others cannot apply here.
+ *
+ * `paragraph` and `codeBlock` share the code-block exception the toolbar's
+ * Code button has — a plain fence is what they REVERSE, so a fence is not a
+ * refusal for either of them. Every other type refuses it, and an object fence
+ * (a rendered mermaid diagram) refuses all eight: un-fencing a diagram would
+ * destroy it exactly the way converting one to a heading would (F6).
+ */
+export function blockTypeStates(editor: Editor): Record<BlockTypeId, ToolbarControlState> {
+  const strict = blockTypeBlocker(editor);
+  const reversible = reversibleBlockTypeBlocker(editor);
+  const activeId = activeBlockTypeId(editor);
+
+  return Object.fromEntries(
+    BLOCK_TYPE_IDS.map((id) => [
+      id,
+      {
+        active: id === activeId,
+        blockedBy: id === "paragraph" || id === "codeBlock" ? reversible : strict,
+      },
+    ]),
+  ) as Record<BlockTypeId, ToolbarControlState>;
+}
+
+/**
+ * The block type the selection already is. Exactly one, deepest wins: a
+ * paragraph inside a bullet list is a bullet list, or the menu would show two
+ * checks for one block.
+ */
+function activeBlockTypeId(editor: Editor): BlockTypeId | null {
+  if (editor.isActive("code_block")) return "codeBlock";
+  if (editor.isActive("bullet_list")) return "bulletList";
+  if (editor.isActive("ordered_list")) return "orderedList";
+  if (editor.isActive("blockquote")) return "blockquote";
+  for (const [id, level] of Object.entries(BLOCK_TYPE_HEADING_LEVELS)) {
+    if (editor.isActive("heading", { level })) return id as BlockTypeId;
+  }
+  return editor.isActive("paragraph") ? "paragraph" : null;
+}
+
+function headingLevel(id: BlockTypeId): Level | null {
+  return id in BLOCK_TYPE_HEADING_LEVELS
+    ? BLOCK_TYPE_HEADING_LEVELS[id as keyof typeof BLOCK_TYPE_HEADING_LEVELS]
+    : null;
+}
+
+/**
+ * Convert the blocks under the selection in place (§5.1). A true toggle: the
+ * type the blocks already are returns them to a paragraph, which is why the
+ * menu can check the current type and reverse on a second choice.
+ */
+export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
+  if (!canWrite(editor) || blockTypeStates(editor)[id].blockedBy) return false;
+
+  const level = headingLevel(id);
+  if (level) return editor.chain().focus().toggleHeading({ level }).run();
+
+  switch (id) {
+    case "paragraph":
+      return editor.chain().focus().setParagraph().run();
+    case "bulletList":
+      return toggleListBlock(editor, "bullet_list");
+    case "orderedList":
+      return toggleListBlock(editor, "ordered_list");
+    case "blockquote":
+      return editor.chain().focus().toggleBlockquote().run();
+    default:
+      return editor.chain().focus().toggleCodeBlock().run();
+  }
+}
+
+/** Read-only outranks every contextual reason, and still reports the state. */
+function blockedFirst(
+  readOnly: ToolbarBlockedReason | null,
+  state: ToolbarControlState,
+): ToolbarControlState {
+  return readOnly ? { active: state.active, blockedBy: readOnly } : state;
+}
+
 /** True toggle: pressing on an H1 returns the block to a paragraph (law 6). */
 export function toggleHeadingBlock(editor: Editor): boolean {
   if (!canWrite(editor) || blockTypeBlocker(editor)) return false;
@@ -181,15 +300,14 @@ export function toggleHeadingBlock(editor: Editor): boolean {
 
 /** True toggle: one press fences the block, one press returns it to prose. */
 export function toggleCodeBlockBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || codeBlockBlocker(editor)) return false;
+  if (!canWrite(editor) || reversibleBlockTypeBlocker(editor)) return false;
   return editor.chain().focus().toggleCodeBlock().run();
 }
 
 /** True toggle: one press lists, one press un-lists, however deep (law 6). */
 export function toggleBulletListBlock(editor: Editor): boolean {
   if (!canWrite(editor) || blockTypeBlocker(editor)) return false;
-  if (!editor.isActive("bullet_list")) return editor.chain().focus().toggleBulletList().run();
-  return unwrapBulletList(editor);
+  return toggleListBlock(editor, "bullet_list");
 }
 
 export function toggleTextMark(editor: Editor, mark: ToolbarMarkName): boolean {
@@ -197,6 +315,7 @@ export function toggleTextMark(editor: Editor, mark: ToolbarMarkName): boolean {
   const chain = editor.chain().focus();
   if (mark === "strong") return chain.toggleBold().run();
   if (mark === "em") return chain.toggleItalic().run();
+  if (mark === "strike") return chain.toggleStrike().run();
   return chain.toggleCode().run();
 }
 
@@ -253,14 +372,21 @@ function hasCollaborativeHistory(editor: Editor): boolean {
  * `AllSelection` (Ctrl+A) carries no block range for `liftListItem` to work
  * with until it is spelled as a text selection.
  */
-function unwrapBulletList(editor: Editor): boolean {
+function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list"): boolean {
+  if (!editor.isActive(listType)) {
+    const chain = editor.chain().focus();
+    return listType === "bullet_list"
+      ? chain.toggleBulletList().run()
+      : chain.toggleOrderedList().run();
+  }
+
   if (editor.state.selection instanceof AllSelection) {
     const { doc } = editor.state;
     editor.commands.setTextSelection({ from: 0, to: doc.content.size });
   }
 
   let lifted = false;
-  for (let step = 0; step < MAX_LIST_UNWRAP_STEPS && editor.isActive("bullet_list"); step += 1) {
+  for (let step = 0; step < MAX_LIST_UNWRAP_STEPS && editor.isActive(listType); step += 1) {
     if (!editor.chain().focus().liftListItem("list_item").run()) break;
     lifted = true;
   }
@@ -309,14 +435,19 @@ function blockTypeBlocker(editor: Editor): ToolbarBlockedReason | null {
 }
 
 /**
- * The code-block control fences like its block-type siblings with one
- * exception: a code block is its REVERSAL target, not a refusal. Pressing
- * inside one returns the block to a paragraph (law 6), so only the reasons
- * that would destroy something still stand — an object, a component, a table
- * cell, or a mixed selection where a conversion would strip a fence's language
+ * The fence for the two commands a plain code block REVERSES rather than
+ * refuses — the code-block toggle and "turn into paragraph". Pressing either
+ * inside a fence returns the block to prose (law 6), so only the reasons that
+ * would destroy something still stand: an object, a component, a table cell,
+ * or a mixed selection where the conversion would strip a fence's language
  * along the way.
+ *
+ * A rendered object fence is NOT reversible here. Its reason is
+ * `embedded-block` rather than `code-block`, so un-fencing a mermaid diagram
+ * refuses like every other conversion (F6, and the reason the menu can offer
+ * "Paragraph" at all).
  */
-function codeBlockBlocker(editor: Editor): ToolbarBlockedReason | null {
+function reversibleBlockTypeBlocker(editor: Editor): ToolbarBlockedReason | null {
   const blocker = blockTypeBlocker(editor);
   return blocker === "code-block" ? null : blocker;
 }
@@ -367,8 +498,15 @@ function isNonProseTextblock(node: PMNode): boolean {
   return node.type.spec.code === true;
 }
 
+/**
+ * A fence the writer types in is a `code-block`; anything else that holds text
+ * but is not prose reads as embedded. A rendered mermaid fence lands in the
+ * second group deliberately: it is a diagram on the page, and the reasons that
+ * forgive a code block (un-fence it, turn it into a paragraph) would destroy
+ * it.
+ */
 function nonProseReason(node: PMNode): ToolbarBlockedReason {
-  return node.type.name === "code_block" ? "code-block" : "embedded-block";
+  return node.type.name === "code_block" && !isEditorObject(node) ? "code-block" : "embedded-block";
 }
 
 function isInsideTableCell($pos: ResolvedPos): boolean {
