@@ -60,9 +60,12 @@ the control-style ring always fires on autofocused surfaces.
 
 Two triggers publish an open menu the writer keeps typing underneath: `/` for
 blocks (`surfaces/slash/`) and `[[` for documents (`surfaces/link/`). They share
-one surface, `chrome/SuggestionMenu`, and one store,
-`core/editor/extensions/suggestion/` — each lane brings rows and reacts to a
-choice, and nothing else. What matters from outside them: focus stays in the
+one surface, `chrome/SuggestionMenu`, one editor-side mechanism,
+`core/editor/extensions/suggestion/`, and one headless store,
+`core/completion/` — each lane brings rows and reacts to a choice, and nothing
+else. The store is where the chat composer's own `@` menu will read from, so a
+surface change that assumes ProseMirror geometry belongs in the surface, not the
+store. What matters from outside them: focus stays in the
 prose while a menu is open (`focusOnOpen="prose"`), and the anchor is something
 that moves, so they read `anchorRect` rather than a captured point. Both are
 `EditorPopover` capabilities, and the link lane's other surfaces inherit them.

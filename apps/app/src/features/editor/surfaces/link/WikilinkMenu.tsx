@@ -11,8 +11,8 @@ import { t } from "@lingui/core/macro";
 import { FilePlus2, FileText } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
-import { closedSuggestionMenu } from "@/core/editor/extensions/suggestion";
-import { getWikilinkMenu, type WikilinkMenuItem } from "@/core/editor/extensions/wikilink";
+import { closedSuggestionMenu, type WikilinkMenuItem } from "@/core/completion";
+import { getWikilinkMenu } from "@/core/editor/extensions/wikilink";
 
 import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
 

@@ -49,16 +49,6 @@ export type SlashCommandCatalog = {
   requestImageUpload: () => void;
 };
 
-export type SlashCommandExtensionOptions = {
-  /**
-   * Read when the menu opens, never at construction. The catalog carries
-   * localized labels and host callbacks that must stay live; making them
-   * construction facts would put a locale switch on the editor's remount path.
-   * Return null to leave the menu off for this surface.
-   */
-  catalog: () => SlashCommandCatalog | null;
-};
-
 function fuzzyScore(value: string, query: string): number | null {
   const candidate = value.toLocaleLowerCase();
   if (candidate.startsWith(query)) return 0;

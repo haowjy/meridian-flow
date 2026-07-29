@@ -1,11 +1,12 @@
 # extensions/slash — the `/` trigger
 
-Three small modules and the plugin that wires them: where `/` may open
-(`slash-trigger.ts`), what a choice does to the document
+Three small modules and the spec that hands them to the shared mechanism: where
+`/` may open (`slash-trigger.ts`), what a choice does to the document
 (`slash-insertion.ts`), and what the menu is offering (`slash-catalog.ts`). The
-open menu React reads is the shared store in
-[`../suggestion/`](../suggestion/suggestion-menu-store.ts), which `[[` uses
-too. The surface that renders it is
+lifecycle is [`../suggestion/`](../suggestion/suggestion-lane.ts), which `[[`
+uses too; the open menu React reads is the headless store in
+[`@/core/completion`](../../../completion/AGENTS.md). The surface that renders it
+is
 [`features/editor/surfaces/slash/`](../../../../features/editor/surfaces/slash/AGENTS.md).
 
 ## Mental model
@@ -52,23 +53,12 @@ inserts outside a cell from inside one.
   every visible row at once, in the toolbar's vocabulary (`"table-cell"`); the
   surface renders it through `blockTypeReasonMessage`, so a writer meets one
   wording of the rule wherever they meet it. Core holds no writer-facing string.
-- **This extension owns no Escape.** The kernel does; the menu takes its step by
-  being a registered layer. Suggestion's own Escape handling is the floor under
-  the frame before React has rendered.
-- **A withdrawn catalog closes the menu.** Editability flips without a
-  transaction (`setEditable` re-runs plugin views, not plugin `apply`), so the
-  suggestion never re-evaluates on its own and would leave an open menu whose
-  every row is dead. A plugin view watches for it and exits through the same
-  door Escape uses, which is what releases the keymap and the layer once.
-- **A dismissal stays dismissed.** A second `/` typed against a dismissed one
-  is the same trigger, because the dismissed range maps forward onto it; the
-  menu comes back when the trigger is deleted, not when it is repeated.
-- **Keys register from the suggestion's `onStart`**, which is plugin-view
-  lifetime. A React effect would arrive after the first ArrowDown of a writer
-  who types `/` and moves in one motion.
-- **No `shouldShow`.** It is evaluated on every transaction, so using it to keep
-  remote writes from opening the menu would close an open menu every time a
-  collaborator typed anywhere in the chapter.
+- **The lifecycle is not this lane's.** Escape, the catalog fence, the arrow
+  keys' timing, dismissal, and the refusal to gate on transaction origin are one
+  mechanism's contracts, reasoned about in
+  [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts). A
+  correction to any of them belongs there, where `[[` and the next trigger get
+  it too.
 
 ## Anti-patterns
 
@@ -82,6 +72,10 @@ inserts outside a cell from inside one.
   Table row once died in every cell but the last.
 - Mounting this in `EDITOR_CHROME_EXTENSIONS`. It mounts with the catalog
   option, so a surface that offers no catalog pays for no trigger.
+- Reaching for `@tiptap/suggestion` here. This lane is a spec; a rule it cannot
+  express is a missing field on the spec, not a second plugin.
 
+→ [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts) — the
+  mechanism every lane shares
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the layer, keymap, and Esc contracts
 → design of record: `editor-toolbar-split/interaction-model.md` §5.7

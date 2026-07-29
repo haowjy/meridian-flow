@@ -387,8 +387,10 @@ element to compare.
 ## Slash trigger — the `/` menu
 
 Colocated under `extensions/slash/`, with its own
-[`AGENTS.md`](../extensions/slash/AGENTS.md). Two contracts cross this
-boundary:
+[`AGENTS.md`](../extensions/slash/AGENTS.md). It is one spec over the lane
+mechanism in `extensions/suggestion/`, which `[[` shares, so the first two
+contracts below hold for every lane; the store and catalog a lane publishes
+through are `core/completion/`. Two contracts cross this boundary:
 
 - **The catalog is the host's, read at open.** `slashCommands.catalog()` is
   called when the menu opens and may return null, which is how a surface turns
