@@ -100,6 +100,22 @@ function rightClick(instance: Editor): MouseEvent {
   return event;
 }
 
+/**
+ * A press, and the two answers that decide who owns it: whether a plugin told
+ * ProseMirror it was handled — which is what makes ProseMirror skip its own
+ * mouse machinery for that event — and whether anything refused its default.
+ */
+function mousePress(
+  instance: Editor,
+  button: number,
+): { handledByPlugin: boolean; prevented: boolean } {
+  const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button });
+  const handled = instance.view.someProp("handleDOMEvents", (handlers) =>
+    handlers.mousedown?.(instance.view, event),
+  );
+  return { handledByPlugin: handled === true, prevented: event.defaultPrevented };
+}
+
 describe("the kernel on a live editor", () => {
   it("resolves the context every selection change", () => {
     const instance = mount([paragraph("before"), figure]);
@@ -166,6 +182,36 @@ describe("the kernel on a live editor", () => {
 
     expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
     expect(instance.state.selection.$head.parent.textContent).toBe("after");
+  });
+
+  it("keeps a non-primary press out of ProseMirror's click machinery", () => {
+    // ProseMirror arms that machinery on ANY button and runs the whole click
+    // path on the matching release: `handleClickOn`, then its own
+    // `selectClickedLeaf`. On a right-click the release lands after the claim
+    // ladder has already opened the menu, and selecting a node there syncs the
+    // selection back into the editor, taking focus out of the menu and
+    // dismissing it — which is how a quick right-click on a diagram came to
+    // show nothing while a held one worked.
+    const instance = mount([paragraph("before"), figure]);
+
+    expect(mousePress(instance, 2).handledByPlugin).toBe(true);
+  });
+
+  it("refuses no default on that press, so the menu still comes (ruling 11)", () => {
+    // `contextmenu` is raised from the press on Linux and macOS and from the
+    // release on Windows. Refusing either default is how a claim ladder ends
+    // up with no event to route and a writer with no menu at all.
+    const instance = mount([paragraph("before"), figure]);
+
+    expect(mousePress(instance, 2).prevented).toBe(false);
+  });
+
+  it("leaves the primary press to the document", () => {
+    // Caret placement, drag-selection, and the sweep the surfaces stand down
+    // for are all ProseMirror's on the primary button.
+    const instance = mount([paragraph("before"), figure]);
+
+    expect(mousePress(instance, 0).handledByPlugin).toBe(false);
   });
 
   it("leaves a right-click to the browser when nobody claims (ruling 11)", () => {

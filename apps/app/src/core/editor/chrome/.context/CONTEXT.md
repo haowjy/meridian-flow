@@ -181,6 +181,21 @@ both. `OverlayIconRow` already does this.
 and so is every icon glyph in an overlay row; both are exactly what a writer
 right-clicks. `closest()` works either way.
 
+**The whole press belongs to the ladder, release included.** The kernel's
+`handleDOMEvents.mousedown` returns true for any button but the primary one,
+which is how a plugin tells ProseMirror to skip its own mouse machinery for
+that event. ProseMirror arms that machinery on every button and runs the full
+click path on the matching release — `handleClickOn`, then its own
+`selectClickedLeaf`. On a right-click the release arrives after the ladder has
+already opened the claimed menu, and selecting a node there syncs the selection
+back into the editor, takes focus out of the menu, and dismisses it. Whether
+the release beat the menu's first paint decided whether the writer saw a menu
+at all: a quick right-click on a diagram showed nothing, a held one worked.
+
+Returning true refuses no default, which is what keeps ruling 11 whole:
+`contextmenu` is raised from the press on Linux and macOS and from the release
+on Windows, and both still reach the router.
+
 **`grip` before `object`.** The design groups them ("object/grip"); they never
 both match, because a grip is chrome and an object is a node. Grip is spelled
 first as the more specific of the two.
