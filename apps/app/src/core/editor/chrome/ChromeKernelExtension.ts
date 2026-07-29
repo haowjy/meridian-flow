@@ -24,7 +24,7 @@ import {
   caretHomeFromObjectTransaction,
   selectObjectTransaction,
 } from "../objects/object-selection";
-import { chromeContextAt, resolveChromeContext } from "./chrome-context";
+import { chromeContextAt, proseSelectionCovers, resolveChromeContext } from "./chrome-context";
 import { type ContextClaimTarget, resolveContextClaim } from "./context-claims";
 import {
   createEditorChrome,
@@ -65,10 +65,19 @@ const SWEEP_SLOP_PX = 4;
 
 /**
  * Marks chrome that lives outside the editor's DOM — a portalled object row, a
- * table grip — as still belonging to the editor, so a right-click on it goes
- * through the claim ladder instead of straight to the browser.
+ * table grip — as still belonging to one editor, so a right-click on it goes
+ * through that editor's claim ladder instead of straight to the browser.
+ *
+ * It carries the chrome's id rather than standing alone: two documents open
+ * side by side are two kernels listening on the same page, and an unqualified
+ * mark would hand one editor's overlay row to both.
  */
-export const EDITOR_CHROME_ATTRIBUTE = "data-editor-chrome";
+const EDITOR_CHROME_ATTRIBUTE = "data-editor-chrome";
+
+/** Spread onto portalled chrome so the kernel's router can still see it. */
+export function editorChromeAttributes(chrome: EditorChrome): Record<string, string> {
+  return { [EDITOR_CHROME_ATTRIBUTE]: chrome.id };
+}
 
 export const ChromeKernelExtension = Extension.create({
   name: CHROME_EXTENSION_NAME,
@@ -90,14 +99,25 @@ export const ChromeKernelExtension = Extension.create({
     let cachedBindings: Record<string, KeymapBinding> = {};
     let cachedRevision = -1;
     const bindingsFor = () => {
-      if (cachedRevision !== chrome.keymapRevision) {
-        cachedRevision = chrome.keymapRevision;
-        cachedBindings = mergeKeymapContributions(chrome.keymapContributions());
-      }
-      return cachedBindings;
+      if (cachedRevision === chrome.keymapRevision) return cachedBindings;
+      // The revision advances only once the merge has produced something. A
+      // throw between the two would otherwise leave a stale map cached against
+      // a revision that never built it, and every later registration would be
+      // dropped in silence.
+      const merged = mergeKeymapContributions(chrome.keymapContributions(), () => ({
+        context: chrome.context,
+        layerCount: chrome.layers.length,
+      }));
+      cachedBindings = merged;
+      cachedRevision = chrome.keymapRevision;
+      return merged;
     };
 
     let sweepOrigin: { x: number; y: number } | null = null;
+    const endSweep = () => {
+      sweepOrigin = null;
+      if (chrome.gesture === "sweep") controller.setGesture("idle");
+    };
 
     return [
       new Plugin({
@@ -108,25 +128,51 @@ export const ChromeKernelExtension = Extension.create({
 
           // The pointer leaves the editor mid-sweep constantly (a selection
           // dragged past the last paragraph), so release is watched on the
-          // window rather than the editor DOM.
-          const endSweep = () => {
-            sweepOrigin = null;
-            if (chrome.gesture === "sweep") controller.setGesture("idle");
-          };
+          // window rather than the editor DOM. `blur` covers the release the
+          // window never hears: a sweep that ends over a devtools panel, an
+          // OS window switch, or a drag out of the tab would otherwise leave
+          // every surface suppressed with nothing to un-suppress it.
           window.addEventListener("mouseup", endSweep);
+          window.addEventListener("blur", endSweep);
 
-          // Chrome that portals out of the editor still routes through the
-          // ladder. Without this a right-click on an object's own row would
-          // reach the browser instead of the object's menu, which is the one
-          // place the split matrix would read as an accident.
-          const routeChromeMenu = (event: MouseEvent) => {
+          // The router listens in the capture phase rather than through
+          // ProseMirror's `handleDOMEvents`, because that prop cannot see a
+          // right-click inside a node view at all: TipTap's `NodeView.stopEvent`
+          // returns true for `contextmenu`, and ProseMirror consults it in
+          // `eventBelongsToView` BEFORE running any handler. Every React node
+          // view in this editor — image, figure, jsx_leaf, jsx_container — is
+          // one of those, which is to say the two object types ruling 11 is
+          // actually about. Capture reaches them all, current and future,
+          // without a single node view having to cooperate.
+          //
+          // It covers chrome portalled OUT of the editor too, so an object's
+          // overlay row and the object under it give the same answer.
+          const routeMenu = (event: MouseEvent) => {
             const target = event.target;
-            if (!(target instanceof HTMLElement)) return;
-            if (view.dom.contains(target)) return;
-            if (!target.closest(`[${EDITOR_CHROME_ATTRIBUTE}]`)) return;
+            if (!(target instanceof Element)) return;
+            const belongsToEditor =
+              view.dom.contains(target) ||
+              target.closest(`[${EDITOR_CHROME_ATTRIBUTE}="${chrome.id}"]`) !== null;
+            if (!belongsToEditor) return;
             routeContextMenu(view, chrome, event);
           };
-          document.addEventListener("contextmenu", routeChromeMenu, true);
+          document.addEventListener("contextmenu", routeMenu, true);
+
+          // Escape reaches the chain through ProseMirror while the writer is in
+          // the prose, and through Radix while they are inside a Radix surface.
+          // A layer that is neither — a hand-rolled portal, or any layer at all
+          // once focus has moved to the chat composer — has nothing listening
+          // for it, and "nobody is ever trapped" would quietly stop being true.
+          // This is that backstop, and it defers to any layer that says it
+          // dismisses itself so one key never closes two surfaces.
+          const backstopEscape = (event: KeyboardEvent) => {
+            if (event.key !== "Escape" || event.defaultPrevented) return;
+            if (event.target instanceof Node && view.dom.contains(event.target)) return;
+            if (chrome.topLayerDismissal !== "kernel") return;
+            if (!chrome.closeTopLayer()) return;
+            event.preventDefault();
+          };
+          document.addEventListener("keydown", backstopEscape, true);
 
           return {
             update(updatedView, previousState) {
@@ -140,7 +186,9 @@ export const ChromeKernelExtension = Extension.create({
             },
             destroy() {
               window.removeEventListener("mouseup", endSweep);
-              document.removeEventListener("contextmenu", routeChromeMenu, true);
+              window.removeEventListener("blur", endSweep);
+              document.removeEventListener("contextmenu", routeMenu, true);
+              document.removeEventListener("keydown", backstopEscape, true);
             },
           };
         },
@@ -157,14 +205,18 @@ export const ChromeKernelExtension = Extension.create({
               return false;
             },
             mousemove(_view, event) {
+              // The button came back up somewhere we never heard about. The
+              // pointer itself is the truth, so believe it rather than waiting
+              // for an event that is not coming.
+              if (event.buttons === 0) {
+                endSweep();
+                return false;
+              }
               if (!sweepOrigin || chrome.gesture !== "idle") return false;
               const travelled =
                 Math.abs(event.clientX - sweepOrigin.x) + Math.abs(event.clientY - sweepOrigin.y);
               if (travelled >= SWEEP_SLOP_PX) controller.setGesture("sweep");
               return false;
-            },
-            contextmenu(view, event) {
-              return routeContextMenu(view, chrome, event);
             },
           },
         },
@@ -180,19 +232,17 @@ export const ChromeKernelExtension = Extension.create({
  */
 function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEvent): boolean {
   const element = event.target;
-  if (!(element instanceof HTMLElement)) return false;
+  if (!(element instanceof Element)) return false;
 
   const coords = { left: event.clientX, top: event.clientY };
   const docPos = view.posAtCoords(coords)?.pos ?? null;
-  const { selection } = view.state;
 
   const target: ContextClaimTarget = {
     element,
     docPos,
     context:
       docPos === null ? resolveChromeContext(view.state) : chromeContextAt(view.state.doc, docPos),
-    insideTextSelection:
-      !selection.empty && docPos !== null && docPos >= selection.from && docPos <= selection.to,
+    insideTextSelection: proseSelectionCovers(view.state, docPos),
     event,
   };
 

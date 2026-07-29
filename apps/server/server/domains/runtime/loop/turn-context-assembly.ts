@@ -74,6 +74,7 @@ export async function assembleNextTurnContext(
 
     let tools = agentContext.tools;
     let skillsSystemPromptSection: string | undefined;
+    let unfrozenBasePrompt: string | null | undefined;
     let systemPrompt: string;
     const baked = thread.bakedSkillSlugs != null;
 
@@ -118,7 +119,7 @@ export async function assembleNextTurnContext(
         systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
       } else {
         systemPrompt = bakedPrompt;
-        thread = { ...thread, composedSystemPrompt: bakedPrompt };
+        unfrozenBasePrompt = thread.systemPrompt ?? agentContext.agentBody ?? null;
         skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
       }
     }
@@ -128,6 +129,7 @@ export async function assembleNextTurnContext(
       turns: input.turns,
       blocks: input.blocks,
       tools,
+      unfrozenBasePrompt,
       skillsSystemPromptSection,
     });
 

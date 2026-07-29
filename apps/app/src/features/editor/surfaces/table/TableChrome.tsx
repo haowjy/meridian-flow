@@ -32,9 +32,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { EDITOR_CHROME_ATTRIBUTE, type HoverIntent } from "@/core/editor/chrome";
+import { editorChromeAttributes, type HoverIntent } from "@/core/editor/chrome";
 import { selectedObject } from "@/core/editor/objects";
-import { tableSelection } from "@/core/editor/table-operations";
 
 import { EditorMenu, OverlayIconRow, useChromeSuppressed, useEditorChrome } from "../../chrome";
 import { TableColumnMenuItems, TableMenuItems, TableRowMenuItems } from "./TableVerbMenu";
@@ -159,7 +158,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
   return (
     <>
-      {rects && anchorCell && editable
+      {rects && anchorCell && editable && chrome
         ? createPortal(
             <div
               className="meridian-table-chrome"
@@ -168,7 +167,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
               role="toolbar"
               aria-label={tableChromeCopy.tableControls()}
               data-state={visible ? "open" : "closed"}
-              {...{ [EDITOR_CHROME_ATTRIBUTE]: "" }}
+              {...editorChromeAttributes(chrome)}
               onMouseEnter={() => {
                 if (anchorCell) intentRef.current?.enter(anchorCell);
               }}
@@ -379,10 +378,13 @@ function GripMenuContent({ editor, axis }: { editor: Editor; axis: Axis | "table
 function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: boolean) {
   useEffect(() => {
     if (!chrome || !editable) return;
+    // The kernel only runs a `table`-scope binding with a table in the
+    // context chain, so these are always the writer's row and column. They
+    // consume the key even when the move refuses: handing a refused row move
+    // down the ladder would move the whole table instead.
     const inTable =
       (command: Command): Command =>
       (state, dispatch, view) => {
-        if (!tableSelection(state)) return false;
         command(state, dispatch, view);
         return true;
       };

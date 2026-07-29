@@ -7,6 +7,12 @@
  *
  * The host renders nothing of its own. Every surface here portals or floats,
  * so this element has no size and cannot push the manuscript around.
+ *
+ * It mounts for the ACTIVE editor only. The desktop context host keeps several
+ * editors warm behind the visible one and hides them with `hidden`, which does
+ * nothing to a menu, a dialog, or an object row: they all portal to the body
+ * and would paint over the document the writer is actually reading, anchored
+ * to a rect in a pane nobody can see.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -14,8 +20,15 @@ import { Fragment } from "react";
 
 import { EDITOR_CHROME_SURFACES } from "./chrome-surfaces";
 
-export function EditorChromeHost({ editor }: { editor: Editor | null }) {
-  if (!editor || editor.isDestroyed) return null;
+export function EditorChromeHost({
+  editor,
+  active = true,
+}: {
+  editor: Editor | null;
+  /** False for an editor kept warm behind the visible one. */
+  active?: boolean;
+}) {
+  if (!editor || editor.isDestroyed || !active) return null;
 
   return (
     <>

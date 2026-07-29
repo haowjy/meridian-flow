@@ -36,7 +36,9 @@ export function createLayoutCodec(): BlockCodec<MdastJsxFlow> {
       if (parsed.props.align !== undefined && align === null) return invalidJsxFallback(ast, ctx);
 
       const childAst = ast.children[0];
-      if (isMdxJsxFlowElement(childAst)) return invalidJsxFallback(ast, ctx);
+      if (isMdxJsxFlowElement(childAst) && childAst.name !== "table") {
+        return invalidJsxFallback(ast, ctx);
+      }
       const child = parseRecognizedBlockAst(childAst, ctx, new Set(["layout"]));
       if (!child || !isAlignable(child)) return invalidJsxFallback(ast, ctx);
 
@@ -70,6 +72,19 @@ export function serializeLayoutBlock(
   }
   const widths = node.type.name === "table" ? widthsFromFirstRow(node) : null;
   if (align === null && widths === null) return serialized;
+
+  if (serialized.trimStart().startsWith("<table>")) {
+    const renderedAttributes = [
+      align === null ? null : `align="${align}"`,
+      widths === null ? null : `widths="${widths}"`,
+    ].filter((attribute): attribute is string => attribute !== null);
+    const opening = renderedAttributes.length > 0 ? ` ${renderedAttributes.join(" ")}` : "";
+    const indented = serialized
+      .split("\n")
+      .map((line) => `  ${line}`)
+      .join("\n");
+    return `<Layout${opening}>\n${indented}\n</Layout>`;
+  }
 
   const children = getRuntime(ctx).parseMarkdown(serialized).children;
   if (children.length !== 1) {
