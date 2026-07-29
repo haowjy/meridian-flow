@@ -406,6 +406,10 @@ msgstr ""
 msgid "Bullet list"
 msgstr ""
 
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Bulleted list"
+msgstr ""
+
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Buy extra usage"
 msgstr ""
@@ -526,6 +530,7 @@ msgstr ""
 msgid "Code"
 msgstr ""
 
+#: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code block"
 msgstr ""
@@ -748,6 +753,10 @@ msgstr ""
 msgid "Create project"
 msgstr ""
 
+#: src/features/editor/surfaces/blocks/BlockMenu.tsx
+msgid "Current block type"
+msgstr ""
+
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
 msgstr ""
@@ -764,6 +773,7 @@ msgstr ""
 msgid "Default alignment"
 msgstr ""
 
+#: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -903,6 +913,10 @@ msgstr ""
 #: src/features/editor/EditorView.tsx
 #~ msgid "Drop image to upload a figure"
 #~ msgstr ""
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Duplicate"
+msgstr ""
 
 #: src/features/editor/EditorCodeBubble.tsx
 #~ msgid "Edit"
@@ -1123,6 +1137,18 @@ msgstr ""
 #: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
+msgstr ""
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Heading 1"
+msgstr ""
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Heading 2"
+msgstr ""
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Heading 3"
 msgstr ""
 
 #: src/features/chat/placeholders.ts
@@ -1444,6 +1470,14 @@ msgstr ""
 #~ msgid "Move column right"
 #~ msgstr ""
 
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Move down"
+msgstr ""
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Move or change this block"
+msgstr ""
+
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Move row down"
 #~ msgstr ""
@@ -1451,6 +1485,10 @@ msgstr ""
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Move row up"
 #~ msgstr ""
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Move up"
+msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -1618,6 +1656,7 @@ msgid "now"
 msgstr "刚刚"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Numbered list"
 msgstr ""
 
@@ -1728,6 +1767,10 @@ msgstr ""
 msgid "Over your monthly usage"
 msgstr ""
 
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Paragraph"
+msgstr ""
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent unknown"
 msgstr ""
@@ -1806,6 +1849,7 @@ msgid "Quick thought"
 msgstr "突然想到"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Quote"
 msgstr ""
 
@@ -2502,6 +2546,10 @@ msgstr ""
 
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."
+msgstr ""
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Turn into"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
