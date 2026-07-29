@@ -222,6 +222,14 @@ whole document.
 | `table` | `context.chain` contains `table` |
 | `block`, `document` | always — these two are order, not place |
 
+**`table` and a SELECTED table are different places.** A caret in a cell has
+`chain` `[document, table, table-cell]`, so `table` scope is live. Selecting
+the whole table makes it an object, and an object's chain is
+`[document, object]` — `table` scope goes quiet and `object` scope takes over.
+That is the design, not an accident: §5.4 gives Alt+Arrows to the row while the
+caret is inside and to the whole block once the table is selected, so the row
+verbs SHOULD fall silent there and the block verbs pick it up.
+
 `appliesTo` narrows further, for a contribution that serves one kind of the
 scope's context:
 
