@@ -108,17 +108,22 @@ four-column table spans cells it does not contain.
 ## The left margin is shared, and the bands must not stack
 
 Measured on the manuscript column: prose edge 288, table frame 328, so the
-margin is a 40px band. The row grip takes **307 to 322** (its right edge is
-`ROW_GRIP_GAP` clear of the frame), and the block handle reports 294 to 316.
-That is 10px of overlap, and whichever lane paints on top takes the
-right-click for both.
+margin is a 40px band. Two controls live in it, and the split is a ruling:
 
-The split this lane is built for: the block handle keeps the OUTER band
-(≤ 306) and the row grip keeps the inner one, because a grip belongs beside
-the row it serves while the handle is a document-level control. The grip
-cannot vacate further: the clear band inside the handle is 12px and the grip
-is 15px around a 13px icon. `ROW_GRIP_GAP` is the one number to change if the
-ruling goes the other way.
+| Band | Owner | x |
+|---|---|---|
+| outer | block handle | 284 to **306** |
+| inner | row grips | **307** to 322 |
+
+A grip belongs beside the row it serves; the block handle is a document-level
+control, so it takes the outer band. This lane's half is
+`table.left - ROW_GRIP_GAP - GRIP_SHORT`, which is 21px inside the frame at
+any column width; M9's handle clears 22, one pixel outside it. `ROW_GRIP_GAP`
+is the one number to change here if the ruling ever goes the other way, and
+the grip cannot vacate inward much: it is 15px around a 13px icon.
+
+M9's [`blocks/.context/CONTEXT.md`](../../blocks/.context/CONTEXT.md) states
+the same split from the other side; change one and the other is wrong.
 
 ## Hover and the menus
 
