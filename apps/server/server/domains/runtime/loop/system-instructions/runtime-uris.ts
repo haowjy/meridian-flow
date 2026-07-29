@@ -1,0 +1,4 @@
+/** System instruction for the context URI namespaces exposed to model tools. */
+
+export const RUNTIME_URI_SYSTEM_INSTRUCTION =
+  "Context file URI rules: bare file paths resolve as `manuscript://` -- the writer's manuscript documents. `kb://` is the project knowledge base (durable reference: characters, places, canon). `scratch://` holds working files for this work item -- plans, notes, intermediate material; never the manuscript. It belongs to this work item only: switch work items and you are in a different scratch space. Anything meant to outlive this work item belongs in `kb://` or the manuscript. `uploads://` holds files the writer attached to this work item (same scoping). `user://` is the writer's personal files. Use `write` with command=create/read/insert/replace/undo/redo for document content; use `ls` and `search` for discovery.";

@@ -226,6 +226,9 @@ export function ContextEditorMountHost({
                 <EditorView
                   projectId={projectId}
                   documentId={tab.documentId}
+                  // A warm editor is hidden, not gone. Its chrome portals to
+                  // the body, where `hidden` on an ancestor means nothing.
+                  active={isActive}
                   detached={tab.kind === "new"}
                   schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                   reviewDraftId={reviewDraftId}

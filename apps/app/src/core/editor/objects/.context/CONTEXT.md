@@ -21,6 +21,13 @@ first, and the kernel's
 | `caret-inside` | drops the caret at the first text position within | the kernel |
 | `none` | nothing | nobody — but the key is still consumed |
 
+`ObjectEngagement` returns `void`, and that is the contract rather than an
+omission: Enter is consumed either way, so a handler has nothing to decide. A
+`surface` row with no registered handler is therefore a dead key, which law 5
+forbids on anything shipped — legal only while its lane is unbuilt, and it
+warns in development so it is found by a developer rather than by a writer
+pressing Enter on a diagram.
+
 `matches` narrows a node type that is only sometimes an object. Everything
 else — selection, arrow-walk, Esc, the resolved chrome context — follows from
 the row with no further per-type code.
@@ -30,7 +37,6 @@ the row with no further per-type code.
 ```ts
 useEffect(() => registerObjectEngagement(editor, "figure", ({ node, pos }) => {
   openDialog(pos);
-  return true;
 }), [editor]);
 
 useEffect(() => registerObjectKeymap(editor, "code_block", {
@@ -39,9 +45,9 @@ useEffect(() => registerObjectKeymap(editor, "code_block", {
 ```
 
 Engagements are keyed by node type, so a type that is only sometimes an object
-gets the whole node and decides for itself. `registerObjectKeymap` scopes its
-bindings to "this type is the selected object" and registers them at the
-kernel's `object` scope; it does not need to re-check the selection.
+gets the whole node and decides for itself. `registerObjectKeymap` registers at the kernel's `object` scope with an
+`appliesTo` on the node type, so the binding runs only when that type is the
+selected object and does not re-check the selection itself.
 
 Both return an unregister. Both are no-ops on an editor without chrome.
 
@@ -71,6 +77,10 @@ paragraph of a list item shares its edge with the list).
 `walk()` in the extension is then two cases: an object is selected, so pass
 beyond it; or the caret is beside one, so step onto it. Anything else returns
 false and the editor's own caret movement stands.
+
+The arrows register at `block` scope, not `object`. Walking onto an object
+begins in the prose beside it, where nothing is selected yet, so an `object`
+scope would filter out the first press of the two. Only Enter is `object`.
 
 ## Known gap for the table lane
 

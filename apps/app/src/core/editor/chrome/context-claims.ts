@@ -31,8 +31,12 @@ export const CONTEXT_CLAIM_ORDER = ["link", "text-selection", "grip", "object"] 
 export type ContextClaimId = (typeof CONTEXT_CLAIM_ORDER)[number];
 
 export type ContextClaimTarget = {
-  /** The deepest element under the pointer. */
-  element: HTMLElement;
+  /**
+   * The deepest element under the pointer. `Element`, not `HTMLElement`: a
+   * mermaid diagram is SVG and so is every icon glyph in an overlay row, and
+   * both are exactly what a writer right-clicks. `closest()` works either way.
+   */
+  element: Element;
   /** Document position under the pointer; null when the pointer left the prose. */
   docPos: number | null;
   /** Deepest context at the pointer, resolved by `resolveChromeContext`. */
