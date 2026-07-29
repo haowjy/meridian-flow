@@ -7,6 +7,7 @@
  * menu store.
  */
 export { LinkSurfaces } from "./LinkSurfaces";
+export { ProjectLinkRuntime } from "./ProjectLinkRuntime";
 export { useLinkResolution } from "./useLinkResolution";
 export { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
 export { useWikilinkDocuments } from "./useWikilinkDocuments";

@@ -68,7 +68,7 @@ import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
-import { useWikilinkDocuments } from "./surfaces/link";
+import { ProjectLinkRuntime, useWikilinkDocuments } from "./surfaces/link";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
 import { useInlineReviewSync } from "./useInlineReviewSync";
@@ -745,6 +745,9 @@ function ActiveSessionEditorView({
       {/* The one chrome mount host. Surfaces register in
           `chrome/chrome-surfaces.ts`; nothing new is added to this file. */}
       <EditorChromeHost editor={editor} active={active} />
+      {/* Where an internal link goes, and what it offers when it goes nowhere.
+          It needs the project, which chrome surfaces are not given. */}
+      <ProjectLinkRuntime editor={editor} projectId={projectId} documentId={documentId} />
       <PeerMarkPopover
         key={peerMarkTarget?.marker.changeId ?? "closed"}
         target={peerMarkTarget}
