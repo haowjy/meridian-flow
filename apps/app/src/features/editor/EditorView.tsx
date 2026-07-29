@@ -664,6 +664,7 @@ function ActiveSessionEditorView({
             <DocumentToolbar
               editor={editor}
               editable={effectiveEditable}
+              schemaType={identity.schemaType}
               onUploadFigure={() => imageInputRef.current?.click()}
               uploadBusy={imageUploadState.kind === "uploading"}
               uploadAvailable={Boolean(projectId)}

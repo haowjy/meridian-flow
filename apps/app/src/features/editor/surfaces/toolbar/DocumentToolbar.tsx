@@ -12,6 +12,7 @@
  * apply. This file renders that matrix and dispatches; it decides nothing.
  */
 import { t } from "@lingui/core/macro";
+import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import {
   AlignCenter,
@@ -62,6 +63,8 @@ export type DocumentToolbarProps = {
   editor: Editor | null;
   /** False behind a schema fence or a read-only host: every verb greys. */
   editable?: boolean;
+  /** A code file takes no figures; the control greys rather than lying. */
+  schemaType?: YjsTrackedSchemaType;
   onUploadFigure?: () => void;
   uploadBusy?: boolean;
   /** Uploads need a project to own the asset; without one the control greys. */
@@ -71,6 +74,7 @@ export type DocumentToolbarProps = {
 export function DocumentToolbar({
   editor,
   editable = true,
+  schemaType = "document",
   onUploadFigure,
   uploadBusy = false,
   uploadAvailable = true,
@@ -80,6 +84,7 @@ export function DocumentToolbar({
   const controls = documentToolbarControls({
     editor,
     editable,
+    schemaType,
     canUndo: canUndoDocument(editor),
     canRedo: canRedoDocument(editor),
     imageUploadAvailable: uploadAvailable,
@@ -200,7 +205,7 @@ function AlignmentControl({
     "alignment",
     editor ? state.blockedBy : "editor-loading",
   );
-  const value: ToolbarAlignmentValue = editor ? currentAlignmentValue(editor.state) : "default";
+  const value: ToolbarAlignmentValue = editor ? currentAlignmentValue(editor) : "default";
   const Icon = ALIGNMENT_ICONS[value];
 
   const trigger = (

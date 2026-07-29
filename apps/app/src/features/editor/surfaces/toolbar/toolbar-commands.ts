@@ -2,27 +2,37 @@
  * The document toolbar's command layer: what each control can do in the
  * current context, and the fenced commands behind the controls.
  *
- * Two jobs live here because they share one set of refusal predicates:
+ * Two jobs live here because they share one set of refusal predicates, and the
+ * sharing is the point — a control may never advertise what dispatch will
+ * refuse:
  *
  * - `documentToolbarControls` derives the enablement matrix the toolbar
  *   renders. A control that cannot apply reports WHY, so the surface can grey
  *   it with a reason instead of letting a press silently no-op (law 5). The
  *   matrix never removes a control: the toolbar's geometry is fixed
  *   (ruling 15).
- * - the exported commands re-check those predicates before touching the
+ * - the exported commands re-check the same predicates before touching the
  *   document. The greyed button is the first fence; this is the second, and
- *   for the block-type commands it is load-bearing — a selected figure or
- *   diagram must never convert into a heading, however the command is reached
- *   (interaction model §7, F6).
+ *   for the block-type commands it is load-bearing — a selected figure, a
+ *   mermaid fence, or a registered component must never convert into a
+ *   heading, however the command is reached (interaction model §7, F6).
+ *
+ * The two families fence differently on purpose. A block-type conversion
+ * rewrites whole blocks, so it refuses a selection where ANY target is
+ * protected. A mark lands only on the inline content that accepts it, so it
+ * refuses only when NO target can take it.
  */
+
+import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
-import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
-import { type EditorState, NodeSelection } from "@tiptap/pm/state";
+import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
+import { AllSelection, NodeSelection } from "@tiptap/pm/state";
 
 import {
+  alignableBlocksInSelection,
+  alignSelectedBlocks,
   type BlockAlignment,
   currentAlignableBlock,
-  setCurrentBlockAlignment,
 } from "../../block-alignment";
 import { linkAttributesAtSelection } from "../../link-selection";
 
@@ -44,8 +54,13 @@ export type ToolbarBlockedReason =
   | "document-read-only"
   | "object-selection"
   | "code-block"
+  | "embedded-block"
+  | "mixed-selection"
+  | "table-cell"
+  | "inline-code"
   | "no-alignable-block"
   | "empty-history"
+  | "code-document"
   | "no-project"
   | "upload-in-flight";
 
@@ -67,6 +82,8 @@ export type ToolbarContext = {
   editor: Editor | null;
   /** False behind a schema fence or a read-only host; every verb greys. */
   editable: boolean;
+  /** A code file holds one code block; the document-only verbs cannot serve it. */
+  schemaType: YjsTrackedSchemaType;
   canUndo: boolean;
   canRedo: boolean;
   /** Uploads land in a project's asset namespace; without one there is none. */
@@ -89,16 +106,18 @@ const CONTROL_IDS: readonly ToolbarControlId[] = [
 
 const TOOLBAR_HEADING_LEVEL = 1;
 
+/** A list item lifts one level per press; no manuscript nests this deep. */
+const MAX_LIST_UNWRAP_STEPS = 20;
+
 export function documentToolbarControls(context: ToolbarContext): ToolbarControlStates {
   const { editor } = context;
   if (!editor || editor.isDestroyed) return everyControlBlockedBy("editor-loading");
 
-  const { state } = editor;
   // Read-only outranks every contextual reason: nothing applies to a document
   // the writer cannot change, and saying so once is the honest answer.
   const readOnly: ToolbarBlockedReason | null = context.editable ? null : "document-read-only";
-  const blockType = blockTypeBlocker(state);
-  const alignment = currentAlignmentValue(state);
+  const blockType = blockTypeBlocker(editor);
+  const alignment = currentAlignmentValue(editor);
 
   return {
     undo: {
@@ -115,15 +134,15 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
     },
     bold: {
       active: editor.isActive("strong"),
-      blockedBy: readOnly ?? markBlocker(state, "strong"),
+      blockedBy: readOnly ?? markBlocker(editor, "strong"),
     },
     italic: {
       active: editor.isActive("em"),
-      blockedBy: readOnly ?? markBlocker(state, "em"),
+      blockedBy: readOnly ?? markBlocker(editor, "em"),
     },
     code: {
       active: editor.isActive("code"),
-      blockedBy: readOnly ?? markBlocker(state, "code"),
+      blockedBy: readOnly ?? markBlocker(editor, "code"),
     },
     bulletList: {
       active: editor.isActive("bullet_list"),
@@ -131,56 +150,44 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
     },
     link: {
       // No precondition on having a selection: a bare caret opens the
-      // two-field form instead (interaction model §5.5). Code is the one
-      // context that refuses a link, and it refuses it in the schema.
+      // two-field form instead (interaction model §5.5).
       active: linkAttributesAtSelection(editor) !== null,
-      blockedBy: readOnly ?? markBlocker(state, "link"),
+      blockedBy: readOnly ?? markBlocker(editor, "link"),
     },
     alignment: {
       active: alignment !== "default",
-      blockedBy: readOnly ?? (currentAlignableBlock(state) ? null : "no-alignable-block"),
+      blockedBy:
+        readOnly ??
+        (alignableBlocksInSelection(editor.state).length > 0 ? null : "no-alignable-block"),
     },
     uploadFigure: {
       active: false,
-      blockedBy:
-        readOnly ??
-        (context.imageUploadAvailable
-          ? context.imageUploadBusy
-            ? "upload-in-flight"
-            : null
-          : "no-project"),
+      blockedBy: readOnly ?? uploadBlocker(context),
     },
   };
 }
 
-/** The alignment the dropdown should show for the block under the selection. */
-export function currentAlignmentValue(state: EditorState): ToolbarAlignmentValue {
-  const align = currentAlignableBlock(state)?.node.attrs.align;
+/** The alignment the dropdown should show for the blocks under the selection. */
+export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
+  const align = currentAlignableBlock(editor.state)?.node.attrs.align;
   return align === "center" || align === "right" ? align : "default";
 }
 
 /** True toggle: pressing on an H1 returns the block to a paragraph (law 6). */
 export function toggleHeadingBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || blockTypeBlocker(editor.state)) return false;
+  if (!canWrite(editor) || blockTypeBlocker(editor)) return false;
   return editor.chain().focus().toggleHeading({ level: TOOLBAR_HEADING_LEVEL }).run();
 }
 
-/** True toggle: pressing inside a list un-lists it (law 6). */
+/** True toggle: one press lists, one press un-lists, however deep (law 6). */
 export function toggleBulletListBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || blockTypeBlocker(editor.state)) return false;
-  // TipTap reverses a list by finding an ancestor whose extension group holds
-  // "list", and the Meridian list nodes declare `group: "block"` to stay in
-  // parity with the server schema — so its own toggle only ever wraps. The
-  // reverse half is spelled out here rather than by editing a schema the
-  // server shares.
-  if (editor.isActive("bullet_list")) {
-    return editor.chain().focus().liftListItem("list_item").run();
-  }
-  return editor.chain().focus().toggleBulletList().run();
+  if (!canWrite(editor) || blockTypeBlocker(editor)) return false;
+  if (!editor.isActive("bullet_list")) return editor.chain().focus().toggleBulletList().run();
+  return unwrapBulletList(editor);
 }
 
 export function toggleTextMark(editor: Editor, mark: ToolbarMarkName): boolean {
-  if (!canWrite(editor) || markBlocker(editor.state, mark)) return false;
+  if (!canWrite(editor) || markBlocker(editor, mark)) return false;
   const chain = editor.chain().focus();
   if (mark === "strong") return chain.toggleBold().run();
   if (mark === "em") return chain.toggleItalic().run();
@@ -190,7 +197,7 @@ export function toggleTextMark(editor: Editor, mark: ToolbarMarkName): boolean {
 export function setToolbarAlignment(editor: Editor, value: ToolbarAlignmentValue): boolean {
   if (!canWrite(editor)) return false;
   const align: BlockAlignment = value === "default" ? null : value;
-  const transaction = setCurrentBlockAlignment(editor.state, align);
+  const transaction = alignSelectedBlocks(editor.state, align);
   if (!transaction) return false;
   editor.view.dispatch(transaction);
   editor.commands.focus();
@@ -200,16 +207,18 @@ export function setToolbarAlignment(editor: Editor, value: ToolbarAlignmentValue
 /**
  * Undo is the Yjs UndoManager's, shared with the Mod-z binding the editor owns
  * (ruling 17). It is the writer's recovery over LLM writes, so the toolbar
- * reports its real depth rather than a hopeful always-enabled button.
+ * reports its real depth rather than a hopeful always-enabled button, and it
+ * hands focus back to the prose like every other command here — a writer who
+ * clicked Undo has not left editing, and the next Space must be a space.
  */
 export function undoDocument(editor: Editor): boolean {
   if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
-  return editor.commands.undo();
+  return editor.chain().focus().undo().run();
 }
 
 export function redoDocument(editor: Editor): boolean {
   if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
-  return editor.commands.redo();
+  return editor.chain().focus().redo().run();
 }
 
 export function canUndoDocument(editor: Editor | null): boolean {
@@ -231,65 +240,122 @@ function hasCollaborativeHistory(editor: Editor): boolean {
 }
 
 /**
+ * TipTap reverses a list by looking for an ancestor whose extension group holds
+ * "list", and the Meridian list nodes declare `group: "block"` to stay in
+ * parity with the server schema — so its own toggle only ever wraps. Owning the
+ * reverse means owning all of it: a nested item lifts one level per call, and
+ * `AllSelection` (Ctrl+A) carries no block range for `liftListItem` to work
+ * with until it is spelled as a text selection.
+ */
+function unwrapBulletList(editor: Editor): boolean {
+  if (editor.state.selection instanceof AllSelection) {
+    const { doc } = editor.state;
+    editor.commands.setTextSelection({ from: 0, to: doc.content.size });
+  }
+
+  let lifted = false;
+  for (let step = 0; step < MAX_LIST_UNWRAP_STEPS && editor.isActive("bullet_list"); step += 1) {
+    if (!editor.chain().focus().liftListItem("list_item").run()) break;
+    lifted = true;
+  }
+  return lifted;
+}
+
+function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
+  if (context.schemaType !== "document") return "code-document";
+  if (!context.imageUploadAvailable) return "no-project";
+  return context.imageUploadBusy ? "upload-in-flight" : null;
+}
+
+/**
  * The refusal that makes the F6 accident unreachable: a node selection on
  * anything that is not a text block (figure, image, horizontal rule, table) is
  * not a block-type target, and formatting has no text to land on either.
  */
-function objectSelectionBlocker(state: EditorState): ToolbarBlockedReason | null {
-  const { selection } = state;
+function objectSelectionBlocker(editor: Editor): ToolbarBlockedReason | null {
+  const { selection } = editor.state;
   return selection instanceof NodeSelection && !selection.node.isTextblock
     ? "object-selection"
     : null;
 }
 
-function blockTypeBlocker(state: EditorState): ToolbarBlockedReason | null {
-  const objectSelection = objectSelectionBlocker(state);
+function blockTypeBlocker(editor: Editor): ToolbarBlockedReason | null {
+  const objectSelection = objectSelectionBlocker(editor);
   if (objectSelection) return objectSelection;
 
-  const targets = textblocksInSelection(state);
+  const targets = textblockTargets(editor);
   if (targets.length === 0) return "object-selection";
-  // A code block is a text block, so the object fence above lets it through:
-  // converting one to a heading would silently strip its language and fence.
-  return targets.every((node) => node.type.name === "code_block") ? "code-block" : null;
+
+  // ANY protected target refuses the whole conversion: a selection spanning a
+  // mermaid fence and a paragraph is the ordinary Ctrl+A, and converting it
+  // would drop the fence's language along with the fence.
+  const protectedTargets = targets.filter(
+    (target) => isNonProseTextblock(target.node) || isInsideTableCell(target.$pos),
+  );
+  if (protectedTargets.length === 0) return null;
+  if (protectedTargets.length < targets.length) return "mixed-selection";
+
+  // Every target refuses, so the reason can name the kind that refused. A cell
+  // holds exactly one paragraph, which covers a caret in a cell and a whole
+  // CellSelection alike.
+  const first = protectedTargets[0];
+  return isInsideTableCell(first.$pos) ? "table-cell" : nonProseReason(first.node);
 }
 
-function markBlocker(
-  state: EditorState,
-  mark: ToolbarMarkName | "link",
-): ToolbarBlockedReason | null {
-  const objectSelection = objectSelectionBlocker(state);
+function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlockedReason | null {
+  const objectSelection = objectSelectionBlocker(editor);
   if (objectSelection) return objectSelection;
 
-  const markType = state.schema.marks[mark];
-  // `code_block` is the one text block in this schema declaring `marks: ""`,
-  // so a schema refusal here always means the selection sits in code.
-  return markType && marksApplyTo(state, markType) ? null : "code-block";
+  const targets = textblockTargets(editor);
+  // Marks land per node, so only a selection with no prose in it at all is
+  // refused; a mixed selection formats the prose and leaves the rest alone.
+  if (targets.length > 0 && targets.every((target) => isNonProseTextblock(target.node))) {
+    return nonProseReason(targets[0].node);
+  }
+
+  // A mark that is already there can always come off (law 6), whatever the
+  // schema thinks about adding it.
+  if (isMarkActive(editor, mark)) return null;
+  // `can().setMark` is the command's own answer — schema allowance and mark
+  // exclusions both. The only exclusion in this schema is the inline code
+  // mark, which excludes every other mark from the text it covers.
+  return editor.can().setMark(mark) ? null : "inline-code";
 }
 
-function textblocksInSelection(state: EditorState): PMNode[] {
-  const targets: PMNode[] = [];
-  const { from, to } = state.selection;
-  state.doc.nodesBetween(from, to, (node) => {
-    if (node.isTextblock) targets.push(node);
+function isMarkActive(editor: Editor, mark: ToolbarMarkName | "link"): boolean {
+  return mark === "link" ? linkAttributesAtSelection(editor) !== null : editor.isActive(mark);
+}
+
+type TextblockTarget = { node: PMNode; $pos: ResolvedPos };
+
+function textblockTargets(editor: Editor): TextblockTarget[] {
+  const { doc, selection } = editor.state;
+  const targets: TextblockTarget[] = [];
+  doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+    if (node.isTextblock) targets.push({ node, $pos: doc.resolve(pos) });
   });
   return targets;
 }
 
 /**
- * Mirrors prosemirror-commands' internal `markApplies`: a mark can be toggled
- * when any node in the selection accepts it. Ported rather than reached for
- * through `editor.can()` so the whole matrix stays derivable from editor state.
+ * Blocks that hold text but are not prose. ProseMirror calls them text blocks;
+ * a writer calls them a code fence and an embedded component, and a block-type
+ * conversion silently drops what makes them one — the fence's language, the
+ * component's name and props. Classified by the schema's own `code` flag
+ * rather than by `isTextblock`, which is what let `jsx_leaf` through.
  */
-function marksApplyTo(state: EditorState, markType: MarkType): boolean {
-  for (const range of state.selection.ranges) {
-    const { $from, $to } = range;
-    let applies = $from.depth === 0 && state.doc.type.allowsMarkType(markType);
-    state.doc.nodesBetween($from.pos, $to.pos, (node) => {
-      if (applies) return false;
-      applies = node.inlineContent && node.type.allowsMarkType(markType);
-      return true;
-    });
-    if (applies) return true;
+function isNonProseTextblock(node: PMNode): boolean {
+  return node.type.spec.code === true;
+}
+
+function nonProseReason(node: PMNode): ToolbarBlockedReason {
+  return node.type.name === "code_block" ? "code-block" : "embedded-block";
+}
+
+function isInsideTableCell($pos: ResolvedPos): boolean {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const role = $pos.node(depth).type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") return true;
   }
   return false;
 }

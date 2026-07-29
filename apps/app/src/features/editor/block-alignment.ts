@@ -1,4 +1,4 @@
-/** Resolves and updates the single alignable block at the selection head. */
+/** Resolves and updates the alignable blocks under the current selection. */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, type Transaction } from "@tiptap/pm/state";
@@ -10,40 +10,50 @@ export type AlignableBlock = {
   pos: number;
 };
 
-export function currentAlignableBlock(state: EditorState): AlignableBlock | null {
+/**
+ * Every block the selection touches that carries an `align` attribute, in
+ * document order. A table counts as ONE block: alignment applies to the table
+ * rather than to the paragraph inside a cell, so the walk stops there.
+ */
+export function alignableBlocksInSelection(state: EditorState): AlignableBlock[] {
   const { selection } = state;
-  if (selection instanceof NodeSelection && isAlignable(selection.node)) {
-    return { node: selection.node, pos: selection.from };
+  if (selection instanceof NodeSelection) {
+    return isAlignable(selection.node) ? [{ node: selection.node, pos: selection.from }] : [];
   }
 
-  const { $head } = selection;
-  // A cell's paragraph is structurally nearer, but block alignment applies to
-  // the containing table rather than to one cell's internal paragraph.
-  for (let depth = $head.depth; depth > 0; depth -= 1) {
-    const node = $head.node(depth);
-    if (node.type.name === "table") return { node, pos: $head.before(depth) };
-  }
-  for (let depth = $head.depth; depth > 0; depth -= 1) {
-    const node = $head.node(depth);
-    if (node.type.name === "paragraph" || node.type.name === "heading") {
-      return { node, pos: $head.before(depth) };
-    }
-  }
-  return null;
+  const blocks: AlignableBlock[] = [];
+  state.doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+    if (!isAlignable(node)) return true;
+    blocks.push({ node, pos });
+    return false;
+  });
+  return blocks;
 }
 
-export function setCurrentBlockAlignment(
-  state: EditorState,
-  align: BlockAlignment,
-): Transaction | null {
-  const target = currentAlignableBlock(state);
-  if (!target) return null;
-  return state.tr.setNodeMarkup(
-    target.pos,
-    undefined,
-    { ...target.node.attrs, align },
-    target.node.marks,
-  );
+/** The block a control reads its current alignment from. */
+export function currentAlignableBlock(state: EditorState): AlignableBlock | null {
+  return alignableBlocksInSelection(state)[0] ?? null;
+}
+
+/**
+ * Aligns every block the selection touches, which is what a writer means by
+ * selecting three paragraphs and pressing Center. Attribute-only markup leaves
+ * node sizes alone, so an earlier write never moves a later position.
+ */
+export function alignSelectedBlocks(state: EditorState, align: BlockAlignment): Transaction | null {
+  const targets = alignableBlocksInSelection(state);
+  if (targets.length === 0) return null;
+
+  const transaction = state.tr;
+  for (const target of targets) {
+    transaction.setNodeMarkup(
+      target.pos,
+      undefined,
+      { ...target.node.attrs, align },
+      target.node.marks,
+    );
+  }
+  return transaction;
 }
 
 function isAlignable(node: PMNode): boolean {

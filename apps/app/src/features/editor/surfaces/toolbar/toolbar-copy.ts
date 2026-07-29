@@ -55,10 +55,26 @@ export function blockedReasonMessage(
       }
       if (control === "link") return t`Code blocks take no links.`;
       return t`Code blocks take no formatting.`;
+    case "embedded-block":
+      if (control === "heading" || control === "bulletList") {
+        return t`Embedded blocks keep their own block type.`;
+      }
+      if (control === "link") return t`Embedded blocks take no links.`;
+      return t`Embedded blocks take no formatting.`;
+    case "mixed-selection":
+      return t`Part of this selection keeps its own block type.`;
+    case "table-cell":
+      return t`Table cells hold plain paragraphs.`;
+    case "inline-code":
+      return control === "link"
+        ? t`Inline code takes no links.`
+        : t`Inline code takes no other formatting.`;
     case "no-alignable-block":
       return t`Alignment applies to paragraphs, headings, and tables.`;
     case "empty-history":
       return control === "redo" ? t`Nothing to redo yet.` : t`Nothing to undo yet.`;
+    case "code-document":
+      return t`This file holds code only.`;
     case "no-project":
       return t`Open this document in a project to upload figures.`;
     case "upload-in-flight":
