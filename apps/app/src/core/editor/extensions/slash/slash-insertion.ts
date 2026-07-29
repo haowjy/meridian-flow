@@ -17,7 +17,7 @@
  */
 
 import type { Editor, JSONContent, Range } from "@tiptap/core";
-import type { NodeType, Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
+import type { NodeType, Node as PMNode, ResolvedPos, Schema } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 import { Selection } from "@tiptap/pm/state";
 
@@ -65,10 +65,13 @@ function heading(level: 1 | 2 | 3): SlashInsertion {
 }
 
 /**
- * One row per catalog id, minus `image`: an image arrives through the host's
- * picker or a paste, so the menu's whole job there is to consume the `/`.
+ * One row per catalog id, `image` included. The picker is the host's and so is
+ * the dispatch, but the SHAPE an image lands is known here — a paragraph
+ * holding the image — and availability has to be answerable for every visible
+ * row, including that one: a cell holds one paragraph, so `Image` refuses
+ * there like the rest.
  */
-const SLASH_INSERTIONS: Record<Exclude<SlashCommandId, "image">, SlashInsertion> = {
+const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   "heading-1": heading(1),
   "heading-2": heading(2),
   "heading-3": heading(3),
@@ -95,34 +98,72 @@ const SLASH_INSERTIONS: Record<Exclude<SlashCommandId, "image">, SlashInsertion>
     caret: "inside",
   },
   code: { node: { type: "code_block" }, caret: "inside" },
+  image: { node: emptyParagraph, caret: "inside" },
 };
+
+/** The type an entry would put in the document, for asking whether it may. */
+function insertionType(schema: Schema, id: SlashCommandId): NodeType | null {
+  return schema.nodes[SLASH_INSERTIONS[id].node.type as string] ?? null;
+}
+
+/**
+ * Why each entry cannot apply where the trigger sits, computed once against
+ * the document a pick would act on. An id absent from the map works here.
+ *
+ * The menu asks this to grey rows and say why (law 5): a writer in a table
+ * cell must learn that the cell holds plain paragraphs, not watch nine rows do
+ * nothing or, worse, watch one throw their caret outside the table.
+ */
+export function slashRefusals(
+  editor: Editor,
+  range: Range,
+  items: readonly SlashCommandItem[],
+): ReadonlyMap<SlashCommandId, SlashRefusal> {
+  const landing = editor.state.tr.delete(range.from, range.to);
+  const pos = landing.mapping.map(range.from);
+  const refusals = new Map<SlashCommandId, SlashRefusal>();
+
+  for (const item of items) {
+    const type = insertionType(editor.schema, item.id);
+    const target = type && slashTarget(landing.doc, pos, type);
+    if (target?.mode === "blocked") refusals.set(item.id, target.reason);
+  }
+  return refusals;
+}
+
+/**
+ * Why an entry cannot apply where the caret is. The spelling is the toolbar's
+ * (`BlockTypeRefusalReason`) so one refusal reads the same wherever a writer
+ * meets it; the surface renders it through that module's copy.
+ */
+export type SlashRefusal = "table-cell";
 
 export type SlashTarget =
   /** The block the writer typed `/` in becomes the new node. */
   | { mode: "convert"; from: number; to: number }
   /** The block keeps its text and the new node lands after it. */
-  | { mode: "insert-after"; pos: number };
+  | { mode: "insert-after"; pos: number }
+  /** Nowhere this entry may land without leaving the writer's structure. */
+  | { mode: "blocked"; reason: SlashRefusal };
 
 /**
- * Nodes whose parts are not free-standing blocks. A list item exists only as
- * part of its list, a cell only as part of its table, so a block asked for
- * from inside one belongs after the whole structure rather than wedged into
- * a bullet. A blockquote is deliberately absent: its children ARE ordinary
- * blocks that happen to be quoted, and a writer quoting a passage who asks for
- * a code block wants it in the quote.
+ * Nodes whose parts are not free-standing blocks: a list item exists only as
+ * part of its list, so a block asked for from inside a bullet belongs after
+ * the whole list rather than wedged into the bullet. A blockquote is
+ * deliberately absent — its children ARE ordinary blocks that happen to be
+ * quoted, and a writer quoting a passage who asks for a code block wants it in
+ * the quote.
  *
- * Only the insert-after walk consults this. Convert cannot reach inside one:
- * a cell holds a single `paragraph` and a list item must open with one, so the
- * schema refuses every conversion an owning structure could hold.
+ * A table is absent for the opposite reason: a cell is never escaped at all
+ * (see `cellFloor`), so there is nothing to walk out of.
+ *
+ * Only the insert-after walk consults this. Convert cannot reach inside a list
+ * item, which must open with a paragraph, so the schema refuses it there.
  */
 const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
   "bullet_list",
   "ordered_list",
   "list_item",
-  "table",
-  "table_row",
-  "table_header",
-  "table_cell",
 ]);
 
 /**
@@ -134,12 +175,18 @@ const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
  * `insertPoint`, which answers a different question. `insertPoint` takes the
  * first schema-legal parent and stops climbing the moment the position has a
  * sibling on the relevant side, so from a list item it lands a table INSIDE
- * the bullet (`list_item` permits `paragraph block*`), and from any cell but
- * the last it returns null and the visible command silently does nothing
- * (law 5). Structure is a domain question here, not a schema one.
+ * the bullet (`list_item` permits `paragraph block*`). Structure is a domain
+ * question here, not a schema one.
+ *
+ * The walk has a ceiling as well as a direction: **a table cell is never left**
+ * (ruling). §5.7 lets `/` open in a cell, and a pick that answered by inserting
+ * after the whole table would yank the caret out of the structure the writer is
+ * standing in — the deepest owner, law 4. A Meridian cell holds one plain
+ * paragraph, so most entries have nowhere to go there and say so instead.
  *
  * Returns null only when nothing from the caret up to the document will hold
- * the node; the caller declines rather than dropping it somewhere surprising.
+ * the node, which no trigger position can produce; blocked is the refusal a
+ * writer can read.
  */
 export function slashTarget(doc: PMNode, pos: number, type: NodeType): SlashTarget | null {
   const $pos = doc.resolve(pos);
@@ -155,20 +202,34 @@ export function slashTarget(doc: PMNode, pos: number, type: NodeType): SlashTarg
 
   // Start outside every owning structure the caret is in — the outermost one,
   // so a nested list is escaped whole — then take the first level that will
-  // hold the node. `doc` accepts `block+`, so the walk always has a floor.
-  for (let level = escapedDepth($pos); level >= 1; level -= 1) {
+  // hold the node, stopping inside the cell when there is one.
+  const floor = cellFloor($pos);
+  for (let level = escapedDepth($pos, floor); level > floor; level -= 1) {
     const parent = $pos.node(level - 1);
     const insertIndex = $pos.indexAfter(level - 1);
     if (parent.canReplaceWith(insertIndex, insertIndex, type)) {
       return { mode: "insert-after", pos: $pos.after(level) };
     }
   }
-  return null;
+  return floor > 0 ? { mode: "blocked", reason: "table-cell" } : null;
 }
 
-/** The depth whose node the insertion goes after: the outermost owning structure, else the block itself. */
-function escapedDepth($pos: ResolvedPos): number {
-  for (let level = 1; level <= $pos.depth; level += 1) {
+/**
+ * The depth of the cell the caret is in, or 0 outside a table. Read from the
+ * schema's `tableRole` rather than a node name, because that is what makes a
+ * cell a cell to prosemirror-tables.
+ */
+function cellFloor($pos: ResolvedPos): number {
+  for (let level = $pos.depth; level >= 1; level -= 1) {
+    const role = $pos.node(level).type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") return level;
+  }
+  return 0;
+}
+
+/** The depth whose node the insertion goes after: the outermost owning structure above the floor, else the block itself. */
+function escapedDepth($pos: ResolvedPos, floor: number): number {
+  for (let level = floor + 1; level <= $pos.depth; level += 1) {
     if (OWNING_STRUCTURES.has($pos.node(level).type.name)) return level;
   }
   return $pos.depth;
@@ -181,12 +242,6 @@ export function applySlashCommand(
   item: SlashCommandItem,
   catalog: SlashCommandCatalog,
 ): boolean {
-  if (item.id === "image") {
-    const consumed = editor.chain().focus().deleteRange(range).run();
-    catalog.requestImageUpload();
-    return consumed;
-  }
-
   const insertion = SLASH_INSERTIONS[item.id];
   const node = editor.schema.nodeFromJSON(insertion.node);
 
@@ -194,9 +249,16 @@ export function applySlashCommand(
   // anything is dispatched: TipTap dispatches a chain's transaction even when
   // one of its commands declines, so resolving the target inside the chain
   // would let a refusal eat the trigger text and insert nothing in its place.
+  // A refusal therefore costs the writer nothing — not even the `/` they typed.
   const deleted = editor.state.tr.delete(range.from, range.to);
   const target = slashTarget(deleted.doc, deleted.mapping.map(range.from), node.type);
-  if (!target) return false;
+  if (!target || target.mode === "blocked") return false;
+
+  if (item.id === "image") {
+    const consumed = editor.chain().focus().deleteRange(range).run();
+    catalog.requestImageUpload();
+    return consumed;
+  }
 
   const start = target.mode === "convert" ? target.from : target.pos;
   const applied = editor
