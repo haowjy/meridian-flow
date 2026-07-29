@@ -16,8 +16,6 @@
 import type { Editor } from "@tiptap/core";
 import { ClipboardPaste, Copy, Scissors } from "lucide-react";
 import { type ComponentType, useState } from "react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import { EditorMenuItem, EditorMenuShortcut } from "../../chrome";
 
 import {
@@ -106,43 +104,29 @@ export function ClipboardMenuItems({
   const states = clipboardItemStates(editor, clipboard);
 
   return (
-    <TooltipProvider delayDuration={400}>
+    <>
       {FORMATTING_CLIPBOARD_IDS.map((id) => {
-        const reason = formattingBlockedMessage("document", states[id].blockedBy);
         const Icon = CLIPBOARD_ICONS[id];
 
         return (
-          <Tooltip key={id}>
-            <TooltipTrigger asChild>
-              <EditorMenuItem
-                aria-disabled={reason ? true : undefined}
-                className={cn(reason && "opacity-50")}
-                onSelect={(event) => {
-                  if (reason) {
-                    event.preventDefault();
-                    return;
-                  }
-                  prepare?.();
-                  void CLIPBOARD_COMMANDS[id](editor).then((result) => {
-                    if (result !== "denied" && result !== "unavailable") return;
-                    const direction = CLIPBOARD_DIRECTION[id];
-                    setClipboard((current) => ({ ...current, [direction]: "unavailable" }));
-                  });
-                }}
-              >
-                <Icon />
-                {clipboardLabel(id)}
-                <EditorMenuShortcut>{clipboardShortcut(id)}</EditorMenuShortcut>
-              </EditorMenuItem>
-            </TooltipTrigger>
-            {reason ? (
-              <TooltipContent side="right" className="max-w-56">
-                {reason}
-              </TooltipContent>
-            ) : null}
-          </Tooltip>
+          <EditorMenuItem
+            key={id}
+            blockedReason={formattingBlockedMessage("document", states[id].blockedBy)}
+            onSelect={() => {
+              prepare?.();
+              void CLIPBOARD_COMMANDS[id](editor).then((result) => {
+                if (result !== "denied" && result !== "unavailable") return;
+                const direction = CLIPBOARD_DIRECTION[id];
+                setClipboard((current) => ({ ...current, [direction]: "unavailable" }));
+              });
+            }}
+          >
+            <Icon />
+            {clipboardLabel(id)}
+            <EditorMenuShortcut>{clipboardShortcut(id)}</EditorMenuShortcut>
+          </EditorMenuItem>
         );
       })}
-    </TooltipProvider>
+    </>
   );
 }
