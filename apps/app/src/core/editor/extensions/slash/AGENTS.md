@@ -30,10 +30,17 @@ The caret rule is a field in the insertion table, not a special case in a
 command. An object whose type registers `engage: "surface"` gets that surface
 instead, through the object lane's `engageObject` — the same door Enter uses.
 
-**"After the current one" needs a level.** A list item exists only as part of
-its list and a cell only as part of its table, so a block asked for from inside
-one lands after the whole structure. A quote is deliberately not one of those:
-its children are ordinary blocks that happen to be quoted.
+**"After the current one" needs a level, and a ceiling.** A list item exists
+only as part of its list, so a block asked for from inside a bullet lands after
+the whole list. A quote is deliberately not one of those: its children are
+ordinary blocks that happen to be quoted.
+
+**A table cell is never left** (ruling). §5.7 lets `/` open in a cell, but a
+pick that answered by inserting after the whole table would yank the caret out
+of the structure the writer is standing in — the deepest owner, law 4. A
+Meridian cell holds one plain paragraph, so most entries have nowhere to go
+there: they grey, and the menu says why in the toolbar's own words. Nothing
+inserts outside a cell from inside one.
 
 ## Key rules
 
@@ -41,6 +48,10 @@ its children are ordinary blocks that happen to be quoted.
   localized and the image entry needs the host's picker, so nothing here may
   hard-code a string. Ids are a closed union: a new entry needs a row in the
   insertion table and an icon in the surface, or it will not compile.
+- **A refusal is a code here and copy there.** `slashRefusals` answers for
+  every visible row at once, in the toolbar's vocabulary (`"table-cell"`); the
+  surface renders it through `blockTypeReasonMessage`, so a writer meets one
+  wording of the rule wherever they meet it. Core holds no writer-facing string.
 - **This extension owns no Escape.** The kernel does; the menu takes its step by
   being a registered layer. Suggestion's own Escape handling is the floor under
   the frame before React has rendered.

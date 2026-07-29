@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStandaloneEditorExtensions } from "../../config";
 import { type ObjectAt, registerObjectEngagement } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
-import { applySlashCommand } from "./slash-insertion";
+import { applySlashCommand, slashRefusals } from "./slash-insertion";
 
 let editor: Editor | null = null;
 
@@ -95,6 +95,11 @@ const row = (...cells: JSONContent[]): JSONContent => ({ type: "table_row", cont
 function caretChain(instance: Editor): string[] {
   const { $from } = instance.state.selection;
   return Array.from({ length: $from.depth }, (_, depth) => $from.node(depth + 1).type.name);
+}
+
+/** The table role of the node holding the caret's paragraph, so "still in the cell" reads as itself. */
+function cellAroundCaret(instance: Editor): unknown {
+  return instance.state.selection.$from.node(-1).type.spec.tableRole;
 }
 
 function blockTypes(instance: Editor): string[] {
@@ -281,7 +286,14 @@ describe("slash insertion out of nested structures", () => {
     expect(instance.state.doc.firstChild?.textContent).toBe("outerinner ");
   });
 
-  it("lands after the whole table from any cell", () => {
+  /**
+   * Ruling: a cell never teleports. §5.7 lets `/` open in a table cell, but a
+   * pick may not yank the caret out of the structure the writer is standing in
+   * (law 4), and a Meridian cell holds one plain paragraph — so an entry that
+   * cannot live in the cell refuses with a reason (law 5) instead of landing
+   * after the whole table.
+   */
+  it("refuses rather than leaving the cell, from any cell", () => {
     for (const target of ["first", "middle", "last"]) {
       const cells = ["first", "middle", "last"].map((name) =>
         cell(name === target ? `${name} ${TRIGGER}` : name),
@@ -289,15 +301,49 @@ describe("slash insertion out of nested structures", () => {
       const { editor: instance, range } = mountAround([
         { type: "table", content: [row(...cells)] },
       ]);
+      const before = instance.state.doc.toJSON();
       const applied = applySlashCommand(instance, range, item("table"), catalog());
 
-      expect(applied, `from the ${target} cell`).toBe(true);
-      expect(blockTypes(instance), `from the ${target} cell`).toEqual(["table", "table"]);
-      expect(instance.state.doc.firstChild?.textContent).toBe(
-        `first${target === "first" ? " " : ""}middle${target === "middle" ? " " : ""}last${target === "last" ? " " : ""}`,
-      );
+      expect(applied, `from the ${target} cell`).toBe(false);
+      expect(instance.state.doc.toJSON(), `from the ${target} cell`).toEqual(before);
+      expect(cellAroundCaret(instance), `from the ${target} cell`).toBe("cell");
       instance.destroy();
     }
+  });
+
+  it("keeps the caret in the cell when an entry refuses", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
+    ]);
+    const applied = applySlashCommand(instance, range, item("heading-1"), catalog());
+
+    expect(applied).toBe(false);
+    expect(blockTypes(instance)).toEqual(["table"]);
+    expect(cellAroundCaret(instance)).toBe("cell");
+  });
+
+  it("names the refusal so the menu can render it", () => {
+    const inCell = mountAround([
+      { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
+    ]);
+    const cellRefusals = slashRefusals(inCell.editor, inCell.range, [
+      item("heading-1"),
+      item("code"),
+      item("table"),
+      item("image"),
+    ]);
+    expect([...cellRefusals.values()]).toEqual([
+      "table-cell",
+      "table-cell",
+      "table-cell",
+      "table-cell",
+    ]);
+    inCell.editor.destroy();
+
+    const inProse = mountWithTrigger("She stepped through. ", "/x");
+    expect(
+      slashRefusals(inProse.editor, inProse.range, [item("heading-1"), item("table")]).size,
+    ).toBe(0);
   });
 
   it("carries a text entry out of a list too", () => {

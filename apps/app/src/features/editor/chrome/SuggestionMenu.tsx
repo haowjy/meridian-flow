@@ -17,6 +17,12 @@
  * cap, the internal scroll, the hairline fades, the announcement the caret's
  * own element has to carry — is one behavior both menus share, so neither lane
  * can drift from the other on a Radix upgrade (§5.7's height ruling).
+ *
+ * A row a lane cannot take is shown greyed rather than hidden, with the reason
+ * in `note` (law 5: absent beats disabled, disabled beats dead, and a writer
+ * who cannot see why an entry refuses is left to wonder). It keeps the hover
+ * and focus path — `aria-disabled`, never the `disabled` attribute — because
+ * that is the path the reason travels.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -32,6 +38,8 @@ export type SuggestionMenuRow = {
   key: string;
   /** A group heading or separator drawn above this row, when the lane wants one. */
   before?: ReactNode;
+  /** Visible, greyed, and not choosable. `note` says why. */
+  blocked?: boolean;
   content: ReactNode;
 };
 
@@ -50,6 +58,11 @@ export type SuggestionMenuProps = {
   onActivate: (index: number) => void;
   onChoose: (index: number) => void;
   onDismiss: () => void;
+  /**
+   * Why rows are greyed, above them rather than below: the menu opens under
+   * the caret, so its top edge is where the writer is already looking.
+   */
+  note?: ReactNode;
   className?: string;
 };
 
@@ -67,6 +80,7 @@ export function SuggestionMenu({
   onActivate,
   onChoose,
   onDismiss,
+  note,
   className,
 }: SuggestionMenuProps) {
   // Law: a surface stands down while a drag or sweep is in flight, without
@@ -136,6 +150,11 @@ export function SuggestionMenu({
       focusOnOpen="prose"
       className={cn("meridian-suggestion-menu-shell min-w-64 p-0", className)}
     >
+      {note ? (
+        <div className="border-border-subtle border-b px-2 py-1.5 text-ink-subtle text-xs">
+          {note}
+        </div>
+      ) : null}
       <div
         ref={attachScroller}
         onScroll={readOverflow}
@@ -155,18 +174,24 @@ export function SuggestionMenu({
                 role="option"
                 id={`${id}-${row.key}`}
                 aria-selected={active}
+                aria-disabled={row.blocked || undefined}
                 ref={active ? activeRef : undefined}
                 tabIndex={-1}
                 className={cn(
                   "flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden",
                   "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
                   active && "bg-accent text-accent-foreground",
+                  row.blocked && "text-muted-foreground",
                 )}
                 // The caret is the writer's place in the chapter; a menu row
                 // taking focus from it would end the filter mid-word.
                 onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => onActivate(index)}
-                onClick={() => onChoose(index)}
+                onMouseEnter={() => {
+                  if (!row.blocked) onActivate(index);
+                }}
+                onClick={() => {
+                  if (!row.blocked) onChoose(index);
+                }}
               >
                 {row.content}
               </button>

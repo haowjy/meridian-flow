@@ -323,6 +323,11 @@ boundary:
   returns what the surface subscribes to; the surface never reads editor state
   to decide what the menu shows. It may be null on an editor without the
   extension.
+- **A pick never leaves a table cell.** The insertion walk stops at the cell
+  the caret is in; entries that cannot live there are refused with a reason the
+  menu renders, rather than landing after the table. Lists are the other rule:
+  a bullet's table lands after the whole list, because a list item is only part
+  of its list.
 - **A new object opens through `engageObject`.** The slash lane does not know
   what a diagram dialog is; it hands the node it just made to the object lane,
   which resolves the surface a type registered. Enter on a selected object

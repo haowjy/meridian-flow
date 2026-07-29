@@ -15,6 +15,12 @@
  * back — but shows no surface, because a menu with no rows is the dead control
  * law 5 forbids.
  *
+ * A row that is visible but cannot be chosen is the other half of law 5, and
+ * the store is where "cannot" has to live: the highlight steps over such rows
+ * and Enter declines them, so a lane can show a writer why an entry refuses
+ * without ever handing them a key that does nothing. A lane with no such rows
+ * passes no `choosable` and nothing changes.
+ *
  * `TMeta` is whatever a lane's rows need that is not a row: the slash menu's
  * group labels, say. Anything a lane reads on every row belongs in `TItem`.
  */
@@ -40,6 +46,8 @@ export type SuggestionMenuSession<TItem, TMeta = null> = {
   meta: TMeta;
   /** Applies the choice; the trigger consumes its own text and the query. */
   choose: (item: TItem) => void;
+  /** Rows this lane will refuse. Absent means every row works. */
+  choosable?: (item: TItem) => boolean;
   /** Leaves the typed text alone and takes the menu down. */
   dismiss: () => void;
 };
@@ -86,6 +94,18 @@ export function createSuggestionMenu<TItem, TMeta = null>(): {
   let activeIndex = 0;
   let snapshot: SuggestionMenuSnapshot<TItem, TMeta> = closedSuggestionMenu();
 
+  const choosable = (index: number) => {
+    const item = session?.items[index];
+    return item !== undefined && (session?.choosable?.(item) ?? true);
+  };
+
+  /** The row the highlight opens on: the first the lane will take, or none at all. */
+  const firstChoosable = () => {
+    const count = session?.items.length ?? 0;
+    for (let index = 0; index < count; index += 1) if (choosable(index)) return index;
+    return -1;
+  };
+
   const publish = () => {
     snapshot = session
       ? {
@@ -109,7 +129,7 @@ export function createSuggestionMenu<TItem, TMeta = null>(): {
     snapshot: () => snapshot,
 
     setActiveIndex(index) {
-      if (!session || index < 0 || index >= session.items.length || index === activeIndex) return;
+      if (!session || index === activeIndex || !choosable(index)) return;
       activeIndex = index;
       publish();
     },
@@ -117,14 +137,22 @@ export function createSuggestionMenu<TItem, TMeta = null>(): {
     move(delta) {
       const count = session?.items.length ?? 0;
       if (count === 0) return false;
-      activeIndex = (activeIndex + delta + count) % count;
-      publish();
-      return true;
+      // Steps over rows the lane refuses, so the key never lands somewhere
+      // Enter would decline. All of them refusing means the key is not ours,
+      // and that is the only way the highlight is nowhere (-1) to begin with.
+      for (let step = 1; step <= count; step += 1) {
+        const candidate = (((activeIndex + delta * step) % count) + count) % count;
+        if (!choosable(candidate)) continue;
+        activeIndex = candidate;
+        publish();
+        return true;
+      }
+      return false;
     },
 
     choose(index) {
       const item = session?.items[index];
-      if (!session || !item) return false;
+      if (!session || !item || !choosable(index)) return false;
       session.choose(item);
       return true;
     },
@@ -141,14 +169,14 @@ export function createSuggestionMenu<TItem, TMeta = null>(): {
   const controller: SuggestionMenuController<TItem, TMeta> = {
     open(next) {
       session = next;
-      activeIndex = 0;
+      activeIndex = firstChoosable();
       publish();
     },
     // A refilter is a new list, so the highlight goes back to the top: the
     // best match for what the writer just typed is the one they meant.
     update(next) {
       session = next;
-      activeIndex = 0;
+      activeIndex = firstChoosable();
       publish();
     },
     close() {
