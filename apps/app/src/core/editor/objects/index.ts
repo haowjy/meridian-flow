@@ -31,6 +31,8 @@ export {
   isSourceBlock,
   type ObjectBody,
   type ObjectEngageIntent,
+  type ObjectSurfaceKind,
   type ObjectTypeSpec,
+  objectSurfaceKind,
   objectTypeSpec,
 } from "./object-types";

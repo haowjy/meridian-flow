@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 
-import { objectSurfaceAt, objectSurfaceAtPos, objectSurfaceKind } from "./object-anchors";
+import { objectSurfaceAt, objectSurfaceAtPos } from "./object-anchors";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
@@ -56,30 +56,6 @@ function positions(mounted: Editor): Map<string, number> {
   });
   return found;
 }
-
-describe("which surface an object gets", () => {
-  it("splits code_block by language, because a diagram is a fence wearing another face", () => {
-    const mounted = mount();
-    const at = positions(mounted);
-
-    const mermaid = mounted.state.doc.nodeAt(at.get("code_block:mermaid") ?? -1);
-    const typescript = mounted.state.doc.nodeAt(at.get("code_block:typescript") ?? -1);
-
-    expect(mermaid && objectSurfaceKind(mermaid)).toBe("diagram");
-    expect(typescript && objectSurfaceKind(typescript)).toBe("code");
-  });
-
-  it("gives nothing to nodes that carry no controls", () => {
-    const mounted = mount();
-    const rule = mounted.state.doc.nodeAt(positions(mounted).get("horizontal_rule") ?? -1);
-    const paragraph = mounted.state.doc.nodeAt(positions(mounted).get("paragraph") ?? -1);
-
-    // A horizontal rule is an object to the kernel (arrow-walk, Esc) and still
-    // has no verbs of its own: object-ness and a control row are two questions.
-    expect(rule && objectSurfaceKind(rule)).toBeNull();
-    expect(paragraph && objectSurfaceKind(paragraph)).toBeNull();
-  });
-});
 
 describe("resolving an anchor", () => {
   it("finds the object from anything the pointer can land on inside it", () => {

@@ -10,13 +10,7 @@
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 
-/**
- * Which control surface a node gets. Not the same question as "is this an
- * object" (`EDITOR_OBJECT_TYPES` answers that): a plain code fence is prose the
- * writer types into and still carries a chip cluster, and a rendered mermaid
- * fence is the same node type wearing the other face.
- */
-export type ObjectSurfaceKind = "diagram" | "image" | "code";
+import { type ObjectSurfaceKind, objectSurfaceKind } from "@/core/editor/objects";
 
 export type ObjectSurfaceTarget = {
   pos: number;
@@ -30,8 +24,9 @@ export type ObjectSurfaceTarget = {
   element: HTMLElement;
 };
 
+/** A fence the registry renders as a diagram, rather than one to type in. */
 export function isMermaidFence(node: PMNode): boolean {
-  return node.type.name === "code_block" && node.attrs.language === "mermaid";
+  return objectSurfaceKind(node) === "diagram";
 }
 
 /**
@@ -46,12 +41,6 @@ export function isMermaidFence(node: PMNode): boolean {
 function renderedBounds(node: PMNode, dom: HTMLElement): HTMLElement {
   if (node.type.name !== "image") return dom;
   return dom.querySelector("img") ?? dom;
-}
-
-export function objectSurfaceKind(node: PMNode): ObjectSurfaceKind | null {
-  if (node.type.name === "code_block") return isMermaidFence(node) ? "diagram" : "code";
-  if (node.type.name === "image" || node.type.name === "figure") return "image";
-  return null;
 }
 
 /**

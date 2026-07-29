@@ -8,6 +8,7 @@ import {
   isEditorObject,
   isObjectBodyDragSource,
   isSourceBlock,
+  objectSurfaceKind,
   objectTypeSpec,
 } from "./object-types";
 
@@ -110,6 +111,34 @@ describe("which bodies a writer can grab", () => {
         nodeOfType([{ type: "paragraph", content: [{ type: "text", text: "x" }] }], "paragraph"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("which control surface a node gets", () => {
+  it("splits code_block by language, because a diagram is a fence wearing another face", () => {
+    expect(objectSurfaceKind(nodeOfType([fence("mermaid")], "code_block"))).toBe("diagram");
+    expect(objectSurfaceKind(nodeOfType([fence("ts")], "code_block"))).toBe("code");
+  });
+
+  it("gives a picture the image cluster, however it is wrapped", () => {
+    expect(
+      objectSurfaceKind(
+        nodeOfType([{ type: "figure", attrs: { src: "a", caption: "" } }], "figure"),
+      ),
+    ).toBe("image");
+  });
+
+  it("gives nothing to nodes that carry no controls", () => {
+    // A rule is an object to the kernel (arrow-walk, Esc) and still has no
+    // verbs of its own: object-ness and a control row are two questions.
+    expect(
+      objectSurfaceKind(nodeOfType([{ type: "horizontal_rule" }], "horizontal_rule")),
+    ).toBeNull();
+    expect(
+      objectSurfaceKind(
+        nodeOfType([{ type: "paragraph", content: [{ type: "text", text: "x" }] }], "paragraph"),
+      ),
+    ).toBeNull();
   });
 });
 

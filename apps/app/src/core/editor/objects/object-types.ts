@@ -41,6 +41,18 @@ export type ObjectEngageIntent =
  */
 export type ObjectBody = "opaque" | "text";
 
+/**
+ * Which control surface the node gets — the chip cluster and the row of verbs
+ * a lane renders over it.
+ *
+ * Not the same question as object-ness, which is why it is optional here and
+ * why one kind has no row at all: a plain code fence is prose the writer types
+ * into and still carries the code chips, while a rendered mermaid fence is the
+ * same node type wearing the diagram's face. An object with no `surfaceKind`
+ * (a table, a rule) gets no cluster.
+ */
+export type ObjectSurfaceKind = "diagram" | "image" | "code";
+
 export type ObjectTypeSpec = {
   /** Schema node name. */
   nodeType: string;
@@ -51,12 +63,13 @@ export type ObjectTypeSpec = {
   matches?: (node: PMNode) => boolean;
   body: ObjectBody;
   engage: ObjectEngageIntent;
+  surfaceKind?: ObjectSurfaceKind;
 };
 
 export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
   // ── kernel (M3) ──────────────────────────────────────────────────
-  { nodeType: "figure", body: "opaque", engage: "surface" },
-  { nodeType: "image", body: "opaque", engage: "surface" },
+  { nodeType: "figure", body: "opaque", engage: "surface", surfaceKind: "image" },
+  { nodeType: "image", body: "opaque", engage: "surface", surfaceKind: "image" },
   { nodeType: "table", body: "text", engage: "caret-inside" },
   { nodeType: "horizontal_rule", body: "opaque", engage: "none" },
   {
@@ -68,6 +81,7 @@ export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
     // control inside it, and a press on a control is never a press on a body.
     body: "opaque",
     engage: "surface",
+    surfaceKind: "diagram",
   },
   // ── surface lanes append one row per object type below ───────────
 ];
@@ -92,6 +106,20 @@ export function isEditorObject(node: PMNode): boolean {
  */
 export function isObjectBodyDragSource(node: PMNode): boolean {
   return objectTypeSpec(node)?.body === "opaque";
+}
+
+/**
+ * Which control surface this node gets, or null when it gets none (§5.2).
+ *
+ * The registration answers for every object. The one node that carries a
+ * cluster without being an object is the plain code fence — the same
+ * `code_block` the mermaid row claims when its language renders, which is why
+ * the exception is named here rather than re-derived beside each surface.
+ */
+export function objectSurfaceKind(node: PMNode): ObjectSurfaceKind | null {
+  const spec = objectTypeSpec(node);
+  if (spec) return spec.surfaceKind ?? null;
+  return node.type.name === "code_block" ? "code" : null;
 }
 
 /**
