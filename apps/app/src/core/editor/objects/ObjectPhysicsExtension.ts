@@ -206,7 +206,7 @@ export const ObjectPhysicsExtension = Extension.create({
             // Select first: engaging leaves the object selected underneath, so
             // closing its surface lands on the object rather than past it.
             view.dispatch(selected);
-            return engage(view.state, view.dispatch.bind(view), engagements);
+            return engage(editor, view.state, view.dispatch.bind(view));
           },
         },
       }),
