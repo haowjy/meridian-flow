@@ -154,7 +154,12 @@ Yjs document session. It must stay structurally aligned with
   `src` is a stable `asset:<documentId>`; `ImageNodeView` resolves a signed read
   URL through `asset-image-render-state.ts`, while the markup codec materializes
   project-relative paths. One failed media load may refresh the signed URL
-  automatically; the next one surfaces an error instead of looping.
+  automatically; the next one surfaces an error instead of looping. That budget
+  is per picture the browser reported rendering (`onLoad`), not per mounted node
+  view — a view lives as long as the chapter is open, so a budget spent once
+  would leave every later expiry with a placeholder. A failure arriving while a
+  load is in flight is ignored: a refresh keeps the expiring URL on screen, and
+  the request already running is the answer.
 - Assets cross the clipboard as project-relative paths and live inside the
   editor as stable refs. `image-workflow.ts` owns both directions, and the
   resolver behind them is per-editor because a path only means something inside
