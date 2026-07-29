@@ -28,7 +28,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
-import { classifyLinkTarget } from "../links/link-target";
+import { classifyLinkTarget, normalizeLinkHref } from "../links/link-target";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -258,18 +258,18 @@ export const MeridianLink = Link.extend({
    * link its trailing arrow and (at M12) an unresolved wikilink its dashed
    * quiet ink. It is absent from `addAttributes`, so it never reaches the
    * schema, the wire format, or another peer's document.
+   *
+   * It replaces TipTap's own renderHTML, so it also carries TipTap's fence:
+   * an href the classifier does not recognize renders with no destination.
+   * A `javascript:` URL can still reach the document through a markdown parse,
+   * and it must not become a live link when it does.
    */
   renderHTML({ HTMLAttributes }) {
-    const kind = classifyLinkTarget(String(HTMLAttributes.href ?? ""))?.kind;
-    return [
-      "a",
-      mergeAttributes(
-        this.options.HTMLAttributes,
-        HTMLAttributes,
-        kind ? { "data-link-kind": kind } : {},
-      ),
-      0,
-    ];
+    const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
+    const attributes = target
+      ? { ...HTMLAttributes, "data-link-kind": target.kind }
+      : { ...HTMLAttributes, href: "" };
+    return ["a", mergeAttributes(this.options.HTMLAttributes, attributes), 0];
   },
 
   addAttributes() {
@@ -278,7 +278,36 @@ export const MeridianLink = Link.extend({
       title: { default: null },
     };
   },
-}).configure({ openOnClick: false });
+}).configure({
+  openOnClick: false,
+
+  /**
+   * TipTap's own allow-list is web schemes, which reads `manuscript://` and
+   * `work://` as attacks and drops the mark on parse and on every command.
+   * The classifier is the fence instead: it knows the internal family and
+   * keeps the same refusal for `javascript:` and `data:`.
+   */
+  isAllowedUri: (uri) => classifyLinkTarget(String(uri ?? "")) !== null,
+
+  /**
+   * Bare-URL autolink stays (§5.5), but it may not swallow the relative
+   * spelling: linkify reads `chapter-213.md` as a hostname under the `.md`
+   * TLD and would rewrite a project document into an external site. What a
+   * writer typed is exactly what the link form normalizes, so ask that.
+   */
+  shouldAutoLink: (url) => {
+    const href = normalizeLinkHref(url);
+    return href !== null && classifyLinkTarget(href)?.kind === "external";
+  },
+
+  // A link the writer typed without a scheme goes to the secure one.
+  defaultProtocol: "https",
+
+  // The editor owns every follow (new tab for external, in-app for internal),
+  // so `target="_blank"` describes nothing and `nofollow` is an SEO artifact
+  // in a manuscript. `rel` stays as the fence for anything that does navigate.
+  HTMLAttributes: { target: null, rel: "noopener noreferrer" },
+});
 
 // We renamed list_item from TipTap's default `listItem`, so the list commands
 // (toggleBulletList / toggleOrderedList) must be pointed at the renamed item type
