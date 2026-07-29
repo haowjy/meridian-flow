@@ -143,15 +143,21 @@ export function applySlashCommand(
   }
 
   const insertion = SLASH_INSERTIONS[item.id];
+  const node = editor.schema.nodeFromJSON(insertion.node);
+
+  // Decided against the document the delete will produce, and decided BEFORE
+  // anything is dispatched: TipTap dispatches a chain's transaction even when
+  // one of its commands declines, so resolving the target inside the chain
+  // would let a refusal eat the trigger text and insert nothing in its place.
+  const deleted = editor.state.tr.delete(range.from, range.to);
+  const target = slashTarget(deleted.doc, deleted.mapping.map(range.from), node.type);
+  if (!target) return false;
 
   return editor
     .chain()
     .focus()
     .deleteRange(range)
     .command(({ tr, dispatch }) => {
-      const node = editor.schema.nodeFromJSON(insertion.node);
-      const target = slashTarget(tr.doc, tr.selection.from, node.type);
-      if (!target) return false;
       if (!dispatch) return true;
 
       const start = target.mode === "convert" ? target.from : target.pos;
