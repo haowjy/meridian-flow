@@ -24,12 +24,18 @@
  * `pathForAsset` and takes the whole document's save with it.
  */
 
-import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
-import { type AnchorRange, carryAnchor, type EditorAnchor, resolveAnchorIn } from "../anchors";
+import {
+  type AnchorRange,
+  carryAnchor,
+  type EditorAnchor,
+  type NodeHold,
+  resolveAnchorIn,
+  resolveNodeHold,
+} from "../anchors";
 import { pastedImageLinkRange } from "./image-workflow";
 
 /** The picture's own size, measured locally so its slot is the right shape. */
@@ -43,8 +49,12 @@ export type PendingUploadStatus =
 export type PendingImageUpload = {
   kind: "upload";
   id: string;
-  /** The `image` node standing in the picture's final slot. */
-  hold: EditorAnchor;
+  /**
+   * The `image` node standing in the picture's final slot, held the way every
+   * long-lived surface in this editor holds its target: the anchor for where,
+   * the Yjs element for which (`anchors.ts`).
+   */
+  hold: NodeHold;
   filename: string;
   /** The pending node's `alt`, unchanged when the upload lands. */
   alt: string;
@@ -82,10 +92,6 @@ export const NO_PENDING_IMAGES: PendingImageState = new Map();
 /** A pending node's source: the one `src` that names nothing. */
 export const PENDING_IMAGE_SRC = "";
 
-export function isPendingImageNode(node: PMNode | null | undefined): boolean {
-  return node?.type.name === "image" && String(node.attrs.src ?? "") === PENDING_IMAGE_SRC;
-}
-
 /**
  * Carry every hold across one transaction's mapping.
  *
@@ -100,6 +106,13 @@ export function carryPendingImages(
   if (pending.size === 0) return pending;
   const next = new Map<string, PendingImage>();
   for (const [id, entry] of pending) {
+    // Per kind, because the two hold different things: an upload holds the
+    // picture (identity and all), an import holds a range of text.
+    if (entry.kind === "upload") {
+      const hold = carryAnchor(entry.hold, mapping);
+      if (hold) next.set(id, { ...entry, hold });
+      continue;
+    }
     const hold = carryAnchor(entry.hold, mapping);
     if (hold) next.set(id, { ...entry, hold });
   }
@@ -110,17 +123,16 @@ export function carryPendingImages(
  * Where this pending picture is now, or null once the writer's document no
  * longer holds it.
  *
- * The anchor answers where; the node answers whether. A deleted picture's
- * anchor resolves to the seam it left behind, and a paragraph that slid into
- * those numbers is not the picture — so the node there is read and compared.
+ * A picture is a node, so the hold answers both halves itself: coordinates
+ * outlive what was at them, and a deleted picture's anchor resolves to the seam
+ * it left behind. An import is a range of TEXT — the link the paste landed — and
+ * text has no element of its own, so that one reads its own content back the way
+ * a link range does.
  */
 export function resolvePendingImage(state: EditorState, entry: PendingImage): AnchorRange | null {
+  if (entry.kind === "upload") return resolveNodeHold(state, entry.hold);
   const at = resolveAnchorIn(state, entry.hold);
-  if (!at) return null;
-  if (entry.kind === "import") {
-    return pastedImageLinkRange(state.doc, at, entry.url);
-  }
-  return isPendingImageNode(state.doc.nodeAt(at.from)) ? { from: at.from, to: at.from + 1 } : null;
+  return at && pastedImageLinkRange(state.doc, at, entry.url);
 }
 
 /** The pending picture standing at `pos`, or null. */

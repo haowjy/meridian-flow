@@ -21,12 +21,18 @@
  * be the same state: a right-click claims an object before hover intent has
  * settled on it, so a menu reading hover state would run Delete on whatever the
  * pointer passed over last.
+ *
+ * **Elements are geometry, holds are identity.** Every surface here — two
+ * menus and the lightbox — remembers a `NodeHold` and resolves it to the
+ * current node and the current DOM on every render. The element a right-click
+ * landed on is gone as soon as a peer writes, and the writer is still looking at
+ * the same diagram.
  */
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Code2, Copy, CopyPlus, Download, ImageDown, Maximize2, Trash2 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   registerObjectEngagement,
@@ -40,6 +46,7 @@ import {
   OverlayIconRow,
   type OverlayIconRowItem,
   useEditorChrome,
+  useNodeHold,
 } from "@/features/editor/chrome";
 
 import { CodeBlockChips } from "./CodeBlockChips";
@@ -51,6 +58,7 @@ import {
   type ObjectSurfaceTarget,
   objectSurfaceAt,
   objectSurfaceAtPos,
+  objectSurfaceForHold,
   renderedImage,
 } from "./object-anchors";
 import {
@@ -71,27 +79,26 @@ import "./object-controls.css";
 /** Runs a verb and keeps its answer, success or failure. */
 export type RunVerb = (work: Promise<unknown>, done: string) => void;
 
-/**
- * A menu opened at a point, and the object it was opened on.
- *
- * By ELEMENT, not by position: a position goes stale the moment a peer types
- * above it, and the writer is still looking at the same block. Every render
- * resolves it back, so the menu keeps acting on what was pointed at.
- */
-type ObjectContextMenu = { at: { x: number; y: number }; element: HTMLElement };
+/** Where a right-click landed. Geometry, so the menu opens under the pointer. */
+type MenuPoint = { x: number; y: number };
 
 export function ObjectControls({ editor }: { editor: Editor }) {
   const chrome = useEditorChrome(editor);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<ObjectContextMenu | null>(null);
-  const [fenceMenu, setFenceMenu] = useState<ObjectContextMenu | null>(null);
   const { notice, run } = useVerbFeedback();
 
-  // The lightbox holds an ELEMENT, not a position: a position goes stale the
-  // moment a peer types above it, and the writer is still looking at the same
-  // diagram.
-  const [lightboxElement, setLightboxElement] = useState<HTMLElement | null>(null);
+  // Three surfaces, three holds. A hold is released the moment its object stops
+  // existing, which is what closes the surface: no state here can outlive the
+  // thing it points at.
+  const [contextMenu, holdContextMenu] = useNodeHold(editor);
+  const [fenceMenu, holdFenceMenu] = useNodeHold(editor);
+  const [lightbox, holdLightbox] = useNodeHold(editor);
   const [sourceOpen, setSourceOpen] = useState(false);
+
+  // The pointer's own place, in a ref rather than state: it decides nothing
+  // about what a menu acts on, and it is read once when the menu opens.
+  const contextAt = useRef<MenuPoint | null>(null);
+  const fenceAt = useRef<MenuPoint | null>(null);
 
   // Any open menu here holds the approach: the chip cluster or row must not
   // fade out from under the verbs the writer opened on it.
@@ -102,14 +109,19 @@ export function ObjectControls({ editor }: { editor: Editor }) {
 
   const openLightbox = useCallback(
     (pos: number, withSource = false) => {
-      const found = objectSurfaceAtPos(editor.view, pos);
-      if (!found) return false;
-      setLightboxElement(found.element);
+      if (!objectSurfaceAtPos(editor.view, pos)) return false;
+      holdLightbox(pos);
       setSourceOpen(withSource);
       return true;
     },
-    [editor],
+    [editor, holdLightbox],
   );
+
+  // A diagram a peer deleted takes its dialog with it, and the source hatch
+  // belongs to the dialog rather than to the next one the writer opens.
+  useEffect(() => {
+    if (lightbox === null) setSourceOpen(false);
+  }, [lightbox]);
 
   // Enter and a double-click both engage the selected object (§4, §5.2).
   // Registered per node type, from the mounted component, because the surface
@@ -149,9 +161,11 @@ export function ObjectControls({ editor }: { editor: Editor }) {
         // A plain fence has a caret in it rather than a hidden inside, so it
         // is not an object and its right-click waits for the ladder's floor.
         if (!found || found.kind === "code") return false;
-        // Remembered by element, not by hover: a right-click arrives before
-        // hover intent settles, and the menu must act on what was pointed at.
-        setContextMenu({ at: { x: event.clientX, y: event.clientY }, element: found.element });
+        // Held from the press, not read from hover: a right-click arrives
+        // before hover intent settles, and the menu must act on what was
+        // pointed at.
+        contextAt.current = { x: event.clientX, y: event.clientY };
+        holdContextMenu(found.pos);
         // Selecting it says which object the menu is about, and leaves the page
         // in the state Esc walks home from.
         const selected = selectObjectTransaction(editor.state, found.pos);
@@ -159,34 +173,31 @@ export function ObjectControls({ editor }: { editor: Editor }) {
         return true;
       },
     });
-  }, [chrome, editor]);
+  }, [chrome, editor, holdContextMenu]);
 
   // The ladder's floor for a caret in a plain fence. The fence's position comes
-  // from the kernel's own resolver; the element is what the menu then holds, so
-  // a peer typing above it does not point the verbs at another block.
+  // from the kernel's own resolver, and the hold is what the menu then carries,
+  // so a peer typing above it does not point the verbs at another block.
   useEffect(() => {
     if (!chrome) return;
     return chrome.registerContextClaim({
       id: "caret",
       claim: (target) => {
         const pos = fenceUnderPointer(editor, target);
-        if (pos === null) return false;
-        const found = objectSurfaceAtPos(editor.view, pos);
-        if (!found) return false;
-        setFenceMenu({
-          at: { x: target.event.clientX, y: target.event.clientY },
-          element: found.element,
-        });
+        if (pos === null || !objectSurfaceAtPos(editor.view, pos)) return false;
+        fenceAt.current = { x: target.event.clientX, y: target.event.clientY };
+        holdFenceMenu(pos);
         return true;
       },
     });
-  }, [chrome, editor]);
+  }, [chrome, editor, holdFenceMenu]);
 
-  const lightboxTarget = lightboxElement ? objectSurfaceAt(editor.view, lightboxElement) : null;
-  // Re-resolved every render, so the menu keeps acting on the object it was
-  // opened on even as the document moves under it.
-  const contextTarget = contextMenu ? objectSurfaceAt(editor.view, contextMenu.element) : null;
-  const fenceTarget = fenceMenu ? objectSurfaceAt(editor.view, fenceMenu.element) : null;
+  // Resolved every render, so each surface keeps acting on the object it was
+  // opened on as the document moves under it. Null while a node view is being
+  // rebuilt: the surface stays open on its hold and paints again next frame.
+  const lightboxTarget = objectSurfaceForHold(editor.view, lightbox);
+  const contextTarget = objectSurfaceForHold(editor.view, contextMenu);
+  const fenceTarget = objectSurfaceForHold(editor.view, fenceMenu);
 
   return (
     <>
@@ -225,34 +236,36 @@ export function ObjectControls({ editor }: { editor: Editor }) {
         />
       ) : null}
 
-      {contextTarget ? (
+      {contextMenu ? (
         <EditorMenu
           editor={editor}
           id="object-context-menu"
           open
-          onOpenChange={(open) => !open && setContextMenu(null)}
-          at={contextMenu?.at ?? null}
+          onOpenChange={(open) => !open && holdContextMenu(null)}
+          at={contextAt.current}
         >
-          {objectMenuItems({ editor, target: contextTarget, run, openLightbox })}
+          {contextTarget
+            ? objectMenuItems({ editor, target: contextTarget, run, openLightbox })
+            : null}
         </EditorMenu>
       ) : null}
 
-      {fenceTarget ? (
+      {fenceMenu ? (
         <EditorMenu
           editor={editor}
           id="fence-context-menu"
           open
-          onOpenChange={(open) => !open && setFenceMenu(null)}
-          at={fenceMenu?.at ?? null}
+          onOpenChange={(open) => !open && holdFenceMenu(null)}
+          at={fenceAt.current}
         >
-          <FenceMenuItems editor={editor} target={fenceTarget} run={run} />
+          {fenceTarget ? <FenceMenuItems editor={editor} target={fenceTarget} run={run} /> : null}
         </EditorMenu>
       ) : null}
 
       <ObjectLightbox
         editor={editor}
         target={lightboxTarget}
-        open={lightboxElement !== null}
+        open={lightbox !== null}
         onOpenChange={(open) => {
           if (open) return;
           // Law 3 walks home one step at a time, so closing the dialog has to
@@ -263,8 +276,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
             const selected = selectObjectTransaction(editor.state, lightboxTarget.pos);
             if (selected) editor.view.dispatch(selected);
           }
-          setLightboxElement(null);
-          setSourceOpen(false);
+          holdLightbox(null);
         }}
         sourceOpen={sourceOpen}
         onSourceOpenChange={setSourceOpen}

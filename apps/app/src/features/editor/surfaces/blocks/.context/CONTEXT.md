@@ -40,7 +40,7 @@ or an AI write can land while the pointer is down (law 9 gates nothing), and
 the block the writer grabbed has to be the block that lands. One hold beats one
 per consumer.
 
-It is a `BlockHold`, not a number. A peer's write arrives as a replacement of
+It is a `NodeHold` taken with `holdBlock`, not a number. A peer's write arrives as a replacement of
 the whole document (see
 [the position contract](../../../../../core/editor/.context/CONTEXT.md)), so a
 mapped number reports the grab deleted on every peer keystroke — which used to

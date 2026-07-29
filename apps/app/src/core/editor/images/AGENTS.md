@@ -52,10 +52,12 @@ every door refuses out loud rather than opening onto nothing.
   attributes double as the node view's repaint signal, which is why
   `MeridianImage`'s node view passes an explicit `update` — a picture in flight
   never changes its node.
-- **Identity is an `EditorAnchor` plus a read-back.** A remote write replaces the
-  whole document; a number would point at nothing, and a deleted picture's anchor
-  resolves to the seam it left behind. Every read checks the node it lands on is
-  still a pending image (`resolvePendingImage`).
+- **A pending picture is held the way every long-lived surface here holds its
+  target**: a `NodeHold` from `anchors.ts` (the anchor for where, the Yjs element
+  for which). A remote write replaces the whole document, so a number points at
+  nothing and a deleted picture's anchor resolves to the seam it left behind. An
+  import is the exception the hold itself names: it holds a range of TEXT, so it
+  reads its own link back the way a link range does.
 - **Losing the slot cancels the upload.** Deleting the node, or undoing its
   insert, orphans the entry; the sweep aborts the request. Nothing is written
   into a slot the writer took back.

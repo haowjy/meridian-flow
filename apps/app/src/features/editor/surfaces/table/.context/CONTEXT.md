@@ -84,8 +84,16 @@ peer deleting the row — the anchor is released whole: open menu closed,
 anchor dropped, and any open grip menu closed with it. Closing the menu is the
 load-bearing part. An open menu holds the anchor still so a stray hover cannot
 move the grips out from under it, so a menu that outlived its own row would
-pin the surface to a dead element and no later hover could replace it: the
+pin the surface to a cell nobody is on and no later hover could replace it: the
 table's chrome never came back.
+
+What "the cell" means here is the hold, not the element. The approach settles on
+a `NodeHold` and `useNodeHold` carries it through every transaction, so a rebuild
+that replaces the `<td>` moves the grips and a rebuild that takes the cell away
+releases them. `cellElementAt` is the crossing back to geometry and
+`cellDocPosition` the crossing in from the pointer; the pointer's last reading is
+a number and `isTableCellPos` is what it has to survive, because a verb run from
+the open menu moves every cell after the one the reading described.
 
 Opacity on the container fades all four together. Opacity makes a stacking
 context but **not** a containing block, so the fixed children still resolve

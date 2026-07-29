@@ -13,7 +13,7 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 
-import { anchorRange } from "../anchors";
+import { holdNode } from "../anchors";
 import type { ImageIngressHost, UploadedImage } from "./image-ingress-ports";
 import {
   type ImageIngressMessage,
@@ -168,12 +168,16 @@ export function startUpload(
   host: ImageIngressHost,
   input: { file: File; alt: string; at: number },
 ): void {
+  const hold = holdNode(editor.state, input.at);
+  // Only a document with no picture at `input.at` answers null, which the
+  // insertion this follows has just ruled out.
+  if (!hold) return;
   const controller = new AbortController();
   const id = nextIngressId("image-upload");
   const entry: PendingImageUpload = {
     kind: "upload",
     id,
-    hold: anchorRange(editor.state, { from: input.at, to: input.at + 1 }),
+    hold,
     filename: input.file.name,
     alt: input.alt,
     file: input.file,

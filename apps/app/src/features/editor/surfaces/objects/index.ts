@@ -23,6 +23,7 @@ export {
   objectPosForElement,
   objectSurfaceAt,
   objectSurfaceAtPos,
+  objectSurfaceForHold,
 } from "./object-anchors";
 export {
   copyImageFrom,

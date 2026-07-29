@@ -7,11 +7,13 @@ import { type CollabPair, createCollabPair } from "@/test-support/collab-editors
 import {
   anchorPosition,
   anchorRange,
-  type BlockHold,
   followAnchor,
   followBlock,
+  followNode,
   holdBlock,
+  holdNode,
   isRemoteDocumentRebuild,
+  type NodeHold,
   resolveAnchor,
 } from "./anchors";
 import { createStandaloneEditorExtensions } from "./config";
@@ -153,12 +155,12 @@ describe("editor anchors under a peer's write", () => {
 
 describe("holding a block across a change", () => {
   /** Dispatch and answer where the hold landed, the way the surface does. */
-  function afterDispatch(instance: Editor, hold: BlockHold, tr: Transaction): BlockHold | null {
+  function afterDispatch(instance: Editor, hold: NodeHold, tr: Transaction): NodeHold | null {
     instance.view.dispatch(tr);
     return followBlock(instance.state, hold, tr.mapping);
   }
 
-  function holdOf(instance: Editor, index: number): BlockHold {
+  function holdOf(instance: Editor, index: number): NodeHold {
     const hold = holdBlock(instance.state, blockStart(instance, index));
     if (!hold) throw new Error("no hold");
     return hold;
@@ -283,3 +285,131 @@ describe("holding a block across a change", () => {
     expect(followBlock(pair.local.state, hold, transaction.mapping)).toBeNull();
   });
 });
+
+/**
+ * A hold is not a block-level idea. An inline image lives in a paragraph's
+ * inline content and a table cell lives two levels down, and both are things a
+ * long-lived surface aims verbs at — so the identity behind a hold has to be
+ * findable at any depth, with a run of text counting as ONE Yjs child.
+ */
+describe("holding a node nested inside the document", () => {
+  const IMAGE_PARAGRAPH: JSONContent = {
+    type: "paragraph",
+    content: [
+      { type: "text", text: "look " },
+      { type: "image", attrs: { src: "asset:one" } },
+      { type: "text", text: " there" },
+    ],
+  };
+
+  function posOf(instance: Editor, typeName: string): number {
+    let found: number | null = null;
+    instance.state.doc.descendants((node, pos) => {
+      if (found === null && node.type.name === typeName) found = pos;
+      return found === null;
+    });
+    if (found === null) throw new Error(`no ${typeName} in the fixture`);
+    return found;
+  }
+
+  it("keeps an inline image through a peer typing in front of it", () => {
+    pair = createCollabPair({ type: "doc", content: [paragraph("first"), IMAGE_PARAGRAPH] });
+    const { local } = pair;
+    const at = posOf(local, "image");
+    const hold = holdNode(local.state, at);
+    expect(hold?.identity).not.toBeNull();
+
+    const { transaction } = peerWrite(({ peer }) => {
+      peer.commands.insertContentAt(posOf(peer, "image") - 1, "PEER");
+    });
+
+    // What the mapping alone would have answered: gone.
+    expect(transaction.mapping.mapResult(at).deleted).toBe(true);
+    if (!hold) throw new Error("no hold");
+    const followed = followNode(local.state, hold, transaction.mapping);
+    expect(followed?.from).toBe(at + 4);
+    expect(local.state.doc.nodeAt(followed?.from ?? -1)?.type.name).toBe("image");
+  });
+
+  it("keeps a table cell through a peer's write in the paragraph above", () => {
+    pair = createCollabPair({
+      type: "doc",
+      content: [
+        paragraph("intro"),
+        table([
+          ["a", "b"],
+          ["c", "d"],
+        ]),
+      ],
+    });
+    const { local } = pair;
+    const at = secondCellPos(local);
+    const hold = holdNode(local.state, at);
+    expect(hold?.nodeType).toBe("table_cell");
+    expect(hold?.identity).not.toBeNull();
+    if (!hold) throw new Error("no hold");
+
+    const { transaction } = peerWrite(({ peer }) => {
+      peer.commands.insertContentAt(1, "PEER ");
+    });
+
+    const followed = followNode(local.state, hold, transaction.mapping);
+    expect(followed?.from).toBe(at + 5);
+    expect(local.state.doc.nodeAt(followed?.from ?? -1)?.textContent).toBe("b");
+  });
+
+  it("lets go when a peer deletes the row the held cell was in", () => {
+    pair = createCollabPair({
+      type: "doc",
+      content: [
+        table([
+          ["a", "b"],
+          ["c", "d"],
+        ]),
+      ],
+    });
+    const { local } = pair;
+    const hold = holdNode(local.state, secondCellPos(local));
+    if (!hold) throw new Error("no hold");
+
+    const { transaction } = peerWrite(({ peer }) => {
+      const row = peer.state.doc.resolve(secondCellPos(peer)).before(2);
+      peer.commands.deleteRange({
+        from: row,
+        to: row + (peer.state.doc.nodeAt(row)?.nodeSize ?? 0),
+      });
+    });
+
+    expect(followNode(local.state, hold, transaction.mapping)).toBeNull();
+  });
+
+  it("refuses a position that holds text rather than a node", () => {
+    const instance = mount([paragraph("one")]);
+    expect(holdNode(instance.state, 1)).toBeNull();
+  });
+});
+
+/** The second cell of the first row: `b` in the fixtures above. */
+function secondCellPos(instance: Editor): number {
+  let found: number | null = null;
+  instance.state.doc.descendants((node, pos) => {
+    if (node.type.name !== "table_cell") return true;
+    if (node.textContent === "b") found = pos;
+    return found === null;
+  });
+  if (found === null) throw new Error("no second cell in the fixture");
+  return found;
+}
+
+function table(rows: string[][]): JSONContent {
+  return {
+    type: "table",
+    content: rows.map((cells) => ({
+      type: "table_row",
+      content: cells.map((text) => ({
+        type: "table_cell",
+        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+      })),
+    })),
+  };
+}

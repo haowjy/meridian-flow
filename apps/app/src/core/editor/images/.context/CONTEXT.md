@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TD
   door["picker / drop / pasted file"] --> slot["insert image node, src empty"]
-  slot --> entry["plugin entry: anchored hold, file, abort"]
+  slot --> entry["plugin entry: node hold, file, abort"]
   entry --> measure["measure the file locally, frame set"]
   entry --> upload["port: upload with signal + onProgress"]
   upload -->|percent| entry
@@ -16,7 +16,7 @@ flowchart TD
 
 Each step's rule:
 
-- **Insert first.** `image-uploads.ts`'s `insertImageFile` opens the slot and only then calls the
+- **Insert first, then take hold.** `image-uploads.ts`'s `insertImageFile` opens the slot and only then calls the
   port. `image` is an inline atom (§5.6), so it goes inline where the position
   can hold one and in a paragraph of its own after the block where it cannot.
   A position that can take neither is the one refusal.
@@ -81,6 +81,14 @@ its transaction exists:
 3. The microtask settle pins those numbers as an anchor and starts one import per
    address. Each import owns its own entry, so a refusal cannot report for an
    import that is still working.
+
+## Holds
+
+An upload's hold is `holdNode(state, pos)` — the same `NodeHold` the object row,
+the table grip, and a block drag use, so there is one identity mechanism in the
+editor and `resolveNodeHold` does the read-back. An import's is a plain
+`EditorAnchor` plus `pastedImageLinkRange`, because its placeholder is text and
+text has no Yjs element of its own (`anchors.ts` states that rule).
 
 ## Invariants worth a test
 

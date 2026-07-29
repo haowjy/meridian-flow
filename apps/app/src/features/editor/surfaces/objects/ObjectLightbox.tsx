@@ -60,7 +60,11 @@ export function ObjectLightbox({
     <EditorDialog
       editor={editor}
       id="object-lightbox"
-      open={open && target !== null}
+      // Open on its hold rather than on the resolved target: a remote write
+      // rebuilds the node view under the dialog, and the writer is still
+      // looking at the same diagram. A frame with nothing to draw is a frame,
+      // and closing here would lose the dialog on every peer keystroke.
+      open={open}
       onOpenChange={onOpenChange}
       title={isDiagram ? t`Diagram` : t`Image`}
       className="meridian-object-lightbox"

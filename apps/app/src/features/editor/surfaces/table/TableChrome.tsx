@@ -15,6 +15,12 @@
  * mounted by the table extension), restyled to Q6's hover-only hairline. It
  * writes widths to `colwidth`, which is exactly what the `Layout widths`
  * codec reads, so persistence needed nothing from this lane.
+ *
+ * **Elements are geometry, holds are identity.** The approach settles on a
+ * `NodeHold` of the cell; the cell's element is resolved from it for each
+ * measurement. So a peer's write that rebuilds the table moves the grips instead
+ * of closing the menu open on them, and the anchor is released only when the
+ * cell itself is gone or has left the manuscript's pane.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -32,6 +38,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { resolveNodeHold } from "@/core/editor/anchors";
 import { editorChromeAttributes, hoverOwner, watchManuscriptLayout } from "@/core/editor/chrome";
 
 import {
@@ -40,6 +47,7 @@ import {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
+  useNodeHold,
 } from "../../chrome";
 import {
   TableCellMenuItems,
@@ -50,6 +58,8 @@ import {
 } from "./TableVerbMenu";
 import {
   cellDocPosition,
+  cellElementAt,
+  isTableCellPos,
   measureTableChrome,
   pointerHoldsTableChrome,
   sameTableChromeRects,
@@ -75,7 +85,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const suppressed = useChromeSuppressed(editor);
   const editable = editor.isEditable;
 
-  const [anchorCell, setAnchorCell] = useState<HTMLElement | null>(null);
+  const [anchorCell, holdAnchorCell] = useNodeHold(editor);
   const [hovering, setHovering] = useState(false);
   const [openMenu, setOpenMenu] = useState<Axis | null>(null);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
@@ -84,31 +94,52 @@ export function TableChrome({ editor }: { editor: Editor }) {
   // What the approach last settled on, whether or not this surface was free to
   // move its anchor there. A menu holds the grips still while it is open, and
   // the pointer's real place has to be readable again on close.
-  const settledCell = useRef<HTMLElement | null>(null);
+  const settledCell = useRef<number | null>(null);
   const openMenuRef = useRef<Axis | null>(null);
   openMenuRef.current = openMenu;
 
   /**
    * The hovered cell has left the manuscript's pane — scrolled out, or taken
    * away by a peer's write. Everything aimed at it goes with it: an open menu
-   * that outlived its row would keep this surface's anchor pinned to a dead
-   * element, and the grips would never come back.
+   * that outlived its row would offer row verbs against whatever the selection
+   * has become.
    */
   const releaseAnchor = useCallback(() => {
     setOpenMenu(null);
-    setAnchorCell(null);
+    holdAnchorCell(null);
     setHovering(false);
-  }, []);
+  }, [holdAnchorCell]);
 
-  const rects = useTableChromeRects(editor, anchorCell, releaseAnchor);
+  // Where the held cell is now, and what is drawing it. Read fresh every
+  // render: a rebuild replaces the element while the cell itself stays, and
+  // grips measured from the old one would hang beside a row nobody is on.
+  const anchorPos = anchorCell ? (resolveNodeHold(editor.state, anchorCell)?.from ?? null) : null;
+  const rects = useTableChromeRects(
+    editor,
+    anchorPos === null ? null : cellElementAt(editor.view, anchorPos),
+    releaseAnchor,
+  );
+
+  // A cell a peer took away takes the menu aimed at it with it. The hold is
+  // already gone by the time this runs; what it cannot know is that this
+  // surface had a menu open on it.
+  useEffect(() => {
+    if (anchorCell === null) {
+      setOpenMenu(null);
+      setHovering(false);
+    }
+  }, [anchorCell]);
 
   // A menu held the anchor still while it was open, so the pointer's real
   // position has to be read back on close or the grips linger where it left.
   const syncHover = useCallback(() => {
+    // Verified rather than trusted: a verb the menu just ran may have moved
+    // every cell after the one the pointer was last read over.
     const settled = settledCell.current;
-    if (settled) setAnchorCell(settled);
-    setHovering(settled !== null);
-  }, []);
+    const pos = settled !== null && isTableCellPos(editor.view, settled) ? settled : null;
+    holdAnchorCell(pos);
+    setHovering(pos !== null);
+  }, [editor, holdAnchorCell]);
 
   /**
    * The approach. This lane answers one question — which cell is at this point
@@ -124,34 +155,49 @@ export function TableChrome({ editor }: { editor: Editor }) {
    */
   useEffect(() => {
     if (!chrome || !editable) return;
-    return chrome.registerHoverAnchor<HTMLElement>({
+    return chrome.registerHoverAnchor<number>({
       id: "table-chrome",
       probe: ({ element }) => {
         const cell = tableCellUnder(editor.view, element);
-        if (!cell) return null;
+        const pos = cell && cellDocPosition(editor.view, cell);
+        if (!cell || pos === null) return null;
         const owner = hoverOwner(editor.view, cell);
-        return owner ? { owner, value: cell } : null;
+        return owner ? { owner, value: pos } : null;
       },
-      holds: (cell, { x, y }) => pointerHoldsTableChrome(cell, x, y),
-      onSettle: (cell) => {
-        settledCell.current = cell;
+      holds: (pos, { x, y }) => {
+        const cell = cellElementAt(editor.view, pos);
+        return cell !== null && pointerHoldsTableChrome(cell, x, y);
+      },
+      onSettle: (pos) => {
+        settledCell.current = pos;
         // An open menu owns the anchor: letting a stray hover move the grips
         // out from under the menu would leave it pointing at another row.
         if (openMenuRef.current) return;
-        if (cell) setAnchorCell(cell);
-        setHovering(cell !== null);
+        if (pos !== null) holdAnchorCell(pos);
+        setHovering(pos !== null);
       },
     });
-  }, [chrome, editor, editable]);
+  }, [chrome, editor, editable, holdAnchorCell]);
 
   const selectAxis = useCallback(
-    (axis: Axis) => {
-      if (!anchorCell) return false;
-      const cellPos = cellDocPosition(editor.view, anchorCell);
-      return cellPos === null ? false : selectTableAxis(editor, cellPos, axis);
-    },
-    [anchorCell, editor],
+    (axis: Axis) => (anchorPos === null ? false : selectTableAxis(editor, anchorPos, axis)),
+    [anchorPos, editor],
   );
+
+  /**
+   * An open grip menu re-arms its axis whenever the held cell moves.
+   *
+   * Every verb on that menu reads the selection, and a rectangle of cells is the
+   * one selection a remote write cannot carry: the Yjs binding restores the
+   * writer's place as a caret, so the row the writer opened the menu on stops
+   * being selected the moment a collaborator types anywhere. Re-arming is safe
+   * because an open menu already owns the anchor, and it runs only when the cell
+   * moved — never against a selection the writer made themselves.
+   */
+  useEffect(() => {
+    if (openMenu === null || anchorPos === null) return;
+    selectAxis(openMenu);
+  }, [anchorPos, openMenu, selectAxis]);
 
   // A right-click on a grip is the same door as a left-click: one entry point,
   // so the menu cannot behave differently depending on which button opened it.
@@ -210,7 +256,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
   return (
     <>
-      {rects && anchorCell && editable && chrome
+      {rects && anchorPos !== null && editable && chrome
         ? createPortal(
             <div
               className="meridian-table-chrome"
@@ -271,13 +317,13 @@ export function TableChrome({ editor }: { editor: Editor }) {
               <AddTab
                 axis="column"
                 label={tableChromeCopy.addColumn()}
-                onSelect={() => appendFrom(editor, anchorCell, "column")}
+                onSelect={() => appendTableAxis(editor, anchorPos, "column")}
                 piece={rects.addColumn}
               />
               <AddTab
                 axis="row"
                 label={tableChromeCopy.addRow()}
-                onSelect={() => appendFrom(editor, anchorCell, "row")}
+                onSelect={() => appendTableAxis(editor, anchorPos, "row")}
                 piece={rects.addRow}
               />
             </div>,
@@ -327,12 +373,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
       />
     </>
   );
-}
-
-function appendFrom(editor: Editor, cell: HTMLElement | null, axis: Axis) {
-  if (!cell) return;
-  const cellPos = cellDocPosition(editor.view, cell);
-  if (cellPos !== null) appendTableAxis(editor, cellPos, axis);
 }
 
 /**
