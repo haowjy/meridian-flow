@@ -158,7 +158,11 @@ function pickCursorColor(awareness: Awareness): string {
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
-  dropcursor: false,
+  // Dropcursor is display-only, like gapcursor below: it draws where dragged
+  // text will land and touches neither schema nor wire. It had been swept
+  // into this list with the real Yjs exclusions, which left a text drag with
+  // no landing indicator at all. Jade, matching the block drag's drop line.
+  dropcursor: { color: "var(--color-primary)", width: 2 },
   // Gapcursor is deliberately ABSENT from this list (absent = enabled): it is
   // display-only (no schema or wire impact) and it is the caret's only way
   // BELOW a trailing table — without it a writer can reach the document end

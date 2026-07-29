@@ -33,6 +33,20 @@ the Esc chain), `open`, `onOpenChange`. All three bake in the layer
 registration, the Escape deferral, the focus return, and `layer.scope(children)`
 so a layer opened inside them is recognised as the deeper one.
 
+### A refused row
+
+`EditorMenuItem` and `EditorMenuCheckboxItem` take `blockedReason` on top of
+Radix's own props. A row with one greys (`aria-disabled` + `cursor-not-allowed`
++ half opacity), swallows its `onSelect` so the menu stays open under the
+writer, and mounts a `ReasonTooltip` that opens on hover and on focus — the
+reason is never standing text on the row.
+
+`EditorMenu` puts a `TooltipProvider` inside its content, which is what those
+tooltips read; a row rendered outside an `EditorMenu` has to bring its own. The
+tooltip's first line is the row's `aria-label` when it has one — an icon-only
+row has no label on screen, and the tooltip is where its name lives whether or
+not it can run.
+
 ### One surface opening another
 
 This is the seam every lane hits: a menu item that opens a form. Two things
@@ -179,4 +193,5 @@ chrome. Both answer safely on an editor with no kernel.
   that knows its node view's shape.
 - **Hover tracking.** The kernel supplies the timing policy, not the pointer
   listeners.
-- **Menu contents.** Every item, its copy, and its command.
+- **Menu contents.** Every item, its copy, and its command — including which
+  reason applies, though never how a reason is drawn.

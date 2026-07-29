@@ -29,9 +29,8 @@ import {
   Repeat,
   Strikethrough,
 } from "lucide-react";
-import { type ComponentType, type ReactNode, useRef, useState } from "react";
+import { type ComponentType, useRef, useState } from "react";
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { openLinkForm } from "@/core/editor/links";
 import { cn } from "@/lib/utils";
 import {
@@ -100,9 +99,7 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
       at={anchor}
     >
       {model ? (
-        // Delayed, like the toolbar's: a pointer crossing four dense icons
-        // should not set off four tooltips, but resting on one must answer.
-        <TooltipProvider delayDuration={400}>
+        <>
           <div className="flex items-center gap-0.5 px-1 py-0.5">
             {FORMATTING_MARK_IDS.map((id) => (
               <MarkButton key={id} id={id} state={model.marks[id]} editor={editor} />
@@ -133,7 +130,7 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
           ) : null}
           <EditorMenuSeparator />
           <ClipboardMenuItems editor={editor} />
-        </TooltipProvider>
+        </>
       ) : null}
     </EditorMenu>
   );
@@ -149,33 +146,22 @@ function MarkButton({
   editor: Editor;
 }) {
   const label = formattingMarkLabel(id);
-  const reason = formattingBlockedMessage("mark", state.blockedBy);
   const Icon = MARK_ICONS[id];
 
   return (
-    <ReasonTooltip label={label} reason={reason}>
-      <EditorMenuItem
-        aria-label={label}
-        aria-pressed={state.active || undefined}
-        aria-disabled={reason ? true : undefined}
-        className={cn(
-          "size-8 justify-center rounded-sm p-0",
-          state.active && "bg-primary/10",
-          reason && "opacity-50",
-        )}
-        onSelect={(event) => {
-          if (reason) {
-            event.preventDefault();
-            return;
-          }
-          toggleTextMark(editor, FORMATTING_MARKS[id]);
-        }}
-      >
-        {/* An explicit text colour every time: the menu's own rule mutes any
-            icon that has none, which would swallow the lit state. */}
-        <Icon className={cn("size-4", state.active ? "text-primary" : "text-foreground")} />
-      </EditorMenuItem>
-    </ReasonTooltip>
+    // Icon-only, so the row's own tooltip names it — from `aria-label`, whether
+    // or not it can run.
+    <EditorMenuItem
+      aria-label={label}
+      aria-pressed={state.active || undefined}
+      blockedReason={formattingBlockedMessage("mark", state.blockedBy)}
+      className={cn("size-8 justify-center rounded-sm p-0", state.active && "bg-primary/10")}
+      onSelect={() => toggleTextMark(editor, FORMATTING_MARKS[id])}
+    >
+      {/* An explicit text colour every time: the menu's own rule mutes any
+          icon that has none, which would swallow the lit state. */}
+      <Icon className={cn("size-4", state.active ? "text-primary" : "text-foreground")} />
+    </EditorMenuItem>
   );
 }
 
@@ -185,21 +171,14 @@ function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Edito
   const blockedReason = formattingBlockedMessage("block-type", model.turnIntoBlockedBy);
 
   // Every type refuses for one reason, so the list is not worth opening: the
-  // trigger greys and carries the reason itself. Radix's `disabled` would take
-  // it out of the hover and focus path and the reason with it (law 5).
+  // trigger greys in the list's place and answers for all eight.
   if (blockedReason) {
     return (
-      <ReasonTooltip reason={blockedReason}>
-        <EditorMenuItem
-          aria-disabled
-          className="opacity-50"
-          onSelect={(event) => event.preventDefault()}
-        >
-          <Repeat aria-hidden />
-          {label}
-          <ChevronRight className="ml-auto" aria-hidden />
-        </EditorMenuItem>
-      </ReasonTooltip>
+      <EditorMenuItem blockedReason={blockedReason}>
+        <Repeat aria-hidden />
+        {label}
+        <ChevronRight className="ml-auto" aria-hidden />
+      </EditorMenuItem>
     );
   }
 
@@ -237,25 +216,14 @@ function TurnIntoItem({
   state: FormattingItemState;
   editor: Editor;
 }) {
-  const reason = formattingBlockedMessage("block-type", state.blockedBy);
-
   return (
-    <ReasonTooltip reason={reason}>
-      <EditorMenuCheckboxItem
-        checked={state.active}
-        aria-disabled={reason ? true : undefined}
-        className={cn(reason && "opacity-50")}
-        onSelect={(event) => {
-          if (reason) {
-            event.preventDefault();
-            return;
-          }
-          turnIntoBlockType(editor, id);
-        }}
-      >
-        {blockTypeLabel(id)}
-      </EditorMenuCheckboxItem>
-    </ReasonTooltip>
+    <EditorMenuCheckboxItem
+      checked={state.active}
+      blockedReason={formattingBlockedMessage("block-type", state.blockedBy)}
+      onSelect={() => turnIntoBlockType(editor, id)}
+    >
+      {blockTypeLabel(id)}
+    </EditorMenuCheckboxItem>
   );
 }
 
@@ -274,52 +242,14 @@ function FormattingItem({
   state: FormattingItemState;
   onSelect: () => void;
 }) {
-  const reason = formattingBlockedMessage(subject, state.blockedBy);
-
   return (
-    <ReasonTooltip reason={reason}>
-      <EditorMenuItem
-        aria-disabled={reason ? true : undefined}
-        className={cn(reason && "opacity-50")}
-        onSelect={(event) => {
-          if (reason) {
-            event.preventDefault();
-            return;
-          }
-          onSelect();
-        }}
-      >
-        <Icon />
-        {label}
-        {shortcut ? <EditorMenuShortcut>{shortcut}</EditorMenuShortcut> : null}
-      </EditorMenuItem>
-    </ReasonTooltip>
-  );
-}
-
-/**
- * The reason a greyed item carries. Labelled items say what they are already;
- * the icon-only marks row needs its label here too, which is why both are
- * optional and either one earns a tooltip.
- */
-function ReasonTooltip({
-  label,
-  reason,
-  children,
-}: {
-  label?: string;
-  reason: string | null;
-  children: ReactNode;
-}) {
-  if (!label && !reason) return <>{children}</>;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="right" className="max-w-56">
-        {label ? <span className="block">{label}</span> : null}
-        {reason ? <span className="block text-background/70">{reason}</span> : null}
-      </TooltipContent>
-    </Tooltip>
+    <EditorMenuItem
+      blockedReason={formattingBlockedMessage(subject, state.blockedBy)}
+      onSelect={onSelect}
+    >
+      <Icon />
+      {label}
+      {shortcut ? <EditorMenuShortcut>{shortcut}</EditorMenuShortcut> : null}
+    </EditorMenuItem>
   );
 }

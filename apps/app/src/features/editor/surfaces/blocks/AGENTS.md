@@ -93,9 +93,9 @@ gesture is holding, and whether it has lifted.
   heading must be unable to from every door, and one rule is how that stays
   true.
 - **Two law-5 shapes.** A move with nowhere to go is absent; a conversion the
-  schema refuses is present with its reason in view. Menu items may take
-  Radix's `disabled` because the reason is rendered text, not a tooltip — the
-  toolbar greys instead only because its reasons live in tooltips.
+  schema refuses is present, greyed, and says why when the writer reaches it.
+  Refused rows pass `blockedReason` and never Radix's `disabled`, which would
+  take the hover and focus path away and the reason with it.
 - **Reach the chrome primitives by module, not through `chrome/index.ts`.**
   That barrel also carries the surface registry this lane is listed in, so the
   round trip is a module cycle.

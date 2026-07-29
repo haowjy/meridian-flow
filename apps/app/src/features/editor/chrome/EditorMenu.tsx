@@ -25,9 +25,17 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useChromeLayer } from "./chrome-layers";
 import { pointerAnchorStyle } from "./pointer-anchor";
+
+/**
+ * How long a pointer rests on a row before that row says why it is grey. A
+ * pointer crossing dense rows should not set off a tooltip on each one; the
+ * toolbar waits the same.
+ */
+const REASON_DELAY_MS = 400;
 
 export type EditorMenuProps = {
   editor: Editor | null;
@@ -102,16 +110,17 @@ export function EditorMenu({
         onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
-        {layer.scope(children)}
+        {/* Every greyed row inside answers from here, submenus included: their
+            content is this content's child, and context reaches through the
+            portal Radix sends it out on. */}
+        <TooltipProvider delayDuration={REASON_DELAY_MS}>{layer.scope(children)}</TooltipProvider>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 export {
-  DropdownMenuCheckboxItem as EditorMenuCheckboxItem,
   DropdownMenuGroup as EditorMenuGroup,
-  DropdownMenuItem as EditorMenuItem,
   DropdownMenuLabel as EditorMenuLabel,
   DropdownMenuRadioGroup as EditorMenuRadioGroup,
   DropdownMenuRadioItem as EditorMenuRadioItem,
@@ -121,3 +130,10 @@ export {
   DropdownMenuSubContent as EditorMenuSubContent,
   DropdownMenuSubTrigger as EditorMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
+export {
+  EditorMenuCheckboxItem,
+  type EditorMenuCheckboxItemProps,
+  EditorMenuItem,
+  type EditorMenuItemProps,
+} from "./EditorMenuItem";
+export { ReasonTooltip, type ReasonTooltipProps } from "./ReasonTooltip";

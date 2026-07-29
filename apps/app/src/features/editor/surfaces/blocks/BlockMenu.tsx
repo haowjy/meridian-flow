@@ -7,12 +7,12 @@
  * Two law-5 shapes, and the difference is deliberate. A move that has nowhere
  * to go is ABSENT: a block already at the top of the document has no "up", and
  * saying so would be a row that exists to be dead. A conversion that the
- * schema refuses is PRESENT with its reason in view, because the writer asked
- * for something real and is owed the answer — a code fence keeps its language,
- * an embedded component keeps its props. The reason is rendered text rather
- * than a tooltip, which is why these items may take Radix's `disabled`: the
- * toolbar greys instead only because its reasons live in tooltips, and a
- * disabled button never opens one.
+ * schema refuses is PRESENT and greyed, because the writer asked for something
+ * real and is owed the answer — a code fence keeps its language, an embedded
+ * component keeps its props. The answer arrives when they reach the row, from
+ * the shared row's tooltip, so every refused row here wears `blockedReason`
+ * rather than Radix's `disabled`, which would take hover and focus away and
+ * the reason with them.
  */
 
 import { t } from "@lingui/core/macro";
@@ -44,7 +44,6 @@ import { cn } from "@/lib/utils";
 import {
   EditorMenu,
   EditorMenuItem,
-  EditorMenuLabel,
   EditorMenuSeparator,
   EditorMenuShortcut,
   EditorMenuSub,
@@ -145,12 +144,9 @@ function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarg
   // dead ones.
   if (refused.length === targets.length) {
     return (
-      <EditorMenuItem disabled className="flex-col items-start gap-0.5">
-        <span className="flex items-center gap-2">
-          <Type aria-hidden />
-          {blockMenuLabel("turnInto")}
-        </span>
-        {reason ? <span className="pl-6 text-muted-foreground text-xs">{reason}</span> : null}
+      <EditorMenuItem blockedReason={reason}>
+        <Type aria-hidden />
+        {blockMenuLabel("turnInto")}
       </EditorMenuItem>
     );
   }
@@ -162,15 +158,10 @@ function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarg
         {blockMenuLabel("turnInto")}
       </EditorMenuSubTrigger>
       <EditorMenuSubContent className="min-w-48">
-        {reason ? (
-          <EditorMenuLabel className="font-normal text-muted-foreground text-xs">
-            {reason}
-          </EditorMenuLabel>
-        ) : null}
         {targets.map((option) => (
           <EditorMenuItem
             key={option.id}
-            disabled={Boolean(option.blockedBy)}
+            blockedReason={option.blockedBy ? blockTypeReasonMessage(option.blockedBy) : null}
             onSelect={() => turnIntoBlockType(editor, option.id)}
           >
             {turnIntoIcon(option.id)}
