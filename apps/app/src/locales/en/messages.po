@@ -545,6 +545,7 @@ msgid "Code blocks take no links."
 msgstr "Code blocks take no links."
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Code copied"
 msgstr "Code copied"
 
@@ -575,6 +576,10 @@ msgstr "Collapse sidebar  ["
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
 msgstr "Color theme"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Column"
+msgstr "Column"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Column options"
@@ -611,6 +616,7 @@ msgid "Copy"
 msgstr "Copy"
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Copy code"
 msgstr "Copy code"
 
@@ -805,7 +811,7 @@ msgid "Default alignment"
 msgstr "Default alignment"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
@@ -938,7 +944,7 @@ msgid "Drop image to insert it"
 msgstr "Drop image to insert it"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 msgid "Duplicate"
 msgstr "Duplicate"
@@ -1322,6 +1328,7 @@ msgid "Label"
 msgstr "Label"
 
 #: src/features/account/SettingsDialog.tsx
+#: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Language"
 msgstr "Language"
 
@@ -1892,7 +1899,7 @@ msgstr "photo"
 msgid "picture"
 msgstr "picture"
 
-#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Plain text"
 msgstr "Plain text"
 
@@ -2132,6 +2139,10 @@ msgstr "Rewrote"
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
 msgstr "Right"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Row"
+msgstr "Row"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Row options"
@@ -2880,7 +2891,7 @@ msgstr "Working…"
 msgid "Workspace navigation"
 msgstr "Workspace navigation"
 
-#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Wrap lines"
 msgstr "Wrap lines"
 
