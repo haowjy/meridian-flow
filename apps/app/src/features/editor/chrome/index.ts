@@ -6,6 +6,7 @@
  * on the first Radix upgrade.
  */
 
+export { type AnchorRect, useAnchorRect } from "./anchor-rect";
 export {
   EDITOR_CHROME_SURFACES,
   type EditorChromeSurface,

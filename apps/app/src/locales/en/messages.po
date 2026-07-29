@@ -232,7 +232,7 @@ msgstr "Add a caption for this figure."
 #~ msgid "Add column right"
 #~ msgstr "Add column right"
 
-#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Add link"
 msgstr "Add link"
 
@@ -415,6 +415,7 @@ msgid "Can't undo"
 msgstr "Can't undo"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -611,6 +612,10 @@ msgstr "Context"
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
 msgstr "Copied"
+
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+msgid "Copy link address"
+msgstr "Copy link address"
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
@@ -912,9 +917,9 @@ msgstr "Drop image to insert it"
 #~ msgid "Edit diagram"
 #~ msgstr "Edit diagram"
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Edit link"
-#~ msgstr "Edit link"
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+msgid "Edit link"
+msgstr "Edit link"
 
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Edit table"
@@ -994,8 +999,8 @@ msgid "Enter an amount in USD."
 msgstr "Enter an amount in USD."
 
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
-msgid "Enter an http, https, or mailto link."
-msgstr "Enter an http, https, or mailto link."
+#~ msgid "Enter an http, https, or mailto link."
+#~ msgstr "Enter an http, https, or mailto link."
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/home/HomeScreen.tsx
@@ -1293,18 +1298,18 @@ msgstr "Light"
 #~ msgid "Line {0}"
 #~ msgstr "Line {0}"
 
-#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Link"
 msgstr "Link"
 
-#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Link text"
 msgstr "Link text"
 
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
-msgid "Link URL"
-msgstr "Link URL"
+#~ msgid "Link URL"
+#~ msgstr "Link URL"
 
 #: src/features/editor/EditorView.tsx
 msgid "list"
@@ -1679,9 +1684,9 @@ msgstr "Open conversation"
 msgid "Open existing"
 msgstr "Open existing"
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Open link"
-#~ msgstr "Open link"
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+msgid "Open link"
+msgstr "Open link"
 
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"
@@ -1741,8 +1746,12 @@ msgid "Part of this selection keeps its own block type."
 msgstr "Part of this selection keeps its own block type."
 
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
-msgid "Paste a link"
-msgstr "Paste a link"
+#~ msgid "Paste a link"
+#~ msgstr "Paste a link"
+
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Paste a link or type [[a document name]]"
+msgstr "Paste a link or type [[a document name]]"
 
 #: src/features/editor/EditorLinkBubble.tsx
 #~ msgid "Paste or type a link"
@@ -1907,7 +1916,8 @@ msgstr "remaining"
 #~ msgid "Remove image"
 #~ msgstr "Remove image"
 
-#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
 msgstr "Remove link"
 
@@ -2264,7 +2274,7 @@ msgstr "Talk it out"
 msgid "Task Assignment"
 msgstr "Task Assignment"
 
-#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Text"
 msgstr "Text"
 
@@ -2496,6 +2506,10 @@ msgstr "Toggle folder {0}"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Try a web address, a document path, or [[a document name]]."
+msgstr "Try a web address, a document path, or [[a document name]]."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Try again"
 msgstr "Try again"
@@ -2554,7 +2568,7 @@ msgstr "Untitled project"
 #~ msgid "Update image"
 #~ msgstr "Update image"
 
-#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Update link"
 msgstr "Update link"
 

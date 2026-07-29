@@ -23,12 +23,13 @@
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { MoreVertical } from "lucide-react";
-import { type ReactNode, useLayoutEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+import { useAnchorRect } from "./anchor-rect";
 import { useChromeSuppressed } from "./useEditorChrome";
 
 /** Matches mockup 03b: the row sits inside the bounds, not on the edge. */
@@ -141,53 +142,4 @@ function OverlayIconChip({
       <TooltipContent side="top">{label}</TooltipContent>
     </Tooltip>
   );
-}
-
-type AnchorRect = { top: number; right: number };
-
-/**
- * The anchor's viewport rect, followed while the row is mounted.
- *
- * Scroll is watched in capture phase because the manuscript scrolls in a pane
- * rather than the window, and the row has to travel with its object instead of
- * hanging over whatever paragraph took its place.
- */
-function useAnchorRect(anchor: HTMLElement | null): AnchorRect | null {
-  const [rect, setRect] = useState<AnchorRect | null>(null);
-
-  useLayoutEffect(() => {
-    if (!anchor) {
-      setRect(null);
-      return;
-    }
-
-    let frame = 0;
-    const measure = () => {
-      const box = anchor.getBoundingClientRect();
-      setRect((previous) =>
-        previous && previous.top === box.top && previous.right === box.right
-          ? previous
-          : { top: box.top, right: box.right },
-      );
-    };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
-
-    measure();
-    window.addEventListener("scroll", schedule, true);
-    window.addEventListener("resize", schedule);
-    const observer = new ResizeObserver(schedule);
-    observer.observe(anchor);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", schedule, true);
-      window.removeEventListener("resize", schedule);
-      observer.disconnect();
-    };
-  }, [anchor]);
-
-  return rect;
 }

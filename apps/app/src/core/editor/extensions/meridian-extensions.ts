@@ -26,9 +26,9 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-
 import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
+import { classifyLinkTarget } from "../links/link-target";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -252,6 +252,25 @@ export const MeridianTableCell = TableCell.extend({
 // (`core/editor/links/`), which owns the click, the hover, and the menu.
 export const MeridianLink = Link.extend({
   inclusive: false,
+
+  /**
+   * Rendered, not stored: `data-link-kind` is what lets CSS give an external
+   * link its trailing arrow and (at M12) an unresolved wikilink its dashed
+   * quiet ink. It is absent from `addAttributes`, so it never reaches the
+   * schema, the wire format, or another peer's document.
+   */
+  renderHTML({ HTMLAttributes }) {
+    const kind = classifyLinkTarget(String(HTMLAttributes.href ?? ""))?.kind;
+    return [
+      "a",
+      mergeAttributes(
+        this.options.HTMLAttributes,
+        HTMLAttributes,
+        kind ? { "data-link-kind": kind } : {},
+      ),
+      0,
+    ];
+  },
 
   addAttributes() {
     return {

@@ -18,6 +18,8 @@
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 
+import { LinkSurfaces } from "../surfaces/link";
+
 export type EditorChromeSurfaceProps = {
   editor: Editor;
 };
@@ -34,5 +36,5 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
   // L-C table chrome (M6)
   // L-D slash (M8)
   // L-E block movement (M9)
-  // L-F links (M7)
+  { id: "link", render: ({ editor }) => <LinkSurfaces editor={editor} /> },
 ];

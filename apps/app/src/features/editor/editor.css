@@ -747,3 +747,51 @@
   box-shadow: var(--shadow-card);
   color: var(--color-foreground);
 }
+
+/* ── L-F links: destination hint and the external mark (§5.5, mockup 06) ── */
+
+/* Approach chrome, so it fades both ways and never takes the pointer: the
+   writer is aiming at the link under it, not at the hint. Portalled to the
+   body, hence the `meridian-` prefix rather than a nesting under the editor. */
+.meridian-link-hint {
+  position: fixed;
+  z-index: 30;
+  padding: 0.1875rem 0.5625rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+  color: var(--color-muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+
+.meridian-link-hint[data-state="closed"] {
+  opacity: 0;
+}
+
+.meridian-link-hint[data-state="open"] {
+  opacity: 1;
+}
+
+/* The one thing that tells a writer a link leaves the app before they press
+   it: internal links carry no mark, external ones carry this arrow. Drawn in
+   the mask rather than as text so it never lands in a copy or a screen
+   reader's reading of the sentence. */
+.meridian-editor .ProseMirror a[data-link-kind="external"]::after {
+  display: inline-block;
+  width: 0.625em;
+  height: 0.625em;
+  margin-left: 0.125em;
+  background-color: currentColor;
+  content: "";
+  vertical-align: 0.0625em;
+  opacity: 0.7;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17 17 7'/%3E%3Cpath d='M9 7h8v8'/%3E%3C/svg%3E");
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
