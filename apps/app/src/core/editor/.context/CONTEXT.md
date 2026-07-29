@@ -288,11 +288,19 @@ Three rules a lane holding one should follow:
   peer writes.
 
 A deleted thing's anchor resolves to the seam it left behind, so "is it still
-there" needs an answer of its own. A range over the thing's whole extent is the
-cheapest one: both of its edges land on that seam, so a collapsed hold means
-gone. `BlockHold` (`surfaces/blocks/block-targets.ts`) is that shape, and it is
-what lets a block menu follow a peer typing into its paragraph while closing
-when a peer deletes it.
+there" needs an answer of its own, and positions cannot give it. `BlockHold`
+([`anchors.ts`](../anchors.ts)) is the worked example every block surface uses:
+the block's two seams for where it is, plus the **Yjs element** behind it for
+which block it is. The element is the same object for as long as the block
+lives — local typing, a peer's typing, an AI write all mutate it in place — and
+a different one for anything that is really a new block.
+
+Both halves earn their place. Without identity, a peer deleting the document's
+only heading leaves the schema to supply an empty paragraph in its place, and
+the seams describe that replacement perfectly: uncollapsed, at depth 0, a
+good-looking block a menu would happily delete. Without the seams, an editor
+with no shared document has no deletion signal at all, because there is no
+element to compare.
 
 ## TipTap v3 defaults we intentionally disable
 
