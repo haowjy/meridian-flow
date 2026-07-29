@@ -109,3 +109,31 @@ describe("Mermaid code blocks", () => {
     });
   });
 });
+
+describe("a diagram that stops parsing", () => {
+  it("keeps the last good render and says what broke", async () => {
+    const mounted = mountDocument("mermaid", RENDERS);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+    });
+
+    // The writer (or a peer) leaves the source unparseable. What was on the
+    // page is still the truest picture of the diagram there is.
+    let pos = -1;
+    mounted.state.doc.descendants((node, at) => {
+      if (node.type.name === "code_block") pos = at;
+      return true;
+    });
+    const node = mounted.state.doc.nodeAt(pos);
+    if (!node) throw new Error("expected a fence");
+    mounted.view.dispatch(mounted.state.tr.insertText(" and then", pos + node.nodeSize - 1));
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("Parse error on line 2");
+    });
+    // Both, not either: the render stays AND the failure is visible.
+    expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+    expect(fenceClass()).toContain("hidden");
+  });
+});

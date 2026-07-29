@@ -61,7 +61,21 @@ export const SELECTED_OBJECT_CLASS = "meridian-object-selected";
  * the block around it and leaves stray paragraphs in the manuscript — a
  * structural edit from a key that was supposed to open something.
  */
-export type ObjectEngagement = (target: ObjectAt) => void;
+/**
+ * Why an object's surface is opening.
+ *
+ * A surface usually shows what is already there; one opening on an object made
+ * a moment ago has nothing to show, and law 2's exception says it opens ready
+ * to work instead. Only the lane that owns the surface can act on that, so the
+ * physics carries the reason rather than deciding for it.
+ */
+export type ObjectOpening =
+  /** The writer asked to look at an object that already exists. */
+  | "engage"
+  /** Just created, with nothing to view yet (law 2's sole exception). */
+  | "created";
+
+export type ObjectEngagement = (target: ObjectAt, opening: ObjectOpening) => void;
 
 type ObjectPhysicsStorage = {
   engagements: Map<string, ObjectEngagement>;
@@ -97,20 +111,23 @@ export function registerObjectEngagement(
 }
 
 /**
- * Open an object's own surface without the writer pressing Enter on it.
+ * Run an object type's registered engagement — the one way its surface opens.
  *
- * Law 2 allows exactly one caller: a just-created empty object has nothing to
- * view yet, so the lane that made it asks for the same surface Enter would.
- * False means no lane has registered one, and the caller keeps whatever
+ * `opening` is why, and the surface is entitled to care: law 2 lets a
+ * just-created object open ready to work, because there is nothing to view
+ * yet, while everything else opens on what is there. Enter and a double-click
+ * say `engage`; the lane that just made the object says `created`.
+ *
+ * False means no lane has registered a surface, and the caller keeps whatever
  * opening it already made.
  */
-export function engageObject(editor: Editor, target: ObjectAt): boolean {
+export function engageObject(editor: Editor, target: ObjectAt, opening: ObjectOpening): boolean {
   const storage = physicsStorage(editor);
   const spec = objectTypeSpec(target.node);
   if (!storage || spec?.engage !== "surface") return false;
   const engagement = storage.engagements.get(spec.nodeType);
   if (!engagement) return false;
-  engagement(target);
+  engagement(target, opening);
   return true;
 }
 
@@ -307,7 +324,7 @@ function engage(
   if (!spec) return false;
 
   if (spec.engage === "surface") {
-    if (!engageObject(editor, selected)) reportMissingEngagement(spec.nodeType);
+    if (!engageObject(editor, selected, "engage")) reportMissingEngagement(spec.nodeType);
     return true;
   }
 

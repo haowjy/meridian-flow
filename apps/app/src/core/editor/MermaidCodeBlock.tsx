@@ -9,15 +9,17 @@
  * inside it so no keystroke is ever swallowed by a hidden element.
  *
  * `useMermaidSvg` is the render pipeline both faces share. It keeps the LAST
- * GOOD svg across a failing edit, which is what lets the dialog show a live
- * preview beside source that does not parse yet (§5.2's "keeps the last good
- * render and names the line").
+ * GOOD svg across a failing edit (§5.2's "keeps the last good render and names
+ * the line") — and naming the line is half the promise, so a stale render
+ * carries the parse error beside it here as well as in the dialog's pane.
  */
 import { t } from "@lingui/core/macro";
 import type { Editor, NodeViewProps } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+
+import { DEFAULT_UI_THEME, resolveUiTheme, subscribeUiTheme } from "@/lib/ui-theme";
 
 import { renderMermaid } from "./mermaid-render";
 
@@ -47,6 +49,10 @@ export function useMermaidSvg(source: string): MermaidRender {
   const [render, setRender] = useState<MermaidRender>({ svg: null, error: null, pending: true });
   // Renders resolve out of order under fast typing; only the newest may land.
   const generation = useRef(0);
+  // A diagram is drawn in the manuscript's ink, so switching palettes has to
+  // redraw it. Mermaid bakes its colors into the markup; nothing about an
+  // already-rendered SVG follows a token.
+  const uiTheme = useSyncExternalStore(subscribeUiTheme, resolveUiTheme, () => DEFAULT_UI_THEME);
 
   useEffect(() => {
     generation.current += 1;
@@ -62,7 +68,7 @@ export function useMermaidSvg(source: string): MermaidRender {
         const message = error instanceof Error ? error.message : t`Unable to render diagram`;
         setRender((previous) => ({ svg: previous.svg, error: message, pending: false }));
       });
-  }, [reactId, source]);
+  }, [reactId, source, uiTheme]);
 
   return render;
 }
@@ -124,6 +130,10 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
 
   const showDiagram = isMermaid && svg !== null && !caretInside;
   const showFence = !isMermaid || caretInside || (error !== null && svg === null);
+  // A render that no longer matches its source. The picture stays — it is
+  // still the truest thing on the page about this diagram — but a failure the
+  // writer cannot see is one they cannot fix (law 5).
+  const renderIsStale = isMermaid && error !== null && svg !== null;
 
   return (
     <NodeViewWrapper
@@ -139,6 +149,12 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
           <p className="font-medium">{t`Diagram could not be rendered`}</p>
           <p className="mt-1 whitespace-pre-wrap font-mono text-xs">{error}</p>
         </div>
+      ) : null}
+      {renderIsStale ? (
+        <p className="meridian-diagram-parse-note mb-2" contentEditable={false} role="status">
+          {t`This diagram stopped parsing. Showing the last version that rendered.`}
+          <code>{error}</code>
+        </p>
       ) : null}
       {isMermaid && pending && !caretInside ? (
         <div

@@ -2246,8 +2246,8 @@ msgid "Settings sections"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-msgid "Showing the last good render."
-msgstr ""
+#~ msgid "Showing the last good render."
+#~ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -2619,6 +2619,14 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
+msgstr ""
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "This diagram stopped parsing. Showing the last version that rendered."
+msgstr ""
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "This diagram stopped parsing. The preview is the last version that rendered."
 msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
