@@ -4,7 +4,11 @@ import { NodeSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
-import { registerObjectEngagement, registerObjectKeymap } from "./ObjectPhysicsExtension";
+import {
+  engageObject,
+  registerObjectEngagement,
+  registerObjectKeymap,
+} from "./ObjectPhysicsExtension";
 
 let editor: Editor | null = null;
 
@@ -180,5 +184,47 @@ describe("double-click engages", () => {
     );
 
     expect(handled).toBeFalsy();
+  });
+});
+
+describe("why a surface is opening", () => {
+  /** Records the opening each door reports, so the two can be told apart. */
+  function captureOpenings(instance: Editor): string[] {
+    const openings: string[] = [];
+    registerObjectEngagement(instance, "code_block", (_target, opening) => {
+      openings.push(opening);
+      return true;
+    });
+    return openings;
+  }
+
+  it("says a just-created object has nothing to view yet", () => {
+    const instance = mount([paragraph("before"), mermaid]);
+    const openings = captureOpenings(instance);
+    const pos = positionOf(instance, "code_block");
+    const node = instance.state.doc.nodeAt(pos);
+    if (!node) throw new Error("no diagram in the fixture");
+
+    // Law 2's exception: the lane that made it asks for the surface, and the
+    // surface has to know it is opening on something nobody has read yet.
+    engageObject(instance, { node, pos }, "created");
+
+    expect(openings).toEqual(["created"]);
+  });
+
+  it("says an existing object is being engaged", () => {
+    const instance = mount([paragraph("before"), mermaid]);
+    const openings = captureOpenings(instance);
+    const pos = positionOf(instance, "code_block");
+    const node = instance.state.doc.nodeAt(pos);
+    if (!node) throw new Error("no diagram in the fixture");
+
+    select(instance, pos);
+    press(instance, { key: "Enter" });
+    instance.view.someProp("handleDoubleClickOn", (handler) =>
+      handler(instance.view, pos + 1, node, pos, new MouseEvent("dblclick"), true),
+    );
+
+    expect(openings).toEqual(["engage", "engage"]);
   });
 });

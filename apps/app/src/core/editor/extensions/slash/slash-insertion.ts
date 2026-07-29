@@ -225,17 +225,15 @@ export function applySlashCommand(
  * surface Enter would open, and everything else keeps the caret this module
  * already placed.
  *
- * TODO(M5): the diagram is the only entry that reaches this today, and the
- * surface it wants is the diagram dialog. The object lane registers it with
- * `registerObjectEngagement(editor, "code_block", …)`, and when it does, the
- * mermaid entry's `caret: "inside"` becomes wrong: a rendered fence has no
- * inside, so the caret rule turns into a selection and the dialog is the
- * opening. Until then a mermaid fence is plain editable source and the caret
- * in it is the whole readiness.
+ * The diagram is the only entry that reaches this today, and `"created"` is
+ * what makes its opening the one the mockups draw: the object lane reads it
+ * and opens the dialog on the starter source rather than on a picture nobody
+ * has written yet. The caret this insertion already placed inside the fence is
+ * where the writer lands if they close that dialog without touching it.
  */
 function openNewObject(editor: Editor, pos: number) {
   const landed = editor.state.doc.nodeAt(pos);
-  if (landed) engageObject(editor, { node: landed, pos });
+  if (landed) engageObject(editor, { node: landed, pos }, "created");
 }
 
 function landCaret(tr: Transaction, start: number, size: number, caret: "inside" | "after") {

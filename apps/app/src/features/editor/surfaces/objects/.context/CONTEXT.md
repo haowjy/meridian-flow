@@ -17,6 +17,26 @@ on the selection, and a double-click in the page. The last two are the same
 registration — `handleDoubleClickOn` at the object-physics seam selects the
 object and runs the engagement Enter runs — so a lane wires its surface once.
 
+A fourth opening comes from the slash lane: a diagram it just created arrives
+with `opening: "created"`, and that one opens the dialog with the source pane
+already showing its starter source (§5.2's law-2 exception, mockup 04's third
+scene). A new diagram has nothing to look at, so the writer's first act is
+typing rather than reading.
+
+## What a diagram says when it stops parsing
+
+Both faces show the same note, because it is the same fact: the picture on
+screen is the last version that rendered, and mermaid's message names the line.
+In the page it sits under the diagram; in the dialog it sits under the source.
+A fence that has NEVER rendered is the one exception — there is no picture to
+keep, so the source itself is revealed with the error.
+
+## The palette
+
+Diagrams are drawn from the design tokens, read at render time
+(`core/editor/mermaid-theme.ts`), so a theme switch repaints them. Nothing in
+this lane names a color.
+
 Alt text and Replace are absent from the image ⋮ rather than dead: their
 surfaces belong to the upload lane (§5.6), and law 5 prefers the gap.
 

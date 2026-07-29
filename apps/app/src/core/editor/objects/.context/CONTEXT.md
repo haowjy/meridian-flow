@@ -26,6 +26,17 @@ and then calls the identical `engage`, so a lane wires its surface once (§5.2's
 "click 2 / double-click / Enter opens the dialog"). A double-click in prose is
 left to the browser's word selection.
 
+An engagement is also told WHY it is opening, because law 2's exception turns
+on exactly that:
+
+| `opening` | Who says it | What the surface owes |
+|---|---|---|
+| `engage` | Enter, double-click | show what is there |
+| `created` | the lane that just made the object | open ready to work — there is nothing to view yet |
+
+A surface free to ignore it still gets the argument, so the reason never has to
+be smuggled through a second channel.
+
 `ObjectEngagement` returns `void`, and that is the contract rather than an
 omission: Enter is consumed either way, so a handler has nothing to decide. A
 `surface` row with no registered handler is therefore a dead key, which law 5

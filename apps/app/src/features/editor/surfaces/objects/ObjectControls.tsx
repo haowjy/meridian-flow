@@ -96,9 +96,12 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   // they open is React's.
   useEffect(() => {
     const releases = ["code_block", "image", "figure"].map((nodeType) =>
-      registerObjectEngagement(editor, nodeType, ({ node, pos }) => {
+      registerObjectEngagement(editor, nodeType, ({ node, pos }, opening) => {
         if (nodeType === "code_block" && !isMermaidFence(node)) return false;
-        return openLightbox(pos);
+        // Law 2's exception, as the mockups draw it: a diagram made a moment
+        // ago has nothing to view, so it opens on its starter source and the
+        // writer's first act is typing rather than looking.
+        return openLightbox(pos, opening === "created" && nodeType === "code_block");
       }),
     );
     return () => {
