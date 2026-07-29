@@ -27,6 +27,20 @@ gesture is holding, and whether it has lifted.
 
 ## Key rules
 
+- **A drag has two starting places and one gesture.** The margin handle is
+  one; the body of an object the registry marks `body: "opaque"` is the other,
+  because a writer's first instinct is to grab the picture. Both go through
+  `beginGesture`, so there is one hold, one kernel token, one finalizer — and
+  one difference: a press that never travels opens the menu on the handle and
+  is left to ProseMirror on a body, where it becomes the jade ring.
+- **An object moves one way.** ProseMirror's own HTML5 drag is refused
+  wherever it would carry an object off, including out of a field the object
+  embeds. It shows no drop line and it moves a node by serializing and
+  re-parsing it, which brought a figure back as a bare paragraph.
+- **Text ProseMirror owns is never a drag source.** A mermaid fence is a
+  diagram when it renders and its own source when the caret is inside it, and
+  the registration cannot say which — the DOM can, because everything standing
+  in for that text is `contenteditable="false"`.
 - **Nothing here keeps a timer or a suppression rule.** Hover comes from
   `chrome.createHoverIntent`, a drag is declared with `chrome.beginDrag`, and
   the kernel cancels the reveal when a gesture starts. A local `setTimeout`
@@ -44,6 +58,12 @@ gesture is holding, and whether it has lifted.
   including a move, which really is a new block. Nothing here stores a child
   index across a transaction either: the drop seam is derived from the pointer,
   every time.
+- **Chrome geometry is measured on a frame, never in render.** The handle and
+  the drop line are `getBoundingClientRect` readings against a DOM ProseMirror
+  has just rewritten, and this surface re-renders on every transaction;
+  measuring in render forced a synchronous layout on each one.
+  `useBlockChromePlacement` schedules the measurement and moves state only
+  when the numbers did.
 - **Overlays are measured onto the page, never inserted into it** (law 7). A
   widget decoration between two blocks inherits the manuscript's block spacing
   and pushes the page down by its own height.
@@ -79,6 +99,11 @@ gesture is holding, and whether it has lifted.
   Nested reordering is a different design (see `.context/FUTURE`).
 - Ending a gesture anywhere but the finalizer, or storing a drop target rather
   than deriving it.
+- Asking which node types can be dragged by their body. That is a column in
+  `EDITOR_OBJECT_TYPES`; a node name here would drift from it the first time a
+  lane ships an object.
+- Preventing the press that starts a body drag. The click that never travels
+  has to reach ProseMirror, or the object stops selecting.
 - A second refusal rule for whole-block conversions.
 - Mounting anything in `EditorView.tsx` or reading suppression into local state.
 

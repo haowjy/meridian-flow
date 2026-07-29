@@ -29,6 +29,18 @@ export type ObjectEngageIntent =
    */
   | "none";
 
+/**
+ * What the pointer finds inside the object (§5.8).
+ *
+ * An `opaque` body has nothing to select and nothing to type into — a picture,
+ * a rule, a rendered diagram — so a press on it is a press on the object, and
+ * the body can be a second door into the same block drag the margin handle
+ * starts. A `text` body already owns its pointer: a table's cells take
+ * drag-selection across them, and a grab that moved the whole table instead
+ * would take that away.
+ */
+export type ObjectBody = "opaque" | "text";
+
 export type ObjectTypeSpec = {
   /** Schema node name. */
   nodeType: string;
@@ -37,20 +49,24 @@ export type ObjectTypeSpec = {
    * prose the writer types into unless its language renders it as a diagram.
    */
   matches?: (node: PMNode) => boolean;
+  body: ObjectBody;
   engage: ObjectEngageIntent;
 };
 
 export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
   // ── kernel (M3) ──────────────────────────────────────────────────
-  { nodeType: "figure", engage: "surface" },
-  { nodeType: "image", engage: "surface" },
-  { nodeType: "table", engage: "caret-inside" },
-  { nodeType: "horizontal_rule", engage: "none" },
+  { nodeType: "figure", body: "opaque", engage: "surface" },
+  { nodeType: "image", body: "opaque", engage: "surface" },
+  { nodeType: "table", body: "text", engage: "caret-inside" },
+  { nodeType: "horizontal_rule", body: "opaque", engage: "none" },
   {
     // Mermaid is not a node (§8): rendering keys off the language attr, so
     // object physics has to as well. A plain fence stays prose you type in.
     nodeType: "code_block",
     matches: (node) => node.attrs.language === "mermaid",
+    // The rendered diagram is opaque; the source hatch it can open is a
+    // control inside it, and a press on a control is never a press on a body.
+    body: "opaque",
     engage: "surface",
   },
   // ── surface lanes append one row per object type below ───────────
@@ -67,6 +83,15 @@ export function objectTypeSpec(node: PMNode): ObjectTypeSpec | null {
 
 export function isEditorObject(node: PMNode): boolean {
   return objectTypeSpec(node) !== null;
+}
+
+/**
+ * True when a press on this node's body may start the block drag its margin
+ * handle starts (§5.8). The registration answers it — nothing about a picture
+ * in the schema says the writer can grab it.
+ */
+export function isObjectBodyDragSource(node: PMNode): boolean {
+  return objectTypeSpec(node)?.body === "opaque";
 }
 
 /**

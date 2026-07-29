@@ -118,6 +118,10 @@ msgstr "{days}d"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr "{documents, plural, one {# document} other {# documents}}"
 
+#: src/features/editor/EditorView.tsx
+msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+msgstr "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}h"
@@ -851,10 +855,6 @@ msgstr "Dev-login failed"
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Diagram"
 msgstr "Diagram"
-
-#: src/core/editor/MermaidCodeBlock.tsx
-#~ msgid "Diagram could not be rendered"
-#~ msgstr "Diagram could not be rendered"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx

@@ -6,6 +6,26 @@ export function isImageFile(file: Pick<File, "type" | "name">): boolean {
   return file.type.startsWith("image/") || /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(file.name);
 }
 
+/**
+ * What a drop carrying files means.
+ *
+ * The editor answers for every file dropped on it, including the ones it
+ * cannot use: the browser's own answer to an unclaimed file is to LEAVE the
+ * page and open it, which takes the writer out of the manuscript
+ * mid-sentence. Null is the only case the editor has nothing to say about —
+ * a drop carrying no files at all, which is ProseMirror's own business.
+ */
+export type FileDropIntent =
+  | { kind: "insert"; file: File }
+  /** Named, because a refusal that does not say what it refused is a shrug. */
+  | { kind: "refuse"; filename: string };
+
+export function fileDropIntent(files: readonly File[]): FileDropIntent | null {
+  if (files.length === 0) return null;
+  const image = files.find(isImageFile);
+  return image ? { kind: "insert", file: image } : { kind: "refuse", filename: files[0].name };
+}
+
 export function imageAltFromFilename(filename: string): string {
   const stem = filename
     .replace(/\.[^.]+$/, "")

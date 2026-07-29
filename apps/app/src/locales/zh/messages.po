@@ -118,6 +118,10 @@ msgstr "{days}天"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+msgstr ""
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
@@ -851,10 +855,6 @@ msgstr ""
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Diagram"
 msgstr ""
-
-#: src/core/editor/MermaidCodeBlock.tsx
-#~ msgid "Diagram could not be rendered"
-#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
