@@ -18,7 +18,7 @@ import { Code2, Copy, Download, MoreVertical } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
-import { useMermaidSvg } from "@/core/editor/MermaidCodeBlock";
+import { useMermaidSvg } from "@/core/editor/mermaid-render-state";
 import {
   EditorDialog,
   EditorMenu,

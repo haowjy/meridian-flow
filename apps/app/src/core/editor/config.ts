@@ -21,6 +21,7 @@ import type { AgentNameStore } from "./agent-name-store";
 import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
+import { AutoPairExtension } from "./extensions/auto-pair";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
@@ -312,6 +313,9 @@ export function createStandaloneEditorExtensions({
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
       MeridianCodeBlockLowlight.configure({ lowlight }),
+      // A code file is one fence, so the fence's bracket/quote set is the
+      // whole document's.
+      AutoPairExtension,
     ];
   }
   return [
@@ -341,6 +345,9 @@ export function createStandaloneEditorExtensions({
     ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
     ...(wikilinks ? [WikilinkSuggestionExtension.configure(wikilinks)] : []),
     MarkdownAutoformatExtension,
+    // Below the autoformat, which owns the delimiters this deliberately does
+    // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
+    AutoPairExtension,
     LiveRangeNavigationExtension,
     PassageHighlightExtension,
     // Chrome mounts only on the document schema: a code file is one code

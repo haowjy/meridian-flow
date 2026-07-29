@@ -173,6 +173,23 @@ describe("codec presets", () => {
     expect(wikilinkCodec.serialize(parsed)).not.toContain("[[target|label]]");
   });
 
+  it.each([
+    ["markdown", markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })],
+    ["mdx", mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components })],
+  ])("carries empty auto-paired brackets through the %s preset unchanged", (_name, codec) => {
+    // Auto-pairing in the editor writes real characters, so an empty pair the
+    // writer opened and never filled is ordinary prose the wire has to carry.
+    // The opener escapes so it cannot be read back as a link or a wikilink;
+    // the text the writer sees comes back byte for byte.
+    const prose = 'Brackets [] and [[]], parens (), and "quotes".';
+    const wire = codec.serialize([paragraph(t(prose))]);
+
+    expect(wire).toBe('Brackets \\[] and \\[\\[]], parens (), and "quotes".\n');
+    expect(codec.parse(wire).blocks[0]?.textContent).toBe(prose);
+    expect(codec.parse(wire).blocks[0]?.child(0).marks).toEqual([]);
+    expectStable(codec, wire);
+  });
+
   it("registers every markdown node and mark codec", () => {
     expect(markdownBlockCodecs.map((block) => block.name).sort()).toEqual(
       [...markdownRequiredBlockNames].sort(),

@@ -34,7 +34,7 @@ import {
   selectObjectTransaction,
   typeBesideObjectTransaction,
 } from "./object-selection";
-import { isEditorObject, objectTypeSpec } from "./object-types";
+import { isEditorObject, objectDrag, objectTypeSpec } from "./object-types";
 
 const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
@@ -205,6 +205,14 @@ function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
  * refuses a caret takes the press.** A plain fence and a table cell are
  * editable, their click IS a caret (§5.3, §5.4), and neither is touched here.
  *
+ * One object leaves the press alone all the same: the kind that travels by
+ * ProseMirror's own drag to land between two words. Chrome will not start a
+ * drag out of a press whose default was refused, so refusing here is refusing
+ * the gesture — and there is nothing to protect the writer from, because the
+ * nearest editable position beside an inline picture is the sentence it is
+ * already standing in. The click that never travels still rings it, one
+ * mouseup later, through `handleClickOn`.
+ *
  * Bound as a plain listener rather than through `handleDOMEvents`, which reads
  * a prevented default as "the plugin owns the whole press" and skips the mouse
  * machinery that counts clicks and double-clicks. This has to run beside that
@@ -222,6 +230,7 @@ function selectObjectUnderPress(view: EditorView, event: MouseEvent): void {
 
   const found = objectAtDOM(view, opaque);
   if (!found) return;
+  if (objectDrag(found.node) === "inline") return;
   const transaction = selectObjectTransaction(view.state, found.pos);
   if (!transaction) return;
 

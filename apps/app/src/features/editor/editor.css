@@ -21,10 +21,13 @@
 }
 
 .meridian-editor .ProseMirror {
-  min-height: 100%;
   outline: none;
   max-width: 68ch;
-  /* Font family, reading scale, AND color inherit from `prose-tokens` — the
+  /* Height, insets, and the scroll-past-end reserve are the prose column's,
+     applied as utilities from `editor-column.ts` — one owner for the geometry
+     that decides where a click below the last line lands.
+
+     Font family, reading scale, AND color inherit from `prose-tokens` — the
      editor must read identically to chat prose (one reading surface). A
      `--color-foreground` override here once made the manuscript render darker
      and visually heavier than chat at the same font size. */

@@ -22,6 +22,11 @@ the design, from the primitives.
 - Keep prose geometry in `editor-column.ts`; hosts consume it rather than
   copying column or spacing classes. The toolbar row and the prose share one
   column edge, so a chrome row never re-encodes its own inset.
+- `EditorSurfaceFrame` turns a press on the scroll pane's inert space into a
+  caret, and owns only the guard on that press (scrollbar strip, interactive
+  children, the prose itself). WHERE the caret lands is
+  `core/editor/pointer-boundary`; a seam between two blocks belongs to neither
+  of them, and no selection policy belongs in a layout component.
 - Inline draft review mounts the server projection in an editable editor: the
   writer is a peer in the review branch room, and edits there land in that
   branch.

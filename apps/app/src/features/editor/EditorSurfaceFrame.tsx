@@ -1,8 +1,8 @@
 /** Shared docked-toolbar and scrolling layout for document editor surfaces. */
-import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import type { MouseEvent as ReactMouseEvent, ReactNode, Ref, UIEventHandler } from "react";
 
+import { pointerBoundaryDecision } from "@/core/editor/pointer-boundary";
 import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
 
@@ -30,24 +30,17 @@ function focusEditorFromGutterPress(editor: Editor, event: ReactMouseEvent<HTMLD
   // must keep their default behavior.
   if (event.clientX - frameRect.left >= frame.clientWidth) return;
 
-  const prose = editor.view.dom.getBoundingClientRect();
-  const pos = editor.view.posAtCoords({
-    left: Math.min(Math.max(event.clientX, prose.left + 1), prose.right - 1),
-    top: Math.min(Math.max(event.clientY, prose.top + 1), prose.bottom - 1),
-  });
   // Focusing on mousedown (not click) matches ProseMirror's own timing;
   // preventDefault stops the press from re-blurring the editor it just focused.
   event.preventDefault();
-  if (!pos) {
-    editor.commands.focus("end");
-    return;
-  }
-  // posAtCoords in the inter-paragraph gap returns a block-boundary position;
-  // fed raw to focus() it parks the selection at doc level — remote collab
-  // cursors then render BETWEEN <p>s as a phantom uneditable row. near()
-  // always resolves into the adjacent textblock.
+
+  // Where an outside press may land is `core/editor/pointer-boundary`, not this
+  // layout component: a seam between two blocks belongs to neither of them, and
+  // the raw `posAtCoords` answer there can be a rendered diagram's hidden
+  // source. A decline leaves the selection standing, which is still a focus.
   const { state, view } = editor;
-  view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(pos.pos))));
+  const decision = pointerBoundaryDecision(view, event.clientX, event.clientY);
+  if (decision.kind === "place") view.dispatch(state.tr.setSelection(decision.selection));
   view.focus();
 }
 

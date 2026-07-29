@@ -19,6 +19,7 @@ export {
   caretBesideObjectTransaction,
   caretHomeFromObjectTransaction,
   caretInsideObjectTransaction,
+  gapCursorFits,
   type ObjectAt,
   objectBeside,
   selectedObject,
@@ -27,12 +28,14 @@ export {
 export {
   EDITOR_OBJECT_TYPES,
   isEditorObject,
-  isObjectBodyDragSource,
   isSourceBlock,
   type ObjectBody,
+  type ObjectDrag,
   type ObjectEngageIntent,
   type ObjectSurfaceKind,
   type ObjectTypeSpec,
+  objectBody,
+  objectDrag,
   objectSurfaceKind,
   objectTypeSpec,
 } from "./object-types";

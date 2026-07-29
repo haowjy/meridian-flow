@@ -28,22 +28,28 @@ gesture is holding, and whether it has lifted.
 ## Key rules
 
 - **A drag has two starting places and one gesture.** The margin handle is
-  one; the body of an object the registry marks `body: "opaque"` is the other,
-  because a writer's first instinct is to grab the picture. Both go through
-  `beginGesture`, so there is one hold, one kernel token, one finalizer — and
-  one difference: a press that never travels opens the menu on the handle and
-  is left to ProseMirror on a body, where it becomes the jade ring.
+  one; the body of an object the registry marks `drag: "block"` is the other,
+  because a writer's first instinct is to grab the thing itself. Both go
+  through `beginGesture`, so there is one hold, one kernel token, one finalizer
+  — and one difference: a press that never travels opens the menu on the handle
+  and is left to ProseMirror on a body, where it becomes the jade ring.
+- **An object that lands inline is not this gesture.** A picture (`drag:
+  "inline"`) travels by ProseMirror's own drag, which carries it as an inline
+  slice and puts it between two words with the dropcursor showing where (human
+  ruling, 2026-07-29). This surface never sees that press. The margin handle
+  above its paragraph is still how the whole LINE moves to a block seam, and
+  the two gestures answer two different questions.
 - **The body door opens only where the object IS the block**
-  (`objectIsWholeBlock`). The drag moves a top-level block, so an object that
-  shares its paragraph with prose would carry sentences nobody grabbed; there
-  the press stays the text selection the pointer was already drawing, and the
-  margin handle remains the way to move that whole line. The test is
-  structural, per occurrence — the same image is grabbable alone in a
-  paragraph and not mid-sentence.
-- **An object moves one way.** ProseMirror's own HTML5 drag is refused
-  wherever it would carry an object off, including out of a field the object
-  embeds. It shows no drop line and it moves a node by serializing and
-  re-parsing it, which brought a figure back as a bare paragraph.
+  (`objectIsWholeBlock`). The drag moves a top-level block, so a figure sharing
+  a list item with a paragraph would carry the whole list nobody grabbed; there
+  the press stays the text selection the pointer was already drawing. The test
+  is structural, per occurrence — the same rule is grabbable in the manuscript
+  and only decoration inside a quote that also holds prose.
+- **A block object moves one way.** ProseMirror's own HTML5 drag is refused
+  wherever it would carry one off, including out of a field the object embeds.
+  It shows no block drop line and it moves a node by serializing and re-parsing
+  it, which brought a figure back as a bare paragraph. Over an object that
+  lands inline that same drag is the right one and is left alone.
 - **Text ProseMirror owns is never a drag source.** A mermaid fence is a
   diagram when it renders and its own source when the caret is inside it, and
   the registration cannot say which — the DOM can, because everything standing
@@ -118,9 +124,12 @@ gesture is holding, and whether it has lifted.
   Nested reordering is a different design (see `.context/FUTURE`).
 - Ending a gesture anywhere but the finalizer, or storing a drop target rather
   than deriving it.
-- Asking which node types can be dragged by their body. That is a column in
-  `EDITOR_OBJECT_TYPES`; a node name here would drift from it the first time a
-  lane ships an object.
+- Asking which node types can be dragged by their body, or which of them may
+  land between two words. Both are the `drag` column in `EDITOR_OBJECT_TYPES`;
+  a node name here would drift from it the first time a lane ships an object.
+- Teaching this drag inline drop targets. ProseMirror's own drag already has
+  them, and the dropcursor already draws the caret; a second inline landing
+  path would be two answers to one question.
 - Preventing the press that starts a body drag. The click that never travels
   has to reach ProseMirror, or the object stops selecting.
 - A second refusal rule for whole-block conversions.

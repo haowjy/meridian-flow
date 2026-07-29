@@ -267,7 +267,7 @@ function gapPastFollowingNodes(state: EditorState, from: ResolvedPos): Selection
  * position depends on what closes either side of it and on the parent's
  * `allowGapCursor`, and a copy of that would drift on the next upgrade.
  */
-function gapCursorFits($pos: ResolvedPos): boolean {
+export function gapCursorFits($pos: ResolvedPos): boolean {
   const gapCursor = GapCursor as unknown as { valid?: (at: ResolvedPos) => boolean };
   return gapCursor.valid?.($pos) ?? false;
 }
