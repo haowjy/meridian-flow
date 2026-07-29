@@ -59,9 +59,7 @@ function blockMenuDoor(instance: Editor) {
 
 /** The formatting menu's door: the same ids, through its own model. */
 function formattingMenuDoor(instance: Editor) {
-  const model = formattingMenuModel(instance, {
-    clipboard: { read: "available", write: "available" },
-  });
+  const model = formattingMenuModel(instance);
   return Object.fromEntries(
     BLOCK_TYPE_IDS.map((id) => [
       id,
