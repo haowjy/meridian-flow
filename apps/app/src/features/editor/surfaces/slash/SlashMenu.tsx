@@ -56,7 +56,7 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
   const suppressed = useChromeSuppressed(editor);
   const open = snapshot.open && !suppressed;
 
-  const scrollerRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
   const [overflow, setOverflow] = useState<Overflow>("none");
 
@@ -68,13 +68,24 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
     setOverflow(above && below ? "both" : above ? "top" : below ? "bottom" : "none");
   }, []);
 
+  // Measured from the ref callback, not an effect: Radix mounts the portal's
+  // children a commit after `open` flips, so an effect keyed on `open` runs
+  // while there is nothing to measure and the fades never appear.
+  const attachScroller = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollerRef.current = node;
+      if (node) readOverflow();
+    },
+    [readOverflow],
+  );
+
   // The scroll follows the arrow keys (ruled), and `nearest` plus the
   // scroller's own scroll padding keeps the highlighted row clear of the fade.
   useEffect(() => {
     if (!open) return;
     activeRef.current?.scrollIntoView({ block: "nearest" });
     readOverflow();
-  }, [open, readOverflow]);
+  }, [open, snapshot.activeIndex, readOverflow]);
 
   const activeItem = snapshot.items[snapshot.activeIndex];
 
@@ -113,10 +124,10 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
       align="start"
       side="bottom"
       focusOnOpen="prose"
-      className="meridian-slash-menu-shell min-w-56 p-0"
+      className="meridian-slash-menu-shell min-w-64 p-0"
     >
       <div
-        ref={scrollerRef}
+        ref={attachScroller}
         onScroll={readOverflow}
         id={LISTBOX_ID}
         role="listbox"
