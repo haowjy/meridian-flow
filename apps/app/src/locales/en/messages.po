@@ -966,6 +966,18 @@ msgstr "Editor formatting toolbar"
 msgid "Email"
 msgstr "Email"
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Embedded blocks keep their own block type."
+msgstr "Embedded blocks keep their own block type."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Embedded blocks take no formatting."
+msgstr "Embedded blocks take no formatting."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Embedded blocks take no links."
+msgstr "Embedded blocks take no links."
+
 #: src/features/chat/FormBlock.tsx
 msgid "Enabled"
 msgstr "Enabled"
@@ -1170,6 +1182,14 @@ msgstr "Image upload failed."
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
 msgstr "Includes your edits"
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Inline code takes no links."
+msgstr "Inline code takes no links."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Inline code takes no other formatting."
+msgstr "Inline code takes no other formatting."
 
 #: src/features/editor/EditorView.tsx
 msgid "Insert block"
@@ -1709,6 +1729,10 @@ msgstr "Parent unknown"
 msgid "Parent:"
 msgstr "Parent:"
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Part of this selection keeps its own block type."
+msgstr "Part of this selection keeps its own block type."
+
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Paste a link"
 msgstr "Paste a link"
@@ -2221,6 +2245,10 @@ msgstr "Switch work"
 msgid "Table"
 msgstr "Table"
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Table cells hold plain paragraphs."
+msgstr "Table cells hold plain paragraphs."
+
 #: src/features/chat/placeholders.ts
 msgid "Talk it out"
 msgstr "Talk it out"
@@ -2394,6 +2422,10 @@ msgstr "This document keeps changing elsewhere. Reopen it and try again."
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "This file holds code only."
+msgstr "This file holds code only."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."

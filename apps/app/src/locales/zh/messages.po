@@ -966,6 +966,18 @@ msgstr ""
 msgid "Email"
 msgstr "邮箱"
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Embedded blocks keep their own block type."
+msgstr ""
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Embedded blocks take no formatting."
+msgstr ""
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Embedded blocks take no links."
+msgstr ""
+
 #: src/features/chat/FormBlock.tsx
 msgid "Enabled"
 msgstr ""
@@ -1169,6 +1181,14 @@ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
+msgstr ""
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Inline code takes no links."
+msgstr ""
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Inline code takes no other formatting."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
@@ -1709,6 +1729,10 @@ msgstr ""
 msgid "Parent:"
 msgstr ""
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Part of this selection keeps its own block type."
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Paste a link"
 msgstr ""
@@ -2221,6 +2245,10 @@ msgstr ""
 msgid "Table"
 msgstr ""
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Table cells hold plain paragraphs."
+msgstr ""
+
 #: src/features/chat/placeholders.ts
 msgid "Talk it out"
 msgstr "说出来理一理"
@@ -2393,6 +2421,10 @@ msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
+msgstr ""
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "This file holds code only."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
