@@ -19,6 +19,7 @@ import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 
 import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "../surfaces/blocks";
+import { FormattingMenu } from "../surfaces/formatting";
 import { SlashMenu } from "../surfaces/slash";
 
 export type EditorChromeSurfaceProps = {
@@ -32,7 +33,7 @@ export type EditorChromeSurface = {
 };
 
 export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
-  // L-A formatting menu (M4)
+  { id: "formatting-menu", render: ({ editor }) => <FormattingMenu editor={editor} /> },
   // L-B object controls + diagram (M5)
   // L-C table chrome (M6)
   { id: "slash-menu", render: (props) => <SlashMenu {...props} /> }, // L-D slash (M8)

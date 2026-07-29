@@ -12,6 +12,16 @@ import type {
   ToolbarControlId,
 } from "./toolbar-commands";
 
+/**
+ * Who the reason is being said about. The toolbar names a control; a surface
+ * whose controls are not toolbar rows — the formatting menu's marks row and
+ * its Turn into list — names the family instead, because the copy only ever
+ * branches on family and a menu item is not a toolbar button. `document` is
+ * for controls whose only reasons are the document's own (still opening, read
+ * only), where naming a family would claim a distinction the copy never makes.
+ */
+export type BlockedSubject = ToolbarControlId | "block-type" | "mark" | "document";
+
 export function toolbarControlLabel(control: ToolbarControlId): string {
   switch (control) {
     case "undo":
@@ -38,8 +48,13 @@ export function toolbarControlLabel(control: ToolbarControlId): string {
 }
 
 /** Heading, code block, and bullet list all rewrite the block they sit on. */
-function isBlockTypeControl(control: ToolbarControlId): boolean {
-  return control === "heading" || control === "codeBlock" || control === "bulletList";
+function isBlockTypeControl(control: BlockedSubject): boolean {
+  return (
+    control === "heading" ||
+    control === "codeBlock" ||
+    control === "bulletList" ||
+    control === "block-type"
+  );
 }
 
 /**
@@ -63,7 +78,7 @@ export function blockTypeReasonMessage(reason: BlockTypeRefusalReason): string {
 }
 
 export function blockedReasonMessage(
-  control: ToolbarControlId,
+  control: BlockedSubject,
   reason: ToolbarBlockedReason | null,
 ): string | null {
   if (!reason) return null;
