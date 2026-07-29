@@ -12,7 +12,7 @@
  */
 
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
-import { AllSelection, type EditorState, TextSelection } from "@tiptap/pm/state";
+import { AllSelection, type EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 
 import { selectedObject } from "../objects/object-selection";
 import { isEditorObject, isSourceBlock } from "../objects/object-types";
@@ -100,9 +100,39 @@ export function resolveChromeContext(state: EditorState): ChromeContext {
     };
   }
 
+  // A selected plain fence. Not an object — clicking one places a caret, and
+  // the arrow walk steps past it — but not the document either: it is the
+  // deepest thing under the selection, and reporting the document left Esc
+  // with nothing to walk out of and Enter to the base keymap.
+  const fence = selectedSourceBlock(state);
+  if (fence) {
+    const ancestors = resolveAncestors(state.doc.resolve(fence.pos));
+    return {
+      owner: "source-block",
+      nodeType: fence.node.type.name,
+      pos: fence.pos,
+      chain: [...ancestors.chain, "source-block"],
+      objectPos: ancestors.objectPos,
+    };
+  }
+
   const { chain, nodeType, pos, objectPos } = resolveAncestors(selection.$from);
   const owner = chain[chain.length - 1];
   return { owner, nodeType, pos, chain, objectPos };
+}
+
+/**
+ * The source block the selection is standing ON, as opposed to inside.
+ *
+ * A plain code fence is prose the writer types into, so it is deliberately not
+ * an editor object. It can still be selected whole — the block handle does it,
+ * and so does ProseMirror's own parent-node selection — and when it is, it is
+ * what the writer is pointing at.
+ */
+export function selectedSourceBlock(state: EditorState): { node: PMNode; pos: number } | null {
+  const { selection } = state;
+  if (!(selection instanceof NodeSelection)) return null;
+  return isSourceBlock(selection.node) ? { node: selection.node, pos: selection.from } : null;
 }
 
 /**

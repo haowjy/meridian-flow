@@ -44,6 +44,13 @@ const handle = chrome.openLayer({
 handle.release(); // when the surface has closed itself
 ```
 
+**One transient at a time, enforced here.** A layer opened with no `parentId`
+REPLACES every open top-level layer and their subtrees: law 4 is the kernel's
+to keep, not something each surface remembers to do on its way in. Leaving it
+to surfaces let the slash menu and the link form both stay live, two inputs
+reading the same keystrokes. A layer that names a `parentId` is not a rival —
+a submenu, a dialog's source pane — and is left alone.
+
 **Depth is not arrival order.** React mounts child effects before parent
 effects, so a dialog that opens with its source pane already showing registers
 the pane first — and that is the design's mandated new-empty-diagram path, not

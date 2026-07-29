@@ -205,6 +205,41 @@ describe("handing the caret back", () => {
   });
 });
 
+describe("one transient surface at a time", () => {
+  it("closes the open surface when a rival is summoned", () => {
+    const closeSlash = vi.fn();
+
+    function SlashThenForm({ formOpen }: { formOpen: boolean }) {
+      useChromeLayer(editor, { id: "slash-menu", open: true, close: closeSlash });
+      useChromeLayer(editor, { id: "link-form", open: formOpen, close: () => {} });
+      return null;
+    }
+
+    act(() => root?.render(<SlashThenForm formOpen={false} />));
+    expect(closeSlash).not.toHaveBeenCalled();
+
+    // Ctrl+K while the slash menu is up. Both staying open leaves two inputs
+    // reading the same keystrokes.
+    act(() => root?.render(<SlashThenForm formOpen={true} />));
+    expect(closeSlash).toHaveBeenCalledOnce();
+  });
+
+  it("does not mistake a surface's own child for a rival", () => {
+    const closeMenu = vi.fn();
+
+    function MenuWithSubmenu() {
+      const menu = useChromeLayer(editor, { id: "block-menu", open: true, close: closeMenu });
+      return menu.scope(<Layer id="turn-into" close={() => {}} />);
+    }
+
+    act(() => root?.render(<MenuWithSubmenu />));
+
+    const chrome = getEditorChrome(editor);
+    expect(closeMenu).not.toHaveBeenCalled();
+    expect(chrome?.layers).toHaveLength(2);
+  });
+});
+
 describe("a layer whose close does not land", () => {
   it("stops consuming Escape instead of trapping the writer", () => {
     // A surface whose dismissal fails, or whose owner unmounted mid-animation.

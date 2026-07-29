@@ -103,6 +103,27 @@ describe("Enter on a selected object", () => {
     expect(blockTypes(instance)).toEqual(before);
   });
 
+  it("puts the caret at the start of a selected plain fence (§4)", () => {
+    const plainFence: JSONContent = {
+      type: "code_block",
+      attrs: { language: "ts" },
+      content: [{ type: "text", text: "const gate = 3;" }],
+    };
+    const instance = mount([paragraph("before"), plainFence, paragraph("after")]);
+    const before = blockTypes(instance);
+
+    select(instance, positionOf(instance, "code_block"));
+    expect(press(instance, { key: "Enter" })).toBe(true);
+
+    // Not the base keymap's answer, which appends a paragraph after the fence
+    // and leaves the caret in it — a structural edit from a key that was
+    // supposed to take the writer INTO the code.
+    expect(blockTypes(instance)).toEqual(before);
+    expect(instance.state.selection.empty).toBe(true);
+    expect(instance.state.selection.$head.parent.type.name).toBe("code_block");
+    expect(instance.state.selection.from).toBe(positionOf(instance, "code_block") + 1);
+  });
+
   it("engages a table by putting the caret in its first cell", () => {
     const instance = mount([
       {

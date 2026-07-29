@@ -40,7 +40,7 @@ describe("chrome layers", () => {
     const closeSource = vi.fn();
 
     chrome.openLayer({ id: "dialog", close: closeDialog });
-    const source = chrome.openLayer({ id: "source", close: closeSource });
+    const source = chrome.openLayer({ id: "source", parentId: "dialog", close: closeSource });
 
     expect(chrome.closeTopLayer()).toBe(true);
     expect(closeSource).toHaveBeenCalledOnce();
@@ -71,6 +71,55 @@ describe("chrome layers", () => {
     expect(closeDialog).not.toHaveBeenCalled();
   });
 
+  it("replaces the open transient when another one is summoned", () => {
+    const { chrome } = createEditorChrome();
+    const closeSlash = vi.fn();
+
+    const slash = chrome.openLayer({
+      id: "slash-menu",
+      close: () => {
+        closeSlash();
+        slash.release();
+      },
+    });
+    chrome.openLayer({ id: "link-form", close: () => {} });
+
+    // Law 4: one transient surface. Two would leave the slash menu and the
+    // link form both live, competing for the same keystrokes.
+    expect(closeSlash).toHaveBeenCalledOnce();
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["link-form"]);
+  });
+
+  it("leaves a layer opened INSIDE another alone", () => {
+    const { chrome } = createEditorChrome();
+    const closeDialog = vi.fn();
+
+    chrome.openLayer({ id: "diagram-dialog", close: closeDialog });
+    chrome.openLayer({ id: "diagram-source", parentId: "diagram-dialog", close: () => {} });
+
+    // A source pane is not a rival surface, it is part of the one that is
+    // open. Same for a submenu inside a menu.
+    expect(closeDialog).not.toHaveBeenCalled();
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["diagram-dialog", "diagram-source"]);
+  });
+
+  it("takes a replaced surface's whole subtree out of the walk", () => {
+    const { chrome } = createEditorChrome();
+    const dialog = chrome.openLayer({
+      id: "diagram-dialog",
+      close: () => dialog.release(),
+    });
+    const source = chrome.openLayer({
+      id: "diagram-source",
+      parentId: "diagram-dialog",
+      close: () => source.release(),
+    });
+
+    chrome.openLayer({ id: "link-form", close: () => {} });
+
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["link-form"]);
+  });
+
   it("reports how the topmost layer expects Escape to reach it", () => {
     const { chrome } = createEditorChrome();
     expect(chrome.topLayerDismissal).toBeNull();
@@ -89,8 +138,10 @@ describe("chrome layers", () => {
 
   it("keeps two opens of one surface distinct rather than leaving a ghost step", () => {
     const { chrome } = createEditorChrome();
+    // A menu whose submenu happens to carry the same id: both are open, so
+    // both need their own place in the walk.
     const first = chrome.openLayer({ id: "menu", close: () => {} });
-    const second = chrome.openLayer({ id: "menu", close: () => {} });
+    const second = chrome.openLayer({ id: "menu", parentId: first.id, close: () => {} });
 
     expect(first.id).not.toBe(second.id);
     second.release();

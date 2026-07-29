@@ -7,7 +7,6 @@ import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
 import { createStandaloneEditorExtensions } from "../config";
 
-
 import { editorChromeAttributes, getEditorChrome } from "./ChromeKernelExtension";
 
 let editor: Editor | null = null;
@@ -155,6 +154,24 @@ describe("the kernel on a live editor", () => {
     // content of "the editor gave the key back".
     expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
     expect(instance.state.selection.eq(home)).toBe(true);
+  });
+
+  it("walks home off a selected plain fence", () => {
+    const instance = mount([
+      paragraph("before"),
+      { type: "code_block", attrs: { language: "ts" }, content: [{ type: "text", text: "x" }] },
+      paragraph("after"),
+    ]);
+    let fencePos = 0;
+    instance.state.doc.descendants((node, pos) => {
+      if (node.type.name === "code_block") fencePos = pos;
+    });
+    instance.view.dispatch(
+      instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, fencePos)),
+    );
+
+    expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
+    expect(instance.state.selection.$head.parent.textContent).toBe("after");
   });
 
   it("leaves a right-click to the browser when nobody claims (ruling 11)", () => {

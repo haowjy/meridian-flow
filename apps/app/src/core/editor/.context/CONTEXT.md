@@ -170,17 +170,20 @@ Yjs document session. It must stay structurally aligned with
   table containing spans, because GFM cannot represent one and the codec throws
   on serialization. Row zero is the structural GFM header and never moves.
 - The slash trigger lives under `extensions/slash/` and is summarized below.
-- A `code_block` whose `language` is `mermaid` is a plain editable code block:
-  `MeridianCodeBlockLowlight` registers no node view. `MermaidCodeBlock.tsx`
-  keeps the SVG pipeline (`renderMermaid`, token-themed preview) in the tree,
-  unregistered, because rendering a fence hides its `<pre>` and there is no
-  in-page source escape hatch, so the caret lands in a hidden element and drops
-  keystrokes. The rebuild re-registers the node view together with the diagram
-  dialog that owns source access; caret-enters-source is not coming back.
-- `SlashCommandExtension` is a catalog seam with no trigger: the item shape,
-  the fuzzy filter, and a read-at-open catalog getter supplied by the mounting
-  surface. The trigger plugin was deleted with the condemned chrome and the
-  rebuild owns its replacement, so typing `/` currently inserts a literal slash.
+- Enter on a whole-block selection is object physics', not the base keymap's
+  (§4). What it means comes from the block: a registered object with a
+  `surface` intent opens its lane's surface, a table takes the caret into its
+  first cell, and a selected plain fence takes the caret to its own start —
+  its rendering IS its source, so there is nothing else to open. The binding
+  sits at `block` scope precisely because a plain fence is NOT an object;
+  making it one would trade click-to-caret for click-to-select. It always
+  consumes the key, because letting Enter reach the base keymap splits the
+  block and leaves a stray paragraph behind.
+- A lane that owns an object's surface registers it with
+  `registerObjectEngagement`, and receives an `ObjectOpening` saying why it was
+  asked: `"engage"` for something that already exists, `"created"` for one made
+  a moment ago. Law 2's sole exception rides that distinction — a new empty
+  diagram opens ready to work rather than showing a viewer with nothing in it.
 - A `code_block` whose `language` is `mermaid` renders as a diagram and hides
   its own `<pre>`; every other language is the fence itself.
   `MermaidCodeBlock.tsx` is that node view and `mermaid-render.ts` is the async
