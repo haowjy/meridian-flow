@@ -19,6 +19,7 @@ export type MdastInline =
   | MdastDelete
   | MdastInlineCode
   | MdastLink
+  | MdastWikiLink
   | MdastBreak
   | MdastImage
   | MdastJsxText
@@ -53,6 +54,12 @@ export interface MdastLink {
   type: "link";
   url: string;
   title: string | null;
+  children: MdastInline[];
+}
+
+export interface MdastWikiLink {
+  type: "wikiLink";
+  target: string;
   children: MdastInline[];
 }
 

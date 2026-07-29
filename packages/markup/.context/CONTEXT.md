@@ -10,6 +10,9 @@
 - `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (refuses to
   serialize an asset ref) and `createAssetPathResolver(entries)`.
 - Plugin factories: `markdown()` and `mdx({ components })`.
+- Both presets include the first-class `[[target]]` wikilink extension. It maps
+  to the existing link mark with `href: "[[target]]"` and `title: null`; labels
+  are deliberately not part of the syntax.
 - Codec author helpers for converting between ProseMirror nodes and mdast/MDX
   AST nodes.
 - Codec and AST types, `CodecParseError`, and MDX component registry types.
@@ -89,3 +92,11 @@ single positive integer, throw.
 string, stores it as `runtime.source`, then runs post-parse hooks before PM
 conversion. `rawTextForAst()` slices from `runtime.source`, so fallback text and
 AST positions stay self-consistent even when preprocessors rewrite input.
+
+## Wikilinks
+
+`[[target]]` is a non-GFM inline construct shared by the markdown and MDX
+presets. It carries only the target text: `[[target|label]]` is literal text, not
+an alternate spelling. A parsed wikilink uses the ordinary ProseMirror `link`
+mark, so it needs no schema node or extra mark attributes. Resolution never
+occurs in the codec; unresolved targets round-trip unchanged.

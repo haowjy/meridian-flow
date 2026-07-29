@@ -87,6 +87,52 @@ function expectStable(codec: ReturnType<typeof mdxCodec>, input: string): void {
 }
 
 describe("codec presets", () => {
+  it.each([
+    ["markdown", markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })],
+    ["mdx", mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components })],
+  ])("round-trips first-class wikilinks through the %s preset", (_name, wikilinkCodec) => {
+    const input = "Before [[Chapter 213]] and [[characters/Kael]].";
+    const parsed = wikilinkCodec.parse(input).blocks;
+
+    expect(parsed[0]?.toJSON()).toEqual(
+      paragraph(
+        t("Before "),
+        t("Chapter 213", [m("link", { href: "[[Chapter 213]]", title: null })]),
+        t(" and "),
+        t("characters/Kael", [m("link", { href: "[[characters/Kael]]", title: null })]),
+        t("."),
+      ).toJSON(),
+    );
+    expect(wikilinkCodec.serialize(parsed)).toBe(`${input}\n`);
+    expect(docFrom(wikilinkCodec.parse(wikilinkCodec.serialize(parsed)).blocks).toJSON()).toEqual(
+      docFrom(parsed).toJSON(),
+    );
+  });
+
+  it("keeps malformed, labeled, and code-contained bracket text literal", () => {
+    const wikilinkCodec = mdxCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+      components,
+    });
+    const input = [
+      "Literal [[unfinished and [[target|label]] plus `[[inline code]]`.",
+      "",
+      "```md",
+      "[[fenced code]]",
+      "```",
+    ].join("\n");
+
+    const parsed = wikilinkCodec.parse(input).blocks;
+
+    expect(parsed[0]?.textContent).toBe(
+      "Literal [[unfinished and [[target|label]] plus [[inline code]].",
+    );
+    expect(parsed[0]?.rangeHasMark(0, parsed[0].content.size, schema.marks.link)).toBe(false);
+    expect(parsed[1]?.textContent).toBe("[[fenced code]]");
+    expect(wikilinkCodec.serialize(parsed)).not.toContain("[[target|label]]");
+  });
+
   it("registers every markdown node and mark codec", () => {
     expect(markdownBlockCodecs.map((block) => block.name).sort()).toEqual(
       [...markdownRequiredBlockNames].sort(),

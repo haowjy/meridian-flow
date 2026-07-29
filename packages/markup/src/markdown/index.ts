@@ -24,6 +24,7 @@ import {
   strikeMarkCodec,
   strongMarkCodec,
 } from "./marks/index.js";
+import { remarkWikiLink } from "./wikilink.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,
@@ -54,6 +55,7 @@ export function markdown(): MarkupPlugin {
   return {
     blocks: markdownBlockCodecs,
     marks: markdownMarkCodecs,
+    remarkPlugins: [remarkWikiLink],
     postParse: demoteAutolinks,
   };
 }

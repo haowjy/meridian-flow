@@ -8,6 +8,7 @@ import type { ComponentRegistry } from "../components.js";
 import { escapeProseForMdxIngress } from "../escape.js";
 import { demoteAutolinks } from "../helpers.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
+import { remarkWikiLink } from "../markdown/wikilink.js";
 import type { AssetPathResolver, BlockCodec, MarkupPlugin } from "../types.js";
 import {
   createFigureCodec,
@@ -31,7 +32,7 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
   return {
     blocks: mdxBlockCodecs(options?.components),
     marks: markdownMarkCodecs,
-    remarkPlugins: [remarkMdx],
+    remarkPlugins: [remarkMdx, remarkWikiLink],
     preprocess: escapeProseForMdxIngress,
     postParse: demoteAutolinks,
     postSerializeBlock: serializeLayoutBlock,

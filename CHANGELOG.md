@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `packages/markup`: `[[target]]` is now first-class markdown/MDX wire syntax.
+  It round-trips as an ordinary editor link without embedding resolution state,
+  so links to documents that do not exist yet remain valid prose.
 - `apps/app`, `packages/markup`, `packages/prosemirror-schema`: chapters now
   carry tables, Mermaid fences, and block alignment. A mermaid fence stays an
   editable code block for now; its SVG renderer ships unregistered until the

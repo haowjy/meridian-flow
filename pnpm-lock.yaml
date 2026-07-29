@@ -669,6 +669,15 @@ importers:
 
   packages/markup:
     dependencies:
+      mdast-util-from-markdown:
+        specifier: ^2.0.3
+        version: 2.0.3
+      mdast-util-to-markdown:
+        specifier: ^2.1.2
+        version: 2.1.2
+      micromark-util-types:
+        specifier: ^2.0.2
+        version: 2.0.2
       prosemirror-model:
         specifier: ^1.25.9
         version: 1.25.9
