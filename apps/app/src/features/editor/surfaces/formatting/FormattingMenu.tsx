@@ -87,6 +87,9 @@ const MARK_ICONS: Record<FormattingMarkId, ComponentType<{ className?: string }>
   code: Code,
 };
 
+/** How long the link form waits for the prose to take focus back. */
+const FOCUS_HANDOFF_TIMEOUT_MS = 300;
+
 const CLIPBOARD_ICONS: Record<FormattingClipboardId, ComponentType<{ className?: string }>> = {
   cut: Scissors,
   copy: Copy,
@@ -115,6 +118,34 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
     void pasteIntoSelection(editor).then((result) => {
       if (result === "denied" || result === "unavailable") setClipboardRead("unavailable");
     });
+  };
+
+  /**
+   * Hand off to the link form only once the menu's close has finished putting
+   * the caret back in the prose.
+   *
+   * Every editor surface returns focus on close (the chrome contract) and
+   * TipTap's focus lands a frame late, so a form mounted straight away reads
+   * that arrival as focus leaving and dismisses itself. Waiting on the
+   * editor's own focus event says what the handoff actually needs; a guessed
+   * delay would be right until somebody changed the other end.
+   */
+  const openLinkForm = (point: FormattingMenuPoint | null) => {
+    if (!point) return;
+    if (editor.view.hasFocus()) {
+      setLinkAnchor(point);
+      return;
+    }
+
+    let fallback: number | undefined;
+    const openForm = () => {
+      window.clearTimeout(fallback);
+      editor.off("focus", openForm);
+      setLinkAnchor(point);
+    };
+    editor.on("focus", openForm);
+    // A focus that never arrives must not swallow the writer's click (law 5).
+    fallback = window.setTimeout(openForm, FOCUS_HANDOFF_TIMEOUT_MS);
   };
 
   const clipboardCommands: Record<FormattingClipboardId, () => void> = {
@@ -150,7 +181,7 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
               label={addLinkLabel()}
               icon={LinkIcon}
               state={model.link}
-              onSelect={() => setLinkAnchor(anchor)}
+              onSelect={() => openLinkForm(anchor)}
             />
             <EditorMenuSeparator />
             {FORMATTING_CLIPBOARD_IDS.map((id) => (
@@ -235,6 +266,7 @@ function MarkButton({
 }
 
 function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Editor }) {
+  const [open, setOpen] = useState(false);
   const label = turnIntoLabel();
   const blockedReason = formattingBlockedMessage("block-type", model.turnIntoBlockedBy);
 
@@ -258,12 +290,22 @@ function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Edito
   }
 
   return (
-    <EditorMenuSub>
+    <EditorMenuSub open={open} onOpenChange={setOpen}>
       <EditorMenuSubTrigger>
         <Repeat aria-hidden />
         {label}
       </EditorMenuSubTrigger>
-      <EditorMenuSubContent className="min-w-44">
+      <EditorMenuSubContent
+        className="min-w-44"
+        // Radix answers Escape inside a submenu by closing the whole menu,
+        // which spends two steps of the walk home on one key (law 3). Taking
+        // the key here closes this list and leaves the menu standing, so the
+        // next Escape is the one that puts the writer back in the prose.
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          setOpen(false);
+        }}
+      >
         {BLOCK_TYPE_IDS.map((id) => (
           <TurnIntoItem key={id} id={id} state={model.turnInto[id]} editor={editor} />
         ))}
