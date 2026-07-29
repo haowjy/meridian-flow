@@ -10,12 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 
-import {
-  type BlockedSubject,
-  type BlockTypeId,
-  blockedReasonMessage,
-  type ToolbarBlockedReason,
-} from "../toolbar";
+import { type BlockedSubject, blockedReasonMessage, type ToolbarBlockedReason } from "../toolbar";
 import type { FormattingClipboardId, FormattingMarkId } from "./formatting-menu-items";
 
 /** The toolbar's reasons plus the two only a clipboard control can hit. */
@@ -39,27 +34,6 @@ export function formattingMarkLabel(mark: FormattingMarkId): string {
 
 export function turnIntoLabel(): string {
   return t`Turn into`;
-}
-
-export function blockTypeLabel(id: BlockTypeId): string {
-  switch (id) {
-    case "paragraph":
-      return t`Paragraph`;
-    case "heading1":
-      return t`Heading 1`;
-    case "heading2":
-      return t`Heading 2`;
-    case "heading3":
-      return t`Heading 3`;
-    case "bulletList":
-      return t`Bulleted list`;
-    case "orderedList":
-      return t`Numbered list`;
-    case "blockquote":
-      return t`Quote`;
-    case "codeBlock":
-      return t`Code block`;
-  }
 }
 
 export function addLinkLabel(): string {

@@ -7,8 +7,6 @@
  */
 import { t } from "@lingui/core/macro";
 
-import type { TurnIntoTargetId } from "./turn-into";
-
 export function blockHandleLabel(): string {
   return t`Move or change this block`;
 }
@@ -25,27 +23,6 @@ export function blockMenuLabel(id: "moveUp" | "moveDown" | "duplicate" | "turnIn
       return t`Turn into`;
     case "delete":
       return t`Delete`;
-  }
-}
-
-export function turnIntoLabel(id: TurnIntoTargetId): string {
-  switch (id) {
-    case "paragraph":
-      return t`Paragraph`;
-    case "heading1":
-      return t`Heading 1`;
-    case "heading2":
-      return t`Heading 2`;
-    case "heading3":
-      return t`Heading 3`;
-    case "bulletList":
-      return t`Bulleted list`;
-    case "orderedList":
-      return t`Numbered list`;
-    case "quote":
-      return t`Quote`;
-    case "codeBlock":
-      return t`Code block`;
   }
 }
 

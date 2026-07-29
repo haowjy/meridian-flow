@@ -45,6 +45,7 @@ import {
   BLOCK_TYPE_IDS,
   type BlockedSubject,
   type BlockTypeId,
+  blockTypeLabel,
   toggleTextMark,
   turnIntoBlockType,
 } from "../toolbar";
@@ -58,7 +59,6 @@ import {
 } from "./clipboard-commands";
 import {
   addLinkLabel,
-  blockTypeLabel,
   clipboardLabel,
   clipboardShortcut,
   formattingBlockedMessage,

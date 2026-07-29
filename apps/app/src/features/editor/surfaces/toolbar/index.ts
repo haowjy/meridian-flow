@@ -11,6 +11,7 @@ export {
   BLOCK_TYPE_IDS,
   type BlockTypeId,
   type BlockTypeRefusalReason,
+  type BlockTypeState,
   blockTypeRefusal,
   blockTypeStates,
   codeBlockRefusal,
@@ -26,4 +27,9 @@ export {
   toggleTextMark,
   turnIntoBlockType,
 } from "./toolbar-commands";
-export { type BlockedSubject, blockedReasonMessage, blockTypeReasonMessage } from "./toolbar-copy";
+export {
+  type BlockedSubject,
+  blockedReasonMessage,
+  blockTypeLabel,
+  blockTypeReasonMessage,
+} from "./toolbar-copy";

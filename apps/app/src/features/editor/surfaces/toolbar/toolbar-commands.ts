@@ -86,6 +86,13 @@ export type ToolbarControlState = {
 
 export type ToolbarControlStates = Record<ToolbarControlId, ToolbarControlState>;
 
+/**
+ * A control state whose refusal can only be a whole-block one. Narrower than
+ * `ToolbarControlState` because the surfaces that render Turn into show the
+ * reason as block-type copy, and no other reason can reach them.
+ */
+export type BlockTypeState = ToolbarControlState & { blockedBy: BlockTypeRefusalReason | null };
+
 export type ToolbarMarkName = "strong" | "em" | "code" | "strike";
 
 /**
@@ -228,7 +235,7 @@ export function textMarkState(editor: Editor, mark: ToolbarMarkName | "link"): T
  * (a rendered mermaid diagram) refuses all eight: un-fencing a diagram would
  * destroy it exactly the way converting one to a heading would (F6).
  */
-export function blockTypeStates(editor: Editor): Record<BlockTypeId, ToolbarControlState> {
+export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeState> {
   const strict = blockTypeRefusal(editor);
   const reversible = codeBlockRefusal(editor);
   const activeId = activeBlockTypeId(editor);
@@ -241,7 +248,7 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, ToolbarCont
         blockedBy: id === "paragraph" || id === "codeBlock" ? reversible : strict,
       },
     ]),
-  ) as Record<BlockTypeId, ToolbarControlState>;
+  ) as Record<BlockTypeId, BlockTypeState>;
 }
 
 /**
