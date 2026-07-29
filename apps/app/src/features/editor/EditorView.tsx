@@ -68,6 +68,7 @@ import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
+import { useWikilinkDocuments } from "./surfaces/link";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
 import { useInlineReviewSync } from "./useInlineReviewSync";
@@ -434,6 +435,15 @@ function ActiveSessionEditorView({
     };
   }, [effectiveEditable, identity.schemaType]);
 
+  // Read when the `[[` menu opens, for the same reason as the slash catalog:
+  // the label resolves against whatever locale is active then, and the document
+  // list changes every time the writer creates or renames a file.
+  const wikilinkDocuments = useWikilinkDocuments(projectId);
+  const wikilinkCatalog = useCallback(() => {
+    if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
+    return { label: t`Link a document`, documents: wikilinkDocuments };
+  }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
+
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
     clearUploadTimerRef.current = setTimeout(() => {
@@ -597,6 +607,7 @@ function ActiveSessionEditorView({
     agentNames,
     placeholder: t`Start writing…`,
     slashCommandCatalog,
+    wikilinkCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
   });
