@@ -36,7 +36,12 @@ import { editorChromeAttributes, type HoverIntent } from "@/core/editor/chrome";
 import { selectedObject } from "@/core/editor/objects";
 
 import { EditorMenu, OverlayIconRow, useChromeSuppressed, useEditorChrome } from "../../chrome";
-import { TableColumnMenuItems, TableMenuItems, TableRowMenuItems } from "./TableVerbMenu";
+import {
+  TableCellMenuItems,
+  TableColumnMenuItems,
+  TableMenuItems,
+  TableRowMenuItems,
+} from "./TableVerbMenu";
 import {
   cellDocPosition,
   measureTableChrome,
@@ -47,6 +52,7 @@ import {
 } from "./table-anchors";
 import {
   appendTableAxis,
+  claimsTableCellMenu,
   mergeJoinsCellText,
   selectedColumnAlignment,
   selectedTablePlacement,
@@ -57,6 +63,8 @@ import {
 import { tableChromeCopy } from "./table-copy";
 
 type Axis = "row" | "column";
+/** The four shapes a table menu takes, each a different thing to act on. */
+type TableMenuShape = Axis | "cells" | "table";
 
 export function TableChrome({ editor }: { editor: Editor }) {
   useEditorRevision(editor);
@@ -68,6 +76,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const [hovering, setHovering] = useState(false);
   const [openMenu, setOpenMenu] = useState<Axis | null>(null);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
+  const [cellMenuAt, setCellMenuAt] = useState<{ x: number; y: number } | null>(null);
 
   // The pointer travels off the editor and onto the grips, so hover has to be
   // re-enterable from the chrome itself; the intent's warm grace is what makes
@@ -158,6 +167,22 @@ export function TableChrome({ editor }: { editor: Editor }) {
       },
     });
   }, [chrome, editable, selectAxis]);
+
+  // A rectangle the writer swept by hand is the one table selection no grip
+  // can make, and the only path to merging two arbitrary cells. Nothing above
+  // this rung wants it — the formatting menu admits text selections only — so
+  // without this the right-click lands on silence.
+  useEffect(() => {
+    if (!chrome) return;
+    return chrome.registerContextClaim({
+      id: "cell-selection",
+      claim: (target) => {
+        if (!claimsTableCellMenu(editor, target)) return false;
+        setCellMenuAt({ x: target.event.clientX, y: target.event.clientY });
+        return true;
+      },
+    });
+  }, [chrome, editor]);
 
   useTableKeymap(chrome, editable);
 
@@ -250,6 +275,19 @@ export function TableChrome({ editor }: { editor: Editor }) {
             document.body,
           )
         : null}
+
+      {/* What a swept rectangle of cells opens, hung off the pointer. */}
+      <EditorMenu
+        editor={editor}
+        id="table-cell-menu"
+        open={cellMenuAt !== null}
+        onOpenChange={(open) => {
+          if (!open) setCellMenuAt(null);
+        }}
+        at={cellMenuAt}
+      >
+        <GripMenuContent editor={editor} axis="cells" />
+      </EditorMenu>
 
       {/* The table's object controls: one ⋮, and only while the table is
           selected. §5.4 rules out a hover icon row here — the grips already
@@ -367,7 +405,7 @@ function pieceStyle(piece: TableChromePiece | null): CSSProperties {
  * unmounted otherwise). Recomputing the verb matrix on every keystroke of the
  * chapter would be a table walk per character; behind an open menu it is free.
  */
-function GripMenuContent({ editor, axis }: { editor: Editor; axis: Axis | "table" }) {
+function GripMenuContent({ editor, axis }: { editor: Editor; axis: TableMenuShape }) {
   const states = tableVerbStates(editor.state, { editable: editor.isEditable });
   const props = {
     editor,
@@ -379,6 +417,7 @@ function GripMenuContent({ editor, axis }: { editor: Editor; axis: Axis | "table
 
   if (axis === "row") return <TableRowMenuItems {...props} />;
   if (axis === "column") return <TableColumnMenuItems {...props} />;
+  if (axis === "cells") return <TableCellMenuItems {...props} />;
   return <TableMenuItems {...props} />;
 }
 

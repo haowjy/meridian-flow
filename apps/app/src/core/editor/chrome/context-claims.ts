@@ -25,8 +25,20 @@ import type { ChromeContext } from "./chrome-context";
  * both match, because a grip is chrome drawn outside the frame and an object
  * is a node inside it. Grip is spelled first as the more specific of the two,
  * so a future grip drawn OVER its table still resolves to the grip.
+ *
+ * `cell-selection` is last because it is the widest: a rectangle of table
+ * cells the writer swept by hand. A link inside one is still a link, a grip
+ * over one is still a grip, and the rung exists because nothing above it wants
+ * a `CellSelection` — `text-selection` admits `TextSelection` and
+ * `AllSelection` only, which left a swept rectangle with no menu at all.
  */
-export const CONTEXT_CLAIM_ORDER = ["link", "text-selection", "grip", "object"] as const;
+export const CONTEXT_CLAIM_ORDER = [
+  "link",
+  "text-selection",
+  "grip",
+  "object",
+  "cell-selection",
+] as const;
 
 export type ContextClaimId = (typeof CONTEXT_CLAIM_ORDER)[number];
 

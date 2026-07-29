@@ -27,8 +27,8 @@ import {
   type ChromeContext,
   type ChromeContextKind,
   type ContextClaimTarget,
-  editorChromeAttributes,
   getEditorChrome,
+  isEditorChromeElement,
   proseSelectionCovers,
   resolveChromeContext,
 } from "@/core/editor/chrome";
@@ -86,21 +86,11 @@ export function claimsFormattingMenu(editor: Editor, target: ContextClaimTarget)
   if (!target.insideTextSelection) return false;
   // A grip or an object row is chrome standing over the prose; its own lane
   // takes those right-clicks, further down the ladder than this rung.
-  if (isEditorChrome(editor, target.element)) return false;
+  const chrome = getEditorChrome(editor);
+  if (chrome && isEditorChromeElement(chrome, target.element)) return false;
   // What the POINTER is over, which is the finer answer: the writer aimed at a
   // place inside their selection, and that place may be a diagram.
   return formattingOwnsContext(target.context);
-}
-
-function isEditorChrome(editor: Editor, element: Element): boolean {
-  const chrome = getEditorChrome(editor);
-  if (!chrome) return false;
-  // Qualified by this editor's id, the way the kernel's own router qualifies
-  // it: two documents side by side are two kernels, and an unqualified mark
-  // would hand one editor's overlay row to both.
-  return Object.entries(editorChromeAttributes(chrome)).some(
-    ([attribute, value]) => element.closest(`[${attribute}="${value}"]`) !== null,
-  );
 }
 
 /**

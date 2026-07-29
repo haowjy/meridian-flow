@@ -178,6 +178,13 @@ right-clicks. `closest()` works either way.
 both match, because a grip is chrome and an object is a node. Grip is spelled
 first as the more specific of the two.
 
+**`cell-selection` is last.** A rectangle of table cells the writer swept is
+the widest thing on the ladder, and nothing above it wants it: the formatting
+rung admits `TextSelection` and `AllSelection` only, a grip is chrome rather
+than a cell, and no object type answers for a table. Without the rung a swept
+rectangle reached no menu at all. Last is also correct: a link inside a
+selected cell is still a link.
+
 **The other two triggers are the claiming lane's.** §5.1 gives the formatting
 menu three doors — right-click, Menu key / Shift+F10, and long-press on touch.
 Only the first is a `contextmenu` event, so only the first routes here. The

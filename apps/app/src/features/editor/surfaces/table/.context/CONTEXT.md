@@ -78,6 +78,33 @@ not the window), on resize, on a `ResizeObserver` over the cell and the table,
 and on every editor transaction: a row grows as the writer types into it and
 the grip has to travel with it.
 
+## The four menus, and who takes a right-click
+
+| Shape | Door | Carries |
+|---|---|---|
+| Row | row grip, left-click or right-click | insert, merge/split, move, delete, `Table ▸` |
+| Column | column grip, either button | insert, alignment, merge/split, move, delete, `Table ▸` |
+| Cells | right-click inside a swept rectangle | merge/split, alignment, `Table ▸` |
+| Table | the selected table's ⋮ | header row, alignment, placement, widths, delete |
+
+The cell menu is deliberately the shortest. Merge and split are what a
+rectangle exists for, alignment applies to the columns it covers, and the row
+and column verbs already have a home on the grips a few pixels away; a third
+copy of them would be three places saying the same thing.
+
+`cell-selection` is the ladder's last rung, added because nothing above it
+wanted a `CellSelection`: `proseSelectionCovers` admits `TextSelection` and
+`AllSelection` only, so the formatting menu stands down, a grip is chrome
+rather than a cell, and `objectSurfaceKind` returns null for a table. A swept
+rectangle therefore reached no menu at all. Last is the right place for it: a
+link inside a selected cell is still a link, and a grip drawn over one is
+still a grip.
+
+`claimsTableCellMenu` decides it, pure and testable. It asks whether the
+pointer is inside one of the cells the selection COVERS, not whether it falls
+in the selection's `from`..`to` range: a rectangle two columns wide in a
+four-column table spans cells it does not contain.
+
 ## Hover and the menus
 
 Hover intent comes from `chrome.createHoverIntent`, keyed on the cell ELEMENT

@@ -50,6 +50,11 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - **The kernel enforces keymap scope.** A `table`-scope binding only runs with
   a table in the context chain, so a lane guard re-asking the same question is
   a second answer waiting to drift.
+- **Four menus, four things to act on**: a row, a column, the table, and a
+  rectangle of cells the writer swept. The first three hang off chrome; the
+  fourth is a right-click, because no grip can make an arbitrary rectangle and
+  merging two adjacent cells has no other path. A bare caret in a cell is NOT
+  one of them: that right-click stays the browser's, where spellcheck lives.
 - **Refusals are named, and the item says so** (law 5). A blocked menu item
   keeps its hover and focus, wears `aria-disabled`, drops its action, and
   carries the reason on a second line. `disabled` is where a reason goes to

@@ -227,6 +227,38 @@ export function TableColumnMenuItems({ editor, states, mergeJoinsText, ...table 
   );
 }
 
+/**
+ * What a swept rectangle of cells offers.
+ *
+ * Deliberately short: merge and split are the verbs a rectangle exists for,
+ * alignment applies to the columns it covers, and the row and column verbs
+ * already have a home on the grips a few pixels away. A third full copy of
+ * them here would be three places to keep saying the same thing.
+ */
+export function TableCellMenuItems({ editor, states, mergeJoinsText, ...table }: VerbProps) {
+  return (
+    <>
+      <TableVerbItem
+        editor={editor}
+        states={states}
+        verb="mergeCells"
+        icon={<TableCellsMerge aria-hidden />}
+        mergeJoinsText={mergeJoinsText}
+      />
+      <TableVerbItem
+        editor={editor}
+        states={states}
+        verb="splitCell"
+        icon={<TableCellsSplit aria-hidden />}
+      />
+      <EditorMenuSeparator />
+      <TableAlignmentItems editor={editor} alignment={table.alignment} />
+      <EditorMenuSeparator />
+      <TableSubmenu editor={editor} states={states} mergeJoinsText={mergeJoinsText} {...table} />
+    </>
+  );
+}
+
 /** The table's own verbs, flat. What the selected table's ⋮ shows. */
 export function TableMenuItems({ editor, states, alignment, placement }: VerbProps) {
   return (
