@@ -52,9 +52,13 @@ export function duplicateObject(editor: Editor, pos: number): boolean {
  * (`surfaceFields`), so this takes any of them and the surface never branches on
  * the node type.
  *
- * An emptied optional field becomes null rather than an empty string: `caption`
- * is a plain string in the schema and `alt`/`label` are nullable, and a wire
- * format that round-trips needs the absent case to be absent.
+ * **What the writer typed is what is stored.** The popover has no draft, so this
+ * runs per keystroke against a controlled input that renders the document back:
+ * a trim here took the space off the end of "Lanterns " before the next letter
+ * could follow it, and the space bar did nothing at all. The only normalization
+ * left is emptiness — a nullable field holding nothing but whitespace is a field
+ * nobody wrote, and the wire format needs the absent case to be absent
+ * (`caption` is a plain string in the schema, `alt` and `label` are nullable).
  */
 export function setObjectField(
   editor: Editor,
@@ -64,8 +68,7 @@ export function setObjectField(
 ): boolean {
   const node = editor.state.doc.nodeAt(pos);
   if (!node) return false;
-  const trimmed = field === "caption" ? value : value.trim();
-  const next = field === "caption" ? trimmed : trimmed || null;
+  const next = field !== "caption" && value.trim() === "" ? null : value;
   if (node.attrs[field] === next) return true;
   editor.view.dispatch(
     editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, [field]: next }),
