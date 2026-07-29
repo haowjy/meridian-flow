@@ -12,14 +12,19 @@ import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
+
 import { createStandaloneEditorExtensions } from "../config";
 import { getLinkResolution } from "./LinkSurfaceExtension";
 
 let editor: Editor | null = null;
+let pair: CollabPair | null = null;
 
 afterEach(() => {
   editor?.destroy();
   editor = null;
+  pair?.destroy();
+  pair = null;
 });
 
 const SECOND_GATE: ResolvedDocumentLink = {
@@ -129,5 +134,86 @@ describe("what an internal link is drawn as", () => {
       state: "resolved",
       document: SECOND_GATE,
     });
+  });
+});
+
+/**
+ * The decorations are rebuilt only when something reached a link, so the
+ * transactions that do NOT rebuild them are the ones with something to prove:
+ * a peer's write, which arrives as a replacement of the whole document, and a
+ * local edit somewhere else, which must carry them along instead.
+ */
+describe("what the drawing survives", () => {
+  const LINKED = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Kael pressed" }] },
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "The Second Gate",
+            marks: [{ type: "link", attrs: { href: "[[The Second Gate]]" } }],
+          },
+        ],
+      },
+    ],
+  };
+
+  async function resolvedPair(): Promise<CollabPair> {
+    pair = createCollabPair(LINKED);
+    getLinkResolution(pair.local)?.registerResolver(async () => SECOND_GATE);
+    await settle();
+    expect(stateOf(pair.local)).toBe("resolved");
+    return pair;
+  }
+
+  it("keeps the state through a peer's write, which replaces the whole document", async () => {
+    const { local, peer, sync } = await resolvedPair();
+
+    peer.commands.insertContentAt(1, "A collaborator typed here. ");
+    sync();
+
+    expect(local.state.doc.textContent).toContain("A collaborator typed here.");
+    expect(stateOf(local)).toBe("resolved");
+  });
+
+  it("keeps the state through a peer's write inside the link's own text", async () => {
+    const { local, peer, sync } = await resolvedPair();
+    const linkStart = local.state.doc.resolve(local.state.doc.content.size - 1).start();
+
+    peer.commands.insertContentAt(linkStart + 3, "!");
+    sync();
+
+    expect(stateOf(local)).toBe("resolved");
+  });
+
+  it("carries the state past an edit of its own in another paragraph", async () => {
+    const target = editorWith(
+      '<p>Kael pressed</p><p><a href="[[The Second Gate]]">The Second Gate</a></p>',
+    );
+    getLinkResolution(target)?.registerResolver(async () => SECOND_GATE);
+    await settle();
+    expect(stateOf(target)).toBe("resolved");
+
+    target.commands.insertContentAt(3, "xyz");
+
+    expect(stateOf(target)).toBe("resolved");
+  });
+
+  it("asks about a link the writer just made", async () => {
+    const target = editorWith("<p>The Second Gate</p>");
+    getLinkResolution(target)?.registerResolver(async () => SECOND_GATE);
+    await settle();
+    expect(stateOf(target)).toBeNull();
+
+    target.commands.selectAll();
+    target.commands.setLink({ href: "[[The Second Gate]]" });
+    await settle();
+
+    // The mark step moves nothing, so a hot path that only mapped positions
+    // would keep the old set of hrefs and never ask about this one.
+    expect(stateOf(target)).toBe("resolved");
   });
 });

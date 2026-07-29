@@ -52,6 +52,11 @@ pointer, and calls into it.
   attribute (law 9), so `[[Chapter 214]]` from an LLM needs no extra
   attributes and no peer receives an answer that was true in someone else's
   project.
+- **The decorations are mapped on an ordinary keystroke and rebuilt only when
+  something reached a link** — a mark step, an edit inside one, an answer
+  landing. The exception is a remote write: mapping across the whole-document
+  replace reports every position deleted and would erase the drawing, so
+  `isRemoteDocumentRebuild` rebuilds instead.
 - Register keys and claims from the plugin's `view()`, never TipTap's
   `onCreate` — it fires a macrotask late and the first Ctrl+K misses it.
 
