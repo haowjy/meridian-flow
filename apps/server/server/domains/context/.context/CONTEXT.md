@@ -52,6 +52,11 @@ with a single unified `ContextPort` that resolves durable project schemes
   updated immediately when figure upload creates a binary asset. A path shared
   by more than one asset resolves to nothing: the id direction is unique, the
   path direction is not.
+- **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
+  resolution boundary for wikilink titles/aliases, `manuscript://` and
+  `work://` locations, and paths relative to the containing document. The
+  Drizzle adapter reads authoritative document/folder state for every
+  resolution; the in-memory adapter obeys the same contract.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
@@ -65,6 +70,7 @@ with a single unified `ContextPort` that resolves durable project schemes
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. |
+| `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
 
 ## URI and router invariants
 
@@ -76,6 +82,11 @@ with a single unified `ContextPort` that resolves durable project schemes
   Omitted authority resolves to the thread's primary Work. `manuscript://`,
   `kb://`, `user://` carry no work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
+- Wikilink title/alias matching is case-insensitive and trims outer whitespace.
+  Scheme and relative paths are exact (an omitted final extension may match);
+  relative traversal cannot escape its scheme root. `work://` maps to the
+  selected Work's `scratch` source and serializes with its Work ID authority.
+  Zero or multiple matches both resolve to `null`; resolution never guesses.
 - Router methods attach the canonical URI to every `ContextError`.
 - Writer-facing HTTP mutations use `context-mutation-validation.ts`, which delegates to the shared reason-coded path/name validators before constructing ContextPort URIs.
 - Adapter `Ok(null)` becomes `not_found`; `permission_denied`,

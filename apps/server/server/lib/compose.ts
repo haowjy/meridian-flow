@@ -23,6 +23,7 @@ import {
 } from "../domains/collab/index.js";
 import {
   createDrizzleAssetPathResolver,
+  createDrizzleDocumentLinkResolver,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
@@ -32,7 +33,9 @@ import {
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createThreadUploadImportService,
+  type DocumentLinkResolver,
   type FigureAssetService,
+  InMemoryDocumentLinkResolver,
   type PromotionService,
   type ResultRepository,
   type ThreadUploadDocumentStore,
@@ -150,6 +153,7 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
+  documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -197,6 +201,7 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
+  documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -386,6 +391,7 @@ export async function createProductionAppPorts(input: {
     eventQuery: input.eventQuery,
     documentSync,
     contextPorts,
+    documentLinks: createDrizzleDocumentLinkResolver(input.db),
     projects,
     works: workRepo,
     projectRepo,
@@ -553,6 +559,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadRuntime: createThreadRuntimeService({ db: ports.db }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
+    documentLinks: ports.documentLinks,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -702,6 +709,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    documentLinks: new InMemoryDocumentLinkResolver(),
     projects: {
       async findPersonalProjectId() {
         return null;
