@@ -37,4 +37,5 @@ the design, from the primitives.
 → [`chrome/AGENTS.md`](chrome/AGENTS.md)
 → [`surfaces/toolbar/AGENTS.md`](surfaces/toolbar/AGENTS.md)
 → [`surfaces/slash/AGENTS.md`](surfaces/slash/AGENTS.md)
+→ [`surfaces/blocks/AGENTS.md`](surfaces/blocks/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)

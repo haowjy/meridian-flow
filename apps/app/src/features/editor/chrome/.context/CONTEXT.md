@@ -136,6 +136,12 @@ const suppressed = useChromeSuppressed(editor); // drag or sweep in flight
 const chrome = useEditorChrome(editor);       // registrations; may be null
 ```
 
+Reach for these by module (`./useEditorChrome`, `./EditorMenu`) rather than
+through `chrome/index.ts`. That barrel also carries `chrome-surfaces`, the
+registry every surface is listed in, so a surface importing the barrel closes a
+module cycle — Vite reports the registry's own export being read before
+initialization, and the lane's surface never mounts.
+
 `useChromeContext` and `useChromeSuppressed` are `useSyncExternalStore`
 readings of one store, so two surfaces can never disagree about what owns
 chrome. Both answer safely on an editor with no kernel.

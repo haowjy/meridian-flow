@@ -18,6 +18,7 @@ import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { AgentNameStore } from "./agent-name-store";
+import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
@@ -124,6 +125,7 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
   // L-D slash (M8) mounts with the catalog option instead: a surface that
   // passes no catalog pays for no trigger.
   // L-E block movement (M9)
+  BlockDragExtension,
   // L-F links (M7)
 ];
 

@@ -64,6 +64,17 @@ export type ToolbarBlockedReason =
   | "no-project"
   | "upload-in-flight";
 
+/**
+ * The subset a whole-block conversion can refuse with. Named because the block
+ * menu's Turn into and the formatting menu's carry the same verbs and must
+ * refuse the same targets — `blockTypeRefusal` is the one fence behind all of
+ * them, and its answers are these.
+ */
+export type BlockTypeRefusalReason = Extract<
+  ToolbarBlockedReason,
+  "object-selection" | "code-block" | "embedded-block" | "mixed-selection" | "table-cell"
+>;
+
 export type ToolbarControlState = {
   /** Lit when the control's state is currently applied (law 6, F9). */
   active: boolean;
@@ -116,7 +127,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
   // Read-only outranks every contextual reason: nothing applies to a document
   // the writer cannot change, and saying so once is the honest answer.
   const readOnly: ToolbarBlockedReason | null = context.editable ? null : "document-read-only";
-  const blockType = blockTypeBlocker(editor);
+  const blockType = blockTypeRefusal(editor);
   const alignment = currentAlignmentValue(editor);
 
   return {
@@ -142,7 +153,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
     },
     codeBlock: {
       active: editor.isActive("code_block"),
-      blockedBy: readOnly ?? codeBlockBlocker(editor),
+      blockedBy: readOnly ?? codeBlockRefusal(editor),
     },
     bulletList: {
       active: editor.isActive("bullet_list"),
@@ -175,19 +186,19 @@ export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
 
 /** True toggle: pressing on an H1 returns the block to a paragraph (law 6). */
 export function toggleHeadingBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || blockTypeBlocker(editor)) return false;
+  if (!canWrite(editor) || blockTypeRefusal(editor)) return false;
   return editor.chain().focus().toggleHeading({ level: TOOLBAR_HEADING_LEVEL }).run();
 }
 
 /** True toggle: one press fences the block, one press returns it to prose. */
 export function toggleCodeBlockBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || codeBlockBlocker(editor)) return false;
+  if (!canWrite(editor) || codeBlockRefusal(editor)) return false;
   return editor.chain().focus().toggleCodeBlock().run();
 }
 
 /** True toggle: one press lists, one press un-lists, however deep (law 6). */
 export function toggleBulletListBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || blockTypeBlocker(editor)) return false;
+  if (!canWrite(editor) || blockTypeRefusal(editor)) return false;
   if (!editor.isActive("bullet_list")) return editor.chain().focus().toggleBulletList().run();
   return unwrapBulletList(editor);
 }
@@ -278,14 +289,20 @@ function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
  * anything that is not a text block (figure, image, horizontal rule, table) is
  * not a block-type target, and formatting has no text to land on either.
  */
-function objectSelectionBlocker(editor: Editor): ToolbarBlockedReason | null {
+function objectSelectionBlocker(editor: Editor): BlockTypeRefusalReason | null {
   const { selection } = editor.state;
   return selection instanceof NodeSelection && !selection.node.isTextblock
     ? "object-selection"
     : null;
 }
 
-function blockTypeBlocker(editor: Editor): ToolbarBlockedReason | null {
+/**
+ * The block-type fence, shared with every other surface that rewrites a whole
+ * block (the block menu's Turn into, the formatting menu's). Exported so those
+ * surfaces refuse the same targets for the same reasons rather than growing a
+ * second fence beside this one.
+ */
+export function blockTypeRefusal(editor: Editor): BlockTypeRefusalReason | null {
   const objectSelection = objectSelectionBlocker(editor);
   if (objectSelection) return objectSelection;
 
@@ -316,8 +333,8 @@ function blockTypeBlocker(editor: Editor): ToolbarBlockedReason | null {
  * cell, or a mixed selection where a conversion would strip a fence's language
  * along the way.
  */
-function codeBlockBlocker(editor: Editor): ToolbarBlockedReason | null {
-  const blocker = blockTypeBlocker(editor);
+export function codeBlockRefusal(editor: Editor): BlockTypeRefusalReason | null {
+  const blocker = blockTypeRefusal(editor);
   return blocker === "code-block" ? null : blocker;
 }
 
@@ -367,7 +384,7 @@ function isNonProseTextblock(node: PMNode): boolean {
   return node.type.spec.code === true;
 }
 
-function nonProseReason(node: PMNode): ToolbarBlockedReason {
+function nonProseReason(node: PMNode): BlockTypeRefusalReason {
   return node.type.name === "code_block" ? "code-block" : "embedded-block";
 }
 

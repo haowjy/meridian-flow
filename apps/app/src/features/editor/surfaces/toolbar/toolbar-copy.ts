@@ -6,7 +6,11 @@
  */
 import { t } from "@lingui/core/macro";
 
-import type { ToolbarBlockedReason, ToolbarControlId } from "./toolbar-commands";
+import type {
+  BlockTypeRefusalReason,
+  ToolbarBlockedReason,
+  ToolbarControlId,
+} from "./toolbar-commands";
 
 export function toolbarControlLabel(control: ToolbarControlId): string {
   switch (control) {
@@ -38,6 +42,26 @@ function isBlockTypeControl(control: ToolbarControlId): boolean {
   return control === "heading" || control === "codeBlock" || control === "bulletList";
 }
 
+/**
+ * Why a whole-block conversion cannot run on this target. Shared with every
+ * surface carrying the same verbs — the block menu's Turn into — so one
+ * refusal reads the same wherever the writer meets it.
+ */
+export function blockTypeReasonMessage(reason: BlockTypeRefusalReason): string {
+  switch (reason) {
+    case "object-selection":
+      return t`Select text to change the block type.`;
+    case "code-block":
+      return t`Code blocks keep their own block type.`;
+    case "embedded-block":
+      return t`Embedded blocks keep their own block type.`;
+    case "mixed-selection":
+      return t`Part of this selection keeps its own block type.`;
+    case "table-cell":
+      return t`Table cells hold plain paragraphs.`;
+  }
+}
+
 export function blockedReasonMessage(
   control: ToolbarControlId,
   reason: ToolbarBlockedReason | null,
@@ -50,20 +74,19 @@ export function blockedReasonMessage(
       return t`This document is read only right now.`;
     case "object-selection":
       if (control === "link") return t`Select text to add a link.`;
-      if (isBlockTypeControl(control)) return t`Select text to change the block type.`;
+      if (isBlockTypeControl(control)) return blockTypeReasonMessage(reason);
       return t`Select text to format it.`;
     case "code-block":
-      if (isBlockTypeControl(control)) return t`Code blocks keep their own block type.`;
+      if (isBlockTypeControl(control)) return blockTypeReasonMessage(reason);
       if (control === "link") return t`Code blocks take no links.`;
       return t`Code blocks take no formatting.`;
     case "embedded-block":
-      if (isBlockTypeControl(control)) return t`Embedded blocks keep their own block type.`;
+      if (isBlockTypeControl(control)) return blockTypeReasonMessage(reason);
       if (control === "link") return t`Embedded blocks take no links.`;
       return t`Embedded blocks take no formatting.`;
     case "mixed-selection":
-      return t`Part of this selection keeps its own block type.`;
     case "table-cell":
-      return t`Table cells hold plain paragraphs.`;
+      return blockTypeReasonMessage(reason);
     case "inline-code":
       return control === "link"
         ? t`Inline code takes no links.`
