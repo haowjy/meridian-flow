@@ -34,9 +34,46 @@ describe("where the table's chrome goes", () => {
     expect(columnGrip).toEqual({ left: 373, top: 121, width: 30, height: 15 });
     // 6px left of the frame, centred on the hovered row.
     expect(rowGrip).toEqual({ left: 307, top: 165, width: 15, height: 30 });
-    // 9px past the right and bottom edges, centred on the frame.
+    // 9px past the right edge, centred on the frame.
     expect(addColumn).toEqual({ left: 865, top: 156, width: 18, height: 18 });
-    expect(addRow).toEqual({ left: 583, top: 199, width: 18, height: 18 });
+    // 6px inside the bottom edge, centred on the frame.
+    expect(addRow).toEqual({ left: 583, top: 166, width: 18, height: 18 });
+  });
+
+  it("keeps the add-row tab off the paragraph under the table", () => {
+    // Measured in the running editor: 16px prose, and `.ProseMirror > * + *`
+    // is the only thing between two blocks — 0.9em, 14.4px here and less at a
+    // smaller reading size. The tab is 18px. So no gap below the frame clears
+    // the paragraph: at 9px the tab ran to 1092.6 while that paragraph's first
+    // line box started at 1083, and a writer clicking their own first line
+    // pressed "add a row" instead. Inside the frame is the only placement that
+    // holds at every reading size.
+    const table: Box = { left: 328, top: 800, right: 856, bottom: 1065 };
+    const wide: Box = { left: 0, top: 0, right: 1200, bottom: 1400 };
+    const { addRow } = tableChromePieces({
+      table,
+      column: { left: table.left, width: 120 },
+      row: { top: 1000, height: 40 },
+      port: wide,
+    });
+    if (!addRow) throw new Error("a table this size has room for its tab");
+
+    expect(addRow).toEqual({ left: 583, top: 1041, width: 18, height: 18 });
+    expect(addRow.top + addRow.height).toBeLessThanOrEqual(table.bottom);
+  });
+
+  it("leaves the add-column tab outside the frame, where no block reaches", () => {
+    // Sideways there is nothing to collide with. A table is a block, so the
+    // space beside it is the page gutter (measured: the prose column ends at
+    // 856, the pane at 920) or the table's own empty half when it is aligned
+    // narrow. Nothing renders there, so this tab keeps its gap.
+    const table: Box = { left: 328, top: 140, right: 856, bottom: 190 };
+    expect(pieces(table, { top: 160, height: 40 }).addColumn).toEqual({
+      left: 865,
+      top: 156,
+      width: 18,
+      height: 18,
+    });
   });
 
   it("drops a grip that scrolling pushed above the pane, toolbar and all", () => {
@@ -124,8 +161,12 @@ describe("the surface a revealed table chrome is held by", () => {
     const zone = tableHoverZone(table);
     // The column grip: a 4px gap and a 15px pill.
     expect(table.top - zone.top).toBe(19);
-    // The add tabs: a 9px gap and an 18px circle.
+    // The add-column tab: a 9px gap and an 18px circle.
     expect(zone.right - table.right).toBe(27);
-    expect(zone.bottom - table.bottom).toBe(27);
+    // Below the frame the add-row tab is gone, and all that still reaches there
+    // is the overhang of a row grip centred on a short last row: half a grip.
+    // It stays inside the 14.4px seam the table shares with the paragraph under
+    // it, so holding a reveal there never fights a click aimed at that prose.
+    expect(zone.bottom - table.bottom).toBe(15);
   });
 });
