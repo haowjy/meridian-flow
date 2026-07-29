@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Editor configuration contracts at live-versus-review composition boundaries. */
 
-import { getSchema } from "@tiptap/core";
+import { Editor, getSchema } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
 import { describe, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
@@ -47,6 +47,31 @@ describe("undo ownership", () => {
         expect(owned?.priority).toBeGreaterThan(other.priority);
       }
     }
+  });
+});
+
+describe("inline code keyboard home", () => {
+  it("toggles the code mark on Mod-e", () => {
+    // The toolbar's Code button is a code-block toggle (human ruling), so the
+    // inline mark's only writer surface until the formatting menu lands is
+    // this binding. TipTap's Code extension owns it; the schema-parity rename
+    // to `code` must not have cost us the shortcut.
+    const editor = new Editor({
+      extensions: createStandaloneEditorExtensions(),
+      content: "<p>the third gate</p>",
+    });
+    editor.commands.setTextSelection({ from: 5, to: 15 });
+
+    const handled = editor.view.someProp("handleKeyDown", (handler) =>
+      handler(
+        editor.view,
+        new KeyboardEvent("keydown", { key: "e", ctrlKey: true, bubbles: true, cancelable: true }),
+      ),
+    );
+
+    expect(handled).toBe(true);
+    expect(editor.isActive("code")).toBe(true);
+    editor.destroy();
   });
 });
 

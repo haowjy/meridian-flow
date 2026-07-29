@@ -1,7 +1,7 @@
 # surfaces/toolbar — the persistent document toolbar
 
 The editor's one persistent chrome row: Undo, Redo, then Heading, Bold,
-Italic, Code, Bullet list, Link, block alignment, Upload figure. It carries
+Italic, Code block, Bullet list, Link, block alignment, Upload figure. It carries
 document-level verbs only. `EditorSurfaceFrame` docks it above the scroll
 area and `EditorView` supplies the editor and the upload callback.
 
@@ -23,8 +23,12 @@ behavior is never decided in a component.
   path, so the reason never reaches the writer. Blocked controls keep
   `aria-disabled`, keep their tooltip, and drop their action (law 5).
 - **Toggles reverse** (law 6). Heading is an H1 toggle back to paragraph;
-  bullet list un-lists; marks remove. If a TipTap command only applies in one
-  direction, spell out the reverse here.
+  the Code button fences a block and un-fences it (human ruling: it makes a
+  ``` block, it does not format text); bullet list un-lists; marks remove. If a
+  TipTap command only applies in one direction, spell out the reverse here.
+- **The inline code mark is not on this row.** Its writer surfaces are Ctrl+E
+  today and the formatting menu later; `toggleTextMark` keeps the command so
+  those surfaces share this one.
 - **Block-type commands refuse non-text targets themselves.** The greyed
   button is the first fence, the command is the second, and the second is
   load-bearing: a selected figure converting to a heading is the accident this

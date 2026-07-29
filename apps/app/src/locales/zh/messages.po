@@ -523,8 +523,11 @@ msgid "Closed"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code"
+msgstr ""
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Code block"
 msgstr ""
 
 #: src/features/editor/EditorCodeBubble.tsx

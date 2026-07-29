@@ -53,6 +53,7 @@ import {
   type ToolbarControlId,
   type ToolbarControlState,
   toggleBulletListBlock,
+  toggleCodeBlockBlock,
   toggleHeadingBlock,
   toggleTextMark,
   undoDocument,
@@ -134,9 +135,9 @@ export function DocumentToolbar({
             <Italic className="size-3.5" aria-hidden />
           </ToolbarControl>
           <ToolbarControl
-            id="code"
-            state={controls.code}
-            onPress={run((target) => toggleTextMark(target, "code"))}
+            id="codeBlock"
+            state={controls.codeBlock}
+            onPress={run(toggleCodeBlockBlock)}
           >
             <Code className="size-3.5" aria-hidden />
           </ToolbarControl>

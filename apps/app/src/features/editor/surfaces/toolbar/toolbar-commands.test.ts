@@ -9,6 +9,7 @@ import {
   setToolbarAlignment,
   type ToolbarContext,
   toggleBulletListBlock,
+  toggleCodeBlockBlock,
   toggleHeadingBlock,
   toggleTextMark,
 } from "./toolbar-commands";
@@ -117,7 +118,7 @@ describe("toolbar enablement matrix", () => {
   it("enables every formatting verb at a caret in prose", () => {
     const controls = controlsFor(editorWith("<p>Kael pressed his palm flat</p>"));
 
-    for (const id of ["heading", "bold", "italic", "code", "bulletList", "link"] as const) {
+    for (const id of ["heading", "bold", "italic", "codeBlock", "bulletList", "link"] as const) {
       expect(controls[id].blockedBy, id).toBeNull();
     }
     expect(controls.alignment.blockedBy).toBeNull();
@@ -133,25 +134,28 @@ describe("toolbar enablement matrix", () => {
     expect(controls.bulletList.blockedBy).toBe("object-selection");
     expect(controls.bold.blockedBy).toBe("object-selection");
     expect(controls.italic.blockedBy).toBe("object-selection");
-    expect(controls.code.blockedBy).toBe("object-selection");
+    expect(controls.codeBlock.blockedBy).toBe("object-selection");
     expect(controls.link.blockedBy).toBe("object-selection");
     expect(controls.alignment.blockedBy).toBe("no-alignable-block");
     // A figure under the caret says nothing about uploading the next one.
     expect(controls.uploadFigure.blockedBy).toBeNull();
   });
 
-  it("greys marks and block-type verbs inside a code block", () => {
+  it("greys marks and the other block-type verbs inside a code block", () => {
     const target = editorWith("<pre><code>const gate = 3</code></pre>");
     target.commands.setTextSelection(3);
 
     const controls = controlsFor(target);
     expect(controls.bold.blockedBy).toBe("code-block");
     expect(controls.italic.blockedBy).toBe("code-block");
-    expect(controls.code.blockedBy).toBe("code-block");
     expect(controls.heading.blockedBy).toBe("code-block");
     expect(controls.bulletList.blockedBy).toBe("code-block");
     // The link mark is refused by the same schema rule.
     expect(controls.link.blockedBy).toBe("code-block");
+    // The code-block control is the exception: a code block is what it
+    // reverses, so here it is lit and live rather than greyed.
+    expect(controls.codeBlock.active).toBe(true);
+    expect(controls.codeBlock.blockedBy).toBeNull();
   });
 
   it("greys block-type verbs when a selection reaches across a code block", () => {
@@ -161,6 +165,9 @@ describe("toolbar enablement matrix", () => {
     const controls = controlsFor(target);
     expect(controls.heading.blockedBy).toBe("mixed-selection");
     expect(controls.bulletList.blockedBy).toBe("mixed-selection");
+    // Converting the prose around a fence would strip the fence's language
+    // with it, so the code-block control refuses this one too.
+    expect(controls.codeBlock.blockedBy).toBe("mixed-selection");
     // Marks land per node, so they stay live over the prose in the selection.
     expect(controls.bold.blockedBy).toBeNull();
   });
@@ -172,6 +179,7 @@ describe("toolbar enablement matrix", () => {
     const controls = controlsFor(target);
     expect(controls.heading.blockedBy).toBe("embedded-block");
     expect(controls.bulletList.blockedBy).toBe("embedded-block");
+    expect(controls.codeBlock.blockedBy).toBe("embedded-block");
     expect(controls.bold.blockedBy).toBe("embedded-block");
   });
 
@@ -182,6 +190,7 @@ describe("toolbar enablement matrix", () => {
     const controls = controlsFor(target);
     expect(controls.heading.blockedBy).toBe("table-cell");
     expect(controls.bulletList.blockedBy).toBe("table-cell");
+    expect(controls.codeBlock.blockedBy).toBe("table-cell");
     // Cells are prose: marks and links belong there.
     expect(controls.bold.blockedBy).toBeNull();
     expect(controls.link.blockedBy).toBeNull();
@@ -195,9 +204,10 @@ describe("toolbar enablement matrix", () => {
     expect(controls.bold.blockedBy).toBe("inline-code");
     expect(controls.italic.blockedBy).toBe("inline-code");
     expect(controls.link.blockedBy).toBe("inline-code");
-    // Code itself stays live: a lit control must always reverse.
-    expect(controls.code.active).toBe(true);
-    expect(controls.code.blockedBy).toBeNull();
+    // The paragraph holding the inline code is still prose, so fencing it is
+    // a legal conversion.
+    expect(controls.codeBlock.blockedBy).toBeNull();
+    expect(controls.codeBlock.active).toBe(false);
   });
 
   it("keeps alignment live across a multi-block selection", () => {
@@ -278,7 +288,7 @@ describe("block-type commands refuse non-text targets", () => {
     expect(target.state.doc.lastChild?.type.name).toBe("figure");
   });
 
-  it("never converts a code block", () => {
+  it("never converts a code block to a heading or a list", () => {
     const target = editorWith("<pre><code>const gate = 3</code></pre>");
     target.commands.setTextSelection(3);
 
@@ -293,6 +303,7 @@ describe("block-type commands refuse non-text targets", () => {
 
     expect(toggleHeadingBlock(target)).toBe(false);
     expect(toggleBulletListBlock(target)).toBe(false);
+    expect(toggleCodeBlockBlock(target)).toBe(false);
     const fence = target.state.doc.child(1);
     expect(fence.type.name).toBe("code_block");
     expect(fence.attrs.language).toBe("mermaid");
@@ -305,6 +316,7 @@ describe("block-type commands refuse non-text targets", () => {
 
     expect(toggleHeadingBlock(target)).toBe(false);
     expect(toggleBulletListBlock(target)).toBe(false);
+    expect(toggleCodeBlockBlock(target)).toBe(false);
     const component = target.state.doc.lastChild;
     expect(component?.type.name).toBe("jsx_leaf");
     expect(component?.attrs.name).toBe("StatBlock");
@@ -316,6 +328,7 @@ describe("block-type commands refuse non-text targets", () => {
 
     expect(toggleHeadingBlock(target)).toBe(false);
     expect(toggleBulletListBlock(target)).toBe(false);
+    expect(toggleCodeBlockBlock(target)).toBe(false);
     expect(target.state.doc.firstChild?.type.name).toBe("table");
   });
 
@@ -355,6 +368,20 @@ describe("toolbar toggles reverse", () => {
     expect(controlsFor(target).heading.active).toBe(false);
   });
 
+  it("fences a paragraph and returns it to prose on the second press", () => {
+    const target = editorWith("<p>graph TD; A to B</p>");
+    target.commands.setTextSelection(3);
+
+    expect(toggleCodeBlockBlock(target)).toBe(true);
+    expect(target.state.doc.firstChild?.type.name).toBe("code_block");
+    expect(controlsFor(target).codeBlock.active).toBe(true);
+
+    expect(toggleCodeBlockBlock(target)).toBe(true);
+    expect(target.state.doc.firstChild?.type.name).toBe("paragraph");
+    expect(controlsFor(target).codeBlock.active).toBe(false);
+    expect(target.state.doc.textContent).toBe("graph TD; A to B");
+  });
+
   it("un-lists a bulleted block on the second press", () => {
     const target = editorWith("<p>one rehearsal</p>");
     target.commands.setTextSelection(3);
@@ -388,6 +415,18 @@ describe("toolbar toggles reverse", () => {
     expect(toggleBulletListBlock(target)).toBe(true);
     expect(controlsFor(target).bulletList.active).toBe(false);
     expect(target.state.doc.firstChild?.type.name).toBe("paragraph");
+  });
+
+  it("still toggles the inline code mark for the surfaces that carry it", () => {
+    // The toolbar's Code button fences blocks now; the mark verb keeps its
+    // command here for Ctrl+E's siblings (formatting menu, block menu).
+    const target = editorWith("<p>the third gate</p>");
+    target.commands.setTextSelection({ from: 5, to: 15 });
+
+    expect(toggleTextMark(target, "code")).toBe(true);
+    expect(target.isActive("code")).toBe(true);
+    expect(toggleTextMark(target, "code")).toBe(true);
+    expect(target.isActive("code")).toBe(false);
   });
 
   it("removes a mark on the second press", () => {

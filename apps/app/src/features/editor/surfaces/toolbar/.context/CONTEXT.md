@@ -16,10 +16,10 @@ which is why the same code can read differently per control.
 | Schema fence or read-only host | all ten | `document-read-only` |
 | Node selection on a non-textblock (figure, image, rule, table) | heading, bullet list, marks, link | `object-selection` |
 | Same selection | alignment | `no-alignable-block` |
-| Every target is a code block | heading, bullet list, marks, link | `code-block` |
-| Every target is a registered component (`jsx_leaf`) | heading, bullet list, marks, link | `embedded-block` |
-| Every target sits in a table cell | heading, bullet list | `table-cell` |
-| Some but not all targets are protected (the Ctrl+A case) | heading, bullet list | `mixed-selection` |
+| Every target is a code block | heading, bullet list, marks, link (NOT code block) | `code-block` |
+| Every target is a registered component (`jsx_leaf`) | heading, code block, bullet list, marks, link | `embedded-block` |
+| Every target sits in a table cell | heading, code block, bullet list | `table-cell` |
+| Some but not all targets are protected (the Ctrl+A case) | heading, code block, bullet list | `mixed-selection` |
 | Inline code covers the selection | bold, italic, link | `inline-code` |
 | No paragraph, heading, or table under the selection | alignment | `no-alignable-block` |
 | Yjs undo or redo stack empty | undo, redo | `empty-history` |
@@ -38,13 +38,17 @@ is never blocked by a schema refusal either: what is on can always come off.
 
 The two command families fence differently, and the difference is the design:
 
-- **Block type** (heading, bullet list) rewrites whole blocks, so ANY
+- **Block type** (heading, code block, bullet list) rewrites whole blocks, so ANY
   protected target in the selection refuses the whole command. Protected means
   a node selection on a non-textblock, a node the schema marks as `code`
   (a fence or a `jsx_leaf`, both text blocks by ProseMirror's reckoning), or a
   paragraph inside a table cell, which holds exactly one paragraph and can be
   nothing else. Classifying by `isTextblock` is what let a select-all flatten a
-  mermaid fence and a component conversion drop its name and props.
+  mermaid fence and a component conversion drop its name and props. The code
+  block control shares that fence with one exception: a code block is what it
+  REVERSES, so `code-block` alone is not a refusal for it. A mixed selection
+  still is, because fencing the prose around a fence rewrites the fence's
+  attributes with it.
 - **Marks** (bold, italic, code, link) land per node, so they refuse only when
   NOTHING in the selection can take them. Availability comes from
   `editor.can().setMark`, which is the command's own answer: schema allowance

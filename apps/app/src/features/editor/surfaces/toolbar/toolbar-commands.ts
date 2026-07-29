@@ -42,7 +42,7 @@ export type ToolbarControlId =
   | "heading"
   | "bold"
   | "italic"
-  | "code"
+  | "codeBlock"
   | "bulletList"
   | "link"
   | "alignment"
@@ -97,7 +97,7 @@ const CONTROL_IDS: readonly ToolbarControlId[] = [
   "heading",
   "bold",
   "italic",
-  "code",
+  "codeBlock",
   "bulletList",
   "link",
   "alignment",
@@ -140,9 +140,9 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       active: editor.isActive("em"),
       blockedBy: readOnly ?? markBlocker(editor, "em"),
     },
-    code: {
-      active: editor.isActive("code"),
-      blockedBy: readOnly ?? markBlocker(editor, "code"),
+    codeBlock: {
+      active: editor.isActive("code_block"),
+      blockedBy: readOnly ?? codeBlockBlocker(editor),
     },
     bulletList: {
       active: editor.isActive("bullet_list"),
@@ -177,6 +177,12 @@ export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
 export function toggleHeadingBlock(editor: Editor): boolean {
   if (!canWrite(editor) || blockTypeBlocker(editor)) return false;
   return editor.chain().focus().toggleHeading({ level: TOOLBAR_HEADING_LEVEL }).run();
+}
+
+/** True toggle: one press fences the block, one press returns it to prose. */
+export function toggleCodeBlockBlock(editor: Editor): boolean {
+  if (!canWrite(editor) || codeBlockBlocker(editor)) return false;
+  return editor.chain().focus().toggleCodeBlock().run();
 }
 
 /** True toggle: one press lists, one press un-lists, however deep (law 6). */
@@ -300,6 +306,19 @@ function blockTypeBlocker(editor: Editor): ToolbarBlockedReason | null {
   // CellSelection alike.
   const first = protectedTargets[0];
   return isInsideTableCell(first.$pos) ? "table-cell" : nonProseReason(first.node);
+}
+
+/**
+ * The code-block control fences like its block-type siblings with one
+ * exception: a code block is its REVERSAL target, not a refusal. Pressing
+ * inside one returns the block to a paragraph (law 6), so only the reasons
+ * that would destroy something still stand — an object, a component, a table
+ * cell, or a mixed selection where a conversion would strip a fence's language
+ * along the way.
+ */
+function codeBlockBlocker(editor: Editor): ToolbarBlockedReason | null {
+  const blocker = blockTypeBlocker(editor);
+  return blocker === "code-block" ? null : blocker;
 }
 
 function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlockedReason | null {

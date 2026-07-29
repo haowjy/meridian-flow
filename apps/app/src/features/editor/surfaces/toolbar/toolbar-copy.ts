@@ -20,8 +20,8 @@ export function toolbarControlLabel(control: ToolbarControlId): string {
       return t`Bold`;
     case "italic":
       return t`Italic`;
-    case "code":
-      return t`Code`;
+    case "codeBlock":
+      return t`Code block`;
     case "bulletList":
       return t`Bullet list`;
     case "link":
@@ -31,6 +31,11 @@ export function toolbarControlLabel(control: ToolbarControlId): string {
     case "uploadFigure":
       return t`Upload figure`;
   }
+}
+
+/** Heading, code block, and bullet list all rewrite the block they sit on. */
+function isBlockTypeControl(control: ToolbarControlId): boolean {
+  return control === "heading" || control === "codeBlock" || control === "bulletList";
 }
 
 export function blockedReasonMessage(
@@ -45,20 +50,14 @@ export function blockedReasonMessage(
       return t`This document is read only right now.`;
     case "object-selection":
       if (control === "link") return t`Select text to add a link.`;
-      if (control === "heading" || control === "bulletList") {
-        return t`Select text to change the block type.`;
-      }
+      if (isBlockTypeControl(control)) return t`Select text to change the block type.`;
       return t`Select text to format it.`;
     case "code-block":
-      if (control === "heading" || control === "bulletList") {
-        return t`Code blocks keep their own block type.`;
-      }
+      if (isBlockTypeControl(control)) return t`Code blocks keep their own block type.`;
       if (control === "link") return t`Code blocks take no links.`;
       return t`Code blocks take no formatting.`;
     case "embedded-block":
-      if (control === "heading" || control === "bulletList") {
-        return t`Embedded blocks keep their own block type.`;
-      }
+      if (isBlockTypeControl(control)) return t`Embedded blocks keep their own block type.`;
       if (control === "link") return t`Embedded blocks take no links.`;
       return t`Embedded blocks take no formatting.`;
     case "mixed-selection":
