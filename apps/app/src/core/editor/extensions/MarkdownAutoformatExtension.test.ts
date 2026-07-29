@@ -72,13 +72,22 @@ describe("block rules fire at their trigger", () => {
     ["# Chapter", 'heading:1("Chapter")'],
     ["## Scene", 'heading:2("Scene")'],
     ["### Beat", 'heading:3("Beat")'],
+    // Past the three ruling 18 named: the schema, the codec and every paste
+    // path carry h4-h6, so denying the trigger would leave a writer who typed
+    // valid markdown holding a literal `#### `.
+    ["#### Fourth", 'heading:4("Fourth")'],
+    ["##### Fifth", 'heading:5("Fifth")'],
+    ["###### Sixth", 'heading:6("Sixth")'],
     ["> aside", 'blockquote("aside")'],
     ["- item", 'bullet_list("item")'],
     ["* item", 'bullet_list("item")'],
+    ["+ item", 'bullet_list("item")'],
     ["1. item", 'ordered_list("item")'],
     ["---", 'horizontal_rule("") + paragraph("")'],
     ["```ts x", 'code_block:ts("x")'],
     ["``` x", 'code_block:none("x")'],
+    ["~~~ts x", 'code_block:ts("x")'],
+    ["~~~ x", 'code_block:none("x")'],
   ];
 
   for (const [typed, expected] of table) {
@@ -137,7 +146,22 @@ describe("block rules fire only at a block start", () => {
 });
 
 describe("nothing fires inside a code block", () => {
-  const inert = ["# heading", "> quote", "- item", "1. item", "--- ", "```", "**bold** "];
+  const inert = [
+    "# heading",
+    "###### heading",
+    "> quote",
+    "- item",
+    "* item",
+    "+ item",
+    "1. item",
+    "--- ",
+    "```",
+    "~~~",
+    "**bold** ",
+    "*emphasis* ",
+    "~~struck~~ ",
+    "`literal` ",
+  ];
 
   for (const typed of inert) {
     it(`leaves ${JSON.stringify(typed)} as code`, () => {
@@ -159,26 +183,41 @@ describe("nothing fires inside a code block", () => {
 });
 
 describe("code fences capture their language", () => {
-  const table: Array<[info: string, language: string]> = [
-    ["ts", "ts"],
-    ["mermaid", "mermaid"],
+  const table: Array<[fence: string, info: string, language: string | null]> = [
+    ["```", "ts", "ts"],
+    ["```", "mermaid", "mermaid"],
     // Case-blind and punctuation-tolerant: TipTap's own `[a-z]+` rule matched
     // none of these, leaving the writer with literal backticks.
-    ["Python", "python"],
-    ["Mermaid", "mermaid"],
-    ["c++", "c++"],
-    ["ts-node", "ts-node"],
-    ["objective-c", "objective-c"],
+    ["```", "Python", "python"],
+    ["```", "Mermaid", "mermaid"],
+    ["```", "c++", "c++"],
+    ["```", "ts-node", "ts-node"],
+    ["```", "objective-c", "objective-c"],
+    ["~~~", "ts", "ts"],
+    // GFM forbids backticks inside a backtick fence's info string and forbids
+    // nothing inside a tilde fence's, so a tilde may sit in the language.
+    ["~~~", "aa~bb", "aa~bb"],
+    // An opening run longer than three is still one fence with no info string,
+    // which is the reason the run and the info token are captured separately.
+    ["~~~~", "", null],
+    ["````", "", null],
+    ["~~~~", "ts", "ts"],
   ];
 
-  for (const [info, language] of table) {
-    it(`reads \`\`\`${info} as ${language}`, () => {
+  for (const [fence, info, language] of table) {
+    it(`reads ${fence}${info} as ${language ?? "no language"}`, () => {
       const editor = openEditor();
-      type(editor, `\`\`\`${info} `);
+      type(editor, `${fence}${info} `);
       expect(editor.state.doc.firstChild?.type.name).toBe("code_block");
       expect(editor.state.doc.firstChild?.attrs.language).toBe(language);
     });
   }
+
+  it("ends the info string at the first space and takes the rest as code", () => {
+    const editor = openEditor();
+    type(editor, "~~~ts const qi = 1");
+    expect(outline(editor)).toBe('code_block:ts("const qi = 1")');
+  });
 
   it("gives a mermaid fence a plain code block, not a diagram", () => {
     const editor = openEditor();
@@ -205,10 +244,18 @@ describe("code fences capture their language", () => {
 describe("Backspace reverts the transform it just made", () => {
   const table: Array<[typed: string, restored: string]> = [
     ["# ", "# "],
+    ["###### ", "###### "],
     ["> ", "> "],
     ["- ", "- "],
+    ["* ", "* "],
+    ["+ ", "+ "],
     ["1. ", "1. "],
     ["```ts ", "```ts "],
+    ["~~~ts ", "~~~ts "],
+    ["**bold**", "**bold**"],
+    ["*emphasis*", "*emphasis*"],
+    ["~~struck~~", "~~struck~~"],
+    ["`literal`", "`literal`"],
   ];
 
   for (const [typed, restored] of table) {
@@ -229,6 +276,16 @@ describe("Backspace reverts the transform it just made", () => {
     press(editor, "Enter");
     expect(press(editor, "Backspace")).toBe(true);
     expect(outline(editor)).toBe('paragraph("```mermaid")');
+  });
+
+  it("leaves an ordinary empty code block to CodeBlock's own Backspace", () => {
+    const editor = openEditor();
+    editor.commands.setCodeBlock({ language: "ts" });
+
+    // Claiming Backspace above every node extension is what fixed the fence;
+    // it must not cost the bindings underneath it their turn.
+    expect(press(editor, "Backspace")).toBe(true);
+    expect(outline(editor)).toBe('paragraph("")');
   });
 
   it("leaves Backspace alone when the last keystroke transformed nothing", () => {

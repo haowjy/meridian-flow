@@ -19,13 +19,19 @@
 import { Extension, textblockTypeInputRule } from "@tiptap/core";
 
 /**
- * A GFM info string runs to the first space; only the fence character itself
- * is excluded. TipTap's own rule captures `[a-z]+`, so ` ```Python `,
- * ` ```c++ ` and ` ```ts-node ` matched nothing at all and left the writer
- * holding literal backticks.
+ * A fence is an opening run of at least three fence characters and an info
+ * string running to the first space. Capturing the run separately from the
+ * info token is what lets the two differ: GFM forbids backticks inside a
+ * backtick fence's info string and forbids nothing inside a tilde fence's, so
+ * ` ~~~aa~bb ` is a language and ` ~~~~ ` is a longer fence with none. The run
+ * is greedy for the same reason GFM's own parser is.
+ *
+ * TipTap's rule captures `[a-z]+` and no run at all, so ` ```Python `,
+ * ` ```c++ ` and ` ```ts-node ` matched nothing and left the writer holding
+ * literal backticks.
  */
-const BACKTICK_FENCE = /^```([^\s`]*)[\s\n]$/;
-const TILDE_FENCE = /^~~~([^\s~]*)[\s\n]$/;
+const BACKTICK_FENCE = /^(`{3,})([^\s`]*)[\s\n]$/;
+const TILDE_FENCE = /^(~{3,})([^\s]*)[\s\n]$/;
 
 /**
  * The language attr is lowercased: it is a lookup key, for highlighting and for
@@ -33,7 +39,7 @@ const TILDE_FENCE = /^~~~([^\s~]*)[\s\n]$/;
  * case-blind, so ` ```Mermaid ` must land on the same block as ` ```mermaid `.
  */
 function fenceAttributes(match: RegExpMatchArray) {
-  const info = (match[1] ?? "").toLowerCase();
+  const info = (match[2] ?? "").toLowerCase();
   return { language: info === "" ? null : info };
 }
 

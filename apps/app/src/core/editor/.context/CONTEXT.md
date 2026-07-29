@@ -221,8 +221,8 @@ Two places the live surface is wider than ruling 18's wording, deliberately.
 Headings go to `######` rather than stopping at `###`: the schema, the codec and
 every paste path already carry h4-h6, so denying the trigger would leave a
 writer who typed valid markdown holding literal `#### `. Fences accept `~~~` as
-well as ``` , and bullets accept `+`, for the same reason — both are GFM the
-codec reads, and both produce the same node.
+well as ``` , and bullets accept `+`, for the same reason: all of them are GFM
+the codec reads, and all of them produce the same node.
 
 `MarkdownAutoformatExtension` owns only what inheritance gets wrong, and
 `MarkdownAutoformatExtension.test.ts` is the truth table for the surface as a
@@ -232,8 +232,12 @@ to fail there rather than in a manuscript.
 - The code fence takes the whole GFM info string, lowercased. TipTap's rule
   captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
   block at all. Lowercasing is what makes the attr a usable key: highlighting
-  and the plain-editable `mermaid` block both look it up. The fence rules live
-  here and `MeridianCodeBlockLowlight` yields its own.
+  and the plain-editable `mermaid` block both look it up. The opening run is
+  captured apart from the info token, because the two differ per fence
+  character — a backtick fence's info string may not hold backticks, a tilde
+  fence's may hold anything — and because a run longer than three is one fence
+  with no info, not a failed match. The fence rules live here and
+  `MeridianCodeBlockLowlight` yields its own.
 - Backspace reverts the transform the last keystroke made. TipTap reaches for
   `undoInputRule` too, but from the core keymap, which sits below every node
   extension's: CodeBlock's "delete the empty block" binding got to a just-opened
