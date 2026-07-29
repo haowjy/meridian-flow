@@ -110,8 +110,8 @@ the whole split matrix.
 <OverlayIconRow
   editor={editor}
   kind="diagram"
-  anchor={objectElement}      // null takes the row out of the document
-  visible={hovered || selected} // drives the fade
+  corner={{ inside: nodeViewElement }} // or { over: element }; null removes it
+  visible={hovered || selected}        // drives the fade
   items={[{ id, label, icon, onSelect }]}
   overflow={(chip) => <EditorMenu trigger={chip} …>…</EditorMenu>}
 />
@@ -121,25 +121,40 @@ The chip handed to `overflow` is a real trigger: it spreads whatever Radix
 merges onto it (`aria-haspopup`, the press handlers, the ref). A chip that
 swallowed those would look like a menu and behave like a dead button.
 
-`anchor` and `visible` are separate on purpose. `anchor` is which object is
+`corner` and `visible` are separate on purpose. `corner` is which object is
 being approached; `visible` fades the row over it. A row that unmounted on the
 frame the pointer left would read as a flicker, and the design asks for a fade
-both ways — so the lane holds `anchor` through the hover intent's leave grace
+both ways — so the lane holds `corner` through the hover intent's leave grace
 (`CHROME_TIMING.fadeMs`) and lets `visible` go first.
+
+`corner` also says whose coordinate space the row lives in, and there are only
+two answers (`object-overlay.ts`):
+
+| | who owns the element | how it is placed | who uses it |
+|---|---|---|---|
+| `{ inside: … }` | a node view | rendered in the element, CSS corner | diagram, image, figure, code fence |
+| `{ over: … }` | ProseMirror | measured rect, body portal | the selected table's ⋮ |
+
+`inside` is the default and the reason is structural: chrome rendered in the
+object cannot go stale, because there is no rect between it and the object.
+`over` exists only because ProseMirror reads its own elements back as document
+content, so a child inserted into a table's wrapper is a document change it
+will try to parse. A node view ignores DOM changes outside its `contentDOM`
+and has no such problem.
 
 Geometry, matching mockup 03b: inset 10px from the object's top-right, 6px gap,
 card chip per button (`--color-card` ground, hairline border, `--shadow-card`),
 the row ending in ⋮. Measured in the browser: `dxRight` 10, `dyTop` 10, three
 32px chips, and the manuscript's block offsets are byte-identical with the row
-up and down.
+up and down — the attached row is absolutely positioned and out of flow, so
+zero footprint is a property of the CSS rather than of a portal.
 
-The row follows its object: scroll is watched in capture phase because the
-manuscript scrolls in a pane rather than the window, plus a `ResizeObserver` on
-the anchor. It carries `data-editor-chrome`, so a right-click on it routes
-through the claim ladder like a right-click on the object.
+It carries `data-editor-chrome`, so a right-click on it routes through the
+claim ladder like a right-click on the object, and the approach reads a pointer
+resting on it as still being on the object.
 
-Hover reveal is the lane's to wire, through `chrome.createHoverIntent(...)` —
-never a local `setTimeout`, which would linger through a drag.
+Which object is approached is the kernel's single answer
+(`chrome.registerHoverAnchor`), never a listener here.
 
 ## Registering a layer by hand
 
@@ -176,9 +191,10 @@ initialization, and the lane's surface never mounts.
 directly — a toolbar's lit states, a chip cluster's language label. Anything
 that only needs the resolved context or suppression reads those stores instead:
 they notify when their answer changes, not when the document does.
-`useAnchorRect(editor, element)` is the shared measurement behind every
-inside-corner surface, and `watchManuscriptLayout` is the scheduler under it
-that the table lane shares. It re-measures on scroll (capture phase, because
+`useAnchorRect(editor, element)` is the shared measurement behind every surface
+that still measures, over the kernel's `watchManuscriptLayout` — the same
+scheduler the approach re-hit-tests on, so a rect and its target can never
+disagree about when the world moved. It re-measures on scroll (capture phase, because
 the manuscript scrolls in a pane), on window resize, on any editor transaction,
 and on a resize of either the anchor or the manuscript root — the last two
 between them cover the moves nothing else reports: a block travelling because a
@@ -198,7 +214,8 @@ chrome. Both answer safely on an editor with no kernel.
 - **Which element is the anchor.** The kernel resolves the document position;
   turning it into DOM is `editor.view.nodeDOM(pos)` and belongs to the lane
   that knows its node view's shape.
-- **Hover tracking.** The kernel supplies the timing policy, not the pointer
-  listeners.
+- **The probe, and only the probe.** A lane registers a `HoverAnchorLane` and
+  answers which of ITS things is at a point. The pointer, its last place, the
+  re-hit-test after a scroll, and the one hovered owner are the kernel's.
 - **Menu contents.** Every item, its copy, and its command — including which
   reason applies, though never how a reason is drawn.

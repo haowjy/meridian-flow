@@ -48,10 +48,13 @@ gesture is holding, and whether it has lifted.
   diagram when it renders and its own source when the caret is inside it, and
   the registration cannot say which — the DOM can, because everything standing
   in for that text is `contenteditable="false"`.
-- **Nothing here keeps a timer or a suppression rule.** Hover comes from
-  `chrome.createHoverIntent`, a drag is declared with `chrome.beginDrag`, and
-  the kernel cancels the reveal when a gesture starts. A local `setTimeout`
-  would linger through a drag.
+- **Nothing here keeps a timer, a pointer listener, or a suppression rule.**
+  The approach is one `registerHoverAnchor` lane that answers which block is at
+  a point; the kernel owns the timing, the pointer's last place, the re-hit-test
+  after a scroll, and the rule that one block owns hover chrome at a time. A
+  drag is declared with `chrome.beginDrag`. A local `setTimeout` would linger
+  through a drag, and a local pointer listener would disagree with every other
+  lane the first time the writer scrolled without moving their hand.
 - **One finalizer ends the gesture, and every way it can end calls that one.**
   Release, browser cancel, lost capture, window blur, Escape, unmount, and a
   peer deleting the held block are seven doors into one function. A gesture
@@ -75,9 +78,14 @@ gesture is holding, and whether it has lifted.
   not this lane's.** A local watcher here listened for transactions and window
   resizes only, so a scroll under a still hand left the handle at its old
   viewport top. Any second list of signals will be short of that one again.
-- **Overlays are measured onto the page, never inserted into it** (law 7). A
-  widget decoration between two blocks inherits the manuscript's block spacing
-  and pushes the page down by its own height.
+- **The handle is measured onto the page, and it is the exception.** Object
+  controls are rendered inside the object's own node view, where nothing can
+  strand them; the handle cannot be, because a top-level block is usually
+  ProseMirror's own DOM and because the handle belongs to the prose COLUMN's
+  margin rather than to any one block's box (`.context/CONTEXT.md`). Never by
+  inserting anything into the manuscript either way (law 7): a widget
+  decoration between two blocks inherits the manuscript's block spacing and
+  pushes the page down by its own height.
 - **The manuscript's DOM is ProseMirror's.** Styling a block by setting an
   attribute on its element does not survive: the DOM observer treats it as
   corruption and re-renders the node without it. The lift is a decoration.

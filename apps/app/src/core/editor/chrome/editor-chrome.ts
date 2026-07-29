@@ -19,7 +19,12 @@ import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 import type { ContextClaimHandler } from "./context-claims";
 import type { ChromeLayer, GesturePhase } from "./esc-chain";
 import { createHoverAnchors, type HoverAnchorLane, type HoverAnchors } from "./hover-anchor";
-import { createHoverIntent, type HoverIntent, type HoverIntentOptions } from "./hover-intent";
+import {
+  createHoverIntent,
+  type HoverIntent,
+  type HoverIntentOptions,
+  type HoverIntentTimers,
+} from "./hover-intent";
 import { assertKeymapContribution, type KeymapContribution } from "./keymap";
 
 /** Who takes Escape for a layer when the editor does not have focus. */
@@ -124,18 +129,14 @@ export type EditorChrome = {
   beginDrag: (onCancel?: () => void) => () => void;
 
   /**
-   * Hover intent that the kernel cancels when a gesture starts. Approach
-   * chrome should always take its timing from here rather than its own
-   * `setTimeout`, or it will linger through a drag.
-   */
-  createHoverIntent: <T>(options: HoverIntentOptions<T>) => HoverIntent<T>;
-
-  /**
    * Take part in the approach (`hover-anchor.ts`). ONE block owns hover chrome
    * at a time and this lane is told its share of it, including after a scroll
    * the writer's hand did not follow. A lane that answers "what am I hovering"
    * from its own listener will disagree with the others eventually, and two
    * disagreeing answers are two chromes on screen for two different blocks.
+   *
+   * This is the only door to hover here on purpose: a surface with its own
+   * intent has its own pointer, and that is the whole defect class.
    */
   registerHoverAnchor: <T>(lane: HoverAnchorLane<T>) => () => void;
 
@@ -165,7 +166,10 @@ export type EditorChromeController = {
 
 let chromeSequence = 0;
 
-export function createEditorChrome(): {
+export function createEditorChrome(
+  /** The approach's clock. Injected so the timing policy is testable. */
+  hoverTimers?: HoverIntentTimers,
+): {
   chrome: EditorChrome;
   controller: EditorChromeController;
 } {
@@ -192,7 +196,7 @@ export function createEditorChrome(): {
    * is one of these, which is why a drag clears the whole approach at once.
    */
   const trackHoverIntent = <T>(options: HoverIntentOptions<T>): HoverIntent<T> => {
-    const intent = createHoverIntent(options);
+    const intent = createHoverIntent({ timers: hoverTimers, ...options });
     hoverIntents.add(intent as HoverIntent<unknown>);
     return {
       ...intent,
@@ -339,7 +343,6 @@ export function createEditorChrome(): {
       };
     },
 
-    createHoverIntent: trackHoverIntent,
     registerHoverAnchor: (lane) => hoverAnchors.register(lane),
   };
 

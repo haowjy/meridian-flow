@@ -1,25 +1,77 @@
 /**
- * Where an object's overlay chrome sits: just inside the object's top-right
- * bounds (ruling 8, mockup 03b).
+ * Where an object's corner chrome is drawn, and in whose coordinates.
  *
- * The object row and the code fence's chip cluster are different shapes over
- * the same corner, so the corner is defined once here and worn by both:
- * `.meridian-object-overlay` fixes and fades them, this decides where.
+ * Ruling 8 puts every object's controls just inside its own top-right bounds
+ * with zero footprint: no band above the object, no reserved space, nothing
+ * that moves a line of the manuscript when it appears. There are two ways to
+ * be in that corner, and the difference is who owns the DOM.
+ *
+ * **Inside**, whenever the object is a node view. The controls are rendered in
+ * the object's own element and placed by CSS, so scroll and reflow move chrome
+ * and object as one piece: there is no rect to chase and therefore no way to
+ * strand the chrome beside the paragraph that took the object's place. This is
+ * the collaborator cursor's own model, and it is the default.
+ *
+ * **Over**, where the element belongs to ProseMirror rather than to a node view
+ * — a table. ProseMirror reads its own elements back as document content, so a
+ * child inserted into one is a document change it will try to parse. Those
+ * controls stay measured and portalled, riding `watchManuscriptLayout` for
+ * their geometry and the kernel's hover anchors for their target.
  */
 
+import type { Editor } from "@tiptap/core";
 import type { CSSProperties } from "react";
 
-import type { AnchorRect } from "./useAnchorRect";
+import { useAnchorRect } from "./useAnchorRect";
 import "./object-overlay.css";
+
+/** Which corner an overlay is asking for. */
+export type ObjectOverlayCorner =
+  /** The object's own node-view element; the overlay is rendered in it. */
+  | { inside: HTMLElement }
+  /** An element ProseMirror owns; the overlay is measured onto the page. */
+  | { over: HTMLElement };
+
+export type ObjectOverlayPlacement = {
+  /** Where the overlay is portalled. */
+  container: Element;
+  /** How the overlay is placed, and which half of `object-overlay.css` styles it. */
+  placement: "inside" | "over";
+  /** Only a measured overlay carries geometry; CSS holds the attached corner. */
+  style: CSSProperties | undefined;
+};
 
 /** Matches mockup 03b: the overlay sits inside the bounds, not on the edge. */
 const OVERLAY_INSET_PX = 10;
 
 /**
- * Anchored to the right edge so an overlay that gains a verb keeps its
- * outermost control where the pointer already learned to find it. The class
- * supplies the `translateX(-100%)` that pulls it back over its own width.
+ * Resolve a corner, or null when there is nothing to draw against.
+ *
+ * Null once the anchor has left the document: a node view that remounts leaves
+ * the old element detached, and chrome rendered into a detached element is
+ * chrome nobody can see or reach.
  */
-export function objectOverlayStyle(rect: AnchorRect): CSSProperties {
-  return { top: rect.top + OVERLAY_INSET_PX, left: rect.right - OVERLAY_INSET_PX };
+export function useObjectOverlayCorner(
+  editor: Editor | null,
+  corner: ObjectOverlayCorner | null,
+): ObjectOverlayPlacement | null {
+  const measured = corner && "over" in corner ? corner.over : null;
+  const rect = useAnchorRect(editor, measured);
+
+  if (!corner || typeof document === "undefined") return null;
+
+  if ("inside" in corner) {
+    if (!corner.inside.isConnected) return null;
+    return { container: corner.inside, placement: "inside", style: undefined };
+  }
+
+  if (!rect) return null;
+  return {
+    container: document.body,
+    placement: "over",
+    // Anchored to the right edge so an overlay that gains a verb keeps its
+    // outermost control where the pointer already learned to find it. The
+    // class supplies the `translateX(-100%)` that pulls it back over its width.
+    style: { top: rect.top + OVERLAY_INSET_PX, left: rect.right - OVERLAY_INSET_PX },
+  };
 }

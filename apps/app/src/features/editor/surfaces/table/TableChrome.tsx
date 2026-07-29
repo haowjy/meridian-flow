@@ -300,11 +300,16 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
       {/* The table's object controls: one ⋮, and only while the table is
           selected. §5.4 rules out a hover icon row here — the grips already
-          own the top edge, and a second system would crowd them. */}
+          own the top edge, and a second system would crowd them.
+
+          Measured rather than rendered inside the frame, unlike every other
+          object's row: a table is ProseMirror's own DOM rather than a node
+          view's, and a child inserted into it is read back as a document
+          change. */}
       <OverlayIconRow
         editor={editor}
         kind="table"
-        anchor={editable ? tableElement : null}
+        corner={editable && tableElement ? { over: tableElement } : null}
         visible={Boolean(tableElement)}
         items={[]}
         overflow={(chip) => (

@@ -2,9 +2,11 @@
  * The object row's own styles (ruling 8, mockup 03b) — the shape it makes in
  * the corner that `object-overlay.css` puts it in.
  *
- * Portalled to the body, so nothing here nests under `.meridian-editor` — the
- * `meridian-` prefix is what scopes it instead. Imported by the component, so
- * a lane that never renders a row still gets the rules the moment it does.
+ * Rendered inside the object it decorates or portalled to the body, depending
+ * on who owns that DOM (`object-overlay.ts`), so nothing here may nest under
+ * `.meridian-editor` — the `meridian-` prefix is what scopes it instead.
+ * Imported by the component, so a lane that never renders a row still gets the
+ * rules the moment it does.
  */
 
 /* One line of editor text is the ceiling for anything hovering over an object

@@ -2,19 +2,35 @@
  * The corner every object overlay hangs in — the object row, the code fence's
  * chip cluster, whatever comes next (ruling 8, mockup 03b).
  *
- * Portalled to the body, so nothing here nests under `.meridian-editor` — the
- * `meridian-` prefix is what scopes it instead. Imported by `object-overlay.ts`
- * so the class and the position it pairs with always arrive together.
+ * Two placements, one look. `inside` is rendered in the object's own node-view
+ * element and needs no measurement at all; `over` is portalled to the body for
+ * the elements ProseMirror owns, and its top-left arrives as an inline style.
+ * Nothing here nests under `.meridian-editor` — the `meridian-` prefix is what
+ * scopes it, since one of the two placements is outside the editor entirely.
  */
 
-/* Overlaid just inside the object's top-right bounds, with no footprint: the
-   overlay is fixed to a measured rect and pulled back over its own width, so
-   the manuscript never reserves a pixel for it. */
 .meridian-object-overlay {
-  position: fixed;
   z-index: 30;
-  transform: translateX(-100%);
   transition: opacity 120ms ease-out;
+  /* The overlay is a control, not prose: a sweep through the object must not
+     drag its labels into the writer's selection. */
+  user-select: none;
+}
+
+/* Inside the object's own bounds, with no footprint: absolute against the node
+   view, which the manuscript already positions and sizes for the selection
+   ring. Nothing is measured, so nothing can go stale. */
+.meridian-object-overlay[data-placement="inside"] {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* Measured onto the page instead, and pulled back over its own width so the
+   right edge lands on the inline `left`. */
+.meridian-object-overlay[data-placement="over"] {
+  position: fixed;
+  transform: translateX(-100%);
 }
 
 .meridian-object-overlay[data-state="closed"] {

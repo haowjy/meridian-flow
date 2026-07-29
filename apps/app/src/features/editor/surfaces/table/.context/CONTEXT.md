@@ -80,7 +80,7 @@ view — Radix needs a trigger to anchor an open menu to — and stops painting
 and hit-testing; the add tabs simply unmount.
 
 When the hovered cell itself leaves the port — scrolled away, or taken by a
-peer deleting the row — the anchor is released whole: hover intent cancelled,
+peer deleting the row — the anchor is released whole: open menu closed,
 anchor dropped, and any open grip menu closed with it. Closing the menu is the
 load-bearing part. An open menu holds the anchor still so a stray hover cannot
 move the grips out from under it, so a menu that outlived its own row would
@@ -148,32 +148,36 @@ the same split from the other side; change one and the other is wrong.
 
 ## Hover and the menus
 
-Hover intent comes from `chrome.createHoverIntent`, keyed on the cell ELEMENT
-so an unchanged cell settles once rather than on every `mousemove`.
+The approach is the kernel's, through one `registerHoverAnchor` lane
+(`core/editor/chrome/hover-anchor.ts`). This lane answers one question — which
+cell of this table is at this point — and gets back its share of whichever
+block currently owns hover chrome, keyed on the cell ELEMENT so an unchanged
+cell settles once rather than on every pointer move.
 
-**One pointer source, on the document.** The grips are portalled OUTSIDE the
-editor, so a listener bound to the prose watches the pointer leave and never
-watches it arrive. Pairing that with a React `onMouseEnter` on the portal put
-two mechanisms in a 120ms race across a tree boundary, and the race is why a
-grip stopped being clickable a moment after it appeared: the reveal faded,
+**No pointer listener here.** The grips are portalled OUTSIDE the editor, so a
+listener bound to the prose watches the pointer leave and never watches it
+arrive. Pairing that with a React `onMouseEnter` on the portal put two
+mechanisms in a 120ms race across a tree boundary, and the race is why a grip
+stopped being clickable a moment after it appeared: the reveal faded,
 `pointer-events: none` went on, and the right-click fell through to the
-browser. One `mousemove` on the document asks one question instead, `is the
-pointer on a cell of this editor, or anywhere in the zone this table's chrome
-lives in`, and the answer is the same on both sides of the portal.
+browser. The kernel's one reading of the page answers the same on both sides of
+the portal, and it re-asks after a scroll the writer's hand did not follow.
 
-**The zone, not the chrome's elements.** Asking whether the pointer is over a
-grip leaves the pixels BETWEEN the frame and the grip belonging to nobody, and
-the pointer crosses them on every approach: measured, 4px above the frame and
-6px left of it. It also has to RE-ENTER rather than merely not leave. A
-`mousemove` that answers "still here" by returning leaves the grace the frame's
-edge scheduled in flight, and 120ms later it fades the grip out from under a
-pointer already resting on it — after which the closed chrome takes no pointer
+**The zone, not the chrome's elements — and that part is still this lane's.**
+Asking whether the pointer is over a grip leaves the pixels BETWEEN the frame
+and the grip belonging to nobody, and the pointer crosses them on every
+approach: measured, 4px above the frame and 6px left of it. That is the lane's
+`holds` predicate (`pointerHoldsTableChrome`), the one thing about this reveal
+the kernel cannot know. The kernel's own re-entry is what cancels the grace the
+frame's edge scheduled — left running, it fades the grip out from under a
+pointer already resting on it, after which the closed chrome takes no pointer
 events and `elementFromPoint` over the grip answers the prose underneath.
 
 While a menu is open the anchor is frozen: a stray hover would slide the grips
-out from under the menu and leave it pointing at another row. On close the
-pointer's real position is read back from `intent.settled`, or the chrome
-lingers where the writer left it.
+out from under the menu and leave it pointing at another row. The approach
+keeps settling meanwhile and the lane remembers the answer, so on close the
+pointer's real position is read back rather than the chrome lingering where the
+writer left it.
 
 **The selected table's ⋮ reads the kernel's context, not the document.** This
 surface is mounted for the whole session, so a blunt per-transaction

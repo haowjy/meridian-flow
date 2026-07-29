@@ -4,9 +4,10 @@
  *
  * Zero footprint is the whole point: no band above the object, no reserved
  * space, no layout growth, nothing that moves a line of the manuscript when it
- * appears. So the row is portalled and positioned from the object's measured
- * rect rather than rendered inside the node — a node view that laid it out
- * would have to reserve space for it, and the ruling is that it must not.
+ * appears. So the row is absolutely positioned rather than laid out — inside
+ * the object's own element wherever that element belongs to a node view, and
+ * measured onto the page where it does not. `object-overlay.ts` owns that
+ * choice; the row only wears it.
  *
  * Each button is its own compact rounded-square card chip so it reads over
  * diagram lines, with its label in a tooltip and the row ending in ⋮. They are
@@ -32,8 +33,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 import { editorChromeAttributes } from "@/core/editor/chrome";
 
-import { objectOverlayStyle } from "./object-overlay";
-import { useAnchorRect } from "./useAnchorRect";
+import { type ObjectOverlayCorner, useObjectOverlayCorner } from "./object-overlay";
 import { useChromeSuppressed, useEditorChrome } from "./useEditorChrome";
 import "./overlay-icon-row.css";
 
@@ -48,10 +48,10 @@ export type OverlayIconRowItem = {
 export type OverlayIconRowProps = {
   editor: Editor | null;
   /**
-   * The object's rendered element. Null when no object is being approached —
-   * that, not `visible`, is what takes the row out of the document.
+   * Which corner to hang in, and against what. Null when no object is being
+   * approached — that, not `visible`, is what takes the row out of the page.
    */
-  anchor: HTMLElement | null;
+  corner: ObjectOverlayCorner | null;
   /** Hover settled on it, or its object is selected. Drives the fade. */
   visible: boolean;
   items: readonly OverlayIconRowItem[];
@@ -67,7 +67,7 @@ export type OverlayIconRowProps = {
 
 export function OverlayIconRow({
   editor,
-  anchor,
+  corner,
   visible,
   items,
   overflow,
@@ -75,9 +75,9 @@ export function OverlayIconRow({
 }: OverlayIconRowProps) {
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
-  const rect = useAnchorRect(editor, anchor);
+  const placement = useObjectOverlayCorner(editor, corner);
 
-  if (!anchor || !rect || !chrome || typeof document === "undefined") return null;
+  if (!placement || !chrome) return null;
 
   const chromeAttributes = editorChromeAttributes(chrome);
 
@@ -87,8 +87,12 @@ export function OverlayIconRow({
         data-overlay-icon-row={kind}
         {...chromeAttributes}
         data-state={visible && !suppressed ? "open" : "closed"}
+        data-placement={placement.placement}
         className="meridian-object-overlay meridian-overlay-icon-row"
-        style={objectOverlayStyle(rect)}
+        style={placement.style}
+        // Rendered inside the manuscript when it is attached, so it says what
+        // it is: chrome, never text ProseMirror owns.
+        contentEditable={false}
       >
         {items.map((item) => (
           <OverlayIconChip
@@ -107,7 +111,7 @@ export function OverlayIconRow({
         )}
       </div>
     </TooltipProvider>,
-    document.body,
+    placement.container,
   );
 }
 

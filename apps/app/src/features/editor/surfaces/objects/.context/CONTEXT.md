@@ -56,15 +56,34 @@ const { target, visible } = useApproachedObject(editor, pinned);
   row fades out over its object instead of blinking away from under the pointer.
 - `pinned` — a menu is open on this object, so the pointer no longer decides.
 
-Hover comes from a single capture-phase `pointerover` listener on the document,
-not on the editor: only a listener that sees where the pointer went can tell
-"travelled onto the row" from "left the object". Anything matching
-`[data-editor-chrome]` or a Radix popper wrapper counts as travelling onto the
-chrome, so a diagram keeps its row while the writer reaches for its ⋮.
+Hover is the kernel's, through one `registerHoverAnchor` lane
+(`core/editor/chrome/hover-anchor.ts`). This lane answers one question — which
+object is at this point — and gets back its share of whichever block currently
+owns hover chrome. Everything else is the kernel's: the pointer, the delay and
+the grace, the re-hit-test after a scroll the writer's hand did not follow,
+reading a pointer resting on this editor's own chrome as still being on the
+object, and the rule that the block's grip and this row are on ONE block or the
+row is not on screen at all.
 
 Selection persistence reads the kernel's context: `owner === "object"` is a
 selected diagram or image, `owner === "source-block"` is a caret inside a plain
 fence, and ruling 15 gives the second one the same persistent chrome.
+
+## Where the chrome is drawn
+
+`target` carries two elements, and they are different questions.
+
+- `element` — the object's rendered bounds, which the verbs read (a diagram's
+  SVG, an image's `<img>`).
+- `container` — the node view's own element, which is where the chrome is
+  RENDERED. Absolutely positioned inside it, so a scroll or a reflow moves
+  chrome and object as one piece and there is no rect that can strand.
+
+Attachment is safe here and only here: every object in this lane is a React
+node view, and a node view ignores DOM changes outside its `contentDOM`. The
+manuscript's own elements are ProseMirror's, and a child inserted into one is
+read back as a document change — which is why a table's ⋮ is still measured
+(`chrome/object-overlay.ts` holds both cases).
 
 ## Resolving anchors
 

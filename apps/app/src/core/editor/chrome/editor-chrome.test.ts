@@ -219,83 +219,25 @@ describe("gesture suppression", () => {
   });
 
   it("drops revealed approach chrome the moment a gesture starts", () => {
-    const { chrome } = createEditorChrome();
     const { timers, advance } = fakeTimers();
+    const { chrome, controller } = createEditorChrome(timers);
     const settled = vi.fn();
-    const intent = chrome.createHoverIntent({ onSettle: settled, timers });
+    const figure = { name: "figure" };
 
-    intent.enter("figure");
+    chrome.registerHoverAnchor<string>({
+      id: "probe",
+      probe: () => ({ owner: figure, value: "row" }),
+      onSettle: settled,
+    });
+    controller.hoverAnchors.observe((x, y) => ({ x, y, element: {} as Element, onChrome: false }));
+
+    controller.hoverAnchors.pointerAt(10, 10);
     advance(CHROME_TIMING.handleIntentMs);
-    expect(settled).toHaveBeenLastCalledWith("figure");
+    expect(settled).toHaveBeenLastCalledWith("row");
 
+    // A drag blanks every surface on the page for its whole length, not just
+    // where the pointer is now.
     chrome.beginDrag();
     expect(settled).toHaveBeenLastCalledWith(null);
-  });
-});
-
-describe("hover intent", () => {
-  it("ignores a pointer crossing the page and answers one that rests", () => {
-    const { chrome } = createEditorChrome();
-    const { timers, advance } = fakeTimers();
-    const settled = vi.fn();
-    const intent = chrome.createHoverIntent({ onSettle: settled, timers });
-
-    intent.enter("figure");
-    advance(CHROME_TIMING.handleIntentMs - 1);
-    intent.leave();
-    advance(1_000);
-    expect(settled).not.toHaveBeenCalled();
-
-    intent.enter("figure");
-    advance(CHROME_TIMING.handleIntentMs);
-    expect(settled).toHaveBeenCalledExactlyOnceWith("figure");
-  });
-
-  it("answers the next object immediately once something is already revealed", () => {
-    const { chrome } = createEditorChrome();
-    const { timers, advance } = fakeTimers();
-    const settled = vi.fn();
-    const intent = chrome.createHoverIntent({ onSettle: settled, timers });
-
-    intent.enter("first");
-    advance(CHROME_TIMING.handleIntentMs);
-    intent.enter("second");
-
-    expect(settled).toHaveBeenLastCalledWith("second");
-  });
-
-  it("holds the row through the grace so the pointer can cross onto it", () => {
-    const { chrome } = createEditorChrome();
-    const { timers, advance } = fakeTimers();
-    const settled = vi.fn();
-    const intent = chrome.createHoverIntent({ onSettle: settled, timers });
-
-    intent.enter("figure");
-    advance(CHROME_TIMING.handleIntentMs);
-    settled.mockClear();
-
-    intent.leave();
-    advance(CHROME_TIMING.fadeMs - 1);
-    intent.enter("figure");
-    advance(1_000);
-
-    expect(settled).not.toHaveBeenCalled();
-    expect(intent.settled).toBe("figure");
-  });
-});
-
-describe("keymap registration", () => {
-  it("bumps a revision so a merged keymap can be cached across keystrokes", () => {
-    const { chrome } = createEditorChrome();
-    const before = chrome.keymapRevision;
-
-    const release = chrome.registerKeymap({ id: "slash", scope: "layer", bindings: {} });
-    expect(chrome.keymapRevision).toBeGreaterThan(before);
-
-    const afterRegister = chrome.keymapRevision;
-    release();
-    expect(chrome.keymapRevision).toBeGreaterThan(afterRegister);
-    release();
-    expect(chrome.keymapRevision).toBe(afterRegister + 1);
   });
 });

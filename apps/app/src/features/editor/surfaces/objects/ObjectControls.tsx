@@ -207,7 +207,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
         <OverlayIconRow
           editor={editor}
           kind={target.kind}
-          anchor={target.element}
+          corner={{ inside: target.container }}
           visible={visible}
           items={rowItems({ editor, target, run, openLightbox })}
           overflow={(chip) => (
