@@ -39,15 +39,24 @@ re-deriving it, so there is one answer to "is this an object".
   already hunted for the nearest editable position — which, inside a node view
   that hides its own text, is that hidden text. The rule is the DOM's own
   (`contenteditable="false"` under the pointer), never a list of node types, so
-  a plain fence and a table cell keep their caret.
-- **`body` decides whether the object can be grabbed** (§5.8). An `opaque`
-  body — a picture, a rule, a rendered diagram — is a drag source: pressing it
-  starts the same block drag the margin handle starts, in
-  [`surfaces/blocks`](../../../features/editor/surfaces/blocks/AGENTS.md). A
-  `text` body declines, because a table's cells already own the pointer that
-  sweeps across them. The registration is the answer; nothing downstream reads
-  a node name to guess it — it decides the TYPE, and the block surface still
-  asks whether that occurrence is the whole block before dragging it.
+  a plain fence and a table cell keep their caret. An `inline` drag is the one
+  exception, and refusing the press there would refuse the gesture: Chrome
+  starts no drag out of a press whose default was taken away, and beside an
+  inline picture the nearest editable position is the sentence it already
+  stands in.
+- **`drag` decides what taking hold of the body does** (§5.8). `block` starts
+  the drag the margin handle starts, in
+  [`surfaces/blocks`](../../../features/editor/surfaces/blocks/AGENTS.md), and
+  that surface still asks whether this occurrence IS the whole block first.
+  `inline` leaves the press to ProseMirror's own drag, which carries the node
+  as an inline slice and lands it anywhere a caret can go — between two words,
+  with the dropcursor drawing the caret there (human ruling, 2026-07-29: a
+  picture drags in between text). A figure has no inline place to land and
+  stays `block`; only a node the schema calls inline can say `inline`, and its
+  node view has to carry `data-drag-handle` or TipTap refuses the browser's
+  dragstart. `none` is a body that already owns its pointer: a table's cells
+  take the sweep across them. The registration is the answer; nothing
+  downstream reads a node name to guess it.
 - **A letter types beside a selected object; only Delete and Backspace
   destroy it.** ProseMirror replaces the selection on any input, so one
   printable character used to be the end of a picture the writer had just
@@ -62,7 +71,8 @@ re-deriving it, so there is one answer to "is this an object".
   the object itself, at kernel scope `object`, for every type alike.
 - **Arrows never leap out of a sentence.** A block object is beside the caret
   only at the very edge of its text block; an inline image is beside it
-  directly.
+  directly. The same split runs through the drag: a block object travels
+  between blocks, an inline one travels between characters.
 - **A dead end is an answer.** `caretBesideObjectTransaction` returns null
   rather than silently walking the other way — pressing Right on the last block
   in the document must not move the caret left. Esc uses
