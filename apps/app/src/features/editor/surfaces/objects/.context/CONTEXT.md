@@ -95,6 +95,22 @@ enlarged to fill it is just bigger pixels.
 over the corner; only the diagram viewer's canvas claims the pointer, and it
 claims it because drag pans there (§5.2).
 
+## Opening a dialog from a closing menu
+
+A surface opened by a menu item has a known way of dying: the menu's close
+hands the caret back to the prose, TipTap's focus command lands a frame later,
+and a *non-modal* Radix surface reads that late arrival as an interaction
+outside itself and dismisses. The lightbox does not, because it is modal —
+Radix traps focus and ignores what happens beyond the scrim. Probed four times
+from ⋮ → Edit source with a 100 ms read inside the failure window: open every
+time.
+
+The related guard this lane did add is in `useReturnFocusToProse`
+(`features/editor/chrome`): it stands down when the prose is unreachable
+(`aria-hidden` / `inert`), which is the state a modal dialog puts it in. That
+is a reachability check rather than the layer-awareness M7 built; a non-modal
+surface opened from a menu still needs the wait-for-focus pattern.
+
 ## Known blocked
 
 Right-click on a diagram or an image does not reach the claim ladder: TipTap's
