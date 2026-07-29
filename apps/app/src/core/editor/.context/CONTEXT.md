@@ -169,10 +169,7 @@ Yjs document session. It must stay structurally aligned with
   and column moves, whole-column alignment, layout reset). All of them refuse a
   table containing spans, because GFM cannot represent one and the codec throws
   on serialization. Row zero is the structural GFM header and never moves.
-- `SlashCommandExtension` is a catalog seam with no trigger: the item shape,
-  the fuzzy filter, and a read-at-open catalog getter supplied by the mounting
-  surface. The trigger plugin was deleted with the condemned chrome and the
-  rebuild owns its replacement, so typing `/` currently inserts a literal slash.
+- The slash trigger lives under `extensions/slash/` and is summarized below.
 - A `code_block` whose `language` is `mermaid` is a plain editable code block:
   `MeridianCodeBlockLowlight` registers no node view. `MermaidCodeBlock.tsx`
   keeps the SVG pipeline (`renderMermaid`, token-themed preview) in the tree,
@@ -205,6 +202,27 @@ Yjs document session. It must stay structurally aligned with
   no undo command to bind.
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
+
+## Slash trigger — the `/` menu
+
+Colocated under `extensions/slash/`, with its own
+[`AGENTS.md`](../extensions/slash/AGENTS.md). Two contracts cross this
+boundary:
+
+- **The catalog is the host's, read at open.** `slashCommands.catalog()` is
+  called when the menu opens and may return null, which is how a surface turns
+  the trigger off. `EditorView` withdraws it behind a schema fence, because a
+  slash command dispatches through a TipTap chain and chains run on a
+  non-editable editor: withdrawing editability alone would leave an open menu
+  able to insert.
+- **The open menu is a store, not a render prop.** `getSlashMenu(editor)`
+  returns what the surface subscribes to; the surface never reads editor state
+  to decide what the menu shows. It may be null on an editor without the
+  extension.
+
+The trigger mounts with the catalog option rather than through
+`EDITOR_CHROME_EXTENSIONS`, so a surface that offers no catalog pays for no
+plugin.
 
 ## Draft review — projection-only view extension
 

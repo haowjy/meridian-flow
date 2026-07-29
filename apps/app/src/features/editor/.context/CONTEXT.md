@@ -41,6 +41,15 @@ it is geometry, owned by `editor-column.ts`.
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
 
+## Slash menu
+
+`surfaces/slash/` renders the open menu the `/` trigger publishes; its own
+[`AGENTS.md`](../surfaces/slash/AGENTS.md) carries the rules. What matters from
+outside it: the menu is the first surface that keeps focus in the prose while it
+is open (`focusOnOpen="prose"`), and the first anchored to something that moves,
+so it reads `anchorRect` rather than a captured point. Both are `EditorPopover`
+capabilities now, and the link lane inherits them.
+
 ## Draft chrome
 
 Two self-contained surfaces, both resolving their own state from
@@ -93,12 +102,14 @@ than gating on `isActive` alone.
 
 ### Slash insertion catalog
 
-`EditorView` owns the nine-item catalog and hands `useMountedEditor` a *getter*,
-never the catalog itself. The extension mounts as a construction fact; its
-localized labels and the image-upload callback are read when the menu opens, so
-a locale switch relabels the menu instead of appearing in `EditorMountIdentity`
-and remounting the editor. The seam is live; the trigger that consumed it is
-not, so nothing reads the catalog until the rebuild lands a trigger.
+`EditorView` owns §5.7's eleven-entry catalog and hands `useMountedEditor` a
+*getter*, never the catalog itself. The extension mounts as a construction fact;
+its localized labels, group headings, hints, and the image-upload callback are
+read when the menu opens, so a locale switch relabels the menu instead of
+appearing in `EditorMountIdentity` and remounting the editor. The getter returns
+null on a code surface, on a read-only host, and behind a schema fence — the
+last because a slash command dispatches through a chain, and chains run on a
+non-editable editor.
 
 `EditorSurfaceFrame` accepts scrolling content and the tracked editor's optional
 scroll class/ref/handler. The frame owns every shared vertical, scroll, and

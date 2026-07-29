@@ -25,8 +25,24 @@ registration, the Escape deferral, and the focus return.
 | | Anchoring | Focus on open | Modal |
 |---|---|---|---|
 | `EditorMenu` | `at={{x, y}}` for a claimed right-click, or `trigger` for a control | Radix roving focus | no |
-| `EditorPopover` | same | Radix's — a popover holds a form, and the writer opened it to type | no |
+| `EditorPopover` | `at`, `anchorRect`, or `trigger` | Radix's by default; `focusOnOpen="prose"` leaves the caret where it was | no |
 | `EditorDialog` | centered lightbox over the still-mounted page | Radix's | yes, with the scrim |
+
+`EditorPopover`'s two anchors are one mechanism — a virtual reference
+floating-ui measures — and the difference between them is whether the anchor
+can move. `at` is a point that cannot (a right-click landed there); `anchorRect`
+is a function read on every reposition, for a surface tied to the text itself
+(the `/` a writer is typing after, in a manuscript that scrolls). The anchor
+names `editor.view.dom` as its `contextElement`, which is what lets floating-ui
+find the scroll container to watch; without it a virtual anchor only hears the
+window. `EditorMenu` keeps the zero-size trigger from `pointer-anchor.ts`
+instead, because Radix's `DropdownMenu` has no Anchor part — which is also why
+only it needs the remount key on a new point.
+
+`focusOnOpen="prose"` is for a surface the writer is still typing UNDERNEATH.
+The slash menu filters on document text, so a popover that took focus would end
+the query on its first keystroke; nothing inside such a surface may be
+focusable, and its rows cancel their own mousedown.
 
 Menu parts are re-exported with editor names (`EditorMenuItem`,
 `EditorMenuSeparator`, `EditorMenuSub`, …) so a lane has one import.

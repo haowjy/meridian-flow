@@ -8,7 +8,8 @@ belong under `core/editor`; project context owns pane and tab composition.
 The interaction layer is being rebuilt against a design of record. Its trunk
 is [`chrome/`](chrome/AGENTS.md): the primitives every surface renders from,
 and the one host they all mount through. The persistent document toolbar is
-[`surfaces/toolbar/`](surfaces/toolbar/AGENTS.md); the contextual bubbles were
+[`surfaces/toolbar/`](surfaces/toolbar/AGENTS.md) and the insertion menu is
+[`surfaces/slash/`](surfaces/slash/AGENTS.md); the contextual bubbles were
 deleted whole and their replacements are anchored to the blocks they serve.
 Do not restore the old surfaces or grow new ones ad hoc here — build against
 the design, from the primitives.
@@ -35,4 +36,5 @@ the design, from the primitives.
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`chrome/AGENTS.md`](chrome/AGENTS.md)
 → [`surfaces/toolbar/AGENTS.md`](surfaces/toolbar/AGENTS.md)
+→ [`surfaces/slash/AGENTS.md`](surfaces/slash/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)

@@ -54,4 +54,5 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for session, peer-mark, draft-
 and navigation contracts.
 
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
+→ [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
