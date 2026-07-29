@@ -81,7 +81,12 @@ import {
 /** Names this surface in `EDITOR_CHROME_SURFACES` and in probes. */
 export const BLOCK_MOVEMENT_SURFACE_ID = "block-movement";
 
-/** Pointer travel that turns a press into a drag, not a click. */
+/**
+ * Pointer travel that turns a press into a drag, not a click. Straight-line
+ * distance: summing the axes made a 2px diagonal jitter — a hand resting on a
+ * mouse — read as 4px of travel, so the block faded for a gesture that never
+ * went anywhere.
+ */
 const DRAG_SLOP_PX = 4;
 
 /**
@@ -430,8 +435,10 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       gesture.pointerY = event.clientY;
 
       if (!gesture.lifted) {
-        const travelled =
-          Math.abs(event.clientX - gesture.startX) + Math.abs(event.clientY - gesture.startY);
+        const travelled = Math.hypot(
+          event.clientX - gesture.startX,
+          event.clientY - gesture.startY,
+        );
         if (travelled < DRAG_SLOP_PX) return;
         // Only now is it a drag. A press that never travelled is a click, and
         // telling the kernel otherwise would blank every surface on the page

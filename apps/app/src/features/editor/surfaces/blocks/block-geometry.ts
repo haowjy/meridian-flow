@@ -15,7 +15,7 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import { isObjectBodyDragSource } from "@/core/editor/objects";
 
-import { type BlockTarget, blockAt } from "./block-targets";
+import { type BlockTarget, blockAt, objectIsWholeBlock } from "./block-targets";
 
 /** Matches mockup 08: a 22×24 grip. */
 export const BLOCK_HANDLE_WIDTH = 22;
@@ -157,15 +157,19 @@ const OBJECT_BODY_CONTROLS = "input, textarea, select, button, a[href]";
  * press in the margin beside a picture is a press on the margin.
  *
  * What moves is the object's top-level block, the same unit the margin handle
- * points at. An uploaded picture is an inline image alone in a paragraph, and
- * moving that paragraph is what moves the picture.
+ * points at — so the object has to BE that block. An uploaded picture is an
+ * inline image alone in a paragraph and moving that paragraph moves the
+ * picture; a picture mid-sentence declines, and the press stays the text
+ * selection the pointer is already drawing. The margin handle still moves the
+ * paragraph either way, which is where "move this whole line" lives.
  */
 export function objectBodyDragTarget(view: EditorView, event: PointerEvent): BlockTarget | null {
   if (!(event.target instanceof Element)) return null;
   if (onEditableText(event.target) || event.target.closest(OBJECT_BODY_CONTROLS)) return null;
 
   const object = objectBodyAt(view, event.clientX, event.clientY);
-  return object === null ? null : blockAt(view.state.doc, object);
+  if (object === null || !objectIsWholeBlock(view.state.doc, object)) return null;
+  return blockAt(view.state.doc, object);
 }
 
 /**

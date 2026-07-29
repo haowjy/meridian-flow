@@ -33,6 +33,13 @@ gesture is holding, and whether it has lifted.
   `beginGesture`, so there is one hold, one kernel token, one finalizer — and
   one difference: a press that never travels opens the menu on the handle and
   is left to ProseMirror on a body, where it becomes the jade ring.
+- **The body door opens only where the object IS the block**
+  (`objectIsWholeBlock`). The drag moves a top-level block, so an object that
+  shares its paragraph with prose would carry sentences nobody grabbed; there
+  the press stays the text selection the pointer was already drawing, and the
+  margin handle remains the way to move that whole line. The test is
+  structural, per occurrence — the same image is grabbable alone in a
+  paragraph and not mid-sentence.
 - **An object moves one way.** ProseMirror's own HTML5 drag is refused
   wherever it would carry an object off, including out of a field the object
   embeds. It shows no drop line and it moves a node by serializing and

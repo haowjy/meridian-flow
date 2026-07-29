@@ -73,6 +73,30 @@ export function blockAt(doc: PMNode, pos: number): BlockTarget | null {
 }
 
 /**
+ * True when the node at `pos` is the whole of the top-level block that would
+ * move with it (§5.8).
+ *
+ * A body drag moves the object's BLOCK, so the two have to be the same thing
+ * for the gesture to mean what it looks like. A picture alone in its paragraph
+ * — the shape an upload leaves — is: moving that paragraph is moving the
+ * picture. A picture in the middle of a sentence is not, and grabbing it would
+ * carry prose the writer never took hold of.
+ *
+ * Structural, and about this occurrence rather than this kind: the same image
+ * is grabbable in one paragraph and only text in the next. Every wrapper
+ * between the node and the document has to hold nothing else, so a picture in
+ * a table cell answers no rather than offering the whole table.
+ */
+export function objectIsWholeBlock(doc: PMNode, pos: number): boolean {
+  if (pos < 0 || pos > doc.content.size) return false;
+  const $pos = doc.resolve(pos);
+  for (let depth = $pos.depth; depth >= 1; depth -= 1) {
+    if ($pos.node(depth).childCount !== 1) return false;
+  }
+  return true;
+}
+
+/**
  * The block the writer is standing on: the one holding the caret, or the one
  * holding the selected object. An inline image answers with its paragraph —
  * the paragraph is what moves.

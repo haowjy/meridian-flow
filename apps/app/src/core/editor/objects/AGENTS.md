@@ -46,7 +46,8 @@ re-deriving it, so there is one answer to "is this an object".
   [`surfaces/blocks`](../../../features/editor/surfaces/blocks/AGENTS.md). A
   `text` body declines, because a table's cells already own the pointer that
   sweeps across them. The registration is the answer; nothing downstream reads
-  a node name to guess it.
+  a node name to guess it — it decides the TYPE, and the block surface still
+  asks whether that occurrence is the whole block before dragging it.
 - **Arrows never leap out of a sentence.** A block object is beside the caret
   only at the very edge of its text block; an inline image is beside it
   directly.
