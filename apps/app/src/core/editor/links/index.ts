@@ -8,6 +8,7 @@
 
 export {
   followLinkAtSelection,
+  getLinkResolution,
   getLinkSurface,
   LinkSurfaceExtension,
   openLinkForm,
@@ -43,6 +44,13 @@ export {
   linkClickIntent,
   MIDDLE_BUTTON,
 } from "./link-navigation";
+export {
+  createLinkResolution,
+  type InternalLinkResolver,
+  type LinkResolution,
+  type LinkResolutionEntry,
+  type LinkResolutionState,
+} from "./link-resolution";
 export {
   createLinkSurface,
   type LinkFormRequest,

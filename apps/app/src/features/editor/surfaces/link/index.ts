@@ -7,6 +7,7 @@
  * menu store.
  */
 export { LinkSurfaces } from "./LinkSurfaces";
+export { useLinkResolution } from "./useLinkResolution";
 export { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
 export { useWikilinkDocuments } from "./useWikilinkDocuments";
 export { WikilinkMenu } from "./WikilinkMenu";

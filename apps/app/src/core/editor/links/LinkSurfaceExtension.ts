@@ -2,9 +2,10 @@
  * LinkSurfaceExtension — the one place the link lane touches the editor.
  *
  * It owns the click (follow or caret, `link-navigation.ts` decides), the hover
- * that reveals the destination, Ctrl+K, Alt+Enter, and the right-click claim.
+ * that reveals the destination, Ctrl+K, Alt+Enter, the right-click claim, and
+ * the decoration that says whether an internal link has landed anywhere yet.
  * Everything it decides is decided by the pure modules beside it; this file
- * reads the document, watches the pointer, and calls the store.
+ * reads the document, watches the pointer, and calls the stores.
  *
  * It also owns link clicks outright: the link mark used to cancel navigation
  * from its own plugin, which would now be a second opinion about the same
@@ -35,6 +36,8 @@ import {
   relocateLink,
 } from "./link-commands";
 import { followLink, linkClickIntent, MIDDLE_BUTTON } from "./link-navigation";
+import { createLinkResolution, type LinkResolution } from "./link-resolution";
+import { linkResolutionPlugin } from "./link-resolution-decorations";
 import {
   createLinkSurface,
   type LinkMenuTarget,
@@ -47,7 +50,7 @@ const LINK_SURFACE_NAME = "meridianLinkSurface";
 
 export const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
 
-type LinkSurfaceStorage = { surface: LinkSurface };
+type LinkSurfaceStorage = { surface: LinkSurface; resolution: LinkResolution };
 
 declare module "@tiptap/core" {
   interface Storage {
@@ -59,6 +62,17 @@ declare module "@tiptap/core" {
 export function getLinkSurface(editor: Editor | null | undefined): LinkSurface | null {
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[LINK_SURFACE_NAME]?.surface ?? null;
+}
+
+/**
+ * Where this editor's internal links point, or null on one that never mounted
+ * the lane. Separate from the surface store because it answers a different
+ * question: the surface knows which link the writer is working on, and this
+ * knows what any of them addresses.
+ */
+export function getLinkResolution(editor: Editor | null | undefined): LinkResolution | null {
+  if (!editor || editor.isDestroyed) return null;
+  return editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
 }
 
 /**
@@ -94,16 +108,17 @@ export const LinkSurfaceExtension = Extension.create({
   name: LINK_SURFACE_NAME,
 
   addStorage(): LinkSurfaceStorage {
-    return { surface: createLinkSurface() };
+    return { surface: createLinkSurface(), resolution: createLinkResolution() };
   },
 
   onDestroy() {
     this.storage.surface.destroy();
+    this.storage.resolution.destroy();
   },
 
   addProseMirrorPlugins() {
     const editor = this.editor;
-    const { surface } = this.storage;
+    const { surface, resolution } = this.storage;
 
     // What the current press started from: where the pointer was, and where
     // the writer's selection was before ProseMirror moved it.
@@ -150,6 +165,8 @@ export const LinkSurfaceExtension = Extension.create({
     };
 
     return [
+      linkResolutionPlugin(resolution),
+
       new Plugin({
         key: linkSurfacePluginKey,
 
