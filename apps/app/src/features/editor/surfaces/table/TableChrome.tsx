@@ -47,6 +47,7 @@ import {
   TableColumnMenuItems,
   TableMenuItems,
   TableRowMenuItems,
+  tableMenuProps,
 } from "./TableVerbMenu";
 import {
   cellDocPosition,
@@ -60,12 +61,8 @@ import {
 import {
   appendTableAxis,
   claimsTableCellMenu,
-  mergeJoinsCellText,
-  selectedColumnAlignment,
-  selectedTablePlacement,
   selectTableAxis,
   TABLE_VERB_COMMANDS,
-  tableVerbStates,
 } from "./table-commands";
 import { tableChromeCopy } from "./table-copy";
 import "./table-chrome.css";
@@ -433,18 +430,11 @@ function pieceStyle(piece: TableChromePiece | null): CSSProperties {
 
 /**
  * Menu contents, mounted only while the menu is open (Radix keeps its content
- * unmounted otherwise). Recomputing the verb matrix on every keystroke of the
- * chapter would be a table walk per character; behind an open menu it is free.
+ * unmounted otherwise), which is what makes `tableMenuProps` free to read the
+ * whole verb matrix.
  */
 function GripMenuContent({ editor, axis }: { editor: Editor; axis: TableMenuShape }) {
-  const states = tableVerbStates(editor.state, { editable: editor.isEditable });
-  const props = {
-    editor,
-    states,
-    alignment: selectedColumnAlignment(editor.state),
-    placement: selectedTablePlacement(editor.state),
-    mergeJoinsText: mergeJoinsCellText(editor.state),
-  };
+  const props = tableMenuProps(editor);
 
   if (axis === "row") return <TableRowMenuItems {...props} />;
   if (axis === "column") return <TableColumnMenuItems {...props} />;

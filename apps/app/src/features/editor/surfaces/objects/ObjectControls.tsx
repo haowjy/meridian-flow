@@ -11,6 +11,11 @@
  * cluster instead (ruling 15): same inside-corner physics, different shape,
  * because its language is a labeled control.
  *
+ * Two of the claim ladder's rungs land here. `object` is a right-click on a
+ * diagram or an image, which opens the ⋮ it already has. `caret` is a
+ * right-click INSIDE a plain fence, which used to reach the browser and now
+ * opens the fence's own verbs as one list (human ruling, 2026-07-29).
+ *
  * **Approach is not identity.** Hover decides what the row hangs off; a menu
  * decides what its items act on. They are usually the same object and must not
  * be the same state: a right-click claims an object before hover intent has
@@ -38,6 +43,8 @@ import {
 } from "@/features/editor/chrome";
 
 import { CodeBlockChips } from "./CodeBlockChips";
+import { FenceMenuItems } from "./fence-menu-items";
+import { fenceUnderPointer } from "./fence-triggers";
 import { ObjectLightbox } from "./ObjectLightbox";
 import {
   isMermaidFence,
@@ -64,13 +71,20 @@ import "./object-controls.css";
 /** Runs a verb and keeps its answer, success or failure. */
 export type RunVerb = (work: Promise<unknown>, done: string) => void;
 
-/** A menu opened at a point, and the object it was opened on. */
+/**
+ * A menu opened at a point, and the object it was opened on.
+ *
+ * By ELEMENT, not by position: a position goes stale the moment a peer types
+ * above it, and the writer is still looking at the same block. Every render
+ * resolves it back, so the menu keeps acting on what was pointed at.
+ */
 type ObjectContextMenu = { at: { x: number; y: number }; element: HTMLElement };
 
 export function ObjectControls({ editor }: { editor: Editor }) {
   const chrome = useEditorChrome(editor);
   const [menuOpen, setMenuOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ObjectContextMenu | null>(null);
+  const [fenceMenu, setFenceMenu] = useState<ObjectContextMenu | null>(null);
   const { notice, run } = useVerbFeedback();
 
   // The lightbox holds an ELEMENT, not a position: a position goes stale the
@@ -79,7 +93,12 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   const [lightboxElement, setLightboxElement] = useState<HTMLElement | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
 
-  const { target, visible } = useApproachedObject(editor, menuOpen || contextMenu !== null);
+  // Any open menu here holds the approach: the chip cluster or row must not
+  // fade out from under the verbs the writer opened on it.
+  const { target, visible } = useApproachedObject(
+    editor,
+    menuOpen || contextMenu !== null || fenceMenu !== null,
+  );
 
   const openLightbox = useCallback(
     (pos: number, withSource = false) => {
@@ -127,8 +146,8 @@ export function ObjectControls({ editor }: { editor: Editor }) {
       id: "object",
       claim: ({ element, event }) => {
         const found = objectSurfaceAt(editor.view, element);
-        // A code block's controls are its chip cluster, and its right-click is
-        // the browser's, so spellcheck and paste survive inside a fence.
+        // A plain fence has a caret in it rather than a hidden inside, so it
+        // is not an object and its right-click waits for the ladder's floor.
         if (!found || found.kind === "code") return false;
         // Remembered by element, not by hover: a right-click arrives before
         // hover intent settles, and the menu must act on what was pointed at.
@@ -142,10 +161,32 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     });
   }, [chrome, editor]);
 
+  // The ladder's floor for a caret in a plain fence. The fence's position comes
+  // from the kernel's own resolver; the element is what the menu then holds, so
+  // a peer typing above it does not point the verbs at another block.
+  useEffect(() => {
+    if (!chrome) return;
+    return chrome.registerContextClaim({
+      id: "caret",
+      claim: (target) => {
+        const pos = fenceUnderPointer(editor, target);
+        if (pos === null) return false;
+        const found = objectSurfaceAtPos(editor.view, pos);
+        if (!found) return false;
+        setFenceMenu({
+          at: { x: target.event.clientX, y: target.event.clientY },
+          element: found.element,
+        });
+        return true;
+      },
+    });
+  }, [chrome, editor]);
+
   const lightboxTarget = lightboxElement ? objectSurfaceAt(editor.view, lightboxElement) : null;
   // Re-resolved every render, so the menu keeps acting on the object it was
   // opened on even as the document moves under it.
   const contextTarget = contextMenu ? objectSurfaceAt(editor.view, contextMenu.element) : null;
+  const fenceTarget = fenceMenu ? objectSurfaceAt(editor.view, fenceMenu.element) : null;
 
   return (
     <>
@@ -193,6 +234,18 @@ export function ObjectControls({ editor }: { editor: Editor }) {
           at={contextMenu?.at ?? null}
         >
           {objectMenuItems({ editor, target: contextTarget, run, openLightbox })}
+        </EditorMenu>
+      ) : null}
+
+      {fenceTarget ? (
+        <EditorMenu
+          editor={editor}
+          id="fence-context-menu"
+          open
+          onOpenChange={(open) => !open && setFenceMenu(null)}
+          at={fenceMenu?.at ?? null}
+        >
+          <FenceMenuItems editor={editor} target={fenceTarget} run={run} />
         </EditorMenu>
       ) : null}
 

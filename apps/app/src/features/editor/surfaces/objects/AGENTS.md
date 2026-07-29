@@ -41,6 +41,12 @@ control and a labeled control floating alone over code reads as part of it.
 Both shapes cap at one line of the text they decorate (human ruling), so every
 control in them is the dense `xs` button size.
 
+**Two rungs of the claim ladder land here.** `object` is a right-click on a
+diagram or an image and opens the ⋮ it already has. `caret` is a right-click
+INSIDE a plain fence and opens the fence's verbs as one list (human ruling,
+2026-07-29). A plain fence is not an object — clicking it places a caret — so
+its rung is the ladder's floor rather than the object rung.
+
 ## Key rules
 
 - **The row's copy chip copies Mermaid source**, not an image (ruling 8's
@@ -62,6 +68,10 @@ control in them is the dense `xs` button size.
   wrapped lines, live as long as their element and no longer. Neither is
   written to the document: how one writer reads one block on one screen is not
   a collaborator's business.
+- **A fence's verbs live in `fence-menu-items.tsx`, once.** The chip cluster
+  spreads them across three controls and the right-click nests the language
+  into one list; both render the same components against the same commands. A
+  verb added to one door and not the other is two answers within a week.
 - **Hover timing comes from `chrome.createHoverIntent`**, never a local timer.
   The kernel cancels it when a gesture starts.
 

@@ -1,7 +1,7 @@
 /**
  * The contents of the row grip, column grip, and table menus.
  *
- * One item component for all three, because law 5 is one rule: a verb that
+ * One item component for all of them, because law 5 is one rule: a verb that
  * cannot run here stays where the writer found it, keeps its hover and focus,
  * and says why when the writer reaches it. The greying, the swallowed select,
  * and the tooltip are the shared row's (`chrome/EditorMenuItem`); this file
@@ -11,6 +11,11 @@
  * and as a submenu at the foot of both grip menus. Selecting a whole table is
  * a deliberate act (arrow-walk or Esc out of a cell), and the header toggle
  * should not be behind it: the grips are the surface a writer already found.
+ *
+ * `TableCaretMenuItems` is the fifth arrangement and adds no verb: a
+ * right-click inside a cell now opens the formatting menu (human ruling,
+ * 2026-07-29), and these are the two submenus it carries so the writer can
+ * reach the table without finding a grip first.
  */
 import type { Editor } from "@tiptap/core";
 import {
@@ -21,17 +26,19 @@ import {
   ArrowLeftFromLine,
   ArrowRightFromLine,
   ArrowUpFromLine,
+  Columns3,
   MoveDown,
   MoveLeft,
   MoveRight,
   MoveUp,
+  Rows3,
   Ruler,
   TableCellsMerge,
   TableCellsSplit,
   Table as TableIcon,
   Trash2,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import {
   EditorMenuCheckboxItem,
@@ -46,15 +53,19 @@ import {
   EditorMenuSubTrigger,
 } from "../../chrome";
 import {
+  mergeJoinsCellText,
   runTableVerb,
+  selectedColumnAlignment,
+  selectedTablePlacement,
   type TableAlignment,
   type TablePlacement,
   type TableVerbId,
   type TableVerbStates,
+  tableVerbStates,
 } from "./table-commands";
 import { tableBlockedMessage, tableChromeCopy, tableVerbHint, tableVerbLabel } from "./table-copy";
 
-type VerbProps = {
+export type VerbProps = {
   editor: Editor;
   states: TableVerbStates;
   alignment: TableAlignment | null;
@@ -300,15 +311,94 @@ export function TableMenuItems({ editor, states, alignment, placement }: VerbPro
   );
 }
 
+/**
+ * Everything the arrangements read, gathered once per open.
+ *
+ * Recomputing the verb matrix on every keystroke of the chapter would be a
+ * table walk per character; behind an open menu it is free, and Radix keeps
+ * menu content unmounted until then.
+ */
+export function tableMenuProps(editor: Editor): VerbProps {
+  return {
+    editor,
+    states: tableVerbStates(editor.state, { editable: editor.isEditable }),
+    alignment: selectedColumnAlignment(editor.state),
+    placement: selectedTablePlacement(editor.state),
+    mergeJoinsText: mergeJoinsCellText(editor.state),
+  };
+}
+
+/**
+ * The table verbs a caret in a cell reaches, as the two lists the grips
+ * already own. No third copy: a writer who found the row grip and a writer who
+ * right-clicked a cell meet the same rows in the same order.
+ */
+export function TableCaretMenuItems({ editor }: { editor: Editor }) {
+  const props = tableMenuProps(editor);
+
+  return (
+    <>
+      <TableMenuSub label={tableChromeCopy.rowVerbs()} icon={<Rows3 aria-hidden />} name="row">
+        <TableRowMenuItems {...props} />
+      </TableMenuSub>
+      <TableMenuSub
+        label={tableChromeCopy.columnVerbs()}
+        icon={<Columns3 aria-hidden />}
+        name="column"
+      >
+        <TableColumnMenuItems {...props} />
+      </TableMenuSub>
+    </>
+  );
+}
+
 function TableSubmenu(props: VerbProps) {
   return (
-    <EditorMenuSub>
-      <EditorMenuSubTrigger data-table-submenu="table">
-        <TableIcon aria-hidden />
-        {tableChromeCopy.wholeTable()}
+    <TableMenuSub
+      label={tableChromeCopy.wholeTable()}
+      icon={<TableIcon aria-hidden />}
+      name="table"
+    >
+      <TableMenuItems {...props} />
+    </TableMenuSub>
+  );
+}
+
+/**
+ * A submenu that spends one Escape, not two.
+ *
+ * Radix answers Escape inside a submenu by closing the whole menu, which is
+ * two steps of the walk home on one key (law 3). Taking the key here closes
+ * this list and leaves the menu it opened from standing.
+ */
+function TableMenuSub({
+  label,
+  icon,
+  name,
+  children,
+}: {
+  label: string;
+  icon: ReactNode;
+  /** Names the list for a probe; the label is the writer's. */
+  name: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <EditorMenuSub open={open} onOpenChange={setOpen}>
+      <EditorMenuSubTrigger data-table-submenu={name}>
+        {icon}
+        {label}
       </EditorMenuSubTrigger>
-      <EditorMenuSubContent className="min-w-52">
-        <TableMenuItems {...props} />
+      <EditorMenuSubContent
+        className="min-w-52"
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          setOpen(false);
+        }}
+      >
+        {children}
       </EditorMenuSubContent>
     </EditorMenuSub>
   );

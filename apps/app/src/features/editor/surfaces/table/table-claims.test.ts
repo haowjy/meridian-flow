@@ -165,7 +165,7 @@ describe("who takes a right-click on swept cells", () => {
     );
   });
 
-  it("declines a bare caret in a cell, which is ruling 11's native menu", () => {
+  it("declines a bare caret in a cell, which the ladder's floor takes instead", () => {
     const current = editorWithTable();
     current.commands.setTextSelection(insideCell(current, "A1"));
 

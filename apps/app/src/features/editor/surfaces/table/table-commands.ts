@@ -297,8 +297,8 @@ export function pointerInsideCellSelection(state: EditorState, docPos: number | 
  * the formatting menu admits `TextSelection` and `AllSelection` only, so
  * without this a writer who swept two cells and right-clicked got silence.
  *
- * A bare caret in a cell is NOT this: that is ruling 11's native menu, where
- * spellcheck lives, and it stays the browser's.
+ * A bare caret in a cell is NOT this: it falls to the ladder's `caret` rung,
+ * where the formatting menu opens carrying the table's own lists.
  */
 export function claimsTableCellMenu(editor: Editor, target: ContextClaimTarget): boolean {
   if (editor.isDestroyed || !editor.isEditable) return false;

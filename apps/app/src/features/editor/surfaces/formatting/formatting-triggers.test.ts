@@ -14,10 +14,12 @@ import {
 } from "@/core/editor/chrome";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import {
+  claimsCaretFormattingMenu,
   claimsFormattingMenu,
   formattingMenuOpensFor,
   formattingOwnsContext,
   isProseSelection,
+  placeCaretForMenu,
 } from "./formatting-triggers";
 
 let editor: Editor | null = null;
@@ -58,7 +60,7 @@ function rightClick(overrides: Partial<ContextClaimTarget> = {}): ContextClaimTa
     docPos: 3,
     context: DOCUMENT_CHROME_CONTEXT,
     insideTextSelection: true,
-    event: { clientX: 120, clientY: 240 } as MouseEvent,
+    event: { clientX: 120, clientY: 240, shiftKey: false } as MouseEvent,
     ...overrides,
   };
 }
@@ -100,6 +102,14 @@ const TABLE_DOC: JSONContent = {
   ],
 };
 
+const cellContext: ChromeContext = {
+  owner: "table-cell",
+  nodeType: "table_cell",
+  pos: 4,
+  objectPos: null,
+  chain: ["document", "table", "table-cell"],
+};
+
 const FIGURE_DOC: JSONContent = {
   type: "doc",
   content: [
@@ -124,11 +134,13 @@ describe("the selection the formatting menu acts on", () => {
     expect(isProseSelection(target.state)).toBe(true);
   });
 
-  it("leaves the bare caret alone, where spellcheck lives (ruling 11)", () => {
+  it("is not a selection at a bare caret, which the caret rung takes instead", () => {
     const target = editorWith("<p>He had reharsed this</p>");
     target.commands.setTextSelection(6);
 
     expect(isProseSelection(target.state)).toBe(false);
+    // The keyboard twin still declines: Shift+F10 has no pointer, so there is
+    // nowhere to move a caret to and nothing new to say about the one it has.
     expect(formattingMenuOpensFor(target)).toBe(false);
   });
 
@@ -202,13 +214,6 @@ describe("the right-click claim", () => {
 
   it("claims a selection inside a table cell, whose text is prose (§5.4)", () => {
     const target = selectedEditor();
-    const cellContext: ChromeContext = {
-      owner: "table-cell",
-      nodeType: "table_cell",
-      pos: 4,
-      objectPos: null,
-      chain: ["document", "table", "table-cell"],
-    };
 
     expect(claimsFormattingMenu(target, rightClick({ context: cellContext }))).toBe(true);
   });
@@ -237,5 +242,78 @@ describe("the right-click claim", () => {
 
     expect(resolveContextClaim([formatting], rightClick())).toBe("text-selection");
     expect(resolveContextClaim([formatting, link], rightClick())).toBe("link");
+  });
+});
+
+describe("the bare caret's claim", () => {
+  function caretClick(overrides: Partial<ContextClaimTarget> = {}): ContextClaimTarget {
+    return rightClick({ insideTextSelection: false, ...overrides });
+  }
+
+  it("claims a caret in a paragraph, so no right-click reaches the browser", () => {
+    const target = editorWith("<p>He had rehearsed this</p>");
+    target.commands.setTextSelection(6);
+
+    expect(claimsCaretFormattingMenu(target, caretClick())).toBe(true);
+  });
+
+  it("claims a caret in a table cell, whose text is prose (§5.4)", () => {
+    const target = editorWith(TABLE_DOC);
+    target.commands.setTextSelection(posInsideCell(target));
+
+    expect(claimsCaretFormattingMenu(target, caretClick({ context: cellContext }))).toBe(true);
+  });
+
+  it("leaves a code fence to the fence's own verbs (law 4)", () => {
+    const target = editorWith("<pre><code>const gate = 3</code></pre>");
+    const context = chromeContextAt(target.state.doc, 3);
+    expect(context.owner).toBe("source-block");
+
+    expect(claimsCaretFormattingMenu(target, caretClick({ context }))).toBe(false);
+  });
+
+  it("leaves an object to its own lane", () => {
+    const target = editorWith(FIGURE_DOC);
+    expect(claimsCaretFormattingMenu(target, caretClick({ context: objectContext }))).toBe(false);
+  });
+
+  it("declines portalled chrome standing over the prose", () => {
+    const target = editorWith("<p>He had rehearsed this</p>");
+    expect(claimsCaretFormattingMenu(target, caretClick({ element: chromeElement(target) }))).toBe(
+      false,
+    );
+  });
+
+  it("declines where the pointer left the prose and there is no place to aim", () => {
+    const target = editorWith("<p>He had rehearsed this</p>");
+    expect(claimsCaretFormattingMenu(target, caretClick({ docPos: null }))).toBe(false);
+  });
+
+  it("declines on a read-only document, so the browser's menu stands", () => {
+    const target = editorWith("<p>He had rehearsed this</p>");
+    target.setEditable(false);
+
+    expect(claimsCaretFormattingMenu(target, caretClick())).toBe(false);
+  });
+
+  it("puts the caret where the writer pointed, so the verbs act on that block", () => {
+    const target = editorWith("<p>First line</p><h2>Second line</h2>");
+    target.commands.setTextSelection(3);
+
+    expect(placeCaretForMenu(target, 16)).toBe(true);
+    expect(target.state.selection.empty).toBe(true);
+    expect(target.state.selection.$from.parent.type.name).toBe("heading");
+  });
+
+  it("registers at the caret rung, under every more specific one", () => {
+    const target = editorWith("<p>He had rehearsed this</p>");
+    const caret = {
+      id: "caret" as const,
+      claim: (claimTarget: ContextClaimTarget) => claimsCaretFormattingMenu(target, claimTarget),
+    };
+    const object = { id: "object" as const, claim: () => true };
+
+    expect(resolveContextClaim([caret], caretClick())).toBe("caret");
+    expect(resolveContextClaim([caret, object], caretClick())).toBe("object");
   });
 });

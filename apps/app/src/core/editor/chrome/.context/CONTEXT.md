@@ -128,9 +128,45 @@ to reintroduce the trap. If in doubt, leave the default.
 ## The context-menu claim table
 
 Handlers register against a rung of `CONTEXT_CLAIM_ORDER`:
-`link` → `text-selection` → `grip` → `object` → native. First registered
-handler at the strongest matching rung wins; `null` means the browser keeps
-its menu.
+`link` → `text-selection` → `grip` → `object` → `cell-selection` → `caret`.
+First registered handler at the strongest matching rung wins; `null` means the
+browser keeps its menu.
+
+**Every right-click in the editor opens an editor menu** (human ruling,
+2026-07-29). `caret` is the floor and it matches wherever the rungs above
+declined, so nothing in the prose falls through:
+
+| Right-click at | Rung | Menu |
+|---|---|---|
+| a link | `link` | the link menu |
+| inside a swept prose selection | `text-selection` | the formatting menu |
+| a grip or block handle | `grip` | that control's own menu |
+| a diagram, image, figure | `object` | the object's ⋮ |
+| inside a swept rectangle of cells | `cell-selection` | merge, split, alignment |
+| a bare caret in prose | `caret` | the formatting menu |
+| a caret in a table cell | `caret` | the formatting menu plus Row ▸ and Column ▸ |
+| a caret in a plain code fence | `caret` | the fence's own verbs |
+
+The `caret` rung is a rung rather than a kernel default because WHICH menu
+opens is the owning lane's answer. The lanes on it are disjoint by context —
+`formatting` takes `document`, `table`, and `table-cell`; `objects` takes
+`source-block` — so registration order between them never decides anything.
+
+**Shift+right-click is the browser's, always.** `resolveContextClaim` returns
+null before it walks the ladder when `event.shiftKey` is set, and no handler is
+asked. Spellcheck suggestions, dictionary lookup, and OS services exist in the
+native menu and in no editor surface, so the escape had to be a gesture rather
+than an absence of one. A lane must never re-check the modifier itself, and
+must never claim a `contextmenu` outside this router.
+
+**A claim that moves the caret moves it synchronously.** The formatting menu's
+`caret` rung dispatches a selection to the pointer's position before it opens,
+because the model it renders is read from the selection: Turn into converts the
+block the selection is in, and a menu opened over the third paragraph must not
+offer to convert the first. Chrome moves the caret on right-click and Firefox
+does not, so the editor does it itself and both behave the same. A lane whose
+verbs address a position rather than the selection (the fence's do) leaves the
+caret alone.
 
 ```ts
 chrome.registerContextClaim({
@@ -200,12 +236,13 @@ on Windows, and both still reach the router.
 both match, because a grip is chrome and an object is a node. Grip is spelled
 first as the more specific of the two.
 
-**`cell-selection` is last.** A rectangle of table cells the writer swept is
-the widest thing on the ladder, and nothing above it wants it: the formatting
-rung admits `TextSelection` and `AllSelection` only, a grip is chrome rather
-than a cell, and no object type answers for a table. Without the rung a swept
-rectangle reached no menu at all. Last is also correct: a link inside a
-selected cell is still a link.
+**`cell-selection` sits above `caret` and below everything else.** A rectangle
+of table cells the writer swept is the widest SELECTION on the ladder, and
+nothing above it wants it: the formatting rung admits `TextSelection` and
+`AllSelection` only, a grip is chrome rather than a cell, and no object type
+answers for a table. Low is also correct: a link inside a selected cell is
+still a link. It outranks `caret` because a swept rectangle is a thing the
+writer made, and the caret rung would offer the verbs for one cell of it.
 
 **The other two triggers are the claiming lane's.** §5.1 gives the formatting
 menu three doors — right-click, Menu key / Shift+F10, and long-press on touch.

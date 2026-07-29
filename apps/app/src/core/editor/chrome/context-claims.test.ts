@@ -28,7 +28,7 @@ function target(overrides: Partial<ContextClaimTarget> = {}): ContextClaimTarget
     docPos: 4,
     context: DOCUMENT_CHROME_CONTEXT,
     insideTextSelection: false,
-    event: {} as MouseEvent,
+    event: { shiftKey: false } as MouseEvent,
     ...overrides,
   };
 }
@@ -47,10 +47,36 @@ describe("the right-click claim table", () => {
   const selection = claimant("text-selection", (t) => t.insideTextSelection);
   const grip = claimant("grip", (t) => datasetOf(t.element).grip === "true");
   const object = claimant("object", (t) => t.context.owner === "object");
-  const all = [object, grip, selection, link];
+  const caret = claimant("caret", () => true);
+  const all = [object, grip, selection, link, caret];
 
-  it("leaves the bare caret to the browser, so spellcheck survives (ruling 11)", () => {
-    expect(resolveContextClaim(all, target())).toBeNull();
+  it("gives the bare caret to the caret rung: every right-click opens a menu", () => {
+    expect(resolveContextClaim(all, target())).toBe("caret");
+  });
+
+  it("leaves the caret to the browser when no lane took that rung", () => {
+    expect(resolveContextClaim([object, grip, selection, link], target())).toBeNull();
+  });
+
+  it("stands aside for Shift, the writer's way back to spellcheck", () => {
+    const shifted = { shiftKey: true } as MouseEvent;
+    expect(resolveContextClaim(all, target({ event: shifted }))).toBeNull();
+    expect(
+      resolveContextClaim(all, target({ event: shifted, insideTextSelection: true })),
+    ).toBeNull();
+    expect(resolveContextClaim(all, target({ event: shifted, context: objectContext }))).toBeNull();
+  });
+
+  it("asks nobody at all once Shift is held", () => {
+    const untouched = [claimant("object", () => true), claimant("caret", () => true)];
+    resolveContextClaim(untouched, target({ event: { shiftKey: true } as MouseEvent }));
+    for (const handler of untouched) expect(handler.claim).not.toHaveBeenCalled();
+  });
+
+  it("puts the caret rung under every more specific one", () => {
+    expect(resolveContextClaim(all, target({ context: objectContext }))).toBe("object");
+    expect(resolveContextClaim(all, target({ insideTextSelection: true }))).toBe("text-selection");
+    expect(resolveContextClaim(all, target({ element: element({ grip: "true" }) }))).toBe("grip");
   });
 
   it("claims a non-empty prose selection the pointer is inside", () => {

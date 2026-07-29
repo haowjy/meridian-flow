@@ -258,8 +258,8 @@ export const ChromeKernelExtension = Extension.create({
 
 /**
  * The claim decision, synchronous inside the event because `preventDefault`
- * is worthless after it returns. Nobody claiming is the common case and the
- * designed one: the browser keeps its menu, and spellcheck with it (ruling 11).
+ * is worthless after it returns. Nobody claiming means the browser keeps its
+ * menu — Shift+right-click every time, and anywhere no lane took the rung.
  */
 function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEvent): boolean {
   const element = event.target;

@@ -139,3 +139,19 @@ describe("what the formatting menu offers", () => {
     expect(model.link.blockedBy).toBe("document-read-only");
   });
 });
+
+describe("the table lists the menu carries in a cell", () => {
+  it("carries them with the caret in a cell", () => {
+    const target = editorWith(TABLE_DOC);
+    target.commands.setTextSelection(posInsideType(target, "table_cell") + 1);
+
+    expect(modelFor(target).inTable).toBe(true);
+  });
+
+  it("leaves them out in ordinary prose, where they would refuse every row", () => {
+    const target = editorWith("<p>He had rehearsed this</p>");
+    target.commands.setTextSelection(3);
+
+    expect(modelFor(target).inTable).toBe(false);
+  });
+});
