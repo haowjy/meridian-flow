@@ -53,6 +53,7 @@ export function blockedReasonMessage(
       if (control === "heading" || control === "bulletList") {
         return t`Code blocks keep their own block type.`;
       }
+      if (control === "link") return t`Code blocks take no links.`;
       return t`Code blocks take no formatting.`;
     case "no-alignable-block":
       return t`Alignment applies to paragraphs, headings, and tables.`;

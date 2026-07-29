@@ -93,6 +93,8 @@ describe("toolbar enablement matrix", () => {
     expect(controls.code.blockedBy).toBe("code-block");
     expect(controls.heading.blockedBy).toBe("code-block");
     expect(controls.bulletList.blockedBy).toBe("code-block");
+    // The link mark is refused by the same schema rule.
+    expect(controls.link.blockedBy).toBe("code-block");
   });
 
   it("greys alignment where no alignable block sits under the selection", () => {

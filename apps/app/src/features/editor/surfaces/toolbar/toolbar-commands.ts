@@ -131,9 +131,10 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
     },
     link: {
       // No precondition on having a selection: a bare caret opens the
-      // two-field form instead (interaction model §5.5).
+      // two-field form instead (interaction model §5.5). Code is the one
+      // context that refuses a link, and it refuses it in the schema.
       active: linkAttributesAtSelection(editor) !== null,
-      blockedBy: readOnly ?? objectSelectionBlocker(state),
+      blockedBy: readOnly ?? markBlocker(state, "link"),
     },
     alignment: {
       active: alignment !== "default",
@@ -252,7 +253,10 @@ function blockTypeBlocker(state: EditorState): ToolbarBlockedReason | null {
   return targets.every((node) => node.type.name === "code_block") ? "code-block" : null;
 }
 
-function markBlocker(state: EditorState, mark: ToolbarMarkName): ToolbarBlockedReason | null {
+function markBlocker(
+  state: EditorState,
+  mark: ToolbarMarkName | "link",
+): ToolbarBlockedReason | null {
   const objectSelection = objectSelectionBlocker(state);
   if (objectSelection) return objectSelection;
 

@@ -38,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { LinkControl } from "./LinkPopover";
 import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./ToolbarButton";
 import {
@@ -208,10 +209,12 @@ function AlignmentControl({
       aria-label={label}
       aria-pressed={state.active || undefined}
       aria-disabled={blockedReason ? true : undefined}
-      className={toolbarControlClass({
-        active: state.active,
-        blocked: Boolean(blockedReason),
-      })}
+      // Wider than the icon buttons by exactly the chevron it carries: the
+      // dropdown says so before it is opened.
+      className={cn(
+        "gap-px px-1 has-[>svg]:px-1",
+        toolbarControlClass({ active: state.active, blocked: Boolean(blockedReason) }),
+      )}
       onClick={blockedReason ? (event) => event.preventDefault() : undefined}
     >
       <Icon className="size-3.5" aria-hidden />
