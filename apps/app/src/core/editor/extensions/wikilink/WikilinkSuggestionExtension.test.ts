@@ -56,6 +56,23 @@ async function type(instance: Editor, text: string) {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/**
+ * The same text through the keystroke path a browser drives, so auto-pairing
+ * writes its closers exactly as it does for a writer. `insertContent` above
+ * bypasses `handleTextInput` and therefore pairs nothing.
+ */
+async function keystrokes(instance: Editor, text: string) {
+  for (const character of text) {
+    const { from, to } = instance.state.selection;
+    const insert = () => instance.state.tr.insertText(character, from, to);
+    const handled = instance.view.someProp("handleTextInput", (handleTextInput) =>
+      handleTextInput(instance.view, from, to, character, insert),
+    );
+    if (!handled) instance.view.dispatch(insert());
+  }
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 const rows = (instance: Editor) =>
   getWikilinkMenu(instance)
     ?.snapshot()
@@ -103,6 +120,26 @@ describe("the `[[` trigger against a live editor", () => {
   it("inserts the chosen document as a wikilink", async () => {
     const { editor: instance } = mount();
     await type(instance, "[[the third");
+    getWikilinkMenu(instance)?.chooseActive();
+
+    expect(instance.state.doc.textContent).toBe("The Third Gate");
+    expect(instance.state.doc.firstChild?.firstChild?.marks[0]?.attrs.href).toBe(
+      "[[The Third Gate]]",
+    );
+  });
+
+  it("opens between the closers auto-pairing wrote for the second bracket", async () => {
+    const { editor: instance } = mount();
+    await keystrokes(instance, "[[");
+
+    expect(instance.state.doc.textContent).toBe("[[]]");
+    expect(getWikilinkMenu(instance)?.snapshot().open).toBe(true);
+    expect(rows(instance)).toEqual(["The Third Gate", "Third Gate Aspirants", "Warden Ilsever"]);
+  });
+
+  it("swallows those closers when the writer chooses a document", async () => {
+    const { editor: instance } = mount();
+    await keystrokes(instance, "[[the third");
     getWikilinkMenu(instance)?.chooseActive();
 
     expect(instance.state.doc.textContent).toBe("The Third Gate");

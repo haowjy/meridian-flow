@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 
-import { objectBodyDragTarget } from "./block-geometry";
+import { nativeDragCarriesObject, objectBodyDragTarget } from "./block-geometry";
 
 let editor: Editor | null = null;
 
@@ -74,27 +74,43 @@ function positionOf(instance: Editor, type: string): number {
 }
 
 describe("which presses start a block drag", () => {
-  it("grabs a picture that is alone in its paragraph", () => {
+  it("grabs a block object, which IS its block", () => {
+    const instance = mount([{ type: "paragraph", content: [{ type: "text", text: "one" }] }, rule]);
+    const { view, event } = pressOn(instance, positionOf(instance, "horizontal_rule"));
+
+    expect(objectBodyDragTarget(view, event)?.index).toBe(1);
+  });
+
+  it("leaves a picture alone in its paragraph to the drag that can land it inline", () => {
     const instance = mount([
       { type: "paragraph", content: [{ type: "text", text: "one" }] },
       imageAlone,
     ]);
     const { view, event } = pressOn(instance, positionOf(instance, "image"));
 
-    expect(objectBodyDragTarget(view, event)?.index).toBe(1);
+    expect(objectBodyDragTarget(view, event)).toBeNull();
   });
 
-  it("refuses a picture sitting inside a sentence: the paragraph is not what the writer grabbed", () => {
+  it("leaves a picture inside a sentence to the same drag", () => {
     const instance = mount([imageInSentence]);
     const { view, event } = pressOn(instance, positionOf(instance, "image"));
 
     expect(objectBodyDragTarget(view, event)).toBeNull();
   });
+});
 
-  it("still grabs a block object, which IS its block", () => {
+describe("which native drags are refused", () => {
+  it("refuses the browser's drag over a block object, which it would re-parse", () => {
     const instance = mount([{ type: "paragraph", content: [{ type: "text", text: "one" }] }, rule]);
     const { view, event } = pressOn(instance, positionOf(instance, "horizontal_rule"));
 
-    expect(objectBodyDragTarget(view, event)?.index).toBe(1);
+    expect(nativeDragCarriesObject(view, event as unknown as DragEvent)).toBe(true);
+  });
+
+  it("leaves it alone over a picture: that drag is the one that lands inline", () => {
+    const instance = mount([imageInSentence]);
+    const { view, event } = pressOn(instance, positionOf(instance, "image"));
+
+    expect(nativeDragCarriesObject(view, event as unknown as DragEvent)).toBe(false);
   });
 });

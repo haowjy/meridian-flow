@@ -50,6 +50,15 @@ change-trail events, not manuscript content.
   second rule races the first. `MarkdownAutoformatExtension` owns the
   exceptions and its test is the truth table for the whole surface.
 
+- **Which characters close themselves is a registration, not a keymap.**
+  `extensions/auto-pair/` holds one table of `{ open, close, contexts }` rows
+  and one mechanism that opens, steps over, and unpairs by reading it; a new
+  pair is a one-row change. It writes real characters, so the wire never
+  learns about it. Two things it deliberately does not do: pair `*`, `_`, `~`
+  or the prose backtick, whose completion path is the autoformat's input
+  rules, and consume a closing keystroke it is not certain it wrote. See
+  [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md).
+
 - Control-surface policy is the chrome kernel's, not an extension's private
   habit. `ChromeKernelExtension` owns the Esc chain, the right-click claim
   table, deepest-context resolution, and gesture suppression; object physics
@@ -89,6 +98,7 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for session, peer-mark, draft-
 and navigation contracts.
 
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
+→ [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers the editor writes
 → [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
 → [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag

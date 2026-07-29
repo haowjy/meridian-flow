@@ -59,13 +59,20 @@ pointer when the document shifts, rather than chasing content that moved.
 
 ### Two doors into it
 
-The margin handle is one drag source and an object's body is the other, and
-they are the same gesture: `beginGesture` takes the press whichever door it
+The margin handle is one drag source and a block object's body is the other,
+and they are the same gesture: `beginGesture` takes the press whichever door it
 came through, so both hold one block, take one kernel drag token, and end in
-one finalizer. Which objects offer their body is
-`EDITOR_OBJECT_TYPES`'s `body` column, read through `isObjectBodyDragSource` —
-`opaque` for a picture, a figure, a rule and a rendered diagram, `text` for a
-table, whose cells own the pointer that sweeps across them.
+one finalizer. Which objects offer their body is `EDITOR_OBJECT_TYPES`'s `drag`
+column, read through `objectDrag` — `block` for a figure, a rule and a rendered
+diagram, `none` for a table, whose cells own the pointer that sweeps across
+them.
+
+`inline` is a third answer and it belongs to nothing here: a picture travels by
+ProseMirror's own drag, which lands it wherever a caret can go and draws the
+dropcursor there (human ruling, 2026-07-29). This surface declines the press
+and refuses none of the browser's answers, so the block gesture and the inline
+one never overlap. The picture's paragraph still has a margin handle, which is
+where "move this whole line to a seam" lives.
 
 Three differences between the doors, each forced:
 
@@ -80,10 +87,10 @@ under it is the page scrolling; touch reaches the same move through the handle
 it taps.
 
 Two answers the browser would give instead are refused. Its own HTML5 drag,
-wherever it would carry an object off — ProseMirror arms it on mousedown, it
-draws no drop line, and it moves a node by serializing and re-parsing it, which
-brought a figure back as a bare paragraph. And a text selection growing out of
-the object, for as long as a body gesture owns the pointer. Prose that merely
+wherever it would carry a BLOCK object off — ProseMirror arms it on mousedown,
+it draws no block drop line, and it moves a node by serializing and re-parsing
+it, which brought a figure back as a bare paragraph. And a text selection
+growing out of the object, for as long as a body gesture owns the pointer. Prose that merely
 runs THROUGH an object is untouched: that selection starts somewhere else, so
 no gesture begins.
 

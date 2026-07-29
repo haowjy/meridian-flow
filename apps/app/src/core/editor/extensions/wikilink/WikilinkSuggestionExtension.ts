@@ -20,6 +20,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Suggestion, { exitSuggestion, type SuggestionProps } from "@tiptap/suggestion";
 
 import { getEditorChrome } from "../../chrome";
+import { autoClosedRunLength } from "../auto-pair";
 import {
   createSuggestionMenu,
   type SuggestionMenu,
@@ -115,7 +116,13 @@ export const WikilinkSuggestionExtension = Extension.create<WikilinkExtensionOpt
             exitSuggestion(target.view, wikilinkSuggestionPluginKey);
             return;
           }
-          insertWikilink(target, range, props.name);
+          // The trigger's own range stops at the caret, and the `]]`
+          // auto-pairing wrote for the second bracket sits just past it. The
+          // writer typed one gesture, so the link replaces all of it — a
+          // range that stopped at the caret would strand the closers behind
+          // the link it just wrote.
+          const to = range.to + autoClosedRunLength(target.state, range.to);
+          insertWikilink(target, { from: range.from, to }, props.name);
         },
         render: () => {
           let releaseKeymap: (() => void) | null = null;

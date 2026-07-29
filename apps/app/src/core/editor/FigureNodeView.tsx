@@ -174,8 +174,12 @@ export function ImageNodeView(props: NodeViewProps) {
   const { projectId } = getExtensionOptions(props);
   const [state, actions] = useAssetImageRenderState({ projectId, src });
 
+  // The whole picture is its own grip (`drag: "inline"` in EDITOR_OBJECT_TYPES):
+  // a writer grabs the picture, not a handle beside it. `data-drag-handle` is
+  // how a TipTap node view says so — without it the node view refuses the
+  // browser's dragstart, and the picture could only ever move as a block.
   return (
-    <NodeViewWrapper as="span" className="meridian-image-node" data-type="image">
+    <NodeViewWrapper as="span" className="meridian-image-node" data-type="image" data-drag-handle>
       {state.url ? (
         <img
           src={state.url}

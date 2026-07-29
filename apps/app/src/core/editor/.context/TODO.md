@@ -20,11 +20,11 @@ Design reference: [inline-diff-decoration-architecture.md].
 
 [#111]: https://github.com/haowjy/meridian-flow/issues/111
 
-Dragging a figure into place ships: the registry marks a figure's body
-`opaque`, so the picture itself is a drag handle, and every move goes through
+Dragging a figure into place ships: the registry marks a figure `drag: "block"`,
+so the figure itself is a drag handle, and every move goes through
 `moveBlockToSeamTransaction` — a delete of the source followed by an insert at
-the seam. ProseMirror's own HTML5 drag is refused wherever it would carry an
-object, because it moves a node by serializing and re-parsing it.
+the seam. ProseMirror's own HTML5 drag is refused wherever it would carry a
+block object, because it moves a node by serializing and re-parsing it.
 
 What is still missing is the assertion that this is true: a test that moves a
 figure and shows every OTHER block keeping its hash while the moved figure
