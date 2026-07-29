@@ -72,6 +72,15 @@ so a bad URL never closes over a change that did not happen, and `refused`
 covers a document that turned read-only while the form was open. Rewriting a
 link's text keeps the marks that text already wore.
 
+## Closing a surface returns the caret
+
+Both surfaces this module opens — the link popover and the alignment menu —
+override Radix's `onCloseAutoFocus`, prevent its default, and focus the editor.
+Radix restores focus to the trigger, which is right for a page and wrong for a
+manuscript: the writer never left the sentence, so the next Space must be a
+space rather than a control being re-activated. Any surface added here owes the
+same handler on every close path, selection and dismissal alike.
+
 ## Why greying, not disabling
 
 `disabled` removes the button from the hover and focus path, so its tooltip

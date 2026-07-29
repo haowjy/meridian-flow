@@ -244,7 +244,16 @@ function AlignmentControl({
       <ToolbarControlTooltip label={label}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       </ToolbarControlTooltip>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent
+        align="start"
+        onCloseAutoFocus={(event) => {
+          // Radix hands focus back to the trigger on both close paths, where
+          // the writer's next Space reopens the menu instead of typing. The
+          // caret never left the prose; the focus goes with it.
+          event.preventDefault();
+          if (!editor.isDestroyed) editor.commands.focus();
+        }}
+      >
         <DropdownMenuRadioGroup
           value={value}
           onValueChange={(next) => setToolbarAlignment(editor, next as ToolbarAlignmentValue)}
