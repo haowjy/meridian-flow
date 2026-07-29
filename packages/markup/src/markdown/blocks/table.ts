@@ -23,14 +23,14 @@ export function normalizeGfmTableHardBreaks(source: string): string {
     const line = lines[index] ?? "";
     if (fence) {
       out.push(line);
-      if (closesFence(line, fence)) fence = null;
+      if (closesFence(lines, index, fence)) fence = null;
       index++;
       continue;
     }
 
-    const openingFence = line.match(/^[\t ]{0,3}(`{3,}|~{3,})/);
-    if (openingFence?.[1]) {
-      fence = { marker: openingFence[1][0] ?? "", length: openingFence[1].length };
+    const openingFence = openingFenceAt(lines, index);
+    if (openingFence) {
+      fence = openingFence;
       out.push(line);
       index++;
       continue;
@@ -59,7 +59,27 @@ export function normalizeGfmTableHardBreaks(source: string): string {
 
 export function canonicalizeGfmTableHardBreaks(serialized: string): string {
   const lines = serialized.split("\n");
-  return lines.flatMap((line, index) => canonicalTableLine(lines, index, line)).join("\n");
+  const out: string[] = [];
+  let fence: { marker: string; length: number } | null = null;
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
+    if (fence) {
+      out.push(line);
+      if (closesFence(lines, index, fence)) fence = null;
+      continue;
+    }
+
+    const openingFence = openingFenceAt(lines, index);
+    if (openingFence) {
+      fence = openingFence;
+      out.push(line);
+      continue;
+    }
+
+    out.push(...canonicalTableLine(lines, index, line));
+  }
+  return out.join("\n");
 }
 
 export const tableCodec: BlockCodec<MdastTable> = {
@@ -259,9 +279,37 @@ function isDelimiterRow(value: string): boolean {
   return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()));
 }
 
-function closesFence(line: string, fence: { marker: string; length: number }): boolean {
+function openingFenceAt(
+  lines: readonly string[],
+  index: number,
+): { marker: string; length: number } | null {
+  const content = fenceLineContent(lines, index);
+  const opening = content?.match(/^(`{3,}|~{3,})/);
+  const run = opening?.[1];
+  return run ? { marker: run[0] ?? "", length: run.length } : null;
+}
+
+function closesFence(
+  lines: readonly string[],
+  index: number,
+  fence: { marker: string; length: number },
+): boolean {
+  const content = fenceLineContent(lines, index);
+  if (content === null) return false;
   const marker = fence.marker === "`" ? "`" : "~";
-  return new RegExp(`^[\\t ]{0,3}${marker}{${fence.length},}[\\t ]*$`).test(line);
+  return new RegExp(`^${marker}{${fence.length},}[\\t ]*$`).test(content);
+}
+
+function fenceLineContent(lines: readonly string[], index: number): string | null {
+  const { remainder } = stripQuotePrefix(lines[index] ?? "");
+  const listMarker = remainder.match(/^ {0,3}(?:[-+*] |\d+[.)] )/);
+  if (listMarker) return remainder.slice(listMarker[0].length).replace(/^ {0,3}/, "");
+
+  const indentation = remainder.match(/^ */)?.[0].length ?? 0;
+  if (indentation <= 3 || hasListContainer(lines, index, indentation)) {
+    return remainder.slice(indentation);
+  }
+  return null;
 }
 
 function canonicalTableLine(lines: readonly string[], index: number, line: string): string[] {

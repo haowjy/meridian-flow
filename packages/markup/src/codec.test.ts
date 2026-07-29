@@ -12,7 +12,10 @@ import {
   mdxCodec,
   requiredBlockNamesForSchema,
 } from "./index.js";
-import { normalizeGfmTableHardBreaks } from "./markdown/blocks/table.js";
+import {
+  canonicalizeGfmTableHardBreaks,
+  normalizeGfmTableHardBreaks,
+} from "./markdown/blocks/table.js";
 import {
   markdownBlockCodecs,
   markdownMarkCodecs,
@@ -656,6 +659,29 @@ describe("mdx codec round-trip corpus", () => {
     expect(block.type.name).toBe("code_block");
     expect(block.textContent).toBe(["| H |", "| - |", "| a\\", "b |"].join("\n"));
     expect(codec.serializeBlock(block)).toBe(input);
+  });
+
+  it("does not canonicalize literal br syntax inside code fences", () => {
+    const input = ["```md", "| H |", "| - |", "| a<br />b |", "```"].join("\n");
+    const nested = [
+      "- outer",
+      "  - inner",
+      "    ```md",
+      "    | H |",
+      "    | - |",
+      "    | a<br />b |",
+      "    ```",
+    ].join("\n");
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      const block = firstParsedBlock(activeCodec, input);
+      expect(block.type.name).toBe("code_block");
+      expect(activeCodec.serializeBlock(block)).toBe(input);
+    }
+    expect(canonicalizeGfmTableHardBreaks(nested)).toBe(nested);
   });
 
   it("does not normalize table-looking text inside indented code", () => {
