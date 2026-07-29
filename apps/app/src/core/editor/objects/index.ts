@@ -19,6 +19,7 @@ export {
   caretBesideObjectTransaction,
   caretHomeFromObjectTransaction,
   caretInsideObjectTransaction,
+  gapCursorFits,
   type ObjectAt,
   objectBeside,
   selectedObject,

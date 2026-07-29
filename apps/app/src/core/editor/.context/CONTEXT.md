@@ -187,6 +187,25 @@ Yjs document session. It must stay structurally aligned with
   cells would break prosemirror-tables' rectangular invariants. Row zero is
   the structural GFM header and never moves.
 - The slash trigger lives under `extensions/slash/` and is summarized below.
+- `pointer-boundary.ts` answers a press that landed outside the prose:
+  `pointerBoundaryDecision(view, clientX, clientY)` reads the prose rectangle
+  and the neighbouring block rectangles, and `resolvePointerBoundary` decides
+  over that geometry plus the document alone. Three sites, two policies. A
+  press whose y is inside a block's band — or past the first or last band,
+  which is the page above and below the document — is a press ON that block:
+  it takes the `posAtCoords` line beside the pointer unless that line is an
+  opaque object's interior, in which case it falls to the nearer of the
+  block's edges. A press in the vertical strip BETWEEN two bands is a seam and
+  belongs to neither block: the following block's first writer text answers
+  first, then the preceding block's last, then a gap cursor at the boundary
+  when prosemirror-gapcursor admits one, then the nearest writer text outward
+  (forward first). `writerTextEdge` is what "writer text" means — never an
+  opaque object's interior, and at a seam never a source block either, since
+  the seam belongs to no block and prose beats syntax. `PointerBoundaryDecision`
+  is a discriminated union so the last case, a document with no visible caret
+  anywhere, declines out loud instead of falling through to
+  `TextSelection.near`. The decision table in `pointer-boundary.test.ts` is the
+  contract; `EditorSurfaceFrame` only dispatches what it returns.
 - Enter on a whole-block selection is object physics', not the base keymap's
   (§4). What it means comes from the block: a registered object with a
   `surface` intent opens its lane's surface, a table takes the caret into its
