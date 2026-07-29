@@ -156,7 +156,7 @@ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
 msgstr "3 by 3, header row"
 
@@ -370,7 +370,7 @@ msgstr "Billing"
 msgid "Block alignment"
 msgstr "Block alignment"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "blockquote"
 msgstr "blockquote"
 
@@ -395,9 +395,8 @@ msgstr "Built-in"
 msgid "Bullet list"
 msgstr "Bullet list"
 
-#: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bulleted list"
 msgstr "Bulleted list"
 
@@ -444,7 +443,7 @@ msgstr "Changed {relativeTime}"
 msgid "Changes"
 msgstr "Changes"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "chart"
 msgstr "chart"
 
@@ -524,9 +523,7 @@ msgstr "Close settings"
 msgid "Closed"
 msgstr "Closed"
 
-#: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code block"
 msgstr "Code block"
@@ -547,7 +544,7 @@ msgstr "Code blocks take no links."
 msgid "Code copied"
 msgstr "Code copied"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "codeblock"
 msgstr "codeblock"
 
@@ -851,8 +848,8 @@ msgstr "Dev login"
 msgid "Dev-login failed"
 msgstr "Dev-login failed"
 
-#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Diagram"
 msgstr "Diagram"
 
@@ -874,7 +871,7 @@ msgstr "Discard all changes?"
 msgid "Dismiss"
 msgstr "Dismiss"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Divider"
 msgstr "Divider"
 
@@ -1013,7 +1010,7 @@ msgstr "Enclosing folder"
 msgid "Enter an amount in USD."
 msgstr "Enter an amount in USD."
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "epigraph"
 msgstr "epigraph"
 
@@ -1072,7 +1069,7 @@ msgstr "Extra usage"
 msgid "Failed to load image"
 msgstr "Failed to load image"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
 msgstr "fence"
 
@@ -1104,7 +1101,7 @@ msgstr "First name"
 msgid "Fit"
 msgstr "Fit"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "flowchart"
 msgstr "flowchart"
 
@@ -1120,7 +1117,7 @@ msgstr "Form payload is malformed."
 msgid "Go ahead"
 msgstr "Go ahead"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
 msgstr "grid"
 
@@ -1128,15 +1125,15 @@ msgstr "grid"
 msgid "Grilling"
 msgstr "Grilling"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "h1"
 msgstr "h1"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "h2"
 msgstr "h2"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "h3"
 msgstr "h3"
 
@@ -1148,21 +1145,18 @@ msgstr "Header row"
 msgid "Heading"
 msgstr "Heading"
 
-#: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 1"
 msgstr "Heading 1"
 
-#: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 2"
 msgstr "Heading 2"
 
-#: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
 msgstr "Heading 3"
 
@@ -1186,7 +1180,7 @@ msgstr "Home"
 msgid "How much of your plan you have used this month."
 msgstr "How much of your plan you have used this month."
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "hr"
 msgstr "hr"
 
@@ -1203,8 +1197,8 @@ msgstr "Identity"
 msgid "Idle"
 msgstr "Idle"
 
-#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Image"
 msgstr "Image"
 
@@ -1245,11 +1239,11 @@ msgstr "Inline code takes no links."
 msgid "Inline code takes no other formatting."
 msgstr "Inline code takes no other formatting."
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Insert"
 msgstr "Insert"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Insert block"
 msgstr "Insert block"
 
@@ -1372,7 +1366,7 @@ msgstr "Link text"
 msgid "links now, page later"
 msgstr "links now, page later"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "list"
 msgstr "list"
 
@@ -1380,7 +1374,7 @@ msgstr "list"
 msgid "Literature Review"
 msgstr "Literature Review"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "litrpg"
 msgstr "litrpg"
 
@@ -1493,11 +1487,11 @@ msgstr "Merging works on a rectangle of cells."
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 msgstr "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "mermaid"
 msgstr "mermaid"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Mermaid"
 msgstr "Mermaid"
 
@@ -1742,9 +1736,8 @@ msgstr "Nothing to undo yet."
 msgid "now"
 msgstr "now"
 
-#: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
 msgstr "Numbered list"
 
@@ -1752,7 +1745,7 @@ msgstr "Numbered list"
 msgid "Object"
 msgstr "Object"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr "ol"
 
@@ -1859,7 +1852,7 @@ msgstr "Opening the link"
 msgid "Or pick a file from the tree."
 msgstr "Or pick a file from the tree."
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ordered"
 msgstr "ordered"
 
@@ -1867,8 +1860,7 @@ msgstr "ordered"
 msgid "Over your monthly usage"
 msgstr "Over your monthly usage"
 
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr "Paragraph"
 
@@ -1888,11 +1880,11 @@ msgstr "Paste"
 msgid "Paste a link or type [[a document name]]"
 msgstr "Paste a link or type [[a document name]]"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr "photo"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
 msgstr "picture"
 
@@ -1941,9 +1933,8 @@ msgstr "Put the caret in a table first."
 msgid "Quick thought"
 msgstr "Quick thought"
 
-#: src/features/editor/EditorView.tsx
-#: src/features/editor/surfaces/blocks/block-copy.ts
-#: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Quote"
 msgstr "Quote"
 
@@ -2142,7 +2133,7 @@ msgstr "Right"
 msgid "Row options"
 msgstr "Row options"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "rule"
 msgstr "rule"
 
@@ -2162,7 +2153,7 @@ msgstr "Save name and location"
 msgid "Saved locally (offline)"
 msgstr "Saved locally (offline)"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "scene break"
 msgstr "scene break"
 
@@ -2194,7 +2185,7 @@ msgstr "Searching"
 msgid "Searching…"
 msgstr "Searching…"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "section"
 msgstr "section"
 
@@ -2313,11 +2304,11 @@ msgstr "Start a quick chat without a project"
 msgid "Start writing…"
 msgstr "Start writing…"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "stat block"
 msgstr "stat block"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "status"
 msgstr "status"
 
@@ -2361,7 +2352,7 @@ msgstr "Submit"
 msgid "Subscribe"
 msgstr "Subscribe"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "subsection"
 msgstr "subsection"
 
@@ -2386,7 +2377,7 @@ msgstr "Switch screens or manage your account."
 msgid "Switch work"
 msgstr "Switch work"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
 msgstr "Table"
@@ -2415,8 +2406,8 @@ msgstr "Talk it out"
 msgid "Task Assignment"
 msgstr "Task Assignment"
 
-#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
 msgstr "Text"
 
@@ -2708,7 +2699,7 @@ msgstr "This week"
 msgid "This Work has {serverPendingCount, plural, one {# AI change} other {# AI changes}} in draft. Auto-apply stays off until every draft is applied or discarded."
 msgstr "This Work has {serverPendingCount, plural, one {# AI change} other {# AI changes}} in draft. Auto-apply stays off until every draft is applied or discarded."
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
 msgstr "title"
 
@@ -2751,7 +2742,7 @@ msgstr "two documents share this name"
 msgid "Type your answer…"
 msgstr "Type your answer…"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"
 msgstr "ul"
 
@@ -2801,7 +2792,7 @@ msgstr "Update link"
 msgid "Updated"
 msgstr "Updated"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "upload"
 msgstr "upload"
 
@@ -2809,7 +2800,7 @@ msgstr "upload"
 msgid "Upload figure"
 msgstr "Upload figure"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Upload or paste"
 msgstr "Upload or paste"
 

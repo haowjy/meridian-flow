@@ -20,7 +20,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { type LinkHint as LinkHintTarget, linkTargetHref } from "@/core/editor/links";
