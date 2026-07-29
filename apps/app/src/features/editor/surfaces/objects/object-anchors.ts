@@ -1,15 +1,21 @@
 /**
- * Which object is being approached, and which element is it.
+ * Which object a surface is aimed at, and which elements draw it right now.
  *
  * The kernel resolves document positions; turning a position into DOM — and a
  * pointer into a position — is the lane's job, because only the lane knows its
  * node views' shape. Everything here is a reading over an `EditorView`; nothing
  * dispatches.
+ *
+ * **Elements are geometry, holds are identity.** A target is derived at the
+ * moment it is needed and never stored: its elements belong to node views a
+ * remote write replaces. What a surface stores between frames is a `NodeHold`,
+ * and `objectSurfaceForHold` is how it gets back to the page.
  */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 
+import { type NodeHold, resolveNodeHold } from "@/core/editor/anchors";
 import { type ObjectSurfaceKind, objectSurfaceKind } from "@/core/editor/objects";
 
 export type ObjectSurfaceTarget = {
@@ -131,4 +137,17 @@ export function objectSurfaceAtPos(view: EditorView, pos: number): ObjectSurface
   const element = view.nodeDOM(pos);
   if (!(element instanceof HTMLElement)) return null;
   return { pos, node, kind, element: renderedBounds(node, element), container: element };
+}
+
+/**
+ * The surface target a hold is aimed at, resolved against the page as it now
+ * stands, or null once the object is gone (or has not been re-rendered yet).
+ */
+export function objectSurfaceForHold(
+  view: EditorView,
+  hold: NodeHold | null,
+): ObjectSurfaceTarget | null {
+  if (!hold) return null;
+  const at = resolveNodeHold(view.state, hold);
+  return at ? objectSurfaceAtPos(view, at.from) : null;
 }

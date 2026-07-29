@@ -12,11 +12,14 @@ and from the kernel's resolved context together. Two readings would be two
 surfaces on screen at once, which law 4 forbids and which nobody would notice
 until it happened.
 
-**Anchors are elements, positions are derived.** A held position goes stale the
-moment anything above it changes — a peer typing three paragraphs up is
-enough — while the element stays itself. So hover, selection, the open
-lightbox, and an open context menu all remember an element and resolve its
-position on every render.
+**Elements are geometry, holds are identity.** Hover, selection, the open
+lightbox, and both context menus remember a `NodeHold`
+(`core/editor/anchors.ts`) and resolve it to the current node and the current
+DOM on every render. Neither a raw position nor an element can be the memory: a
+position goes stale the moment anything above it changes, and an element belongs
+to a node view that any rebuild may replace. `useNodeHold` carries the hold
+through every transaction and lets go once the object is gone, which is what
+closes the surface — no state here outlives the thing it points at.
 
 The source pane is the exception, because it diffs rather than points: what a
 textarea reports is a whole string, and the base it must be read against is the
@@ -77,7 +80,8 @@ its rung is the ladder's floor rather than the object rung.
 
 ## Anti-patterns
 
-- Storing a document position in React state. Store the element.
+- Storing a document position, or an element, as what a surface is aimed at.
+  Store a hold; read geometry per frame.
 - Anchoring to `view.nodeDOM(pos)` without asking what the object's rendered
   bounds actually are: an inline image's wrapper is a line box a fraction of
   the picture's height.

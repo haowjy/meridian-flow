@@ -85,6 +85,21 @@ manuscript's own elements are ProseMirror's, and a child inserted into one is
 read back as a document change — which is why a table's ⋮ is still measured
 (`chrome/object-overlay.ts` holds both cases).
 
+## What a surface is aimed at
+
+Three surfaces here outlive a keystroke — the lightbox and the two context
+menus — and each remembers a `NodeHold` (`core/editor/anchors.ts`) taken at the
+moment it opened: relative positions for where the object is, the Yjs element
+for which object it is. `useNodeHold` carries it across every transaction and
+answers null once the object is gone, and null is what closes the surface. So
+there is no dismissal to remember to perform, and no state that can point at a
+deleted diagram.
+
+`objectSurfaceForHold(view, hold)` is the way back to the page: the hold
+resolves to a position, the position to the current node and its current DOM. It
+answers null for a frame in which the node view has not been rebuilt yet, and a
+surface stays open on its hold through such a frame rather than closing on it.
+
 ## Resolving anchors
 
 `objectSurfaceAt(view, target)` walks UP from whatever the pointer hit — a

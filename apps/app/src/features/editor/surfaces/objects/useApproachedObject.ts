@@ -10,10 +10,16 @@
  * the fade: the anchor is held for the fade's duration after the writer leaves,
  * so the row fades out over its object rather than blinking away from under
  * the pointer.
+ *
+ * Both doors settle on a `NodeHold`, never on the element the pointer hit.
+ * Elements are geometry: an element is how the pointer names an object and how
+ * the row is measured, and a remote write replaces it while the writer is still
+ * looking at the same diagram. So what this hook carries between frames is the
+ * object, and DOM is resolved from it on every read.
  */
 
 import type { Editor } from "@tiptap/core";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { hoverOwner } from "@/core/editor/chrome";
 import {
@@ -22,9 +28,10 @@ import {
   useEditorChrome,
   useEditorRevision,
   useFadeHold,
+  useNodeHold,
 } from "@/features/editor/chrome";
 
-import { type ObjectSurfaceTarget, objectSurfaceAt, objectSurfaceAtPos } from "./object-anchors";
+import { type ObjectSurfaceTarget, objectSurfaceAt, objectSurfaceForHold } from "./object-anchors";
 
 export type ObjectApproach = {
   target: ObjectSurfaceTarget | null;
@@ -42,9 +49,10 @@ export function useApproachedObject(
   const suppressed = useChromeSuppressed(editor);
   // Chip labels read node attrs (a fence's language), so this surface follows
   // the document rather than only the resolved context.
-  useEditorRevision(editor);
+  const revision = useEditorRevision(editor);
 
-  const [hovered, setHovered] = useState<HTMLElement | null>(null);
+  const [hovered, holdHovered] = useNodeHold(editor);
+  const [selected, holdSelected] = useNodeHold(editor);
 
   // The approach is the kernel's: it owns the timing, the pointer, and which
   // block owns chrome right now. This lane only says which object is at a
@@ -54,50 +62,36 @@ export function useApproachedObject(
   // on two blocks that happened to settle at different moments.
   useEffect(() => {
     if (!chrome) return;
-    return chrome.registerHoverAnchor<HTMLElement>({
+    return chrome.registerHoverAnchor<number>({
       id: "object-approach",
       probe: ({ element }) => {
         const found = objectSurfaceAt(editor.view, element);
         if (!found) return null;
         const owner = hoverOwner(editor.view, found.element);
-        return owner ? { owner, value: found.element } : null;
+        return owner ? { owner, value: found.pos } : null;
       },
-      onSettle: setHovered,
+      onSettle: holdHovered,
     });
-  }, [chrome, editor]);
+  }, [chrome, editor, holdHovered]);
 
-  const selectedElement = selectedObjectElement(editor, context.owner, context.pos);
-  // A remembered element dies when its node view remounts — a diagram
-  // re-rendering, a peer's write rebuilding the block. Chrome is derived, never
-  // remembered, so the dead one is dropped and the selection's element, which
-  // is resolved from the document position on every render, answers instead.
-  const active = (hovered?.isConnected ? hovered : null) ?? selectedElement;
+  // `object` is a selected diagram or image; `source-block` is a caret inside a
+  // plain fence, which ruling 15 gives the same persistent chip cluster.
+  const selectedPos =
+    context.owner === "object" || context.owner === "source-block" ? context.pos : null;
+  // Re-taken on every change rather than remembered: the selection is the
+  // document's own state, and the kernel keeps its position current. What makes
+  // it a hold at all is what outlives it — the fade, and a menu pinned open on
+  // an object the writer has since stopped pointing at.
+  useEffect(() => {
+    holdSelected(selectedPos);
+  }, [holdSelected, selectedPos, revision]);
+
+  const active = hovered ?? selected;
   const held = useFadeHold(active);
   const anchor = pinned ? (active ?? held) : held;
 
   return {
-    target: anchor ? surfaceForElement(editor, anchor) : null,
+    target: objectSurfaceForHold(editor.view, anchor),
     visible: !suppressed && (pinned || active !== null),
   };
-}
-
-function selectedObjectElement(
-  editor: Editor,
-  owner: string,
-  pos: number | null,
-): HTMLElement | null {
-  // `object` is a selected diagram or image; `source-block` is a caret inside a
-  // plain fence, which ruling 15 gives the same persistent chip cluster.
-  if (pos === null || (owner !== "object" && owner !== "source-block")) return null;
-  return objectSurfaceAtPos(editor.view, pos)?.element ?? null;
-}
-
-/**
- * Re-resolve the element's position on every render rather than remembering
- * one. A position goes stale the moment anything above it changes — a peer
- * typing three paragraphs up is enough — while the element stays itself.
- */
-function surfaceForElement(editor: Editor, element: HTMLElement): ObjectSurfaceTarget | null {
-  if (!element.isConnected) return null;
-  return objectSurfaceAt(editor.view, element);
 }

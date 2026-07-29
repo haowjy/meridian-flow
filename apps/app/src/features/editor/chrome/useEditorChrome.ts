@@ -68,7 +68,7 @@ export function useChromeCoarsePointer(editor: Editor | null): boolean {
 }
 
 /**
- * Re-render on every editor change.
+ * Re-render on every editor change, and answer which change this is.
  *
  * The bluntest possible subscription, and the right one for chrome that reads
  * the document directly — a toolbar's lit states, a chip cluster's language
@@ -76,11 +76,15 @@ export function useChromeCoarsePointer(editor: Editor | null): boolean {
  * read those stores instead: they notify when their answer changes, not when
  * the document does.
  *
+ * The revision is for an effect that has to re-read the document rather than
+ * only re-render with it: an effect depending on a value the document supplies
+ * cannot see a change the document made underneath that value.
+ *
  * One subscription, not two: a selection change IS a transaction, so listening
  * for both rendered every caret move twice.
  */
-export function useEditorRevision(editor: Editor | null): void {
-  const [, setRevision] = useState(0);
+export function useEditorRevision(editor: Editor | null): number {
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     if (!editor) return;
@@ -90,4 +94,6 @@ export function useEditorRevision(editor: Editor | null): void {
       editor.off("transaction", bump);
     };
   }, [editor]);
+
+  return revision;
 }
