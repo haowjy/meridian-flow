@@ -509,6 +509,47 @@ describe("the block types Turn into offers", () => {
     expect(target.state.doc.firstChild?.type.name).toBe("paragraph");
   });
 
+  it("un-lists every list a select-all reaches, not just the first", () => {
+    // Two sibling lists: one selection, two block ranges, and no single range
+    // for `liftListItem` to work on.
+    const target = editorWith(
+      "<ul><li><p>the vault</p></li></ul><ul><li><p>the warden</p></li></ul>",
+    );
+    target.commands.selectAll();
+
+    // Checked, so law 6 promises the next choice reverses it.
+    expect(blockTypeStates(target).bulletList.active).toBe(true);
+    expect(blockTypeStates(target).bulletList.blockedBy).toBeNull();
+    expect(turnIntoBlockType(target, "bulletList")).toBe(true);
+
+    const types: string[] = [];
+    target.state.doc.forEach((node) => {
+      types.push(node.type.name);
+    });
+    expect(types).toEqual(["paragraph", "paragraph"]);
+  });
+
+  it("un-lists a nested list from the inside out", () => {
+    const target = editorWith("<ul><li><p>outer</p><ul><li><p>inner</p></li></ul></li></ul>");
+    target.commands.selectAll();
+
+    expect(turnIntoBlockType(target, "bulletList")).toBe(true);
+    expect(target.isActive("bullet_list")).toBe(false);
+    expect(target.state.doc.textContent).toBe("outerinner");
+  });
+
+  it("un-lists only the items the selection reaches", () => {
+    const target = editorWith(
+      "<ul><li><p>the vault</p></li><li><p>the warden</p></li></ul><ul><li><p>the gate</p></li></ul>",
+    );
+    // A caret inside the first list only.
+    target.commands.setTextSelection(3);
+
+    expect(turnIntoBlockType(target, "bulletList")).toBe(true);
+    // The untouched list is still a list.
+    expect(target.state.doc.lastChild?.type.name).toBe("bullet_list");
+  });
+
   it("un-lists a numbered list the way it un-lists a bulleted one", () => {
     const target = editorWith("<p>Kael pressed</p>");
     target.commands.setTextSelection(3);

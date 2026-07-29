@@ -19,7 +19,7 @@ import {
   type ToolbarMarkName,
   textMarkState,
 } from "../toolbar";
-import type { ClipboardReadAvailability } from "./clipboard-commands";
+import type { ClipboardAccess } from "./clipboard-commands";
 import type { FormattingBlockedReason } from "./formatting-copy";
 
 export type FormattingMarkId = "bold" | "italic" | "strike" | "code";
@@ -62,12 +62,19 @@ export const FORMATTING_CLIPBOARD_IDS: readonly FormattingClipboardId[] = ["cut"
 
 export function formattingMenuModel(
   editor: Editor,
-  { clipboardRead }: { clipboardRead: ClipboardReadAvailability },
+  { clipboard }: { clipboard: ClipboardAccess },
 ): FormattingMenuModel {
   // The menu only opens on a writable document (see `formatting-triggers`),
   // but a document can turn read-only while it is open — a schema fence, a
   // lost lease — and every item must say so rather than silently no-op.
   const readOnly: FormattingBlockedReason | null = editor.isEditable ? null : "document-read-only";
+
+  // A browser can withhold either direction of the clipboard, and the writer
+  // needs to hear which one and what to press instead.
+  const clipboardWrite: FormattingBlockedReason | null =
+    clipboard.write === "available" ? null : "clipboard-write-blocked";
+  const clipboardRead: FormattingBlockedReason | null =
+    clipboard.read === "available" ? null : "clipboard-read-blocked";
 
   const turnInto = blockTypeStates(editor);
   const turnIntoStates = Object.fromEntries(
@@ -85,13 +92,10 @@ export function formattingMenuModel(
     turnIntoBlockedBy: sharedBlocker(Object.values(turnIntoStates)),
     link: blockedFirst(readOnly, textMarkState(editor, "link")),
     clipboard: {
-      cut: { active: false, blockedBy: readOnly },
+      cut: { active: false, blockedBy: readOnly ?? clipboardWrite },
       // Copying is reading; a document nobody may change is still readable.
-      copy: { active: false, blockedBy: null },
-      paste: {
-        active: false,
-        blockedBy: readOnly ?? (clipboardRead === "available" ? null : "clipboard-read-blocked"),
-      },
+      copy: { active: false, blockedBy: clipboardWrite },
+      paste: { active: false, blockedBy: readOnly ?? clipboardRead },
     },
   };
 }

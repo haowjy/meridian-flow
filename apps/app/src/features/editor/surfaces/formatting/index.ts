@@ -8,9 +8,10 @@
  */
 
 export {
-  type ClipboardPasteResult,
-  type ClipboardReadAvailability,
-  clipboardReadAvailability,
+  type ClipboardAccess,
+  type ClipboardAvailability,
+  type ClipboardResult,
+  clipboardAccess,
   copySelection,
   cutSelection,
   pasteIntoSelection,
@@ -27,5 +28,6 @@ export {
   claimsFormattingMenu,
   type FormattingMenuPoint,
   formattingMenuOpensFor,
+  formattingOwnsContext,
   isProseSelection,
 } from "./formatting-triggers";

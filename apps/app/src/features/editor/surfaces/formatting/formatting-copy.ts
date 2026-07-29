@@ -18,8 +18,11 @@ import {
 } from "../toolbar";
 import type { FormattingClipboardId, FormattingMarkId } from "./formatting-menu-items";
 
-/** The toolbar's reasons plus the one only a paste control can hit. */
-export type FormattingBlockedReason = ToolbarBlockedReason | "clipboard-read-blocked";
+/** The toolbar's reasons plus the two only a clipboard control can hit. */
+export type FormattingBlockedReason =
+  | ToolbarBlockedReason
+  | "clipboard-read-blocked"
+  | "clipboard-write-blocked";
 
 export function formattingMarkLabel(mark: FormattingMarkId): string {
   switch (mark) {
@@ -93,6 +96,10 @@ export function formattingBlockedMessage(
   if (reason === "clipboard-read-blocked") {
     const shortcut = shortcutLabel("V");
     return t`This browser will not hand the clipboard to the page. Press ${shortcut} to paste.`;
+  }
+  if (reason === "clipboard-write-blocked") {
+    const shortcut = shortcutLabel("C");
+    return t`This browser will not let the page write to the clipboard. Press ${shortcut} to copy.`;
   }
   return blockedReasonMessage(subject, reason);
 }

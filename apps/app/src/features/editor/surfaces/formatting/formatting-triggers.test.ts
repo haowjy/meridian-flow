@@ -7,13 +7,16 @@ import {
   type ContextClaimTarget,
   chromeContextAt,
   DOCUMENT_CHROME_CONTEXT,
-  EDITOR_CHROME_ATTRIBUTE,
+  editorChromeAttributes,
+  getEditorChrome,
+  resolveChromeContext,
   resolveContextClaim,
 } from "@/core/editor/chrome";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import {
   claimsFormattingMenu,
   formattingMenuOpensFor,
+  formattingOwnsContext,
   isProseSelection,
 } from "./formatting-triggers";
 
@@ -35,9 +38,14 @@ function proseElement(): HTMLElement {
   return element;
 }
 
-function chromeElement(): HTMLElement {
+/** A portalled overlay row, marked the way the kernel asks a lane to mark it. */
+function chromeElement(target: Editor): HTMLElement {
+  const chrome = getEditorChrome(target);
+  if (!chrome) throw new Error("the editor mounted no chrome");
   const row = document.createElement("div");
-  row.setAttribute(EDITOR_CHROME_ATTRIBUTE, "");
+  for (const [attribute, value] of Object.entries(editorChromeAttributes(chrome))) {
+    row.setAttribute(attribute, value);
+  }
   const button = document.createElement("button");
   row.appendChild(button);
   document.body.appendChild(row);
@@ -60,6 +68,35 @@ const objectContext: ChromeContext = {
   nodeType: "figure",
   pos: 8,
   chain: ["document", "object"],
+};
+
+function posInsideCell(target: Editor): number {
+  let pos = -1;
+  target.state.doc.descendants((node, at) => {
+    if (pos < 0 && node.type.name === "table_cell") pos = at + 2;
+  });
+  if (pos < 0) throw new Error("no table cell in the document");
+  return pos;
+}
+
+const TABLE_DOC: JSONContent = {
+  type: "doc",
+  content: [
+    {
+      type: "table",
+      content: [
+        {
+          type: "table_row",
+          content: [
+            {
+              type: "table_cell",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "Kael" }] }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
 };
 
 const FIGURE_DOC: JSONContent = {
@@ -103,6 +140,24 @@ describe("the selection the formatting menu acts on", () => {
     target.commands.setNodeSelection(figurePos);
 
     expect(isProseSelection(target.state)).toBe(false);
+  });
+
+  it("declines a selected code fence, where the right-click declines too", () => {
+    const target = editorWith("<pre><code>const gate = 3</code></pre>");
+    target.commands.setTextSelection({ from: 1, to: 6 });
+
+    // The selection is prose-shaped; the context is what refuses it.
+    expect(isProseSelection(target.state)).toBe(true);
+    expect(formattingOwnsContext(resolveChromeContext(target.state))).toBe(false);
+    expect(formattingMenuOpensFor(target)).toBe(false);
+  });
+
+  it("opens over a selection inside a table cell, whose text is prose", () => {
+    const target = editorWith(TABLE_DOC);
+    const cell = posInsideCell(target);
+    target.commands.setTextSelection({ from: cell, to: cell + 3 });
+
+    expect(formattingMenuOpensFor(target)).toBe(true);
   });
 
   it("opens nothing on a read-only document, so the browser's menu stands", () => {
@@ -158,7 +213,16 @@ describe("the right-click claim", () => {
 
   it("declines a right-click on portalled chrome standing over the prose", () => {
     const target = selectedEditor();
-    expect(claimsFormattingMenu(target, rightClick({ element: chromeElement() }))).toBe(false);
+    expect(claimsFormattingMenu(target, rightClick({ element: chromeElement(target) }))).toBe(
+      false,
+    );
+  });
+
+  it("declines on a read-only document, so the browser's menu stands", () => {
+    const target = selectedEditor();
+    target.setEditable(false);
+
+    expect(claimsFormattingMenu(target, rightClick())).toBe(false);
   });
 
   it("registers at the text-selection rung, under a link and over an object", () => {

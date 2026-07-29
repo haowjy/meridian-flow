@@ -2419,6 +2419,10 @@ msgstr ""
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr ""

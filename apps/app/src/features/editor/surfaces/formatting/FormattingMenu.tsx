@@ -52,8 +52,9 @@ import {
   useLinkDraft,
 } from "../toolbar";
 import {
-  type ClipboardReadAvailability,
-  clipboardReadAvailability,
+  type ClipboardAccess,
+  type ClipboardResult,
+  clipboardAccess,
   copySelection,
   cutSelection,
   pasteIntoSelection,
@@ -87,9 +88,6 @@ const MARK_ICONS: Record<FormattingMarkId, ComponentType<{ className?: string }>
   code: Code,
 };
 
-/** How long the link form waits for the prose to take focus back. */
-const FOCUS_HANDOFF_TIMEOUT_MS = 300;
-
 const CLIPBOARD_ICONS: Record<FormattingClipboardId, ComponentType<{ className?: string }>> = {
   cut: Scissors,
   copy: Copy,
@@ -99,59 +97,36 @@ const CLIPBOARD_ICONS: Record<FormattingClipboardId, ComponentType<{ className?:
 export function FormattingMenu({ editor }: { editor: Editor }) {
   const [anchor, setAnchor] = useState<FormattingMenuPoint | null>(null);
   const [linkAnchor, setLinkAnchor] = useState<FormattingMenuPoint | null>(null);
-  // A browser that refused one read will refuse the next, so Paste greys with
-  // the shortcut from then on rather than failing again silently (law 5).
-  const [clipboardRead, setClipboardRead] =
-    useState<ClipboardReadAvailability>(clipboardReadAvailability);
+  // A browser that refused once will refuse again, so the control greys with
+  // its shortcut from then on rather than failing silently a second time
+  // (law 5). Capability answers what it can before the writer presses; only a
+  // real refusal can answer the rest.
+  const [clipboard, setClipboard] = useState<ClipboardAccess>(clipboardAccess);
 
-  useFormattingMenuDoors(editor, { isOpen: () => anchor !== null, open: setAnchor });
+  useFormattingMenuDoors(editor, setAnchor);
 
   const { draft: linkDraft, readDraft: readLinkDraft } = useLinkDraft(editor, linkAnchor !== null);
 
   // Held through the close so the menu fades out with its contents rather than
   // emptying a frame before it goes.
   const lastModel = useRef<FormattingMenuModel | null>(null);
-  if (anchor) lastModel.current = formattingMenuModel(editor, { clipboardRead });
+  if (anchor) lastModel.current = formattingMenuModel(editor, { clipboard });
   const model = lastModel.current;
 
-  const runPaste = () => {
-    void pasteIntoSelection(editor).then((result) => {
-      if (result === "denied" || result === "unavailable") setClipboardRead("unavailable");
+  const run = (
+    direction: keyof ClipboardAccess,
+    command: (target: Editor) => Promise<ClipboardResult>,
+  ) => {
+    void command(editor).then((result) => {
+      if (result !== "denied" && result !== "unavailable") return;
+      setClipboard((current) => ({ ...current, [direction]: "unavailable" }));
     });
   };
 
-  /**
-   * Hand off to the link form only once the menu's close has finished putting
-   * the caret back in the prose.
-   *
-   * Every editor surface returns focus on close (the chrome contract) and
-   * TipTap's focus lands a frame late, so a form mounted straight away reads
-   * that arrival as focus leaving and dismisses itself. Waiting on the
-   * editor's own focus event says what the handoff actually needs; a guessed
-   * delay would be right until somebody changed the other end.
-   */
-  const openLinkForm = (point: FormattingMenuPoint | null) => {
-    if (!point) return;
-    if (editor.view.hasFocus()) {
-      setLinkAnchor(point);
-      return;
-    }
-
-    let fallback: number | undefined;
-    const openForm = () => {
-      window.clearTimeout(fallback);
-      editor.off("focus", openForm);
-      setLinkAnchor(point);
-    };
-    editor.on("focus", openForm);
-    // A focus that never arrives must not swallow the writer's click (law 5).
-    fallback = window.setTimeout(openForm, FOCUS_HANDOFF_TIMEOUT_MS);
-  };
-
   const clipboardCommands: Record<FormattingClipboardId, () => void> = {
-    cut: () => void cutSelection(editor),
-    copy: () => void copySelection(editor),
-    paste: runPaste,
+    cut: () => run("write", cutSelection),
+    copy: () => run("write", copySelection),
+    paste: () => run("read", pasteIntoSelection),
   };
 
   return (
@@ -181,7 +156,11 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
               label={addLinkLabel()}
               icon={LinkIcon}
               state={model.link}
-              onSelect={() => openLinkForm(anchor)}
+              // Synchronously: the form registers its layer before the
+              // menu finishes closing, and `useChromeLayer` hands the caret
+              // back only when nothing succeeded it. Waiting for that focus
+              // instead would open at a point the writer had already left.
+              onSelect={() => setLinkAnchor(anchor)}
             />
             <EditorMenuSeparator />
             {FORMATTING_CLIPBOARD_IDS.map((id) => (

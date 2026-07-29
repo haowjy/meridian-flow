@@ -2419,6 +2419,10 @@ msgstr "This browser cannot display the PDF inline."
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
 msgstr "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
+msgstr "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."

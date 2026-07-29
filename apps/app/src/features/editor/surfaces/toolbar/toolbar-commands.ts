@@ -27,7 +27,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Level } from "@tiptap/extension-heading";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
-import { AllSelection, NodeSelection } from "@tiptap/pm/state";
+import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
 
 import { isEditorObject } from "@/core/editor/objects";
 
@@ -142,9 +142,6 @@ const CONTROL_IDS: readonly ToolbarControlId[] = [
 ];
 
 const TOOLBAR_HEADING_LEVEL = 1;
-
-/** A list item lifts one level per press; no manuscript nests this deep. */
-const MAX_LIST_UNWRAP_STEPS = 20;
 
 export function documentToolbarControls(context: ToolbarContext): ToolbarControlStates {
   const { editor } = context;
@@ -368,9 +365,14 @@ function hasCollaborativeHistory(editor: Editor): boolean {
  * TipTap reverses a list by looking for an ancestor whose extension group holds
  * "list", and the Meridian list nodes declare `group: "block"` to stay in
  * parity with the server schema — so its own toggle only ever wraps. Owning the
- * reverse means owning all of it: a nested item lifts one level per call, and
- * `AllSelection` (Ctrl+A) carries no block range for `liftListItem` to work
- * with until it is spelled as a text selection.
+ * reverse means owning all of it.
+ *
+ * And "all of it" is one list at a time. `liftListItem` works on the block
+ * range around the selection, and a selection spanning two sibling lists has no
+ * single range to lift: it refuses, and a checked control that does nothing is
+ * exactly what law 6 forbids. So each list the writer's range reaches is lifted
+ * on its own, and that range travels through the lifts — every lift moves the
+ * positions after it.
  */
 function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list"): boolean {
   if (!editor.isActive(listType)) {
@@ -380,17 +382,74 @@ function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list
       : chain.toggleOrderedList().run();
   }
 
-  if (editor.state.selection instanceof AllSelection) {
-    const { doc } = editor.state;
-    editor.commands.setTextSelection({ from: 0, to: doc.content.size });
-  }
+  let range = { from: editor.state.selection.from, to: editor.state.selection.to };
+  const followDocument = ({ transaction }: { transaction: Transaction }) => {
+    if (!transaction.docChanged) return;
+    range = {
+      from: transaction.mapping.map(range.from, 1),
+      to: transaction.mapping.map(range.to, -1),
+    };
+  };
+  editor.on("transaction", followDocument);
 
-  let lifted = false;
-  for (let step = 0; step < MAX_LIST_UNWRAP_STEPS && editor.isActive(listType); step += 1) {
-    if (!editor.chain().focus().liftListItem("list_item").run()) break;
-    lifted = true;
+  try {
+    let lifted = false;
+    // Each lift removes at least the two tokens of the list it unwrapped, so
+    // the document's own size is a bound that always terminates.
+    for (let guard = editor.state.doc.content.size; guard > 0; guard -= 1) {
+      const target = listRangeReachedBy(editor.state, listType, range);
+      if (!target) break;
+      const chain = editor.chain().focus().setTextSelection(target);
+      if (!chain.liftListItem("list_item").run()) break;
+      lifted = true;
+    }
+    // The writer selected words, not list items; give them back what they had.
+    if (lifted) editor.commands.setTextSelection(range);
+    return lifted;
+  } finally {
+    editor.off("transaction", followDocument);
   }
-  return lifted;
+}
+
+/**
+ * The part of the next list of this type that the writer's range actually
+ * reaches, or null when none is left.
+ *
+ * Only the overlap is lifted, so a caret in one item still un-lists that item
+ * alone. "Reaches" is strict for a caret: once its item has been lifted out,
+ * the caret sits against the remaining list's edge rather than inside it, and
+ * counting that would un-list a list the writer never pointed at.
+ */
+function listRangeReachedBy(
+  state: EditorState,
+  listType: string,
+  range: { from: number; to: number },
+): { from: number; to: number } | null {
+  const { doc } = state;
+  const from = Math.max(0, Math.min(range.from, doc.content.size));
+  const to = Math.max(from, Math.min(range.to, doc.content.size));
+
+  let found: { from: number; to: number } | null = null;
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (found) return false;
+    if (node.type.name !== listType) return true;
+
+    const contentFrom = pos + 1;
+    const contentTo = pos + node.nodeSize - 1;
+    if (from === to && (from <= contentFrom || from >= contentTo)) return true;
+
+    const overlapFrom = Math.max(from, contentFrom);
+    const overlapTo = Math.min(to, contentTo);
+    if (overlapFrom > overlapTo) return true;
+
+    // A list's own boundary positions hold list items, not inline content, so
+    // a text selection cannot sit on them; `between` walks in to the nearest
+    // positions that can hold a caret.
+    const snapped = TextSelection.between(doc.resolve(overlapFrom), doc.resolve(overlapTo));
+    found = { from: snapped.from, to: snapped.to };
+    return false;
+  });
+  return found;
 }
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
