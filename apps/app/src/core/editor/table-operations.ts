@@ -256,15 +256,28 @@ export function addTableRow(direction: "above" | "below"): Command {
   };
 }
 
-export const resetTableLayout: Command = (state, dispatch) => {
+/**
+ * Where the table sits in the measure (§5.4). `null` is the default flow,
+ * which is what "left" means for a block that is already left-aligned.
+ */
+export function setTablePlacement(align: "center" | "right" | null): Command {
+  return (state, dispatch) => {
+    const selection = tableSelection(state);
+    if (!selection) return false;
+    if (selection.table.attrs.align === align) return true;
+    dispatch?.(
+      state.tr.setNodeMarkup(selection.tablePos, undefined, { ...selection.table.attrs, align }),
+    );
+    return true;
+  };
+}
+
+/** Drops every persisted column width so the table sizes to its content again. */
+export const resetTableColumnWidths: Command = (state, dispatch) => {
   const selection = tableSelection(state);
   if (!selection) return false;
-  if (!dispatch) return true;
 
-  const tr = state.tr.setNodeMarkup(selection.tablePos, undefined, {
-    ...selection.table.attrs,
-    align: null,
-  });
+  const tr = state.tr;
   let rowPos = selection.tablePos + 1;
   selection.table.forEach((row) => {
     let cellPos = rowPos + 1;
@@ -276,6 +289,8 @@ export const resetTableLayout: Command = (state, dispatch) => {
     });
     rowPos += row.nodeSize;
   });
-  dispatch(tr);
+
+  if (!tr.docChanged) return false;
+  dispatch?.(tr);
   return true;
 };

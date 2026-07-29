@@ -165,21 +165,6 @@
   vertical-align: top;
 }
 
-.meridian-editor .ProseMirror .column-resize-handle {
-  position: absolute;
-  top: 0;
-  right: -2px;
-  bottom: 0;
-  z-index: 2;
-  width: 4px;
-  background: var(--color-border-focus);
-  pointer-events: none;
-}
-
-.meridian-editor .ProseMirror.resize-cursor {
-  cursor: col-resize;
-}
-
 .meridian-editor .ProseMirror th {
   background: var(--color-muted);
   font-weight: 650;
@@ -746,4 +731,99 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   color: var(--color-foreground);
+}
+
+/* ── L-C: table chrome (M6, §5.4 and Q6) ───────────────────────────────── */
+
+/* Grips and add tabs live OUTSIDE the frame and are portalled to the body, so
+   the table reserves nothing for them. Fixed children of an opacity parent
+   still resolve against the viewport (opacity makes a stacking context, not a
+   containing block), which is what lets one fade drive all four. */
+.meridian-table-chrome {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  transition: opacity 120ms ease-out;
+}
+
+.meridian-table-chrome[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.meridian-table-chrome[data-state="open"] {
+  opacity: 1;
+}
+
+.meridian-table-grip,
+.meridian-table-add-tab {
+  position: fixed;
+  display: grid;
+  place-items: center;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  color: var(--color-ink-subtle);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.meridian-table-grip:hover,
+.meridian-table-add-tab:hover,
+.meridian-table-grip[data-state="open"] {
+  color: var(--color-foreground);
+  border-color: var(--color-border-focus);
+}
+
+/* The column grip hangs above the table's top edge, centred on its column;
+   the row grip sits left of the frame, centred on its row (mockup 05). */
+.meridian-table-grip[data-table-grip="column"] {
+  width: 30px;
+  height: 15px;
+  transform: translate(-50%, -100%);
+}
+
+.meridian-table-grip[data-table-grip="row"] {
+  width: 15px;
+  height: 30px;
+  transform: translate(-100%, -50%);
+}
+
+.meridian-table-grip svg {
+  width: 13px;
+  height: 13px;
+}
+
+.meridian-table-add-tab {
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+}
+
+.meridian-table-add-tab svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Q6's resize affordance: a hairline that appears under the pointer and takes
+   no space of its own, so hovering a boundary never nudges a column. The
+   plugin's widget is absolutely positioned inside the cell, which is what
+   keeps the layout still. */
+.meridian-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  z-index: 2;
+  width: 2px;
+  background: var(--color-primary);
+  pointer-events: none;
+}
+
+.meridian-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
 }

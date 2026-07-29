@@ -18,6 +18,8 @@
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 
+import { TableChrome } from "../surfaces/table";
+
 export type EditorChromeSurfaceProps = {
   editor: Editor;
 };
@@ -31,7 +33,7 @@ export type EditorChromeSurface = {
 export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
   // L-A formatting menu (M4)
   // L-B object controls + diagram (M5)
-  // L-C table chrome (M6)
+  { id: "table-chrome", render: ({ editor }) => <TableChrome editor={editor} /> },
   // L-D slash (M8)
   // L-E block movement (M9)
   // L-F links (M7)

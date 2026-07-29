@@ -194,6 +194,14 @@ msgstr ""
 msgid "A project is required before images can be uploaded."
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "A table keeps at least one column."
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "A table keeps at least one row."
+msgstr ""
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
 msgstr ""
@@ -224,6 +232,10 @@ msgstr "其实…"
 msgid "Add a caption for this figure."
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Add column"
+msgstr ""
+
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Add column left"
 #~ msgstr ""
@@ -234,6 +246,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Add link"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Add row"
 msgstr ""
 
 #: src/features/editor/EditorTableBubble.tsx
@@ -274,6 +290,10 @@ msgstr ""
 msgid "AI write mode"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align center"
+msgstr ""
+
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Align column center"
 #~ msgstr ""
@@ -285,6 +305,14 @@ msgstr ""
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Align column right"
 #~ msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align left"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align right"
+msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Alignment applies to paragraphs, headings, and tables."
@@ -435,6 +463,10 @@ msgstr ""
 msgid "Center"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Centered"
+msgstr ""
+
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr ""
@@ -576,6 +608,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Column options"
 msgstr ""
 
 #: src/features/editor/EditorTableBubble.tsx
@@ -769,9 +805,9 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Delete column"
-#~ msgstr ""
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete column"
+msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete file?"
@@ -781,13 +817,13 @@ msgstr ""
 msgid "Delete folder?"
 msgstr ""
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Delete row"
-#~ msgstr ""
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete row"
+msgstr ""
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Delete table"
-#~ msgstr ""
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete table"
+msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
@@ -1120,6 +1156,10 @@ msgstr ""
 msgid "h2"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Header row"
+msgstr ""
+
 #: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
@@ -1198,9 +1238,25 @@ msgstr ""
 msgid "Insert block"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert column left"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert column right"
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 #~ msgid "Insert image"
 #~ msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert row above"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert row below"
+msgstr ""
 
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
@@ -1278,6 +1334,10 @@ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Leading or trailing whitespace detected in file or folder name."
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Left"
 msgstr ""
 
 #: src/features/chat/placeholders.ts
@@ -1403,8 +1463,20 @@ msgstr ""
 msgid "Medium"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merge cells"
+msgstr ""
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Merged"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merged cells stay where they are."
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merging works on a rectangle of cells."
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
@@ -1436,21 +1508,21 @@ msgstr ""
 msgid "More"
 msgstr ""
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move column left"
-#~ msgstr ""
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move column left"
+msgstr ""
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move column right"
-#~ msgstr ""
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move column right"
+msgstr ""
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move row down"
-#~ msgstr ""
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move row down"
+msgstr ""
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move row up"
-#~ msgstr ""
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move row up"
+msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -1555,6 +1627,10 @@ msgstr ""
 msgid "No chats yet — start one to get going."
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "No column has been resized yet."
+msgstr ""
+
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "No context files yet."
@@ -1628,6 +1704,10 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "Older"
 msgstr "更早"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "One cell across the selection"
+msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
@@ -1801,6 +1881,10 @@ msgstr ""
 msgid "Protocol Designer"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Put the caret in a table first."
+msgstr ""
+
 #: src/features/chat/placeholders.ts
 msgid "Quick thought"
 msgstr "突然想到"
@@ -1952,6 +2036,10 @@ msgstr ""
 msgid "Required"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Reset column widths"
+msgstr ""
+
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Reset table layout"
 #~ msgstr ""
@@ -2010,8 +2098,13 @@ msgstr ""
 msgid "Rewrote"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Row options"
 msgstr ""
 
 #: src/features/editor/EditorTableBubble.tsx
@@ -2082,6 +2175,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Select a document."
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Select more than one cell to merge them."
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2174,6 +2271,10 @@ msgstr ""
 msgid "Sorted {0}"
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Split cell"
+msgstr ""
+
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
 msgstr ""
@@ -2249,11 +2350,24 @@ msgid "Switch work"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Table cells hold plain paragraphs."
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table controls"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table options"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table placement"
 msgstr ""
 
 #: src/features/chat/placeholders.ts
@@ -2266,6 +2380,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Text"
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Text alignment"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -2332,6 +2450,10 @@ msgstr ""
 #~ msgid "The figure uploaded, but the editor could not insert it."
 #~ msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "The header row stays first."
+msgstr ""
+
 #: src/features/editor/EditorView.tsx
 msgid "The image uploaded, but the editor could not insert it."
 msgstr ""
@@ -2367,6 +2489,10 @@ msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This cell is not merged."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2406,6 +2532,10 @@ msgstr ""
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This column is already at the edge."
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
 msgstr ""
@@ -2414,6 +2544,7 @@ msgstr ""
 msgid "This document changed elsewhere. Reopen it and try again."
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This document is read only right now."
 msgstr ""
@@ -2457,6 +2588,10 @@ msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
 msgid "This project has no chats yet."
+msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This row is already at the edge."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
