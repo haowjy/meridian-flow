@@ -13,6 +13,10 @@ import {
   requiredBlockNamesForSchema,
 } from "./index.js";
 import {
+  canonicalizeGfmTableHardBreaks,
+  normalizeGfmTableHardBreaks,
+} from "./markdown/blocks/table.js";
+import {
   markdownBlockCodecs,
   markdownMarkCodecs,
   markdownRequiredBlockNames,
@@ -558,21 +562,482 @@ describe("mdx codec round-trip corpus", () => {
     expect(nonTable?.attrs.align).toBeNull();
   });
 
-  it("throws rather than silently serializing table spans", () => {
+  it("escalates table spans to canonical HTML and parses them back", () => {
     const table = firstParsedBlock(codec, "| A | B |\n| - | - |\n| 1 | 2 |");
     const firstRow = table.child(0);
     const firstCell = firstRow.child(0);
     const spanned = firstCell.type.create({ ...firstCell.attrs, colspan: 2 }, firstCell.content);
-    const changedRow = firstRow.type.create(firstRow.attrs, [spanned, firstRow.child(1)]);
+    const changedRow = firstRow.type.create(firstRow.attrs, [spanned]);
     const changedTable = table.type.create(table.attrs, [changedRow, table.child(1)]);
-    expect(() => codec.serializeBlock(changedTable)).toThrow(
-      "table cell spans are not representable",
-    );
+    const html = [
+      "<table>",
+      "  <thead>",
+      "    <tr>",
+      '      <th colspan="2">A</th>',
+      "    </tr>",
+      "  </thead>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>1</td>",
+      "      <td>2</td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
 
-    const zeroSpan = firstCell.type.create({ ...firstCell.attrs, colspan: 0 }, firstCell.content);
-    const zeroRow = firstRow.type.create(firstRow.attrs, [zeroSpan, firstRow.child(1)]);
-    const zeroTable = table.type.create(table.attrs, [zeroRow, table.child(1)]);
-    expect(() => codec.serializeBlock(zeroTable)).toThrow("table cell spans are not representable");
+    expect(codec.serializeBlock(changedTable)).toBe(html);
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+    expect(firstParsedBlock(codec, html).child(0).child(0).attrs.colspan).toBe(2);
+  });
+
+  it("escalates literal multi-line cell text to canonical HTML", () => {
+    const table = firstParsedBlock(codec, "| A |\n| - |\n| one |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const multiLineCell = bodyCell.type.create(bodyCell.attrs, [paragraph(t("one\nand two"))]);
+    const changedTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [multiLineCell]),
+    ]);
+    const html = [
+      "<table>",
+      "  <thead>",
+      "    <tr>",
+      "      <th>A</th>",
+      "    </tr>",
+      "  </thead>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>one&#10;and two</td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+
+    expect(codec.serializeBlock(changedTable)).toBe(html);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(changedTable.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips headerless HTML tables with per-column alignment", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td align="left">Skill</td>',
+      '      <td align="right">Rank</td>',
+      "    </tr>",
+      "    <tr>",
+      '      <td align="left">Iron Body</td>',
+      '      <td align="right">7</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const table = firstParsedBlock(codec, html);
+
+    expect(table.child(0).child(0).type.name).toBe("table_cell");
+    expect(table.child(0).child(1).attrs.alignment).toBe("right");
+    expect(codec.serializeBlock(table)).toBe(html);
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("preserves inline formatting on the HTML table path", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td><strong>Iron</strong> <a href="chapter-7.md">Body</a><br />Rank 7</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const table = firstParsedBlock(codec, html);
+    const paragraph = table.child(0).child(0).child(0);
+
+    expect(paragraph.child(0).marks[0]?.type.name).toBe("strong");
+    expect(paragraph.child(2).marks[0]?.type.name).toBe("link");
+    expect(paragraph.child(3).type.name).toBe("hard_break");
+    expect(codec.serializeBlock(table)).toBe(html);
+  });
+
+  it("entity-escapes MDX-significant braces on the HTML table path", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>a &#123; brace and <code>&#125;</code></td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const table = firstParsedBlock(codec, html);
+
+    expect(table.textContent).toBe("a { brace and }");
+    expect(codec.serializeBlock(table)).toBe(html);
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips Layout around an HTML-spelled table", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td colspan="2">Section</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const table = firstParsedBlock(codec, html);
+    const aligned = table.type.create({ align: "center" }, table.content);
+    const wrapped = [
+      '<Layout align="center">',
+      ...html.split("\n").map((line) => `  ${line}`),
+      "</Layout>",
+    ].join("\n");
+
+    expect(codec.serializeBlock(aligned)).toBe(wrapped);
+    expect(firstParsedBlock(codec, wrapped).toJSON()).toEqual(aligned.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, wrapped))).toBe(wrapped);
+  });
+
+  it("keeps aligned GFM tables in pipes", () => {
+    const gfm = "| Skill     | Rank |\n| :-------- | ---: |\n| Iron Body |    7 |\n";
+    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(gfm);
+    expect(codec.serialize(codec.parse(gfm).blocks)).not.toContain("<table>");
+  });
+
+  it("round-trips hard breaks inside pipe cells as backslash-newline", () => {
+    const table = firstParsedBlock(codec, "| Detail |\n| - |\n| one |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const breakCell = bodyCell.type.create(bodyCell.attrs, [
+      paragraph(t("one"), schema.node("hard_break"), t("two")),
+    ]);
+    const changedTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [breakCell]),
+    ]);
+    const gfm = "| Detail    |\n| --------- |\n| one\\\ntwo |\n";
+
+    expect(codec.serializeBlock(changedTable)).toBe(gfm.trimEnd());
+    expect(firstParsedBlock(codec, gfm).toJSON()).toEqual(changedTable.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, gfm))).toBe(gfm.trimEnd());
+  });
+
+  it("does not confuse literal br syntax with a pipe-cell hard break", () => {
+    const input = "| Value           |\n| --------------- |\n| literal \\<br/> |\n";
+    const first = firstParsedBlock(codec, input);
+    const serialized = codec.serializeBlock(first);
+
+    expect(serialized).not.toContain("\\\n");
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(first.toJSON());
+  });
+
+  it("does not normalize table-looking hard breaks inside code fences", () => {
+    const input = ["```md", "| H |", "| - |", "| a\\", "b |", "```"].join("\n");
+    const block = firstParsedBlock(codec, input);
+
+    expect(block.type.name).toBe("code_block");
+    expect(block.textContent).toBe(["| H |", "| - |", "| a\\", "b |"].join("\n"));
+    expect(codec.serializeBlock(block)).toBe(input);
+  });
+
+  it("does not canonicalize literal br syntax inside code fences", () => {
+    const input = ["```md", "| H |", "| - |", "| a<br />b |", "```"].join("\n");
+    const nested = [
+      "- outer",
+      "  - inner",
+      "    ```md",
+      "    | H |",
+      "    | - |",
+      "    | a<br />b |",
+      "    ```",
+    ].join("\n");
+    const padded = [
+      "-   outer",
+      "",
+      "      ```md",
+      "      | H |",
+      "      | - |",
+      "      | a<br />b |",
+      "      ```",
+    ].join("\n");
+    const tabPadded = [
+      "-\touter",
+      "",
+      "\t  ```md",
+      "\t  | H |",
+      "\t  | - |",
+      "\t  | a<br />b |",
+      "\t  ```",
+    ].join("\n");
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      const block = firstParsedBlock(activeCodec, input);
+      expect(block.type.name).toBe("code_block");
+      expect(activeCodec.serializeBlock(block)).toBe(input);
+
+      for (const nestedInput of [nested, padded, tabPadded]) {
+        const nestedBlock = firstParsedBlock(activeCodec, nestedInput);
+        const nestedCode: PMNode[] = [];
+        nestedBlock.descendants((node) => {
+          if (node.type.name === "code_block") nestedCode.push(node);
+        });
+        expect(nestedCode[0]?.textContent).toContain("a<br />b");
+        const serializedNested = activeCodec.serializeBlock(nestedBlock);
+        expect(serializedNested).not.toContain("\\<br");
+        expect(firstParsedBlock(activeCodec, serializedNested).toJSON()).toEqual(
+          nestedBlock.toJSON(),
+        );
+      }
+    }
+    expect(canonicalizeGfmTableHardBreaks(nested)).toBe(nested);
+  });
+
+  it("does not normalize table-looking text inside indented code", () => {
+    for (const indent of ["    ", "\t"]) {
+      const input = [`${indent}| H |`, `${indent}| - |`, `${indent}| a\\`, `${indent}b |`].join(
+        "\n",
+      );
+
+      expect(normalizeGfmTableHardBreaks(input)).toBe(input);
+    }
+  });
+
+  it("does not normalize table-looking indented code inside a list", () => {
+    const inputs = [
+      ["- item", "", "      | H |", "      | - |", "      | a\\", "      b |"].join("\n"),
+      ["-\t  item", "", "      | H |", "      | - |", "      | a\\", "      b |"].join("\n"),
+    ];
+
+    const activeCodec = markdownCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    });
+    for (const input of inputs) {
+      expect(normalizeGfmTableHardBreaks(input)).toBe(input);
+      const block = firstParsedBlock(activeCodec, input);
+      const code: PMNode[] = [];
+      block.descendants((node) => {
+        if (node.type.name === "code_block") code.push(node);
+      });
+      expect(code[0]?.textContent).toContain("a\\\nb |");
+      const serialized = activeCodec.serializeBlock(block);
+      expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(block.toJSON());
+    }
+  });
+
+  it("recognizes tables beneath padded list markers", () => {
+    const inputs = [
+      ["-   item", "", "      | H |", "      | - |", "      | a\\", "      b |"].join("\n"),
+      ["-\titem", "", "\t  | H |", "\t  | - |", "\t  | a\\", "\t  b |"].join("\n"),
+    ];
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      for (const input of inputs) {
+        const block = firstParsedBlock(activeCodec, input);
+        const hardBreaks: PMNode[] = [];
+        block.descendants((node) => {
+          if (node.type.name === "hard_break") hardBreaks.push(node);
+        });
+        expect(hardBreaks).toHaveLength(1);
+        const serialized = activeCodec.serializeBlock(block);
+        expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(block.toJSON());
+      }
+    }
+  });
+
+  it("keeps explicitly escaped HTML tables as prose", () => {
+    const input = '\\<table><tbody><tr><td colspan="2">literal</td></tr></tbody></table>';
+    const block = firstParsedBlock(codec, input);
+
+    expect(block.type.name).toBe("paragraph");
+    expect(block.textContent).toBe(
+      '<table><tbody><tr><td colspan="2">literal</td></tr></tbody></table>',
+    );
+  });
+
+  it("round-trips HTML-spelled tables through blockquotes", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td colspan="2">Section</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const original = schema.node("blockquote", null, [firstParsedBlock(codec, html)]);
+    const serialized = codec.serializeBlock(original);
+
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
+  });
+
+  it("keeps pipe-cell hard breaks canonical through blockquotes and lists", () => {
+    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const breakCell = bodyCell.type.create(bodyCell.attrs, [
+      paragraph(t("a"), schema.node("hard_break"), t("b")),
+    ]);
+    const breakTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [breakCell]),
+    ]);
+    const originals = [
+      schema.node("blockquote", null, [breakTable]),
+      schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [paragraph(t("Details")), breakTable]),
+      ]),
+    ];
+
+    for (const original of originals) {
+      const serialized = codec.serializeBlock(original);
+      expect(serialized).toContain("\\\n");
+      expect(serialized).not.toContain("<br");
+      expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
+    }
+  });
+
+  it("keeps HTML table pipes inert while canonicalizing nested hard breaks", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td colspan="2">left | right<br />down</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      const table = firstParsedBlock(activeCodec, html);
+      expect(activeCodec.serializeBlock(table)).toBe(html);
+      expect(firstParsedBlock(activeCodec, html).toJSON()).toEqual(table.toJSON());
+    }
+  });
+
+  it("keeps pipe-cell hard breaks canonical in nested list tables", () => {
+    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const breakCell = bodyCell.type.create(bodyCell.attrs, [
+      paragraph(t("a", [m("strong")]), schema.node("hard_break"), t("b", [m("strong")])),
+    ]);
+    const breakTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [breakCell]),
+    ]);
+    const original = schema.node("bullet_list", { tight: true }, [
+      schema.node("list_item", null, [
+        paragraph(t("outer")),
+        schema.node("bullet_list", { tight: true }, [
+          schema.node("list_item", null, [paragraph(t("inner")), breakTable]),
+        ]),
+      ]),
+    ]);
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      const serialized = activeCodec.serializeBlock(original);
+      expect(serialized).toContain("\\\n");
+      expect(serialized).not.toContain("<br");
+      expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(original.toJSON());
+    }
+  });
+
+  it("keeps pipe-cell hard breaks canonical in list-nested blockquotes", () => {
+    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
+    const rows = [0, 1].map((rowIndex) => {
+      const row = table.child(rowIndex);
+      const cell = row.child(0);
+      const mark = rowIndex === 0 ? m("strong") : m("em");
+      return row.type.create(row.attrs, [
+        cell.type.create(cell.attrs, [
+          paragraph(
+            t(rowIndex === 0 ? "head" : "body", [mark]),
+            schema.node("hard_break"),
+            t("down"),
+          ),
+        ]),
+      ]);
+    });
+    const breakTable = table.type.create(table.attrs, rows);
+    const nestedQuote = schema.node("blockquote", null, [breakTable]);
+    const originals = [
+      schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [
+          paragraph(t("outer")),
+          schema.node("bullet_list", { tight: true }, [
+            schema.node("list_item", null, [paragraph(t("inner")), nestedQuote]),
+          ]),
+        ]),
+      ]),
+      schema.node("ordered_list", { order: 1, tight: true }, [
+        schema.node("list_item", null, [
+          paragraph(t("outer")),
+          schema.node("bullet_list", { tight: true }, [
+            schema.node("list_item", null, [paragraph(t("inner")), nestedQuote]),
+          ]),
+        ]),
+      ]),
+    ];
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      for (const original of originals) {
+        const serialized = activeCodec.serializeBlock(original);
+        expect(serialized).toContain("\\\n");
+        expect(serialized).not.toContain("<br");
+        expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(original.toJSON());
+      }
+    }
+  });
+
+  it("declines unsupported or conflicting HTML alignment styles", () => {
+    for (const cell of [
+      '<td style="color:red">A</td>',
+      '<td align="left" style="text-align: right">A</td>',
+    ]) {
+      const input = `<table><tbody><tr>${cell}</tr></tbody></table>`;
+      expect(firstParsedBlock(codec, input).type.name).not.toBe("table");
+    }
+  });
+
+  it("keeps a plain-GFM LitRPG status screen in pipes", () => {
+    const gfm = [
+      "| Stat | Value |",
+      "| ---- | ----: |",
+      "| Level | 42 |",
+      "| Health | 810 |",
+      "| Mana | 275 |",
+      "",
+    ].join("\n");
+
+    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(
+      [
+        "| Stat   | Value |",
+        "| ------ | ----: |",
+        "| Level  |    42 |",
+        "| Health |   810 |",
+        "| Mana   |   275 |",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("throws rather than silently dropping malformed column widths", () => {

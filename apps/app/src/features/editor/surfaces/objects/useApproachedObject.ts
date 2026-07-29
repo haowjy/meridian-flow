@@ -15,7 +15,7 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useState } from "react";
 
-import { CHROME_TIMING, EDITOR_CHROME_ATTRIBUTE } from "@/core/editor/chrome";
+import { CHROME_TIMING } from "@/core/editor/chrome";
 import {
   useChromeContext,
   useChromeSuppressed,
@@ -37,7 +37,7 @@ export type ObjectApproach = {
  * menu it opened lives in the popper wrapper. Without this, moving the pointer
  * from a diagram to its own ⋮ would read as leaving the diagram.
  */
-const CHROME_SELECTOR = `[${EDITOR_CHROME_ATTRIBUTE}], [data-radix-popper-content-wrapper]`;
+const CHROME_SELECTOR = "[data-editor-chrome], [data-radix-popper-content-wrapper]";
 
 export function useApproachedObject(
   editor: Editor,

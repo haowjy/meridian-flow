@@ -12,7 +12,7 @@
  */
 
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
-import type { EditorState } from "@tiptap/pm/state";
+import { AllSelection, type EditorState, TextSelection } from "@tiptap/pm/state";
 
 import { selectedObject } from "../objects/object-selection";
 import { isEditorObject, isSourceBlock } from "../objects/object-types";
@@ -49,6 +49,26 @@ export const DOCUMENT_CHROME_CONTEXT: ChromeContext = {
   pos: null,
   chain: ["document"],
 };
+
+/**
+ * The selection holds prose the writer could format, and `pos` is inside it.
+ *
+ * Not "a selection exists". §5.1's formatting claim outranks the object claim,
+ * so anything that answers yes here shadows a right-click on the thing under
+ * the pointer. A `CellSelection` over a whole table and a `NodeSelection` on a
+ * figure are both non-empty ranges with no prose text selected; answering yes
+ * for them would put the formatting menu over every table and every object.
+ *
+ * `AllSelection` does count: Ctrl+A then format the chapter is the gesture the
+ * rule exists for, and the formatting commands fence their own non-prose
+ * targets (see `surfaces/toolbar`).
+ */
+export function proseSelectionCovers(state: EditorState, pos: number | null): boolean {
+  const { selection } = state;
+  if (pos === null || selection.empty) return false;
+  if (!(selection instanceof TextSelection || selection instanceof AllSelection)) return false;
+  return pos >= selection.from && pos <= selection.to;
+}
 
 export function resolveChromeContext(state: EditorState): ChromeContext {
   const { selection } = state;

@@ -22,6 +22,7 @@ import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
+import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
   MeridianBulletList,
   MeridianCode,
@@ -315,6 +316,7 @@ export function createStandaloneEditorExtensions({
       projectId: assetRenderContext?.projectId,
     }),
     ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
+    MarkdownAutoformatExtension,
     LiveRangeNavigationExtension,
     PassageHighlightExtension,
     // Chrome mounts only on the document schema: a code file is one code

@@ -105,11 +105,9 @@ Radix traps focus and ignores what happens beyond the scrim. Probed four times
 from ⋮ → Edit source with a 100 ms read inside the failure window: open every
 time.
 
-The related guard this lane did add is in `useReturnFocusToProse`
-(`features/editor/chrome`): it stands down when the prose is unreachable
-(`aria-hidden` / `inert`), which is the state a modal dialog puts it in. That
-is a reachability check rather than the layer-awareness M7 built; a non-modal
-surface opened from a menu still needs the wait-for-focus pattern.
+`useChromeLayer`'s `onCloseAutoFocus` carries both halves of the guard: it
+stands down when a successor layer is still open, and when the manuscript is
+behind a modal scrim (`aria-hidden` / `inert`).
 
 ## Known blocked
 

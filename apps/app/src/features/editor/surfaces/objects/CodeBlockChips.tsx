@@ -22,7 +22,7 @@ import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { EDITOR_CHROME_ATTRIBUTE } from "@/core/editor/chrome";
+import { editorChromeAttributes } from "@/core/editor/chrome";
 import {
   EditorMenu,
   EditorMenuCheckboxItem,
@@ -32,6 +32,7 @@ import {
   EditorMenuSeparator,
   useAnchorRect,
   useChromeSuppressed,
+  useEditorChrome,
 } from "@/features/editor/chrome";
 
 import type { ObjectSurfaceTarget } from "./object-anchors";
@@ -76,6 +77,7 @@ export type CodeBlockChipsProps = {
 };
 
 export function CodeBlockChips({ editor, target, visible, onMenuOpenChange }: CodeBlockChipsProps) {
+  const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
   const rect = useAnchorRect(target.element);
   const [languageOpen, setLanguageOpen] = useState(false);
@@ -93,7 +95,7 @@ export function CodeBlockChips({ editor, target, visible, onMenuOpenChange }: Co
     return () => window.clearTimeout(timer);
   }, [copied]);
 
-  if (!rect || typeof document === "undefined") return null;
+  if (!rect || !chrome || typeof document === "undefined") return null;
 
   const language =
     typeof target.node.attrs.language === "string" && target.node.attrs.language
@@ -111,8 +113,10 @@ export function CodeBlockChips({ editor, target, visible, onMenuOpenChange }: Co
       data-code-chips=""
       data-state={visible && !suppressed ? "open" : "closed"}
       // Right-clicks on chrome route through the claim ladder like right-clicks
-      // on the block itself, rather than falling through to the browser.
-      {...{ [EDITOR_CHROME_ATTRIBUTE]: "" }}
+      // on the block itself, rather than falling through to the browser. The
+      // mark carries the kernel's id, so two editors on one page never claim
+      // each other's overlays.
+      {...editorChromeAttributes(chrome)}
       style={{ top: rect.top + OVERLAY_INSET_PX, left: rect.right - OVERLAY_INSET_PX }}
       // A press on the cluster must not move the caret out of the block the
       // cluster belongs to.

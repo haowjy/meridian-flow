@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { Editor, type JSONContent } from "@tiptap/core";
+import { Editor, type JSONContent, Node } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
-import { getEditorChrome } from "./ChromeKernelExtension";
+import { editorChromeAttributes, getEditorChrome } from "./ChromeKernelExtension";
 
 let editor: Editor | null = null;
 
@@ -20,7 +20,36 @@ const paragraph = (text: string): JSONContent => ({
 
 const figure: JSONContent = { type: "figure", attrs: { src: "asset:1", caption: "" } };
 
-function mount(content: JSONContent[]): Editor {
+/**
+ * A node view that swallows events the way TipTap's does.
+ *
+ * TipTap's `NodeView.stopEvent` returns false for `mousedown` on a selectable
+ * node — which is why click-to-select works — and then falls through to
+ * `return true` for everything else, `contextmenu` included. ProseMirror
+ * consults `stopEvent` in `eventBelongsToView` BEFORE it runs any
+ * `handleDOMEvents`, so a router that lives in that prop is invisible inside
+ * every React node view in this editor: image, figure, jsx_leaf,
+ * jsx_container. This fixture is that mechanism with no React in it.
+ */
+const SwallowingNodeView = Node.create({
+  name: "swallowing_rule",
+  group: "block",
+  atom: true,
+  selectable: true,
+  parseHTML: () => [{ tag: "div[data-swallowing]" }],
+  renderHTML: () => ["div", { "data-swallowing": "" }],
+  addNodeView() {
+    return () => {
+      const dom = document.createElement("div");
+      dom.dataset.swallowing = "";
+      dom.append(document.createElement("img"));
+      dom.append(document.createElementNS("http://www.w3.org/2000/svg", "svg"));
+      return { dom, stopEvent: (event: Event) => event.type !== "mousedown" };
+    };
+  },
+});
+
+function mount(content: JSONContent[], extras: Node[] = []): Editor {
   const element = document.createElement("div");
   document.body.append(element);
   // jsdom has no layout, so ProseMirror's `posAtCoords` has nothing to hit
@@ -29,14 +58,34 @@ function mount(content: JSONContent[]): Editor {
   document.elementFromPoint ??= () => null;
   editor = new Editor({
     element,
-    extensions: createStandaloneEditorExtensions(),
+    extensions: [...createStandaloneEditorExtensions(), ...extras],
     content: { type: "doc", content },
   });
   return editor;
 }
 
-function pressEscape(instance: Editor): boolean {
-  const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+/**
+ * Escape, and what the editor did about it.
+ *
+ * NOT `defaultPrevented`: ProseMirror's own `captureKeyDown` calls
+ * `preventDefault` on keyCode 27 whether or not anything handled the key, so
+ * the flag reports ProseMirror rather than the chain. The kernel's answer is
+ * the state it left behind, which is what these tests read.
+ */
+function pressEscape(instance: Editor): { owner: string; layers: number } {
+  const event = new KeyboardEvent("keydown", {
+    key: "Escape",
+    keyCode: 27,
+    bubbles: true,
+    cancelable: true,
+  });
+  instance.view.dom.dispatchEvent(event);
+  const chrome = getEditorChrome(instance);
+  return { owner: chrome?.context.owner ?? "document", layers: chrome?.layers.length ?? 0 };
+}
+
+function press(instance: Editor, init: KeyboardEventInit): boolean {
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
   instance.view.dom.dispatchEvent(event);
   return event.defaultPrevented;
 }
@@ -82,23 +131,109 @@ describe("the kernel on a live editor", () => {
     const close = vi.fn();
     const layer = chrome.openLayer({ id: "menu", close });
 
-    // One: the menu.
-    expect(pressEscape(instance)).toBe(true);
+    // One: the menu. The object is still selected under it.
+    expect(pressEscape(instance)).toEqual({ owner: "object", layers: 0 });
     expect(close).toHaveBeenCalledOnce();
     layer.release();
-    expect(chrome.context.owner).toBe("object");
 
     // Two: the object.
-    expect(pressEscape(instance)).toBe(true);
-    expect(chrome.context.owner).toBe("document");
+    expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
+    const home = instance.state.selection;
 
-    // Three: home. The key is left alone so the browser can still have it.
-    expect(pressEscape(instance)).toBe(false);
+    // Three: home leaves everything exactly where it was, which is the whole
+    // content of "the editor gave the key back".
+    expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
+    expect(instance.state.selection.eq(home)).toBe(true);
   });
 
   it("leaves a right-click to the browser when nobody claims (ruling 11)", () => {
     const instance = mount([paragraph("The thrid gate opened.")]);
     expect(rightClick(instance).defaultPrevented).toBe(false);
+  });
+
+  it("routes a right-click inside a node view that swallows events", () => {
+    const instance = mount(
+      [paragraph("before"), { type: "swallowing_rule" }],
+      [SwallowingNodeView],
+    );
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const claim = vi.fn(() => true);
+    chrome.registerContextClaim({ id: "object", claim });
+
+    // The pointer is on the node view's own DOM, which is where a writer
+    // right-clicks an image or a figure — the two object types ruling 11 and
+    // §5.2 are actually about.
+    const inside = instance.view.dom.querySelector("img");
+    if (!inside) throw new Error("node view did not render");
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+    inside.dispatchEvent(event);
+
+    expect(claim).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("gives portalled chrome to its own editor and to no other", () => {
+    const first = mount([paragraph("first document")]);
+    const firstChrome = getEditorChrome(first);
+    if (!firstChrome) throw new Error("kernel did not mount");
+
+    // A second document open in the next pane, with its own kernel listening
+    // on the same document.
+    const secondElement = document.createElement("div");
+    document.body.append(secondElement);
+    const second = new Editor({
+      element: secondElement,
+      extensions: createStandaloneEditorExtensions(),
+      content: { type: "doc", content: [paragraph("second document")] },
+    });
+    const secondChrome = getEditorChrome(second);
+    if (!secondChrome) throw new Error("second kernel did not mount");
+
+    const firstClaim = vi.fn(() => true);
+    const secondClaim = vi.fn(() => true);
+    firstChrome.registerContextClaim({ id: "object", claim: firstClaim });
+    secondChrome.registerContextClaim({ id: "object", claim: secondClaim });
+
+    // An overlay row belonging to the first editor, portalled to the body.
+    const row = document.createElement("div");
+    for (const [name, value] of Object.entries(editorChromeAttributes(firstChrome))) {
+      row.setAttribute(name, value);
+    }
+    document.body.append(row);
+    row.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }),
+    );
+
+    expect(firstClaim).toHaveBeenCalledOnce();
+    expect(secondClaim).not.toHaveBeenCalled();
+
+    second.destroy();
+    row.remove();
+    secondElement.remove();
+  });
+
+  it("routes a right-click on an SVG target", () => {
+    const instance = mount(
+      [paragraph("before"), { type: "swallowing_rule" }],
+      [SwallowingNodeView],
+    );
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const claim = vi.fn(() => true);
+    chrome.registerContextClaim({ id: "object", claim });
+
+    // A mermaid diagram is SVG, and so is every icon in an overlay row. A
+    // router that only knows HTMLElement hands both to the browser.
+    const svg = instance.view.dom.querySelector("svg");
+    if (!svg) throw new Error("node view did not render");
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+    svg.dispatchEvent(event);
+
+    expect(claim).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it("takes the right-click when a lane claims it", () => {
@@ -114,6 +249,99 @@ describe("the kernel on a live editor", () => {
 
     release();
     expect(rightClick(instance).defaultPrevented).toBe(false);
+  });
+
+  it("rejects an Escape binding at registration, and later lanes still land", () => {
+    const instance = mount([paragraph("before")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const registeredBefore = chrome.keymapContributions().length;
+
+    expect(() =>
+      chrome.registerKeymap({
+        id: "greedy-lane",
+        scope: "layer",
+        bindings: { Escape: () => true, "Alt-ArrowUp": () => true },
+      }),
+    ).toThrow(/Esc chain owns it/);
+
+    // The refusal has to leave the registry usable. A guard against silent
+    // rejection that drops every later lane's keys is a worse silent
+    // rejection than the one it was written to prevent.
+    expect(chrome.keymapContributions()).toHaveLength(registeredBefore);
+
+    const laterLane = vi.fn(() => true);
+    chrome.registerKeymap({
+      id: "block-movement",
+      scope: "document",
+      bindings: { "Alt-ArrowDown": laterLane },
+    });
+
+    press(instance, { key: "ArrowDown", altKey: true });
+    expect(laterLane).toHaveBeenCalledOnce();
+  });
+
+  it("holds a scoped binding back until its context is the one under the caret", () => {
+    const instance = mount([
+      paragraph("plain prose"),
+      {
+        type: "table",
+        content: [
+          {
+            type: "table_row",
+            content: [
+              { type: "table_header", content: [paragraph("Rank")] },
+              { type: "table_header", content: [paragraph("Skill")] },
+            ],
+          },
+        ],
+      },
+    ]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const moveRow = vi.fn(() => true);
+    chrome.registerKeymap({
+      id: "table-chrome",
+      scope: "table",
+      bindings: { "Alt-ArrowUp": moveRow },
+    });
+
+    // The caret is in a paragraph. A row move has nothing to move, and the
+    // scope is what says so — otherwise every lane has to rediscover its own
+    // guard and one missed check shadows an outer verb document-wide.
+    instance.commands.setTextSelection(3);
+    expect(press(instance, { key: "ArrowUp", altKey: true })).toBe(false);
+    expect(moveRow).not.toHaveBeenCalled();
+
+    let cellPos = 0;
+    instance.state.doc.descendants((node, pos) => {
+      if (!cellPos && node.type.name === "table_header") cellPos = pos + 2;
+    });
+    instance.commands.setTextSelection(cellPos);
+    expect(press(instance, { key: "ArrowUp", altKey: true })).toBe(true);
+    expect(moveRow).toHaveBeenCalledOnce();
+  });
+
+  it("holds a layer-scoped binding back until a surface is open", () => {
+    const instance = mount([paragraph("before")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const menuArrow = vi.fn(() => true);
+    chrome.registerKeymap({
+      id: "slash-menu",
+      scope: "layer",
+      bindings: { ArrowDown: menuArrow },
+    });
+
+    press(instance, { key: "ArrowDown" });
+    expect(menuArrow).not.toHaveBeenCalled();
+
+    chrome.openLayer({ id: "slash", close: () => {} });
+    press(instance, { key: "ArrowDown" });
+    expect(menuArrow).toHaveBeenCalledOnce();
   });
 
   it("routes a registered key and leaves an unregistered one to the editor", () => {

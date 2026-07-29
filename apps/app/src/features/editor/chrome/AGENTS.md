@@ -22,14 +22,28 @@ roving focus (decision 2026-07-29). What these add is subordination.
 
 ## Key rules
 
-- **`onCloseAutoFocus` → prose, on every surface, on every close path.** Radix
+- **`onCloseAutoFocus` → `useChromeLayer(...).onCloseAutoFocus`.** Radix
   restores focus to the trigger, which is right for a page and wrong for a
   manuscript: the writer never left the sentence, so the next Space must be a
-  space. `useReturnFocusToProse` is the handler. This is the toolbar module's
-  standing contract, and it applies to anything opened over the editor.
+  space. The handler is layer-aware, and that part is load-bearing: a menu item
+  that opens a form leaves the form behind, and handing the caret back then
+  pulls focus out of a surface on the frame it appeared — which Radix reads as
+  an outside interaction and dismisses. A close returns the caret only when it
+  was the last thing on screen.
 - **`onEscapeKeyDown` → `useChromeLayer(...).onEscapeKeyDown`.** Without it a
   single Esc closes a dialog and the pane inside it, spending two steps of the
   walk home on one key.
+- **Wrap what a surface renders in `layer.scope(...)`.** That is how a layer
+  opened inside another knows its parent, and depth is what orders the walk —
+  React mounts child effects first, so arrival order says the opposite. A
+  surface that skips it makes every layer inside it a sibling.
+- **A Radix-backed layer declares `dismissal: "self"`; anything hand-rolled
+  keeps the default.** The kernel's Escape backstop serves the default and
+  stands aside for `"self"`, so declaring `"self"` without listening is how a
+  writer gets stuck.
+- **Chrome mounts for the active editor only.** The desktop context host keeps
+  several editors warm behind the visible one and hides them with `hidden`,
+  which does nothing to anything portalled.
 - **`modal={false}`** on menus and popovers. A modal surface freezes the page
   behind it, and the page behind it is the writer's chapter: clicking away must
   land the caret where the writer clicked, not merely dismiss.
@@ -40,8 +54,10 @@ roving focus (decision 2026-07-29). What these add is subordination.
 - **A surface keyed on a pointer point remounts when the point moves.** Radix
   positions through floating-ui's `autoUpdate`, which never sees a fixed anchor
   move; both wrappers already carry the key.
-- **Chrome that portals out of the editor carries `data-editor-chrome`**, or
-  right-clicks on it bypass the claim ladder.
+- **Chrome that portals out of the editor spreads
+  `editorChromeAttributes(chrome)`**, or right-clicks on it bypass the claim
+  ladder. The mark names the editor, because two documents open side by side
+  are two kernels listening on one page.
 - No raw color. Chip and row styling lives in `editor.css` under the kernel's
   banner; token classes elsewhere.
 

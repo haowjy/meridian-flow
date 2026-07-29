@@ -7,6 +7,11 @@
  */
 
 export {
+  type ChromeLayerBinding,
+  type UseChromeLayerOptions,
+  useChromeLayer,
+} from "./chrome-layers";
+export {
   EDITOR_CHROME_SURFACES,
   type EditorChromeSurface,
   type EditorChromeSurfaceProps,
@@ -37,9 +42,7 @@ export {
 export { type AnchorRect, useAnchorRect } from "./useAnchorRect";
 export {
   useChromeContext,
-  useChromeLayer,
   useChromeSuppressed,
   useEditorChrome,
   useEditorRevision,
-  useReturnFocusToProse,
 } from "./useEditorChrome";

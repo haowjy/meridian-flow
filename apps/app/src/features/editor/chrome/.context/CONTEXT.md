@@ -16,11 +16,38 @@ current state it reads from the kernel, so the host has no growing prop list
 and a lane never has to ask for one. The host renders no element of its own;
 every surface portals or floats, so nothing here can push the manuscript.
 
+## Mounting a surface, continued
+
+`EditorChromeHost` takes an `active` flag and `EditorView` passes it down. It
+is not decoration: `ContextEditorMountHost` keeps up to six editors mounted and
+hides the inactive ones with `hidden`, which works for the manuscript (it is
+inside the hidden element) and does nothing at all for chrome (it portals to
+the body). Without the flag, a warm editor's menu, dialog, or selection-persistent
+object row paints over the document the writer is reading, anchored to a rect
+in a pane nobody can see.
+
 ## The Radix wrappers
 
 All three take the same first four props: `editor`, `id` (names the layer in
 the Esc chain), `open`, `onOpenChange`. All three bake in the layer
-registration, the Escape deferral, and the focus return.
+registration, the Escape deferral, the focus return, and `layer.scope(children)`
+so a layer opened inside them is recognised as the deeper one.
+
+### One surface opening another
+
+This is the seam every lane hits: a menu item that opens a form. Two things
+make it work, both inside `useChromeLayer`.
+
+- **The focus return is layer-aware.** `onCloseAutoFocus` hands the caret back
+  only when no other layer is open. Otherwise the closing menu pulls focus out
+  of the form on the frame it appeared, and Radix reads that as an outside
+  interaction and dismisses it.
+- **The Escape deferral reads depth, not arrival.** The form registered inside
+  the menu's `scope` is the deeper layer, so Escape closes it first.
+
+A lane that opens a surface from a surface owes nothing beyond using the
+wrappers. A lane that hand-rolls one owes `layer.onCloseAutoFocus` and
+`layer.scope(...)`.
 
 | | Anchoring | Focus on open | Modal |
 |---|---|---|---|
@@ -31,12 +58,12 @@ registration, the Escape deferral, and the focus return.
 Menu parts are re-exported with editor names (`EditorMenuItem`,
 `EditorMenuSeparator`, `EditorMenuSub`, …) so a lane has one import.
 
-**Focus returns to the prose unless the prose cannot take it.** A modal dialog
-hides the page behind it and traps focus inside itself, so handing the caret
-back to a sentence under the scrim is a move the dialog immediately undoes —
-asynchronously, landing focus on whatever happens to be first inside. There
-`useReturnFocusToProse` stands down and Radix's own answer holds: the control
-the writer pressed, which is where they still are.
+**Focus returns to the prose unless the prose cannot take it.** `useChromeLayer`
+gives every surface an `onCloseAutoFocus` that stands down in two cases: a
+successor layer is still open (a menu item that opened a form), or the
+manuscript is behind a modal scrim (`aria-hidden` / `inert`), where the dialog
+would drag focus back asynchronously and land it on whatever is first inside.
+Either way the caret stays where the writer left it.
 
 Opening from inside a `contextmenu` handler works: Radix does not dismiss on
 the pointer sequence that produced the event. Verified in the browser across
@@ -78,6 +105,23 @@ through the claim ladder like a right-click on the object.
 
 Hover reveal is the lane's to wire, through `chrome.createHoverIntent(...)` —
 never a local `setTimeout`, which would linger through a drag.
+
+## Registering a layer by hand
+
+A lane that portals its own surface rather than using a wrapper calls
+`useChromeLayer` directly and owes two things the wrappers give for free:
+
+```ts
+const layer = useChromeLayer(editor, { id: "block-menu", open, close });
+// 1. wrap whatever can contain another layer
+return layer.scope(<div>{children}</div>);
+// 2. hand `layer.onCloseAutoFocus` to whatever closes the surface, so the
+//    caret goes back to the prose — and does not, when this surface opened
+//    another one.
+// 3. leave `dismissal` at its default unless the surface has its own Escape
+//    listener; the kernel's backstop is what keeps it from surviving Escape
+//    when focus has moved out of the editor.
+```
 
 ## Reading the kernel
 
