@@ -19,7 +19,7 @@
  */
 
 import { type Editor, Extension } from "@tiptap/core";
-import { PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Suggestion, { exitSuggestion, type SuggestionProps } from "@tiptap/suggestion";
 
 import { getEditorChrome } from "../../chrome";
@@ -40,6 +40,8 @@ import { allowsSlashTrigger } from "./slash-trigger";
 const SLASH_EXTENSION_NAME = "slashCommand";
 
 export const slashCommandPluginKey = new PluginKey(SLASH_EXTENSION_NAME);
+
+const slashCatalogFencePluginKey = new PluginKey(`${SLASH_EXTENSION_NAME}CatalogFence`);
 
 type SlashCommandStorage = {
   menu: SlashMenu;
@@ -110,7 +112,13 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
         items: ({ query }) => filterSlashCommandItems(options.catalog()?.items ?? [], query),
         command: ({ editor: target, range, props }) => {
           const catalog = options.catalog();
-          if (catalog) applySlashCommand(target, range, props, catalog);
+          // Withdrawn between the row being drawn and the row being chosen:
+          // take the menu down rather than let a dead row sit there.
+          if (!catalog) {
+            exitSuggestion(target.view, slashCommandPluginKey);
+            return;
+          }
+          applySlashCommand(target, range, props, catalog);
         },
         render: () => {
           let releaseKeymap: (() => void) | null = null;
@@ -148,6 +156,22 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
             },
           };
         },
+      }),
+
+      // The catalog can be withdrawn without a transaction to notice it: a
+      // schema fence or a read-only host flips editability, and `setEditable`
+      // re-runs plugin VIEWS rather than plugin `apply`. Suggestion would keep
+      // an open menu whose every row is dead, which is the control law 5
+      // forbids. Exiting here means withdrawal leaves by the same door as
+      // Escape, so the keymap and the chrome layer are released once.
+      new Plugin({
+        key: slashCatalogFencePluginKey,
+        view: (view) => ({
+          update() {
+            if (!slashCommandPluginKey.getState(view.state)?.active) return;
+            if (options.catalog() === null) exitSuggestion(view, slashCommandPluginKey);
+          },
+        }),
       }),
     ];
   },
