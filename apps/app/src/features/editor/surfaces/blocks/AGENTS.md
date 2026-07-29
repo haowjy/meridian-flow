@@ -71,6 +71,10 @@ gesture is holding, and whether it has lifted.
   measuring in render forced a synchronous layout on each one.
   `useBlockChromePlacement` schedules the measurement and moves state only
   when the numbers did.
+- **What counts as "the manuscript moved" is `watchManuscriptLayout`'s answer,
+  not this lane's.** A local watcher here listened for transactions and window
+  resizes only, so a scroll under a still hand left the handle at its old
+  viewport top. Any second list of signals will be short of that one again.
 - **Overlays are measured onto the page, never inserted into it** (law 7). A
   widget decoration between two blocks inherits the manuscript's block spacing
   and pushes the page down by its own height.

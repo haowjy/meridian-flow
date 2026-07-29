@@ -53,6 +53,7 @@ import { isEditorObject, selectObjectTransaction } from "@/core/editor/objects";
 // barrel also carries the surface registry this file is listed in, so the
 // barrel route is a module cycle (and a real one — Vite reported the
 // registry's own export read before initialization).
+import { watchManuscriptLayout } from "../../chrome/useAnchorRect";
 import { useChromeSuppressed, useEditorChrome } from "../../chrome/useEditorChrome";
 import { BlockMenu } from "./BlockMenu";
 import { blockHandleLabel } from "./block-copy";
@@ -621,9 +622,11 @@ const NO_BLOCK_CHROME: BlockChromePlacement = { handle: null, line: null };
  * so a transaction that changed nothing on screen costs one measurement and no
  * render at all.
  *
- * Block boxes move for reasons a `ResizeObserver` on one element never sees —
- * three paragraphs inserted above — so the editor's own transactions are the
- * signal rather than any one element's size.
+ * WHICH signals mean "measure again" is not this surface's question. A block
+ * travels for reasons a `ResizeObserver` on one element never sees — three
+ * paragraphs inserted above, the pane scrolling under a hand that never moved,
+ * a diagram finishing its render — and every floating surface in the editor
+ * needs the same list, so they share one: `watchManuscriptLayout`.
  */
 function useBlockChromePlacement(
   editor: Editor,
@@ -633,7 +636,6 @@ function useBlockChromePlacement(
   const [placement, setPlacement] = useState<BlockChromePlacement>(NO_BLOCK_CHROME);
 
   useLayoutEffect(() => {
-    let frame = 0;
     const measure = () => {
       if (editor.isDestroyed) return;
       const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
@@ -649,21 +651,12 @@ function useBlockChromePlacement(
       };
       setPlacement((previous) => (samePlacement(previous, next) ? previous : next));
     };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
 
     // The pointer's own moves are measured at once: the drop line belongs
     // under the pointer on the frame the writer moved it, not the one after.
+    // Everything else is a frame late, which is what the shared watcher coalesces to.
     measure();
-    editor.on("transaction", schedule);
-    window.addEventListener("resize", schedule);
-    return () => {
-      cancelAnimationFrame(frame);
-      editor.off("transaction", schedule);
-      window.removeEventListener("resize", schedule);
-    };
+    return watchManuscriptLayout(editor, [], measure);
   }, [editor, targetPos, seamIndex]);
 
   return placement;
