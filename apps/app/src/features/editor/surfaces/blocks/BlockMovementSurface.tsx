@@ -125,6 +125,13 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const showingRef = useRef(false);
   showingRef.current = anchorHold !== null || menuHold !== null;
   /**
+   * The block the visible handle belongs to, for the doors that fire outside
+   * React's own event flow. Fed by render rather than remembered per-element
+   * (the way an object's row has to be): there is only ever one handle, and it
+   * exists only once the approach has already settled on a block.
+   */
+  const targetPosRef = useRef<number | null>(null);
+  /**
    * The writer's last input device. A tap has no hover to settle, so on touch
    * the handle follows the selection instead (§5.8, law 8) — and a hybrid
    * machine answers for the hand actually on it rather than for a media query.
@@ -249,6 +256,33 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       editor.off("selectionUpdate", onSelection);
     };
   }, [editor, editable]);
+
+  /**
+   * The handle's right-click (§5.1's claim ladder, `grip` rung).
+   *
+   * The grip is chrome drawn outside the frame, so a right-click on it is a
+   * question about the block, never about the page: it opens the same menu the
+   * click opens, through the same call. Not claiming would leave the browser's
+   * menu over a control the browser knows nothing about — and the kernel's
+   * default IS the native menu, so a surface that registers nothing gets it by
+   * saying nothing.
+   */
+  useEffect(() => {
+    if (!chrome || !editable) return;
+    return chrome.registerContextClaim({
+      id: "grip",
+      claim: ({ element }) => {
+        if (!element.closest("[data-block-handle]")) return false;
+        // A right-click with the pointer already down is not a menu request,
+        // and the drag under it still owns the gesture.
+        if (gestureRef.current) return false;
+        const pos = targetPosRef.current;
+        if (pos === null) return false;
+        openBlockMenuAt(editor, pos, setMenuHold);
+        return true;
+      },
+    });
+  }, [chrome, editable, editor]);
 
   // Approach: the pointer spends most of it in the margin, where `posAtCoords`
   // has nothing to say, so x is pulled into the column before asking.
@@ -382,6 +416,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   if (!editable || !chrome || typeof document === "undefined") return null;
 
   const targetPos = (menuHold ?? anchorHold)?.from ?? null;
+  targetPosRef.current = targetPos;
   const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
   const dragging = seamIndex !== null;
   // The handle stays mounted for the whole gesture even while it is invisible:
@@ -405,6 +440,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
               ref={handleRef}
               type="button"
               className="meridian-block-handle"
+              data-block-handle
               {...editorChromeAttributes(chrome)}
               data-state={visible ? "open" : dragging ? "dragging" : "closed"}
               aria-label={blockHandleLabel()}
