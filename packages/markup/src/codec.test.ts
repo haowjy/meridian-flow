@@ -130,6 +130,8 @@ describe("codec presets", () => {
 
   it.each([
     "star*turn",
+    "a<b",
+    "a{b",
     " Chapter 214 ",
   ])("preserves markdown-sensitive wikilink target %j", (target) => {
     for (const wikilinkCodec of [

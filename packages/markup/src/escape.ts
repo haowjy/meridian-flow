@@ -127,6 +127,15 @@ function tryConsumeInlineCodeSpan(text: string, start: number): number | null {
   return null;
 }
 
+function tryConsumeWikilink(text: string, start: number): number | null {
+  if (text[start] !== "[" || text[start + 1] !== "[") return null;
+  const close = text.indexOf("]]", start + 2);
+  if (close === -1) return null;
+  const target = text.slice(start + 2, close);
+  if (!target.trim() || target.includes("|") || target.includes("]")) return null;
+  return close + 2 - start;
+}
+
 function escapeProseSegment(segment: string): string {
   let out = "";
   let i = 0;
@@ -138,6 +147,14 @@ function escapeProseSegment(segment: string): string {
     }
     if (segment[i] === "`") {
       const len = tryConsumeInlineCodeSpan(segment, i);
+      if (len !== null) {
+        out += segment.slice(i, i + len);
+        i += len;
+        continue;
+      }
+    }
+    if (segment[i] === "[") {
+      const len = tryConsumeWikilink(segment, i);
       if (len !== null) {
         out += segment.slice(i, i + len);
         i += len;
