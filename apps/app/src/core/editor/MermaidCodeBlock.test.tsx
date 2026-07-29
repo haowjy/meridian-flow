@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { Editor } from "@tiptap/core";
-import { TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { EditorContent } from "@tiptap/react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "./config";
+import { registerObjectEngagement } from "./objects";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
@@ -57,6 +58,44 @@ function mountDocument(language: string, source: string): Editor {
 }
 
 const fenceClass = () => document.querySelector("pre")?.className ?? "";
+const errorCard = () => document.querySelector(".meridian-diagram-error");
+
+/** The face the writer presses: the picture, the error card, or the placeholder. */
+function diagramBody(): Element {
+  const body = document.querySelector('.meridian-diagram-block [contenteditable="false"]');
+  if (!body) throw new Error("expected a diagram body");
+  return body;
+}
+
+/** A real press, and whether anything refused its default. */
+function mouseDown(element: Element): boolean {
+  const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+  element.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+/** Long enough for React to flush an update it should never have made. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 30));
+}
+
+/**
+ * Focus, with the caret in the paragraph after the fence.
+ *
+ * Focusing a document whose FIRST block is the fence lands the caret inside
+ * it, which is a different story than the one a pointer test is telling.
+ */
+async function landCaretInProse(mounted: Editor): Promise<void> {
+  mounted.view.focus();
+  mounted.view.dispatch(
+    mounted.state.tr.setSelection(
+      TextSelection.create(mounted.state.doc, mounted.state.doc.content.size - 1),
+    ),
+  );
+  await vi.waitFor(() => {
+    expect(fenceClass()).toContain("hidden");
+  });
+}
 
 describe("Mermaid code blocks", () => {
   it("renders a mermaid fence as a diagram and hides its source", async () => {
@@ -78,16 +117,75 @@ describe("Mermaid code blocks", () => {
     expect(fenceClass()).not.toContain("hidden");
   });
 
-  it("shows the fence for a diagram that has never rendered", async () => {
+  it("shows an error card, never the fence, for source that has never rendered", async () => {
     mountDocument("mermaid", "flowchart LR\nA[");
 
-    // Unrenderable source is the one case the page shows Mermaid syntax: with
-    // no diagram standing in for it, hiding the fence would strand the writer.
+    // §5.2: the page never shows Mermaid syntax, not even when the syntax is
+    // what broke. The card holds the diagram's place and names the problem.
     await vi.waitFor(() => {
-      expect(document.body.textContent).toContain("Parse error on line 2");
+      expect(errorCard()).not.toBeNull();
     });
-    expect(fenceClass()).not.toContain("hidden");
-    expect(document.querySelector("pre")?.textContent).toContain("flowchart LR");
+    expect(errorCard()?.textContent).toContain("Parse error on line 2");
+    expect(fenceClass()).toContain("hidden");
+  });
+
+  it("engages the source pane from the error card", async () => {
+    const mounted = mountDocument("mermaid", "flowchart LR\nA[");
+    const openings: string[] = [];
+    registerObjectEngagement(mounted, "code_block", (_target, opening) => {
+      openings.push(opening);
+    });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector(".meridian-diagram-error button")).not.toBeNull();
+    });
+    document.querySelector<HTMLButtonElement>(".meridian-diagram-error button")?.click();
+
+    await vi.waitFor(() => {
+      expect(openings).toEqual(["engage"]);
+    });
+    // Selected underneath, so closing the dialog lands on the diagram.
+    expect(mounted.state.selection).toBeInstanceOf(NodeSelection);
+  });
+
+  it("selects the diagram on the press, and never shows source", async () => {
+    // The whole bug, in one gesture. Before the fix the browser answered the
+    // press first: pressing the picture sent it hunting for the nearest
+    // editable position, it found the fence's hidden text, and the node view
+    // brought the source back to keep those keystrokes reachable. Selecting on
+    // the press and refusing the default is what leaves nothing to answer.
+    const mounted = mountDocument("mermaid", RENDERS);
+    await landCaretInProse(mounted);
+
+    const body = diagramBody();
+    expect(mouseDown(body)).toBe(true);
+    expect(mounted.state.selection).toBeInstanceOf(NodeSelection);
+    expect(fenceClass()).toContain("hidden");
+
+    await settle();
+    expect(fenceClass()).toContain("hidden");
+    expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+  });
+
+  it("holds the diagram through a press that never becomes a click", async () => {
+    // Two ways a press stops short of `handleClickOn`: it travels past the
+    // click slop, or it never releases over the editor at all. Both left the
+    // source showing for as long as the selection stayed inside.
+    const mounted = mountDocument("mermaid", RENDERS);
+    await landCaretInProse(mounted);
+
+    const body = diagramBody();
+    mouseDown(body);
+    body.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 400, clientY: 400 }));
+
+    await settle();
+    expect(fenceClass()).toContain("hidden");
+    expect(mounted.state.selection).toBeInstanceOf(NodeSelection);
+
+    // Released far away, or not released at all: the selection stands either way.
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    await settle();
+    expect(fenceClass()).toContain("hidden");
   });
 
   it("brings the source back whenever a caret is inside it", async () => {

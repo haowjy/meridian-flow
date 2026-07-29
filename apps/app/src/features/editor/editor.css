@@ -1127,6 +1127,46 @@
   margin: 0 0.75rem 0.75rem;
 }
 
+/* A diagram whose source has never parsed (§5.2, state 3). It holds the
+   diagram's place rather than spilling Mermaid into the chapter: the same
+   warning family the parse note uses, because it is the same fact one step
+   earlier, and one door out of it. */
+.meridian-diagram-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.75rem 0.9rem;
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-foreground);
+}
+
+.meridian-diagram-error-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.meridian-diagram-error-title {
+  flex: 1;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Mermaid's own words, kept verbatim and kept monospaced: the line and column
+   it names only mean anything against the source as the writer typed it. */
+.meridian-diagram-error-message {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
 /* The canvas: a dot grid so pan and zoom have something to move against, and
    `touch-action: none` because the viewer owns every pointer that lands here —
    without it the browser claims two fingers for its own scroll and pinch. */

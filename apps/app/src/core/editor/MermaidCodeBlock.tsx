@@ -3,25 +3,43 @@
  *
  * A `code_block` whose language is `mermaid` renders as a diagram and hides its
  * own `<pre>`; every other language is the fence itself (interaction model
- * §5.2). Source access belongs to the diagram dialog's ⋮, with two exceptions
- * this file owns: a fence that has never rendered shows itself so a broken
- * diagram is still reachable, and the source comes back whenever a caret is
- * inside it so no keystroke is ever swallowed by a hidden element.
+ * §5.2). "The page never shows Mermaid syntax" is that section's rule, so a
+ * diagram has three faces and none of them is a code block:
  *
- * `useMermaidSvg` is the render pipeline both faces share. It keeps the LAST
- * GOOD svg across a failing edit (§5.2's "keeps the last good render and names
- * the line") — and naming the line is half the promise, so a stale render
- * carries the parse error beside it here as well as in the dialog's pane.
+ * 1. the render, whenever there is one;
+ * 2. the LAST GOOD render plus the parse error, once an edit stops parsing;
+ * 3. an error card naming the problem, for source that has never rendered at
+ *    all — with Edit source as its one door, the same door Enter and a
+ *    double-click open.
+ *
+ * The single exception the file owns is a caret INSIDE the fence: a fence typed
+ * as markdown is filled in by hand, and a caret in a hidden element eats every
+ * keystroke it is given. That face is the writer's own doing — never a
+ * pointer's, which is what `useCaretInsideNode` is careful about.
  */
 import { t } from "@lingui/core/macro";
 import type { Editor, NodeViewProps } from "@tiptap/core";
+import type { Transaction } from "@tiptap/pm/state";
 import { NodeSelection } from "@tiptap/pm/state";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
+import { Code2 } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
+import { Button } from "@/components/ui/button";
 import { DEFAULT_UI_THEME, resolveUiTheme, subscribeUiTheme } from "@/lib/ui-theme";
 
 import { renderMermaid } from "./mermaid-render";
+import { engageObject, selectObjectTransaction } from "./objects";
+
+/**
+ * How long source rests before it is parsed again.
+ *
+ * Mermaid reparses and re-lays-out the whole diagram per render, so a fence
+ * being typed into would run one full parse per keystroke and throw all but the
+ * last away. The pause costs nothing visible: the last good render stays on
+ * screen throughout.
+ */
+const RENDER_DEBOUNCE_MS = 250;
 
 export type MermaidRender = {
   /**
@@ -30,10 +48,14 @@ export type MermaidRender = {
    * than blanking the canvas mid-keystroke.
    */
   svg: string | null;
-  /** Mermaid's message for the current source, which usually names the line. */
+  /** Mermaid's message for `rendered`, which usually names the line. */
   error: string | null;
-  /** No render has completed yet, for any source. */
-  pending: boolean;
+  /**
+   * The source `svg` and `error` describe. Null until the first render
+   * settles, which is how "nothing has been parsed yet" is said without a
+   * second flag that could disagree with this one.
+   */
+  rendered: string | null;
 };
 
 /**
@@ -46,7 +68,7 @@ export type MermaidRender = {
  */
 export function useMermaidSvg(source: string): MermaidRender {
   const reactId = useId();
-  const [render, setRender] = useState<MermaidRender>({ svg: null, error: null, pending: true });
+  const [render, setRender] = useState<MermaidRender>({ svg: null, error: null, rendered: null });
   // Renders resolve out of order under fast typing; only the newest may land.
   const generation = useRef(0);
   // A diagram is drawn in the manuscript's ink, so switching palettes has to
@@ -55,19 +77,32 @@ export function useMermaidSvg(source: string): MermaidRender {
   const uiTheme = useSyncExternalStore(subscribeUiTheme, resolveUiTheme, () => DEFAULT_UI_THEME);
 
   useEffect(() => {
-    generation.current += 1;
-    const current = generation.current;
-    const id = `meridian-mermaid-${reactId.replaceAll(":", "")}-${current}`;
+    const run = () => {
+      generation.current += 1;
+      const current = generation.current;
+      const id = `meridian-mermaid-${reactId.replaceAll(":", "")}-${current}`;
 
-    void renderMermaid(id, source)
-      .then((svg) => {
-        if (generation.current === current) setRender({ svg, error: null, pending: false });
-      })
-      .catch((error: unknown) => {
-        if (generation.current !== current) return;
-        const message = error instanceof Error ? error.message : t`Unable to render diagram`;
-        setRender((previous) => ({ svg: previous.svg, error: message, pending: false }));
-      });
+      void renderMermaid(id, source)
+        .then((svg) => {
+          if (generation.current === current) setRender({ svg, error: null, rendered: source });
+        })
+        .catch((error: unknown) => {
+          if (generation.current !== current) return;
+          const message = error instanceof Error ? error.message : t`Unable to render diagram`;
+          setRender((previous) => ({ svg: previous.svg, error: message, rendered: source }));
+        });
+    };
+
+    // The first parse is not a pause in typing, it is a chapter opening, and
+    // every diagram in it would otherwise sit blank for the length of a pause
+    // nobody took.
+    if (generation.current === 0) {
+      run();
+      return;
+    }
+
+    const timer = window.setTimeout(run, RENDER_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
   }, [reactId, source, uiTheme]);
 
   return render;
@@ -106,14 +141,20 @@ function useCaretInsideNode(editor: Editor, getPos: () => number | undefined): b
       setInside(from > pos && to < pos + node.nodeSize);
     };
 
+    // `transaction` alone: `selectionUpdate` is a subset of it, and a
+    // transaction that moved neither the document nor the selection cannot
+    // have moved the caret. Focus and blur move no transaction at all, and are
+    // the other half of the answer.
+    const onTransaction = ({ transaction }: { transaction: Transaction }) => {
+      if (transaction.docChanged || transaction.selectionSet) read();
+    };
+
     read();
-    editor.on("selectionUpdate", read);
-    editor.on("transaction", read);
+    editor.on("transaction", onTransaction);
     editor.on("focus", read);
     editor.on("blur", read);
     return () => {
-      editor.off("selectionUpdate", read);
-      editor.off("transaction", read);
+      editor.off("transaction", onTransaction);
       editor.off("focus", read);
       editor.off("blur", read);
     };
@@ -122,49 +163,44 @@ function useCaretInsideNode(editor: Editor, getPos: () => number | undefined): b
   return inside;
 }
 
+/** Which of §5.2's faces the diagram is wearing right now. */
+type DiagramFace =
+  /** A render that matches its source. */
+  | "rendered"
+  /** The last good render, kept while the current source does not parse. */
+  | "stale"
+  /** Source that has never parsed: there is no picture to keep. */
+  | "unrendered"
+  /** Nothing has been parsed yet. */
+  | "pending";
+
+function diagramFace({ svg, error }: MermaidRender): DiagramFace {
+  if (svg) return error ? "stale" : "rendered";
+  return error ? "unrendered" : "pending";
+}
+
 export function MermaidCodeBlockNodeView(props: NodeViewProps) {
   const isMermaid = props.node.attrs.language === "mermaid";
   const source = props.node.textContent;
-  const { svg, error, pending } = useMermaidSvg(isMermaid ? source : "");
+  const render = useMermaidSvg(isMermaid ? source : "");
   const caretInside = useCaretInsideNode(props.editor, props.getPos);
-
-  const showDiagram = isMermaid && svg !== null && !caretInside;
-  const showFence = !isMermaid || caretInside || (error !== null && svg === null);
-  // A render that no longer matches its source. The picture stays — it is
-  // still the truest thing on the page about this diagram — but a failure the
-  // writer cannot see is one they cannot fix (law 5).
-  const renderIsStale = isMermaid && error !== null && svg !== null;
+  const showFence = !isMermaid || caretInside;
 
   return (
     <NodeViewWrapper
       className={isMermaid ? "meridian-diagram-block" : undefined}
       data-language={String(props.node.attrs.language ?? "")}
     >
-      {isMermaid && error && svg === null ? (
-        <div
-          className="mb-2 rounded-md bg-destructive/10 p-3 text-destructive text-sm"
-          contentEditable={false}
-          role="alert"
-        >
-          <p className="font-medium">{t`Diagram could not be rendered`}</p>
-          <p className="mt-1 whitespace-pre-wrap font-mono text-xs">{error}</p>
-        </div>
-      ) : null}
-      {renderIsStale ? (
-        <p className="meridian-diagram-parse-note mb-2" contentEditable={false} role="status">
-          {t`This diagram stopped parsing. Showing the last version that rendered.`}
-          <code>{error}</code>
-        </p>
-      ) : null}
-      {isMermaid && pending && !caretInside ? (
-        <div
-          className="px-4 py-6 text-center text-muted-foreground text-sm"
-          contentEditable={false}
-          role="status"
-        >
-          {t`Rendering diagram…`}
-        </div>
-      ) : null}
+      {showFence ? null : (
+        <DiagramBody
+          editor={props.editor}
+          getPos={props.getPos}
+          render={render}
+          // A note about source the writer has already changed is noise: the
+          // next render is moments away and will speak for the text on screen.
+          describesSource={render.rendered === source}
+        />
+      )}
       {/* The fence stays in the tree either way: ProseMirror owns this text,
           and a node view that dropped its content DOM would drop the writer's
           edits with it. Hidden while the diagram stands in for it. */}
@@ -174,15 +210,108 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
             (`pre-wrap`, inline) would make that control a no-op. */}
         <NodeViewContent as={"code" as never} style={{ whiteSpace: "inherit" }} />
       </pre>
-      {showDiagram ? (
-        <div
-          className="meridian-diagram"
-          contentEditable={false}
-          data-mermaid-preview=""
-          // Mermaid's strict security mode sanitizes authored labels before producing the SVG.
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-      ) : null}
     </NodeViewWrapper>
+  );
+}
+
+function DiagramBody({
+  editor,
+  getPos,
+  render,
+  describesSource,
+}: {
+  editor: Editor;
+  getPos: () => number | undefined;
+  render: MermaidRender;
+  describesSource: boolean;
+}) {
+  const face = diagramFace(render);
+
+  if (face === "pending") {
+    return (
+      <div
+        className="px-4 py-6 text-center text-muted-foreground text-sm"
+        contentEditable={false}
+        role="status"
+      >
+        {t`Rendering diagram…`}
+      </div>
+    );
+  }
+
+  if (face === "unrendered") {
+    return <DiagramErrorCard editor={editor} getPos={getPos} message={render.error} />;
+  }
+
+  return (
+    <>
+      {/* A render that no longer matches its source. The picture stays — it is
+          still the truest thing on the page about this diagram — but a failure
+          the writer cannot see is one they cannot fix (law 5). */}
+      {face === "stale" && describesSource ? (
+        <p className="meridian-diagram-parse-note mb-2" contentEditable={false} role="status">
+          {t`This diagram stopped parsing. Showing the last version that rendered.`}
+          <code>{render.error}</code>
+        </p>
+      ) : null}
+      <div
+        className="meridian-diagram"
+        contentEditable={false}
+        data-mermaid-preview=""
+        // Mermaid's strict security mode sanitizes authored labels before producing the SVG.
+        dangerouslySetInnerHTML={{ __html: render.svg ?? "" }}
+      />
+    </>
+  );
+}
+
+/**
+ * Source that has never parsed, said plainly, with its one way out.
+ *
+ * There is no picture to keep here, and §5.2's "the page never shows Mermaid
+ * syntax" holds even when the syntax is the problem: a fence spilled into the
+ * chapter as raw code reads as the manuscript itself having broken, and it
+ * wears a diagram's hover controls over a wall of text. The card says what
+ * mermaid said, verbatim, and hands the writer the same source pane Enter and
+ * a double-click open.
+ */
+function DiagramErrorCard({
+  editor,
+  getPos,
+  message,
+}: {
+  editor: Editor;
+  getPos: () => number | undefined;
+  message: string | null;
+}) {
+  const openSource = () => {
+    const pos = getPos();
+    const node = pos === undefined ? null : editor.state.doc.nodeAt(pos);
+    if (pos === undefined || !node) return;
+    // Select first: engaging leaves the diagram selected underneath, so
+    // closing the dialog lands on it rather than wherever the caret was.
+    const selected = selectObjectTransaction(editor.state, pos);
+    if (selected) editor.view.dispatch(selected);
+    engageObject(editor, { node, pos }, "engage");
+  };
+
+  return (
+    <div className="meridian-diagram-error" contentEditable={false} role="status">
+      <div className="meridian-diagram-error-head">
+        <p className="meridian-diagram-error-title">{t`This diagram has a syntax problem`}</p>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          // A press here must not carry a caret into the fence underneath.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={openSource}
+        >
+          <Code2 aria-hidden />
+          {t`Edit source`}
+        </Button>
+      </div>
+      {message ? <code className="meridian-diagram-error-message">{message}</code> : null}
+    </div>
   );
 }

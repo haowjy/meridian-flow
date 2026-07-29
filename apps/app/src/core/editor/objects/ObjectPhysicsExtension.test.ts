@@ -67,6 +67,18 @@ function press(instance: Editor, init: KeyboardEventInit): boolean {
   return event.defaultPrevented;
 }
 
+/** A real mouse press on `element`, and whether anything refused its default. */
+function mouseDown(element: Element, init: MouseEventInit = {}): boolean {
+  const event = new MouseEvent("mousedown", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    ...init,
+  });
+  element.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 function blockTypes(instance: Editor): string[] {
   const types: string[] = [];
   instance.state.doc.forEach((node) => {
@@ -253,5 +265,45 @@ describe("why a surface is opening", () => {
     );
 
     expect(openings).toEqual(["engage", "engage"]);
+  });
+});
+
+describe("a press on an object body", () => {
+  // The rule is the DOM's own: a body marked `contenteditable="false"` takes
+  // the press, because `handleClickOn` is a mouseup path and the browser has
+  // already answered the press by then. Only a node view that hides its own
+  // text produces such a body, so the positive case lives with the one that
+  // does (`MermaidCodeBlock.test.tsx`); what belongs here is everything the
+  // rule must keep its hands off.
+
+  it("leaves a plain fence its caret: the press lands in editable text", () => {
+    // §5.3: a code block's rendering IS its source, so a click places a caret
+    // and there is no hidden mode to fall into.
+    const instance = mount([
+      { type: "code_block", content: [{ type: "text", text: "const qi = 1;" }] },
+    ]);
+    const fence = instance.view.dom.querySelector("pre");
+    if (!fence) throw new Error("expected a fence");
+
+    expect(mouseDown(fence)).toBe(false);
+    expect(instance.state.selection).not.toBeInstanceOf(NodeSelection);
+  });
+
+  it("leaves a table cell its caret", () => {
+    const instance = mount([
+      {
+        type: "table",
+        content: [
+          {
+            type: "table_row",
+            content: [{ type: "table_cell", content: [paragraph("cell")] }],
+          },
+        ],
+      },
+    ]);
+    const cell = instance.view.dom.querySelector("td");
+    if (!cell) throw new Error("expected a cell");
+
+    expect(mouseDown(cell)).toBe(false);
   });
 });

@@ -89,6 +89,39 @@ Both return an unregister. Both are no-ops on an editor without chrome.
   both, and `selectObjectTransaction` still dispatches a `NodeSelection`
   because the tables plugin converts it on the way in.
 
+## When a pointer selects: press, not click
+
+Two doors, and the difference is timing rather than taste.
+
+`handleClickOn` is ProseMirror's own path and runs on **mouseup**. It covers
+every object, and it is what a tap, a click on an image, and a click on a scene
+break go through.
+
+`selectObjectUnderPress` runs on **mousedown**, and only when the press landed
+on something marked `contenteditable="false"` inside an object. That case needs
+the earlier door because the browser answers a press before mouseup: pressing a
+non-editable element sends it hunting for the nearest editable position, and
+inside a node view that hides its own text — a rendered mermaid fence — the
+nearest one is that hidden text. The caret landed there, the node view brought
+the source back to keep those keystrokes reachable, the page moved under the
+pointer, and the mouseup landed in the source it had just revealed. Past the
+click slop ProseMirror hands the press to the browser entirely and
+`handleClickOn` never runs at all, so the source simply stayed.
+
+Two things make this a rule rather than an exception:
+
+- **The test is the DOM's, not a node type's.** An object body that refuses a
+  caret takes the press. A plain fence and a table cell are editable and are
+  untouched, which is what keeps §5.3's "a click in code places a caret".
+- **It is a plain listener on `view.dom`, not `handleDOMEvents`.** ProseMirror
+  reads a prevented default from a `handleDOMEvents` hook as "the plugin owns
+  this press" and skips its own mouse machinery — the machinery that counts
+  clicks and turns the second one into a double-click. This has to run beside
+  that machinery, never instead of it.
+
+Refusing the default is the whole mechanism: nothing later can take a caret
+back, so it must never be placed.
+
 ## The ring is a decoration, not a lifecycle call
 
 `SELECTED_OBJECT_CLASS` is painted by a ProseMirror decoration derived from the
