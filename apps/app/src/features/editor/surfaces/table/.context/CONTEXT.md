@@ -19,7 +19,9 @@ into writer copy, so the same code can read differently per verb.
 | One column left | delete column | `single-column` |
 | A caret rather than a cell selection | merge cells | `one-cell-selected` |
 | Cell selection that is not a rectangle | merge cells | `cells-not-rectangular` |
-| Cell carries no span | split cell | `not-merged` |
+| Selection spans the header row and the body | merge cells | `header-and-body` |
+| More than one cell selected | split cell | `many-cells-selected` |
+| One cell selected, carrying no span | split cell | `not-merged` |
 | No cell carries a `colwidth` | reset column widths | `no-column-widths` |
 
 Read-only outranks every structural reason: on a document the writer cannot
@@ -37,17 +39,29 @@ decided to be left. The radio group shows no choice made; `null` is a value.
 
 ## Geometry
 
-All four pieces of chrome are `position: fixed`, portalled to the body, and
-measured from the hovered cell plus the table's own box. Measured in the
-browser against mockup 05, with the manuscript's block offsets byte-identical
-with the chrome up and down:
+`tableChromePieces` is the whole placement decision: a pure function of four
+rectangles — the table, the hovered column band, the hovered row band, and the
+manuscript's scrollport — returning a box per piece, or null where the piece
+would fall outside the port. Sizes live there too, not in CSS: the module that
+decides whether a grip fits has to know how big it is.
 
 | Piece | Placement |
 |---|---|
 | Column grip | 30×15 pill, centred on the hovered column, bottom edge 4px above the table |
 | Row grip | 15×30 pill, centred on the hovered row, right edge 6px left of the table |
-| Add column tab | 18px circle, centre 18px right of the table's right edge, vertically centred |
-| Add row tab | 18px circle, centre 18px below the table's bottom edge, horizontally centred |
+| Add column tab | 18px circle, 9px right of the table's right edge, vertically centred |
+| Add row tab | 18px circle, 9px below the table's bottom edge, horizontally centred |
+
+**Null rather than clamped.** A grip pushed back inside the port would sit
+beside a row it does not serve, and chrome pointing at the wrong row is worse
+than chrome that is not there. The document toolbar needs no special case: it
+lives above the scrollport rather than inside it, so anything that would ride
+up over it has already left the port. A grip keeps its element while out of
+view — Radix needs a trigger to anchor an open menu to — and stops painting
+and hit-testing; the add tabs simply unmount.
+
+When the hovered cell itself leaves the port the hover intent is cancelled, so
+the approach ends with the pointer where it is rather than where it was.
 
 Opacity on the container fades all four together. Opacity makes a stacking
 context but **not** a containing block, so the fixed children still resolve
@@ -99,22 +113,37 @@ Owning resize would have bought nothing and cost a drag implementation, a drop
 of the plugin's spanned-column arithmetic, and a second place widths are
 written.
 
+## Merging under a one-paragraph cell
+
+`mergeTableCells` runs the filled cells' inline content together into one
+paragraph before handing the selection to prosemirror-tables. Three things it
+has to get exactly right, each of which was a defect first:
+
+- **Emptiness is structural**, and it is the library's own test: one childless
+  text block. `textContent` disagrees about a cell holding only a hard break or
+  only an inline image, and a cell the two disagree about is one whose content
+  the join leaves behind and the merge then appends as a second paragraph —
+  which the schema fit ejects out of the table entirely.
+- **Every block of every cell**, in reading order, and each cell's WHOLE
+  content is replaced. Reading only `firstChild` loses the rest the moment a
+  cell can hold more than one paragraph.
+- **The header row does not merge into the body** (`mergeCrossesHeader`).
+  Upstream merges any rectangle and keeps the first cell's type, so a
+  whole-column merge on a headed table yields one header cell spanning every
+  row. The fence is in the command as well as the menu. Merging the header row
+  across itself stays allowed: that is a title row.
+
+When cells hold several paragraphs on the wire, loosen
+`table_cell`/`table_header` to `paragraph+` (a minor collab-schema bump: the
+change only loosens) and delete the join; `mergeCells` then stands alone.
+
 ## What the wire cannot carry yet
 
-Two things the editor now does that `packages/markup` refuses or drops. Both
-belong to the codec escalation, and both are loud rather than silent today
-except where noted:
-
-- **Spans** throw on serialize (`table cell spans are not representable in
-  GFM`). Ruled allowed in the editor; the wire follows.
-- **`colwidth` on a spanned cell** is written as `[0, n]` by the resize plugin
-  (`zeroes(colspan)`), which the codec rejects as "must be null or one positive
-  integer". Only reachable by resizing a column that contains a merged cell.
-- **Multi-paragraph cells** do not exist yet: the schema allows one paragraph,
-  which is why `mergeTableCells` joins text instead of stacking paragraphs.
-  When the codec learns multi-line cells, loosen `table_cell`/`table_header` to
-  `paragraph+` (a minor collab-schema bump: the change only loosens) and delete
-  the join.
+**Spans** are on the wire now (the codec escalates a spanned table to raw
+HTML), and so are span-sized `colwidth` arrays — see the widths ruling in
+[`packages/markup/.context/CONTEXT.md`](../../../../../../../packages/markup/.context/CONTEXT.md).
+What remains absent is **multi-paragraph cells**, which is why the merge joins
+text rather than stacking paragraphs.
 
 ## Where the lane touched shared code
 

@@ -41,6 +41,9 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - **A header row is a thing a table may not have** (§5.4 requirement 3). Ask
   `hasHeaderRow`; never treat row zero as structurally sacred, or a headerless
   table's first row becomes unreachable.
+- **The kernel enforces keymap scope.** A `table`-scope binding only runs with
+  a table in the context chain, so a lane guard re-asking the same question is
+  a second answer waiting to drift.
 - **Refusals are named, and the item says so** (law 5). A blocked menu item
   keeps its hover and focus, wears `aria-disabled`, drops its action, and
   carries the reason on a second line. `disabled` is where a reason goes to
@@ -52,11 +55,15 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - **Alt+Arrows are consumed inside a table even when refused.** Handing a
   refused row move down the ladder would move the whole table instead, which is
   not what a writer asked for by pressing "move this row".
-- **Merging runs the cells' text together first.** A cell holds one paragraph,
-  and prosemirror-tables' merge appends every filled cell's content; the
-  schema-fitted replace then splits the cell into a new row and eats a cell's
-  text. `mergeTableCells` joins first. This goes away when cells hold several
-  paragraphs on the wire.
+- **Merging runs the cells' content together first, and refuses the header.**
+  A cell holds one paragraph, and prosemirror-tables' merge appends every
+  filled cell's content; the schema-fitted replace then splits the cell into a
+  new row and drops what it could not fit. `mergeTableCells` joins first, uses
+  the library's own structural emptiness test rather than `textContent`, and
+  refuses a rectangle that spans the header row and the body.
+- **Chrome that has left the manuscript's pane does not draw.** Placement is
+  clipped to the scrollport in `table-anchors.ts`, so a grip cannot ride up
+  over the toolbar when the writer scrolls without moving the pointer.
 - The chrome portals out of the editor, so it carries `data-editor-chrome` or
   its right-clicks bypass the claim ladder.
 
@@ -68,6 +75,10 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   measured; the frame stays clean.
 - Reaching for prosemirror-tables' `toggleHeaderRow`. It toggles the SELECTED
   rows, so from the table's own menu it makes every row a header.
+- Deciding a cell is empty by its text. A hard break and an inline image are
+  content that carries no text.
+- Clamping a piece of chrome back inside the pane. It would then point at a row
+  it does not serve.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the primitives
