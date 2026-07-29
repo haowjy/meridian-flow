@@ -8,6 +8,15 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { createEditorConfig, createStandaloneEditorExtensions } from "./config";
 
+function keyboardShortcutsOf(extensions: ReturnType<typeof createStandaloneEditorExtensions>) {
+  return extensions.flatMap((extension) => {
+    const shortcuts = extension.config.addKeyboardShortcuts;
+    return typeof shortcuts === "function"
+      ? [{ name: extension.name, priority: extension.config.priority ?? 100 }]
+      : [];
+  });
+}
+
 describe("createEditorConfig", () => {
   it("keeps a draft review editor editable — the writer is one more peer in the draft room", () => {
     const document = new Y.Doc();
@@ -20,6 +29,24 @@ describe("createEditorConfig", () => {
     });
 
     expect(config.editable).toBe(true);
+  });
+});
+
+describe("undo ownership", () => {
+  it("binds the collaborative history keys above every inherited keymap", () => {
+    const document = new Y.Doc();
+    const config = createEditorConfig({ document, awareness: new Awareness(document) });
+    const shortcuts = keyboardShortcutsOf(config.extensions ?? []);
+    const owned = shortcuts.find((entry) => entry.name === "meridianUndoRedoKeymap");
+
+    // Undo is the writer's recovery over LLM writes: the keys are Meridian's,
+    // not the collaboration extension's to hand out (ruling 17).
+    expect(owned).toBeDefined();
+    for (const other of shortcuts) {
+      if (other.name !== "meridianUndoRedoKeymap") {
+        expect(owned?.priority).toBeGreaterThan(other.priority);
+      }
+    }
   });
 });
 

@@ -13,7 +13,9 @@ import { Extension } from "@tiptap/core";
 
 export const UndoRedoKeymapExtension = Extension.create({
   name: "meridianUndoRedoKeymap",
-  priority: 1000,
+  // Above the collaboration extension's own 1000, so these keys resolve here
+  // first and no extension added later can quietly take them.
+  priority: 1100,
 
   addKeyboardShortcuts() {
     return {
