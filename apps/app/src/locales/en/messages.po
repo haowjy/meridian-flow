@@ -232,6 +232,7 @@ msgstr "Add a caption for this figure."
 #~ msgid "Add column right"
 #~ msgstr "Add column right"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Add link"
 msgstr "Add link"
@@ -381,6 +382,7 @@ msgstr "Block alignment"
 msgid "blockquote"
 msgstr "blockquote"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
 msgstr "Bold"
@@ -405,6 +407,10 @@ msgstr "Built-in"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
 msgstr "Bullet list"
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Bulleted list"
+msgstr "Bulleted list"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Buy extra usage"
@@ -526,6 +532,7 @@ msgstr "Closed"
 msgid "Code"
 msgstr "Code"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code block"
 msgstr "Code block"
@@ -611,6 +618,10 @@ msgstr "Context"
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
 msgstr "Copied"
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Copy"
+msgstr "Copy"
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
@@ -751,6 +762,10 @@ msgstr "Create project"
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
 msgstr "Custom amount (USD)"
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Cut"
+msgstr "Cut"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Dark"
@@ -1125,6 +1140,18 @@ msgstr "h2"
 msgid "Heading"
 msgstr "Heading"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 1"
+msgstr "Heading 1"
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 2"
+msgstr "Heading 2"
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 3"
+msgstr "Heading 3"
+
 #: src/features/chat/placeholders.ts
 msgid "Hold on…"
 msgstr "Hold on…"
@@ -1186,6 +1213,10 @@ msgstr "Image upload failed."
 msgid "Includes your edits"
 msgstr "Includes your edits"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Inline code"
+msgstr "Inline code"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Inline code takes no links."
 msgstr "Inline code takes no links."
@@ -1240,6 +1271,7 @@ msgstr "Invoking a skill…"
 msgid "Invoking the {skill} skill…"
 msgstr "Invoking the {skill} skill…"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
 msgstr "Italic"
@@ -1618,6 +1650,7 @@ msgid "now"
 msgstr "now"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Numbered list"
 msgstr "Numbered list"
 
@@ -1728,6 +1761,10 @@ msgstr "ordered"
 msgid "Over your monthly usage"
 msgstr "Over your monthly usage"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Paragraph"
+msgstr "Paragraph"
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent unknown"
 msgstr "Parent unknown"
@@ -1739,6 +1776,10 @@ msgstr "Parent:"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Part of this selection keeps its own block type."
 msgstr "Part of this selection keeps its own block type."
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Paste"
+msgstr "Paste"
 
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Paste a link"
@@ -1806,6 +1847,7 @@ msgid "Quick thought"
 msgstr "Quick thought"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Quote"
 msgstr "Quote"
 
@@ -2215,6 +2257,10 @@ msgstr "Stopped."
 msgid "Streaming"
 msgstr "Streaming"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Strikethrough"
+msgstr "Strikethrough"
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Subagent:"
 msgstr "Subagent:"
@@ -2369,6 +2415,10 @@ msgstr "Thinking part {0}"
 msgid "This browser cannot display the PDF inline."
 msgstr "This browser cannot display the PDF inline."
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
+msgstr "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."
@@ -2503,6 +2553,10 @@ msgstr "Try again"
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Turn into"
+msgstr "Turn into"
 
 #: src/features/editor/EditorView.tsx
 #~ msgid "Type / to insert…"

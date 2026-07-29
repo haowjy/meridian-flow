@@ -232,6 +232,7 @@ msgstr ""
 #~ msgid "Add column right"
 #~ msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Add link"
 msgstr ""
@@ -381,6 +382,7 @@ msgstr ""
 msgid "blockquote"
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
 msgstr ""
@@ -404,6 +406,10 @@ msgstr ""
 #: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
+msgstr ""
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Bulleted list"
 msgstr ""
 
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -526,6 +532,7 @@ msgstr ""
 msgid "Code"
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code block"
 msgstr ""
@@ -610,6 +617,10 @@ msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
+msgstr ""
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Copy"
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
@@ -750,6 +761,10 @@ msgstr ""
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
+msgstr ""
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Cut"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -1125,6 +1140,18 @@ msgstr ""
 msgid "Heading"
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 1"
+msgstr ""
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 2"
+msgstr ""
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 3"
+msgstr ""
+
 #: src/features/chat/placeholders.ts
 msgid "Hold on…"
 msgstr "等一下…"
@@ -1186,6 +1213,10 @@ msgstr ""
 msgid "Includes your edits"
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Inline code"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Inline code takes no links."
 msgstr ""
@@ -1240,6 +1271,7 @@ msgstr ""
 msgid "Invoking the {skill} skill…"
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
 msgstr ""
@@ -1618,6 +1650,7 @@ msgid "now"
 msgstr "刚刚"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Numbered list"
 msgstr ""
 
@@ -1728,6 +1761,10 @@ msgstr ""
 msgid "Over your monthly usage"
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Paragraph"
+msgstr ""
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent unknown"
 msgstr ""
@@ -1738,6 +1775,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Part of this selection keeps its own block type."
+msgstr ""
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Paste"
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
@@ -1806,6 +1847,7 @@ msgid "Quick thought"
 msgstr "突然想到"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Quote"
 msgstr ""
 
@@ -2215,6 +2257,10 @@ msgstr "已取消。"
 msgid "Streaming"
 msgstr "流式输出中"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Strikethrough"
+msgstr ""
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Subagent:"
 msgstr ""
@@ -2369,6 +2415,10 @@ msgstr ""
 msgid "This browser cannot display the PDF inline."
 msgstr ""
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr ""
@@ -2502,6 +2552,10 @@ msgstr ""
 
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."
+msgstr ""
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Turn into"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
