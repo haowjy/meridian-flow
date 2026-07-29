@@ -1,7 +1,18 @@
-/** Anchored evidence and navigation surface for one session peer mark. */
+/**
+ * Anchored evidence and navigation surface for one session peer mark.
+ *
+ * **Elements are geometry, holds are identity.** The mark is a decoration, and
+ * this plugin rebuilds every decoration on every remote write, so the span the
+ * writer clicked is gone the moment a collaborator types. What the popover holds
+ * is the mark itself — a `changeId` whose anchor is a relative position — and it
+ * asks the page for the current span on every rect it needs. A captured span
+ * measures as a rect of zeros, which puts the popover in the corner of the
+ * window with its arm pointing at nothing.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/core";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bodyFromTrailHashline, changeTrailDetailKey } from "@/client/change-trails";
@@ -10,15 +21,17 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import type { EditorAnchor } from "@/core/editor/anchors";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { peerMarkRect } from "@/core/editor/extensions/PeerMarkerExtension";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
 import { changeTrailDetailQuery } from "@/features/change-trail/trail-detail-query";
 import { ChangeExcerpts } from "@/features/chat/ChangeViewRows";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 
-export type PeerMarkPopoverTarget = {
-  marker: SessionMarker;
-  element: HTMLElement;
+/** What the press said, and nothing the page will rebuild. */
+export type PeerMarkPress = {
+  /** The mark's own identity, which survives the decoration being rebuilt. */
+  changeId: string;
   activation: "pointer" | "keyboard";
   /**
    * Where the writer's caret was when the mark was opened, held rather than
@@ -28,10 +41,15 @@ export type PeerMarkPopoverTarget = {
   editorSelection: EditorAnchor;
 };
 
+/** The press, plus the mark as the store reports it right now. */
+export type PeerMarkPopoverTarget = PeerMarkPress & { marker: SessionMarker };
+
 export function PeerMarkPopover({
+  editor,
   target,
   onOpenChange,
 }: {
+  editor: Editor | null;
   target: PeerMarkPopoverTarget | null;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -50,11 +68,12 @@ export function PeerMarkPopover({
     return document.changes.find((candidate) => candidate.changeId === marker?.changeId) ?? null;
   }, [detail.data, marker]);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const virtualAnchor = useRef({
-    getBoundingClientRect: () => target?.element.getBoundingClientRect() ?? new DOMRect(),
-  });
+  // Asked on every measurement rather than captured once: floating-ui calls this
+  // again on scroll, on resize, and on every reposition, and the span answering
+  // it is whichever one is drawing the mark at that moment.
+  const virtualAnchor = useRef({ getBoundingClientRect: () => new DOMRect() });
   virtualAnchor.current.getBoundingClientRect = () =>
-    target?.element.getBoundingClientRect() ?? new DOMRect();
+    peerMarkRect(editor, target?.changeId ?? null) ?? new DOMRect();
 
   // Losing access to the document is the only reason to drop cached evidence
   // while the popover is open; closing it is not, or every open refetches.

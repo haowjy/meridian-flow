@@ -11,6 +11,12 @@
  * Placement is a pure function of four rectangles, so where a piece goes and
  * whether it fits are decided in one testable place. `table-chrome.css` keeps the
  * look; every number that decides a position is here.
+ *
+ * **Elements are geometry, holds are identity.** A cell element is what the
+ * grips are measured from and never what says which cell they serve: the chrome
+ * is up while collaborators write, and every remote change rebuilds the
+ * document. `cellDocPosition` and `cellElementAt` are the two crossings, and
+ * what the surface keeps between them is a hold (`core/editor/anchors.ts`).
  */
 
 import { cellAround } from "@tiptap/pm/tables";
@@ -101,6 +107,28 @@ export function cellDocPosition(view: EditorView, cell: HTMLElement): number | n
   const inside = view.posAtDOM(cell, 0);
   if (inside < 0) return null;
   return cellAround(view.state.doc.resolve(inside))?.pos ?? null;
+}
+
+/**
+ * `pos` is still a cell's own position.
+ *
+ * What the pointer's last reading has to be checked against: a verb run from an
+ * open menu — insert a row above, delete a column — moves every cell after it,
+ * and the reading was taken before that.
+ */
+export function isTableCellPos(view: EditorView, pos: number): boolean {
+  const node = pos >= 0 && pos < view.state.doc.content.size ? view.state.doc.nodeAt(pos) : null;
+  const role = node?.type.spec.tableRole;
+  return role === "cell" || role === "header_cell";
+}
+
+/**
+ * The element drawing the cell at `pos` right now, or null when nothing is
+ * drawing it — the cell is gone, or the rebuild has not reached the page yet.
+ */
+export function cellElementAt(view: EditorView, pos: number): HTMLElement | null {
+  const dom = pos >= 0 && pos < view.state.doc.content.size ? view.nodeDOM(pos) : null;
+  return dom instanceof HTMLElement ? dom : null;
 }
 
 function fits(piece: TableChromePiece, port: Box): TableChromePiece | null {

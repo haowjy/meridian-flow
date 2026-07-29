@@ -23,6 +23,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
+import type { SessionMarkerStore } from "@/core/editor/session-marker-store";
 
 export type CollabPair = {
   /** The editor under test. */
@@ -34,10 +35,10 @@ export type CollabPair = {
   destroy: () => void;
 };
 
-function editorOn(doc: Y.Doc): Editor {
+function editorOn(doc: Y.Doc, markerStore?: SessionMarkerStore): Editor {
   return new Editor({
     element: document.createElement("div"),
-    ...createEditorConfig({ document: doc, awareness: new Awareness(doc) }),
+    ...createEditorConfig({ document: doc, awareness: new Awareness(doc), markerStore }),
   });
 }
 
@@ -56,11 +57,15 @@ function push(from: Y.Doc, to: Y.Doc): void {
  * its state handed over before the peer mounts: two bindings both initializing
  * an empty document would each contribute a paragraph.
  */
-export function createCollabPair(content: JSONContent): CollabPair {
+export function createCollabPair(
+  content: JSONContent,
+  /** Peer marks project into the editor under test only, as they do in the app. */
+  options: { markerStore?: SessionMarkerStore } = {},
+): CollabPair {
   const localDoc = new Y.Doc({ gc: false });
   const peerDoc = new Y.Doc({ gc: false });
 
-  const local = editorOn(localDoc);
+  const local = editorOn(localDoc, options.markerStore);
   local.commands.setContent(content);
   reconcileMount(local);
   push(localDoc, peerDoc);

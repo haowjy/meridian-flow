@@ -73,49 +73,64 @@ describe("PeerMarkPopover", () => {
   });
 
   it("keeps the resting popover to actor, time, recovery, diff, and conversation", async () => {
-    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
-      expect(document.body.textContent).toContain("AI assistant");
-      expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
-      expect(document.body.textContent).not.toContain("Deleted a passage");
-      expect(document.body.textContent).not.toContain("Removed passage");
-      expect(document.body.textContent).not.toContain("You asked");
-      expect(document.body.textContent).not.toContain("This passage included edits");
-      expect(document.body.textContent).not.toContain("Writer text.");
-    });
+    await withReactRoot(
+      <PeerMarkPopover editor={null} target={target()} onOpenChange={vi.fn()} />,
+      () => {
+        expect(document.body.textContent).toContain("AI assistant");
+        expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
+        expect(document.body.textContent).not.toContain("Deleted a passage");
+        expect(document.body.textContent).not.toContain("Removed passage");
+        expect(document.body.textContent).not.toContain("You asked");
+        expect(document.body.textContent).not.toContain("This passage included edits");
+        expect(document.body.textContent).not.toContain("Writer text.");
+      },
+    );
   });
 
   it("withholds the actions row until trail evidence resolves", async () => {
     detailPending = true;
 
-    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
-      expect(document.body.textContent).toContain("AI assistant");
-      expect(buttonLabels()).toEqual([]);
-    });
+    await withReactRoot(
+      <PeerMarkPopover editor={null} target={target()} onOpenChange={vi.fn()} />,
+      () => {
+        expect(document.body.textContent).toContain("AI assistant");
+        expect(buttonLabels()).toEqual([]);
+      },
+    );
   });
 
   it("reveals the shared trail-backed Before/After renderer", async () => {
-    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, async () => {
-      await act(async () => button("Before / After").click());
-      expect(document.querySelector('[data-change-excerpt="before"]')?.textContent).toContain(
-        "Writer text.",
-      );
-      expect(document.body.textContent).not.toContain("Copy");
-    });
+    await withReactRoot(
+      <PeerMarkPopover editor={null} target={target()} onOpenChange={vi.fn()} />,
+      async () => {
+        await act(async () => button("Before / After").click());
+        expect(document.querySelector('[data-change-excerpt="before"]')?.textContent).toContain(
+          "Writer text.",
+        );
+        expect(document.body.textContent).not.toContain("Copy");
+      },
+    );
   });
 
   it("keeps ordinary marks read-only", async () => {
     const ordinaryTarget = target();
     ordinaryTarget.marker = { ...ordinaryTarget.marker, swept: false };
 
-    await withReactRoot(<PeerMarkPopover target={ordinaryTarget} onOpenChange={vi.fn()} />, () => {
-      expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
-    });
+    await withReactRoot(
+      <PeerMarkPopover editor={null} target={ordinaryTarget} onOpenChange={vi.fn()} />,
+      () => {
+        expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
+      },
+    );
   });
 
   it("keeps swept marks read-only", async () => {
-    await withReactRoot(<PeerMarkPopover target={target()} onOpenChange={vi.fn()} />, () => {
-      expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
-    });
+    await withReactRoot(
+      <PeerMarkPopover editor={null} target={target()} onOpenChange={vi.fn()} />,
+      () => {
+        expect(buttonLabels()).toEqual(["Before / After", "Open conversation"]);
+      },
+    );
   });
 });
 
@@ -134,9 +149,7 @@ function target(): PeerMarkPopoverTarget {
       receivedAt: Date.now(),
       dismissed: false,
     },
-    element: {
-      getBoundingClientRect: () => ({}) as DOMRect,
-    } as HTMLElement,
+    changeId: "change-1",
     activation: "pointer",
     editorSelection: { from: 1, to: 1, relative: null },
   };

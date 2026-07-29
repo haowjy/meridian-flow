@@ -4,6 +4,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { escapeCssIdent } from "@/lib/css-selector";
 import { i18n } from "@/lib/i18n";
 import type { AgentNameStore } from "../agent-name-store";
 import { isRemoteDocumentRebuild } from "../anchors";
@@ -21,6 +22,38 @@ import {
 import type { SessionMarker, SessionMarkerStore } from "../session-marker-store";
 
 const peerMarkerPluginKey = new PluginKey<PeerMarkerPluginState>("peer-markers");
+
+/**
+ * The element drawing one peer mark right now, or null when nothing is drawing
+ * it — the mark was dismissed, or its anchor no longer resolves.
+ *
+ * Marks are decorations, so their DOM is not the manuscript's: this plugin
+ * rebuilds the whole decoration set on every remote write and ProseMirror builds
+ * new spans from it. A surface aimed at a mark therefore holds the mark's
+ * identity (`changeId`, whose anchor is a relative position) and asks for the
+ * element again on every read. One captured span is a rect of zeros one
+ * collaborator keystroke later.
+ */
+export function peerMarkElement(editor: Editor | null, changeId: string): HTMLElement | null {
+  if (!editor || editor.isDestroyed) return null;
+  return editor.view.dom.querySelector<HTMLElement>(
+    `[data-peer-mark="${escapeCssIdent(changeId)}"]`,
+  );
+}
+
+/**
+ * Where one peer mark is drawn right now, for a surface anchored to it.
+ *
+ * Asked again for every measurement, never captured. A tick is a keyed widget
+ * and the key carries the mark's emphasis and its author's label, so addressing
+ * a change from the chat — or a thread title arriving after the turn that made
+ * the mark — replaces the element while the mark itself stays exactly where it
+ * is. A held element then measures as a rect of zeros.
+ */
+export function peerMarkRect(editor: Editor | null, changeId: string | null): DOMRect | null {
+  const element = changeId === null ? null : peerMarkElement(editor, changeId);
+  return element ? element.getBoundingClientRect() : null;
+}
 const REBUILD_META = "peer-markers:rebuild";
 const EMPHASIZE_META = "peer-markers:emphasize";
 const EMPHASIS_DURATION_MS = 4_000;
@@ -363,10 +396,10 @@ export const PeerMarkerExtension = Extension.create<{
           }
           dispatch?.(tr.setMeta(EMPHASIZE_META, changeId));
           requestAnimationFrame(() => {
-            if (editor.isDestroyed) return;
-            editor.view.dom
-              .querySelector<HTMLElement>(`[data-peer-mark="${CSS.escape(changeId)}"]`)
-              ?.scrollIntoView({ block: "center", behavior: "smooth" });
+            peerMarkElement(editor, changeId)?.scrollIntoView({
+              block: "center",
+              behavior: "smooth",
+            });
           });
           const prior = clearTimers.get(editor);
           if (prior) clearTimeout(prior);

@@ -48,6 +48,7 @@ import {
 } from "@/core/editor/anchors";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { peerMarkElement } from "@/core/editor/extensions/PeerMarkerExtension";
 import {
   createEditorAssetPathResolver,
   fileDropIntent,
@@ -76,7 +77,7 @@ import { EditorChromeHost } from "./chrome";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
-import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
+import { PeerMarkPopover, type PeerMarkPress } from "./PeerMarkPopover";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
@@ -349,7 +350,7 @@ function ActiveSessionEditorView({
     enabled: Boolean(projectId),
   });
   const [dragActive, setDragActive] = useState(false);
-  const [peerMarkTarget, setPeerMarkTarget] = useState<PeerMarkPopoverTarget | null>(null);
+  const [peerMarkPress, setPeerMarkPress] = useState<PeerMarkPress | null>(null);
   const effectiveEditableRef = useRef(true);
   const pointerSelectionRef = useRef<EditorAnchor | null>(null);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
@@ -378,6 +379,26 @@ function ActiveSessionEditorView({
     ),
   );
 
+  /**
+   * The mark the open popover is about, as the store reports it now. Derived
+   * rather than captured: a mark the writer's own edit cleared is a popover with
+   * nothing left to be about, and a marker object captured at press time would
+   * keep reporting the state it had then.
+   */
+  const peerMarkTarget = useMemo(() => {
+    if (!peerMarkPress) return null;
+    const marker = markers.find(
+      (candidate) => candidate.changeId === peerMarkPress.changeId && !candidate.dismissed,
+    );
+    return marker ? { ...peerMarkPress, marker } : null;
+  }, [markers, peerMarkPress]);
+
+  // A mark that is gone takes its press with it, so nothing here outlives what
+  // it points at.
+  useEffect(() => {
+    if (peerMarkPress && !peerMarkTarget) setPeerMarkPress(null);
+  }, [peerMarkPress, peerMarkTarget]);
+
   const openPeerMark = useCallback(
     (eventTarget: EventTarget | null, activation: "pointer" | "keyboard"): boolean => {
       if (inReview || !(eventTarget instanceof Element)) return false;
@@ -400,7 +421,7 @@ function ActiveSessionEditorView({
               to: selection?.to ?? selection?.from ?? 0,
             })
           : { from: 0, to: 0, relative: null });
-      setPeerMarkTarget({ marker, element, activation, editorSelection });
+      setPeerMarkPress({ changeId, activation, editorSelection });
       pointerSelectionRef.current = null;
       if (activation === "pointer") {
         requestAnimationFrame(() => restoreSelection(editorRef.current, editorSelection));
@@ -885,18 +906,22 @@ function ActiveSessionEditorView({
           It needs the project, which chrome surfaces are not given. */}
       <ProjectLinkRuntime editor={editor} projectId={projectId} documentId={documentId} />
       <PeerMarkPopover
-        key={peerMarkTarget?.marker.changeId ?? "closed"}
+        key={peerMarkPress?.changeId ?? "closed"}
+        editor={editor}
         target={peerMarkTarget}
         onOpenChange={(open) => {
           if (open) return;
-          const closingTarget = peerMarkTarget;
-          setPeerMarkTarget(null);
+          const closing = peerMarkPress;
+          setPeerMarkPress(null);
           requestAnimationFrame(() => {
-            if (closingTarget?.activation === "keyboard") {
-              if (closingTarget.element.isConnected) closingTarget.element.focus();
+            if (!closing) return;
+            if (closing.activation === "keyboard") {
+              // Queried, not remembered: the mark the writer tabbed to is drawn
+              // by whichever span exists once the popover has gone.
+              peerMarkElement(editorRef.current, closing.changeId)?.focus();
               return;
             }
-            if (closingTarget) restoreSelection(editorRef.current, closingTarget.editorSelection);
+            restoreSelection(editorRef.current, closing.editorSelection);
           });
         }}
       />
