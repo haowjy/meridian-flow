@@ -16,7 +16,6 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 import { useChromeLayer } from "./chrome-layers";
-import { useReturnFocusToProse } from "./useEditorChrome";
 
 export type EditorDialogProps = {
   editor: Editor | null;
@@ -40,7 +39,6 @@ export function EditorDialog({
   className,
   children,
 }: EditorDialogProps) {
-  const returnFocus = useReturnFocusToProse(editor);
   // Radix carries its own Escape listener, so the kernel must not also
   // dismiss this one; `scope` is what lets a layer opened inside it — a
   // source pane — be recognised as the deeper one.
@@ -55,7 +53,7 @@ export function EditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn("max-w-[min(64rem,92vw)]", className)}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
         <DialogTitle className={showTitle ? undefined : "sr-only"}>{title}</DialogTitle>

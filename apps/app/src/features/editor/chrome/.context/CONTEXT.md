@@ -33,6 +33,22 @@ the Esc chain), `open`, `onOpenChange`. All three bake in the layer
 registration, the Escape deferral, the focus return, and `layer.scope(children)`
 so a layer opened inside them is recognised as the deeper one.
 
+### One surface opening another
+
+This is the seam every lane hits: a menu item that opens a form. Two things
+make it work, both inside `useChromeLayer`.
+
+- **The focus return is layer-aware.** `onCloseAutoFocus` hands the caret back
+  only when no other layer is open. Otherwise the closing menu pulls focus out
+  of the form on the frame it appeared, and Radix reads that as an outside
+  interaction and dismisses it.
+- **The Escape deferral reads depth, not arrival.** The form registered inside
+  the menu's `scope` is the deeper layer, so Escape closes it first.
+
+A lane that opens a surface from a surface owes nothing beyond using the
+wrappers. A lane that hand-rolls one owes `layer.onCloseAutoFocus` and
+`layer.scope(...)`.
+
 | | Anchoring | Focus on open | Modal |
 |---|---|---|---|
 | `EditorMenu` | `at={{x, y}}` for a claimed right-click, or `trigger` for a control | Radix roving focus | no |
@@ -88,7 +104,10 @@ A lane that portals its own surface rather than using a wrapper calls
 const layer = useChromeLayer(editor, { id: "block-menu", open, close });
 // 1. wrap whatever can contain another layer
 return layer.scope(<div>{children}</div>);
-// 2. leave `dismissal` at its default unless the surface has its own Escape
+// 2. hand `layer.onCloseAutoFocus` to whatever closes the surface, so the
+//    caret goes back to the prose — and does not, when this surface opened
+//    another one.
+// 3. leave `dismissal` at its default unless the surface has its own Escape
 //    listener; the kernel's backstop is what keeps it from surviving Escape
 //    when focus has moved out of the editor.
 ```

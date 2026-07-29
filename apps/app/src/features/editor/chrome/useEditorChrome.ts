@@ -8,7 +8,7 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import {
   type ChromeContext,
@@ -48,21 +48,5 @@ export function useChromeSuppressed(editor: Editor | null): boolean {
     chrome ? chrome.subscribe : NO_SUBSCRIPTION,
     () => chrome?.suppressed ?? false,
     () => false,
-  );
-}
-
-/**
- * The close handler every editor surface owes (the toolbar's standing
- * contract). Radix restores focus to the trigger, which is right for a page
- * and wrong for a manuscript: the writer never left the sentence, so the next
- * Space must be a space rather than a control re-activating.
- */
-export function useReturnFocusToProse(editor: Editor | null): (event: Event) => void {
-  return useCallback(
-    (event: Event) => {
-      event.preventDefault();
-      if (editor && !editor.isDestroyed) editor.commands.focus();
-    },
-    [editor],
   );
 }

@@ -43,5 +43,4 @@ export {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
-  useReturnFocusToProse,
 } from "./useEditorChrome";

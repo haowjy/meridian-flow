@@ -41,6 +41,18 @@ export type ChromeLayerBinding = {
    * whenever the kernel knows something deeper is open.
    */
   onEscapeKeyDown: (event: { preventDefault: () => void; defaultPrevented?: boolean }) => void;
+  /**
+   * Give this to the Radix content's `onCloseAutoFocus`. Radix restores focus
+   * to the trigger, which is right for a page and wrong for a manuscript: the
+   * writer never left the sentence, so the next Space must be a space.
+   *
+   * Unless another surface is still open. A menu item that opens a form leaves
+   * exactly that behind, and handing the caret back then pulls focus out of a
+   * surface on the frame it appeared — which Radix reads as an outside
+   * interaction and dismisses. So a close returns the caret only when it was
+   * the last thing on screen.
+   */
+  onCloseAutoFocus: (event: Event) => void;
   /** Wrap whatever this surface renders, so a layer inside it knows its parent. */
   scope: (children: ReactNode) => ReactNode;
 };
@@ -98,6 +110,18 @@ export function useChromeLayer(
     [chrome, layerId],
   );
 
+  const onCloseAutoFocus = useCallback(
+    (event: Event) => {
+      event.preventDefault();
+      // A layer being dismissed may not have released yet, so "another
+      // surface" means any layer that is not this one.
+      const successor = chrome?.layers.some((layer) => layer.id !== layerId);
+      if (successor) return;
+      if (editor && !editor.isDestroyed) editor.commands.focus();
+    },
+    [chrome, editor, layerId],
+  );
+
   const scope = useCallback(
     (children: ReactNode) => (
       <ChromeLayerContext.Provider value={layerId}>{children}</ChromeLayerContext.Provider>
@@ -105,5 +129,5 @@ export function useChromeLayer(
     [layerId],
   );
 
-  return { id: layerId, onEscapeKeyDown, scope };
+  return { id: layerId, onCloseAutoFocus, onEscapeKeyDown, scope };
 }

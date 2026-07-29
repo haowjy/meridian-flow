@@ -28,7 +28,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useChromeLayer } from "./chrome-layers";
 import { pointerAnchorStyle } from "./pointer-anchor";
-import { useReturnFocusToProse } from "./useEditorChrome";
 
 export type EditorMenuProps = {
   editor: Editor | null;
@@ -58,7 +57,6 @@ export function EditorMenu({
   className,
   children,
 }: EditorMenuProps) {
-  const returnFocus = useReturnFocusToProse(editor);
   // Radix carries its own Escape listener, so the kernel must not also
   // dismiss this one; `scope` is what lets a layer opened inside it — a
   // source pane — be recognised as the deeper one.
@@ -101,7 +99,7 @@ export function EditorMenu({
         // Approach chrome fades; a summoned menu does not need to be waited
         // for, so it keeps Radix's own entrance and nothing more.
         className={cn("min-w-52", className)}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
         {layer.scope(children)}

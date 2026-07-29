@@ -142,6 +142,66 @@ describe("nested layers", () => {
   });
 });
 
+describe("handing the caret back", () => {
+  /**
+   * jsdom will not put `document.activeElement` on a contenteditable div, so
+   * the observable end of "the caret went back to the prose" is ProseMirror's
+   * own focus call rather than the browser's focus state.
+   */
+  function watchProseFocus() {
+    if (!editor) throw new Error("no editor");
+    return vi.spyOn(editor.view, "focus");
+  }
+
+  /** TipTap defers `focus()` a frame, so the assertion has to wait for it. */
+  const settleFocus = () =>
+    act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+
+  it("returns the caret to the prose when the last surface closes", async () => {
+    const focus = watchProseFocus();
+    let binding: { onCloseAutoFocus: (event: Event) => void } | null = null;
+
+    function Only() {
+      binding = useChromeLayer(editor, { id: "menu", open: true, close: () => {} });
+      return null;
+    }
+    act(() => root?.render(<Only />));
+
+    // Cancelable, or `preventDefault` is a no-op and the assertion below
+    // would be measuring the fixture rather than the handler.
+    const event = new Event("close", { cancelable: true });
+    act(() => binding?.onCloseAutoFocus(event));
+
+    // Radix's own restore is refused, and the caret goes to the prose instead.
+    await settleFocus();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(focus).toHaveBeenCalled();
+  });
+
+  it("leaves focus alone when the closing surface opened another one", async () => {
+    const focus = watchProseFocus();
+    let menu: { onCloseAutoFocus: (event: Event) => void } | null = null;
+
+    function MenuThenForm() {
+      menu = useChromeLayer(editor, { id: "menu", open: true, close: () => {} });
+      useChromeLayer(editor, { id: "link-form", open: true, close: () => {} });
+      return null;
+    }
+    act(() => root?.render(<MenuThenForm />));
+
+    // "Edit link" closes the menu and opens the form in the same commit.
+    // Handing the caret back here pulls focus out of the form on the frame it
+    // appeared, and Radix reads that as an outside interaction and kills it.
+    act(() => menu?.onCloseAutoFocus(new Event("close", { cancelable: true })));
+    await settleFocus();
+
+    expect(focus).not.toHaveBeenCalled();
+  });
+});
+
 describe("a layer whose close does not land", () => {
   it("stops consuming Escape instead of trapping the writer", () => {
     // A surface whose dismissal fails, or whose owner unmounted mid-animation.

@@ -15,7 +15,6 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/compon
 import { cn } from "@/lib/utils";
 import { useChromeLayer } from "./chrome-layers";
 import { pointerAnchorStyle } from "./pointer-anchor";
-import { useReturnFocusToProse } from "./useEditorChrome";
 
 export type EditorPopoverProps = {
   editor: Editor | null;
@@ -43,7 +42,6 @@ export function EditorPopover({
   className,
   children,
 }: EditorPopoverProps) {
-  const returnFocus = useReturnFocusToProse(editor);
   // Radix carries its own Escape listener, so the kernel must not also
   // dismiss this one; `scope` is what lets a layer opened inside it — a
   // source pane — be recognised as the deeper one.
@@ -80,7 +78,7 @@ export function EditorPopover({
         align={align}
         side={side}
         className={cn("w-auto", className)}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
         {layer.scope(children)}

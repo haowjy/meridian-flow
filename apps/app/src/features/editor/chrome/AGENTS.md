@@ -22,11 +22,14 @@ roving focus (decision 2026-07-29). What these add is subordination.
 
 ## Key rules
 
-- **`onCloseAutoFocus` → prose, on every surface, on every close path.** Radix
+- **`onCloseAutoFocus` → `useChromeLayer(...).onCloseAutoFocus`.** Radix
   restores focus to the trigger, which is right for a page and wrong for a
   manuscript: the writer never left the sentence, so the next Space must be a
-  space. `useReturnFocusToProse` is the handler. This is the toolbar module's
-  standing contract, and it applies to anything opened over the editor.
+  space. The handler is layer-aware, and that part is load-bearing: a menu item
+  that opens a form leaves the form behind, and handing the caret back then
+  pulls focus out of a surface on the frame it appeared — which Radix reads as
+  an outside interaction and dismisses. A close returns the caret only when it
+  was the last thing on screen.
 - **`onEscapeKeyDown` → `useChromeLayer(...).onEscapeKeyDown`.** Without it a
   single Esc closes a dialog and the pane inside it, spending two steps of the
   walk home on one key.
