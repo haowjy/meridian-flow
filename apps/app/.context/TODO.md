@@ -22,26 +22,6 @@
   selection/focus. New interaction behavior — placement settled first
   (tab-direction E). `EditorSurfaceFrame.tsx`.
 
-- **Proper link entry UX.** ([#90](https://github.com/haowjy/meridian-flow/issues/90))
-  The toolbar Link button hardcodes `href: "https://meridian.bio"` — there's no
-  way to enter/edit/remove a link. Needs a popover/inline input over the stock
-  TipTap Link mark. `EditorToolbar.tsx`.
-
-- **Image support.** ([#91](https://github.com/haowjy/meridian-flow/issues/91))
-  Image insert/upload/paste/render needs hardening, and the `image` node vs
-  custom `figure` node relationship needs a decision. `meridian-extensions.ts`,
-  `EditorView.tsx`, `FigureNodeView.tsx`.
-
-- **Better tables — creation UI, table toolbar, robust markdown paste.**
-  ([#92](https://github.com/haowjy/meridian-flow/issues/92))
-  No table creation affordance and no contextual table toolbar (insert/delete
-  row/column, header toggle, alignment). The markdown-table clipboard parser
-  (`markdown-paste.ts`) has review-confirmed bugs: document corruption from an
-  over-open slice on paste-into-prose / paste-into-cell, a too-loose detector
-  that reinterprets non-table text, and it ignores the `plain` (Shift+Paste)
-  flag. Clipboard policy also lives in the view shell instead of the editor
-  config seam.
-
 - **Unify rendered-markdown (Streamdown) styling with the editor.**
   ([#93](https://github.com/haowjy/meridian-flow/issues/93))
   The `.prose-tokens` Streamdown surface (chat answers, helper results) and the
