@@ -2,6 +2,7 @@ import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { assembleComposedSystemPrompt } from "../composed-system-prompt.js";
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/document-dialect.js";
+import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
 import { assembleNextTurnContext } from "../turn-context-assembly.js";
 
 const createdAt = "2026-06-07T00:00:00.000Z";
@@ -74,6 +75,7 @@ describe("assembleNextTurnContext", () => {
     expect(systemMessage?.role).toBe("system");
     expect(systemText).toBe(assembled.systemPrompt);
     expect(systemText?.split(DOCUMENT_DIALECT_CORE_INSTRUCTION)).toHaveLength(2);
+    expect(systemText?.split(RUNTIME_URI_SYSTEM_INSTRUCTION)).toHaveLength(2);
   });
 
   it("rebuilds context when a losing bake observes another agent's frozen row", async () => {

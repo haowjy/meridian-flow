@@ -119,7 +119,7 @@ describe("document dialect card codec gate", () => {
     const [paragraph] = expectWireFixpoint(DOCUMENT_DIALECT_CONTRACT.image.wire);
     expect(paragraph?.firstChild?.type.name).toBe("image");
     expect(paragraph?.firstChild?.attrs.src).toBe(
-      `asset:${DOCUMENT_DIALECT_CONTRACT.image.assetId}`,
+      `${DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix}${DOCUMENT_DIALECT_CONTRACT.image.assetId}`,
     );
   });
 
@@ -127,9 +127,12 @@ describe("document dialect card codec gate", () => {
     for (const { reason } of DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations) {
       expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(reason);
     }
-    for (const { form } of DOCUMENT_DIALECT_CONTRACT.layouts) {
-      expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(form);
+    for (const { opening } of DOCUMENT_DIALECT_CONTRACT.layouts.slice(0, 2)) {
+      expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(opening);
     }
+    expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(
+      DOCUMENT_DIALECT_CONTRACT.layouts[2].opening.slice("<Layout ".length, -1),
+    );
     expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(DOCUMENT_DIALECT_CONTRACT.wikilink.wire);
     expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(
       DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral,
@@ -137,7 +140,7 @@ describe("document dialect card codec gate", () => {
     for (const spelling of [
       DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening,
       DOCUMENT_DIALECT_CONTRACT.codeFences[1].opening,
-      DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak.instruction,
+      DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak,
       DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open,
       DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline,
       DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak,

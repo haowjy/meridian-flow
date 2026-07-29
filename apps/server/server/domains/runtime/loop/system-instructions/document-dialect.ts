@@ -2,10 +2,7 @@
 
 const dialectSyntax = {
   fence: "```",
-  pipeHardBreak: {
-    wire: "\\\n",
-    instruction: "a backslash immediately followed by a newline",
-  },
+  pipeHardBreak: "one\\\ntwo",
   htmlTable: {
     open: "<table>",
     close: "</table>",
@@ -120,25 +117,24 @@ const htmlTableEscalations = [
   },
 ] as const;
 
+function layoutSpelling(opening: string, body: string) {
+  return {
+    opening,
+    wire: [opening, body, dialectSyntax.layoutClose].join("\n"),
+  };
+}
+
 const layoutSpellings = [
-  {
-    form: '`<Layout align="center">`',
-    wire: `<Layout align="center">\n  The sword remembers.\n${dialectSyntax.layoutClose}`,
-  },
-  {
-    form: '`<Layout align="right">`',
-    wire: `<Layout align="right">\n  ## Dateline\n${dialectSyntax.layoutClose}`,
-  },
-  {
-    form: '`widths="120,,80"`',
-    wire: [
-      '<Layout widths="120,,80">',
+  layoutSpelling('<Layout align="center">', "  The sword remembers."),
+  layoutSpelling('<Layout align="right">', "  ## Dateline"),
+  layoutSpelling(
+    '<Layout widths="120,,80">',
+    [
       "  | Stat | Detail | Value |",
       "  | ---- | ------ | ----: |",
       "  | STR  | Power  |    15 |",
-      dialectSyntax.layoutClose,
     ].join("\n"),
-  },
+  ),
 ] as const;
 
 export const DOCUMENT_DIALECT_CONTRACT = {
@@ -175,7 +171,7 @@ export const DOCUMENT_DIALECT_CONTRACT = {
   ],
   pipeTable: {
     wire: "| Skill     | Rank |\n| :-------- | ---: |\n| Iron Body |    7 |",
-    hardBreakWire: `| Detail    |\n| --------- |\n| one${dialectSyntax.pipeHardBreak.wire}two |`,
+    hardBreakWire: `| Detail    |\n| --------- |\n| ${dialectSyntax.pipeHardBreak} |`,
   },
   htmlTableEscalations,
   layouts: layoutSpellings,
@@ -214,9 +210,10 @@ const htmlEscalationReasons = DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations
   .join(", ");
 const alignmentForms = DOCUMENT_DIALECT_CONTRACT.layouts
   .slice(0, 2)
-  .map(({ form }) => form)
+  .map(({ opening }) => `\`${opening}\``)
   .join(" or ");
-const widthsForm = DOCUMENT_DIALECT_CONTRACT.layouts[2].form;
+const widthsOpening = DOCUMENT_DIALECT_CONTRACT.layouts[2].opening;
+const widthsForm = `\`${widthsOpening.slice("<Layout ".length, -1)}\``;
 
 export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   "# Meridian document language",
@@ -226,7 +223,7 @@ export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   "Meridian adds these wire rules:",
   `- Link to another document as \`${DOCUMENT_DIALECT_CONTRACT.wikilink.wire}\`. The target is the label; \`${DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral}\` is literal text, not a link.`,
   `- Put block code in a language-tagged fence such as \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening} \`\`\`\`. Use \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[1].opening} \`\`\`\` for a diagram.`,
-  `- Keep a table in GFM pipes when it has one header row, rectangular rows, unit cells, consistent per-column alignment, and no literal newline in a cell. Within a pipe cell, spell an intentional hard break as ${DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak.instruction}.`,
+  `- Keep a table in GFM pipes when it has one header row, rectangular rows, unit cells, consistent per-column alignment, and no literal newline in a cell. Within a pipe cell, use this exact hard-break spelling:\n\n\`\`\`markdown\n${DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak}\n\`\`\``,
   `- Use raw HTML \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open}\` when a table needs ${htmlEscalationReasons}. In HTML cells, use \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline}\` for a literal newline and \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak}\` for a hard break.`,
   `- Wrap exactly one paragraph, heading, or table in ${alignmentForms}, closed by \`${DOCUMENT_DIALECT_CONTRACT.syntax.layoutClose}\`, for block alignment. On a table only, add ${widthsForm} to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.`,
   `- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`${DOCUMENT_DIALECT_CONTRACT.image.wire}\`. Do not emit internal \`${DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix}\` identifiers or signed URLs.`,
