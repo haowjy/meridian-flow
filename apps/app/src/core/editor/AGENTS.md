@@ -55,3 +55,4 @@ and navigation contracts.
 
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
+→ [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag

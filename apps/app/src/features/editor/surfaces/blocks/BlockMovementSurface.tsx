@@ -280,7 +280,13 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
   const dragging = seamIndex !== null;
   const handle = target && !dragging ? blockHandlePosition(editor.view, target) : null;
-  const line = seamIndex === null ? null : seamLinePosition(editor.view, seamIndex);
+  // No line on the two seams the block already sits between. Dropping there
+  // moves nothing, and a jade line promising a landing is the silent rejection
+  // law 5 forbids — said in paint rather than in a click.
+  const line =
+    seamIndex === null || restingSeam(editor, seamIndex)
+      ? null
+      : seamLinePosition(editor.view, seamIndex);
   const visible = !suppressed && (settled !== null || menuPos !== null);
 
   return (
@@ -358,6 +364,14 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       ) : null}
     </>
   );
+}
+
+/** True when `seamIndex` is one of the two edges the held block already has. */
+function restingSeam(editor: Editor, seamIndex: number): boolean {
+  const held = draggedBlockPos(editor.state);
+  if (held === null) return false;
+  const source = blockAt(editor.state.doc, held);
+  return source !== null && (seamIndex === source.index || seamIndex === source.index + 1);
 }
 
 /**
