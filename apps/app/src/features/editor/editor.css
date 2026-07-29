@@ -226,8 +226,13 @@
    rather than the focus tone because selection is a state, not focus.
    A selected table is the exception: prosemirror-tables paints its own cell
    tint across every cell, which is the schema's way of saying "the whole
-   table", and a ring around the wrapper would be a second answer. */
-.meridian-editor .ProseMirror-selectednode {
+   table", and a ring around the wrapper would be a second answer.
+
+   The class is ours, painted by a decoration object physics derives from the
+   selection. ProseMirror's own `ProseMirror-selectednode` is applied once by a
+   node view's lifecycle and does not survive the document rebuild a peer's
+   write causes — see `core/editor/objects`. */
+.meridian-editor .meridian-object-selected {
   outline: none;
   border-radius: var(--radius-md);
   box-shadow: 0 0 0 0.125rem var(--color-primary);

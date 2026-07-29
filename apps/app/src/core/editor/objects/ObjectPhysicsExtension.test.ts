@@ -3,7 +3,12 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { stubEditorLayout } from "@/test-support/editor-layout";
+
 import { createStandaloneEditorExtensions } from "../config";
+
+stubEditorLayout();
+
 import { registerObjectEngagement, registerObjectKeymap } from "./ObjectPhysicsExtension";
 
 let editor: Editor | null = null;

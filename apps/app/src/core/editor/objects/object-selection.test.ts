@@ -183,6 +183,67 @@ describe("selecting and leaving an object", () => {
     ).toBeNull();
   });
 
+  describe("never lands behind the object it left", () => {
+    const successors: [string, JSONContent][] = [
+      ["a scene break", { type: "horizontal_rule" }],
+      ["a figure", { type: "figure", attrs: { src: "asset:2", caption: "" } }],
+      [
+        "a table",
+        {
+          type: "table",
+          content: [
+            {
+              type: "table_row",
+              content: [
+                { type: "table_header", content: [paragraph("Rank")] },
+                { type: "table_header", content: [paragraph("Skill")] },
+              ],
+            },
+          ],
+        },
+      ],
+      [
+        "another diagram",
+        {
+          type: "code_block",
+          attrs: { language: "mermaid" },
+          content: [{ type: "text", text: "graph LR;" }],
+        },
+      ],
+      [
+        "a paragraph holding an inline image",
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "see " },
+            { type: "image", attrs: { src: "asset:3" } },
+          ],
+        },
+      ],
+    ];
+
+    for (const [label, successor] of successors) {
+      it(`walks forward past ${label}`, () => {
+        const diagram: JSONContent = {
+          type: "code_block",
+          attrs: { language: "mermaid" },
+          content: [{ type: "text", text: "graph TD;" }],
+        };
+        const instance = mount([paragraph("before"), diagram, successor, paragraph("tail")]);
+        const pos = positionOf(instance, "code_block");
+
+        const transaction = caretHomeFromObjectTransaction(instance.state, pos);
+        expect(transaction).not.toBeNull();
+        if (transaction) instance.view.dispatch(transaction);
+
+        // The whole failure mode in one assertion: a leaf successor used to
+        // send Esc backward, and the next keystroke edited the block above.
+        expect(instance.state.selection.from).toBeGreaterThan(pos);
+        expect(instance.state.selection.empty).toBe(true);
+      });
+    }
+  });
+
   it("makes a home when the object IS the document, rather than trapping", () => {
     const instance = mount([figure]);
     const pos = positionOf(instance, "figure");
