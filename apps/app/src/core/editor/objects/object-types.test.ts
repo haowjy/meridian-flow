@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createStandaloneEditorExtensions } from "../config";
 import {
   isEditorObject,
-  isObjectBodyDragSource,
   isSourceBlock,
+  objectDrag,
   objectSurfaceKind,
   objectTypeSpec,
 } from "./object-types";
@@ -72,18 +72,37 @@ describe("what counts as an object", () => {
   });
 });
 
-describe("which bodies a writer can grab", () => {
-  it("offers a picture and a rule, and leaves a table's cells their own pointer", () => {
+describe("which drag a body starts", () => {
+  it("drags a figure and a rule as blocks: neither has an inline place to land", () => {
     expect(
-      isObjectBodyDragSource(
-        nodeOfType([{ type: "figure", attrs: { src: "a", caption: "" } }], "figure"),
+      objectDrag(nodeOfType([{ type: "figure", attrs: { src: "a", caption: "" } }], "figure")),
+    ).toBe("block");
+    expect(objectDrag(nodeOfType([{ type: "horizontal_rule" }], "horizontal_rule"))).toBe("block");
+    expect(objectDrag(nodeOfType([fence("mermaid")], "code_block"))).toBe("block");
+  });
+
+  it("drags a picture inline, which is how it lands between two words", () => {
+    expect(
+      objectDrag(
+        nodeOfType(
+          [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "before " },
+                { type: "image", attrs: { src: "asset:1", alt: null, title: null } },
+              ],
+            },
+          ],
+          "image",
+        ),
       ),
-    ).toBe(true);
+    ).toBe("inline");
+  });
+
+  it("leaves a table's cells their own pointer, and says nothing about prose", () => {
     expect(
-      isObjectBodyDragSource(nodeOfType([{ type: "horizontal_rule" }], "horizontal_rule")),
-    ).toBe(true);
-    expect(
-      isObjectBodyDragSource(
+      objectDrag(
         nodeOfType(
           [
             {
@@ -102,15 +121,12 @@ describe("which bodies a writer can grab", () => {
           "table",
         ),
       ),
-    ).toBe(false);
-  });
-
-  it("says nothing about prose, which has no body to grab", () => {
+    ).toBe("none");
     expect(
-      isObjectBodyDragSource(
+      objectDrag(
         nodeOfType([{ type: "paragraph", content: [{ type: "text", text: "x" }] }], "paragraph"),
       ),
-    ).toBe(false);
+    ).toBe("none");
   });
 });
 

@@ -30,16 +30,26 @@ export type ObjectEngageIntent =
   | "none";
 
 /**
- * What the pointer finds inside the object (§5.8).
+ * Which drag a press on the object's body starts (§5.8).
  *
- * An `opaque` body has nothing to select and nothing to type into — a picture,
- * a rule, a rendered diagram — so a press on it is a press on the object, and
- * the body can be a second door into the same block drag the margin handle
- * starts. A `text` body already owns its pointer: a table's cells take
- * drag-selection across them, and a grab that moved the whole table instead
- * would take that away.
+ * A body with nothing to select and nothing to type into — a picture, a rule,
+ * a rendered diagram — is a door into a drag, because taking hold of the thing
+ * itself is what a writer reaches for first. WHICH drag is the object's own
+ * shape:
+ *
+ * - **`block`** starts the drag the margin handle starts: the object's
+ *   top-level block travels to a seam between blocks, behind the jade drop
+ *   line. A figure is a block and has nowhere else to land.
+ * - **`inline`** leaves the press to ProseMirror's own drag, which carries the
+ *   node as an inline slice and lands it anywhere a caret can go — between two
+ *   words of a sentence, with the dropcursor showing where (human ruling,
+ *   2026-07-29: images drag in between text). Only a node the schema calls
+ *   inline can answer this.
+ * - **`none`** is a body that already owns its pointer: a table's cells take
+ *   the drag-selection sweeping across them, and a grab that moved the whole
+ *   table instead would take that away.
  */
-export type ObjectBody = "opaque" | "text";
+export type ObjectDrag = "block" | "inline" | "none";
 
 /**
  * Which control surface the node gets — the chip cluster and the row of verbs
@@ -61,17 +71,17 @@ export type ObjectTypeSpec = {
    * prose the writer types into unless its language renders it as a diagram.
    */
   matches?: (node: PMNode) => boolean;
-  body: ObjectBody;
+  drag: ObjectDrag;
   engage: ObjectEngageIntent;
   surfaceKind?: ObjectSurfaceKind;
 };
 
 export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
   // ── kernel (M3) ──────────────────────────────────────────────────
-  { nodeType: "figure", body: "opaque", engage: "surface", surfaceKind: "image" },
-  { nodeType: "image", body: "opaque", engage: "surface", surfaceKind: "image" },
-  { nodeType: "table", body: "text", engage: "caret-inside" },
-  { nodeType: "horizontal_rule", body: "opaque", engage: "none" },
+  { nodeType: "figure", drag: "block", engage: "surface", surfaceKind: "image" },
+  { nodeType: "image", drag: "inline", engage: "surface", surfaceKind: "image" },
+  { nodeType: "table", drag: "none", engage: "caret-inside" },
+  { nodeType: "horizontal_rule", drag: "block", engage: "none" },
   {
     // Mermaid is not a node (§8): rendering keys off the language attr, so
     // object physics has to as well. A plain fence stays prose you type in.
@@ -79,7 +89,7 @@ export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
     matches: (node) => node.attrs.language === "mermaid",
     // The rendered diagram is opaque; the source hatch it can open is a
     // control inside it, and a press on a control is never a press on a body.
-    body: "opaque",
+    drag: "block",
     engage: "surface",
     surfaceKind: "diagram",
   },
@@ -100,12 +110,15 @@ export function isEditorObject(node: PMNode): boolean {
 }
 
 /**
- * True when a press on this node's body may start the block drag its margin
- * handle starts (§5.8). The registration answers it — nothing about a picture
- * in the schema says the writer can grab it.
+ * Which drag a press on this node's body starts (§5.8), and `none` for
+ * everything that is not a drag source — prose included.
+ *
+ * The registration answers it. Nothing about a picture in the schema says the
+ * writer can grab it, and nothing about a figure says the block seam is the
+ * only place it can land; both are design, and both are this column.
  */
-export function isObjectBodyDragSource(node: PMNode): boolean {
-  return objectTypeSpec(node)?.body === "opaque";
+export function objectDrag(node: PMNode): ObjectDrag {
+  return objectTypeSpec(node)?.drag ?? "none";
 }
 
 /**

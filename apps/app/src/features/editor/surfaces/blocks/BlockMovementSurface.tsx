@@ -9,11 +9,12 @@
  * the gesture, and it decides nothing about the document itself.
  *
  * The drag has two starting places and one gesture. The margin handle is one;
- * an object whose body is not text — a picture, a rule, a rendered diagram —
- * is the other, because direct manipulation is what a writer reaches for
- * first: you grab the picture and pull it where it goes. Which objects offer
- * their body is a registration (`EDITOR_OBJECT_TYPES`), never a node name
- * read here.
+ * the body of a block object — a figure, a rule, a rendered diagram — is the
+ * other, because direct manipulation is what a writer reaches for first: you
+ * grab the thing and pull it where it goes. An object that lands inline is
+ * not this gesture at all: it goes through ProseMirror's own drag, which
+ * carries it between two words. Which drag a body starts is a registration
+ * (`EDITOR_OBJECT_TYPES`), never a node name read here.
  *
  * Two rules run through all of it, and both are about a document that moves
  * while a hand is on it (law 9: nothing gates a write):
@@ -377,19 +378,22 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   }, [editor, editable, chrome]);
 
   /**
-   * The object door: a press on a body the registry calls opaque starts the
-   * drag the handle starts, on that object's top-level block.
+   * The object door: a press on the body of an object the registry drags as a
+   * block starts the drag the handle starts, on that object's top-level block.
    *
    * The press is NOT prevented. A press that never travels is a click, and
    * law 1's click has to reach ProseMirror to put the jade ring on the object.
    * What has to be stopped is what the browser would do with the press
    * INSTEAD, and the two answers are stopped on different terms:
    *
-   * - **Its own drag**, refused anywhere over an object. ProseMirror arms it
-   *   on mousedown (an image is `draggable` in the schema, a selected node is
-   *   draggable whatever the schema says), it shows no drop line, and it
-   *   moves the node by serializing and re-parsing it — which brought a
-   *   figure back as a bare paragraph. An object moves one way now.
+   * - **Its own drag**, refused over a BLOCK object. ProseMirror arms it on
+   *   mousedown (a picture is `draggable` in the schema, a selected node is
+   *   draggable whatever the schema says), it shows no block drop line, and it
+   *   moves the node by serializing and re-parsing it — which brought a figure
+   *   back as a bare paragraph. Over an object that lands inline that same
+   *   drag is the RIGHT one and is left alone: it carries an inline slice, the
+   *   dropcursor draws the caret between characters, and the drop is one
+   *   transaction (human ruling, 2026-07-29).
    * - **A text selection** growing out of the object across everything the
    *   pointer crosses, refused while this gesture owns the pointer. Prose
    *   that merely runs THROUGH an object is untouched: that selection starts
