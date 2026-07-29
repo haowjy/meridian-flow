@@ -748,12 +748,12 @@
   color: var(--color-foreground);
 }
 
-/* ── L-D slash menu (M8, §5.7, mockup 07) ──────────────────────────────── */
+/* ── The typed-under menus: `/` (M8, §5.7, mockup 07) and `[[` (§5.5) ──── */
 
 /* Height caps near eight rows and the list scrolls inside itself (ruled). The
    native scrollbar stays hidden: the fades above and below already say there
    is more, and a bar on a 14rem menu is louder than the menu. */
-.meridian-slash-menu {
+.meridian-suggestion-menu {
   max-height: 19.5rem;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -763,19 +763,19 @@
   scroll-padding-block: 1.5rem;
 }
 
-.meridian-slash-menu::-webkit-scrollbar {
+.meridian-suggestion-menu::-webkit-scrollbar {
   display: none;
 }
 
 /* The fades sit on the popover, not the scroller: a fade that scrolled with
    the list would announce nothing. */
-.meridian-slash-menu-shell {
+.meridian-suggestion-menu-shell {
   position: relative;
   overflow: hidden;
 }
 
-.meridian-slash-menu-shell::before,
-.meridian-slash-menu-shell::after {
+.meridian-suggestion-menu-shell::before,
+.meridian-suggestion-menu-shell::after {
   content: "";
   position: absolute;
   right: 0;
@@ -786,23 +786,23 @@
   pointer-events: none;
 }
 
-.meridian-slash-menu-shell::before {
+.meridian-suggestion-menu-shell::before {
   top: 0;
   background: linear-gradient(to bottom, var(--color-popover), transparent);
 }
 
-.meridian-slash-menu-shell::after {
+.meridian-suggestion-menu-shell::after {
   bottom: 0;
   background: linear-gradient(to top, var(--color-popover), transparent);
 }
 
-.meridian-slash-menu-shell:has([data-overflow="top"])::before,
-.meridian-slash-menu-shell:has([data-overflow="both"])::before {
+.meridian-suggestion-menu-shell:has([data-overflow="top"])::before,
+.meridian-suggestion-menu-shell:has([data-overflow="both"])::before {
   opacity: 1;
 }
 
-.meridian-slash-menu-shell:has([data-overflow="bottom"])::after,
-.meridian-slash-menu-shell:has([data-overflow="both"])::after {
+.meridian-suggestion-menu-shell:has([data-overflow="bottom"])::after,
+.meridian-suggestion-menu-shell:has([data-overflow="both"])::after {
   opacity: 1;
 }
 
@@ -1207,23 +1207,35 @@
 .meridian-link-hint {
   position: fixed;
   z-index: 30;
+  display: flex;
+  flex-direction: column;
   padding: 0.1875rem 0.5625rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-card);
   box-shadow: var(--shadow-card);
   color: var(--color-muted-foreground);
-  font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.4;
   /* A destination is as long as the writer's URL. It stays one line and ends
      in an ellipsis rather than wrapping into a paragraph over the manuscript. */
   max-width: calc(100vw - 1rem);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   pointer-events: none;
   transition: opacity 120ms ease-out;
+}
+
+.meridian-link-hint__destination {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state of the destination, not the destination: a sentence, in the app's
+   own voice, under the address it is about. */
+.meridian-link-hint__note {
+  color: var(--color-ink-subtle);
+  white-space: nowrap;
 }
 
 .meridian-link-hint[data-state="closed"] {
@@ -1232,6 +1244,20 @@
 
 .meridian-link-hint[data-state="open"] {
   opacity: 1;
+}
+
+/* An internal link with nothing behind it yet. NOT an error state: serial
+   writers link chapters and characters before they write them, so this is
+   quiet ink and a dashed underline (mockup 06 state A), never a warning.
+
+   The state lives on a decoration, and ProseMirror renders an inline
+   decoration as a span INSIDE the mark's own `<a>`. The underline belongs to
+   the anchor and a descendant cannot call it off, so the anchor reads its
+   child's state through `:has()`. */
+.meridian-editor .ProseMirror a:has([data-link-state="unresolved"]) {
+  color: var(--color-ink-subtle);
+  text-decoration-style: dashed;
+  text-decoration-color: color-mix(in oklab, var(--color-ink-subtle) 55%, transparent);
 }
 
 /* The one thing that tells a writer a link leaves the app before they press

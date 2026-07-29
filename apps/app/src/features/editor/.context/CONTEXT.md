@@ -41,14 +41,16 @@ it is geometry, owned by `editor-column.ts`.
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
 
-## Slash menu
+## The typed-under menus
 
-`surfaces/slash/` renders the open menu the `/` trigger publishes; its own
-[`AGENTS.md`](../surfaces/slash/AGENTS.md) carries the rules. What matters from
-outside it: the menu is the first surface that keeps focus in the prose while it
-is open (`focusOnOpen="prose"`), and the first anchored to something that moves,
-so it reads `anchorRect` rather than a captured point. Both are `EditorPopover`
-capabilities now, and the link lane inherits them.
+Two triggers publish an open menu the writer keeps typing underneath: `/` for
+blocks (`surfaces/slash/`) and `[[` for documents (`surfaces/link/`). They share
+one surface, `chrome/SuggestionMenu`, and one store,
+`core/editor/extensions/suggestion/` — each lane brings rows and reacts to a
+choice, and nothing else. What matters from outside them: focus stays in the
+prose while a menu is open (`focusOnOpen="prose"`), and the anchor is something
+that moves, so they read `anchorRect` rather than a captured point. Both are
+`EditorPopover` capabilities, and the link lane's other surfaces inherit them.
 
 ## Draft chrome
 
@@ -100,16 +102,25 @@ empty selection at a mark boundary, notably the link's start. It uses
 control that opens on a mark-touching caret should resolve the same way rather
 than gating on `isActive` alone.
 
-### Slash insertion catalog
+### Insertion and document catalogs
 
-`EditorView` owns §5.7's eleven-entry catalog and hands `useMountedEditor` a
-*getter*, never the catalog itself. The extension mounts as a construction fact;
+`EditorView` owns §5.7's eleven-entry slash catalog and the `[[` menu's
+document list, and hands `useMountedEditor` a *getter* for each, never the
+catalog itself. The extension mounts as a construction fact;
 its localized labels, group headings, hints, and the image-upload callback are
 read when the menu opens, so a locale switch relabels the menu instead of
 appearing in `EditorMountIdentity` and remounting the editor. The getter returns
 null on a code surface, on a read-only host, and behind a schema fence — the
 last because a slash command dispatches through a chain, and chains run on a
-non-editable editor.
+non-editable editor. The wikilink getter answers null on the same three, plus a
+host with no project: without one there is nothing to search and nothing a link
+could resolve against.
+
+`ProjectLinkRuntime` is the exception to "EditorView mounts no surfaces": it is
+not chrome, it is the app's half of the link system (the resolution port and
+the navigator), and it needs the project id that `EDITOR_CHROME_SURFACES` does
+not carry. See
+[`surfaces/link/.context/CONTEXT.md`](../surfaces/link/.context/CONTEXT.md).
 
 `EditorSurfaceFrame` accepts scrolling content and the tracked editor's optional
 scroll class/ref/handler. The frame owns every shared vertical, scroll, and

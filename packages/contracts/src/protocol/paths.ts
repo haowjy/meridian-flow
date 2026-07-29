@@ -151,6 +151,11 @@ export function apiProjectContextDeletePath(
   return `${apiProjectPath(projectId)}/context/${scheme}/delete${projectContextQuery(scheme, opts)}`;
 }
 
+/** Internal document-link resolution: three spellings in, one document or none. */
+export function apiProjectLinksResolvePath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/links/resolve`;
+}
+
 export function apiProjectContextKbImportPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/kb/import`;
 }

@@ -39,6 +39,11 @@ export {
   type OverlayIconRowItem,
   type OverlayIconRowProps,
 } from "./OverlayIconRow";
+export {
+  SuggestionMenu,
+  type SuggestionMenuProps,
+  type SuggestionMenuRow,
+} from "./SuggestionMenu";
 export { type AnchorRect, useAnchorRect } from "./useAnchorRect";
 export {
   useChromeContext,

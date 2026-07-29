@@ -1,49 +1,52 @@
 /**
- * The open menu, headless.
+ * The open menu a writer types underneath, headless.
  *
- * `@tiptap/suggestion` owns when the menu exists and what matched; React owns
- * how it looks. This store is the whole seam between them, which is why the
- * keyboard lives here rather than in the component: the arrow keys are
- * registered against the chrome kernel from the plugin's own lifetime, so they
- * are bound before React has rendered a single row and the first ArrowDown
- * after `/` cannot miss.
+ * Two triggers have these physics: `/` offering blocks (§5.7) and `[[`
+ * offering documents (§5.5). In both the query IS the document text after the
+ * trigger, the caret never leaves the prose, and `@tiptap/suggestion` owns when
+ * the menu exists and what matched. This store is the whole seam between that
+ * plugin and React, which is why the keyboard lives here rather than in the
+ * component: the arrow keys are registered against the chrome kernel from the
+ * plugin's own lifetime, so they are bound before React has rendered a single
+ * row and the first ArrowDown after the trigger cannot miss.
  *
  * The menu is only `open` while it has something to offer. A filter that
  * matches nothing leaves the trigger active — backspacing brings the list
- * back — but shows no surface, because a menu with no rows is the dead
- * control law 5 forbids.
+ * back — but shows no surface, because a menu with no rows is the dead control
+ * law 5 forbids.
+ *
+ * `TMeta` is whatever a lane's rows need that is not a row: the slash menu's
+ * group labels, say. Anything a lane reads on every row belongs in `TItem`.
  */
 
-import type { SlashCommandGroupId, SlashCommandItem } from "./slash-catalog";
-
-export type SlashMenuSnapshot = {
+export type SuggestionMenuSnapshot<TItem, TMeta = null> = {
   open: boolean;
-  items: readonly SlashCommandItem[];
+  items: readonly TItem[];
   activeIndex: number;
-  /** What the writer has typed after the `/`. Empty means "show the groups". */
+  /** What the writer has typed after the trigger. */
   query: string;
-  /** Live rect of the `/` in the text, for a surface that must follow it. */
+  /** Live rect of the trigger in the text, for a surface that must follow it. */
   anchorRect: (() => DOMRect | null) | null;
   label: string;
-  groupLabels: Record<SlashCommandGroupId, string> | null;
+  meta: TMeta | null;
 };
 
 /** Everything the trigger knows when it opens or refilters the menu. */
-export type SlashMenuSession = {
-  items: readonly SlashCommandItem[];
+export type SuggestionMenuSession<TItem, TMeta = null> = {
+  items: readonly TItem[];
   query: string;
   anchorRect: () => DOMRect | null;
   label: string;
-  groupLabels: Record<SlashCommandGroupId, string>;
-  /** Applies the choice; the trigger consumes the `/` and its filter text. */
-  choose: (item: SlashCommandItem) => void;
+  meta: TMeta;
+  /** Applies the choice; the trigger consumes its own text and the query. */
+  choose: (item: TItem) => void;
   /** Leaves the typed text alone and takes the menu down. */
   dismiss: () => void;
 };
 
-export type SlashMenu = {
+export type SuggestionMenu<TItem, TMeta = null> = {
   subscribe: (listener: () => void) => () => void;
-  snapshot: () => SlashMenuSnapshot;
+  snapshot: () => SuggestionMenuSnapshot<TItem, TMeta>;
   setActiveIndex: (index: number) => void;
   /** Arrow keys. Returns false when there is nothing to move through. */
   move: (delta: number) => boolean;
@@ -52,28 +55,36 @@ export type SlashMenu = {
   dismiss: () => void;
 };
 
-/** @internal driven by the suggestion plugin only. */
-export type SlashMenuController = {
-  open: (session: SlashMenuSession) => void;
-  update: (session: SlashMenuSession) => void;
+/** @internal driven by a suggestion plugin only. */
+export type SuggestionMenuController<TItem, TMeta = null> = {
+  open: (session: SuggestionMenuSession<TItem, TMeta>) => void;
+  update: (session: SuggestionMenuSession<TItem, TMeta>) => void;
   close: () => void;
 };
 
-const CLOSED: SlashMenuSnapshot = Object.freeze({
+const CLOSED = Object.freeze({
   open: false,
   items: Object.freeze([]),
   activeIndex: 0,
   query: "",
   anchorRect: null,
   label: "",
-  groupLabels: null,
+  meta: null,
 });
 
-export function createSlashMenu(): { menu: SlashMenu; controller: SlashMenuController } {
+/** The shared "no menu" reading, so a surface's fallback is never a new object. */
+export function closedSuggestionMenu<TItem, TMeta = null>(): SuggestionMenuSnapshot<TItem, TMeta> {
+  return CLOSED as SuggestionMenuSnapshot<TItem, TMeta>;
+}
+
+export function createSuggestionMenu<TItem, TMeta = null>(): {
+  menu: SuggestionMenu<TItem, TMeta>;
+  controller: SuggestionMenuController<TItem, TMeta>;
+} {
   const listeners = new Set<() => void>();
-  let session: SlashMenuSession | null = null;
+  let session: SuggestionMenuSession<TItem, TMeta> | null = null;
   let activeIndex = 0;
-  let snapshot: SlashMenuSnapshot = CLOSED;
+  let snapshot: SuggestionMenuSnapshot<TItem, TMeta> = closedSuggestionMenu();
 
   const publish = () => {
     snapshot = session
@@ -84,13 +95,13 @@ export function createSlashMenu(): { menu: SlashMenu; controller: SlashMenuContr
           query: session.query,
           anchorRect: session.anchorRect,
           label: session.label,
-          groupLabels: session.groupLabels,
+          meta: session.meta,
         }
-      : CLOSED;
+      : closedSuggestionMenu();
     for (const listener of listeners) listener();
   };
 
-  const menu: SlashMenu = {
+  const menu: SuggestionMenu<TItem, TMeta> = {
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -127,7 +138,7 @@ export function createSlashMenu(): { menu: SlashMenu; controller: SlashMenuContr
     },
   };
 
-  const controller: SlashMenuController = {
+  const controller: SuggestionMenuController<TItem, TMeta> = {
     open(next) {
       session = next;
       activeIndex = 0;

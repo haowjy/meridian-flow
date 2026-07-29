@@ -1,180 +1,74 @@
 /**
  * SlashMenu — the list `/` opens (§5.7, mockup 07).
  *
- * The writer never leaves the sentence: focus stays in the prose, the query
- * they are typing IS the document text after the `/`, and this surface only
- * shows what the trigger has already matched. That is why nothing here is
- * focusable and why every row cancels its own mousedown — a menu that took
- * focus would stop the next keystroke from filtering.
- *
- * The keyboard is not here either. Arrow keys and Enter are registered against
- * the chrome kernel by the trigger, at scope `layer`, from the moment the menu
- * opens; this component follows the highlight with the scroll and renders it.
- * Esc is the kernel's chain, reached by being an open layer.
+ * Rows and nothing else. The physics the writer feels — focus staying in the
+ * prose, the eight-row cap, the scroll that follows the arrow keys, the fades
+ * — belong to `SuggestionMenu`, which the `[[` menu shares; this file decides
+ * what a slash row says and when a group heading opens.
  */
 
-import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
 import {
   getSlashMenu,
-  type SlashCommandId,
-  type SlashMenuSnapshot,
+  type SlashCommandItem,
+  type SlashMenuMeta,
 } from "@/core/editor/extensions/slash";
-import { cn } from "@/lib/utils";
+import { closedSuggestionMenu } from "@/core/editor/extensions/suggestion";
 
-import { type EditorChromeSurfaceProps, EditorPopover, useChromeSuppressed } from "../../chrome";
+import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
 import { SLASH_MENU_ICONS } from "./slash-menu-icons";
 
-const LISTBOX_ID = "meridian-slash-menu";
-
-const optionId = (id: SlashCommandId) => `meridian-slash-option-${id}`;
-
-const CLOSED: SlashMenuSnapshot = {
-  open: false,
-  items: [],
-  activeIndex: 0,
-  query: "",
-  anchorRect: null,
-  label: "",
-  groupLabels: null,
-};
-
 const NO_SUBSCRIPTION = () => () => {};
-
-/** Which edges have more list behind them, for the hairline fades. */
-type Overflow = "none" | "top" | "bottom" | "both";
+const closed = () => closedSuggestionMenu<SlashCommandItem, SlashMenuMeta>();
 
 export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
   const menu = getSlashMenu(editor);
   const snapshot = useSyncExternalStore(
     menu?.subscribe ?? NO_SUBSCRIPTION,
-    () => menu?.snapshot() ?? CLOSED,
-    () => CLOSED,
+    () => menu?.snapshot() ?? closed(),
+    closed,
   );
-  // Law: a surface stands down while a drag or sweep is in flight, without
-  // guessing which gesture it was.
-  const suppressed = useChromeSuppressed(editor);
-  const open = snapshot.open && !suppressed;
-
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const activeRef = useRef<HTMLButtonElement>(null);
-  const [overflow, setOverflow] = useState<Overflow>("none");
-
-  const readOverflow = useCallback(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const above = scroller.scrollTop > 1;
-    const below = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
-    setOverflow(above && below ? "both" : above ? "top" : below ? "bottom" : "none");
-  }, []);
-
-  // Measured from the ref callback, not an effect: Radix mounts the portal's
-  // children a commit after `open` flips, so an effect keyed on `open` runs
-  // while there is nothing to measure and the fades never appear.
-  const attachScroller = useCallback(
-    (node: HTMLDivElement | null) => {
-      scrollerRef.current = node;
-      if (node) readOverflow();
-    },
-    [readOverflow],
-  );
-
-  // The scroll follows the arrow keys (ruled), and `nearest` plus the
-  // scroller's own scroll padding keeps the highlighted row clear of the fade.
-  useEffect(() => {
-    if (!open) return;
-    activeRef.current?.scrollIntoView({ block: "nearest" });
-    readOverflow();
-  }, [open, snapshot.activeIndex, readOverflow]);
-
-  const activeItem = snapshot.items[snapshot.activeIndex];
-
-  // Tells a screen reader what the caret's own element now controls. The prose
-  // keeps focus, so the announcement has to travel from there.
-  useEffect(() => {
-    const prose = editor.isDestroyed ? null : editor.view.dom;
-    if (!prose || !open) return;
-    prose.setAttribute("aria-expanded", "true");
-    prose.setAttribute("aria-controls", LISTBOX_ID);
-    if (activeItem) prose.setAttribute("aria-activedescendant", optionId(activeItem.id));
-    return () => {
-      prose.removeAttribute("aria-expanded");
-      prose.removeAttribute("aria-controls");
-      prose.removeAttribute("aria-activedescendant");
-    };
-  }, [editor, open, activeItem]);
-
   if (!menu) return null;
 
-  const { groupLabels } = snapshot;
+  const groupLabels = snapshot.meta?.groupLabels ?? null;
   // Group headings answer "what is in this menu"; a filtered list is already
   // an answer, and the mockup's state B drops them (they would also fragment,
   // since matches sort by score rather than by group).
   const grouped = snapshot.query === "" && groupLabels !== null;
 
   return (
-    <EditorPopover
+    <SuggestionMenu
       editor={editor}
       id="slash-menu"
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) menu.dismiss();
-      }}
+      open={snapshot.open}
+      label={snapshot.label}
       anchorRect={snapshot.anchorRect}
-      align="start"
-      side="bottom"
-      focusOnOpen="prose"
-      className="meridian-slash-menu-shell min-w-64 p-0"
-    >
-      <div
-        ref={attachScroller}
-        onScroll={readOverflow}
-        id={LISTBOX_ID}
-        role="listbox"
-        aria-label={snapshot.label}
-        data-overflow={overflow}
-        className="meridian-slash-menu p-1"
-      >
-        {snapshot.items.map((item, index) => {
-          const Icon = SLASH_MENU_ICONS[item.id];
-          const active = index === snapshot.activeIndex;
-          const opensGroup = grouped && item.group !== snapshot.items[index - 1]?.group;
+      activeIndex={snapshot.activeIndex}
+      onActivate={(index) => menu.setActiveIndex(index)}
+      onChoose={(index) => menu.choose(index)}
+      onDismiss={() => menu.dismiss()}
+      rows={snapshot.items.map((item, index) => ({
+        key: item.id,
+        before:
+          grouped && groupLabels && item.group !== snapshot.items[index - 1]?.group ? (
+            <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
+              {groupLabels[item.group]}
+            </div>
+          ) : undefined,
+        content: <SlashRow item={item} />,
+      }))}
+    />
+  );
+}
 
-          return (
-            <Fragment key={item.id}>
-              {opensGroup ? (
-                <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
-                  {groupLabels[item.group]}
-                </div>
-              ) : null}
-              <button
-                type="button"
-                role="option"
-                id={optionId(item.id)}
-                aria-selected={active}
-                ref={active ? activeRef : undefined}
-                tabIndex={-1}
-                className={cn(
-                  "flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden",
-                  "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
-                  active && "bg-accent text-accent-foreground",
-                )}
-                // The caret is the writer's place in the chapter; a menu row
-                // taking focus from it would end the filter mid-word.
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => menu.setActiveIndex(index)}
-                onClick={() => menu.choose(index)}
-              >
-                <Icon aria-hidden />
-                <span>{item.label}</span>
-                {item.hint ? (
-                  <span className="ml-auto pl-4 text-ink-subtle text-xs">{item.hint}</span>
-                ) : null}
-              </button>
-            </Fragment>
-          );
-        })}
-      </div>
-    </EditorPopover>
+function SlashRow({ item }: { item: SlashCommandItem }) {
+  const Icon = SLASH_MENU_ICONS[item.id];
+  return (
+    <>
+      <Icon aria-hidden />
+      <span>{item.label}</span>
+      {item.hint ? <span className="ml-auto pl-4 text-ink-subtle text-xs">{item.hint}</span> : null}
+    </>
   );
 }

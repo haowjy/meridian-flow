@@ -9,8 +9,16 @@
  * It fades rather than vanishing. The store nulls the hint after the kernel's
  * leave grace, and unmounting on that frame would read as a blink, so the last
  * link stays rendered at zero opacity for the fade duration.
+ *
+ * An internal link says two things: where it goes, and — when nothing is there
+ * yet — that nothing is there yet. The second line is a sentence rather than a
+ * warning, because linking a chapter before writing it is how serial writers
+ * work (§5.5). While the answer is still in flight it says only the
+ * destination: a hint that guessed "not written" and corrected itself a moment
+ * later would be worse than one that waited.
  */
 
+import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -18,6 +26,8 @@ import { createPortal } from "react-dom";
 import { CHROME_TIMING } from "@/core/editor/chrome";
 import { type LinkHint as LinkHintTarget, linkTargetHref } from "@/core/editor/links";
 import { type AnchorRect, useAnchorRect, useChromeSuppressed } from "@/features/editor/chrome";
+
+import { useLinkResolution } from "./useLinkResolution";
 
 /** Below the link's baseline, clear of the descenders and the underline. */
 const HINT_GAP_PX = 6;
@@ -31,8 +41,10 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
   const rect = useAnchorRect(shown?.element ?? null);
   const position = useHintPosition(element, rect);
   const visible = Boolean(hint) && !suppressed;
+  const href = shown ? linkTargetHref(shown.target) : null;
+  const resolution = useLinkResolution(editor, href);
 
-  if (!shown || !rect || typeof document === "undefined") return null;
+  if (!shown || !href || !rect || typeof document === "undefined") return null;
 
   return createPortal(
     <div
@@ -42,7 +54,12 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
       className="meridian-link-hint"
       style={position ?? { left: rect.left, top: rect.bottom + HINT_GAP_PX }}
     >
-      {linkTargetHref(shown.target)}
+      <span className="meridian-link-hint__destination">
+        {resolution?.state === "resolved" ? resolution.document.uri : href}
+      </span>
+      {resolution?.state === "unresolved" ? (
+        <span className="meridian-link-hint__note">{t`No document with this name yet`}</span>
+      ) : null}
     </div>,
     document.body,
   );

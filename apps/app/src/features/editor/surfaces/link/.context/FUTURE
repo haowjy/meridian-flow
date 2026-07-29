@@ -1,0 +1,21 @@
+# Deferred, link surfaces
+
+- `[[` autocomplete inside the Ctrl+K form's Link field (impl-plan P4c names
+  "in prose and inside the Ctrl+K field"). The field already accepts and
+  normalizes the wikilink spelling, and `filterWikilinkItems` would rank the
+  rows; what is missing is a way for the form to reach the host's document
+  list (the trigger reads it from its own options today) and a listbox under
+  the input whose Escape closes the list before the popover.
+  Deferred deliberately: the prose trigger is the path a writer and an LLM
+  share, and a second keyboard surface inside the form is where M7's focus
+  contract is easiest to break.
+
+- The `[[` menu offers manuscript documents only. The resolver's candidate set
+  also includes a work's scratch documents, which still resolve when typed but
+  are never offered, because the editor host has no work in hand. Give
+  `EditorView` the active work and `useWikilinkDocuments` can add them.
+
+- One request per distinct internal target per open document, four at a time.
+  A chapter with dozens of links pays dozens of round trips on open, and each
+  is a query over the project's documents. A batch endpoint would collapse
+  them; the client cache already keeps it to once per target.

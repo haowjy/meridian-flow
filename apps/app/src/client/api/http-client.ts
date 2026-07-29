@@ -87,6 +87,8 @@ export type PostJsonOptions = {
   acceptStatuses?: number[];
   /** Allow lifecycle flushes to outlive the page that initiated them. */
   keepalive?: boolean;
+  /** Drop the request when the caller that wanted it is gone. */
+  signal?: AbortSignal;
 };
 
 export async function postJson<T>(
@@ -98,6 +100,7 @@ export async function postJson<T>(
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
 
   const payload = await readResponsePayload(response);

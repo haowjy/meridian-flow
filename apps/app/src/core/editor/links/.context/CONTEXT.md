@@ -100,32 +100,60 @@ pointed at.
 
 ## The resolution port
 
-M7 defines the seam and registers no navigator, so internal links do not
-navigate yet:
+Two registrations, both the app's, both absent until it mounts
+`ProjectLinkRuntime`:
 
 ```ts
 type InternalLinkNavigator = (request: {
   target: LinkTarget;
   disposition: "current" | "new-tab";
 }) => void;
-getLinkSurface(editor)?.registerNavigator(navigate); // returns an unregister
+getLinkSurface(editor)?.registerNavigator(navigate);      // returns an unregister
+
+type InternalLinkResolver = (target: LinkTarget) => Promise<ResolvedDocumentLink | null>;
+getLinkResolution(editor)?.registerResolver(resolve);     // returns an unregister
 ```
 
-What the wikilink lane (M12) plugs in, without restructuring anything here:
+The navigator is where a follow goes. The resolver is where every rendered
+internal link's state comes from, and the two share one cache, so a click on a
+link the writer can already see resolved opens the document with no round trip.
 
-1. A navigator that calls the resolve endpoint with
-   `documentLinkTarget(target, baseUri)` plus the project and work, and opens
-   the returned document in the context pane. `{ document: null }` is the
-   unresolved case and is where "create the document and link it" belongs.
-   `disposition` says whether the writer asked for the same pane or a new tab;
-   middle-click and Ctrl/Cmd+click already produce the second.
-2. `[[` autocomplete inside the form's Link field. The field already accepts
-   and normalizes the wikilink spelling; the autocomplete is a listbox over
-   it, not a second commit path.
-3. Unresolved rendering. Every link renders `data-link-kind` on its `<a>` —
-   rendered only, never a schema attribute — so quiet ink and a dashed
-   underline for an unresolved wikilink is a CSS rule plus whatever attribute
-   the resolver's answer sets.
+`createLinkResolution` keys answers by `linkTargetHref(target)` — the
+classifier's own spelling — so `[[ The Second Gate ]]` and `[[The Second Gate]]`
+ask once between them. Three states are answers (`pending`, `resolved`,
+`unresolved`) and a fourth outcome is not: a request that THROWS caches nothing
+and renders nothing, because a link the editor could not ask about must never
+be drawn as a link that does not exist. `refresh()` drops every answer, which
+is what the app calls when the project's documents change.
+
+Null from the port covers both "nothing matched" and "several did": ambiguity
+resolves to nothing rather than to a guess, and the writer sees the same
+dashed link either way. The `[[` menu is where ambiguity is named, before the
+link is written.
+
+## Rendering a state nobody stored
+
+`linkResolutionPlugin` scans the document for internal link marks, decorates
+each with `data-link-state`, and asks the store about anything it has no answer
+for. Both halves matter:
+
+- **`apply` is pure.** It reads the cache and builds decorations. Asking is a
+  side effect and lives in the plugin's `view`, which requests what the last
+  scan found and redraws when an answer lands. A href with an answer is never
+  asked about again, which is what terminates the loop.
+- **The redraw is deferred by a microtask.** An answer can land while the same
+  view is asking the question, and a transaction dispatched from inside a view
+  update is the one ProseMirror refuses to apply. The delay also coalesces a
+  burst of answers into one redraw.
+
+ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`, so
+`editor.css` reaches the anchor through `a:has([data-link-state="unresolved"])`
+— the underline belongs to the anchor and a descendant cannot call it off.
+`link-resolution.test.ts` asserts that nesting, because a change to it is a
+silently unstyled unresolved link.
+
+Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
+zero extra attributes, and no peer ever receives a resolution.
 
 ## Where the mark's own fences are
 

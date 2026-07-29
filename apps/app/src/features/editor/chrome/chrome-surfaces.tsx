@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 
 import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "../surfaces/blocks";
 import { FormattingMenu } from "../surfaces/formatting";
-import { LinkSurfaces } from "../surfaces/link";
+import { LinkSurfaces, WikilinkMenu } from "../surfaces/link";
 import { ObjectControls } from "../surfaces/objects";
 import { SlashMenu } from "../surfaces/slash";
 import { TableChrome } from "../surfaces/table";
@@ -45,4 +45,5 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
     render: ({ editor }) => <BlockMovementSurface editor={editor} />,
   }, // L-E block movement (M9)
   { id: "link", render: ({ editor }) => <LinkSurfaces editor={editor} /> }, // L-F links (M7)
+  { id: "wikilink-menu", render: (props) => <WikilinkMenu {...props} /> }, // `[[` documents (P4c)
 ];
