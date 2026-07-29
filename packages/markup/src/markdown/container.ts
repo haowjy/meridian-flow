@@ -136,7 +136,7 @@ function listMarker(line: string): {
 
   const firstPadding = whitespaceFrom(line, markerOffset, markerColumn, 1);
   return {
-    contentColumn: firstPadding.columns,
+    contentColumn: markerColumn + 1,
     contentOffset: firstPadding.offset,
     indentColumns: indentation.columns,
   };
