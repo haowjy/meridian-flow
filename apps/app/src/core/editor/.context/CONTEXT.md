@@ -196,7 +196,13 @@ Yjs document session. It must stay structurally aligned with
   after terminal blocks. In this Yjs-backed editor that would be a real shared
   document mutation on open/sync, not visual chrome. Keep trailing-space UX as an
   explicit editor feature if needed, not an inherited StarterKit default.
-- `undoRedo: false` — collaborative history is not TipTap local history.
+- `undoRedo: false` — collaborative history is not TipTap local history. The
+  history is the Yjs UndoManager the collaboration extension installs, and
+  `UndoRedoKeymapExtension` binds Mod-z / Mod-y / Mod-Shift-z to it above every
+  other keymap. Meridian owns those keys rather than inheriting them (ruling
+  17): undo is the writer's recovery over LLM writes, so no later extension may
+  shadow it. It mounts only alongside collaboration — a standalone editor has
+  no undo command to bind.
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
 

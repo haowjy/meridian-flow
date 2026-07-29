@@ -164,6 +164,10 @@ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "A figure is uploading."
+msgstr "A figure is uploading."
+
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "A file named {0} already exists in this location."
@@ -228,9 +232,9 @@ msgstr "Add a caption for this figure."
 #~ msgid "Add column right"
 #~ msgstr "Add column right"
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Add link"
-#~ msgstr "Add link"
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Add link"
+msgstr "Add link"
 
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Add row above"
@@ -281,6 +285,10 @@ msgstr "AI write mode"
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Align column right"
 #~ msgstr "Align column right"
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Alignment applies to paragraphs, headings, and tables."
+msgstr "Alignment applies to paragraphs, headings, and tables."
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Alt text"
@@ -365,17 +373,17 @@ msgstr "Between {0} and {1}."
 msgid "Billing"
 msgstr "Billing"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Block alignment"
-#~ msgstr "Block alignment"
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Block alignment"
+msgstr "Block alignment"
 
 #: src/features/editor/EditorView.tsx
 msgid "blockquote"
 msgstr "blockquote"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Bold"
-#~ msgstr "Bold"
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Bold"
+msgstr "Bold"
 
 #: src/features/chat/placeholders.ts
 msgid "Brainstorm away"
@@ -394,6 +402,7 @@ msgid "Built-in"
 msgstr "Built-in"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
 msgstr "Bullet list"
 
@@ -422,9 +431,9 @@ msgstr "Caption"
 msgid "Capture experiments, methods, and observations in a structured log."
 msgstr "Capture experiments, methods, and observations in a structured log."
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Center"
-#~ msgstr "Center"
+#: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
+msgid "Center"
+msgstr "Center"
 
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
@@ -514,12 +523,25 @@ msgid "Closed"
 msgstr "Closed"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code"
 msgstr "Code"
 
 #: src/features/editor/EditorCodeBubble.tsx
 #~ msgid "Code block options"
 #~ msgstr "Code block options"
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Code blocks keep their own block type."
+msgstr "Code blocks keep their own block type."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Code blocks take no formatting."
+msgstr "Code blocks take no formatting."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Code blocks take no links."
+msgstr "Code blocks take no links."
 
 #: src/features/editor/EditorCodeBubble.tsx
 #~ msgid "Code language"
@@ -735,9 +757,9 @@ msgstr "Dark"
 msgid "Data Analysis"
 msgstr "Data Analysis"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Default alignment"
-#~ msgstr "Default alignment"
+#: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
+msgid "Default alignment"
+msgstr "Default alignment"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
@@ -936,9 +958,9 @@ msgstr "Editing…"
 msgid "Editor"
 msgstr "Editor"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Editor formatting toolbar"
-#~ msgstr "Editor formatting toolbar"
+#: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
+msgid "Editor formatting toolbar"
+msgstr "Editor formatting toolbar"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Email"
@@ -956,9 +978,9 @@ msgstr "Enclosing folder"
 msgid "Enter an amount in USD."
 msgstr "Enter an amount in USD."
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Enter an http, https, or mailto link."
-#~ msgstr "Enter an http, https, or mailto link."
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Enter an http, https, or mailto link."
+msgstr "Enter an http, https, or mailto link."
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/home/HomeScreen.tsx
@@ -1084,6 +1106,7 @@ msgid "h2"
 msgstr "h2"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
 msgstr "Heading"
 
@@ -1194,9 +1217,9 @@ msgstr "Invoking a skill…"
 msgid "Invoking the {skill} skill…"
 msgstr "Invoking the {skill} skill…"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Italic"
-#~ msgstr "Italic"
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Italic"
+msgstr "Italic"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
@@ -1247,13 +1270,18 @@ msgstr "Light"
 #~ msgid "Line {0}"
 #~ msgstr "Line {0}"
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Link"
-#~ msgstr "Link"
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Link"
+msgstr "Link"
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Link URL"
-#~ msgstr "Link URL"
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Link text"
+msgstr "Link text"
+
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Link URL"
+msgstr "Link URL"
 
 #: src/features/editor/EditorView.tsx
 msgid "list"
@@ -1550,6 +1578,14 @@ msgstr "Nothing here yet"
 msgid "Nothing matches this filter."
 msgstr "Nothing matches this filter."
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Nothing to redo yet."
+msgstr "Nothing to redo yet."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Nothing to undo yet."
+msgstr "Nothing to undo yet."
+
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "now"
@@ -1645,6 +1681,10 @@ msgstr "Open result {name}"
 msgid "Open results"
 msgstr "Open results"
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Open this document in a project to upload figures."
+msgstr "Open this document in a project to upload figures."
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
@@ -1668,6 +1708,10 @@ msgstr "Parent unknown"
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent:"
 msgstr "Parent:"
+
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Paste a link"
+msgstr "Paste a link"
 
 #: src/features/editor/EditorLinkBubble.tsx
 #~ msgid "Paste or type a link"
@@ -1804,6 +1848,7 @@ msgid "Redid"
 msgstr "Redid"
 
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Redo"
 msgstr "Redo"
 
@@ -1831,9 +1876,9 @@ msgstr "remaining"
 #~ msgid "Remove image"
 #~ msgstr "Remove image"
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Remove link"
-#~ msgstr "Remove link"
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Remove link"
+msgstr "Remove link"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
@@ -1934,9 +1979,9 @@ msgstr "Review draft"
 msgid "Rewrote"
 msgstr "Rewrote"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Right"
-#~ msgstr "Right"
+#: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
+msgid "Right"
+msgstr "Right"
 
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Rows"
@@ -2007,6 +2052,18 @@ msgstr "section"
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Select a document."
 msgstr "Select a document."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Select text to add a link."
+msgstr "Select text to add a link."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Select text to change the block type."
+msgstr "Select text to change the block type."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Select text to format it."
+msgstr "Select text to format it."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Select…"
@@ -2172,6 +2229,10 @@ msgstr "Talk it out"
 msgid "Task Assignment"
 msgstr "Task Assignment"
 
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Text"
+msgstr "Text"
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Text size"
 msgstr "Text size"
@@ -2318,6 +2379,14 @@ msgstr "This device"
 msgid "This document changed elsewhere. Reopen it and try again."
 msgstr "This document changed elsewhere. Reopen it and try again."
 
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "This document is read only right now."
+msgstr "This document is read only right now."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "This document is still opening."
+msgstr "This document is still opening."
+
 #: src/features/project/context/use-identity-commit.ts
 msgid "This document keeps changing elsewhere. Reopen it and try again."
 msgstr "This document keeps changing elsewhere. Reopen it and try again."
@@ -2413,6 +2482,7 @@ msgid "Undid"
 msgstr "Undid"
 
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Undo"
 msgstr "Undo"
 
@@ -2445,9 +2515,9 @@ msgstr "Untitled project"
 #~ msgid "Update image"
 #~ msgstr "Update image"
 
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Update link"
-#~ msgstr "Update link"
+#: src/features/editor/surfaces/toolbar/LinkPopover.tsx
+msgid "Update link"
+msgstr "Update link"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
@@ -2457,9 +2527,9 @@ msgstr "Updated"
 msgid "upload"
 msgstr "upload"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Upload figure"
-#~ msgstr "Upload figure"
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "Upload figure"
+msgstr "Upload figure"
 
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent

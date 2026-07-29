@@ -3,16 +3,25 @@
 Reference depth for the app-facing editor surface. Read
 [`AGENTS.md`](../AGENTS.md) first.
 
-## The manuscript is chromeless
+## One persistent surface, no contextual bubbles
 
-There is no formatting toolbar and no contextual bubble. The whole interaction
-layer was deleted; the surfaces that replace it are specified in the editor
-toolkit interaction model and belong to the rebuild, not to incremental
-patches here. What remains on this surface is the prose column, the sync
-indicator, the image-upload flow, and the notice/popover surfaces below.
+The document toolbar is the only chrome that persists, and it never overlays
+the text: `EditorSurfaceFrame` docks it in a prose-aligned row above the
+scroll area, and `EditorView` decides whether a host gets one at all
+(read-only phone documents do not). Everything it can do is document-level;
+the contextual surfaces that replace the deleted bubbles anchor to the block
+they serve and belong to the rebuild, not to incremental patches here. See
+[`surfaces/toolbar/AGENTS.md`](../surfaces/toolbar/AGENTS.md).
+
+The rest of this surface is the prose column, the sync indicator, the
+image-upload flow, and the notice/popover surfaces below.
 
 **One column, one owner**: `editor-column.ts` is the single home of prose
-geometry — the canvas wrapper and `editorProseClass` for the ProseMirror node.
+geometry — the chrome row inset, the canvas wrapper, and `editorProseClass`
+for the ProseMirror node. The toolbar row's inset equals the canvas inset plus
+the prose inset, so the first control sits exactly above the first character;
+that sum is the invariant the file documents. `editorProseClass` takes the
+toolbar state because a docked row already provides the top breathing room.
 Tracked and untitled documents share this column exactly, so nothing moves when
 an untitled tab materializes. Never re-encode these classes at a call site.
 (The document identity bar deliberately does NOT share the column: it is
@@ -64,11 +73,12 @@ visible signal that the draft surface is active.
 
 ## Component API
 
-### Command modules waiting on their surfaces
+### Command modules the surfaces consume
 
 `block-alignment.ts`, `link-selection.ts`, and `core/editor/table-operations.ts`
-outlived the chrome that called them. They are the command and resolution layer
-the rebuilt surfaces consume; they are kept deliberately, not by oversight.
+outlived the chrome that called them and are the command and resolution layer
+the rebuilt surfaces consume. The toolbar uses the first two; the third waits
+for the table surfaces.
 
 `linkAttributesAtSelection` exists because `editor.isActive("link")` can miss an
 empty selection at a mark boundary, notably the link's start. It uses
