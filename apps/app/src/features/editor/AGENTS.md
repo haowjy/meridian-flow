@@ -33,8 +33,9 @@ the design, from the primitives.
 - Anything opened over the manuscript hands the caret back on close
   (`onCloseAutoFocus` → prose) and defers Escape to the kernel's chain. Both
   come free from the `chrome/` wrappers; a hand-rolled Radix root does not get
-  them. A surface that opens a SECOND surface from the first waits for that
-  focus to land, or the new one reads it as focus leaving and dismisses itself
+  them, and the return already knows to stand aside when the closing surface
+  left another one open — so a menu item opens its form synchronously rather
+  than waiting for focus it must not wait for
   ([`surfaces/formatting/.context/CONTEXT.md`](surfaces/formatting/.context/CONTEXT.md)).
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)

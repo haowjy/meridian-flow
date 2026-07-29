@@ -21,54 +21,58 @@ The submenu greys **as a whole** when every type refuses for one reason, which
 is the ordinary case (a table cell, a diagram, a mixed selection). Opening onto
 eight dead rows would satisfy the letter of law 5 and none of its point.
 
-## The claim, rung by rung
+## The two questions, and where each door asks them
 
-Registered at the ladder's `text-selection` rung, under `link` and over
-`grip`/`object`. `claimsFormattingMenu` takes a right-click only when all of
-these hold:
+Both doors run `isProseSelection` and `formattingOwnsContext`, which is what
+keeps the split matrix true for the keyboard as well as the mouse.
 
-1. the document is editable — a read-only document has no verb worth the
-   browser's menu, and Copy is already in that menu;
-2. the selection is a non-empty `TextSelection` or `AllSelection` — a
-   `NodeSelection` is an object and a `CellSelection` is a table, both other
-   lanes';
-3. the pointer is inside that selection (`insideTextSelection`), not merely
-   somewhere while a selection exists elsewhere;
-4. the pointer is not on portalled chrome (`data-editor-chrome`), whose lane
-   claims further down the ladder;
-5. the pointer's context is `document`, `table`, or `table-cell`.
+`isProseSelection` is the kernel's own `proseSelectionCovers`, not a second
+opinion: non-empty, and a `TextSelection` or `AllSelection` rather than a
+`NodeSelection` on a figure or a `CellSelection` over a table.
 
-Rung 5 is where the two absences live. An **object** has no text to format. A
+`formattingOwnsContext` allows `document`, `table`, and `table-cell`. Two
+contexts are missing on purpose. An **object** has no text to format. A
 **source block** owns its own chrome (§5.3, law 4): a menu offering Heading
 over a fence is the F6 accident, and a menu offering nothing over one spends
 the browser's menu for no gain.
 
-## The other two doors
+**The claim** additionally requires an editable document, `insideTextSelection`
+(the pointer is in the selection, not merely near one), and a pointer that is
+not on portalled chrome (`editorChromeAttributes`, qualified by this editor's
+id). It reads the context under the POINTER, which is the finer answer: the
+writer aimed at a place inside their selection, and that place may be a
+diagram.
 
-`ContextMenu` and `Shift-F10` register at keymap scope `document`, from a React
-effect — never TipTap's `onCreate`, which fires a macrotask late. They open at
-`view.coordsAtPos(selection.to)`, where the writer's attention already is.
+**The keyboard door** reads the context under the SELECTION and declares it
+twice: `formattingMenuOpensFor` checks it, and the keymap contribution carries
+`appliesTo: formattingOwnsContext` so the kernel never even offers the key in a
+context this menu does not own.
 
-Long press is a pointer timer on the editor's DOM: 500 ms, cancelled by 10 px
-of travel, by pointerup, by a scroll, and by the kernel's suppression. Android
-answers a long press with its own `contextmenu`, so the timer and the claim
-both fire for one gesture; whichever lands first owns it and the other stands
-down for 700 ms. The claim still returns true in that window — the native menu
-must not arrive over the menu the writer is looking at — but it does not
-re-open, which would remount at a point one pixel away.
+## Touch has no door of its own
+
+A long press is a `contextmenu` on every browser that gives the page one, so it
+arrives through the claim ladder like any other right-click. That is the whole
+touch path, and it is the only version of it that can lose: a private pointer
+timer cannot ask whether the link or the diagram under the finger outranks this
+rung, and it opens beside a native callout it has no way to suppress.
+
+**iOS Safari gives no such event for a long press on text.** The formatting
+menu is therefore absent there, and the OS callout (Copy, Look Up, Share)
+stands. Absent beats two menus over one gesture (law 5 prefers absent to dead,
+and ruling 11 protects the native surface). Reopening this needs a real iOS
+Safari probe and a platform-valid way to suppress the callout once the gesture
+is claimed; nothing here should grow a timer again without both.
 
 ## Handing off to another surface
 
-The link form opens only once the editor has focus again.
+The link form opens synchronously from the menu item, and that is the whole
+handoff. `useChromeLayer`'s `onCloseAutoFocus` returns the caret to the prose
+only when the closing surface was the last one on screen, so a form that
+registered its layer first is left alone.
 
-Every editor surface returns the caret to the prose on close (the chrome
-contract), and TipTap's `focus` command lands a frame late. A form mounted
-straight away sees that arrival as focus leaving and dismisses itself inside
-40 ms — observed in the browser, invisible to any unit test. So `openLinkForm`
-waits on the editor's own `focus` event, with a 300 ms fallback so a focus that
-never arrives cannot swallow the writer's click.
-
-**Any lane opening a popover or dialog from a menu item owes the same wait.**
+Anything that waits — a frame, a timeout, the editor's focus event — reopens
+against a writer who has already moved on: the anchor is stale and the draft
+resolves against a selection they made afterwards. Open, or do not.
 
 ## Escape inside the submenu
 
@@ -86,22 +90,28 @@ reaches the clipboard through `navigator.clipboard` and the document through
 `view.serializeForClipboard`. Copy writes `text/html` (carrying ProseMirror's
 slice depths, so a paste back keeps its blocks) and `text/plain`.
 
-Reading is the asymmetric half: writing works everywhere, reading is withheld
-by whole browsers and by permission. `pasteIntoSelection` reports which, and a
-`denied` or `unavailable` answer greys Paste from then on with the shortcut in
-its reason. The capability check alone cannot cover it — a browser that exposes
-`clipboard.read` and then refuses the call looks available until it is asked.
+Both directions can be withheld, and each reports which: a capability check
+answers before the writer presses, and a `denied` or `unavailable` result greys
+that direction from then on with its shortcut in the reason. The check alone
+cannot cover it — a browser that exposes `clipboard.read` and then refuses the
+call looks available until it is asked.
+
+A cut copies before it deletes and stops if the copy was refused, or it would
+take the writer's words with nothing to paste back. A payload reaches the
+document verbatim: emptiness is tested on a trimmed copy, never on the payload,
+because a pasted code line's indentation is content.
 
 ## Verified in the browser
 
-Chromium, portless dev stack. Right-click over a selection opens at the
-pointer; at a bare caret `defaultPrevented` stays false and the browser keeps
-its menu; inside a code fence the same. Italic lights over an italic run and
-reverses. Turn into checks the current type, converts, and reverses. Table
-cells grey Turn into with "Table cells hold plain paragraphs."; inline code
-greys Bold with "Inline code takes no other formatting." and keeps Inline code
-itself removable. Shift+F10 and the Menu key open at the selection; Escape
-walks one step per press and lands focus in the prose with the selection
-intact. Cut and Copy reach the system clipboard; a withheld read greys Paste
-with "Press Ctrl+V". A synthesized touch press opens at the touch point and
-cancels on travel or away from the selection.
+Chromium, portless dev stack, re-run after the kernel merge. Right-click over a
+selection opens at the pointer; at a bare caret `defaultPrevented` stays false
+and the browser keeps its menu; inside a code fence the same, and Shift+F10
+there declines with it. A `contextmenu` inside the selection — the shape a
+touch long press arrives in — is claimed and opens at the point, while a bare
+`pointerdown` held for two seconds opens nothing. Italic lights over an italic
+run and reverses. Turn into checks the current type, converts, and reverses; a
+selection across two sibling lists un-lists both in one choice and keeps the
+writer's words selected. Table cells grey Turn into with "Table cells hold
+plain paragraphs." Add link opens the form in one mutation and it stays, with
+Escape returning the caret and the selection. Cut and Copy reach the system
+clipboard; a withheld read greys Paste with "Press Ctrl+V".
