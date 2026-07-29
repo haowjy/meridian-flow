@@ -13,7 +13,7 @@ not ask it for permission to exist. Everything the kernel decides is decided by
 a pure function beside the store, so the policy is testable as data and the
 extension only reads the document and dispatches.
 
-Four things live here, and nothing else should:
+Five things live here, and nothing else should:
 
 - **The Esc chain.** `escStep` is the whole walk-home policy (law 3). A surface
   registers a layer while it is open and the chain decides whose turn it is.
@@ -23,10 +23,18 @@ Four things live here, and nothing else should:
   read by the Esc chain, the router, and the toolbar's greying.
 - **Suppression and hover intent.** Approach chrome's timing, and standing
   down during a drag or sweep.
+- **The approach.** Which block is hovered, answered once for the whole editor
+  (`hover-anchor.ts`), from a pointer the kernel remembers and re-reads
+  whenever `manuscript-layout.ts` says the manuscript moved.
 
 **Surface exclusivity is not here** (decision 2026-07-29). Radix already makes
 menus, popovers, and dialogs mutually exclusive layers. Do not build a claim
 or suppress arbiter beside it.
+
+**Approach exclusivity IS here**, and it is a different question. A hovered
+target is not a layer: nothing opens it and nothing closes it, so Radix has
+nothing to say. One block owns hover chrome at a time, and the pieces sharing
+that block compose on it (an image's controls and its paragraph's grip).
 
 ## Key rules
 
@@ -41,6 +49,20 @@ or suppress arbiter beside it.
 - **The claim decision is synchronous.** `preventDefault` after the event
   returns does nothing. Opening the surface may be deferred a tick; deciding
   may not.
+- **A lane never keeps its own answer to "what is under the pointer".** It
+  registers a `HoverAnchorLane` and answers only the part it alone knows: which
+  block is at this point, which object, which cell, which link. Timing, the
+  pointer's last place, the re-hit-test after a scroll, the hold while the
+  pointer rests on a revealed control, and the single owner are the kernel's.
+  Four private answers is exactly what put two hover chromes on screen for two
+  different blocks.
+- **Scroll is a pointer move with no pointer event.** A hand that never moved
+  is over something else the moment the pane scrolls, so the approach re-reads
+  its remembered point on every `watchManuscriptLayout` signal. Chrome that
+  only re-measures its rect is chrome for a target the writer has left.
+- **Hover and persistence are different modes.** A selected table's ⋮ and a
+  caret inside a fence keep their chrome with no pointer involved; that belongs
+  to the lane and never to the approach.
 - **Nothing binds Escape but the chain.** `mergeKeymapContributions` throws on
   it. A surface that wants a step in the walk registers a layer.
 - **Undo stays highest.** The kernel mounts at TipTap priority 1050, under
@@ -74,8 +96,10 @@ or suppress arbiter beside it.
 
 ## Anti-patterns
 
-- A surface holding its own `useState` copy of the resolved context, or its
-  own `setTimeout` for hover reveal. Both drift; read the kernel.
+- A surface holding its own `useState` copy of the resolved context, its own
+  `setTimeout` for hover reveal, or its own pointer listener. All three drift;
+  read the kernel. `createHoverIntent` is deliberately not on `EditorChrome`
+  for the third reason: a lane with its own intent has its own pointer.
 - Reaching into `EditorChromeController`. It belongs to the extension.
 - Widening `EditorChrome` with per-surface state. A lane's state is a lane's.
 - Guarding a keymap contribution by re-reading the selection inside the

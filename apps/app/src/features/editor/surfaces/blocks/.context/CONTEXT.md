@@ -177,22 +177,44 @@ crossing the gap between two paragraphs does not blink the handle off.
 
 ## Approach, on a pointer and on a finger
 
-The pointer spends the whole approach in the margin, where `posAtCoords` has
-nothing useful to say, so x is pulled into the column before asking.
+This lane owns one question, registered as a `HoverAnchorLane`: which
+top-level block is at this point. The pointer spends the whole approach in the
+margin, where `posAtCoords` has nothing useful to say, so x is pulled into the
+column before asking, and the answer is checked against the block's own box.
 
-Travelling from the prose onto the handle reads to the DOM as leaving the
-editor — and the browser delivers that leave AFTER the handle's own enter, so
-a naive `leave()` undoes the reveal exactly as the writer arrives. This
-editor's own chrome (the mark from `editorChromeAttributes`, kernel id and
-all) continues the approach instead. Any lane whose chrome portals out of the
-scroller will need the same guard.
+Everything else is the kernel's (`core/editor/chrome/hover-anchor.ts`): the
+delay and the grace, the pointer's last place, the re-hit-test when the pane
+scrolls under a still hand, the rule that travelling onto the handle — which
+portals out of the scroller and reads to the DOM as leaving the editor — is
+not leaving the block, and the rule that this handle and an object's own
+controls are on ONE block or the handle is not on screen.
 
 A finger never hovers, so the touch path is a different door onto the same
-handle: the last pointer type decides which one is live, and on coarse input
+handle: `chrome.coarsePointer` decides which one is live, and on coarse input
 the anchor follows the selection — the writer's own tap is the approach. Last
 pointer type rather than a media query, because a laptop with a touchscreen
 should answer for the hand actually on it. There is no fade-out on that path
 either: the handle belongs to the selected block until another is chosen.
+
+## Why the handle is still measured
+
+Every object's controls are rendered inside the object's own node view, where
+scroll and reflow cannot strand them. The handle cannot be, for two reasons
+that are both about what a top-level block IS:
+
+- **Most of them are ProseMirror's own DOM.** A paragraph, a heading, a list,
+  a table wrapper: ProseMirror reads those elements back as document content,
+  so a child inserted into one is a change it will try to parse. Only the
+  object node views are safe to render into, and the handle serves every block.
+- **The handle is in the margin, not in the block.** It hangs off the prose
+  COLUMN's left text edge — shared with the table's row grips, split to the
+  pixel — while a block's own box starts at that edge. Positioning it against
+  the block would re-derive the column from whichever block happened to be
+  hovered, and a centred table is narrower than the paragraph above it.
+
+So it stays a measured portal, on `watchManuscriptLayout` for its rect and on
+the kernel's hover anchors for its target. Both invariants are covered; only
+the mechanism differs.
 
 ## The block menu
 

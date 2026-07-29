@@ -18,6 +18,10 @@
  * Every control here is the dense `xs` size, including the language: the
  * cluster may not stand taller than one line of the code it decorates (see
  * overlay-icon-row.css), and the label is what drives that height.
+ *
+ * It is rendered INSIDE the fence's own node view, so a scroll or a reflow
+ * moves the cluster and the code as one piece rather than as a rect and a
+ * chaser (`chrome/object-overlay.ts`).
  */
 
 import { t } from "@lingui/core/macro";
@@ -31,10 +35,9 @@ import { IconButton } from "@/components/ui/icon-button";
 import { editorChromeAttributes } from "@/core/editor/chrome";
 import {
   EditorMenu,
-  objectOverlayStyle,
-  useAnchorRect,
   useChromeSuppressed,
   useEditorChrome,
+  useObjectOverlayCorner,
 } from "@/features/editor/chrome";
 import {
   FenceLanguageItems,
@@ -65,7 +68,7 @@ export function CodeBlockChips({
 }: CodeBlockChipsProps) {
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
-  const rect = useAnchorRect(editor, target.element);
+  const placement = useObjectOverlayCorner(editor, { inside: target.container });
   const [languageOpen, setLanguageOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
 
@@ -73,7 +76,7 @@ export function CodeBlockChips({
     onMenuOpenChange(languageOpen || overflowOpen);
   }, [languageOpen, overflowOpen, onMenuOpenChange]);
 
-  if (!rect || !chrome || typeof document === "undefined") return null;
+  if (!placement || !chrome) return null;
 
   return createPortal(
     // biome-ignore lint/a11y/noStaticElementInteractions: the mousedown only keeps the caret where it was; every control inside is a button
@@ -81,12 +84,16 @@ export function CodeBlockChips({
       className="meridian-object-overlay meridian-code-chips"
       data-code-chips=""
       data-state={visible && !suppressed ? "open" : "closed"}
+      data-placement={placement.placement}
+      // Chrome, never text ProseMirror owns: the cluster lives inside the
+      // fence's own node view so it travels with it.
+      contentEditable={false}
       // Right-clicks on chrome route through the claim ladder like right-clicks
       // on the block itself, rather than falling through to the browser. The
       // mark carries the kernel's id, so two editors on one page never claim
       // each other's overlays.
       {...editorChromeAttributes(chrome)}
-      style={objectOverlayStyle(rect)}
+      style={placement.style}
       // A press on the cluster must not move the caret out of the block the
       // cluster belongs to.
       onMouseDown={(event) => event.preventDefault()}
@@ -134,9 +141,6 @@ export function CodeBlockChips({
         <FenceShapeItems editor={editor} target={target} />
       </EditorMenu>
     </div>,
-    // Portalled for the same reason the object rows are: a fixed element inside
-    // a transformed ancestor is positioned against that ancestor, not the
-    // viewport, and the manuscript column is not promised to stay untransformed.
-    document.body,
+    placement.container,
   );
 }

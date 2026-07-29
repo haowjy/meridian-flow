@@ -26,7 +26,7 @@ import {
 } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { getEditorChrome, type HoverIntent } from "../chrome";
+import { getEditorChrome, hoverOwner } from "../chrome";
 import {
   anchorLinkRange,
   type LinkSelection,
@@ -123,9 +123,9 @@ export const LinkSurfaceExtension = Extension.create({
     // What the current press started from: where the pointer was, and where
     // the writer's selection was before ProseMirror moved it.
     let press: { origin: LinkPoint; selection: { from: number; to: number } } | null = null;
-    // Created in `view()`, because the kernel is what supplies the timing and
-    // it must be able to cancel this one when a gesture starts.
-    let hover: HoverIntent<HTMLElement> | null = null;
+    // Registered in `view()`, because the kernel owns the approach: its timing,
+    // its pointer, and which block owns hover chrome at all.
+    let releaseHover: (() => void) | null = null;
 
     /**
      * One answer for both buttons: cancel the browser, decide what the gesture
@@ -178,8 +178,20 @@ export const LinkSurfaceExtension = Extension.create({
         view(view) {
           const chrome = getEditorChrome(editor);
 
-          hover =
-            chrome?.createHoverIntent<HTMLElement>({
+          // One question, answered from the pointer's last known place rather
+          // than only from a mouse event: a hint left over a link the writer
+          // scrolled away from names a destination that is not under their
+          // hand. Moving between two elements inside one link changes nothing,
+          // because the answer is the anchor either way.
+          releaseHover =
+            chrome?.registerHoverAnchor<HTMLElement>({
+              id: "link-hint",
+              probe: ({ element }) => {
+                const anchor = anchorIn(view, element);
+                if (!anchor) return null;
+                const owner = hoverOwner(view, anchor);
+                return owner ? { owner, value: anchor } : null;
+              },
               onSettle: (element) => {
                 const target = element && classifyLinkTarget(hrefOf(element));
                 surface.showHint(target && element ? { element, target } : null);
@@ -228,8 +240,8 @@ export const LinkSurfaceExtension = Extension.create({
           return {
             destroy() {
               editor.off("transaction", followDocument);
-              hover?.dispose();
-              hover = null;
+              releaseHover?.();
+              releaseHover = null;
               releaseKeymap?.();
               releaseClaim?.();
             },
@@ -272,21 +284,6 @@ export const LinkSurfaceExtension = Extension.create({
               // that one belongs to the claim ladder.
               if (event.button !== MIDDLE_BUTTON) return false;
               return handleLinkPress(view, event, event.button);
-            },
-
-            mouseover(view, event) {
-              const anchor = anchorIn(view, event.target);
-              if (anchor) hover?.enter(anchor);
-              else hover?.leave();
-              return false;
-            },
-
-            mouseout(view, event) {
-              // Moving between two elements inside the same link is not a
-              // leave; the hint would blink for every word it spans.
-              if (anchorIn(view, event.relatedTarget)) return false;
-              hover?.leave();
-              return false;
             },
           },
         },

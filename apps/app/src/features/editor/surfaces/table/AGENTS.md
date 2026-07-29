@@ -26,7 +26,7 @@ The layers, in dependency order:
   and cell → the viewport rects the chrome is positioned from.
 - [`TableVerbMenu.tsx`](TableVerbMenu.tsx) — every menu's contents, and
   `tableMenuProps` which reads the verb matrix once per open.
-- [`TableChrome.tsx`](TableChrome.tsx) — the mount: hover tracking, the
+- [`TableChrome.tsx`](TableChrome.tsx) — the mount: the approach lane, the
   portalled grips and tabs, the menus, the selected table's object row.
 
 Column resize is **prosemirror-tables' `columnResizing`**, already mounted by
@@ -83,7 +83,14 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   reach it. `tableHoverZone` expands the table's rect by exactly what is drawn
   on each side; it holds a reveal, never starts one. Its left edge is the
   grips' half of the shared margin and stops one pixel short of the block
-  handle's.
+  handle's. It is this lane's `holds` predicate on the kernel's hover anchor —
+  the one thing about this reveal the kernel cannot know.
+- **Everything about the pointer except that zone is the kernel's.** This lane
+  answers "which cell is at this point" and nothing else: the delay, the grace,
+  the pointer's last place, the re-hit-test after a scroll, and the single
+  hovered block all live in `core/editor/chrome/hover-anchor.ts`. A second
+  answer here is how the grips once stayed up for a row the writer had
+  scrolled past.
 - **Nothing this lane draws may reach the block below the table.** A click
   aimed at prose must never mutate a table (human ruling, 2026-07-29), and the
   seam between two blocks is 14.4px against an 18px tab — so the add-row tab
@@ -99,13 +106,15 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 ## Anti-patterns
 
 - A verb that takes a row or column index. Select, then run.
-- Hover timing from a local `setTimeout` instead of `chrome.createHoverIntent`.
-- Watching the pointer from the editor's DOM. The grips are portalled outside
-  it, so that listener cannot see the pointer reach them, and pairing it with a
-  React handler on the portal is a race the grips lose.
-- Answering a `mousemove` over the chrome by doing nothing. Not-leaving is not
-  re-entering: the grace the frame's edge already scheduled still fires, and it
-  fades the grip out from under the pointer resting on it.
+- A pointer listener of this lane's own, of any kind. The grips are portalled
+  outside the editor, a listener on the prose cannot see the pointer reach
+  them, and pairing it with a React handler on the portal is a race the grips
+  lose — but the fix is the kernel's one reading of the page, not a better
+  listener here.
+- Answering "the pointer is still on my chrome" by doing nothing. Not-leaving
+  is not re-entering: the grace the frame's edge already scheduled still fires,
+  and it fades the grip out from under the pointer resting on it. Saying so
+  through `holds` is what cancels it.
 - Following the document with a per-transaction re-render to learn whether a
   table is selected. The kernel's context store answers that, and notifies when
   the answer changes rather than on every keystroke of the chapter.

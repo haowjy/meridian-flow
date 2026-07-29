@@ -52,6 +52,22 @@ export function useChromeSuppressed(editor: Editor | null): boolean {
 }
 
 /**
+ * True when the writer's last input device was a finger or a pen.
+ *
+ * A tap has no approach to settle, so the surfaces that can follow the
+ * selection instead read this rather than sniffing the device themselves —
+ * one answer, from the one listener that sees every pointer in the editor.
+ */
+export function useChromeCoarsePointer(editor: Editor | null): boolean {
+  const chrome = useEditorChrome(editor);
+  return useSyncExternalStore(
+    chrome ? chrome.subscribe : NO_SUBSCRIPTION,
+    () => chrome?.coarsePointer ?? false,
+    () => false,
+  );
+}
+
+/**
  * Re-render on every editor change.
  *
  * The bluntest possible subscription, and the right one for chrome that reads

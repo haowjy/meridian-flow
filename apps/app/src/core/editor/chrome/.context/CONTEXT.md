@@ -352,10 +352,62 @@ were — the document moved under them.
   owners cannot both hold the pointer — and a late end from a replaced drag
   does nothing rather than releasing the drag the writer is running. M6's
   column resize and M9's block drag both sit on this.
-- Approach chrome takes its timing from `chrome.createHoverIntent(...)`, never
-  its own `setTimeout` — the kernel cancels these when a gesture starts.
-  `CHROME_TIMING` holds the two numbers (`handleIntentMs` 100, `fadeMs` 120).
+- Approach chrome takes its timing from the kernel, never its own
+  `setTimeout` — the kernel cancels hover the moment a gesture starts, and the
+  extension stops feeding the approach for as long as one runs. `CHROME_TIMING`
+  holds the two numbers (`handleIntentMs` 100, `fadeMs` 120). `createHoverIntent`
+  is not on `EditorChrome`: a lane joins the one approach below instead.
 
 Hover intent is warm: once something is revealed the next thing under the
 pointer answers without re-earning the delay, and leaving keeps the row for the
 fade duration so the pointer can travel onto what it revealed.
+
+## The approach
+
+`hover-intent.ts` answers *when* a pointer is believed. `hover-anchor.ts`
+answers *what it is on*, which is the harder half and the one every lane used
+to answer alone — from its own listener, in its own state machine, with no
+re-reading after a scroll. That produced both reported defects at once: chrome
+for a target the writer had scrolled away from, and two hover chromes claiming
+two different blocks on one screen.
+
+```ts
+chrome.registerHoverAnchor<HTMLElement>({
+  id: "object-approach",
+  probe: ({ x, y, element }) => {          // what is MINE at this point
+    const found = objectSurfaceAt(view, element);
+    const owner = found && hoverOwner(view, found.element);
+    return owner ? { owner, value: found.element } : null;
+  },
+  holds: (cell, at) => pointerHoldsTableChrome(cell, at.x, at.y), // optional
+  onSettle: setHovered,                    // my share of the owner, or null
+});
+```
+
+- **The owner is a top-level block element**, resolved by `hoverOwner` so every
+  lane means the same thing by it. Lanes sharing an owner compose (a diagram's
+  chips and its block's grip); two owners never coexist, because there is one
+  owner variable.
+- **The pointer's last place is remembered and re-read** on every
+  `watchManuscriptLayout` signal. A wheel with a still hand is a target change.
+- **`onChrome` freezes the owner.** Chrome portalled over the manuscript covers
+  it, so the hit test under a revealed control would answer for whatever the
+  control sits on. Travelling onto a control this reveal put there is not
+  leaving the target.
+- **`holds` covers the pixels between.** A table's grips live outside the
+  frame, and the gap the writer crosses to reach one is on no cell and on no
+  chrome.
+- **The reading of the page is the extension's**, supplied through
+  `hoverAnchors.observe(...)`: one `document.elementFromPoint`, one check that
+  the point belongs to this editor, one check for this editor's chrome mark.
+  The registry itself touches no DOM.
+- **A gesture clears the approach**, because the coordinator's intent is one of
+  the kernel's own; the extension also stops feeding it while suppressed, so
+  the reveal is re-earned on release rather than reappearing where it was.
+- **`coarsePointer`** is the same answer for the same reason: a finger does not
+  hover, and the one listener that sees every pointer in the editor is the one
+  place to notice.
+
+Out of scope on purpose: menus, selection, and where a surface is drawn.
+Selection-persistent chrome (a selected table's ⋮, a caret inside a fence) is a
+different mode and stays its lane's.

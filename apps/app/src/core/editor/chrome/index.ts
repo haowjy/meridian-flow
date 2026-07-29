@@ -44,12 +44,17 @@ export {
   type GesturePhase,
 } from "./esc-chain";
 export {
-  CHROME_TIMING,
-  createHoverIntent,
-  type HoverIntent,
-  type HoverIntentOptions,
-  type HoverIntentTimers,
-} from "./hover-intent";
+  createHoverAnchors,
+  type HoverAnchorLane,
+  type HoverAnchors,
+  type HoverProbe,
+  type HoverProbeResolver,
+  hoverOwner,
+} from "./hover-anchor";
+// `createHoverIntent` itself is deliberately NOT here. Approach chrome joins
+// the kernel's one approach (`registerHoverAnchor`); a lane with its own intent
+// has its own pointer, and four private pointers is the defect this replaced.
+export { CHROME_TIMING, type HoverIntentTimers } from "./hover-intent";
 // The validator and the merge are `registerKeymap`'s and the extension's; a
 // lane declares its bindings and the registry does the rest.
 export {
@@ -58,3 +63,4 @@ export {
   type KeymapContribution,
   type KeymapScope,
 } from "./keymap";
+export { watchManuscriptLayout } from "./manuscript-layout";

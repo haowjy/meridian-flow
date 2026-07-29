@@ -8,9 +8,9 @@ goes home — with nothing about any particular object in it.
 ## Mental model
 
 `EDITOR_OBJECT_TYPES` is the whole per-type story: a node name, an optional
-predicate for types that are only sometimes objects, what the pointer finds
-inside the object, what Enter means, and which control surface the object
-carries. A lane that ships a new object type adds one row and, if Enter opens
+predicate for types that are only sometimes objects, where an outside press
+may land, what taking hold of the body drags, what Enter means, and which
+control surface the object carries. A lane that ships a new object type adds one row and, if Enter opens
 a surface, registers the handler from its mounted React component.
 
 Object-ness is a **registration, never a structural guess**. ProseMirror cannot
@@ -44,6 +44,13 @@ re-deriving it, so there is one answer to "is this an object".
   starts no drag out of a press whose default was taken away, and beside an
   inline picture the nearest editable position is the sentence it already
   stands in.
+- **`body` decides where an outside press may LAND.** An `opaque` body stands
+  in for text the page does not show, so no press from the gutters, the seams,
+  or the page below the document may put a caret in one — that rule lives in
+  [`../pointer-boundary.ts`](../pointer-boundary.ts) and reads this column for
+  every object alike. A `text` body shows its own text and takes a caret like
+  prose. It is a different question from `drag`, which asks what a press
+  STARTS; the two agree across today's rows and are not required to.
 - **`drag` decides what taking hold of the body does** (§5.8). `block` starts
   the drag the margin handle starts, in
   [`surfaces/blocks`](../../../features/editor/surfaces/blocks/AGENTS.md), and

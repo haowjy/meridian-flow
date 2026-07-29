@@ -97,6 +97,58 @@ async function landCaretInProse(mounted: Editor): Promise<void> {
   });
 }
 
+/** The element ProseMirror writes this fence's text into. */
+function contentHost(): Element {
+  const host = document.querySelector("[data-node-view-content]");
+  if (!host) throw new Error("expected a node view content host");
+  return host;
+}
+
+/**
+ * Everything the browser walks past to reach the content host.
+ *
+ * The node view's structural invariant, said as a list: a face change may
+ * never add, remove, or reorder DOM ahead of the host, because that is DOM
+ * moving in front of ProseMirror's live selection.
+ */
+function domAheadOfHost(): Element[] {
+  const wrapper = document.querySelector(".meridian-diagram-block");
+  if (!wrapper) throw new Error("expected a diagram block");
+  const host = contentHost();
+  const ahead: Element[] = [];
+  for (const child of Array.from(wrapper.children)) {
+    ahead.push(child);
+    if (child.contains(host)) return ahead;
+  }
+  throw new Error("content host is not inside the node view wrapper");
+}
+
+/** Every face the fence wears from now on, in order. */
+function recordFaces(): { faces: string[]; stop: () => void } {
+  const pre = document.querySelector("pre");
+  if (!pre) throw new Error("expected a fence");
+  const faces: string[] = [];
+  const observer = new MutationObserver(() => {
+    const face = pre.className.includes("hidden") ? "render" : "source";
+    if (faces.at(-1) !== face) faces.push(face);
+  });
+  observer.observe(pre, { attributes: true, attributeFilter: ["class"] });
+  return { faces, stop: () => observer.disconnect() };
+}
+
+/** Longer than one render debounce, so a face that waits on the parser shows. */
+function settleThroughRenderDebounce(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 400));
+}
+
+/** Is the model selection strictly inside the fence at the top of the fixture? */
+function selectionInsideFence(mounted: Editor): boolean {
+  const fence = mounted.state.doc.firstChild;
+  if (!fence) return false;
+  const { from, to } = mounted.state.selection;
+  return from > 0 && to < fence.nodeSize;
+}
+
 describe("Mermaid code blocks", () => {
   it("renders a mermaid fence as a diagram and hides its source", async () => {
     mountDocument("mermaid", RENDERS);
@@ -233,5 +285,61 @@ describe("a diagram that stops parsing", () => {
     // Both, not either: the render stays AND the failure is visible.
     expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
     expect(fenceClass()).toContain("hidden");
+  });
+});
+
+describe("a caret inside a rendered diagram", () => {
+  it("converges on the source face and leaves the selection where it found it", async () => {
+    // The invariant, both halves. A caret inside the fence must bring back a
+    // visible, connected source host — and rendering that must not move the
+    // selection, or the two faces alternate forever. The caret arrives by
+    // transaction because provenance is exactly what this must not depend on:
+    // a command, a peer's mapped write, and a press answered at a boundary all
+    // land here.
+    const mounted = mountDocument("mermaid", RENDERS);
+    await vi.waitFor(() => {
+      expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+    });
+    await landCaretInProse(mounted);
+    expect(mounted.isFocused).toBe(true);
+
+    const host = contentHost();
+    const aheadWhileRendered = domAheadOfHost();
+    const recorded = recordFaces();
+
+    mounted.view.dispatch(
+      mounted.state.tr.setSelection(TextSelection.create(mounted.state.doc, 3)),
+    );
+
+    await vi.waitFor(() => {
+      expect(fenceClass()).not.toContain("hidden");
+    });
+    await settleThroughRenderDebounce();
+
+    expect(selectionInsideFence(mounted)).toBe(true);
+    expect(fenceClass()).not.toContain("hidden");
+    expect(recorded.faces).toEqual(["source"]);
+    expect(contentHost()).toBe(host);
+    expect(host.isConnected).toBe(true);
+    expect(domAheadOfHost()).toEqual(aheadWhileRendered);
+
+    // Out again, once: the render comes back and the swap is still one-way.
+    mounted.view.dispatch(
+      mounted.state.tr.setSelection(
+        TextSelection.create(mounted.state.doc, mounted.state.doc.content.size - 1),
+      ),
+    );
+
+    await vi.waitFor(() => {
+      expect(fenceClass()).toContain("hidden");
+    });
+    await settleThroughRenderDebounce();
+    recorded.stop();
+
+    expect(recorded.faces).toEqual(["source", "render"]);
+    expect(selectionInsideFence(mounted)).toBe(false);
+    expect(contentHost()).toBe(host);
+    expect(host.isConnected).toBe(true);
+    expect(domAheadOfHost()).toEqual(aheadWhileRendered);
   });
 });

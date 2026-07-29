@@ -39,15 +39,20 @@ export {
   type OverlayIconRowItem,
   type OverlayIconRowProps,
 } from "./OverlayIconRow";
-export { objectOverlayStyle } from "./object-overlay";
+export {
+  type ObjectOverlayCorner,
+  type ObjectOverlayPlacement,
+  useObjectOverlayCorner,
+} from "./object-overlay";
 export {
   SuggestionMenu,
   type SuggestionMenuProps,
   type SuggestionMenuRow,
 } from "./SuggestionMenu";
 export { shortcutLabel } from "./shortcut-label";
-export { type AnchorRect, useAnchorRect, watchManuscriptLayout } from "./useAnchorRect";
+export { type AnchorRect, useAnchorRect } from "./useAnchorRect";
 export {
+  useChromeCoarsePointer,
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,

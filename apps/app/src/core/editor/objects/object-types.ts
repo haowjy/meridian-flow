@@ -30,6 +30,22 @@ export type ObjectEngageIntent =
   | "none";
 
 /**
+ * What an outside pointer finds in the object's body (§5.8).
+ *
+ * `opaque` stands in for text the page does not show: a picture, a rule, a
+ * rendered diagram's own source. No press from outside may put a caret in one,
+ * because a caret in DOM the writer cannot see eats every keystroke it is
+ * given — `core/editor/pointer-boundary.ts` is where that rule is kept.
+ * `text` is a body that shows its text and takes a caret like prose, which is
+ * what a table's cells are.
+ *
+ * A separate question from `drag`, which asks what a press STARTS rather than
+ * what it can land on. They agree across today's rows and need not: a body can
+ * own its own pointer without holding a word of text.
+ */
+export type ObjectBody = "opaque" | "text";
+
+/**
  * Which drag a press on the object's body starts (§5.8).
  *
  * A body with nothing to select and nothing to type into — a picture, a rule,
@@ -71,6 +87,7 @@ export type ObjectTypeSpec = {
    * prose the writer types into unless its language renders it as a diagram.
    */
   matches?: (node: PMNode) => boolean;
+  body: ObjectBody;
   drag: ObjectDrag;
   engage: ObjectEngageIntent;
   surfaceKind?: ObjectSurfaceKind;
@@ -78,10 +95,10 @@ export type ObjectTypeSpec = {
 
 export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
   // ── kernel (M3) ──────────────────────────────────────────────────
-  { nodeType: "figure", drag: "block", engage: "surface", surfaceKind: "image" },
-  { nodeType: "image", drag: "inline", engage: "surface", surfaceKind: "image" },
-  { nodeType: "table", drag: "none", engage: "caret-inside" },
-  { nodeType: "horizontal_rule", drag: "block", engage: "none" },
+  { nodeType: "figure", body: "opaque", drag: "block", engage: "surface", surfaceKind: "image" },
+  { nodeType: "image", body: "opaque", drag: "inline", engage: "surface", surfaceKind: "image" },
+  { nodeType: "table", body: "text", drag: "none", engage: "caret-inside" },
+  { nodeType: "horizontal_rule", body: "opaque", drag: "block", engage: "none" },
   {
     // Mermaid is not a node (§8): rendering keys off the language attr, so
     // object physics has to as well. A plain fence stays prose you type in.
@@ -89,6 +106,7 @@ export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
     matches: (node) => node.attrs.language === "mermaid",
     // The rendered diagram is opaque; the source hatch it can open is a
     // control inside it, and a press on a control is never a press on a body.
+    body: "opaque",
     drag: "block",
     engage: "surface",
     surfaceKind: "diagram",
@@ -107,6 +125,18 @@ export function objectTypeSpec(node: PMNode): ObjectTypeSpec | null {
 
 export function isEditorObject(node: PMNode): boolean {
   return objectTypeSpec(node) !== null;
+}
+
+/**
+ * What an outside pointer finds in this node's body, and `text` for everything
+ * that is not a registered object — prose included.
+ *
+ * The registration answers it. A rendered diagram is a `code_block` and a
+ * figure is not a blockquote by anything ProseMirror can see, which is why no
+ * caller may guess this from a node name or a schema flag.
+ */
+export function objectBody(node: PMNode): ObjectBody {
+  return objectTypeSpec(node)?.body ?? "text";
 }
 
 /**

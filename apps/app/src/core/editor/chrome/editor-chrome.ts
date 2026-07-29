@@ -18,7 +18,13 @@
 import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 import type { ContextClaimHandler } from "./context-claims";
 import type { ChromeLayer, GesturePhase } from "./esc-chain";
-import { createHoverIntent, type HoverIntent, type HoverIntentOptions } from "./hover-intent";
+import { createHoverAnchors, type HoverAnchorLane, type HoverAnchors } from "./hover-anchor";
+import {
+  createHoverIntent,
+  type HoverIntent,
+  type HoverIntentOptions,
+  type HoverIntentTimers,
+} from "./hover-intent";
 import { assertKeymapContribution, type KeymapContribution } from "./keymap";
 
 /** Who takes Escape for a layer when the editor does not have focus. */
@@ -123,15 +129,34 @@ export type EditorChrome = {
   beginDrag: (onCancel?: () => void) => () => void;
 
   /**
-   * Hover intent that the kernel cancels when a gesture starts. Approach
-   * chrome should always take its timing from here rather than its own
-   * `setTimeout`, or it will linger through a drag.
+   * Take part in the approach (`hover-anchor.ts`). ONE block owns hover chrome
+   * at a time and this lane is told its share of it, including after a scroll
+   * the writer's hand did not follow. A lane that answers "what am I hovering"
+   * from its own listener will disagree with the others eventually, and two
+   * disagreeing answers are two chromes on screen for two different blocks.
+   *
+   * This is the only door to hover here on purpose: a surface with its own
+   * intent has its own pointer, and that is the whole defect class.
    */
-  createHoverIntent: <T>(options: HoverIntentOptions<T>) => HoverIntent<T>;
+  registerHoverAnchor: <T>(lane: HoverAnchorLane<T>) => () => void;
+
+  /**
+   * The writer's last input device was a finger or a pen. A tap has no
+   * approach to settle, so the lanes that can follow the selection instead do
+   * (§5.8, law 8) — and a hybrid machine answers for the hand actually on it
+   * rather than for a media query.
+   */
+  readonly coarsePointer: boolean;
 };
 
 /** What `ChromeKernelExtension` drives. Surfaces never see this half. */
 export type EditorChromeController = {
+  /**
+   * The approach's DOM half: where the pointer is, and when to ask again.
+   * `ChromeKernelExtension` is the only thing that drives it.
+   */
+  hoverAnchors: HoverAnchors;
+  setCoarsePointer: (coarse: boolean) => void;
   setContext: (context: ChromeContext) => void;
   setGesture: (phase: GesturePhase) => void;
   /** Esc's first step: tell the drag's owner to give up, then stop suppressing. */
@@ -141,7 +166,10 @@ export type EditorChromeController = {
 
 let chromeSequence = 0;
 
-export function createEditorChrome(): {
+export function createEditorChrome(
+  /** The approach's clock. Injected so the timing policy is testable. */
+  hoverTimers?: HoverIntentTimers,
+): {
   chrome: EditorChrome;
   controller: EditorChromeController;
 } {
@@ -160,6 +188,29 @@ export function createEditorChrome(): {
   /** The drag that is actually running, if any. Identity, not a flag. */
   let activeDrag: { token: symbol; cancel?: () => void } | null = null;
   let keymapRevision = 0;
+  let coarsePointer = false;
+
+  /**
+   * Hover intent the kernel can reach: a gesture cancels every one of them, so
+   * approach chrome cannot linger through a drag. The coordinator's own intent
+   * is one of these, which is why a drag clears the whole approach at once.
+   */
+  const trackHoverIntent = <T>(options: HoverIntentOptions<T>): HoverIntent<T> => {
+    const intent = createHoverIntent({ timers: hoverTimers, ...options });
+    hoverIntents.add(intent as HoverIntent<unknown>);
+    return {
+      ...intent,
+      get settled() {
+        return intent.settled;
+      },
+      dispose() {
+        hoverIntents.delete(intent as HoverIntent<unknown>);
+        intent.dispose();
+      },
+    };
+  };
+
+  const hoverAnchors = createHoverAnchors(trackHoverIntent);
 
   const notify = () => {
     for (const listener of listeners) listener();
@@ -191,6 +242,9 @@ export function createEditorChrome(): {
     },
     get suppressed() {
       return gesture !== "idle";
+    },
+    get coarsePointer() {
+      return coarsePointer;
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -289,20 +343,7 @@ export function createEditorChrome(): {
       };
     },
 
-    createHoverIntent(options) {
-      const intent = createHoverIntent(options);
-      hoverIntents.add(intent as HoverIntent<unknown>);
-      return {
-        ...intent,
-        get settled() {
-          return intent.settled;
-        },
-        dispose() {
-          hoverIntents.delete(intent as HoverIntent<unknown>);
-          intent.dispose();
-        },
-      };
-    },
+    registerHoverAnchor: (lane) => hoverAnchors.register(lane),
   };
 
   /**
@@ -365,6 +406,12 @@ export function createEditorChrome(): {
   }
 
   const controller: EditorChromeController = {
+    hoverAnchors,
+    setCoarsePointer(coarse) {
+      if (coarsePointer === coarse) return;
+      coarsePointer = coarse;
+      notify();
+    },
     setContext(next) {
       if (
         next.owner === context.owner &&
@@ -383,6 +430,7 @@ export function createEditorChrome(): {
     },
     destroy() {
       activeDrag = null;
+      hoverAnchors.dispose();
       for (const intent of hoverIntents) intent.dispose();
       hoverIntents.clear();
       listeners.clear();

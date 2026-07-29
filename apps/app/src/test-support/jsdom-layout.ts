@@ -46,6 +46,20 @@ export function installJsdomLayoutFallbacks(): void {
   if (typeof document !== "undefined") {
     document.elementFromPoint ??= () => null;
   }
+
+  // Every floating surface observes the manuscript's boxes. Nothing here is
+  // laid out, so nothing ever resizes: an observer that never fires is what an
+  // unlaid-out document would honestly report, and a missing constructor is a
+  // throw out of a layout effect instead.
+  if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = InertResizeObserver;
+  }
+}
+
+class InertResizeObserver implements ResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
 }
 
 /**

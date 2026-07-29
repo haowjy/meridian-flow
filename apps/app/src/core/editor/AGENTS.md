@@ -67,6 +67,27 @@ change-trail events, not manuscript content.
   than binding it. See [`chrome/AGENTS.md`](chrome/AGENTS.md) and
   [`objects/AGENTS.md`](objects/AGENTS.md).
 
+- **A press outside the prose is answered once**, by
+  [`pointer-boundary.ts`](pointer-boundary.ts) rather than by whichever layout
+  component caught it. The pane has no click-dead margins, so the gutters, the
+  page below the last block, and the inert strip between two blocks all place a
+  caret — and `posAtCoords` alone hands a seam press the hidden source of the
+  rendered diagram above it. The resolver is pure over geometry plus the
+  document and returns a typed decision whose refusal is one of its cases. Two
+  rules hold for every block kind alike: an outside press never lands in an
+  opaque object's interior, and a press in a SEAM prefers prose to source. A
+  new block view adds nothing here, because the answer reads the object
+  registration.
+
+- **A node view that hides its own text derives that face from the selection,
+  and never restructures around it.** A selection inside a rendered mermaid
+  fence implies a visible, connected source content DOM; rendering that
+  implication must not change the selection, or the two faces alternate. So the
+  content host stays the wrapper's first child and only its visibility changes,
+  the render layer is a stable sibling behind it, and the face has no memory and
+  no test of how the caret arrived. A caret gets there by keystroke, command,
+  peer write, or pointer, and all four must converge.
+
 - **A key the editor owns is owned on its refusals too.** Undo
   (`UndoRedoKeymapExtension`) and Tab (`TabKeymapExtension`) both consume
   their key whether or not the verb had anything to do, because a binding

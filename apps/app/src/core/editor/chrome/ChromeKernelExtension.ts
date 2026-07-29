@@ -33,6 +33,7 @@ import {
 } from "./editor-chrome";
 import { escStep } from "./esc-chain";
 import { type KeymapBinding, mergeKeymapContributions } from "./keymap";
+import { watchManuscriptLayout } from "./manuscript-layout";
 
 const CHROME_EXTENSION_NAME = "meridianChrome";
 
@@ -105,6 +106,7 @@ export const ChromeKernelExtension = Extension.create({
 
   addProseMirrorPlugins() {
     const { chrome, controller } = this.storage;
+    const editor = this.editor;
 
     // Rebuilt only when a surface registers or unregisters, so an ordinary
     // keystroke costs one map lookup rather than a merge of every lane's keys.
@@ -146,6 +148,50 @@ export const ChromeKernelExtension = Extension.create({
           // every surface suppressed with nothing to un-suppress it.
           window.addEventListener("mouseup", endSweep);
           window.addEventListener("blur", endSweep);
+
+          // ONE pointer source for every approach in this editor, and one
+          // reading of the page under it. Each lane used to keep its own
+          // listener and its own answer to "what is under the pointer"; three
+          // answers is how a chip cluster claimed one object while a grip
+          // claimed another block on the same screen.
+          //
+          // The reading is what a lane cannot do for itself: chrome portalled
+          // out of the prose covers the manuscript, so the hit test under a
+          // revealed control would answer for whatever it happens to sit on.
+          const stopReading = controller.hoverAnchors.observe((x, y) => {
+            const element = document.elementFromPoint(x, y);
+            if (!(element instanceof Element)) return null;
+            if (isEditorChromeElement(chrome, element)) return { x, y, element, onChrome: true };
+            const host = view.dom.closest("[data-stable-layout-scroll]") ?? view.dom;
+            return host.contains(element) ? { x, y, element, onChrome: false } : null;
+          });
+
+          const readPointer = (event: PointerEvent) => {
+            // A finger does not hover. Remember the hand and let the lanes that
+            // follow the selection place their chrome instead (law 8).
+            const coarse = event.pointerType !== "mouse";
+            controller.setCoarsePointer(coarse);
+            if (coarse) {
+              controller.hoverAnchors.pointerGone();
+              return;
+            }
+            // Mid-drag or mid-sweep every surface stands down, and the approach
+            // re-earns itself on release rather than reappearing where it was.
+            if (chrome.suppressed) return;
+            controller.hoverAnchors.pointerAt(event.clientX, event.clientY);
+          };
+          const forgetPointer = () => controller.hoverAnchors.pointerGone();
+
+          document.addEventListener("pointermove", readPointer, { passive: true });
+          document.addEventListener("pointerdown", readPointer, { passive: true });
+          document.addEventListener("pointerleave", forgetPointer, { passive: true });
+
+          // Scroll and reflow are pointer moves with no pointer event: the hand
+          // is still and what is under it is not. Asking again is what keeps
+          // chrome off a target the writer has scrolled away from.
+          const stopWatchingLayout = watchManuscriptLayout(editor, [], () => {
+            if (!chrome.suppressed) controller.hoverAnchors.remeasure();
+          });
 
           // The router listens in the capture phase rather than through
           // ProseMirror's `handleDOMEvents`, because that prop cannot see a
@@ -194,6 +240,11 @@ export const ChromeKernelExtension = Extension.create({
               controller.setContext(resolveChromeContext(updatedView.state));
             },
             destroy() {
+              stopReading();
+              stopWatchingLayout();
+              document.removeEventListener("pointermove", readPointer);
+              document.removeEventListener("pointerdown", readPointer);
+              document.removeEventListener("pointerleave", forgetPointer);
               window.removeEventListener("mouseup", endSweep);
               window.removeEventListener("blur", endSweep);
               document.removeEventListener("contextmenu", routeMenu, true);

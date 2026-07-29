@@ -217,6 +217,15 @@
   font-size: 0.8125rem;
 }
 
+/* Object chrome is rendered inside the object's own node view and placed
+   absolutely in its corner (`chrome/object-overlay.ts`), so the node view is
+   what that corner is measured from. `relative` with no offsets moves nothing
+   and reserves nothing; the class is TipTap's container for a node view, which
+   is exactly the set of elements the manuscript does not own. */
+.meridian-editor .ProseMirror .react-renderer {
+  position: relative;
+}
+
 /* An inline node view's outer wrapper is `display: inline` by default, so its
    box is the line box rather than the thing inside it — a 64px image wears a
    22px ring with its horizontals painted behind the picture. ProseMirror puts

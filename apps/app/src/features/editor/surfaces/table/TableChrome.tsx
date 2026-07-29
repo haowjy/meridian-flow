@@ -32,7 +32,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { editorChromeAttributes, type HoverIntent } from "@/core/editor/chrome";
+import { editorChromeAttributes, hoverOwner, watchManuscriptLayout } from "@/core/editor/chrome";
 
 import {
   EditorMenu,
@@ -40,7 +40,6 @@ import {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
-  watchManuscriptLayout,
 } from "../../chrome";
 import {
   TableCellMenuItems,
@@ -82,10 +81,10 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const [cellMenuAt, setCellMenuAt] = useState<{ x: number; y: number } | null>(null);
 
-  // The pointer travels off the editor and onto the grips, so hover has to be
-  // re-enterable from the chrome itself; the intent's warm grace is what makes
-  // that crossing survivable.
-  const intentRef = useRef<HoverIntent<HTMLElement> | null>(null);
+  // What the approach last settled on, whether or not this surface was free to
+  // move its anchor there. A menu holds the grips still while it is open, and
+  // the pointer's real place has to be readable again on close.
+  const settledCell = useRef<HTMLElement | null>(null);
   const openMenuRef = useRef<Axis | null>(null);
   openMenuRef.current = openMenu;
 
@@ -96,7 +95,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
    * element, and the grips would never come back.
    */
   const releaseAnchor = useCallback(() => {
-    intentRef.current?.cancel();
     setOpenMenu(null);
     setAnchorCell(null);
     setHovering(false);
@@ -107,15 +105,36 @@ export function TableChrome({ editor }: { editor: Editor }) {
   // A menu held the anchor still while it was open, so the pointer's real
   // position has to be read back on close or the grips linger where it left.
   const syncHover = useCallback(() => {
-    const settled = intentRef.current?.settled ?? null;
+    const settled = settledCell.current;
     if (settled) setAnchorCell(settled);
     setHovering(settled !== null);
   }, []);
 
+  /**
+   * The approach. This lane answers one question — which cell is at this point
+   * — and the kernel's coordinator owns the rest: the timing, the pointer's
+   * last place, and which block owns hover chrome at all. A cell that scrolls
+   * away under a still hand is therefore released by the same mechanism that
+   * releases every other lane, rather than by a branch here.
+   *
+   * `holds` is the part only this lane knows. The grips live OUTSIDE the frame
+   * (Q6), so the pixels BETWEEN the frame and a grip belong to the reveal too;
+   * without them the travel to a grip crosses several pixels of nothing and
+   * fades out the control the writer is reaching for.
+   */
   useEffect(() => {
     if (!chrome || !editable) return;
-    const intent = chrome.createHoverIntent<HTMLElement>({
+    return chrome.registerHoverAnchor<HTMLElement>({
+      id: "table-chrome",
+      probe: ({ element }) => {
+        const cell = tableCellUnder(editor.view, element);
+        if (!cell) return null;
+        const owner = hoverOwner(editor.view, cell);
+        return owner ? { owner, value: cell } : null;
+      },
+      holds: (cell, { x, y }) => pointerHoldsTableChrome(cell, x, y),
       onSettle: (cell) => {
+        settledCell.current = cell;
         // An open menu owns the anchor: letting a stray hover move the grips
         // out from under the menu would leave it pointing at another row.
         if (openMenuRef.current) return;
@@ -123,44 +142,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
         setHovering(cell !== null);
       },
     });
-    intentRef.current = intent;
-
-    // One pointer source for the whole approach, on the document rather than
-    // the editor: the grips live in a portal OUTSIDE the editor's DOM, so a
-    // listener bound to the prose sees the pointer leave and never sees it
-    // arrive. Pairing that leave with a React `onMouseEnter` on the portal put
-    // two mechanisms in a 120ms race across a tree boundary, and the race is
-    // why a grip stopped being clickable a moment after it appeared.
-    //
-    // Asking one question of one event removes the race: is the pointer on a
-    // cell of this editor, or anywhere in the zone this table's chrome lives
-    // in? Geometry rather than the chrome's own elements, because the pixels
-    // BETWEEN the frame and a grip belong to the reveal too.
-    const onMove = (event: MouseEvent) => {
-      const cell = tableCellUnder(editor.view, event.target);
-      if (cell) {
-        intent.enter(cell);
-        return;
-      }
-      // Outside the frame but still on the hover zone the chrome was drawn in:
-      // the writer is travelling to a control this reveal put there. Entering
-      // again rather than merely not leaving is the load-bearing part — the
-      // grace the frame's edge started has to be CANCELLED, or it fires on a
-      // pointer already resting on the grip and fades it out from under them.
-      const held = intent.settled;
-      if (held && pointerHoldsTableChrome(held, event.clientX, event.clientY)) {
-        intent.enter(held);
-        return;
-      }
-      intent.leave();
-    };
-
-    document.addEventListener("mousemove", onMove, { passive: true });
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      intentRef.current = null;
-      intent.dispose();
-    };
   }, [chrome, editor, editable]);
 
   const selectAxis = useCallback(
@@ -319,11 +300,16 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
       {/* The table's object controls: one ⋮, and only while the table is
           selected. §5.4 rules out a hover icon row here — the grips already
-          own the top edge, and a second system would crowd them. */}
+          own the top edge, and a second system would crowd them.
+
+          Measured rather than rendered inside the frame, unlike every other
+          object's row: a table is ProseMirror's own DOM rather than a node
+          view's, and a child inserted into it is read back as a document
+          change. */}
       <OverlayIconRow
         editor={editor}
         kind="table"
-        anchor={editable ? tableElement : null}
+        corner={editable && tableElement ? { over: tableElement } : null}
         visible={Boolean(tableElement)}
         items={[]}
         overflow={(chip) => (

@@ -22,6 +22,18 @@ export type ObjectSurfaceTarget = {
    * (`objectSurfaceAt`), so it stays a valid handle either way.
    */
   element: HTMLElement;
+  /**
+   * The node view's own element — where this object's chrome is RENDERED, so
+   * that scroll and reflow move the two as one piece and no measurement can
+   * strand it (`chrome/object-overlay.ts`).
+   *
+   * Safe because every object here is a React node view, and a node view
+   * ignores DOM changes outside its `contentDOM`: the manuscript's own
+   * elements are ProseMirror's, and a child inserted into one of those is read
+   * back as a document change. It already bounds the object for the selection
+   * ring, inline images included (`editor.css`).
+   */
+  container: HTMLElement;
 };
 
 /** A fence the registry renders as a diagram, rather than one to type in. */
@@ -92,7 +104,7 @@ export function objectSurfaceAt(
     const node = view.state.doc.nodeAt(pos);
     const kind = node ? objectSurfaceKind(node) : null;
     if (!node || !kind) continue;
-    return { pos, node, kind, element: renderedBounds(node, element) };
+    return { pos, node, kind, element: renderedBounds(node, element), container: element };
   }
 
   return null;
@@ -118,5 +130,5 @@ export function objectSurfaceAtPos(view: EditorView, pos: number): ObjectSurface
 
   const element = view.nodeDOM(pos);
   if (!(element instanceof HTMLElement)) return null;
-  return { pos, node, kind, element: renderedBounds(node, element) };
+  return { pos, node, kind, element: renderedBounds(node, element), container: element };
 }

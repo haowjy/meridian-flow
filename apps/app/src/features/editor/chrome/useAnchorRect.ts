@@ -10,63 +10,18 @@
  * Anchoring is therefore a measurement that repeats, and it lives here once
  * rather than in each lane, which is also why the surfaces cannot drift apart
  * by a pixel.
+ *
+ * WHEN to repeat it is the kernel's `watchManuscriptLayout`, shared with the
+ * approach's own re-hit-testing so the two can never fall out of step.
  */
 
 import type { Editor } from "@tiptap/core";
 import { useLayoutEffect, useState } from "react";
 
+import { watchManuscriptLayout } from "@/core/editor/chrome";
+
 /** All four edges: a row hangs off the top-right, a hint off the bottom-left. */
 export type AnchorRect = { top: number; right: number; bottom: number; left: number };
-
-/**
- * Re-run `schedule` whenever the manuscript may have moved under `observed`,
- * coalesced to one call per frame. Returns the teardown.
- *
- * Four sources, and the transaction is the one a surface forgets: an element
- * that keeps its size and its identity still travels when a block above it
- * grows, when the writer moves it with Alt+Arrow, or when a peer's write lands
- * three paragraphs up. A ResizeObserver on the anchor sees none of those, so a
- * surface watching only itself paints over whatever slid into its old corner —
- * and an overlay is opaque and takes clicks, so a stale one eats the click the
- * writer aimed at the prose beneath it.
- *
- * The manuscript's own root is observed alongside the anchor for the layout
- * that changes with no transaction at all: a diagram finishing its render, an
- * image arriving, a font swapping. Those grow the document, and everything
- * below them moves without ever changing shape.
- */
-export function watchManuscriptLayout(
-  editor: Editor | null,
-  observed: readonly (Element | null | undefined)[],
-  schedule: () => void,
-): () => void {
-  let frame = 0;
-  const run = () => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(schedule);
-  };
-
-  // Capture phase: the manuscript scrolls in a pane rather than the window, and
-  // a surface has to travel with its block instead of hanging over whatever
-  // paragraph took its place.
-  window.addEventListener("scroll", run, true);
-  window.addEventListener("resize", run);
-  editor?.on("transaction", run);
-
-  const observer = new ResizeObserver(run);
-  const manuscript = editor && !editor.isDestroyed ? editor.view.dom : null;
-  for (const element of [...observed, manuscript]) {
-    if (element) observer.observe(element);
-  }
-
-  return () => {
-    cancelAnimationFrame(frame);
-    window.removeEventListener("scroll", run, true);
-    window.removeEventListener("resize", run);
-    editor?.off("transaction", run);
-    observer.disconnect();
-  };
-}
 
 /**
  * The anchor's viewport rect, followed while the caller is mounted.

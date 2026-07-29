@@ -9,11 +9,10 @@ and lives in [`core/editor/chrome/`](../../../core/editor/chrome/AGENTS.md).
 Four primitives and one host.
 
 - **`OverlayIconRow`** — an object's verbs, overlaid just inside its top-right
-  bounds (ruling 8; mockup 03b is the decision record). Portalled and
-  positioned from the object's measured rect, so it has zero footprint. The
-  corner itself is `objectOverlayStyle` + `.meridian-object-overlay`, worn by
-  every object overlay (the code fence's chip cluster too) so a new one never
-  re-hand-rolls the inset or the fade.
+  bounds (ruling 8; mockup 03b is the decision record). The corner itself is
+  `object-overlay.ts` + `.meridian-object-overlay`, worn by every object
+  overlay (the code fence's chip cluster too) so a new one never re-hand-rolls
+  the inset, the fade, or the choice of coordinate space.
 - **`EditorMenu` / `EditorPopover` / `EditorDialog`** — Radix, subordinated.
   Each registers as a layer in the Esc chain, defers Escape when something
   deeper is open, and hands the caret back to the prose on every close path.
@@ -34,6 +33,17 @@ platform itself will spell it a fourth way.
 
 Radix is not wrapped away. It keeps owning dismissal, outside-click, and
 roving focus (decision 2026-07-29). What these add is subordination.
+
+**Attached by default, measured by exception.** Chrome that decorates
+something with a node view of its own is RENDERED IN that element and placed
+by CSS: scroll and reflow then move chrome and object as one piece, and there
+is no rect to go stale. Only chrome with nowhere to live does the measuring —
+an element ProseMirror renders itself and reads back as document content (a
+table), controls that protrude past the frame they belong to, a menu
+deliberately hung off a pointer point. `object-overlay.ts` holds that choice
+for the object corner; every surviving measured surface rides
+`watchManuscriptLayout` for its rect and the kernel's hover anchors for its
+target.
 
 ## Key rules
 
@@ -66,13 +76,19 @@ roving focus (decision 2026-07-29). What these add is subordination.
 - **`modal={false}`** on menus and popovers. A modal surface freezes the page
   behind it, and the page behind it is the writer's chapter: clicking away must
   land the caret where the writer clicked, not merely dismiss.
-- **A measured anchor is re-measured on every transaction.** An element keeps
-  its identity and its size while travelling: Alt+Arrow moves its block, a peer
-  types above it, a diagram above it finishes rendering. Nothing an observer
-  watches changes, so a surface that measures once paints over whatever slid
-  into its old corner — and an overlay is opaque and takes clicks, so a stale
-  one eats the click the writer aimed at the prose. `useAnchorRect` and
-  `watchManuscriptLayout` own this; no lane schedules its own measurement.
+- **A measured anchor follows `watchManuscriptLayout`, and nothing else.** An
+  element keeps its identity and its size while travelling: the pane scrolls
+  under a still hand, Alt+Arrow moves its block, a peer types above it, a
+  diagram above it finishes rendering. A surface watching any shorter list
+  paints over whatever slid into its old corner — and an overlay is opaque and
+  takes clicks, so a stale one eats the click the writer aimed at the prose.
+  `useAnchorRect` is the hook; the watcher itself is the kernel's, shared with
+  the approach's re-hit-testing so geometry and target cannot fall out of step.
+- **Geometry following is not target following.** A rect that keeps up says
+  nothing about whether the pointer is still on the thing it decorates. Which
+  target is hovered is one kernel answer for the whole editor
+  (`core/editor/chrome/hover-anchor.ts`); a lane that keeps its own will
+  disagree with the others the first time the writer scrolls.
 - **Anchoring is not re-implemented per lane.** `EditorMenu` at a point hangs
   off `pointer-anchor.ts`; its position is inline style, because a utility class
   that failed to reach it would silently drop every claimed menu in the top-left
