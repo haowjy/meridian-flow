@@ -176,11 +176,18 @@ initialization, and the lane's surface never mounts.
 directly — a toolbar's lit states, a chip cluster's language label. Anything
 that only needs the resolved context or suppression reads those stores instead:
 they notify when their answer changes, not when the document does.
-`useAnchorRect(element)` is the shared measurement behind every inside-corner
-surface. It follows an element through scroll (capture phase, because the
-manuscript scrolls in a pane) and resize, coalesces to one measurement per
-frame, and keeps its result identity-stable so a scroll that does not move the
-anchor costs no render.
+`useAnchorRect(editor, element)` is the shared measurement behind every
+inside-corner surface, and `watchManuscriptLayout` is the scheduler under it
+that the table lane shares. It re-measures on scroll (capture phase, because
+the manuscript scrolls in a pane), on window resize, on any editor transaction,
+and on a resize of either the anchor or the manuscript root — the last two
+between them cover the moves nothing else reports: a block travelling because a
+peer typed above it, and a diagram or image finishing its render and pushing
+everything below it down. Results are rAF-coalesced and identity-stable, so a
+scroll or a keystroke that does not move the anchor costs no render. An anchor
+that has left the document reports no rect at all, which takes the surface off
+the page rather than leaving an opaque, clickable overlay measured from a dead
+element.
 
 `useChromeContext` and `useChromeSuppressed` are `useSyncExternalStore`
 readings of one store, so two surfaces can never disagree about what owns

@@ -46,7 +46,7 @@ export {
   type SuggestionMenuRow,
 } from "./SuggestionMenu";
 export { shortcutLabel } from "./shortcut-label";
-export { type AnchorRect, useAnchorRect } from "./useAnchorRect";
+export { type AnchorRect, useAnchorRect, watchManuscriptLayout } from "./useAnchorRect";
 export {
   useChromeContext,
   useChromeSuppressed,

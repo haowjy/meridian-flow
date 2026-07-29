@@ -66,6 +66,13 @@ roving focus (decision 2026-07-29). What these add is subordination.
 - **`modal={false}`** on menus and popovers. A modal surface freezes the page
   behind it, and the page behind it is the writer's chapter: clicking away must
   land the caret where the writer clicked, not merely dismiss.
+- **A measured anchor is re-measured on every transaction.** An element keeps
+  its identity and its size while travelling: Alt+Arrow moves its block, a peer
+  types above it, a diagram above it finishes rendering. Nothing an observer
+  watches changes, so a surface that measures once paints over whatever slid
+  into its old corner — and an overlay is opaque and takes clicks, so a stale
+  one eats the click the writer aimed at the prose. `useAnchorRect` and
+  `watchManuscriptLayout` own this; no lane schedules its own measurement.
 - **Anchoring is not re-implemented per lane.** `EditorMenu` at a point hangs
   off `pointer-anchor.ts`; its position is inline style, because a utility class
   that failed to reach it would silently drop every claimed menu in the top-left

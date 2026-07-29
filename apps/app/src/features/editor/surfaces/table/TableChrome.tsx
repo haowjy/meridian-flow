@@ -40,6 +40,7 @@ import {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
+  watchManuscriptLayout,
 } from "../../chrome";
 import {
   TableCellMenuItems,
@@ -506,7 +507,6 @@ function useTableChromeRects(
       return;
     }
 
-    let frame = 0;
     const measure = () => {
       const next = measureTableChrome(cell);
       // The cell scrolled out of the manuscript's pane: the approach is over
@@ -514,27 +514,11 @@ function useTableChromeRects(
       if (!next) lostRef.current();
       setRects((previous) => (sameTableChromeRects(previous, next) ? previous : next));
     };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
 
     measure();
-    window.addEventListener("scroll", schedule, true);
-    window.addEventListener("resize", schedule);
-    editor.on("transaction", schedule);
-    const observer = new ResizeObserver(schedule);
-    observer.observe(cell);
-    const table = cell.closest("table");
-    if (table) observer.observe(table);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", schedule, true);
-      window.removeEventListener("resize", schedule);
-      editor.off("transaction", schedule);
-      observer.disconnect();
-    };
+    // The table itself joins the cell and the manuscript root: a column drag
+    // resizes the frame live, before the width it settles on becomes a step.
+    return watchManuscriptLayout(editor, [cell, cell.closest("table")], measure);
   }, [cell, editor]);
 
   return rects;

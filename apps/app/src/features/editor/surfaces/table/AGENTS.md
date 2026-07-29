@@ -5,8 +5,8 @@ and column grips outside the frame, the add tabs on the right and bottom
 edges, the row/column/table menus, the header toggle, per-column alignment,
 and the Alt+Arrow row and column moves.
 
-At rest a table is just a table. Nothing here renders inside the frame and
-nothing here can move a line of the manuscript.
+At rest a table is just a table. Nothing here is inserted into the frame's DOM
+and nothing here can move a line of the manuscript.
 
 ## Mental model
 
@@ -79,6 +79,12 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   on each side; it holds a reveal, never starts one. Its left edge is the
   grips' half of the shared margin and stops one pixel short of the block
   handle's.
+- **Nothing this lane draws may reach the block below the table.** A click
+  aimed at prose must never mutate a table (human ruling, 2026-07-29), and the
+  seam between two blocks is 14.4px against an 18px tab — so the add-row tab
+  sits inside the frame, and the hover zone's bottom band is derived from what
+  is left there rather than from a gap. Changing either number means checking
+  it against `.ProseMirror > * + *`.
 - **Chrome that has left the manuscript's pane does not draw.** Placement is
   clipped to the scrollport in `table-anchors.ts`, so a grip cannot ride up
   over the toolbar when the writer scrolls without moving the pointer.
@@ -98,8 +104,9 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - Following the document with a per-transaction re-render to learn whether a
   table is selected. The kernel's context store answers that, and notifies when
   the answer changes rather than on every keystroke of the chapter.
-- Rendering anything inside the table. Grips, tabs, and menus are portalled and
-  measured; the frame stays clean.
+- Inserting anything into the table's DOM. Grips, tabs, and menus are portalled
+  and measured, so the frame reserves nothing for them — which is what lets the
+  add-row tab overlay the frame's own bottom edge without moving a cell.
 - Reaching for prosemirror-tables' `toggleHeaderRow`. It toggles the SELECTED
   rows, so from the table's own menu it makes every row a header.
 - Deciding a cell is empty by its text. A hard break and an inline image are

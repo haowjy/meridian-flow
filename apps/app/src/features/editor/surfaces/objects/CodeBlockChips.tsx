@@ -104,7 +104,7 @@ export function CodeBlockChips({
 }: CodeBlockChipsProps) {
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
-  const rect = useAnchorRect(target.element);
+  const rect = useAnchorRect(editor, target.element);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const wrapped = useWrappedLines(target.element);

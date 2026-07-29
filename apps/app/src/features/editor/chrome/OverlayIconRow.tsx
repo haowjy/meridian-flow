@@ -75,7 +75,7 @@ export function OverlayIconRow({
 }: OverlayIconRowProps) {
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
-  const rect = useAnchorRect(anchor);
+  const rect = useAnchorRect(editor, anchor);
 
   if (!anchor || !rect || !chrome || typeof document === "undefined") return null;
 

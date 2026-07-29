@@ -50,13 +50,26 @@ decides whether a grip fits has to know how big it is.
 | Column grip | 30×15 pill, centred on the hovered column, bottom edge 4px above the table |
 | Row grip | 15×30 pill, centred on the hovered row, right edge 6px left of the table |
 | Add column tab | 18px circle, 9px right of the table's right edge, vertically centred |
-| Add row tab | 18px circle, 9px below the table's bottom edge, horizontally centred |
+| Add row tab | 18px circle, 6px INSIDE the table's bottom edge, horizontally centred |
+
+**The add-row tab is inside the frame, and mockup 05 draws it below.** The
+constraint won (human ruling, 2026-07-29: chrome never overlaps prose, and a
+click aimed at prose must never mutate a table). All that separates two blocks
+is `.ProseMirror > * + *` at `0.9em` — 14.4px at the reading size, less at a
+smaller one — and the tab is 18px, so no gap below the frame keeps it out of
+the paragraph under the table. At 9px it ran to y=1092.6 while that paragraph's
+first line box began at 1083, and a click on the writer's own first line added
+a row. Sideways nothing collides: a table is a block, so the space beside it is
+the page gutter or the table's own empty half, and the add-column tab keeps its
+gap.
 
 `tableHoverZone` is the other half of the same decision: the frame expanded by
-each side's band (19 top, 21 left, 27 right and bottom), which is what the
-pointer has to stay inside for a reveal to hold. Placement and hover are
-checked against each other in the tests — a piece drawn outside the zone would
-dismiss itself as the writer reached for it.
+each side's band (19 top, 21 left, 27 right, 15 bottom), which is what the
+pointer has to stay inside for a reveal to hold. The bottom band is half a row
+grip, because nothing is placed below the frame any more and the only thing
+that still reaches there is a grip centred on a last row shorter than itself.
+Placement and hover are checked against each other in the tests — a piece drawn
+outside the zone would dismiss itself as the writer reached for it.
 
 **Null rather than clamped.** A grip pushed back inside the port would sit
 beside a row it does not serve, and chrome pointing at the wrong row is worse

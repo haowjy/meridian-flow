@@ -24,6 +24,25 @@ const ADD_TAB = 18;
 const COLUMN_GRIP_GAP = 4;
 const ROW_GRIP_GAP = 6;
 const ADD_TAB_GAP = 9;
+/**
+ * The add-row tab hangs INSIDE the bottom edge rather than below it.
+ *
+ * Below it, the tab does not fit. All that separates two blocks is
+ * `.ProseMirror > * + *`, which is `0.9em` — 14.4px at the reading size and
+ * less at a smaller one — while the tab is 18px. Drawn in that seam it reached
+ * into the paragraph under the table (measured: tab to 1092.6, that
+ * paragraph's first line box from 1083), so a writer clicking their own first
+ * line pressed "add a row", and a click meant to place a caret changed the
+ * document. Shrinking the gap cannot fix a tab taller than the seam, so it
+ * moves inside — ruling 8's inside-corner physics, the same trade every object
+ * overlay in this editor already makes. Mockup 05 draws it below; the
+ * constraint wins (human ruling, 2026-07-29).
+ *
+ * Sideways there is nothing to reach into. A table is a block, so the space
+ * beside it is the page gutter or the table's own empty half, and the
+ * add-column tab keeps its gap.
+ */
+const ADD_TAB_INSET = 6;
 
 export type Box = { left: number; top: number; right: number; bottom: number };
 
@@ -33,12 +52,17 @@ export type Box = { left: number; top: number; right: number; bottom: number };
  * Derived from the placements below rather than chosen: each piece is drawn in
  * the band on its own side, so a band is that side's gap plus that piece's
  * size, and the hover zone covers every piece by construction.
+ *
+ * Below the frame nothing is placed on purpose. What still reaches there is a
+ * row grip centred on a last row shorter than the grip itself, which overhangs
+ * by at most half the grip — so that is the band, and it stays inside the
+ * 14.4px seam a table shares with the paragraph under it.
  */
 const CHROME_BAND = {
   top: COLUMN_GRIP_GAP + GRIP_SHORT,
   left: ROW_GRIP_GAP + GRIP_SHORT,
   right: ADD_TAB_GAP + ADD_TAB,
-  bottom: ADD_TAB_GAP + ADD_TAB,
+  bottom: GRIP_LONG / 2,
 } as const;
 
 /** One piece of chrome, in viewport coordinates. */
@@ -139,7 +163,7 @@ export function tableChromePieces({
     addRow: fits(
       {
         left: (table.left + table.right) / 2 - ADD_TAB / 2,
-        top: table.bottom + ADD_TAB_GAP,
+        top: table.bottom - ADD_TAB - ADD_TAB_INSET,
         width: ADD_TAB,
         height: ADD_TAB,
       },
@@ -155,7 +179,9 @@ export function tableChromePieces({
  * Chrome outside the frame (Q6) is only reachable if the pointer can travel to
  * it, and the travel leaves the frame several pixels before it arrives — the
  * gap alone dismissed the grips the writer was reaching for. The zone reveals
- * nothing: a cell does that. It only decides when a reveal is over.
+ * nothing: a cell does that. It only decides when a reveal is over. It stops at
+ * the bottom edge, because the add-row tab is inside the frame and a zone
+ * reaching under the table would hold the reveal open over the paragraph there.
  *
  * The left band stops exactly at the row grip's outer edge, 21px, because the
  * margin is shared: M9's block handle owns everything past 22 (see

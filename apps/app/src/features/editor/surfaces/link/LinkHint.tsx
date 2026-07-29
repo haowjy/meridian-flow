@@ -43,7 +43,7 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
   // Held one fade past its own disappearance, so the hint fades where it stood.
   const shown = useFadeHold(hint);
   const [element, setElement] = useState<HTMLDivElement | null>(null);
-  const rect = useAnchorRect(shown?.element ?? null);
+  const rect = useAnchorRect(editor, shown?.element ?? null);
   const position = useHintPosition(element, rect);
   const visible = Boolean(hint) && !suppressed;
   const href = shown ? linkTargetHref(shown.target) : null;
