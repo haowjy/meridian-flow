@@ -16,11 +16,12 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { WikilinkCatalog } from "@/core/completion";
+
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { SlashCommandCatalog } from "./extensions/slash";
-import type { WikilinkCatalog } from "./extensions/wikilink";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {

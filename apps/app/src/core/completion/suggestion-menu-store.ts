@@ -1,14 +1,15 @@
 /**
  * The open menu a writer types underneath, headless.
  *
- * Two triggers have these physics: `/` offering blocks (§5.7) and `[[`
- * offering documents (§5.5). In both the query IS the document text after the
- * trigger, the caret never leaves the prose, and `@tiptap/suggestion` owns when
- * the menu exists and what matched. This store is the whole seam between that
- * plugin and React, which is why the keyboard lives here rather than in the
- * component: the arrow keys are registered against the chrome kernel from the
- * plugin's own lifetime, so they are bound before React has rendered a single
- * row and the first ArrowDown after the trigger cannot miss.
+ * Two triggers have these physics today: `/` offering blocks (§5.7) and `[[`
+ * offering documents (§5.5). In both the query IS the text after the trigger,
+ * the caret never leaves what the writer is typing, and something upstream owns
+ * when the menu exists and what matched — `@tiptap/suggestion` in the editor,
+ * caret measurement in a composer. This store is the whole seam between that
+ * upstream and React, which is why the keyboard lives here rather than in the
+ * component: the arrow keys are registered from the trigger's own lifetime, so
+ * they are bound before React has rendered a single row and the first ArrowDown
+ * after the trigger cannot miss.
  *
  * The menu is only `open` while it has something to offer. A filter that
  * matches nothing leaves the trigger active — backspacing brings the list
