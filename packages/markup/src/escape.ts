@@ -1,20 +1,18 @@
 /** MDX ingress escaping for prose that contains JSX-significant characters. */
 
+import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
+
 export function escapeProseForMdxIngress(text: string): string {
   const lines = text.split("\n");
   const out: string[] = [];
-  let inCodeFence = false;
-  let fenceMarker = "";
+  let fence: MarkdownFence | null = null;
   let htmlTableEnd = -1;
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? "";
-    if (inCodeFence) {
+    if (fence) {
       out.push(line);
-      if (line.trimStart().startsWith(fenceMarker)) {
-        inCodeFence = false;
-        fenceMarker = "";
-      }
+      if (closesFence(lines, index, fence)) fence = null;
       continue;
     }
 
@@ -35,10 +33,9 @@ export function escapeProseForMdxIngress(text: string): string {
       }
     }
 
-    const fence = line.match(/^(`{3,}|~{3,})(.*)$/);
-    if (fence) {
-      inCodeFence = true;
-      fenceMarker = fence[1];
+    const openingFence = openingFenceAt(lines, index);
+    if (openingFence) {
+      fence = openingFence;
       out.push(line);
       continue;
     }

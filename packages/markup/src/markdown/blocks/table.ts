@@ -8,6 +8,12 @@ import {
   stringifyBlock,
 } from "../../helpers.js";
 import type { BlockCodec, SerializeContext } from "../../types.js";
+import {
+  closesFence,
+  hasListContainerAtIndent,
+  openingFenceAt,
+  stripIndentedQuotePrefix,
+} from "../container.js";
 import { parseHtmlTable, serializeHtmlTable } from "./table-html.js";
 
 type TableAlignment = MdastTable["align"][number];
@@ -279,39 +285,6 @@ function isDelimiterRow(value: string): boolean {
   return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()));
 }
 
-function openingFenceAt(
-  lines: readonly string[],
-  index: number,
-): { marker: string; length: number } | null {
-  const content = fenceLineContent(lines, index);
-  const opening = content?.match(/^(`{3,}|~{3,})/);
-  const run = opening?.[1];
-  return run ? { marker: run[0] ?? "", length: run.length } : null;
-}
-
-function closesFence(
-  lines: readonly string[],
-  index: number,
-  fence: { marker: string; length: number },
-): boolean {
-  const content = fenceLineContent(lines, index);
-  if (content === null) return false;
-  const marker = fence.marker === "`" ? "`" : "~";
-  return new RegExp(`^${marker}{${fence.length},}[\\t ]*$`).test(content);
-}
-
-function fenceLineContent(lines: readonly string[], index: number): string | null {
-  const { remainder } = stripIndentedQuotePrefix(lines, index, lines[index] ?? "");
-  const listMarker = remainder.match(/^ {0,3}(?:[-+*] |\d+[.)] )/);
-  if (listMarker) return remainder.slice(listMarker[0].length).replace(/^ {0,3}/, "");
-
-  const indentation = remainder.match(/^ */)?.[0].length ?? 0;
-  if (indentation <= 3 || hasListContainer(lines, index, indentation)) {
-    return remainder.slice(indentation);
-  }
-  return null;
-}
-
 function canonicalTableLine(lines: readonly string[], index: number, line: string): string[] {
   const structuralPrefix = tableLinePrefix(lines, index);
   if (structuralPrefix === null || !line.includes("<br")) return [line];
@@ -361,62 +334,8 @@ function tableLinePrefix(lines: readonly string[], index: number): string | null
   const prefix = line.slice(0, pipe);
   const { remainder } = stripIndentedQuotePrefix(lines, index, prefix);
   if (/^(?: {0,3}| {0,3}(?:[-+*] |\d+[.)] ))$/.test(remainder)) return prefix;
-  if (/^ {4,}$/.test(remainder) && hasListContainer(lines, index, remainder.length)) {
+  if (/^ {4,}$/.test(remainder) && hasListContainerAtIndent(lines, index, remainder.length)) {
     return prefix;
   }
   return null;
-}
-
-function hasListContainer(lines: readonly string[], index: number, tableIndent: number): boolean {
-  const tableQuoteDepth = stripQuotePrefix(lines[index] ?? "").depth;
-  for (let cursor = index - 1; cursor >= 0; cursor--) {
-    const candidate = stripQuotePrefix(lines[cursor] ?? "");
-    if (candidate.remainder.trim().length === 0) continue;
-    if (candidate.depth !== tableQuoteDepth) return false;
-
-    const marker = candidate.remainder.match(/^( *)(?:[-+*] |\d+[.)] )/);
-    if (marker) {
-      const contentIndent = marker[0].length;
-      if (contentIndent <= tableIndent) return true;
-    }
-
-    const indentation = candidate.remainder.match(/^ */)?.[0].length ?? 0;
-    if (indentation < tableIndent) return false;
-  }
-  return false;
-}
-
-function stripQuotePrefix(line: string): { depth: number; remainder: string } {
-  let depth = 0;
-  let remainder = line;
-  while (true) {
-    const quote = remainder.match(/^ {0,3}> ?/);
-    if (!quote) return { depth, remainder };
-    depth++;
-    remainder = remainder.slice(quote[0].length);
-  }
-}
-
-function stripIndentedQuotePrefix(
-  lines: readonly string[],
-  index: number,
-  line: string,
-): { depth: number; remainder: string } {
-  let depth = 0;
-  let remainder = line;
-  while (true) {
-    const quote = remainder.match(/^ {0,3}> ?/);
-    if (quote) {
-      depth++;
-      remainder = remainder.slice(quote[0].length);
-      continue;
-    }
-
-    const indentedQuote = remainder.match(/^( {4,})> ?/);
-    if (!indentedQuote?.[1] || !hasListContainer(lines, index, indentedQuote[1].length)) {
-      return { depth, remainder };
-    }
-    depth++;
-    remainder = remainder.slice(indentedQuote[0].length);
-  }
 }
