@@ -47,7 +47,8 @@ export function createLayoutCodec(): BlockCodec<MdastJsxFlow> {
         if (child.type.name !== "table" || typeof widthsValue !== "string") {
           return invalidJsxFallback(ast, ctx);
         }
-        const widths = parseWidths(widthsValue, child.firstChild?.childCount ?? 0);
+        // Grid columns, not first-row cells: a spanning cell covers several.
+        const widths = parseWidths(widthsValue, gridColumnCount(child));
         if (!widths || widths.every((width) => width === null)) {
           return invalidJsxFallback(ast, ctx);
         }
@@ -128,20 +129,80 @@ function parseWidths(value: string, columnCount: number): Array<number | null> |
   return widths;
 }
 
+/** A cell's colspan, defaulting the way the schema does. */
+function colspanOf(cell: PMNode): number {
+  const value = cell.attrs.colspan;
+  return typeof value === "number" && value > 0 ? value : 1;
+}
+
+function rowspanOf(cell: PMNode): number {
+  const value = cell.attrs.rowspan;
+  return typeof value === "number" && value > 0 ? value : 1;
+}
+
+/**
+ * Walk the table's cells with the GRID column each one starts at.
+ *
+ * `widths` is a per-column list, and a cell's index among its row's children
+ * stops being its column the moment anything spans: a colspan covers several
+ * columns, and a rowspan from an earlier row pushes every cell after it along.
+ * This is the smallest walk that keeps the wire's promise honest without
+ * pulling prosemirror-tables into a package that only knows the model.
+ */
+function forEachCellWithColumn(
+  table: PMNode,
+  visit: (cell: PMNode, column: number, rowIndex: number, cellIndex: number) => void,
+): number {
+  // Rows still owed to a rowspan from above, per grid column.
+  const heldBelow: number[] = [];
+  let gridWidth = 0;
+
+  table.forEach((row, _offset, rowIndex) => {
+    let column = 0;
+    row.forEach((cell, _cellOffset, cellIndex) => {
+      while ((heldBelow[column] ?? 0) > 0) column += 1;
+      visit(cell, column, rowIndex, cellIndex);
+      const span = colspanOf(cell);
+      const rows = rowspanOf(cell);
+      for (let slot = column; slot < column + span; slot += 1) heldBelow[slot] = rows;
+      column += span;
+      gridWidth = Math.max(gridWidth, column);
+    });
+    for (let slot = 0; slot < heldBelow.length; slot += 1) {
+      heldBelow[slot] = Math.max(0, (heldBelow[slot] ?? 0) - 1);
+    }
+  });
+
+  return gridWidth;
+}
+
 function applyLayout(
   node: PMNode,
   align: LayoutAlign | null,
   widths: readonly (number | null)[] | null,
 ): PMNode {
   if (!widths) return node.type.create({ ...node.attrs, align }, node.content, node.marks);
+
+  const columns = new Map<PMNode, number>();
+  forEachCellWithColumn(node, (cell, column) => {
+    columns.set(cell, column);
+  });
+
   const rows: PMNode[] = [];
   node.forEach((row) => {
     const cells: PMNode[] = [];
-    row.forEach((cell, _offset, columnIndex) => {
-      const width = widths[columnIndex] ?? null;
+    row.forEach((cell) => {
+      const column = columns.get(cell) ?? 0;
+      // A spanning cell carries one slot per column it covers, zero where that
+      // column has no width — prosemirror-tables' own spelling, and what the
+      // table view reads when it sizes the colgroup.
+      const slots = Array.from(
+        { length: colspanOf(cell) },
+        (_, offset) => widths[column + offset] ?? 0,
+      );
       cells.push(
         cell.type.create(
-          { ...cell.attrs, colwidth: width === null ? null : [width] },
+          { ...cell.attrs, colwidth: slots.some((width) => width > 0) ? slots : null },
           cell.content,
           cell.marks,
         ),
@@ -152,22 +213,36 @@ function applyLayout(
   return node.type.create({ ...node.attrs, align }, rows, node.marks);
 }
 
+function gridColumnCount(table: PMNode): number {
+  return forEachCellWithColumn(table, () => {});
+}
+
 function widthsFromFirstRow(table: PMNode): string | null {
   validateColwidths(table);
   const firstRow = table.firstChild;
   if (!firstRow) return null;
-  const slots: string[] = [];
+
+  const slots: Array<string> = Array.from({ length: gridColumnCount(table) }, () => "");
   let hasWidth = false;
-  firstRow.forEach((cell) => {
-    const value = Array.isArray(cell.attrs.colwidth) ? cell.attrs.colwidth[0] : null;
-    const width =
-      typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
-    slots.push(width === null ? "" : String(width));
-    hasWidth ||= width !== null;
+  forEachCellWithColumn(table, (cell, column, rowIndex) => {
+    if (rowIndex !== 0) return;
+    const colwidth = cell.attrs.colwidth;
+    if (!Array.isArray(colwidth)) return;
+    for (let offset = 0; offset < colspanOf(cell); offset += 1) {
+      const width = colwidth[offset];
+      if (typeof width !== "number" || !Number.isSafeInteger(width) || width <= 0) continue;
+      slots[column + offset] = String(width);
+      hasWidth = true;
+    }
   });
   return hasWidth ? slots.join(",") : null;
 }
 
+/**
+ * `colwidth` is one entry per column the cell covers, and zero means "this
+ * column has no width" — the shape prosemirror-tables writes when a resize
+ * touches one column of a spanning cell, and the shape the table view reads.
+ */
 function validateColwidths(table: PMNode): void {
   table.forEach((row) => {
     row.forEach((cell) => {
@@ -175,11 +250,14 @@ function validateColwidths(table: PMNode): void {
       if (colwidth === null || colwidth === undefined) return;
       if (
         !Array.isArray(colwidth) ||
-        colwidth.length !== 1 ||
-        !Number.isSafeInteger(colwidth[0]) ||
-        colwidth[0] <= 0
+        colwidth.length !== colspanOf(cell) ||
+        colwidth.some(
+          (width) => typeof width !== "number" || !Number.isSafeInteger(width) || width < 0,
+        )
       ) {
-        throw new Error("pm->mdast: table cell colwidth must be null or one positive integer");
+        throw new Error(
+          "pm->mdast: table cell colwidth must be null or one non-negative integer per spanned column",
+        );
       }
     });
   });
