@@ -23,7 +23,14 @@ const HANDLE_GAP = 12;
 /** How far the drop line floats off the outer edges of the document. */
 const END_SEAM_OFFSET = 6;
 
-export type ViewportBox = { top: number; left: number; right: number; bottom: number };
+/**
+ * Slack around a block's box when deciding whether the pointer is on it, so a
+ * pointer crossing the gap between two paragraphs does not fall into nothing
+ * and blink the handle off. Half the manuscript's own block spacing.
+ */
+const BLOCK_HOVER_SLACK_PX = 8;
+
+export type ColumnEdges = { left: number; right: number };
 
 /** The rendered element of a top-level block, or null when it has none yet. */
 export function blockElement(view: EditorView, pos: number): HTMLElement | null {
@@ -32,18 +39,19 @@ export function blockElement(view: EditorView, pos: number): HTMLElement | null 
 }
 
 /**
- * The prose column's content box: inside the ProseMirror node's own padding,
- * which is where the text edge actually is. The drop line spans it and the
- * handle hangs off its left, so both agree with the column rather than with
- * whichever block happens to be adjacent (a centered table is narrower than
- * the paragraph above it).
+ * The prose column's left and right text edges: inside the ProseMirror node's
+ * own padding. The drop line spans them and the handle hangs off the left, so
+ * both agree with the column rather than with whichever block happens to be
+ * adjacent (a centered table is narrower than the paragraph above it).
+ *
+ * Horizontal only, deliberately. The prose node reserves half a viewport of
+ * padding under the last line so a writer can keep typing mid-screen, so its
+ * box says nothing useful about where the manuscript ends.
  */
-export function proseContentBox(view: EditorView): ViewportBox {
+export function proseColumnEdges(view: EditorView): ColumnEdges {
   const rect = view.dom.getBoundingClientRect();
   const style = window.getComputedStyle(view.dom);
   return {
-    top: rect.top + pixels(style.paddingTop),
-    bottom: rect.bottom - pixels(style.paddingBottom),
     left: rect.left + pixels(style.paddingLeft),
     right: rect.right - pixels(style.paddingRight),
   };
@@ -70,7 +78,7 @@ export function blockHandlePosition(
     ? Math.max(0, (lineHeight - BLOCK_HANDLE_HEIGHT) / 2)
     : 4;
 
-  const column = proseContentBox(view);
+  const column = proseColumnEdges(view);
   return {
     top: rect.top + pixels(style.paddingTop) + lead,
     left: column.left - HANDLE_GAP - BLOCK_HANDLE_WIDTH,
@@ -78,20 +86,34 @@ export function blockHandlePosition(
 }
 
 /**
- * The document position the pointer is over, with x pulled into the prose
- * column first: the pointer spends the whole approach in the margin, and
- * `posAtCoords` there answers about the gutter or not at all.
+ * The block the pointer is on, or null when it is on none.
+ *
+ * Two corrections to `posAtCoords`, both about approach chrome rather than
+ * carets. X is pulled into the column first, because the pointer spends the
+ * whole approach in the margin where the prose node has nothing to say. And
+ * the answer is checked against the block's own box, because the prose node
+ * keeps answering far below the last line (it reserves half a viewport of
+ * padding there) and a handle floating beside blank page belongs to nothing.
  */
-export function blockUnderPointer(view: EditorView, clientX: number, clientY: number) {
-  const column = proseContentBox(view);
-  if (clientY < column.top || clientY > column.bottom) return null;
-
+export function blockUnderPointer(
+  view: EditorView,
+  clientX: number,
+  clientY: number,
+): BlockTarget | null {
+  const column = proseColumnEdges(view);
   const at = view.posAtCoords({
     left: Math.min(Math.max(clientX, column.left + 1), column.right - 1),
     top: clientY,
   });
   if (!at) return null;
-  return blockAt(view.state.doc, at.pos);
+
+  const block = blockAt(view.state.doc, at.pos);
+  if (!block) return null;
+  const rect = blockElement(view, block.pos)?.getBoundingClientRect();
+  if (!rect) return null;
+  return clientY >= rect.top - BLOCK_HOVER_SLACK_PX && clientY <= rect.bottom + BLOCK_HOVER_SLACK_PX
+    ? block
+    : null;
 }
 
 /**
@@ -123,7 +145,7 @@ export function seamLinePosition(
   seamIndex: number,
 ): { top: number; left: number; width: number } | null {
   const { doc } = view.state;
-  const column = proseContentBox(view);
+  const column = proseColumnEdges(view);
   const geometry = { left: column.left, width: Math.max(0, column.right - column.left) };
 
   const above = seamIndex > 0 ? blockRectAtIndex(view, seamIndex - 1) : null;

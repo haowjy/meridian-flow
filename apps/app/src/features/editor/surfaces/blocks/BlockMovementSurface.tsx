@@ -20,19 +20,27 @@ import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
 import { GripVertical } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-
-import { CHROME_TIMING, type HoverIntent, type KeymapBinding } from "@/core/editor/chrome";
+import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
+import {
+  CHROME_TIMING,
+  EDITOR_CHROME_ATTRIBUTE,
+  type HoverIntent,
+  type KeymapBinding,
+} from "@/core/editor/chrome";
 import { isEditorObject, selectObjectTransaction } from "@/core/editor/objects";
 
-import { useChromeSuppressed, useEditorChrome } from "../../chrome";
+// Straight at the primitives rather than through `chrome/index.ts`: that
+// barrel also carries the surface registry this file is listed in, so the
+// barrel route is a module cycle (and a real one — Vite reported the
+// registry's own export read before initialization).
+import { useChromeSuppressed, useEditorChrome } from "../../chrome/useEditorChrome";
 import { BlockMenu } from "./BlockMenu";
 import { blockHandleLabel } from "./block-copy";
 import {
   BLOCK_HANDLE_HEIGHT,
   BLOCK_HANDLE_WIDTH,
-  blockElement,
   blockHandlePosition,
   blockUnderPointer,
   seamIndexAtPointer,
@@ -59,15 +67,10 @@ const DRAG_SLOP_PX = 4;
 type Gesture = {
   startX: number;
   startY: number;
-  /** Mapped through every transaction, so a peer's edit cannot lose the block. */
-  sourcePos: number;
   seamIndex: number;
   /** Non-null once the press became a drag and the kernel was told. */
   endDrag: (() => void) | null;
 };
-
-/** What a drag renders: the ghosted source, and the seam it would land on. */
-type DragView = { sourcePos: number; seamIndex: number };
 
 type BlockTransactionBuilder = (state: Editor["state"], source: BlockTarget) => Transaction | null;
 
@@ -79,11 +82,12 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const [anchorPos, setAnchorPos] = useState<number | null>(null);
   const [menuPos, setMenuPos] = useState<number | null>(null);
   const [pressing, setPressing] = useState(false);
-  const [drag, setDrag] = useState<DragView | null>(null);
-  // A re-measure ticket. Block boxes move for reasons a ResizeObserver on one
-  // element never sees — a peer typing three paragraphs above, an AI write
-  // landing — so anything on screen re-reads its geometry per transaction.
-  const [revision, setRevision] = useState(0);
+  const [seamIndex, setSeamIndex] = useState<number | null>(null);
+  // A re-measure ticket: the value is never read, incrementing it is the whole
+  // point. Block boxes move for reasons a ResizeObserver on one element never
+  // sees — a peer typing three paragraphs above, an AI write landing — so
+  // anything on screen re-reads its geometry once per transaction.
+  const [, remeasure] = useState(0);
 
   const intentRef = useRef<HoverIntent<number> | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
@@ -119,11 +123,9 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   useEffect(() => {
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
-      const gesture = gestureRef.current;
-      if (gesture) gesture.sourcePos = transaction.mapping.map(gesture.sourcePos);
       setMenuPos((pos) => (pos === null ? pos : transaction.mapping.map(pos)));
       // Only what is on screen pays for a keystroke.
-      if (gesture || showingRef.current) setRevision((value) => value + 1);
+      if (gestureRef.current || showingRef.current) remeasure((tick) => tick + 1);
     };
     editor.on("transaction", onTransaction);
     return () => {
@@ -144,7 +146,16 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       if (block) intentRef.current?.enter(block.pos);
       else intentRef.current?.leave();
     };
-    const onPointerLeave = () => intentRef.current?.leave();
+    const onPointerLeave = (event: Event) => {
+      // The handle is portalled out of the scroller, so travelling onto it
+      // reads to the DOM as leaving the editor — and the browser delivers that
+      // leave AFTER the handle's own enter, so a naive `leave()` here undoes
+      // the reveal the writer was reaching for. Chrome carrying the kernel's
+      // attribute is the editor: the approach continues.
+      const related = (event as PointerEvent).relatedTarget;
+      if (related instanceof Element && related.closest(`[${EDITOR_CHROME_ATTRIBUTE}]`)) return;
+      intentRef.current?.leave();
+    };
 
     scroller.addEventListener("pointermove", onPointerMove);
     scroller.addEventListener("pointerleave", onPointerLeave);
@@ -158,10 +169,11 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     const gesture = gestureRef.current;
     gestureRef.current = null;
     gesture?.endDrag?.();
+    endBlockDrag(editor);
     setPressing(false);
-    setDrag(null);
+    setSeamIndex(null);
     return gesture;
-  }, []);
+  }, [editor]);
 
   const openMenuAt = useCallback(
     (pos: number) => {
@@ -196,27 +208,32 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
         // for the length of a menu press.
         gesture.endDrag = chrome.beginDrag(() => {
           gestureRef.current = null;
+          endBlockDrag(editor);
           setPressing(false);
-          setDrag(null);
+          setSeamIndex(null);
         });
+        liftBlockDrag(editor);
       }
 
       gesture.seamIndex = seamIndexAtPointer(editor.view, event.clientY);
-      setDrag({ sourcePos: gesture.sourcePos, seamIndex: gesture.seamIndex });
+      setSeamIndex(gesture.seamIndex);
     },
     [chrome, editor],
   );
 
   const onPointerUp = useCallback(() => {
+    // The held position is read BEFORE the gesture ends, because letting go is
+    // what forgets it.
+    const held = draggedBlockPos(editor.state);
     const gesture = endGesture();
-    if (!gesture || editor.isDestroyed) return;
+    if (!gesture || held === null || editor.isDestroyed) return;
 
     if (!gesture.endDrag) {
-      openMenuAt(gesture.sourcePos);
+      openMenuAt(held);
       return;
     }
 
-    const source = blockAt(editor.state.doc, gesture.sourcePos);
+    const source = blockAt(editor.state.doc, held);
     if (!source) return;
     const transaction = moveBlockToSeamTransaction(editor.state, source, gesture.seamIndex);
     if (transaction) editor.view.dispatch(transaction);
@@ -247,17 +264,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     };
   }, [pressing, onPointerMove, onPointerUp, onKeyDown]);
 
-  // The lifted block reads as lifted (mockup 08, state C). An attribute rather
-  // than a decoration: nothing is dispatched until the drop, so the document
-  // must not learn about a drag that may never land.
-  useLayoutEffect(() => {
-    if (!drag) return;
-    const element = blockElement(editor.view, drag.sourcePos);
-    if (!element) return;
-    element.setAttribute("data-block-dragging", "true");
-    return () => element.removeAttribute("data-block-dragging");
-  }, [editor, drag, revision]);
-
   const runOnBlock = useCallback(
     (pos: number, build: BlockTransactionBuilder) => {
       const target = blockAt(editor.state.doc, pos);
@@ -272,8 +278,9 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   const targetPos = menuPos ?? anchorPos;
   const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
-  const handle = target && !drag ? blockHandlePosition(editor.view, target) : null;
-  const line = drag ? seamLinePosition(editor.view, drag.seamIndex) : null;
+  const dragging = seamIndex !== null;
+  const handle = target && !dragging ? blockHandlePosition(editor.view, target) : null;
+  const line = seamIndex === null ? null : seamLinePosition(editor.view, seamIndex);
   const visible = !suppressed && (settled !== null || menuPos !== null);
 
   return (
@@ -306,10 +313,10 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
                 gestureRef.current = {
                   startX: event.clientX,
                   startY: event.clientY,
-                  sourcePos: targetPos,
                   seamIndex: 0,
                   endDrag: null,
                 };
+                beginBlockDrag(editor, targetPos);
                 setPressing(true);
               }}
             >

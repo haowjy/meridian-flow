@@ -818,7 +818,9 @@
   background: var(--color-primary);
 }
 
-/* The lifted block, while its drop line looks for a seam. */
-.meridian-editor .ProseMirror > [data-block-dragging="true"] {
+/* The lifted block, while its drop line looks for a seam. A decoration class
+   rather than an attribute set by hand: ProseMirror re-renders a node whose
+   DOM changed behind its back, taking the attribute with it. */
+.meridian-editor .ProseMirror .meridian-block-lifted {
   opacity: 0.45;
 }

@@ -38,6 +38,9 @@ import type { ReactNode } from "react";
 import { isEditorObject } from "@/core/editor/objects";
 import { cn } from "@/lib/utils";
 
+// Straight at the primitive, not through `chrome/index.ts`: that barrel also
+// carries the surface registry this lane is listed in, and the round trip is a
+// module cycle.
 import {
   EditorMenu,
   EditorMenuItem,
@@ -47,7 +50,7 @@ import {
   EditorMenuSub,
   EditorMenuSubContent,
   EditorMenuSubTrigger,
-} from "../../chrome";
+} from "../../chrome/EditorMenu";
 import { blockTypeReasonMessage } from "../toolbar";
 import { blockMenuLabel, blockMoveShortcut, turnIntoLabel } from "./block-copy";
 import type { BlockTarget } from "./block-targets";

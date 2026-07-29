@@ -18,6 +18,7 @@ import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { AgentNameStore } from "./agent-name-store";
+import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
@@ -125,6 +126,7 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
   // L-C table chrome (M6)
   // L-D slash (M8)
   // L-E block movement (M9)
+  BlockDragExtension,
   // L-F links (M7)
 ];
 
