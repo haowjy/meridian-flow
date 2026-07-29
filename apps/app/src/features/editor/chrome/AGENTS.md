@@ -33,13 +33,18 @@ roving focus (decision 2026-07-29). What these add is subordination.
 - **`modal={false}`** on menus and popovers. A modal surface freezes the page
   behind it, and the page behind it is the writer's chapter: clicking away must
   land the caret where the writer clicked, not merely dismiss.
-- **Anchoring is not re-implemented per lane.** A menu summoned by a place
-  rather than a control hangs off `pointer-anchor.ts`. Its position is inline
-  style, because a utility class that failed to reach it would silently drop
-  every claimed menu in the top-left corner.
-- **A surface keyed on a pointer point remounts when the point moves.** Radix
+- **Anchoring is not re-implemented per lane.** `EditorMenu` at a point hangs
+  off `pointer-anchor.ts`; its position is inline style, because a utility class
+  that failed to reach it would silently drop every claimed menu in the top-left
+  corner. `EditorPopover` measures a virtual reference instead and takes either
+  a fixed point (`at`) or a rect that moves with the text (`anchorRect`).
+- **A menu keyed on a pointer point remounts when the point moves.** Radix
   positions through floating-ui's `autoUpdate`, which never sees a fixed anchor
-  move; both wrappers already carry the key.
+  move, so `EditorMenu` carries the key. A virtual reference is re-measured
+  instead, which is why the popover does not need one.
+- **A surface the writer is still typing under keeps focus in the prose**
+  (`focusOnOpen="prose"`). Nothing inside it may be focusable, and its rows
+  cancel their own mousedown.
 - **Chrome that portals out of the editor carries `data-editor-chrome`**, or
   right-clicks on it bypass the claim ladder.
 - No raw color. Chip and row styling lives in `editor.css` under the kernel's
