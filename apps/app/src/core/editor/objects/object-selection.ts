@@ -9,16 +9,39 @@
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 
 import { isEditorObject } from "./object-types";
 
 export type ObjectAt = { node: PMNode; pos: number };
 
-/** The object the selection is standing on, or null in prose. */
+/**
+ * The object the selection is standing on, or null in prose.
+ *
+ * Two spellings, because a table cannot have the first one. prosemirror-tables
+ * normalizes a `NodeSelection` on a table into a `CellSelection` over every
+ * cell, so that — a selection that is both a whole column and a whole row — IS
+ * how "this table is selected" is written in this schema. Reading only
+ * `NodeSelection` would make arrow-walk, Enter, and Esc all quietly skip
+ * tables.
+ */
 export function selectedObject(state: EditorState): ObjectAt | null {
   const { selection } = state;
-  if (!(selection instanceof NodeSelection)) return null;
-  return isEditorObject(selection.node) ? { node: selection.node, pos: selection.from } : null;
+
+  if (selection instanceof NodeSelection) {
+    return isEditorObject(selection.node) ? { node: selection.node, pos: selection.from } : null;
+  }
+
+  if (
+    selection instanceof CellSelection &&
+    selection.isColSelection() &&
+    selection.isRowSelection()
+  ) {
+    const table = selection.$anchorCell.node(-1);
+    return isEditorObject(table) ? { node: table, pos: selection.$anchorCell.before(-1) } : null;
+  }
+
+  return null;
 }
 
 /**

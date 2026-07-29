@@ -60,6 +60,13 @@ export function getEditorChrome(editor: Editor | null | undefined): EditorChrome
 /** Pointer travel that turns a click into a sweep, matching ProseMirror's slop. */
 const SWEEP_SLOP_PX = 4;
 
+/**
+ * Marks chrome that lives outside the editor's DOM — a portalled object row, a
+ * table grip — as still belonging to the editor, so a right-click on it goes
+ * through the claim ladder instead of straight to the browser.
+ */
+export const EDITOR_CHROME_ATTRIBUTE = "data-editor-chrome";
+
 export const ChromeKernelExtension = Extension.create({
   name: CHROME_EXTENSION_NAME,
   priority: 1050,
@@ -105,6 +112,19 @@ export const ChromeKernelExtension = Extension.create({
           };
           window.addEventListener("mouseup", endSweep);
 
+          // Chrome that portals out of the editor still routes through the
+          // ladder. Without this a right-click on an object's own row would
+          // reach the browser instead of the object's menu, which is the one
+          // place the split matrix would read as an accident.
+          const routeChromeMenu = (event: MouseEvent) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (view.dom.contains(target)) return;
+            if (!target.closest(`[${EDITOR_CHROME_ATTRIBUTE}]`)) return;
+            routeContextMenu(view, chrome, event);
+          };
+          document.addEventListener("contextmenu", routeChromeMenu, true);
+
           return {
             update(updatedView, previousState) {
               if (
@@ -117,6 +137,7 @@ export const ChromeKernelExtension = Extension.create({
             },
             destroy() {
               window.removeEventListener("mouseup", endSweep);
+              document.removeEventListener("contextmenu", routeChromeMenu, true);
             },
           };
         },

@@ -23,7 +23,10 @@ export type ObjectEngageIntent =
   | "surface"
   /** Drop the caret at the first text position inside (a table's first cell). */
   | "caret-inside"
-  /** Nothing to engage; Enter falls through. */
+  /**
+   * Nothing to engage. Enter is still consumed — a selected object never
+   * lets the key reach the base keymap, which would split the block around it.
+   */
   | "none";
 
 export type ObjectTypeSpec = {

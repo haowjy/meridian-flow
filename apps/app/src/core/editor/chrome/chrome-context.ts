@@ -12,8 +12,9 @@
  */
 
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
-import { type EditorState, NodeSelection } from "@tiptap/pm/state";
+import type { EditorState } from "@tiptap/pm/state";
 
+import { selectedObject } from "../objects/object-selection";
 import { isEditorObject, isSourceBlock } from "../objects/object-types";
 
 /**
@@ -52,15 +53,16 @@ export const DOCUMENT_CHROME_CONTEXT: ChromeContext = {
 export function resolveChromeContext(state: EditorState): ChromeContext {
   const { selection } = state;
 
-  // A node selection names its owner outright, whatever it is nested in. The
+  // A selected object names its owner outright, whatever it is nested in. The
   // ancestor walk still runs so a selected table cell's table shows in the
   // chain: surfaces read the chain to know what else is above them.
-  if (selection instanceof NodeSelection && isEditorObject(selection.node)) {
-    const ancestors = resolveAncestors(selection.$from);
+  const object = selectedObject(state);
+  if (object) {
+    const ancestors = resolveAncestors(state.doc.resolve(object.pos));
     return {
       owner: "object",
-      nodeType: selection.node.type.name,
-      pos: selection.from,
+      nodeType: object.node.type.name,
+      pos: object.pos,
       chain: [...ancestors.chain, "object"],
     };
   }
@@ -119,5 +121,10 @@ function ancestorKind(node: PMNode): ChromeContextKind | null {
   const role = node.type.spec.tableRole;
   if (role === "table") return "table";
   if (role === "cell" || role === "header_cell") return "table-cell";
-  return isSourceBlock(node) ? "source-block" : null;
+  if (!isSourceBlock(node)) return null;
+
+  // A rendered mermaid fence has no inside to point at: the pointer is over a
+  // diagram, so the diagram owns the point. A table is an object too, but its
+  // cells ARE prose (§5.4), so it keeps its own chain and this never applies.
+  return isEditorObject(node) ? "object" : "source-block";
 }

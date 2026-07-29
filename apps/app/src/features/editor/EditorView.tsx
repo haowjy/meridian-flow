@@ -60,6 +60,7 @@ import {
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
+import { EditorChromeHost } from "./chrome";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
@@ -691,6 +692,9 @@ function ActiveSessionEditorView({
         }
         uploadStatus={<ImageUploadStatus state={imageUploadState} />}
       />
+      {/* The one chrome mount host. Surfaces register in
+          `chrome/chrome-surfaces.ts`; nothing new is added to this file. */}
+      <EditorChromeHost editor={editor} />
       <PeerMarkPopover
         key={peerMarkTarget?.marker.changeId ?? "closed"}
         target={peerMarkTarget}

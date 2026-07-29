@@ -1,0 +1,82 @@
+# Object physics — contracts
+
+Reference depth for the second register. Read [`AGENTS.md`](../AGENTS.md)
+first, and the kernel's
+[`.context/CONTEXT.md`](../../chrome/.context/CONTEXT.md) for the seams.
+
+## Registering an object type
+
+```ts
+// object-types.ts — append-only, one row per type
+{ nodeType: "figure", engage: "surface" },
+{ nodeType: "code_block", matches: (node) => node.attrs.language === "mermaid",
+  engage: "surface" },
+```
+
+`engage` says what Enter means:
+
+| Intent | Enter does | Who performs it |
+|---|---|---|
+| `surface` | opens the object's own surface (the dialog) | the lane, via `registerObjectEngagement` |
+| `caret-inside` | drops the caret at the first text position within | the kernel |
+| `none` | nothing | nobody — but the key is still consumed |
+
+`matches` narrows a node type that is only sometimes an object. Everything
+else — selection, arrow-walk, Esc, the resolved chrome context — follows from
+the row with no further per-type code.
+
+## Registering behavior from a lane
+
+```ts
+useEffect(() => registerObjectEngagement(editor, "figure", ({ node, pos }) => {
+  openDialog(pos);
+  return true;
+}), [editor]);
+
+useEffect(() => registerObjectKeymap(editor, "code_block", {
+  "Mod-Enter": () => { openDialogWithSource(); return true; },
+}), [editor]);
+```
+
+Engagements are keyed by node type, so a type that is only sometimes an object
+gets the whole node and decides for itself. `registerObjectKeymap` scopes its
+bindings to "this type is the selected object" and registers them at the
+kernel's `object` scope; it does not need to re-check the selection.
+
+Both return an unregister. Both are no-ops on an editor without chrome.
+
+## What "selected" means, per node
+
+- **Figures, images, rules, mermaid fences**: a `NodeSelection`.
+- **Tables**: a `CellSelection` covering every cell. prosemirror-tables
+  normalizes a `NodeSelection` on a table into exactly that, so it is not an
+  approximation — it is the only spelling available. `selectedObject` reads
+  both, and `selectObjectTransaction` still dispatches a `NodeSelection`
+  because the tables plugin converts it on the way in.
+
+## The walk
+
+`objectBeside(state, direction)` answers "what would the caret walk onto",
+with two neighbourhoods checked in order:
+
+1. an inline object beside the caret inside the same text block (an image);
+2. the immediate sibling block, but only when the caret is at the very edge of
+   its text block.
+
+The immediate neighbour is what "beside" means: a paragraph next door ends the
+walk rather than hiding an object two blocks away behind it. No sibling at this
+depth means the edge belongs to the level above, so the walk climbs (the last
+paragraph of a list item shares its edge with the list).
+
+`walk()` in the extension is then two cases: an object is selected, so pass
+beyond it; or the caret is beside one, so step onto it. Anything else returns
+false and the editor's own caret movement stands.
+
+## Known gap for the table lane
+
+`caret-inside` on a table lands in the first cell, which is right. What has no
+kernel answer yet is the reverse: no gesture here *selects* a table — arrowing
+to a table's edge selects it via `selectObjectTransaction`, but the block
+handle (M9) and the grips (M6) will want their own entry points, and both land
+on the `CellSelection` spelling above. Neither lane needs a kernel change; both
+should call `selectObjectTransaction` rather than building a second spelling.

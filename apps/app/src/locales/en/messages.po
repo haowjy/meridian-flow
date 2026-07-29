@@ -1432,6 +1432,10 @@ msgstr "missing kind"
 msgid "Monthly usage"
 msgstr "Monthly usage"
 
+#: src/features/editor/chrome/OverlayIconRow.tsx
+msgid "More"
+msgstr "More"
+
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Move column left"
 #~ msgstr "Move column left"

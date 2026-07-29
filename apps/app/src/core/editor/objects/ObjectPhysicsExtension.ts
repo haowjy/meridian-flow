@@ -42,7 +42,6 @@ export type ObjectEngagement = (target: {
 
 type ObjectPhysicsStorage = {
   engagements: Map<string, ObjectEngagement>;
-  release: (() => void)[];
 };
 
 declare module "@tiptap/core" {
@@ -106,41 +105,43 @@ export const ObjectPhysicsExtension = Extension.create({
   priority: 1040,
 
   addStorage(): ObjectPhysicsStorage {
-    return { engagements: new Map(), release: [] };
-  },
-
-  onCreate() {
-    const chrome = getEditorChrome(this.editor);
-    if (!chrome) return;
-    const storage = this.storage;
-    const engagements = storage.engagements;
-
-    storage.release.push(
-      chrome.registerKeymap({
-        id: "object-physics",
-        scope: "object",
-        bindings: {
-          ArrowRight: walkForward,
-          ArrowDown: walkForward,
-          ArrowLeft: walkBackward,
-          ArrowUp: walkBackward,
-          Enter: (state, dispatch) => engage(state, dispatch, engagements),
-        },
-      }),
-    );
-  },
-
-  onDestroy() {
-    const storage = this.storage;
-    for (const release of storage.release) release();
-    storage.release.length = 0;
-    storage.engagements.clear();
+    return { engagements: new Map() };
   },
 
   addProseMirrorPlugins() {
+    const editor = this.editor;
+    const { engagements } = this.storage;
+
     return [
       new Plugin({
         key: objectPhysicsPluginKey,
+
+        /**
+         * Registration rides the view's lifetime rather than TipTap's `create`
+         * event, which is emitted a macrotask late — long enough for a first
+         * keystroke to miss it.
+         */
+        view() {
+          const release = getEditorChrome(editor)?.registerKeymap({
+            id: "object-physics",
+            scope: "object",
+            bindings: {
+              ArrowRight: walkForward,
+              ArrowDown: walkForward,
+              ArrowLeft: walkBackward,
+              ArrowUp: walkBackward,
+              Enter: (state, dispatch) => engage(state, dispatch, engagements),
+            },
+          });
+
+          return {
+            destroy() {
+              release?.();
+              engagements.clear();
+            },
+          };
+        },
+
         props: {
           /**
            * Law 1: a click reads. On an object that reading is a selection,
@@ -189,9 +190,14 @@ function walk(
 }
 
 /**
- * Enter engages the selected object per its registered intent (§4). A
- * `surface` type with no handler yet declines the key rather than doing
- * something else: an object whose lane has not shipped is inert, not wrong.
+ * Enter engages the selected object per its registered intent (§4).
+ *
+ * A selected object ALWAYS consumes the key, even when its intent is `none`
+ * or its lane has not shipped the surface yet. Letting Enter fall through
+ * hands a node selection to the base keymap, which splits the block around it
+ * and leaves stray paragraphs in the manuscript — a structural edit the writer
+ * asked for by pressing a key that was supposed to open something. An object
+ * whose lane is not here yet is inert, not destructive.
  */
 function engage(
   state: Parameters<KeymapBinding>[0],
@@ -202,14 +208,17 @@ function engage(
   if (!selected) return false;
 
   const spec = objectTypeSpec(selected.node);
-  if (!spec || spec.engage === "none") return false;
+  if (!spec) return false;
 
   if (spec.engage === "surface") {
-    return engagements.get(spec.nodeType)?.(selected) ?? false;
+    engagements.get(spec.nodeType)?.(selected);
+    return true;
   }
 
-  const transaction = caretInsideObjectTransaction(state, selected.pos);
-  if (!transaction) return false;
-  dispatch?.(transaction);
+  if (spec.engage === "caret-inside") {
+    const transaction = caretInsideObjectTransaction(state, selected.pos);
+    if (transaction) dispatch?.(transaction);
+  }
+
   return true;
 }
