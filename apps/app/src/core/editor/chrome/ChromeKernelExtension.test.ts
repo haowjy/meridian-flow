@@ -219,8 +219,6 @@ describe("the kernel on a live editor", () => {
     expect(mousePress(instance, 0).handledByPlugin).toBe(false);
   });
 
-  
-
   it("leaves a right-click to the browser when no lane took its rung", () => {
     const instance = mount([paragraph("The thrid gate opened.")]);
     expect(rightClick(instance).defaultPrevented).toBe(false);
