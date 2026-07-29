@@ -20,6 +20,11 @@ heading opens above one.
 - **A menu with no rows does not exist** (law 5). When the filter matches
   nothing the store reports closed, so Enter splits the paragraph the way it
   would with no menu on screen, and backspacing brings the list back.
+- **A row that cannot apply is greyed, not hidden** (the other half of law 5).
+  The reason is one line above the rows, not one copy per row, because it is
+  about where the caret is rather than about any entry; the wording comes from
+  the toolbar so the writer meets one refusal. The keys step over such rows and
+  hand themselves back when every row refuses, which is the store's rule.
 - **Group headings only with an empty query.** Filtered matches sort by score,
   so headings over them would fragment; mockup 07's state B drops them too.
 - **Icons come from the toolbar's family** (lucide), keyed by catalog id in
