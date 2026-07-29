@@ -39,6 +39,7 @@ import {
 import { uploadFigure } from "@/client/api/figures-api";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import {
+  type AnchorRange,
   anchorPosition,
   anchorRange,
   type EditorAnchor,
@@ -53,9 +54,13 @@ import {
   fileDropIntent,
   imageAltFromFilename,
   imageAttrsFromUpload,
+  imageFilenameFromUrl,
   isImageFile,
-  resolveAssetPathsFromClipboard,
+  type PastedImageImport,
+  pastedContentRange,
+  pastedImageLinkRange,
   resolveAssetRefsForClipboard,
+  resolveImagesFromClipboard,
 } from "@/core/editor/image-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { markdownClipboardParser } from "@/core/editor/markdown-paste";
@@ -175,6 +180,27 @@ function insertImageNode(editor: Editor | null, attrs: ImageAttrs, pos?: number)
   return typeof pos === "number"
     ? chain.insertContentAt(pos, content).run()
     : chain.insertContent(content).run();
+}
+
+/**
+ * The bytes behind an address the clipboard carried, or null when the browser
+ * will not hand them over.
+ *
+ * A cross-origin image served without CORS headers is the ordinary answer, not
+ * a failure worth explaining away: most of the web declines. The link the
+ * paste landed is what the writer keeps in that case, which is why nothing
+ * here throws.
+ */
+async function fetchPastedImage(url: string, filename: string): Promise<File | null> {
+  try {
+    const response = await fetch(url, { mode: "cors", credentials: "omit" });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) return null;
+    return new File([blob], filename, { type: blob.type });
+  } catch {
+    return null;
+  }
 }
 
 function imageFileFromClipboard(event: ClipboardEvent): File | null {
@@ -494,7 +520,7 @@ function ActiveSessionEditorView({
   );
 
   const uploadImageFile = useCallback(
-    async (file: File): Promise<ImageAttrs> => {
+    async (file: File, alt?: string): Promise<ImageAttrs> => {
       if (!projectId) throw new Error(t`A project is required before images can be uploaded.`);
       if (!isImageFile(file)) throw new Error(t`Choose an image file.`);
 
@@ -504,7 +530,7 @@ function ActiveSessionEditorView({
           projectId,
           hostDocumentId: documentId,
           file,
-          alt: imageAltFromFilename(file.name),
+          alt: alt || imageAltFromFilename(file.name),
           onProgress: ({ percent }) =>
             setImageUploadState({ kind: "uploading", filename: file.name, percent }),
         });
@@ -568,6 +594,98 @@ function ActiveSessionEditorView({
     [session, uploadImageFile],
   );
 
+  /**
+   * Bring an image the clipboard only pointed at into the project.
+   *
+   * The paste has already landed a link to the address (`image-workflow.ts`),
+   * so the manuscript never holds a `src` the project does not own. This is
+   * the attempt to do better than that link: fetch the bytes, put them through
+   * the same upload every dropped file takes, and swap the link for the
+   * picture. A site that refuses the fetch leaves the link exactly as it is.
+   */
+  const importPastedImage = useCallback(
+    async (pending: PastedImageImport, pasteRange: AnchorRange): Promise<void> => {
+      const targetEditor = editorRef.current;
+      if (!targetEditor || targetEditor.isDestroyed) return;
+      const filename = imageFilenameFromUrl(pending.url);
+
+      // Where the paste landed, held for the length of the import: the writer
+      // keeps typing and a peer's write can replace the whole document while
+      // the bytes are in flight (law 9), and a mapped number would hand the
+      // picture to whatever moved into that seam.
+      let hold: EditorAnchor | null = anchorRange(targetEditor.state, pasteRange);
+      const followPaste = ({ transaction }: { transaction: Transaction }) => {
+        if (hold) hold = followAnchor(targetEditor.state, hold, transaction.mapping);
+      };
+      targetEditor.on("transaction", followPaste);
+      setImageUploadState({ kind: "uploading", filename, percent: null });
+
+      try {
+        const file = await fetchPastedImage(pending.url, filename);
+        if (!file) {
+          setImageUploadState({
+            kind: "error",
+            message: t`${filename} could not be read from that site. It stayed a link.`,
+          });
+          clearUploadLater();
+          return;
+        }
+
+        const attrs = await uploadImageFile(file, pending.alt ?? undefined);
+        const at = hold && resolveAnchorIn(targetEditor.state, hold);
+        const link = at && pastedImageLinkRange(targetEditor.state.doc, at, pending.url);
+        const imageType = targetEditor.schema.nodes.image;
+        // The import outlives the connection that started it: re-read the
+        // fence here so a document fenced mid-import takes no write.
+        const canWrite = effectiveEditableRef.current && !session.getSnapshot().schemaFence;
+
+        if (link && imageType && canWrite) {
+          targetEditor.view.dispatch(
+            targetEditor.state.tr.replaceWith(link.from, link.to, imageType.create(attrs)),
+          );
+          setImageUploadState({ kind: "success", filename });
+        } else {
+          setImageUploadState({
+            kind: "error",
+            message: t`The image imported, but the editor could not insert it.`,
+          });
+        }
+        clearUploadLater();
+      } catch {
+        // The upload put its own reason in the strip, and the link is still
+        // there: nothing to undo.
+      } finally {
+        targetEditor.off("transaction", followPaste);
+      }
+    },
+    [clearUploadLater, session, uploadImageFile],
+  );
+
+  /**
+   * Start the imports a paste asked for, once it has landed.
+   *
+   * The transform runs before the transaction exists, so the links it leaves
+   * have no positions yet. The paste is the very next transaction — ProseMirror
+   * dispatches it the moment the transform returns — and it is the only thing
+   * that knows where its own content went.
+   */
+  const importAfterPaste = useCallback(
+    (imports: readonly PastedImageImport[]) => {
+      const targetEditor = editorRef.current;
+      if (!targetEditor) return;
+      const onPasted = ({ transaction }: { transaction: Transaction }) => {
+        targetEditor.off("transaction", onPasted);
+        const range = pastedContentRange(transaction);
+        if (!range) return;
+        // Started together, so every import anchors the range at the one
+        // moment it is true — the instant the paste landed.
+        for (const pending of imports) void importPastedImage(pending, range);
+      };
+      targetEditor.on("transaction", onPasted);
+    },
+    [importPastedImage],
+  );
+
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Handlers read editability off the view instead of closing over the prop, so
   // the only thing that moves this object is the chrome it describes.
@@ -606,7 +724,11 @@ function ActiveSessionEditorView({
       // paths on the clipboard, so an id never escapes into another surface.
       clipboardTextParser: markdownClipboardParser(undefined, assetPathResolver),
       transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetPathResolver),
-      transformPasted: (slice) => resolveAssetPathsFromClipboard(slice, assetPathResolver),
+      transformPasted: (slice, view) => {
+        const resolved = resolveImagesFromClipboard(slice, view.state.schema, assetPathResolver);
+        if (resolved.imports.length > 0) importAfterPaste(resolved.imports);
+        return resolved.slice;
+      },
       handleDOMEvents: {
         pointerdown(view, event) {
           if (
@@ -658,7 +780,15 @@ function ActiveSessionEditorView({
         },
       },
     }),
-    [ariaLabel, assetPathResolver, handleImageFile, openPeerMark, refuseDroppedFile, showToolbar],
+    [
+      ariaLabel,
+      assetPathResolver,
+      handleImageFile,
+      importAfterPaste,
+      openPeerMark,
+      refuseDroppedFile,
+      showToolbar,
+    ],
   );
 
   const editor = useMountedEditor({

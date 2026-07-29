@@ -159,6 +159,16 @@ Yjs document session. It must stay structurally aligned with
   editor as stable refs. `image-workflow.ts` owns both directions, and the
   resolver behind them is per-editor because a path only means something inside
   one project's asset namespace.
+- A paste never lands an image the project does not own.
+  `resolveImagesFromClipboard` is the one seam: a copied path comes home as its
+  ref, and every other address becomes a link to itself. `EditorView` then
+  attempts the import — fetch the bytes, take the ordinary upload path, and
+  replace the link with the picture — so an external `src` is never written to
+  the shared document even briefly. A site that refuses the fetch (CORS is the
+  common answer) leaves the link, which is the honest result rather than a
+  broken figure. The link is found again through `pastedContentRange` plus
+  `pastedImageLinkRange`, held as an `EditorAnchor` for the length of the
+  import.
 - Block alignment lives as an `align` attr on `paragraph`, `heading`, and
   `table`, mirroring `@meridian/markup`'s reserved `Layout` wire wrapper. Only
   `null`, `"center"`, and `"right"` exist; there is no `"left"` ghost state
