@@ -57,7 +57,7 @@ import {
   resolveAssetRefsForClipboard,
 } from "@/core/editor/image-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
-import { markdownTableClipboardParser } from "@/core/editor/markdown-paste";
+import { markdownClipboardParser } from "@/core/editor/markdown-paste";
 import {
   type EditorMountIdentity,
   editorMountKey,
@@ -573,7 +573,7 @@ function ActiveSessionEditorView({
       },
       // Assets travel as stable refs inside the editor and as project-relative
       // paths on the clipboard, so an id never escapes into another surface.
-      clipboardTextParser: markdownTableClipboardParser(undefined, assetPathResolver),
+      clipboardTextParser: markdownClipboardParser(undefined, assetPathResolver),
       transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetPathResolver),
       transformPasted: (slice) => resolveAssetPathsFromClipboard(slice, assetPathResolver),
       handleDOMEvents: {
