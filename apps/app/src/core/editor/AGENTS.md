@@ -60,8 +60,13 @@ change-trail events, not manuscript content.
   their key whether or not the verb had anything to do, because a binding
   that declines hands the key to the browser: Mod-z becomes whatever the page
   does, and Tab moves DOM focus out of the manuscript while the ProseMirror
-  selection stays put, discarding every keystroke after it in silence. Where
-  the verb means something, do it; everywhere else consume the no-op.
+  selection stays put, discarding every keystroke after it in silence.
+- **Tab makes a tab**, and its four meanings are one kernel ladder rather
+  than four extensions' habits: cells in a table, line-wise indent in a
+  fence, sink/lift in a list, one `\t` in prose. Prose tabs are a wire
+  question as much as an editor one (law 9) — a LEADING tab parses back as an
+  indented code block, so the codec writes it `&#x9;`, and `packages/markup`'s
+  codec test is what keeps the key safe to press.
 
 - What an href means is `links/`, once. A link is four kinds — wikilink,
   scheme, relative, external — and every consumer (the click, the hover hint,

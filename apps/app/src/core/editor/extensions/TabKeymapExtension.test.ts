@@ -32,6 +32,12 @@ const cell = (text: string): JSONContent => ({
   content: [paragraph(text)],
 });
 
+const fence = (code: string): JSONContent => ({
+  type: "code_block",
+  attrs: { language: "python" },
+  content: [{ type: "text", text: code }],
+});
+
 const table: JSONContent = {
   type: "table",
   content: [
@@ -62,6 +68,12 @@ function caretInside(instance: Editor, type: string, index = 0): number {
   });
   if (found === null) throw new Error(`no ${type}[${index}] in the fixture`);
   return found;
+}
+
+function selectText(instance: Editor, from: number, to: number) {
+  instance.view.dispatch(
+    instance.state.tr.setSelection(TextSelection.create(instance.state.doc, from, to)),
+  );
 }
 
 function caretAt(instance: Editor, pos: number) {
@@ -118,6 +130,9 @@ describe("Tab never leaves the editor", () => {
     const before = listShape(instance);
     expect(pressTab(instance)).toBe(true);
     expect(listShape(instance)).toEqual(before);
+    // Not a tab either: inside a list the key belongs to the list, refusal
+    // included, and a tab in the first bullet's text is not what was asked for.
+    expect(instance.state.doc.textContent).toBe("a copper needlea folded map");
   });
 
   it("keeps the key with an object selected", () => {
@@ -151,6 +166,72 @@ describe("Tab never leaves the editor", () => {
     caretAt(instance, caretInside(instance, "table_cell") + 1);
 
     expect(pressTab(instance, true)).toBe(true);
+  });
+});
+
+describe("Tab makes a tab", () => {
+  it("inserts one mid-sentence", () => {
+    const instance = mount([paragraph("The third gate opened.")]);
+    caretAt(instance, 4);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.doc.firstChild?.textContent).toBe("The\t third gate opened.");
+    expect(instance.state.selection.$head.parent.type.name).toBe("paragraph");
+  });
+
+  it("inserts one at the front of a paragraph, where the wire needs an escape", () => {
+    const instance = mount([paragraph("The third gate opened.")]);
+    caretAt(instance, 1);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.doc.firstChild?.textContent).toBe("\tThe third gate opened.");
+  });
+
+  it("inserts one in a heading", () => {
+    const instance = mount([
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Chapter" }] },
+    ]);
+    caretAt(instance, 1);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.doc.firstChild?.textContent).toBe("\tChapter");
+  });
+
+  it("inserts one at the caret in a code fence", () => {
+    const instance = mount([fence("qi = 1")]);
+    caretAt(instance, caretInside(instance, "code_block") + 2);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.doc.firstChild?.textContent).toBe("qi\t = 1");
+  });
+
+  it("leaves a selected object alone: an indent key never replaces a picture", () => {
+    const instance = mount([paragraph("before"), { type: "figure", attrs: { src: "asset:1" } }]);
+    instance.commands.setNodeSelection(instance.state.doc.content.size - 1);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.doc.childCount).toBe(2);
+    expect(instance.state.doc.textContent).toBe("before");
+  });
+});
+
+describe("Tab across fence lines", () => {
+  it("indents every line the selection touches", () => {
+    const instance = mount([fence("one\ntwo\nthree")]);
+    const start = caretInside(instance, "code_block");
+    selectText(instance, start + 1, start + "one\ntw".length);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.doc.firstChild?.textContent).toBe("\tone\n\ttwo\nthree");
+  });
+
+  it("takes the indentation back on Shift-Tab", () => {
+    const instance = mount([fence("\tone\n    two\nthree")]);
+    const start = caretInside(instance, "code_block");
+    selectText(instance, start + 1, start + "\tone\n    tw".length);
+
+    expect(pressTab(instance, true)).toBe(true);
+    expect(instance.state.doc.firstChild?.textContent).toBe("one\ntwo\nthree");
   });
 });
 
