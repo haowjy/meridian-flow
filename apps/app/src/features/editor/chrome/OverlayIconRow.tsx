@@ -33,6 +33,7 @@ import { editorChromeAttributes } from "@/core/editor/chrome";
 
 import { useAnchorRect } from "./useAnchorRect";
 import { useChromeSuppressed, useEditorChrome } from "./useEditorChrome";
+import "./overlay-icon-row.css";
 
 /** Matches mockup 03b: the row sits inside the bounds, not on the edge. */
 const OVERLAY_INSET_PX = 10;
@@ -79,11 +80,13 @@ export function OverlayIconRow({
 
   if (!anchor || !rect || !chrome || typeof document === "undefined") return null;
 
+  const chromeAttributes = editorChromeAttributes(chrome);
+
   return createPortal(
     <TooltipProvider delayDuration={400}>
       <div
         data-overlay-icon-row={kind}
-        {...editorChromeAttributes(chrome)}
+        {...chromeAttributes}
         data-state={visible && !suppressed ? "open" : "closed"}
         className="meridian-overlay-icon-row"
         style={{
@@ -94,12 +97,17 @@ export function OverlayIconRow({
         }}
       >
         {items.map((item) => (
-          <OverlayIconChip key={item.id} label={item.label} onSelect={item.onSelect}>
+          <OverlayIconChip
+            key={item.id}
+            label={item.label}
+            onSelect={item.onSelect}
+            chromeAttributes={chromeAttributes}
+          >
             {item.icon}
           </OverlayIconChip>
         ))}
         {overflow?.(
-          <OverlayIconChip label={t`More`} asTrigger>
+          <OverlayIconChip label={t`More`} asTrigger chromeAttributes={chromeAttributes}>
             <MoreVertical aria-hidden />
           </OverlayIconChip>,
         )}
@@ -113,6 +121,7 @@ function OverlayIconChip({
   label,
   onSelect,
   asTrigger = false,
+  chromeAttributes,
   onMouseDown,
   children,
   ...rest
@@ -121,6 +130,12 @@ function OverlayIconChip({
   onSelect?: () => void;
   /** The ⋮ chip is a menu trigger, so the lane's menu owns its press. */
   asTrigger?: boolean;
+  /**
+   * The tooltip is portalled out of the row, so it carries the row's mark
+   * itself — a surface watching the pointer must read it as part of the same
+   * chrome rather than as a step off the object.
+   */
+  chromeAttributes: Record<string, string>;
   children: ReactNode;
 }) {
   const chip = (
@@ -151,7 +166,9 @@ function OverlayIconChip({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{chip}</TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
+      <TooltipContent side="top" {...chromeAttributes}>
+        {label}
+      </TooltipContent>
     </Tooltip>
   );
 }

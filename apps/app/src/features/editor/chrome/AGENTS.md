@@ -21,6 +21,10 @@ Four primitives and one host.
 - **`EditorChromeHost`** — the one place chrome mounts. Surfaces arrive
   through `EDITOR_CHROME_SURFACES`; `EditorView.tsx` never learns about one.
 
+`shortcut-label.ts` sits beside them: `shortcutLabel("Mod+K")` is how every
+lane prints a shortcut, because Mod is Cmd on macOS and a lane that tests the
+platform itself will spell it a fourth way.
+
 Radix is not wrapped away. It keeps owning dismissal, outside-click, and
 roving focus (decision 2026-07-29). What these add is subordination.
 
@@ -71,8 +75,8 @@ roving focus (decision 2026-07-29). What these add is subordination.
   `editorChromeAttributes(chrome)`**, or right-clicks on it bypass the claim
   ladder. The mark names the editor, because two documents open side by side
   are two kernels listening on one page.
-- No raw color. Chip and row styling lives in `editor.css` under the kernel's
-  banner; token classes elsewhere.
+- No raw color. Chip and row styling lives in the stylesheet beside the
+  component that renders it; token classes elsewhere.
 
 ## Anti-patterns
 

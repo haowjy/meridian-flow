@@ -29,7 +29,7 @@ import { type BlockHold, carryAnchor, holdBlock, resolveBlockHold } from "../anc
 
 const BLOCK_DRAG_NAME = "meridianBlockDrag";
 
-/** Marks the lifted block for `editor.css`; the surface owns nothing here. */
+/** Marks the lifted block for the block surface's CSS; nothing is owned here. */
 export const BLOCK_LIFTED_CLASS = "meridian-block-lifted";
 
 type BlockDragState = {

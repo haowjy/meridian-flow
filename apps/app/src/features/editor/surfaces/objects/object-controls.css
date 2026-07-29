@@ -1,0 +1,269 @@
+/**
+ * Object controls (M5): the code fence's chip cluster, the diagram lightbox
+ * and its canvas, and what a diagram says when its source stopped parsing.
+ */
+
+/* A fence scrolls rather than reflows, which is Notion's default and the
+   reference ruling 15 names: an indented block keeps its shape, and a long
+   line is a long line. Wrap lines in the ⋮ is what turns reflow on. */
+.meridian-editor .ProseMirror [data-node-view-wrapper] pre {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Wrapped lines are view state on the block, not an attribute in the document
+   (see CodeBlockChips): one writer's reading of one fence on one screen. */
+.meridian-editor .ProseMirror [data-wrap="on"] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The code block's chip cluster: one card holding a labeled control and two
+   icons, inside the block's top-right bounds (ruling 15). Fixed and pulled
+   back over its own width, so the block reserves nothing for it. */
+.meridian-code-chips {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  transform: translateX(-100%);
+  padding: 0.1875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+  color: var(--color-foreground);
+  transition: opacity 120ms ease-out;
+}
+
+.meridian-code-chips[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.meridian-code-chip-language {
+  height: 2rem;
+  padding-inline: 0.5rem;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-ink-muted);
+}
+
+.meridian-code-chip-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 0.1875rem 0.125rem;
+  background: var(--color-border-subtle);
+}
+
+/* The lightbox is a viewer, so it gives the whole frame to the canvas: no
+   dialog padding, no gaps, and the header is the only chrome above it. */
+.meridian-object-lightbox {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: min(60rem, 92vw);
+  padding: 0;
+  overflow: hidden;
+}
+
+.meridian-lightbox-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Room on the right for the dialog's own close control. */
+  padding: 0.5rem 3rem 0.5rem 1rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.meridian-lightbox-body {
+  height: min(70vh, 30rem);
+}
+
+.meridian-lightbox-split {
+  display: grid;
+  grid-template-columns: minmax(16rem, 21rem) 1fr;
+  height: min(70vh, 30rem);
+}
+
+.meridian-lightbox-source {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--color-code-border);
+  background: var(--color-code-surface);
+}
+
+.meridian-lightbox-source-text {
+  flex: 1;
+  resize: none;
+  padding: 0.9rem 1.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-code-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.78125rem;
+  line-height: 1.75;
+  outline: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+/* What a diagram says when its source stopped parsing. The same note in the
+   page and in the dialog's source pane, because it is the same fact: the
+   picture on screen is the last one that rendered. */
+.meridian-diagram-parse-note {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-foreground);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.meridian-diagram-parse-note code {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
+.meridian-lightbox-parse-note {
+  margin: 0 0.75rem 0.75rem;
+}
+
+/* A diagram whose source has never parsed (§5.2, state 3). It holds the
+   diagram's place rather than spilling Mermaid into the chapter: the same
+   warning family the parse note uses, because it is the same fact one step
+   earlier, and one door out of it. */
+.meridian-diagram-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.75rem 0.9rem;
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-foreground);
+}
+
+.meridian-diagram-error-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.meridian-diagram-error-title {
+  flex: 1;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Mermaid's own words, kept verbatim and kept monospaced: the line and column
+   it names only mean anything against the source as the writer typed it. */
+.meridian-diagram-error-message {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
+/* The canvas: a dot grid so pan and zoom have something to move against, and
+   `touch-action: none` because the viewer owns every pointer that lands here —
+   without it the browser claims two fingers for its own scroll and pinch. */
+/* The frame holds the gesture host and the pill side by side: a control
+   inside the host loses its click to the viewer's pointer capture. */
+.meridian-viewer-frame {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.meridian-viewer-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  background-color: var(--color-background);
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--color-foreground) 8%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+.meridian-viewer-canvas[data-panning] {
+  cursor: grabbing;
+}
+
+.meridian-viewer-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.meridian-viewer-canvas .meridian-viewer-stage svg,
+.meridian-viewer-canvas .meridian-viewer-stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.meridian-viewer-pill {
+  position: absolute;
+  bottom: 0.9rem;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  transform: translateX(-50%);
+  padding: 0.1875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+.meridian-viewer-percent {
+  min-width: 3.2rem;
+  text-align: center;
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.meridian-viewer-pill-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 0.1875rem 0.125rem;
+  background: var(--color-border-subtle);
+}
+
+/* A diagram sizes to the measure and never scrolls or captures the wheel in
+   the page flow (§5.2): reading a chapter must not turn into panning one. */
+.meridian-editor .ProseMirror .meridian-diagram {
+  display: flex;
+  justify-content: center;
+  padding: 1.25rem 0;
+}
+
+.meridian-editor .ProseMirror .meridian-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* The answer a verb gives back, over the corner the writer just pressed. */
+.meridian-verb-notice {
+  position: fixed;
+  z-index: 31;
+  transform: translate(-100%, calc(-100% - 0.5rem));
+}

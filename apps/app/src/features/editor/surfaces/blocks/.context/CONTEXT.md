@@ -205,8 +205,9 @@ disambiguate.
 
 Opening it stands the writer on the block: a caret in prose, a node selection
 on an object (law 1, a click reads). That is not decoration — it is what lets
-`turn-into.ts` ask the toolbar's own predicates about a block the writer merely
-pointed at, so both surfaces refuse the same targets for the same reasons.
+the menu ask the toolbar's own `blockTypeStates` about a block the writer
+merely pointed at, so both surfaces refuse the same targets for the same
+reasons.
 
 Turn into is present only on text blocks (§5.8). The consequences are worth
 naming: a list, a quote, or a table has no Turn into row, so the block menu

@@ -19,14 +19,7 @@
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 
-/**
- * Prose the writer types sentences into. A list item, a quote, and a table
- * cell all resolve to a paragraph, so the two names cover §5.7's five places.
- * Anything absent is denied: a `jsx_leaf`'s text is a component's props, not a
- * sentence, and an unlisted future block should stay silent until it is
- * deliberately let in.
- */
-export const SLASH_TRIGGER_BLOCKS: ReadonlySet<string> = new Set(["paragraph", "heading"]);
+import { PROSE_TRIGGER_BLOCKS } from "../suggestion";
 
 /**
  * `from` is the position of the `/` itself, which is what
@@ -41,7 +34,7 @@ export function allowsSlashTrigger(doc: PMNode, from: number): boolean {
   // A code fence is source, not prose — and a mermaid fence is the diagram's
   // source pane, so this one check closes both of §5.7's "never" cases.
   if (block.type.spec.code) return false;
-  if (!block.isTextblock || !SLASH_TRIGGER_BLOCKS.has(block.type.name)) return false;
+  if (!block.isTextblock || !PROSE_TRIGGER_BLOCKS.has(block.type.name)) return false;
 
   // Block start: nothing to be in the middle of.
   if ($from.parentOffset === 0) return true;

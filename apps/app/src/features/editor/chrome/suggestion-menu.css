@@ -1,0 +1,63 @@
+/**
+ * The typed-under menus: `/` (M8, §5.7, mockup 07) and `[[` (§5.5).
+ *
+ * One stylesheet because they are one primitive — `SuggestionMenu` — wearing
+ * two triggers. Portalled, hence the `meridian-` prefix rather than a nesting
+ * under the editor.
+ */
+
+/* Height caps near eight rows and the list scrolls inside itself (ruled). The
+   native scrollbar stays hidden: the fades above and below already say there
+   is more, and a bar on a 14rem menu is louder than the menu. */
+.meridian-suggestion-menu {
+  max-height: 19.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* Arrow-key scrolling stops short of the fade bands, so the row the writer
+     just moved onto is never the half-faded one. */
+  scroll-padding-block: 1.5rem;
+}
+
+.meridian-suggestion-menu::-webkit-scrollbar {
+  display: none;
+}
+
+/* The fades sit on the popover, not the scroller: a fade that scrolled with
+   the list would announce nothing. */
+.meridian-suggestion-menu-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.meridian-suggestion-menu-shell::before,
+.meridian-suggestion-menu-shell::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1.5rem;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  pointer-events: none;
+}
+
+.meridian-suggestion-menu-shell::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--color-popover), transparent);
+}
+
+.meridian-suggestion-menu-shell::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--color-popover), transparent);
+}
+
+.meridian-suggestion-menu-shell:has([data-overflow="top"])::before,
+.meridian-suggestion-menu-shell:has([data-overflow="both"])::before {
+  opacity: 1;
+}
+
+.meridian-suggestion-menu-shell:has([data-overflow="bottom"])::after,
+.meridian-suggestion-menu-shell:has([data-overflow="both"])::after {
+  opacity: 1;
+}

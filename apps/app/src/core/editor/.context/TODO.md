@@ -16,34 +16,25 @@ Design reference: [inline-diff-decoration-architecture.md].
 
 [inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
 
-## Figure drag-to-place (reimplement as delete + insert) — [#111]
+## Prove a block move leaves every other block's hash alone — [#111]
 
 [#111]: https://github.com/haowjy/meridian-flow/issues/111
 
-**Want:** let writers drag a figure/image to reposition it (real need — placing
-images where they belong in the prose).
+Dragging a figure into place ships: the registry marks a figure's body
+`opaque`, so the picture itself is a drag handle, and every move goes through
+`moveBlockToSeamTransaction` — a delete of the source followed by an insert at
+the seam. ProseMirror's own HTML5 drag is refused wherever it would carry an
+object, because it moves a node by serializing and re-parsing it.
 
-**Why it's not just `draggable: true`:** ProseMirror's default drag-drop moves a
-node *in place*, and y-prosemirror reconciles a reorder by **slot** — it keeps each
-Yjs item id pinned to its position and rewrites content into it. That **re-binds
-block hashes** (the moved figure, and every block it jumps over, get new hashes),
-which breaks agent-edit's "block hash = stable block identity" contract. See the
-no-in-place-reorder policy in `packages/agent-edit/.context/write-invariants.md`.
+What is still missing is the assertion that this is true: a test that moves a
+figure and shows every OTHER block keeping its hash while the moved figure
+gets a fresh Yjs item id. That contract is agent-edit's ("block hash = stable
+block identity", `packages/agent-edit/.context/write-invariants.md`), and
+y-prosemirror would break it silently by reconciling a reorder slot-wise.
 
-`figure` is not draggable in either editor schema surface; figures move via
-cut/paste (delete+insert).
-
-**Implementation when we build drag-to-place:**
-- Intercept the figure drop (custom `handleDrop` / drag handler) and decompose the
-  move into **delete-old-node + insert-new-node** at the drop position — never let
-  PM's default in-place reconciliation run.
-- The reinserted figure gets a fresh Yjs item id (correct: it's "the figure, now
-  here"), and no other block's hash changes.
-- Add a test asserting a figure move leaves every *other* block's hash unchanged and
-  gives the moved figure a new id.
-- Keep any schema-spec change mirrored between `apps/app/src/core/editor` and
-  `packages/prosemirror-schema`; the two schemas are built separately and parity
-  is currently unenforced.
+Keep any schema-spec change mirrored between `apps/app/src/core/editor` and
+`packages/prosemirror-schema`; the two schemas are built separately and parity
+is currently unenforced.
 
 ## Task lists have a schema and a codec but no writer surface
 

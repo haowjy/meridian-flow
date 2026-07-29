@@ -9,9 +9,9 @@ goes home — with nothing about any particular object in it.
 
 `EDITOR_OBJECT_TYPES` is the whole per-type story: a node name, an optional
 predicate for types that are only sometimes objects, what the pointer finds
-inside the object, and what Enter means. A lane that ships a new object type
-adds one row and, if Enter opens a surface, registers the handler from its
-mounted React component.
+inside the object, what Enter means, and which control surface the object
+carries. A lane that ships a new object type adds one row and, if Enter opens
+a surface, registers the handler from its mounted React component.
 
 Object-ness is a **registration, never a structural guess**. ProseMirror cannot
 tell a figure from a blockquote, and a mermaid diagram is a `code_block` whose

@@ -147,7 +147,8 @@ for. Both halves matter:
   burst of answers into one redraw.
 
 ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`, so
-`editor.css` reaches the anchor through `a:has([data-link-state="unresolved"])`
+`surfaces/link/link-surfaces.css` reaches the anchor through
+`a:has([data-link-state="unresolved"])`
 — the underline belongs to the anchor and a descendant cannot call it off.
 `link-resolution.test.ts` asserts that nesting, because a change to it is a
 silently unstyled unresolved link.

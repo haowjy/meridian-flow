@@ -10,10 +10,10 @@ first. Everything below is a contract a lane can rely on without asking.
 | 1 | Extension registration | [`core/editor/config.ts`](../../config.ts) → `EDITOR_CHROME_EXTENSIONS` | one line, at the placeholder comment for its lane |
 | 2 | Chrome mount host | [`features/editor/chrome/chrome-surfaces.tsx`](../../../../features/editor/chrome/chrome-surfaces.tsx) → `EDITOR_CHROME_SURFACES` | one entry, `{ id, render }` |
 | 3 | Keymap contributions | `chrome.registerKeymap(...)` at a named scope | a runtime registration, no new extension priority |
-| 4 | Stylesheet | [`features/editor/editor.css`](../../../../features/editor/editor.css) | one block appended under its own banner, below the `Chrome surfaces` rule |
+| 4 | Stylesheet | a `.css` file beside the lane's own component, imported by it | its own file; `features/editor/editor.css` is the document's, not a lane's |
 
-Nobody edits `EditorView.tsx`. Nobody edits another lane's CSS block. A rebase
-between lanes is then two hunks landing beside each other.
+Nobody edits `EditorView.tsx`. Nobody edits another lane's stylesheet. A
+rebase between lanes is then two files rather than two hunks in one.
 
 Object types are a fifth list with the same discipline:
 [`objects/object-types.ts`](../../objects/object-types.ts) → `EDITOR_OBJECT_TYPES`.

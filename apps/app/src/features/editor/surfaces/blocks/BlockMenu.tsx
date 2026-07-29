@@ -51,10 +51,16 @@ import {
   EditorMenuSubContent,
   EditorMenuSubTrigger,
 } from "../../chrome/EditorMenu";
-import { blockTypeReasonMessage } from "../toolbar";
-import { blockMenuLabel, blockMoveShortcut, turnIntoLabel } from "./block-copy";
+import {
+  BLOCK_TYPE_IDS,
+  type BlockTypeId,
+  blockTypeLabel,
+  blockTypeReasonMessage,
+  blockTypeStates,
+  turnIntoBlockType,
+} from "../toolbar";
+import { blockMenuLabel, blockMoveShortcut } from "./block-copy";
 import type { BlockTarget } from "./block-targets";
-import { applyTurnInto, type TurnIntoTargetId, turnIntoTargets } from "./turn-into";
 
 export type BlockMenuProps = {
   editor: Editor;
@@ -130,7 +136,8 @@ export function BlockMenu({
 function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarget }) {
   if (!target.node.isTextblock || isEditorObject(target.node)) return null;
 
-  const targets = turnIntoTargets(editor);
+  const states = blockTypeStates(editor);
+  const targets = BLOCK_TYPE_IDS.map((id) => ({ id, ...states[id] }));
   const refused = targets.filter((option) => option.blockedBy);
   const reason = refused[0]?.blockedBy ? blockTypeReasonMessage(refused[0].blockedBy) : null;
 
@@ -164,10 +171,10 @@ function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarg
           <EditorMenuItem
             key={option.id}
             disabled={Boolean(option.blockedBy)}
-            onSelect={() => applyTurnInto(editor, option.id)}
+            onSelect={() => turnIntoBlockType(editor, option.id)}
           >
             {turnIntoIcon(option.id)}
-            <span className={cn(option.active && "font-medium")}>{turnIntoLabel(option.id)}</span>
+            <span className={cn(option.active && "font-medium")}>{blockTypeLabel(option.id)}</span>
             {option.active ? (
               <Check className="ml-auto text-foreground" aria-label={t`Current block type`} />
             ) : null}
@@ -178,7 +185,7 @@ function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarg
   );
 }
 
-function turnIntoIcon(id: TurnIntoTargetId): ReactNode {
+function turnIntoIcon(id: BlockTypeId): ReactNode {
   switch (id) {
     case "paragraph":
       return <Pilcrow aria-hidden />;
@@ -192,7 +199,7 @@ function turnIntoIcon(id: TurnIntoTargetId): ReactNode {
       return <List aria-hidden />;
     case "orderedList":
       return <ListOrdered aria-hidden />;
-    case "quote":
+    case "blockquote":
       return <TextQuote aria-hidden />;
     case "codeBlock":
       return <Code aria-hidden />;
