@@ -27,6 +27,11 @@ import {
 } from "@tiptap/pm/tables";
 
 import {
+  type ContextClaimTarget,
+  getEditorChrome,
+  isEditorChromeElement,
+} from "@/core/editor/chrome";
+import {
   addTableRow,
   alignTableColumn,
   hasHeaderRow,
@@ -263,6 +268,45 @@ export function runTableVerb(editor: Editor, id: TableVerbId): boolean {
   const ran = TABLE_VERB_COMMANDS[id](editor.state, editor.view.dispatch, editor.view);
   editor.view.focus();
   return ran;
+}
+
+/**
+ * The pointer sits inside one of the cells the selection covers.
+ *
+ * Not the selection's `from`..`to` range: a rectangle two columns wide in a
+ * four-column table spans cells it does not contain, and aiming at one of
+ * those is not aiming at what was swept.
+ */
+export function pointerInsideCellSelection(state: EditorState, docPos: number | null): boolean {
+  const { selection } = state;
+  if (docPos === null || !(selection instanceof CellSelection)) return false;
+
+  let inside = false;
+  selection.forEachCell((cell, pos) => {
+    if (docPos >= pos && docPos <= pos + cell.nodeSize) inside = true;
+  });
+  return inside;
+}
+
+/**
+ * The claim decision for one right-click on swept cells, synchronous by
+ * contract.
+ *
+ * A rectangle of cells is the one table selection no grip can make, and the
+ * only path to merging two arbitrary cells. Nothing above this rung wants it:
+ * the formatting menu admits `TextSelection` and `AllSelection` only, so
+ * without this a writer who swept two cells and right-clicked got silence.
+ *
+ * A bare caret in a cell is NOT this: that is ruling 11's native menu, where
+ * spellcheck lives, and it stays the browser's.
+ */
+export function claimsTableCellMenu(editor: Editor, target: ContextClaimTarget): boolean {
+  if (editor.isDestroyed || !editor.isEditable) return false;
+  if (!pointerInsideCellSelection(editor.state, target.docPos)) return false;
+  // A grip or an overlay row standing over the table is chrome, and its own
+  // rung took the event further up the ladder.
+  const chrome = getEditorChrome(editor);
+  return !(chrome && isEditorChromeElement(chrome, target.element));
 }
 
 /** A resolved position standing immediately before a table cell, or null. */

@@ -79,6 +79,18 @@ export function editorChromeAttributes(chrome: EditorChrome): Record<string, str
   return { [EDITOR_CHROME_ATTRIBUTE]: chrome.id };
 }
 
+/**
+ * Is this element part of THIS editor's portalled chrome?
+ *
+ * The router asks it to decide whether an event outside the prose is still
+ * the editor's, and a claim handler asks it to stand down over a lane's own
+ * overlay. Qualified by the chrome's id both times: two documents side by
+ * side are two kernels, and an unqualified mark would answer yes for both.
+ */
+export function isEditorChromeElement(chrome: EditorChrome, element: Element): boolean {
+  return element.closest(`[${EDITOR_CHROME_ATTRIBUTE}="${chrome.id}"]`) !== null;
+}
+
 export const ChromeKernelExtension = Extension.create({
   name: CHROME_EXTENSION_NAME,
   priority: 1050,
@@ -150,10 +162,7 @@ export const ChromeKernelExtension = Extension.create({
           const routeMenu = (event: MouseEvent) => {
             const target = event.target;
             if (!(target instanceof Element)) return;
-            const belongsToEditor =
-              view.dom.contains(target) ||
-              target.closest(`[${EDITOR_CHROME_ATTRIBUTE}="${chrome.id}"]`) !== null;
-            if (!belongsToEditor) return;
+            if (!view.dom.contains(target) && !isEditorChromeElement(chrome, target)) return;
             routeContextMenu(view, chrome, event);
           };
           document.addEventListener("contextmenu", routeMenu, true);

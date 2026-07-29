@@ -2245,10 +2245,6 @@ msgstr ""
 msgid "Settings sections"
 msgstr ""
 
-#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-#~ msgid "Showing the last good render."
-#~ msgstr ""
-
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
 msgstr ""

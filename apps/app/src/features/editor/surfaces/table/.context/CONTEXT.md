@@ -78,12 +78,62 @@ not the window), on resize, on a `ResizeObserver` over the cell and the table,
 and on every editor transaction: a row grows as the writer types into it and
 the grip has to travel with it.
 
+## The four menus, and who takes a right-click
+
+| Shape | Door | Carries |
+|---|---|---|
+| Row | row grip, left-click or right-click | insert, merge/split, move, delete, `Table ▸` |
+| Column | column grip, either button | insert, alignment, merge/split, move, delete, `Table ▸` |
+| Cells | right-click inside a swept rectangle | merge/split, alignment, `Table ▸` |
+| Table | the selected table's ⋮ | header row, alignment, placement, widths, delete |
+
+The cell menu is deliberately the shortest. Merge and split are what a
+rectangle exists for, alignment applies to the columns it covers, and the row
+and column verbs already have a home on the grips a few pixels away; a third
+copy of them would be three places saying the same thing.
+
+`cell-selection` is the ladder's last rung, added because nothing above it
+wanted a `CellSelection`: `proseSelectionCovers` admits `TextSelection` and
+`AllSelection` only, so the formatting menu stands down, a grip is chrome
+rather than a cell, and `objectSurfaceKind` returns null for a table. A swept
+rectangle therefore reached no menu at all. Last is the right place for it: a
+link inside a selected cell is still a link, and a grip drawn over one is
+still a grip.
+
+`claimsTableCellMenu` decides it, pure and testable. It asks whether the
+pointer is inside one of the cells the selection COVERS, not whether it falls
+in the selection's `from`..`to` range: a rectangle two columns wide in a
+four-column table spans cells it does not contain.
+
+## The left margin is shared, and the bands must not stack
+
+Measured on the manuscript column: prose edge 288, table frame 328, so the
+margin is a 40px band. The row grip takes **307 to 322** (its right edge is
+`ROW_GRIP_GAP` clear of the frame), and the block handle reports 294 to 316.
+That is 10px of overlap, and whichever lane paints on top takes the
+right-click for both.
+
+The split this lane is built for: the block handle keeps the OUTER band
+(≤ 306) and the row grip keeps the inner one, because a grip belongs beside
+the row it serves while the handle is a document-level control. The grip
+cannot vacate further: the clear band inside the handle is 12px and the grip
+is 15px around a 13px icon. `ROW_GRIP_GAP` is the one number to change if the
+ruling goes the other way.
+
 ## Hover and the menus
 
 Hover intent comes from `chrome.createHoverIntent`, keyed on the cell ELEMENT
-so an unchanged cell settles once rather than on every `mousemove`. The chrome
-container re-enters the intent on `mouseenter`, which is what lets the pointer
-cross from the table onto a grip without the reveal dying in the gap.
+so an unchanged cell settles once rather than on every `mousemove`.
+
+**One pointer source, on the document.** The grips are portalled OUTSIDE the
+editor, so a listener bound to the prose watches the pointer leave and never
+watches it arrive. Pairing that with a React `onMouseEnter` on the portal put
+two mechanisms in a 120ms race across a tree boundary, and the race is why a
+grip stopped being clickable a moment after it appeared: the reveal faded,
+`pointer-events: none` went on, and the right-click fell through to the
+browser. One `mousemove` on the document asks one question instead, `is the
+pointer over a cell of this editor or over this table's own chrome`, and the
+answer is the same on both sides of the portal.
 
 While a menu is open the anchor is frozen: a stray hover would slide the grips
 out from under the menu and leave it pointing at another row. On close the

@@ -10,6 +10,7 @@ export {
   ChromeKernelExtension,
   editorChromeAttributes,
   getEditorChrome,
+  isEditorChromeElement,
 } from "./ChromeKernelExtension";
 export {
   CHROME_CONTEXT_KINDS,
