@@ -16,6 +16,11 @@ they serve and belong to the rebuild, not to incremental patches here. See
 The rest of this surface is the prose column, the sync indicator, the
 image-upload flow, and the notice/popover surfaces below.
 
+Block alignment is a shared command module, not the toolbar's own:
+`block-alignment.ts` resolves every alignable block a selection touches (a
+table counts as one, never its cells) and writes to all of them, so selecting
+three paragraphs and pressing Center centers three paragraphs.
+
 **One column, one owner**: `editor-column.ts` is the single home of prose
 geometry — the chrome row inset, the canvas wrapper, and `editorProseClass`
 for the ProseMirror node. The toolbar row's inset equals the canvas inset plus

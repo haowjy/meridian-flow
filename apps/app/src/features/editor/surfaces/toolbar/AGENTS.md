@@ -27,10 +27,18 @@ behavior is never decided in a component.
   direction, spell out the reverse here.
 - **Block-type commands refuse non-text targets themselves.** The greyed
   button is the first fence, the command is the second, and the second is
-  load-bearing: a selected figure converting to a heading is the accident
-  this module exists to make unreachable (F6).
+  load-bearing: a selected figure converting to a heading is the accident this
+  module exists to make unreachable (F6). ANY protected target in the selection
+  refuses the whole conversion, and protected is judged by node type, never by
+  `isTextblock` — a mermaid fence and a `jsx_leaf` are both text blocks.
+- **A control may not advertise what dispatch refuses.** Availability comes
+  from the same predicate the command runs, and for marks that predicate is
+  `editor.can().setMark`. A control that looks live and does nothing is the
+  dead control law 5 forbids.
 - New writer copy goes in `toolbar-copy.ts`, including every blocked reason.
-  A reason code with no message is a control that greys silently.
+  A reason code with no message is a control that greys silently. Copy reaches
+  the browser through the COMPILED catalogs, so run extract and compile and
+  commit both; `pnpm check:i18n` fails the build when they drift.
 - Do not bind Ctrl+K to the link popover: that key belongs to the later link
   lane, which absorbs this popover.
 
