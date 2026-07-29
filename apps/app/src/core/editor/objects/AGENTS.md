@@ -19,6 +19,11 @@ re-deriving it, so there is one answer to "is this an object".
 
 ## Key rules
 
+- **A surface opens through `engageObject`, whoever asked.** Enter on a
+  selected object and a lane that just created one are the same request, and
+  law 2's exception (a new empty object opens ready to edit) is why the second
+  exists. A lane that resolves the engagement map itself will drift from the
+  key.
 - **A selected object always consumes Enter**, even when its intent is `none`
   or its lane has not shipped yet. Letting Enter fall through hands a node
   selection to the base keymap, which splits the block around it and leaves

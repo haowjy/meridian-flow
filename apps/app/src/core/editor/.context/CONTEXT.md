@@ -219,6 +219,10 @@ boundary:
   returns what the surface subscribes to; the surface never reads editor state
   to decide what the menu shows. It may be null on an editor without the
   extension.
+- **A new object opens through `engageObject`.** The slash lane does not know
+  what a diagram dialog is; it hands the node it just made to the object lane,
+  which resolves the surface a type registered. Enter on a selected object
+  takes the same path, so "what opens this" has one answer.
 
 The trigger mounts with the catalog option rather than through
 `EDITOR_CHROME_EXTENSIONS`, so a surface that offers no catalog pays for no
