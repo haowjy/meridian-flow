@@ -81,25 +81,22 @@ The external guard is ruling 9: none. Mockup 06 state F records the alternative.
 
 ## Surviving a write that lands underneath
 
-Every remote change reaches this editor as a replacement of the WHOLE document:
-y-prosemirror rebuilds the ProseMirror doc from the Yjs type and dispatches one
-replace step (`sync-plugin.js`, `_typeChanged`). Every position therefore maps
-to a boundary and reports itself deleted, so a surface that holds raw numbers
-across a peer edit or an AI write is pointing at nothing — and this product is
-built around AI writes landing while the writer works.
+`LinkAnchor` is this module's instance of the editor-wide contract in
+[`../../.context/CONTEXT.md`](../../.context/CONTEXT.md): a remote change
+rebuilds the whole document, so a surface that holds raw positions across a
+peer edit or an AI write is pointing at nothing. `anchorLinkRange` pins a
+range through Yjs relative positions, `resolveLinkAnchor` finds it again, and
+the ProseMirror mapping stays the fallback where there is no shared document.
 
-`LinkAnchor` is the answer, and it is the same one the rest of the editor
-already uses for peer marks and live ranges: Yjs relative positions, resolved
-through `relative-position-runtime.ts`. `anchorLinkRange` pins a range,
-`resolveLinkAnchor` finds it again, and the ProseMirror mapping stays the
-fallback for an editor with no shared document, where there are no remote
-changes to survive.
+Both link surfaces hold one. The menu's is its whole target; the form's is its
+draft, because a form the writer is typing in has the same exposure and two
+mechanisms for one problem is how they drift.
 
-Position is only half of it. `relocateLink` re-reads the mark at the resolved
-position and compares it by attributes: coordinates outlive the thing that was
-at them, so a link deleted and replaced by other text, or an href a peer
-changed, both have to close the surface rather than re-aim it. The menu closes;
-the form closes; neither acts on words the writer never pointed at.
+Position is half of it. `relocateLink` re-reads the mark at the resolved
+position and compares it by attributes, so a link deleted and replaced by other
+text, and an href a peer changed, both close the surface rather than re-aim it.
+The menu closes; the form closes; neither acts on words the writer never
+pointed at.
 
 ## The resolution port
 

@@ -205,6 +205,58 @@ Yjs document session. It must stay structurally aligned with
   resolve the selection. `link-url.ts` is the single normalizer for
   writer-entered targets (http/https/mailto only).
 
+## Holding a position across a remote write
+
+Any surface that outlives a keystroke — an open menu aimed at a link, a form
+mid-typing, a drop line, a grip, a decoration — has to answer "where is my
+thing now" after the document changes. ProseMirror's transaction mapping
+answers that for a local edit and **not** for a remote one.
+
+Every remote change arrives as a replacement of the WHOLE document.
+y-prosemirror rebuilds the ProseMirror doc from the Yjs type and dispatches a
+single `tr.replace(0, doc.content.size, …)` (`sync-plugin.js`, `_typeChanged`).
+So every position maps to a boundary and every `mapResult` reports `deleted`,
+whatever the change actually was. A surface holding raw numbers is pointing at
+nothing, and one that closes on `deleted` closes on every peer edit and every
+AI write — which this product produces constantly.
+
+The mechanism that survives it is Yjs relative positions, through
+[`relative-position-runtime.ts`](../relative-position-runtime.ts). It is what
+y-prosemirror itself uses to carry the selection across the rebuild, and what
+peer marks, live-range navigation, and inline review already hold their anchors
+with. The shape, from `core/editor/links/link-commands.ts`:
+
+```ts
+type Anchor = {
+  from: number;
+  to: number;
+  /** null on an editor with no shared document: there is nothing to survive. */
+  relative: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
+};
+
+// Pin it when the surface opens.
+const runtime = relativePositionRuntimeFromState(state);
+const relative = runtime && { start: relativePositionForIndex(runtime, from), … };
+
+// Find it again on every transaction.
+const runtime = relativePositionRuntimeFromState(state);
+if (runtime && anchor.relative) return resolveRelativeRange(runtime, anchor.relative);
+return mappedFallback(anchor, transaction.mapping); // no shared document
+```
+
+Three rules a lane holding one should follow:
+
+- **Position is half the answer.** Coordinates outlive the thing that was at
+  them. Re-read what is actually there and compare it — a mark by attributes, a
+  node by type — or the surface acts on whatever slid into the numbers.
+- **A rebuilt document makes new objects.** Object identity (`===`) fails for
+  equal marks and nodes after a remote write; equality (`Mark.eq`, `node.eq`)
+  is what "the same thing" means here.
+- **Bounds-check what you resolve.** A relative position can land at the very
+  end of the document, and resolving one past it throws inside a Yjs update
+  handler, where the throw is swallowed and the editor quietly stops applying
+  peer writes.
+
 ## TipTap v3 defaults we intentionally disable
 
 - `trailingNode: false` — TipTap v3's StarterKit can append a trailing paragraph

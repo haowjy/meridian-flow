@@ -55,6 +55,18 @@ change-trail events, not manuscript content.
   than binding it. See [`chrome/AGENTS.md`](chrome/AGENTS.md) and
   [`objects/AGENTS.md`](objects/AGENTS.md).
 
+- What an href means is `links/`, once. A link is four kinds — wikilink,
+  scheme, relative, external — and every consumer (the click, the hover hint,
+  the menu, the mark's own rendering, the paste sanitizer) reads the same
+  classifier. TipTap's link extension does not know the internal family and
+  must be configured against ours.
+
+- **A surface that outlives a keystroke cannot hold raw positions.** Every
+  remote change rebuilds the whole document, so ProseMirror's mapping reports
+  every position deleted whatever actually happened, and Yjs relative positions
+  are what survive it. The contract and the three rules that come with it are
+  in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for session, peer-mark, draft-review,
 and navigation contracts.
 
