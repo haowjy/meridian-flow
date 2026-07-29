@@ -91,9 +91,11 @@ the `hard_break` node.
 The HTML table path accepts positive `colspan` and `rowspan`, inline marks,
 links, images, and `<br>` while declining unknown table structure as inert raw
 text. Invalid PM span/alignment attrs and malformed `Layout` column widths
-still throw rather than serialize lossily. `Layout` wrapping is applied by the
-runtime block hook even through list and blockquote child serializers, so
-alignment on nested paragraphs round-trips.
+still throw rather than serialize lossily. `Layout` keeps an HTML-spelled table
+as raw text inside the wrapper instead of parsing and re-stringifying it as
+MDX, which preserves entity-encoded literal newlines and braces. `Layout`
+wrapping is applied by the runtime block hook even through list and blockquote
+child serializers, so alignment on nested paragraphs round-trips.
 
 ## Preprocessed source invariant
 

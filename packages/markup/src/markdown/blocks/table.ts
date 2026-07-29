@@ -11,18 +11,35 @@ import type { BlockCodec, SerializeContext } from "../../types.js";
 import { parseHtmlTable, serializeHtmlTable } from "./table-html.js";
 
 type TableAlignment = MdastTable["align"][number];
-const GFM_HARD_BREAK = "<br/>";
+const GFM_INGRESS_HARD_BREAK = "<br/>";
 
 export function normalizeGfmTableHardBreaks(source: string): string {
   const lines = source.split("\n");
   const out: string[] = [];
   let index = 0;
+  let fence: { marker: string; length: number } | null = null;
 
   while (index < lines.length) {
+    const line = lines[index] ?? "";
+    if (fence) {
+      out.push(line);
+      if (closesFence(line, fence)) fence = null;
+      index++;
+      continue;
+    }
+
+    const openingFence = line.match(/^[\t ]{0,3}(`{3,}|~{3,})/);
+    if (openingFence?.[1]) {
+      fence = { marker: openingFence[1][0] ?? "", length: openingFence[1].length };
+      out.push(line);
+      index++;
+      continue;
+    }
+
     const header = pipeRowAt(lines, index);
     const delimiter = header ? pipeRowAt(lines, header.end + 1) : null;
     if (!header || !delimiter || !isDelimiterRow(delimiter.value)) {
-      out.push(lines[index] ?? "");
+      out.push(line);
       index++;
       continue;
     }
@@ -47,19 +64,20 @@ export const tableCodec: BlockCodec<MdastTable> = {
     if (!isGfmRepresentable(node)) return serializeHtmlTable(node, ctx);
     const align = alignmentFromFirstRow(node);
     const table: MdastTable = { type: "table", align, children: [] };
+    const hardBreakMarker = uniqueHardBreakMarker(node);
 
     node.forEach((row) => {
       const cells: MdastTableCell[] = [];
       row.forEach((cell) => {
         cells.push({
           type: "tableCell",
-          children: hardBreaksForGfm(cellInlineChildren(cell, ctx)),
+          children: hardBreaksForGfm(cellInlineChildren(cell, ctx), hardBreakMarker),
         });
       });
       table.children.push({ type: "tableRow", children: cells });
     });
 
-    return stringifyBlock(ctx, table).replaceAll(GFM_HARD_BREAK, "\\\n");
+    return stringifyBlock(ctx, table).replaceAll(hardBreakMarker, "\\\n");
   },
 
   parse(ast, ctx) {
@@ -154,15 +172,18 @@ function validAlignment(value: unknown): boolean {
   return value === null || value === undefined || tableAlignment(value) !== null;
 }
 
-function hardBreaksForGfm(children: MdastTableCell["children"]): MdastTableCell["children"] {
+function hardBreaksForGfm(
+  children: MdastTableCell["children"],
+  marker: string,
+): MdastTableCell["children"] {
   return replaceHardBreaks(children, (node) =>
-    node.type === "break" ? ({ type: "html", value: GFM_HARD_BREAK } as MdastInline) : node,
+    node.type === "break" ? ({ type: "html", value: marker } as MdastInline) : node,
   );
 }
 
 function hardBreaksFromGfm(children: MdastTableCell["children"]): MdastTableCell["children"] {
   return replaceHardBreaks(children, (node) => {
-    if (node.type === "html" && node.value === GFM_HARD_BREAK) return { type: "break" };
+    if (node.type === "html" && node.value === GFM_INGRESS_HARD_BREAK) return { type: "break" };
     if (node.type === "mdxJsxTextElement") {
       const jsx = node as {
         name: string | null;
@@ -175,6 +196,16 @@ function hardBreaksFromGfm(children: MdastTableCell["children"]): MdastTableCell
     }
     return node;
   });
+}
+
+function uniqueHardBreakMarker(table: PMNode): string {
+  const serialized = JSON.stringify(table.toJSON());
+  let suffix = 0;
+  while (true) {
+    const marker = `\uFDD0${suffix}\uFDEF`;
+    if (!serialized.includes(marker)) return marker;
+    suffix++;
+  }
 }
 
 function replaceHardBreaks(
@@ -200,7 +231,7 @@ function pipeRowAt(lines: readonly string[], start: number): { value: string; en
   while (hasOddTrailingBackslash(value)) {
     const continuation = lines[end + 1];
     if (continuation === undefined) return null;
-    value = `${value.slice(0, -1)}${GFM_HARD_BREAK}${continuation}`;
+    value = `${value.slice(0, -1)}${GFM_INGRESS_HARD_BREAK}${continuation}`;
     end++;
   }
   return value.trimEnd().endsWith("|") ? { value, end } : null;
@@ -214,4 +245,9 @@ function hasOddTrailingBackslash(value: string): boolean {
 function isDelimiterRow(value: string): boolean {
   const cells = value.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
   return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()));
+}
+
+function closesFence(line: string, fence: { marker: string; length: number }): boolean {
+  const marker = fence.marker === "`" ? "`" : "~";
+  return new RegExp(`^[\\t ]{0,3}${marker}{${fence.length},}[\\t ]*$`).test(line);
 }

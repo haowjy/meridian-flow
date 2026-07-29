@@ -46,7 +46,10 @@ export function serializeHtmlTable(table: PMNode, ctx: SerializeContext): string
 }
 
 export function parseHtmlTable(ast: unknown, ctx: ParseContext): PMNode | null {
-  const source = rawTextForAst(ast, ctx).trim();
+  const astType =
+    typeof ast === "object" && ast !== null ? (ast as { type?: unknown }).type : undefined;
+  if (astType !== "html" && astType !== "mdxJsxFlowElement" && astType !== "paragraph") return null;
+  const source = htmlSource(ast, ctx);
   if (!/^<table(?:\s|>)/i.test(source)) return null;
   const root = parseHtml(source);
   if (root?.name !== "table" || root.attributes.size !== 0) return null;
@@ -178,6 +181,8 @@ function escapeHtmlText(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
+    .replaceAll("{", "&#123;")
+    .replaceAll("}", "&#125;")
     .replaceAll("\r", "&#13;")
     .replaceAll("\n", "&#10;");
 }
@@ -224,7 +229,16 @@ function cellAttrs(element: HtmlElement): Record<string, unknown> | null {
   if (colspan === null || rowspan === null) return null;
 
   const directAlignment = element.attributes.get("align");
-  const styleAlignment = alignmentFromStyle(element.attributes.get("style"));
+  const style = element.attributes.get("style");
+  const styleAlignment = style === undefined ? undefined : alignmentFromStyle(style);
+  if (style !== undefined && styleAlignment === null) return null;
+  if (
+    typeof directAlignment === "string" &&
+    typeof styleAlignment === "string" &&
+    directAlignment !== styleAlignment
+  ) {
+    return null;
+  }
   const alignment = directAlignment ?? styleAlignment;
   if (alignment !== undefined && alignment !== null && !ALIGNMENTS.has(alignment)) return null;
 
@@ -243,8 +257,7 @@ function parseSpanAttribute(value: string | null | undefined): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function alignmentFromStyle(style: string | null | undefined): string | null | undefined {
-  if (style === undefined) return undefined;
+function alignmentFromStyle(style: string | null): string | null {
   if (style === null) return null;
   const declarations = style
     .split(";")
@@ -276,7 +289,7 @@ function parseInlineNodes(
     if (node.name === "img" && node.children.length === 0) {
       const image = parseImage(node, ctx);
       if (!image) return null;
-      out.push(image);
+      out.push(image.mark(marks));
       continue;
     }
 
@@ -461,4 +474,18 @@ function decodeHtml(value: string): string {
       ? String.fromCodePoint(codePoint)
       : entity;
   });
+}
+
+function htmlSource(ast: unknown, ctx: ParseContext): string {
+  const record = typeof ast === "object" && ast !== null ? (ast as Record<string, unknown>) : null;
+  const raw =
+    record?.type === "html" && typeof record.value === "string"
+      ? record.value
+      : rawTextForAst(ast, ctx);
+  return raw
+    .split("\n")
+    .map((line) => line.replace(/^[\t ]*(?:>[\t ]*)+/, ""))
+    .join("\n")
+    .replaceAll("\\<", "<")
+    .trim();
 }
