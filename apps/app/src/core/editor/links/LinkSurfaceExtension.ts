@@ -26,6 +26,7 @@ import {
 } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
+import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { getEditorChrome, hoverOwner } from "../chrome";
 import {
   anchorLinkRange,
@@ -121,8 +122,10 @@ export const LinkSurfaceExtension = Extension.create({
     const { surface, resolution } = this.storage;
 
     // What the current press started from: where the pointer was, and where
-    // the writer's selection was before ProseMirror moved it.
-    let press: { origin: LinkPoint; selection: { from: number; to: number } } | null = null;
+    // the writer's selection was before ProseMirror moved it. The selection is
+    // an anchor rather than two numbers — a press and its click are two events,
+    // and a peer's write can land between them.
+    let press: { origin: LinkPoint; selection: EditorAnchor } | null = null;
     // Registered in `view()`, because the kernel owns the approach: its timing,
     // its pointer, and which block owns hover chrome at all.
     let releaseHover: (() => void) | null = null;
@@ -256,9 +259,10 @@ export const LinkSurfaceExtension = Extension.create({
              * caret from here, so a follow has to know what it moved off.
              */
             mousedown(view, event) {
+              const { from, to } = view.state.selection;
               press = {
                 origin: { x: event.clientX, y: event.clientY },
-                selection: { from: view.state.selection.from, to: view.state.selection.to },
+                selection: anchorRange(view.state, { from, to }),
               };
               return false;
             },
@@ -326,18 +330,23 @@ function travelFrom(origin: LinkPoint | null, event: MouseEvent): number {
  * known to be a follow, and preventing that would take drag-selection from a
  * link with it. So the caret moves and comes back, and what the writer keeps
  * is the end state: the place they return to from the new tab.
+ *
+ * Where the press found it is resolved from the held anchor rather than from the
+ * numbers it had then. A peer who types one line up between the press and the
+ * click moves every position in the document, and clamping stale numbers to the
+ * document's size puts the caret in the middle of somebody else's sentence.
  */
-function restoreSelection(
-  view: EditorView,
-  selection: { from: number; to: number } | undefined,
-): void {
-  if (!selection) return;
+function restoreSelection(view: EditorView, selection: EditorAnchor | undefined): void {
+  const at = selection && resolveAnchorIn(view.state, selection);
+  // Nothing to go back to: the writer's place was deleted while they pressed,
+  // and the caret the click already placed is the honest answer.
+  if (!at) return;
   const { doc, selection: current } = view.state;
-  if (current.from === selection.from && current.to === selection.to) return;
+  if (current.from === at.from && current.to === at.to) return;
 
   const size = doc.content.size;
-  const $from = doc.resolve(Math.min(selection.from, size));
-  const $to = doc.resolve(Math.min(selection.to, size));
+  const $from = doc.resolve(Math.min(at.from, size));
+  const $to = doc.resolve(Math.min(at.to, size));
   // `between` lands on the nearest valid text position rather than throwing,
   // which matters when a peer reshaped the block during the press.
   view.dispatch(view.state.tr.setSelection(TextSelection.between($from, $to)));

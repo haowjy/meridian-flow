@@ -2,10 +2,13 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
+
 import { createStandaloneEditorExtensions } from "../config";
 import { getLinkSurface } from "./LinkSurfaceExtension";
 
 let editor: Editor | null = null;
+let pair: CollabPair | null = null;
 let openTab: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -21,6 +24,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   editor?.destroy();
   editor = null;
+  pair?.destroy();
+  pair = null;
 });
 
 function editorWith(content: string): Editor {
@@ -220,5 +225,95 @@ describe("the middle button", () => {
       target: { kind: "wikilink", name: "The Second Gate" },
       disposition: "new-tab",
     });
+  });
+});
+
+/**
+ * A press and its click are two events, and this document's peers are writing
+ * between them. The selection the press remembers is therefore an anchor: a
+ * collaborator who types one line up moves every position in the document, and
+ * numbers restored from before that put the caret inside somebody else's
+ * sentence.
+ *
+ * Two bindings, because a remote write is the only thing that produces the
+ * change this has to survive.
+ */
+describe("a followed click while a collaborator writes", () => {
+  const LEDGER = "the ledger kept its own accounts";
+
+  function collabEditor(): CollabPair {
+    pair = createCollabPair({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              marks: [{ type: "link", attrs: { href: "https://example.com" } }],
+              text: "linked",
+            },
+          ],
+        },
+        { type: "paragraph", content: [{ type: "text", text: LEDGER }] },
+      ],
+    });
+    document.body.append(pair.local.view.dom);
+    return pair;
+  }
+
+  /** Where the caret is, as the writer would name it: the word it sits in. */
+  function wordAtCaret(instance: Editor): string {
+    const { from } = instance.state.selection;
+    const text = instance.state.doc.textBetween(0, instance.state.doc.content.size, "\n");
+    const at = instance.state.doc.textBetween(0, from, "\n").length;
+    const before = text.slice(0, at).split(/\s/).at(-1) ?? "";
+    const after = text.slice(at).split(/\s/)[0] ?? "";
+    return `${before}${after}`;
+  }
+
+  it("returns the caret to the word the press left, not to the numbers it had", () => {
+    const current = collabEditor();
+    const { local } = current;
+    // The writer is reading the second paragraph, caret inside "accounts".
+    local.commands.setTextSelection(local.state.doc.content.size - 3);
+    expect(wordAtCaret(local)).toBe("accounts");
+
+    press(anchorOf(local), {
+      during: () => {
+        current.peer.commands.insertContentAt(1, "PEER TEXT ");
+        current.sync();
+        // jsdom has no layout, so ProseMirror's own mousedown never places a
+        // caret. This is the placement a browser would have made.
+        local.commands.setTextSelection(4);
+      },
+    });
+
+    expect(openTab).toHaveBeenCalled();
+    expect(wordAtCaret(local)).toBe("accounts");
+  });
+
+  it("lands at the seam the writer's place left behind when a peer deletes it", () => {
+    const current = collabEditor();
+    const { local } = current;
+    local.commands.setTextSelection(local.state.doc.content.size - 3);
+
+    press(anchorOf(local), {
+      during: () => {
+        const at = current.peer.state.doc.child(0).nodeSize;
+        current.peer.commands.deleteRange({
+          from: at,
+          to: at + current.peer.state.doc.child(1).nodeSize,
+        });
+        current.sync();
+        local.commands.setTextSelection(4);
+      },
+    });
+
+    expect(openTab).toHaveBeenCalled();
+    expect(local.state.doc.childCount).toBe(1);
+    // The paragraph they were reading is gone, so the nearest place to it is
+    // where it was — never the middle of the link they pressed.
+    expect(local.state.selection.from).toBe(local.state.doc.content.size - 1);
   });
 });
