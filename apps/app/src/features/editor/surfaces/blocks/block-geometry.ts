@@ -15,10 +15,29 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import { type BlockTarget, blockAt } from "./block-targets";
 
-/** Matches mockup 08: a 22×24 grip, roughly 12px clear of the text edge. */
+/** Matches mockup 08: a 22×24 grip. */
 export const BLOCK_HANDLE_WIDTH = 22;
 export const BLOCK_HANDLE_HEIGHT = 24;
-const HANDLE_GAP = 12;
+
+/**
+ * How far the handle's right edge sits inside the text edge.
+ *
+ * The left margin is shared with the table's row grips, and the two used to
+ * overlap by 10px — whichever painted on top took the right-click for both.
+ * The ruling splits the band: the handle keeps the OUTER part and the grips the
+ * inner one, because a grip belongs beside the row it serves while the handle
+ * is a document-level control (M6's `table/.context/CONTEXT.md` records the
+ * same split from the other side).
+ *
+ * 22 is what makes the split true: a row grip starts `ROW_GRIP_GAP` + its own
+ * 15px width inside the frame, so 21, and the handle's right edge lands one
+ * pixel clear of it. Measured against the text edge rather than the viewport
+ * so it holds at every column width — the prose padding halves on a narrow
+ * pane, and an absolute 306 would only be right on a wide one. Growing it
+ * moves the handle further from the text, which is allowed; shrinking it walks
+ * back into the grip band, which is the bug.
+ */
+const HANDLE_CLEARANCE = 22;
 
 /** How far the drop line floats off the outer edges of the document. */
 const END_SEAM_OFFSET = 6;
@@ -81,7 +100,7 @@ export function blockHandlePosition(
   const column = proseColumnEdges(view);
   return {
     top: rect.top + pixels(style.paddingTop) + lead,
-    left: column.left - HANDLE_GAP - BLOCK_HANDLE_WIDTH,
+    left: column.left - HANDLE_CLEARANCE - BLOCK_HANDLE_WIDTH,
   };
 }
 

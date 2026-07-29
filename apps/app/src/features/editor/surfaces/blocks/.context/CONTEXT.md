@@ -85,9 +85,33 @@ every drag on its own first frame.
 
 | Piece | Anchored to |
 |---|---|
-| handle x | the prose column's left text edge, less a 12px gap and its own width |
+| handle x | the prose column's left text edge, less `HANDLE_CLEARANCE` and its own width |
 | handle y | the block's first LINE (its padding plus half the leading), not its box |
 | drop line | the prose column's edges, at the midpoint between two blocks |
+
+### The left margin is shared
+
+The margin holds two controls, and they used to overlap by 10px: whichever
+painted on top took the right-click for both. The band is split by ruling, and
+the numbers below are standard geometry (prose edge 288, text edge and table
+frame 328, so a 40px band):
+
+| Band | Owner | x |
+|---|---|---|
+| outer | block handle | 284 to **306** |
+| inner | table row grips | **307** to 322 |
+
+A grip belongs beside the row it serves; the handle is a document-level
+control, so it takes the outer band. Both are measured from the text edge
+rather than the viewport, so the split holds at every column width: the grip
+starts 21px inside the frame (`ROW_GRIP_GAP` + its own width) and
+`HANDLE_CLEARANCE` is 22, one pixel clear. M6's
+[`table/.context/CONTEXT.md`](../../table/.context/CONTEXT.md) states the same
+split from the other side; change one and the other is wrong.
+
+The handle may move FURTHER from the text (a wider clearance is always legal)
+and never closer, because closer is back into the grip band. It cost the
+12px-clear-of-text reading from mockup 08, which is the trade the ruling makes.
 
 `proseColumnEdges` is horizontal only, deliberately. The prose node reserves
 half a viewport of padding under the last line so a writer can keep typing

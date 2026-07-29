@@ -7,7 +7,6 @@ import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
 import { createStandaloneEditorExtensions } from "../config";
 
-
 import { editorChromeAttributes, getEditorChrome } from "./ChromeKernelExtension";
 
 let editor: Editor | null = null;
