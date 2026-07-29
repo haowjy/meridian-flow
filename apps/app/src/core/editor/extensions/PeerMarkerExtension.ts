@@ -251,14 +251,31 @@ function buildMarkerDecorations(
  * it actually received while retaining the relative-position binding's bounds
  * validation. Selection-only transactions have no maps and cannot clear.
  */
+type MarkerPosition =
+  | { type: "range"; from: number; to: number }
+  | { type: "boundary"; pos: number };
+
+/** Where each marker was drawn before this transaction touched anything. */
+function priorMarkerPositions(decorations: DecorationSet): Map<string, MarkerPosition> {
+  const positions = new Map<string, MarkerPosition>();
+  for (const decoration of decorations.find()) {
+    const changeId = decoration.spec.changeId as string | undefined;
+    if (!changeId) continue;
+    positions.set(
+      changeId,
+      decoration.from === decoration.to
+        ? { type: "boundary", pos: decoration.from }
+        : { type: "range", from: decoration.from, to: decoration.to },
+    );
+  }
+  return positions;
+}
+
 export function markersClearedByWriterTransaction(
   tr: Transaction,
   oldState: EditorState,
   markers: readonly SessionMarker[],
-  priorPositions: ReadonlyMap<
-    string,
-    { type: "range"; from: number; to: number } | { type: "boundary"; pos: number }
-  > = new Map(),
+  priorPositions: ReadonlyMap<string, MarkerPosition> = new Map(),
 ): string[] {
   if (!tr.docChanged || isRemoteDocumentRebuild(tr) || tr.getMeta("addToHistory") === false) {
     return [];
@@ -384,26 +401,17 @@ export const PeerMarkerExtension = Extension.create<{
             emphasizedId: null,
           }),
           apply(tr, previous, oldState, newState) {
-            const priorPositions = new Map<
-              string,
-              { type: "range"; from: number; to: number } | { type: "boundary"; pos: number }
-            >();
-            for (const decoration of previous.decorations.find()) {
-              const changeId = decoration.spec.changeId as string | undefined;
-              if (!changeId) continue;
-              priorPositions.set(
-                changeId,
-                decoration.from === decoration.to
-                  ? { type: "boundary", pos: decoration.from }
-                  : { type: "range", from: decoration.from, to: decoration.to },
-              );
-            }
-            const pendingClearIds = markersClearedByWriterTransaction(
-              tr,
-              oldState,
-              store.getSnapshot(),
-              priorPositions,
-            );
+            // Only a writer's edit can clear a marker, and reading every
+            // decoration's position is the expensive part of asking: a caret
+            // move must not pay for it.
+            const pendingClearIds = tr.docChanged
+              ? markersClearedByWriterTransaction(
+                  tr,
+                  oldState,
+                  store.getSnapshot(),
+                  priorMarkerPositions(previous.decorations),
+                )
+              : [];
             const rebuild = tr.getMeta(REBUILD_META) === true || isRemoteDocumentRebuild(tr);
             const emphasizedMeta = tr.getMeta(EMPHASIZE_META) as string | null | undefined;
             const emphasizedId =
