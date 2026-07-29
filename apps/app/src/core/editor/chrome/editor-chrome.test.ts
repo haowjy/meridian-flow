@@ -46,11 +46,40 @@ describe("chrome layers", () => {
     expect(closeSource).toHaveBeenCalledOnce();
     expect(closeDialog).not.toHaveBeenCalled();
 
-    // The surface's own close path releases the handle; only then does the
-    // chain move on. Closing here and popping here would race the animation.
-    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog", "source"]);
+    // Asked once. The layer leaves the walk on the asking rather than on the
+    // release, so a dismissal that never lands costs one Escape instead of
+    // every Escape after it. The surface may still be on screen finishing its
+    // exit; the chain has simply stopped offering it the key.
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog"]);
     source.release();
     expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog"]);
+  });
+
+  it("orders by nesting, not by the order effects happened to run in", () => {
+    const { chrome } = createEditorChrome();
+    const closeDialog = vi.fn();
+    const closeSource = vi.fn();
+
+    // React mounts child effects first, so this is the order the kernel
+    // actually sees for a dialog that opens with its source pane showing.
+    chrome.openLayer({ id: "source", parentId: "dialog", close: closeSource });
+    chrome.openLayer({ id: "dialog", close: closeDialog });
+
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog", "source"]);
+    chrome.closeTopLayer();
+    expect(closeSource).toHaveBeenCalledOnce();
+    expect(closeDialog).not.toHaveBeenCalled();
+  });
+
+  it("reports how the topmost layer expects Escape to reach it", () => {
+    const { chrome } = createEditorChrome();
+    expect(chrome.topLayerDismissal).toBeNull();
+
+    chrome.openLayer({ id: "dialog", close: () => {}, dismissal: "self" });
+    expect(chrome.topLayerDismissal).toBe("self");
+
+    chrome.openLayer({ id: "source", parentId: "dialog", close: () => {} });
+    expect(chrome.topLayerDismissal).toBe("kernel");
   });
 
   it("reports no layer to close when nothing is open", () => {

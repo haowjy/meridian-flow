@@ -22,7 +22,9 @@ re-deriving it, so there is one answer to "is this an object".
 - **A selected object always consumes Enter**, even when its intent is `none`
   or its lane has not shipped yet. Letting Enter fall through hands a node
   selection to the base keymap, which splits the block around it and leaves
-  stray paragraphs in the manuscript. Inert, not destructive.
+  stray paragraphs in the manuscript. Inert, not destructive — which is why
+  `ObjectEngagement` returns nothing, and why a `surface` type with no handler
+  says so in development instead of shipping a dead key.
 - **Click reads** (law 1). `handleClickOn` acts only on the node the pointer
   directly hit; without that, a click in a table cell would walk out and select
   the whole table.
@@ -32,7 +34,10 @@ re-deriving it, so there is one answer to "is this an object".
 - **A dead end is an answer.** `caretBesideObjectTransaction` returns null
   rather than silently walking the other way — pressing Right on the last block
   in the document must not move the caret left. Esc uses
-  `caretHomeFromObjectTransaction`, which is allowed to land in front.
+  `caretHomeFromObjectTransaction`, which is allowed to land in front, and
+  which makes a paragraph when the object IS the document. That last case is a
+  write on a dismissal, and it is still right: law 3 says nobody is trapped,
+  and a chapter holding one diagram has nowhere else to stand.
 - Keys register through the kernel at scope `object`, so a surface open over
   the document still gets them first.
 
@@ -42,6 +47,9 @@ re-deriving it, so there is one answer to "is this an object".
 - Reading `selection instanceof NodeSelection` to find the selected object: a
   table cannot hold one (see the kernel's `.context`). Call `selectedObject`.
 - Registering keys with a new TipTap extension priority instead of a scope.
+- Scoping a key by what it is about rather than where it must work. The arrow
+  walk is `block` scope, not `object`: walking ONTO an object starts from the
+  prose beside it, where no object is selected yet.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md)

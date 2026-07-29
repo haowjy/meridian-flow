@@ -30,6 +30,17 @@ roving focus (decision 2026-07-29). What these add is subordination.
 - **`onEscapeKeyDown` → `useChromeLayer(...).onEscapeKeyDown`.** Without it a
   single Esc closes a dialog and the pane inside it, spending two steps of the
   walk home on one key.
+- **Wrap what a surface renders in `layer.scope(...)`.** That is how a layer
+  opened inside another knows its parent, and depth is what orders the walk —
+  React mounts child effects first, so arrival order says the opposite. A
+  surface that skips it makes every layer inside it a sibling.
+- **A Radix-backed layer declares `dismissal: "self"`; anything hand-rolled
+  keeps the default.** The kernel's Escape backstop serves the default and
+  stands aside for `"self"`, so declaring `"self"` without listening is how a
+  writer gets stuck.
+- **Chrome mounts for the active editor only.** The desktop context host keeps
+  several editors warm behind the visible one and hides them with `hidden`,
+  which does nothing to anything portalled.
 - **`modal={false}`** on menus and popovers. A modal surface freezes the page
   behind it, and the page behind it is the writer's chapter: clicking away must
   land the caret where the writer clicked, not merely dismiss.
@@ -40,8 +51,10 @@ roving focus (decision 2026-07-29). What these add is subordination.
 - **A surface keyed on a pointer point remounts when the point moves.** Radix
   positions through floating-ui's `autoUpdate`, which never sees a fixed anchor
   move; both wrappers already carry the key.
-- **Chrome that portals out of the editor carries `data-editor-chrome`**, or
-  right-clicks on it bypass the claim ladder.
+- **Chrome that portals out of the editor spreads
+  `editorChromeAttributes(chrome)`**, or right-clicks on it bypass the claim
+  ladder. The mark names the editor, because two documents open side by side
+  are two kernels listening on one page.
 - No raw color. Chip and row styling lives in `editor.css` under the kernel's
   banner; token classes elsewhere.
 

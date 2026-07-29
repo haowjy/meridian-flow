@@ -21,15 +21,54 @@
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
+import type { ChromeContext } from "./chrome-context";
+
 /**
- * Deepest owner first. A contribution that could sit at two scopes belongs at
- * the deeper one: the cost of losing a key you should have won is a writer
- * pressing something twice, and the cost of winning one you should have lost
- * is a writer who cannot reach the outer verb at all.
+ * Deepest owner first, and each scope names a context it is only live in.
+ *
+ * A scope is not a priority number with a friendly name: `keymapScopeApplies`
+ * enforces it, so a table verb is unreachable with the caret in a paragraph
+ * whether or not its lane remembered to check. That is the deepest-owner seam
+ * the design promises — if scope were only an ordering, every lane would
+ * rediscover its own guard and one missed check would shadow an outer verb
+ * across the whole document.
+ *
+ * A contribution that could sit at two scopes belongs at the deeper one: the
+ * cost of losing a key you should have won is a writer pressing something
+ * twice, and the cost of winning one you should have lost is a writer who
+ * cannot reach the outer verb at all.
  */
 export const KEYMAP_SCOPE_ORDER = ["layer", "object", "table", "block", "document"] as const;
 
 export type KeymapScope = (typeof KEYMAP_SCOPE_ORDER)[number];
+
+/** What the kernel knows when a key arrives. */
+export type KeymapApplicability = {
+  context: ChromeContext;
+  /** Transient surfaces open right now. */
+  layerCount: number;
+};
+
+/**
+ * Is a scope live in this state?
+ *
+ * `block` and `document` are both always live; they differ only in who wins
+ * when they collide. Everything above them names a context the writer has to
+ * be standing in.
+ */
+export function keymapScopeApplies(scope: KeymapScope, state: KeymapApplicability): boolean {
+  switch (scope) {
+    case "layer":
+      return state.layerCount > 0;
+    case "object":
+      return state.context.owner === "object";
+    case "table":
+      return state.context.chain.includes("table");
+    case "block":
+    case "document":
+      return true;
+  }
+}
 
 /** ProseMirror's own binding shape: return true to consume the key. */
 export type KeymapBinding = (
@@ -42,9 +81,23 @@ export type KeymapContribution = {
   /** The registering surface, e.g. `"slash-menu"`. Names the owner in a trace. */
   id: string;
   scope: KeymapScope;
+  /**
+   * Narrows further than the scope, for a contribution that applies to one
+   * kind of the scope's context — one object type, one table role. The scope
+   * is checked first, so this only ever sees a context the scope admitted.
+   */
+  appliesTo?: (context: ChromeContext) => boolean;
   /** Keys in ProseMirror's `keymap` spelling: `"Alt-ArrowUp"`, `"Mod-Enter"`. */
   bindings: Readonly<Record<string, KeymapBinding>>;
 };
+
+export function keymapContributionApplies(
+  contribution: KeymapContribution,
+  state: KeymapApplicability,
+): boolean {
+  if (!keymapScopeApplies(contribution.scope, state)) return false;
+  return contribution.appliesTo?.(state.context) ?? true;
+}
 
 /**
  * Refuse a contribution the kernel cannot honour, at registration time.
@@ -71,9 +124,13 @@ export function assertKeymapContribution(contribution: KeymapContribution): void
  * its scope ladder in order and stops at the first binding that consumes it,
  * so a contribution that declines (returns false) hands the key down rather
  * than swallowing it — the difference between "not now" and "never again".
+ *
+ * Applicability is read per keystroke rather than baked in, because the merge
+ * is cached across keystrokes and the writer's context is not.
  */
 export function mergeKeymapContributions(
   contributions: readonly KeymapContribution[],
+  applicability: () => KeymapApplicability,
 ): Record<string, KeymapBinding> {
   const byKey = new Map<string, KeymapBinding[]>();
 
@@ -81,9 +138,12 @@ export function mergeKeymapContributions(
     for (const contribution of contributions) {
       if (contribution.scope !== scope) continue;
       for (const [key, binding] of Object.entries(contribution.bindings)) {
+        const scoped: KeymapBinding = (state, dispatch, view) =>
+          keymapContributionApplies(contribution, applicability()) &&
+          binding(state, dispatch, view);
         const bindings = byKey.get(key);
-        if (bindings) bindings.push(binding);
-        else byKey.set(key, [binding]);
+        if (bindings) bindings.push(scoped);
+        else byKey.set(key, [scoped]);
       }
     }
   }

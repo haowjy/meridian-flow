@@ -1,13 +1,22 @@
 import type { EditorState } from "@tiptap/pm/state";
 import { describe, expect, it, vi } from "vitest";
 
+import { DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 import {
   assertKeymapContribution,
+  type KeymapApplicability,
   type KeymapContribution,
+  keymapScopeApplies,
   mergeKeymapContributions,
 } from "./keymap";
 
 const state = {} as EditorState;
+
+/** Every scope live at once, so the ladder tests measure order, not scope. */
+const anywhere = (): KeymapApplicability => ({
+  context: { ...DOCUMENT_CHROME_CONTEXT, owner: "object", chain: ["document", "table", "object"] },
+  layerCount: 1,
+});
 
 function contribution(
   id: string,
@@ -22,7 +31,7 @@ describe("mergeKeymapContributions", () => {
   it("gives the key to the deepest owner first (law 4)", () => {
     const layer = contribution("slash", "layer", true);
     const table = contribution("table", "table", true);
-    const merged = mergeKeymapContributions([table, layer]);
+    const merged = mergeKeymapContributions([table, layer], anywhere);
 
     expect(merged["Alt-ArrowUp"](state)).toBe(true);
     expect(layer.run).toHaveBeenCalledOnce();
@@ -32,7 +41,7 @@ describe("mergeKeymapContributions", () => {
   it("hands the key down when the deeper owner declines", () => {
     const object = contribution("object", "object", false);
     const document = contribution("blocks", "document", true);
-    const merged = mergeKeymapContributions([document, object]);
+    const merged = mergeKeymapContributions([document, object], anywhere);
 
     expect(merged["Alt-ArrowUp"](state)).toBe(true);
     expect(object.run).toHaveBeenCalledOnce();
@@ -40,8 +49,69 @@ describe("mergeKeymapContributions", () => {
   });
 
   it("reports the key unhandled when nobody takes it", () => {
-    const merged = mergeKeymapContributions([contribution("table", "table", false)]);
+    const merged = mergeKeymapContributions([contribution("table", "table", false)], anywhere);
     expect(merged["Alt-ArrowUp"](state)).toBe(false);
+  });
+});
+
+describe("keymap scopes", () => {
+  const inProse: KeymapApplicability = { context: DOCUMENT_CHROME_CONTEXT, layerCount: 0 };
+
+  it("holds a layer scope back until a surface is open", () => {
+    expect(keymapScopeApplies("layer", inProse)).toBe(false);
+    expect(keymapScopeApplies("layer", { ...inProse, layerCount: 1 })).toBe(true);
+  });
+
+  it("holds an object scope back until an object is selected", () => {
+    expect(keymapScopeApplies("object", inProse)).toBe(false);
+    expect(
+      keymapScopeApplies("object", {
+        context: { owner: "object", nodeType: "figure", pos: 4, chain: ["document", "object"] },
+        layerCount: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it("holds a table scope back until the selection is inside a table", () => {
+    expect(keymapScopeApplies("table", inProse)).toBe(false);
+    expect(
+      keymapScopeApplies("table", {
+        context: {
+          owner: "table-cell",
+          nodeType: "table_cell",
+          pos: 9,
+          chain: ["document", "table", "table-cell"],
+        },
+        layerCount: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves block and document live everywhere: they are order, not place", () => {
+    expect(keymapScopeApplies("block", inProse)).toBe(true);
+    expect(keymapScopeApplies("document", inProse)).toBe(true);
+  });
+
+  it("drops a contribution the scope admitted but its own narrowing refuses", () => {
+    const object: KeymapApplicability = {
+      context: { owner: "object", nodeType: "figure", pos: 4, chain: ["document", "object"] },
+      layerCount: 0,
+    };
+    const diagramOnly = vi.fn(() => true);
+    const merged = mergeKeymapContributions(
+      [
+        {
+          id: "object:code_block",
+          scope: "object",
+          appliesTo: (context) => context.nodeType === "code_block",
+          bindings: { "Mod-Enter": diagramOnly },
+        },
+      ],
+      () => object,
+    );
+
+    expect(merged["Mod-Enter"](state)).toBe(false);
+    expect(diagramOnly).not.toHaveBeenCalled();
   });
 });
 

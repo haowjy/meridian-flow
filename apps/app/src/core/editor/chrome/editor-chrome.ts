@@ -21,21 +21,49 @@ import type { ChromeLayer, GesturePhase } from "./esc-chain";
 import { createHoverIntent, type HoverIntent, type HoverIntentOptions } from "./hover-intent";
 import { assertKeymapContribution, type KeymapContribution } from "./keymap";
 
+/** Who takes Escape for a layer when the editor does not have focus. */
+export type ChromeLayerDismissal =
+  /** The surface has its own Escape listener — every Radix layer does. */
+  | "self"
+  /** Nothing else is listening, so the kernel must. The safe default. */
+  | "kernel";
+
 export type ChromeLayerOptions = {
-  /** Stable within one open; used in traces and by the Esc chain. */
+  /** Unique while open; used in traces and by the Esc chain. */
   id: string;
+  /**
+   * The layer this one opened INSIDE, when there is one.
+   *
+   * Depth cannot be inferred from registration order: React mounts child
+   * effects before parent effects, so a dialog that opens with its source pane
+   * already open registers the pane first. Reading the list as a stack would
+   * make the dialog topmost and spend both steps of the walk home on one key —
+   * and that is the design's mandated new-empty-diagram path, not an edge case.
+   */
+  parentId?: string | null;
   /**
    * Dismiss this layer. The Esc chain calls it for the topmost layer; a
    * Radix-backed surface points it at its own `onOpenChange(false)` so the
    * library keeps owning the animation and focus return.
    */
   close: () => void;
+  dismissal?: ChromeLayerDismissal;
 };
 
 export type ChromeLayerHandle = {
   readonly id: string;
   /** Leave the chain without dismissing: the surface already closed itself. */
   release: () => void;
+};
+
+type ChromeLayerRecord = {
+  id: string;
+  parentId: string | null;
+  dismissal: ChromeLayerDismissal;
+  /** Asked to close and hasn't released yet: out of the walk, still on screen. */
+  closing: boolean;
+  sequence: number;
+  close: () => void;
 };
 
 export type EditorChrome = {
@@ -47,8 +75,14 @@ export type EditorChrome = {
   readonly id: string;
   /** Deepest context under the selection, recomputed per transaction. */
   readonly context: ChromeContext;
-  /** Open transient layers in open order; the last is topmost. */
+  /**
+   * Open transient layers, shallowest first, so the last is topmost. Ordered
+   * by nesting depth rather than by when each registered, and a layer that has
+   * been asked to close is already out of the list.
+   */
   readonly layers: readonly ChromeLayer[];
+  /** How the topmost layer expects Escape to reach it. Null when none is open. */
+  readonly topLayerDismissal: ChromeLayerDismissal | null;
   readonly gesture: GesturePhase;
   /**
    * A drag or sweep is in flight, so active surfaces stand down (BlockNote's
@@ -60,7 +94,14 @@ export type EditorChrome = {
   subscribe: (listener: () => void) => () => void;
 
   openLayer: (layer: ChromeLayerOptions) => ChromeLayerHandle;
-  /** Dismiss the topmost layer. True when there was one. */
+  /**
+   * Ask the topmost layer to dismiss. True when there was one to ask.
+   *
+   * Asking is once. A layer whose close does not land — a surface whose owner
+   * unmounted mid-animation, a dismissal that threw — leaves the walk on the
+   * asking, so the next Escape steps past it. "Nobody is ever trapped" outranks
+   * the tidier property of never over-stepping a surface that is still fading.
+   */
   closeTopLayer: () => boolean;
 
   /** Take right-clicks at a rung of the claim ladder. Returns an unregister. */
@@ -110,8 +151,9 @@ export function createEditorChrome(): {
   const claims: ContextClaimHandler[] = [];
   const keymaps: KeymapContribution[] = [];
   const hoverIntents = new Set<HoverIntent<unknown>>();
-  const layerCloses = new Map<string, () => void>();
+  const layerRecords = new Map<string, ChromeLayerRecord>();
 
+  let layerSequence = 0;
   let layers: ChromeLayer[] = [];
   let gesture: GesturePhase = "idle";
   let context: ChromeContext = DOCUMENT_CHROME_CONTEXT;
@@ -141,6 +183,9 @@ export function createEditorChrome(): {
     get layers() {
       return layers;
     },
+    get topLayerDismissal() {
+      return topRecord()?.dismissal ?? null;
+    },
     get gesture() {
       return gesture;
     },
@@ -152,31 +197,38 @@ export function createEditorChrome(): {
       return () => listeners.delete(listener);
     },
 
-    openLayer({ id, close }) {
+    openLayer({ id, parentId = null, close, dismissal = "kernel" }) {
       // One id, one open layer: a surface that re-registers without releasing
       // would leave a ghost step in the walk home.
-      const key = layerCloses.has(id) ? `${id}#${layers.length}` : id;
-      layerCloses.set(key, close);
-      layers = [...layers, { id: key }];
-      notify();
+      const key = layerRecords.has(id) ? `${id}#${layerSequence}` : id;
+      layerSequence += 1;
+      layerRecords.set(key, {
+        id: key,
+        parentId,
+        dismissal,
+        closing: false,
+        sequence: layerSequence,
+        close,
+      });
+      reorderLayers();
 
       return {
         id: key,
         release() {
-          if (!layerCloses.delete(key)) return;
-          layers = layers.filter((layer) => layer.id !== key);
-          notify();
+          if (!layerRecords.delete(key)) return;
+          reorderLayers();
         },
       };
     },
 
     closeTopLayer() {
-      const topmost = layers[layers.length - 1];
+      const topmost = topRecord();
       if (!topmost) return false;
-      const close = layerCloses.get(topmost.id);
-      // The surface's own dismissal releases the handle, which is what removes
-      // it from the chain — closing here and popping here would race it.
-      close?.();
+      // Marked before the call, so a close that never releases costs one
+      // Escape rather than every Escape after it.
+      topmost.closing = true;
+      reorderLayers();
+      topmost.close();
       return true;
     },
 
@@ -245,6 +297,36 @@ export function createEditorChrome(): {
     },
   };
 
+  /**
+   * Active layers, shallowest first. Depth is the parent chain, so a child
+   * registered before its parent still sorts after it; siblings fall back to
+   * the order they opened in.
+   */
+  function reorderLayers(): void {
+    const active = [...layerRecords.values()].filter((record) => !record.closing);
+    const depths = new Map<string, number>();
+    const depthOf = (record: ChromeLayerRecord): number => {
+      const cached = depths.get(record.id);
+      if (cached !== undefined) return cached;
+      const parent = record.parentId ? layerRecords.get(record.parentId) : undefined;
+      // Guard the cycle a mis-registered parent could make, and treat a parent
+      // that already closed as no parent at all.
+      depths.set(record.id, 0);
+      const depth = parent && !parent.closing ? depthOf(parent) + 1 : 0;
+      depths.set(record.id, depth);
+      return depth;
+    };
+
+    active.sort((a, b) => depthOf(a) - depthOf(b) || a.sequence - b.sequence);
+    layers = active.map((record) => ({ id: record.id }));
+    notify();
+  }
+
+  function topRecord(): ChromeLayerRecord | null {
+    const topmost = layers[layers.length - 1];
+    return topmost ? (layerRecords.get(topmost.id) ?? null) : null;
+  }
+
   function abandonActiveDrag(): void {
     const drag = activeDrag;
     activeDrag = null;
@@ -275,7 +357,7 @@ export function createEditorChrome(): {
       listeners.clear();
       claims.length = 0;
       keymaps.length = 0;
-      layerCloses.clear();
+      layerRecords.clear();
       layers = [];
     },
   };

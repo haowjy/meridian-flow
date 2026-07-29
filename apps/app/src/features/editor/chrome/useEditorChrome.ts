@@ -8,7 +8,7 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import {
   type ChromeContext,
@@ -49,60 +49,6 @@ export function useChromeSuppressed(editor: Editor | null): boolean {
     () => chrome?.suppressed ?? false,
     () => false,
   );
-}
-
-export type ChromeLayerBinding = {
-  /**
-   * Give this to the Radix content's `onEscapeKeyDown`. It is the whole
-   * subordination mechanism: Radix keeps owning its own dismissal, and defers
-   * only when the kernel knows something deeper is open.
-   */
-  onEscapeKeyDown: (event: { preventDefault: () => void }) => void;
-};
-
-/**
- * Put an open surface in the Esc chain and take it out again when it closes.
- *
- * The kernel calls `close` for the topmost layer; pointing it at the same
- * `onOpenChange(false)` Radix already uses keeps one dismissal path, so the
- * animation, the focus return, and the chain cannot disagree about what closed.
- *
- * Radix dismisses on Escape from a document listener, which is right until a
- * layer that is NOT a Radix layer opens inside one — a source pane inside the
- * diagram dialog. Radix cannot see that pane, so it would close the dialog and
- * take the pane with it, spending two steps of the walk home on one key. The
- * returned `onEscapeKeyDown` is how a surface says "not mine yet".
- */
-export function useChromeLayer(
-  editor: Editor | null,
-  { id, open, close }: { id: string; open: boolean; close: () => void },
-): ChromeLayerBinding {
-  const chrome = useEditorChrome(editor);
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  const layerIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!chrome || !open) return;
-    const handle = chrome.openLayer({ id, close: () => closeRef.current() });
-    layerIdRef.current = handle.id;
-    return () => {
-      layerIdRef.current = null;
-      handle.release();
-    };
-  }, [chrome, id, open]);
-
-  const onEscapeKeyDown = useCallback(
-    (event: { preventDefault: () => void }) => {
-      const topmost = chrome?.layers[chrome.layers.length - 1];
-      if (!topmost || topmost.id === layerIdRef.current) return;
-      event.preventDefault();
-      chrome?.closeTopLayer();
-    },
-    [chrome],
-  );
-
-  return { onEscapeKeyDown };
 }
 
 /**

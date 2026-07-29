@@ -87,14 +87,11 @@ describe("what counts as a prose selection the pointer is inside", () => {
         content: [{ type: "table_row", content: [cell("Rank"), cell("Skill")] }],
       },
     ]);
-    const tablePos = positionOf(instance, "table");
-    const map = instance.state.doc.nodeAt(tablePos);
-    if (!map) throw new Error("no table");
-
-    const firstCell = instance.state.doc.resolve(positionOf(instance, "table_cell"));
-    const lastCell = instance.state.doc.resolve(
-      positionOf(instance, "table_cell") + firstCell.nodeAfter!.nodeSize,
-    );
+    const firstCellPos = positionOf(instance, "table_cell");
+    const firstCell = instance.state.doc.resolve(firstCellPos);
+    const cellSize = firstCell.nodeAfter?.nodeSize;
+    if (cellSize === undefined) throw new Error("no cell to select");
+    const lastCell = instance.state.doc.resolve(firstCellPos + cellSize);
     instance.view.dispatch(instance.state.tr.setSelection(new CellSelection(firstCell, lastCell)));
 
     expect(instance.state.selection).toBeInstanceOf(CellSelection);

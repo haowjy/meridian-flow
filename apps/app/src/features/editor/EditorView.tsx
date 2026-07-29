@@ -84,6 +84,12 @@ export type EditorViewProps = {
   editable?: boolean;
   /** Read-only hosts (phone) mount the manuscript without the document toolbar. */
   showToolbar?: boolean;
+  /**
+   * False for an editor a host keeps mounted behind the visible one. Its
+   * chrome stands down: surfaces portal to the body, so a hidden ancestor
+   * would not hide a menu or an object row.
+   */
+  active?: boolean;
   /** Accessible label override when the surface is read-only. */
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
@@ -264,6 +270,7 @@ function ActiveSessionEditorView({
   className,
   editable = true,
   showToolbar = true,
+  active = true,
   ariaLabel,
   reviewWorkId = null,
   onReviewSessionUnavailable,
@@ -694,7 +701,7 @@ function ActiveSessionEditorView({
       />
       {/* The one chrome mount host. Surfaces register in
           `chrome/chrome-surfaces.ts`; nothing new is added to this file. */}
-      <EditorChromeHost editor={editor} />
+      <EditorChromeHost editor={editor} active={active} />
       <PeerMarkPopover
         key={peerMarkTarget?.marker.changeId ?? "closed"}
         target={peerMarkTarget}

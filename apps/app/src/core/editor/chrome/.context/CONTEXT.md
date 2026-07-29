@@ -31,16 +31,36 @@ React reads it through `useEditorChrome` / `useChromeContext` /
 ## Layers and the Esc chain
 
 A surface that is open registers a layer; the kernel closes the topmost one
-first. Order in `chrome.layers` is open order, so the last is topmost.
+first. `chrome.layers` is ordered by NESTING, shallowest first, so the last is
+topmost.
 
 ```ts
-const handle = chrome.openLayer({ id: "link-menu", close: () => setOpen(false) });
+const handle = chrome.openLayer({
+  id: "diagram-source",
+  parentId: dialogLayerId, // the layer this one opened inside
+  dismissal: "kernel",     // default; "self" for anything Radix-backed
+  close: () => setOpen(false),
+});
 handle.release(); // when the surface has closed itself
 ```
 
+**Depth is not arrival order.** React mounts child effects before parent
+effects, so a dialog that opens with its source pane already showing registers
+the pane first — and that is the design's mandated new-empty-diagram path, not
+an edge case. Read as a stack it would make the dialog topmost and spend both
+steps of the walk home on one key. `parentId` is what fixes it; the React hook
+fills it from context and a surface only has to wrap its children in
+`layer.scope(...)`.
+
+**Asking to close is once.** `closeTopLayer()` marks the layer out of the walk
+before calling its `close`, so a dismissal that never lands costs one Escape
+rather than every Escape after it. The surface may still be on screen finishing
+its exit; the chain has simply stopped offering it the key. That trades away a
+tidier property — Esc mashed during an exit animation used to stall on the
+closing surface — because "nobody is ever trapped" outranks it.
+
 `close` and the surface's own dismissal must be the same path. The kernel calls
-`close`; the surface's close path calls `release`. Closing here and popping the
-layer here would race the exit animation.
+`close`; the surface's close path calls `release`.
 
 `escStep` decides one step, in this order:
 
@@ -56,7 +76,8 @@ twice and step 3 once. Verified end to end in the browser.
 **Radix subordination (verdict: KEPT, 2026-07-29).** Radix owns its own
 dismissal and the kernel owns the policy. Two mechanisms make that work:
 
-- an open Radix surface registers a layer, so the chain knows it exists;
+- an open Radix surface registers a layer with `dismissal: "self"`, so the
+  chain knows it exists and knows not to dismiss it itself;
 - `useChromeLayer` returns an `onEscapeKeyDown` every Radix content must
   carry. Radix dismisses from a document listener and cannot see a non-Radix
   layer opened inside one, so without it a single Esc closes the diagram
@@ -67,6 +88,26 @@ The pre-decided floating-ui fallback was not needed: pointer positioning works
 through a zero-size anchor (`pointer-anchor.ts`), Radix menus open
 synchronously from inside `contextmenu`, and exclusivity holds under rapid
 context switches.
+
+### Where Escape actually comes from
+
+The chain is one policy with three doors, and a lane needs to know which one
+its surface is behind.
+
+| Focus is | Who delivers Escape | What the layer must declare |
+|---|---|---|
+| in the prose | ProseMirror's `handleKeyDown` | anything |
+| inside a Radix surface | Radix's own document listener | `dismissal: "self"` plus `onEscapeKeyDown` |
+| anywhere else (a hand-rolled portal, the chat composer, a toolbar button) | the kernel's document backstop | `dismissal: "kernel"` — the default |
+
+The backstop exists because the first two doors both have blind spots: a layer
+whose surface is neither focused prose nor a Radix layer would otherwise
+survive every Escape, and "nobody is ever trapped" would be false without
+anything looking broken. It stands aside for `"self"` layers so one key never
+closes two surfaces.
+
+A surface that declares `"self"` and does not actually listen is the one way
+to reintroduce the trap. If in doubt, leave the default.
 
 ## The context-menu claim table
 
@@ -92,16 +133,37 @@ chrome.registerContextClaim({
 - `docPos` — document position under the pointer, or null outside the prose
 - `context` — `chromeContextAt(doc, docPos)`, i.e. what the POINTER is over,
   not what the selection is in
-- `insideTextSelection` — the pointer sits inside a non-empty text selection.
-  Not "a selection exists": a selection three paragraphs away is not what the
-  writer is pointing at, and shadowing the native menu there would spend
-  spellcheck on nothing.
+- `insideTextSelection` — `proseSelectionCovers`: the pointer sits inside a
+  selection that holds prose the writer could format. Not "a selection
+  exists". A selection three paragraphs away is not what the writer is
+  pointing at, and shadowing the native menu there would spend spellcheck on
+  nothing. Nor is every non-empty range prose: a `CellSelection` over a whole
+  table and a `NodeSelection` on a figure both have `empty === false`, and
+  since the formatting rung outranks the object rung, counting them would put
+  the formatting menu over every table and every object. `AllSelection` does
+  count — Ctrl+A then format the chapter is the gesture the rung exists for.
 
-**Where the router listens.** ProseMirror's own DOM, plus any element carrying
-`data-editor-chrome` (exported as `EDITOR_CHROME_ATTRIBUTE`). Chrome that
-portals out of the editor — an object row, a table grip — must carry that
-attribute or its right-clicks go straight to the browser. `OverlayIconRow`
-already does.
+**Where the router listens.** A capture-phase `contextmenu` listener on the
+document, acting on targets inside ProseMirror's DOM and on chrome that carries
+this editor's own mark.
+
+It is capture rather than ProseMirror's `handleDOMEvents` because that prop
+cannot see a right-click inside a node view at all: TipTap's
+`NodeView.stopEvent` returns true for `contextmenu`, and ProseMirror consults
+it in `eventBelongsToView` BEFORE running any handler. Every React node view in
+this editor — `image`, `figure`, `jsx_leaf`, `jsx_container` — is one of those,
+which is to say the two object types ruling 11 is about. Capture reaches them
+all, current and future, with no node view having to cooperate.
+
+Chrome that portals OUT of the editor spreads `editorChromeAttributes(chrome)`
+onto its root, or its right-clicks go straight to the browser. The mark carries
+the chrome's id, because two documents open side by side are two kernels
+listening on one page and an unqualified mark hands one editor's overlay row to
+both. `OverlayIconRow` already does this.
+
+**`target` is an `Element`, not an `HTMLElement`.** A mermaid diagram is SVG
+and so is every icon glyph in an overlay row; both are exactly what a writer
+right-clicks. `closest()` works either way.
 
 **`grip` before `object`.** The design groups them ("object/grip"); they never
 both match, because a grip is chrome and an object is a node. Grip is spelled
@@ -147,19 +209,42 @@ Scopes, deepest owner first: `layer` → `object` → `table` → `block` →
 returns true; returning false hands the key down, which is the difference
 between "not now" and "never again".
 
+**A scope names a place, and the kernel enforces it.** It is not a priority
+number with a friendly name: a `table` binding cannot fire with the caret in a
+paragraph, whether or not its lane remembered to check. Otherwise every lane
+rediscovers its own guard and one missed check shadows an outer verb across the
+whole document.
+
+| Scope | Live when |
+|---|---|
+| `layer` | at least one transient surface is open |
+| `object` | `context.owner === "object"` |
+| `table` | `context.chain` contains `table` |
+| `block`, `document` | always — these two are order, not place |
+
+`appliesTo` narrows further, for a contribution that serves one kind of the
+scope's context:
+
 ```ts
 const release = chrome.registerKeymap({
-  id: "slash-menu",
-  scope: "layer",
-  bindings: { ArrowDown: (state, dispatch) => { /* … */ return true; } },
+  id: "object:code_block",
+  scope: "object",
+  appliesTo: (context) => context.nodeType === "code_block",
+  bindings: { "Mod-Enter": (state, dispatch) => { /* … */ return true; } },
 });
 ```
+
+Pick the scope by where the key must WORK, not by what it is about. Object
+physics splits for exactly this reason: walking ONTO an object starts from
+prose beside it, so the arrows are `block` scope and only Enter is `object`.
 
 Register from a ProseMirror plugin's `view()` or a React effect, not TipTap's
 `onCreate` — TipTap emits `create` a macrotask late, long enough for a first
 keystroke to miss it. `ObjectPhysicsExtension` shows the plugin-view pattern.
 
-Escape throws. Above every scope, outside this ladder, sits
+Escape is refused at registration, where the stack still names the lane that
+wrote it, and the registry is left untouched so the next lane's registration
+still lands. Above every scope, outside this ladder, sits
 `UndoRedoKeymapExtension` at TipTap priority 1100.
 
 ## Suppression and hover intent
@@ -173,10 +258,17 @@ were — the document moved under them.
 - A sweep is detected by the kernel (mousedown plus 4px of travel) and ends on
   a window `mouseup`, because the pointer leaves the editor mid-sweep
   constantly.
+- A sweep also ends on window `blur` and on any `mousemove` with no button
+  held. A release the window never hears would otherwise leave every surface
+  suppressed with nothing left to un-suppress it.
 - A surface-owned drag calls `chrome.beginDrag(onCancel)` and gets its end
   back. `onCancel` is how Esc reaches a drag the kernel did not start: without
   it the kernel could only stop suppressing, leaving a drop line chasing a
   pointer nobody is listening to.
+- **Each drag owns its own end.** A second `beginDrag` cancels the first — two
+  owners cannot both hold the pointer — and a late end from a replaced drag
+  does nothing rather than releasing the drag the writer is running. M6's
+  column resize and M9's block drag both sit on this.
 - Approach chrome takes its timing from `chrome.createHoverIntent(...)`, never
   its own `setTimeout` — the kernel cancels these when a gesture starts.
   `CHROME_TIMING` holds the two numbers (`handleIntentMs` 100, `fadeMs` 120).

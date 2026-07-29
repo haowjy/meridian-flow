@@ -28,6 +28,7 @@ export {
   resolveContextClaim,
 } from "./context-claims";
 export type {
+  ChromeLayerDismissal,
   ChromeLayerHandle,
   ChromeLayerOptions,
   EditorChrome,

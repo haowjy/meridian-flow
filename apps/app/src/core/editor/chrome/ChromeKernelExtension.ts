@@ -101,7 +101,10 @@ export const ChromeKernelExtension = Extension.create({
       // throw between the two would otherwise leave a stale map cached against
       // a revision that never built it, and every later registration would be
       // dropped in silence.
-      const merged = mergeKeymapContributions(chrome.keymapContributions());
+      const merged = mergeKeymapContributions(chrome.keymapContributions(), () => ({
+        context: chrome.context,
+        layerCount: chrome.layers.length,
+      }));
       cachedBindings = merged;
       cachedRevision = chrome.keymapRevision;
       return merged;
@@ -152,6 +155,22 @@ export const ChromeKernelExtension = Extension.create({
           };
           document.addEventListener("contextmenu", routeMenu, true);
 
+          // Escape reaches the chain through ProseMirror while the writer is in
+          // the prose, and through Radix while they are inside a Radix surface.
+          // A layer that is neither — a hand-rolled portal, or any layer at all
+          // once focus has moved to the chat composer — has nothing listening
+          // for it, and "nobody is ever trapped" would quietly stop being true.
+          // This is that backstop, and it defers to any layer that says it
+          // dismisses itself so one key never closes two surfaces.
+          const backstopEscape = (event: KeyboardEvent) => {
+            if (event.key !== "Escape" || event.defaultPrevented) return;
+            if (event.target instanceof Node && view.dom.contains(event.target)) return;
+            if (chrome.topLayerDismissal !== "kernel") return;
+            if (!chrome.closeTopLayer()) return;
+            event.preventDefault();
+          };
+          document.addEventListener("keydown", backstopEscape, true);
+
           return {
             update(updatedView, previousState) {
               if (
@@ -166,6 +185,7 @@ export const ChromeKernelExtension = Extension.create({
               window.removeEventListener("mouseup", endSweep);
               window.removeEventListener("blur", endSweep);
               document.removeEventListener("contextmenu", routeMenu, true);
+              document.removeEventListener("keydown", backstopEscape, true);
             },
           };
         },

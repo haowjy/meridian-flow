@@ -64,10 +64,24 @@ function mount(content: JSONContent[], extras: Node[] = []): Editor {
   return editor;
 }
 
-function pressEscape(instance: Editor): boolean {
-  const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+/**
+ * Escape, and what the editor did about it.
+ *
+ * NOT `defaultPrevented`: ProseMirror's own `captureKeyDown` calls
+ * `preventDefault` on keyCode 27 whether or not anything handled the key, so
+ * the flag reports ProseMirror rather than the chain. The kernel's answer is
+ * the state it left behind, which is what these tests read.
+ */
+function pressEscape(instance: Editor): { owner: string; layers: number } {
+  const event = new KeyboardEvent("keydown", {
+    key: "Escape",
+    keyCode: 27,
+    bubbles: true,
+    cancelable: true,
+  });
   instance.view.dom.dispatchEvent(event);
-  return event.defaultPrevented;
+  const chrome = getEditorChrome(instance);
+  return { owner: chrome?.context.owner ?? "document", layers: chrome?.layers.length ?? 0 };
 }
 
 function press(instance: Editor, init: KeyboardEventInit): boolean {
@@ -117,18 +131,19 @@ describe("the kernel on a live editor", () => {
     const close = vi.fn();
     const layer = chrome.openLayer({ id: "menu", close });
 
-    // One: the menu.
-    expect(pressEscape(instance)).toBe(true);
+    // One: the menu. The object is still selected under it.
+    expect(pressEscape(instance)).toEqual({ owner: "object", layers: 0 });
     expect(close).toHaveBeenCalledOnce();
     layer.release();
-    expect(chrome.context.owner).toBe("object");
 
     // Two: the object.
-    expect(pressEscape(instance)).toBe(true);
-    expect(chrome.context.owner).toBe("document");
+    expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
+    const home = instance.state.selection;
 
-    // Three: home. The key is left alone so the browser can still have it.
-    expect(pressEscape(instance)).toBe(false);
+    // Three: home leaves everything exactly where it was, which is the whole
+    // content of "the editor gave the key back".
+    expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
+    expect(instance.state.selection.eq(home)).toBe(true);
   });
 
   it("leaves a right-click to the browser when nobody claims (ruling 11)", () => {
@@ -265,6 +280,68 @@ describe("the kernel on a live editor", () => {
 
     press(instance, { key: "ArrowDown", altKey: true });
     expect(laterLane).toHaveBeenCalledOnce();
+  });
+
+  it("holds a scoped binding back until its context is the one under the caret", () => {
+    const instance = mount([
+      paragraph("plain prose"),
+      {
+        type: "table",
+        content: [
+          {
+            type: "table_row",
+            content: [
+              { type: "table_header", content: [paragraph("Rank")] },
+              { type: "table_header", content: [paragraph("Skill")] },
+            ],
+          },
+        ],
+      },
+    ]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const moveRow = vi.fn(() => true);
+    chrome.registerKeymap({
+      id: "table-chrome",
+      scope: "table",
+      bindings: { "Alt-ArrowUp": moveRow },
+    });
+
+    // The caret is in a paragraph. A row move has nothing to move, and the
+    // scope is what says so — otherwise every lane has to rediscover its own
+    // guard and one missed check shadows an outer verb document-wide.
+    instance.commands.setTextSelection(3);
+    expect(press(instance, { key: "ArrowUp", altKey: true })).toBe(false);
+    expect(moveRow).not.toHaveBeenCalled();
+
+    let cellPos = 0;
+    instance.state.doc.descendants((node, pos) => {
+      if (!cellPos && node.type.name === "table_header") cellPos = pos + 2;
+    });
+    instance.commands.setTextSelection(cellPos);
+    expect(press(instance, { key: "ArrowUp", altKey: true })).toBe(true);
+    expect(moveRow).toHaveBeenCalledOnce();
+  });
+
+  it("holds a layer-scoped binding back until a surface is open", () => {
+    const instance = mount([paragraph("before")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const menuArrow = vi.fn(() => true);
+    chrome.registerKeymap({
+      id: "slash-menu",
+      scope: "layer",
+      bindings: { ArrowDown: menuArrow },
+    });
+
+    press(instance, { key: "ArrowDown" });
+    expect(menuArrow).not.toHaveBeenCalled();
+
+    chrome.openLayer({ id: "slash", close: () => {} });
+    press(instance, { key: "ArrowDown" });
+    expect(menuArrow).toHaveBeenCalledOnce();
   });
 
   it("routes a registered key and leaves an unregistered one to the editor", () => {

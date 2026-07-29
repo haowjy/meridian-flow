@@ -16,11 +16,22 @@ current state it reads from the kernel, so the host has no growing prop list
 and a lane never has to ask for one. The host renders no element of its own;
 every surface portals or floats, so nothing here can push the manuscript.
 
+## Mounting a surface, continued
+
+`EditorChromeHost` takes an `active` flag and `EditorView` passes it down. It
+is not decoration: `ContextEditorMountHost` keeps up to six editors mounted and
+hides the inactive ones with `hidden`, which works for the manuscript (it is
+inside the hidden element) and does nothing at all for chrome (it portals to
+the body). Without the flag, a warm editor's menu, dialog, or selection-persistent
+object row paints over the document the writer is reading, anchored to a rect
+in a pane nobody can see.
+
 ## The Radix wrappers
 
 All three take the same first four props: `editor`, `id` (names the layer in
 the Esc chain), `open`, `onOpenChange`. All three bake in the layer
-registration, the Escape deferral, and the focus return.
+registration, the Escape deferral, the focus return, and `layer.scope(children)`
+so a layer opened inside them is recognised as the deeper one.
 
 | | Anchoring | Focus on open | Modal |
 |---|---|---|---|
@@ -67,6 +78,20 @@ through the claim ladder like a right-click on the object.
 
 Hover reveal is the lane's to wire, through `chrome.createHoverIntent(...)` —
 never a local `setTimeout`, which would linger through a drag.
+
+## Registering a layer by hand
+
+A lane that portals its own surface rather than using a wrapper calls
+`useChromeLayer` directly and owes two things the wrappers give for free:
+
+```ts
+const layer = useChromeLayer(editor, { id: "block-menu", open, close });
+// 1. wrap whatever can contain another layer
+return layer.scope(<div>{children}</div>);
+// 2. leave `dismissal` at its default unless the surface has its own Escape
+//    listener; the kernel's backstop is what keeps it from surviving Escape
+//    when focus has moved out of the editor.
+```
 
 ## Reading the kernel
 

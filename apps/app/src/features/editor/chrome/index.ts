@@ -7,6 +7,11 @@
  */
 
 export {
+  type ChromeLayerBinding,
+  type UseChromeLayerOptions,
+  useChromeLayer,
+} from "./chrome-layers";
+export {
   EDITOR_CHROME_SURFACES,
   type EditorChromeSurface,
   type EditorChromeSurfaceProps,
@@ -36,7 +41,6 @@ export {
 } from "./OverlayIconRow";
 export {
   useChromeContext,
-  useChromeLayer,
   useChromeSuppressed,
   useEditorChrome,
   useReturnFocusToProse,
