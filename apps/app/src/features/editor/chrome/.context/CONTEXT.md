@@ -7,7 +7,7 @@ the seams and the Esc chain are in the kernel's
 ## Mounting a surface
 
 ```ts
-// chrome-surfaces.ts — append-only, one entry per lane
+// chrome-surfaces.tsx — append-only, one entry per lane
 { id: "formatting-menu", render: ({ editor }) => <FormattingMenu editor={editor} /> },
 ```
 

@@ -6,7 +6,11 @@
  * `features/editor/chrome/`, which is where a surface actually renders.
  */
 
-export { ChromeKernelExtension, getEditorChrome } from "./ChromeKernelExtension";
+export {
+  ChromeKernelExtension,
+  EDITOR_CHROME_ATTRIBUTE,
+  getEditorChrome,
+} from "./ChromeKernelExtension";
 export {
   CHROME_CONTEXT_KINDS,
   type ChromeContext,
@@ -22,20 +26,18 @@ export {
   type ContextClaimTarget,
   resolveContextClaim,
 } from "./context-claims";
-export {
-  type ChromeLayerHandle,
-  type ChromeLayerOptions,
-  createEditorChrome,
-  type EditorChrome,
-  type EditorChromeController,
+export type {
+  ChromeLayerHandle,
+  ChromeLayerOptions,
+  EditorChrome,
 } from "./editor-chrome";
+// `escStep` is the policy a surface reasons against; the walk-home proof and
+// the store's constructor are the extension's and the tests' business.
 export {
-  advanceEscSituation,
   type ChromeLayer,
   type EscSituation,
   type EscStep,
   escStep,
-  escWalkHome,
   type GesturePhase,
 } from "./esc-chain";
 export {
@@ -43,6 +45,7 @@ export {
   createHoverIntent,
   type HoverIntent,
   type HoverIntentOptions,
+  type HoverIntentTimers,
 } from "./hover-intent";
 export {
   KEYMAP_SCOPE_ORDER,

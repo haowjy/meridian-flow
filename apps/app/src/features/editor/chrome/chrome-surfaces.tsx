@@ -6,6 +6,9 @@
  * mounts editor chrome, and no lane edits the host. A rebase between lanes is
  * then two lines landing beside each other rather than on top of each other.
  *
+ * `.tsx` on purpose: a lane writes its entry as JSX right here, and renaming a
+ * shared file is a collision every other lane would feel.
+ *
  * A surface gets the editor and nothing else. Everything it needs about the
  * writer's current state — the deepest context, suppression, the Esc chain —
  * it reads from the kernel through `useEditorChrome`, so the host has no

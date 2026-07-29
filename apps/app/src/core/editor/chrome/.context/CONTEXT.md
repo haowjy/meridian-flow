@@ -8,7 +8,7 @@ first. Everything below is a contract a lane can rely on without asking.
 | # | Seam | File | What a lane adds |
 |---|---|---|---|
 | 1 | Extension registration | [`core/editor/config.ts`](../../config.ts) → `EDITOR_CHROME_EXTENSIONS` | one line, at the placeholder comment for its lane |
-| 2 | Chrome mount host | [`features/editor/chrome/chrome-surfaces.ts`](../../../../features/editor/chrome/chrome-surfaces.ts) → `EDITOR_CHROME_SURFACES` | one entry, `{ id, render }` |
+| 2 | Chrome mount host | [`features/editor/chrome/chrome-surfaces.tsx`](../../../../features/editor/chrome/chrome-surfaces.tsx) → `EDITOR_CHROME_SURFACES` | one entry, `{ id, render }` |
 | 3 | Keymap contributions | `chrome.registerKeymap(...)` at a named scope | a runtime registration, no new extension priority |
 | 4 | Stylesheet | [`features/editor/editor.css`](../../../../features/editor/editor.css) | one block appended under its own banner, below the `Chrome surfaces` rule |
 

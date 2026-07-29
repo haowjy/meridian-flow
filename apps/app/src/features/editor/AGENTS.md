@@ -24,7 +24,7 @@ the design, from the primitives.
 - Peer-mark evidence reads delegate to `features/change-trail`; this directory
   owns only the anchored popover and editor interaction.
 - A new control surface is a directory under `surfaces/` plus one entry in
-  `chrome/chrome-surfaces.ts`. `EditorView.tsx` mounts `EditorChromeHost` once
+  `chrome/chrome-surfaces.tsx`. `EditorView.tsx` mounts `EditorChromeHost` once
   and takes no further surfaces; a lane that edits it has taken a shared file
   hostage.
 - Anything opened over the manuscript hands the caret back on close
