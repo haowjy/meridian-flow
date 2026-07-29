@@ -12,6 +12,9 @@
   follow. Alt+↑/↓ is the keyboard answer meanwhile, and it scrolls the landing
   into view.
 
-- Touch. §5.8 asks for a handle shown for the active block on tap, draggable.
-  The pointer events here are pointer-type agnostic, so the missing piece is
-  the reveal: a tap has no hover to settle.
+- Touch, verified on a real device. The path exists (coarse input anchors the
+  handle to the selection, the grip captures the pointer and blocks
+  `touch-action`), and it was probed with synthetic touch pointer events plus a
+  keyboard-driven selection. Nobody has yet dragged a block with a finger on
+  hardware, where a long-press, a scroll fighting the capture, or a stylus
+  hover would show up.

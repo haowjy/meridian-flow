@@ -27,6 +27,8 @@ document:
   block up is not an edit.
 - **A deleted block releases the hold.** If the held position is mapped into a
   range that went away, the state clears rather than pointing at a stranger.
+  The surface watches for that transition and ends its gesture on it: the
+  document letting go is the last word.
 - **Nothing here reads the pointer.** It is told what happened; it never asks.
 
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md) for the kernel that owns

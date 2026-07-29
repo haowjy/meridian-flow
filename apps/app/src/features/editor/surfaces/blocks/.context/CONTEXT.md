@@ -40,15 +40,38 @@ or an AI write can land while the pointer is down (law 9 gates nothing), and
 the block the writer grabbed has to be the block that lands. One mapped
 position beats one per consumer.
 
+**The drop target is never stored.** A child index is stale the moment a peer
+inserts a block above: the jade line would go on naming a seam the drop no
+longer lands on. The gesture keeps the pointer's y instead, re-derives the seam
+on every transaction, and reads it once more at the drop. The pointer is the
+writer's intent, the rendered geometry under it is the truth, and a seam is
+only ever a reading of the two — which is also why the line stays under the
+pointer when the document shifts, rather than chasing content that moved.
+
 A press becomes a drag only after 4px of travel — the same slop the kernel uses
 for a sweep. Before that it is still a click, and telling the kernel otherwise
 would blank every surface on the page for the length of a menu press.
 
-Escape reaches a drag twice over. The kernel's chain calls the `onCancel`
-handed to `beginDrag`, which covers a drag while the prose holds focus; a
-window listener covers the rest, because a press that began on portalled chrome
-may have left focus elsewhere and the chain never sees the key. Both doors call
-one cancel.
+### Ending it
+
+One finalizer, seven doors: release (the only one that commits), browser
+cancel, lost capture, window blur, Escape, unmount, and the document letting go
+of the held block. Five of the seven are interruptions the writer never asked
+for, and any of them skipping the finalizer leaves `chrome.suppressed` true
+with nothing left to clear it — every surface on the page frozen until reload.
+The kernel's closer is token-guarded, so calling it late or twice is safe.
+
+Escape belongs to the kernel's chain whenever the editor can hear it: the chain
+cancels through the handler `beginDrag` was given, which lands in the finalizer,
+and law 3 gets its one key and one step. The window listener covers only the
+case the chain cannot see — a press that began on portalled chrome may have
+left focus outside the prose — and it stops the event there, because a key that
+cancels a drag AND walks the caret off an object has taken two steps.
+
+The grip stays mounted for the whole gesture, invisible once lifted. It holds
+the pointer capture that keeps a touch drag from turning into a page scroll,
+and capture dies with the element: letting the hover reveal unmount it ended
+every drag on its own first frame.
 
 ## Geometry
 
@@ -64,16 +87,24 @@ mid-screen, so its box says nothing about where the manuscript ends. Hover is
 judged against each block's own box instead, with 8px of slack so a pointer
 crossing the gap between two paragraphs does not blink the handle off.
 
-## Approach, and why the handle counts as the editor
+## Approach, on a pointer and on a finger
 
 The pointer spends the whole approach in the margin, where `posAtCoords` has
 nothing useful to say, so x is pulled into the column before asking.
 
 Travelling from the prose onto the handle reads to the DOM as leaving the
 editor — and the browser delivers that leave AFTER the handle's own enter, so
-a naive `leave()` undoes the reveal exactly as the writer arrives. Anything
-carrying `EDITOR_CHROME_ATTRIBUTE` continues the approach instead. Any lane
-whose chrome portals out of the scroller will need the same guard.
+a naive `leave()` undoes the reveal exactly as the writer arrives. This
+editor's own chrome (the mark from `editorChromeAttributes`, kernel id and
+all) continues the approach instead. Any lane whose chrome portals out of the
+scroller will need the same guard.
+
+A finger never hovers, so the touch path is a different door onto the same
+handle: the last pointer type decides which one is live, and on coarse input
+the anchor follows the selection — the writer's own tap is the approach. Last
+pointer type rather than a media query, because a laptop with a touchscreen
+should answer for the hand actually on it. There is no fade-out on that path
+either: the handle belongs to the selected block until another is chosen.
 
 ## The block menu
 
