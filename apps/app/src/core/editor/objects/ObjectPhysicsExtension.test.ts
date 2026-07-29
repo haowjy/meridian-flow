@@ -10,6 +10,7 @@ import {
   engageObject,
   registerObjectEngagement,
   registerObjectKeymap,
+  SELECTED_OBJECT_CLASS,
 } from "./ObjectPhysicsExtension";
 import { selectedObject } from "./object-selection";
 
@@ -419,6 +420,8 @@ describe("Delete on a selected object", () => {
 
     press(instance, { key: "Delete" });
     expect(selectedObject(instance.state)?.node.type.name).toBe("table");
+    // Seen before it is destroyed: the second press is the destructive one.
+    expect(instance.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`)).not.toBeNull();
 
     press(instance, { key: "Delete" });
     expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);

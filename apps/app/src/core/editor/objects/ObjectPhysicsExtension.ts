@@ -307,17 +307,21 @@ export const ObjectPhysicsExtension = Extension.create({
 
         props: {
           /**
-           * The ring, derived rather than remembered. Every node ProseMirror
-           * has selected wears it, which is the same set its own
-           * `ProseMirror-selectednode` covers — a table is the deliberate
-           * exception, because prosemirror-tables normalizes its selection to
-           * every cell and paints its own tint across them.
+           * The ring, derived rather than remembered.
+           *
+           * Every node ProseMirror has selected wears it — the same set its
+           * own `ProseMirror-selectednode` covers — and so does a selected
+           * table, whose selection is a `CellSelection` over every cell that
+           * no `NodeSelection` test can see. Leaving the table out left the
+           * one gesture that selects it without asking (Delete at the end of
+           * the line above) showing the writer nothing at all before the next
+           * press took the table.
            */
           decorations(state) {
-            const { selection } = state;
-            if (!(selection instanceof NodeSelection)) return null;
+            const range = selectedObjectRange(state);
+            if (!range) return null;
             return DecorationSet.create(state.doc, [
-              Decoration.node(selection.from, selection.to, { class: SELECTED_OBJECT_CLASS }),
+              Decoration.node(range.from, range.to, { class: SELECTED_OBJECT_CLASS }),
             ]);
           },
 
@@ -407,6 +411,17 @@ function reportMissingEngagement(nodeType: string): void {
   console.warn(
     `[editor] "${nodeType}" is registered with engage: "surface", but no lane called registerObjectEngagement — Enter on it does nothing.`,
   );
+}
+
+/** The node the ring goes around: any selected node, and a selected table. */
+function selectedObjectRange(
+  state: Parameters<KeymapBinding>[0],
+): { from: number; to: number } | null {
+  const object = selectedObject(state);
+  if (object) return { from: object.pos, to: object.pos + object.node.nodeSize };
+  const { selection } = state;
+  if (!(selection instanceof NodeSelection)) return null;
+  return { from: selection.from, to: selection.to };
 }
 
 /**

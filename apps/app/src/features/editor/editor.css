@@ -224,9 +224,6 @@
 /* The jade ring a selected object wears — law 1's click, read back. A ring
    rather than an outline so it follows the object's own radius, and jade
    rather than the focus tone because selection is a state, not focus.
-   A selected table is the exception: prosemirror-tables paints its own cell
-   tint across every cell, which is the schema's way of saying "the whole
-   table", and a ring around the wrapper would be a second answer.
 
    The class is ours, painted by a decoration object physics derives from the
    selection. ProseMirror's own `ProseMirror-selectednode` is applied once by a
@@ -236,6 +233,22 @@
   outline: none;
   border-radius: var(--radius-md);
   box-shadow: 0 0 0 0.125rem var(--color-primary);
+}
+
+/* A table wears the same ring, one node in and turned inward.
+   In: the node ProseMirror decorates is prosemirror-tables' scroll wrapper,
+   which is the full column even when the grid is narrower or aligned right.
+   Inward: that wrapper scrolls, and a scroll container clips its children's
+   shadows, so an outward ring on the grid would be invisible. */
+.meridian-editor .tableWrapper.meridian-object-selected {
+  box-shadow: none;
+}
+
+.meridian-editor .tableWrapper.meridian-object-selected > table {
+  /* One cell border thicker than the ring above: the grid's own 1px border
+     paints over the outermost pixel of an inset shadow, so this is what
+     leaves the same weight of jade showing. */
+  box-shadow: inset 0 0 0 calc(0.125rem + 1px) var(--color-primary);
 }
 
 .meridian-collab-cursor {
