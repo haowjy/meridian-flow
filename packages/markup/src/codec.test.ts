@@ -270,6 +270,23 @@ describe("markdown codec round-trip corpus", () => {
     );
   });
 
+  // Tab is a key a writer presses in prose (the editor inserts one), so the
+  // wire has to carry it. A tab in the middle of a line is literal; a LEADING
+  // tab would parse back as an indented code block, so it goes out as a
+  // character reference and comes back a tab.
+  it("carries a tab through prose, wherever in the line it falls", () => {
+    const withTabs = [
+      paragraph(t("mid\tsentence tab")),
+      paragraph(t("\tleading tab")),
+      schema.node("heading", { level: 2 }, [t("\tindented heading")]),
+    ];
+    const wire = codec.serialize(withTabs);
+
+    expect(wire).toBe("mid\tsentence tab\n\n&#x9;leading tab\n\n## &#x9;indented heading\n");
+    expect(docFrom(codec.parse(wire).blocks).toJSON()).toEqual(docFrom(withTabs).toJSON());
+    expectStable(codec, wire);
+  });
+
   it("stabilizes strong spans containing nested emphasis boundaries", () => {
     expectStable(codec, "Intro with **bold _em_** tail");
     expectStable(codec, "Intro with **bold *em*** tail");

@@ -48,6 +48,18 @@ re-deriving it, so there is one answer to "is this an object".
   sweeps across them. The registration is the answer; nothing downstream reads
   a node name to guess it — it decides the TYPE, and the block surface still
   asks whether that occurrence is the whole block before dragging it.
+- **A letter types beside a selected object; only Delete and Backspace
+  destroy it.** ProseMirror replaces the selection on any input, so one
+  printable character used to be the end of a picture the writer had just
+  closed the lightbox on, or of every cell in a table.
+  `typeBesideObjectTransaction` lands the caret after the object (making a
+  paragraph when there is nothing after) and inserts there. `selectedObject`
+  is the whole gate: a partial `CellSelection` is a writer editing inside the
+  table, so typing still replaces the cells they swept.
+- **The destructive verbs take the NODE, not the selection.** A table is
+  selected as a `CellSelection` over every cell, so `deleteSelection` blanks
+  the cells and leaves the grid standing. `deleteObjectTransaction` removes
+  the object itself, at kernel scope `object`, for every type alike.
 - **Arrows never leap out of a sentence.** A block object is beside the caret
   only at the very edge of its text block; an inline image is beside it
   directly.

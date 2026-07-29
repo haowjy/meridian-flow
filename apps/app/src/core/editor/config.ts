@@ -49,6 +49,7 @@ import {
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
+import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { LinkSurfaceExtension } from "./links";
@@ -123,6 +124,9 @@ const lowlight = createLowlight(common);
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,
   ObjectPhysicsExtension,
+  // Not a lane: the editor's own Tab. It needs the kernel's registry to sit
+  // at two scopes at once, so it mounts exactly where the kernel does.
+  TabKeymapExtension,
   // L-A formatting menu (M4)
   // L-B object controls + diagram (M5)
   // L-C table chrome (M6)

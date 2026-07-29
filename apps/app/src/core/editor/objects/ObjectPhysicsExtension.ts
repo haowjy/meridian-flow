@@ -27,10 +27,12 @@ import type { KeymapBinding } from "../chrome/keymap";
 import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
+  deleteObjectTransaction,
   type ObjectAt,
   objectBeside,
   selectedObject,
   selectObjectTransaction,
+  typeBesideObjectTransaction,
 } from "./object-selection";
 import { isEditorObject, objectTypeSpec } from "./object-types";
 
@@ -274,6 +276,11 @@ export const ObjectPhysicsExtension = Extension.create({
               },
             }),
             chrome?.registerKeymap({
+              id: "object-remove",
+              scope: "object",
+              bindings: { Delete: removeSelected, Backspace: removeSelected },
+            }),
+            chrome?.registerKeymap({
               id: "object-engage",
               // Not `object` scope: §4's Enter row covers a selected plain
               // fence too, and a plain fence is not an object. The binding
@@ -300,18 +307,47 @@ export const ObjectPhysicsExtension = Extension.create({
 
         props: {
           /**
-           * The ring, derived rather than remembered. Every node ProseMirror
-           * has selected wears it, which is the same set its own
-           * `ProseMirror-selectednode` covers — a table is the deliberate
-           * exception, because prosemirror-tables normalizes its selection to
-           * every cell and paints its own tint across them.
+           * The ring, derived rather than remembered.
+           *
+           * Every node ProseMirror has selected wears it — the same set its
+           * own `ProseMirror-selectednode` covers — and so does a selected
+           * table, whose selection is a `CellSelection` over every cell that
+           * no `NodeSelection` test can see. Leaving the table out left the
+           * one gesture that selects it without asking (Delete at the end of
+           * the line above) showing the writer nothing at all before the next
+           * press took the table.
            */
           decorations(state) {
-            const { selection } = state;
-            if (!(selection instanceof NodeSelection)) return null;
+            const range = selectedObjectRange(state);
+            if (!range) return null;
             return DecorationSet.create(state.doc, [
-              Decoration.node(selection.from, selection.to, { class: SELECTED_OBJECT_CLASS }),
+              Decoration.node(range.from, range.to, { class: SELECTED_OBJECT_CLASS }),
             ]);
+          },
+
+          /**
+           * A printable character while an object is selected types BESIDE it
+           * (law 1's other half).
+           *
+           * ProseMirror replaces the selection, which is right for prose and
+           * wrong here: closing an image's full-screen view leaves the picture
+           * node-selected, and the next letter used to be the end of the
+           * picture. A table selected by the join gesture lost every cell to
+           * the same keystroke. Only `Delete` and `Backspace` are destructive
+           * verbs, and they still are.
+           *
+           * `selectedObject` is the whole gate, which is why a writer sweeping
+           * across some cells still types over them: that is a partial
+           * `CellSelection` — a deliberate edit inside the table — and the
+           * table is not standing there as an object.
+           */
+          handleTextInput(view, _from, _to, text) {
+            const selected = selectedObject(view.state);
+            if (!selected) return false;
+            const transaction = typeBesideObjectTransaction(view.state, selected.pos, text);
+            if (!transaction) return false;
+            view.dispatch(transaction);
+            return true;
           },
 
           /**
@@ -379,6 +415,36 @@ function reportMissingEngagement(nodeType: string): void {
     `[editor] "${nodeType}" is registered with engage: "surface", but no lane called registerObjectEngagement — Enter on it does nothing.`,
   );
 }
+
+/** The node the ring goes around: any selected node, and a selected table. */
+function selectedObjectRange(
+  state: Parameters<KeymapBinding>[0],
+): { from: number; to: number } | null {
+  const object = selectedObject(state);
+  if (object) return { from: object.pos, to: object.pos + object.node.nodeSize };
+  const { selection } = state;
+  if (!(selection instanceof NodeSelection)) return null;
+  return { from: selection.from, to: selection.to };
+}
+
+/**
+ * Delete and Backspace take the whole object, not the selection over it.
+ *
+ * They differ for exactly one type and that is the type it matters for: a
+ * table is selected as a `CellSelection` across every cell, so the base
+ * keymap's `deleteSelection` empties the cells and leaves the grid. The join
+ * reflex — Delete at the end of the line above a table — lands on that
+ * selection, so the second press wiped the table's contents while its shell
+ * stayed put.
+ */
+const removeSelected: KeymapBinding = (state, dispatch) => {
+  const selected = selectedObject(state);
+  if (!selected) return false;
+  const transaction = deleteObjectTransaction(state, selected.pos);
+  if (!transaction) return false;
+  dispatch?.(transaction);
+  return true;
+};
 
 const walkForward: KeymapBinding = (state, dispatch) => walk(state, dispatch, 1);
 const walkBackward: KeymapBinding = (state, dispatch) => walk(state, dispatch, -1);

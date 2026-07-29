@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { Editor, type JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
@@ -10,7 +11,9 @@ import {
   engageObject,
   registerObjectEngagement,
   registerObjectKeymap,
+  SELECTED_OBJECT_CLASS,
 } from "./ObjectPhysicsExtension";
+import { selectedObject } from "./object-selection";
 
 let editor: Editor | null = null;
 
@@ -27,6 +30,21 @@ const paragraph = (text: string): JSONContent => ({
   type: "paragraph",
   content: [{ type: "text", text }],
 });
+
+const figure: JSONContent = { type: "figure", attrs: { src: "asset:1", caption: "" } };
+
+const cell = (text: string): JSONContent => ({
+  type: "table_cell",
+  content: [paragraph(text)],
+});
+
+const table: JSONContent = {
+  type: "table",
+  content: [
+    { type: "table_row", content: [cell("Terrace"), cell("Question")] },
+    { type: "table_row", content: [cell("First"), cell("Who are you?")] },
+  ],
+};
 
 const mermaid: JSONContent = {
   type: "code_block",
@@ -77,6 +95,45 @@ function mouseDown(element: Element, init: MouseEventInit = {}): boolean {
   });
   element.dispatchEvent(event);
   return event.defaultPrevented;
+}
+
+/** One printable keystroke, the way ProseMirror hears one. */
+function typeCharacter(instance: Editor, character: string): void {
+  instance.view.dom.dispatchEvent(
+    new KeyboardEvent("keypress", {
+      key: character,
+      charCode: character.charCodeAt(0),
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+function cellTexts(instance: Editor): string[] {
+  const texts: string[] = [];
+  instance.state.doc.descendants((node) => {
+    if (node.type.name === "table_cell") texts.push(node.textContent);
+    return true;
+  });
+  return texts;
+}
+
+function cellPositions(instance: Editor): number[] {
+  const positions: number[] = [];
+  instance.state.doc.descendants((node, pos) => {
+    if (node.type.name === "table_cell") positions.push(pos);
+    return true;
+  });
+  return positions;
+}
+
+function nodeCount(instance: Editor, type: string): number {
+  let count = 0;
+  instance.state.doc.descendants((node) => {
+    if (node.type.name === type) count += 1;
+    return true;
+  });
+  return count;
 }
 
 function blockTypes(instance: Editor): string[] {
@@ -305,5 +362,115 @@ describe("a press on an object body", () => {
     if (!cell) throw new Error("expected a cell");
 
     expect(mouseDown(cell)).toBe(false);
+  });
+});
+
+describe("a printable character beside a selected object", () => {
+  // Closing an image's full-screen view leaves the picture node-selected, and
+  // one letter used to replace it. A letter is not a destructive verb.
+
+  it("types after the picture rather than over it", () => {
+    const instance = mount([
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "look " },
+          { type: "image", attrs: { src: "asset:2" } },
+        ],
+      },
+      paragraph("after"),
+    ]);
+    select(instance, positionOf(instance, "image"));
+
+    typeCharacter(instance, "Q");
+
+    expect(nodeCount(instance, "image")).toBe(1);
+    expect(instance.state.doc.firstChild?.textContent).toBe("look Q");
+  });
+
+  it("lands in the block after a selected figure", () => {
+    const instance = mount([paragraph("before"), figure, paragraph("after")]);
+    select(instance, positionOf(instance, "figure"));
+
+    typeCharacter(instance, "Q");
+
+    expect(nodeCount(instance, "figure")).toBe(1);
+    expect(blockTypes(instance)).toEqual(["paragraph", "figure", "paragraph"]);
+    expect(instance.state.doc.lastChild?.textContent).toBe("Qafter");
+  });
+
+  it("makes a paragraph when the object is the whole document", () => {
+    const instance = mount([figure]);
+    select(instance, positionOf(instance, "figure"));
+
+    typeCharacter(instance, "Q");
+
+    expect(nodeCount(instance, "figure")).toBe(1);
+    expect(blockTypes(instance)).toEqual(["figure", "paragraph"]);
+    expect(instance.state.doc.lastChild?.textContent).toBe("Q");
+  });
+
+  it("types after a table the join gesture selected, leaving its cells alone", () => {
+    const instance = mount([paragraph("above"), table, paragraph("below")]);
+    instance.commands.setTextSelection("above".length + 1);
+    press(instance, { key: "Delete" });
+
+    typeCharacter(instance, "Q");
+
+    expect(nodeCount(instance, "table")).toBe(1);
+    expect(cellTexts(instance)).toEqual(["Terrace", "Question", "First", "Who are you?"]);
+    expect(instance.state.doc.lastChild?.textContent).toBe("Qbelow");
+  });
+
+  it("still replaces the cells a writer swept across", () => {
+    // A partial cell selection is a deliberate text edit inside the table, not
+    // the table standing there as an object.
+    const instance = mount([paragraph("above"), table, paragraph("below")]);
+    const cells = cellPositions(instance);
+    instance.view.dispatch(
+      instance.state.tr.setSelection(CellSelection.create(instance.state.doc, cells[0], cells[1])),
+    );
+
+    typeCharacter(instance, "Q");
+
+    expect(nodeCount(instance, "table")).toBe(1);
+    expect(cellTexts(instance)).toEqual(["", "Q", "First", "Who are you?"]);
+    expect(instance.state.doc.lastChild?.textContent).toBe("below");
+  });
+});
+
+describe("Delete on a selected object", () => {
+  it("removes the picture, because a destructive verb stays destructive", () => {
+    const instance = mount([paragraph("before"), figure, paragraph("after")]);
+    select(instance, positionOf(instance, "figure"));
+
+    expect(press(instance, { key: "Delete" })).toBe(true);
+    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
+  });
+
+  it("takes the whole table rather than blanking its cells", () => {
+    const instance = mount([paragraph("above"), table, paragraph("below")]);
+    // The join reflex: caret at the end of the line above, Delete to pull the
+    // next line up. The first press lands on the table as an object.
+    instance.commands.setTextSelection("above".length + 1);
+
+    press(instance, { key: "Delete" });
+    expect(selectedObject(instance.state)?.node.type.name).toBe("table");
+    // Seen before it is destroyed: the second press is the destructive one.
+    expect(instance.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`)).not.toBeNull();
+
+    press(instance, { key: "Delete" });
+    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
+  });
+
+  it("mirrors the gesture for Backspace at the start of the line below", () => {
+    const instance = mount([paragraph("above"), table, paragraph("below")]);
+    instance.commands.setTextSelection(instance.state.doc.content.size - "below".length - 1);
+
+    press(instance, { key: "Backspace" });
+    expect(selectedObject(instance.state)?.node.type.name).toBe("table");
+
+    press(instance, { key: "Backspace" });
+    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
   });
 });

@@ -172,6 +172,19 @@ export function caretHomeFromObjectTransaction(
   const backward = Selection.findFrom(state.doc.resolve(pos), -1, true);
   if (backward) return state.tr.setSelection(backward).scrollIntoView();
 
+  return paragraphAfterTransaction(state, $after)?.scrollIntoView() ?? null;
+}
+
+/**
+ * A paragraph made after `$after`, with the caret in it.
+ *
+ * The one write to the shared document these transactions make, and both
+ * callers need it for the same reason: an object that IS the document has no
+ * prose to stand in, and one empty paragraph is a smaller cost than a writer
+ * with nowhere to type. Null when the schema refuses a paragraph there — a
+ * code-schema document, whose one block is the whole file by definition.
+ */
+function paragraphAfterTransaction(state: EditorState, $after: ResolvedPos): Transaction | null {
   const paragraph = state.schema.nodes.paragraph;
   if (!paragraph) return null;
 
@@ -179,9 +192,50 @@ export function caretHomeFromObjectTransaction(
   if (!$after.parent.canReplaceWith(index, index, paragraph)) return null;
 
   const transaction = state.tr.insert($after.pos, paragraph.create());
-  return transaction
-    .setSelection(TextSelection.near(transaction.doc.resolve($after.pos), 1))
-    .scrollIntoView();
+  return transaction.setSelection(TextSelection.near(transaction.doc.resolve($after.pos), 1));
+}
+
+/**
+ * Where a printable character lands while an object is selected: the text
+ * position after it, or a paragraph made for the purpose.
+ *
+ * A letter is not a destructive verb. ProseMirror's answer is to replace the
+ * selection, so the picture a writer was looking at a moment ago disappears
+ * under the first thing they type, and a table selected whole loses every
+ * cell — and neither is something anyone attributes to the "Q". Delete and
+ * Backspace still delete; those said so.
+ *
+ * Unlike Esc's walk home this never lands in FRONT of the object. The writer
+ * is typing forward, so a paragraph after it beats a caret before it.
+ */
+export function typeBesideObjectTransaction(
+  state: EditorState,
+  pos: number,
+  text: string,
+): Transaction | null {
+  const node = state.doc.nodeAt(pos);
+  if (!node) return null;
+
+  const $after = state.doc.resolve(pos + node.nodeSize);
+  const forward = Selection.findFrom($after, 1, true);
+  const transaction = forward
+    ? state.tr.setSelection(forward)
+    : paragraphAfterTransaction(state, $after);
+  return transaction?.insertText(text).scrollIntoView() ?? null;
+}
+
+/**
+ * Remove the object at `pos` outright.
+ *
+ * The node, not the selection. A table's selection is a `CellSelection` over
+ * every cell, and replacing THAT empties every cell and leaves the grid
+ * standing — the writer asked to remove a table and got a blank one. Undo
+ * recovers from either, but only one of them is what they pressed the key for.
+ */
+export function deleteObjectTransaction(state: EditorState, pos: number): Transaction | null {
+  const node = state.doc.nodeAt(pos);
+  if (!node) return null;
+  return state.tr.delete(pos, pos + node.nodeSize).scrollIntoView();
 }
 
 /**
