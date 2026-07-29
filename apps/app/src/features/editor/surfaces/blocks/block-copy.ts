@@ -7,6 +7,11 @@
  */
 import { t } from "@lingui/core/macro";
 
+// Straight at the primitive, not through `chrome/index.ts`: that barrel also
+// carries the surface registry this lane is listed in, and the round trip is a
+// module cycle.
+import { shortcutLabel } from "../../chrome/shortcut-label";
+
 export function blockHandleLabel(): string {
   return t`Move or change this block`;
 }
@@ -32,15 +37,5 @@ export function blockMenuLabel(id: "moveUp" | "moveDown" | "duplicate" | "turnIn
  * beside a key labelled ⌥ is a shortcut the writer has to translate.
  */
 export function blockMoveShortcut(direction: "up" | "down"): string {
-  const arrow = direction === "up" ? "↑" : "↓";
-  return isAppleKeyboard() ? `⌥${arrow}` : `Alt+${arrow}`;
-}
-
-function isAppleKeyboard(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const platform =
-    (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ??
-    navigator.platform ??
-    "";
-  return /mac|iphone|ipad|ipod/i.test(platform);
+  return shortcutLabel(`Alt+${direction === "up" ? "↑" : "↓"}`);
 }

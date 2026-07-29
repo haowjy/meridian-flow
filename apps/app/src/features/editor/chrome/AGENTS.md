@@ -21,6 +21,10 @@ Four primitives and one host.
 - **`EditorChromeHost`** — the one place chrome mounts. Surfaces arrive
   through `EDITOR_CHROME_SURFACES`; `EditorView.tsx` never learns about one.
 
+`shortcut-label.ts` sits beside them: `shortcutLabel("Mod+K")` is how every
+lane prints a shortcut, because Mod is Cmd on macOS and a lane that tests the
+platform itself will spell it a fourth way.
+
 Radix is not wrapped away. It keeps owning dismissal, outside-click, and
 roving focus (decision 2026-07-29). What these add is subordination.
 
