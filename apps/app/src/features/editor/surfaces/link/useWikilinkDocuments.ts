@@ -18,7 +18,7 @@ import type {
 import { useMemo } from "react";
 
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import type { WikilinkDocument } from "@/core/editor/extensions/wikilink";
+import type { WikilinkDocument } from "@/core/completion";
 
 export function useWikilinkDocuments(projectId: string | undefined): readonly WikilinkDocument[] {
   const { tree } = useProjectContextTree(projectId ?? "", "manuscript", {

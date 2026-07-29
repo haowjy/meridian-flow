@@ -10,9 +10,10 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { WikilinkCatalog } from "@/core/completion";
+
 import { createStandaloneEditorExtensions } from "../../config";
 import { getWikilinkMenu } from "./WikilinkSuggestionExtension";
-import type { WikilinkCatalog } from "./wikilink-catalog";
 
 let editor: Editor | null = null;
 

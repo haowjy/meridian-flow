@@ -1,5 +1,5 @@
 /**
- * What the `[[` menu is offering: the project's documents, ranked by title.
+ * What a `[[…]]` may name: the project's documents, ranked by title.
  *
  * A wikilink resolves by title or alias, so this ranks titles and nothing
  * else — a document the writer picks here has to be a document the resolver
@@ -8,6 +8,12 @@
  * The create row is an item rather than a footer, because the keyboard has to
  * be able to reach it: Enter on it inserts an unresolved wikilink deliberately
  * (mockup 06 state D, "links now, page later"). It never creates a document.
+ *
+ * The ranking is the whole reason this is not filed under the editor: a
+ * `[[Name]]` spliced into the composer's textarea has to offer the same
+ * documents in the same order as the one typed in prose, and nothing here reads
+ * a document, a view, or a caret. See the module header in
+ * [`index.ts`](index.ts).
  */
 
 export type WikilinkDocument = {
@@ -23,11 +29,6 @@ export type WikilinkCatalog = {
   /** The listbox's accessible name; localized by the host that offers it. */
   label: string;
   documents: readonly WikilinkDocument[];
-};
-
-export type WikilinkExtensionOptions = {
-  /** Read when the menu opens. Null withdraws the trigger entirely. */
-  catalog: () => WikilinkCatalog | null;
 };
 
 export type WikilinkMenuItem =

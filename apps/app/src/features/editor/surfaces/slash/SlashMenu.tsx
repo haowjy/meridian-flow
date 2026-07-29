@@ -8,13 +8,12 @@
  */
 
 import { useSyncExternalStore } from "react";
-
+import { closedSuggestionMenu } from "@/core/completion";
 import {
   getSlashMenu,
   type SlashMenuEntry,
   type SlashMenuMeta,
 } from "@/core/editor/extensions/slash";
-import { closedSuggestionMenu } from "@/core/editor/extensions/suggestion";
 
 import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
 import { blockTypeReasonMessage } from "../toolbar";

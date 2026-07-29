@@ -75,8 +75,10 @@ its rung is the ladder's floor rather than the object rung.
   spreads them across three controls and the right-click nests the language
   into one list; both render the same components against the same commands. A
   verb added to one door and not the other is two answers within a week.
-- **Hover timing comes from `chrome.createHoverIntent`**, never a local timer.
-  The kernel cancels it when a gesture starts.
+- **Hover targeting comes from `chrome.registerHoverAnchor`**, never a local
+  timer or pointer listener. The kernel owns one hover owner at a time,
+  re-hit-tests a stationary pointer after scroll, and cancels when a gesture
+  starts.
 
 ## Anti-patterns
 
