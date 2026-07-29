@@ -230,8 +230,12 @@ function widthsFromFirstRow(table: PMNode): string | null {
     if (!Array.isArray(colwidth)) return;
     for (let offset = 0; offset < colspanOf(cell); offset += 1) {
       const width = colwidth[offset];
-      if (typeof width !== "number" || !Number.isSafeInteger(width) || width <= 0) continue;
-      slots[column + offset] = String(width);
+      if (typeof width !== "number" || !Number.isFinite(width) || width <= 0) continue;
+      // The wire carries whole pixels. A drag across a spanned column divides
+      // the cell's box by its colspan, so the document legitimately holds a
+      // fraction; rounding here converges it on the next load rather than
+      // refusing to save what the writer just did.
+      slots[column + offset] = String(Math.round(width));
       hasWidth = true;
     }
   });
@@ -242,6 +246,10 @@ function widthsFromFirstRow(table: PMNode): string | null {
  * `colwidth` is one entry per column the cell covers, and zero means "this
  * column has no width" — the shape prosemirror-tables writes when a resize
  * touches one column of a spanning cell, and the shape the table view reads.
+ *
+ * The entries are pixel widths, not necessarily whole ones: sizing a spanned
+ * column divides the cell's box by its colspan. Serialization rounds them; a
+ * shape that cannot describe the cell at all is what throws.
  */
 function validateColwidths(table: PMNode): void {
   table.forEach((row) => {
@@ -251,12 +259,10 @@ function validateColwidths(table: PMNode): void {
       if (
         !Array.isArray(colwidth) ||
         colwidth.length !== colspanOf(cell) ||
-        colwidth.some(
-          (width) => typeof width !== "number" || !Number.isSafeInteger(width) || width < 0,
-        )
+        colwidth.some((width) => typeof width !== "number" || !Number.isFinite(width) || width < 0)
       ) {
         throw new Error(
-          "pm->mdast: table cell colwidth must be null or one non-negative integer per spanned column",
+          "pm->mdast: table cell colwidth must be null or one non-negative width per spanned column",
         );
       }
     });

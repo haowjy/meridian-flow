@@ -1077,11 +1077,15 @@ describe("mdx codec round-trip corpus", () => {
 
     // One entry per spanned column, non-negative: a slot count that cannot
     // describe the cell, a negative width, and a fraction are all lies.
-    for (const colwidth of [[120, 80], [], [-1], [12.5]]) {
+    for (const colwidth of [[120, 80], [], [-1], ["120"], [Number.NaN]]) {
       expect(() => codec.serializeBlock(withColwidth(colwidth))).toThrow(
-        "colwidth must be null or one non-negative integer per spanned column",
+        "colwidth must be null or one non-negative width per spanned column",
       );
     }
+
+    // Sizing a spanned column divides the cell's box by its colspan, so a
+    // fraction is what a real drag leaves behind. The wire rounds it.
+    expect(codec.serializeBlock(withColwidth([173.5]))).toContain('widths="174"');
 
     // Zero is not malformed: it is prosemirror-tables' "this column has no
     // width", which a resize leaves in every slot it did not touch.

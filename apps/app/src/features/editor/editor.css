@@ -787,6 +787,13 @@
     border-color 120ms ease-out;
 }
 
+/* A grip whose row has scrolled out of the pane keeps its element for Radix
+   to anchor an open menu to, and stops being paint or a hit target. */
+.meridian-table-grip[data-out-of-view] {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .meridian-table-grip:hover,
 .meridian-table-add-tab:hover,
 .meridian-table-grip[data-state="open"] {
@@ -794,29 +801,12 @@
   border-color: var(--color-border-focus);
 }
 
-/* The column grip hangs above the table's top edge, centred on its column;
-   the row grip sits left of the frame, centred on its row (mockup 05). */
-.meridian-table-grip[data-table-grip="column"] {
-  width: 30px;
-  height: 15px;
-  transform: translate(-50%, -100%);
-}
-
-.meridian-table-grip[data-table-grip="row"] {
-  width: 15px;
-  height: 30px;
-  transform: translate(-100%, -50%);
-}
-
+/* Sizes and positions are inline, measured together in `table-anchors.ts`:
+   the module that decides whether a grip still fits in the manuscript's pane
+   is the one that has to know how big it is. */
 .meridian-table-grip svg {
   width: 13px;
   height: 13px;
-}
-
-.meridian-table-add-tab {
-  width: 18px;
-  height: 18px;
-  transform: translate(-50%, -50%);
 }
 
 .meridian-table-add-tab svg {

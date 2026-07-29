@@ -41,6 +41,7 @@ import {
   cellDocPosition,
   measureTableChrome,
   sameTableChromeRects,
+  type TableChromePiece,
   type TableChromeRects,
   tableCellUnder,
 } from "./table-anchors";
@@ -57,11 +58,6 @@ import { tableChromeCopy } from "./table-copy";
 
 type Axis = "row" | "column";
 
-/** Gaps from the mockup: the chrome hovers just clear of the frame it serves. */
-const COLUMN_GRIP_GAP = 4;
-const ROW_GRIP_GAP = 6;
-const ADD_TAB_OFFSET = 18;
-
 export function TableChrome({ editor }: { editor: Editor }) {
   useEditorRevision(editor);
   const chrome = useEditorChrome(editor);
@@ -72,7 +68,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const [hovering, setHovering] = useState(false);
   const [openMenu, setOpenMenu] = useState<Axis | null>(null);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
-  const rects = useTableChromeRects(editor, anchorCell);
 
   // The pointer travels off the editor and onto the grips, so hover has to be
   // re-enterable from the chrome itself; the intent's warm grace is what makes
@@ -80,6 +75,8 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const intentRef = useRef<HoverIntent<HTMLElement> | null>(null);
   const openMenuRef = useRef<Axis | null>(null);
   openMenuRef.current = openMenu;
+
+  const rects = useTableChromeRects(editor, anchorCell, () => intentRef.current?.cancel());
 
   // A menu held the anchor still while it was open, so the pointer's real
   // position has to be read back on close or the grips linger where it left.
@@ -188,10 +185,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
                     axis="column"
                     label={tableChromeCopy.columnGrip()}
                     onArm={() => selectAxis("column")}
-                    style={{
-                      left: rects.column.left + rects.column.width / 2,
-                      top: rects.table.top - COLUMN_GRIP_GAP,
-                    }}
+                    piece={rects.columnGrip}
                   >
                     <GripHorizontal aria-hidden />
                   </GripButton>
@@ -215,10 +209,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
                     axis="row"
                     label={tableChromeCopy.rowGrip()}
                     onArm={() => selectAxis("row")}
-                    style={{
-                      left: rects.table.left - ROW_GRIP_GAP,
-                      top: rects.row.top + rects.row.height / 2,
-                    }}
+                    piece={rects.rowGrip}
                   >
                     <GripVertical aria-hidden />
                   </GripButton>
@@ -231,19 +222,13 @@ export function TableChrome({ editor }: { editor: Editor }) {
                 axis="column"
                 label={tableChromeCopy.addColumn()}
                 onSelect={() => appendFrom(editor, anchorCell, "column")}
-                style={{
-                  left: rects.table.right + ADD_TAB_OFFSET,
-                  top: (rects.table.top + rects.table.bottom) / 2,
-                }}
+                piece={rects.addColumn}
               />
               <AddTab
                 axis="row"
                 label={tableChromeCopy.addRow()}
                 onSelect={() => appendFrom(editor, anchorCell, "row")}
-                style={{
-                  left: (rects.table.left + rects.table.right) / 2,
-                  top: rects.table.bottom + ADD_TAB_OFFSET,
-                }}
+                piece={rects.addRow}
               />
             </div>,
             document.body,
@@ -290,7 +275,7 @@ function appendFrom(editor: Editor, cell: HTMLElement | null, axis: Axis) {
 function GripButton({
   axis,
   label,
-  style,
+  piece,
   onArm,
   onPointerDown,
   children,
@@ -298,20 +283,24 @@ function GripButton({
 }: ComponentProps<"button"> & {
   axis: Axis;
   label: string;
-  style: CSSProperties;
+  /** Null once this grip would fall outside the manuscript's pane. */
+  piece: TableChromePiece | null;
   /** Selects the row or column before the menu opens; the press means both. */
   onArm: () => void;
   children: ReactNode;
 }) {
+  // Radix still needs a trigger element to anchor an open menu to, so a grip
+  // that has scrolled out of the pane keeps its box and stops painting.
   return (
     <button
       {...rest}
       type="button"
       className="meridian-table-grip"
       data-table-grip={axis}
+      data-out-of-view={piece ? undefined : ""}
       aria-label={label}
       title={label}
-      style={style}
+      style={pieceStyle(piece)}
       onPointerDown={(event) => {
         onArm();
         onPointerDown?.(event);
@@ -325,14 +314,16 @@ function GripButton({
 function AddTab({
   axis,
   label,
-  style,
+  piece,
   onSelect,
 }: {
   axis: Axis;
   label: string;
-  style: CSSProperties;
+  piece: TableChromePiece | null;
   onSelect: () => void;
 }) {
+  if (!piece) return null;
+
   return (
     <button
       type="button"
@@ -340,13 +331,19 @@ function AddTab({
       data-table-add={axis}
       aria-label={label}
       title={label}
-      style={style}
+      style={pieceStyle(piece)}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
     >
       <Plus aria-hidden />
     </button>
   );
+}
+
+/** Geometry is inline: it is measurement, not theme. */
+function pieceStyle(piece: TableChromePiece | null): CSSProperties {
+  if (!piece) return { display: "none" };
+  return { left: piece.left, top: piece.top, width: piece.width, height: piece.height };
 }
 
 /**
@@ -409,8 +406,14 @@ function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: bo
  * rather than the window; the editor's own updates matter too, since a row
  * grows as the writer types into it and the grip has to travel with it.
  */
-function useTableChromeRects(editor: Editor, cell: HTMLElement | null): TableChromeRects | null {
+function useTableChromeRects(
+  editor: Editor,
+  cell: HTMLElement | null,
+  onAnchorLost: () => void,
+): TableChromeRects | null {
   const [rects, setRects] = useState<TableChromeRects | null>(null);
+  const lostRef = useRef(onAnchorLost);
+  lostRef.current = onAnchorLost;
 
   useLayoutEffect(() => {
     if (!cell) {
@@ -421,6 +424,9 @@ function useTableChromeRects(editor: Editor, cell: HTMLElement | null): TableChr
     let frame = 0;
     const measure = () => {
       const next = measureTableChrome(cell);
+      // The cell scrolled out of the manuscript's pane: the approach is over
+      // even though the pointer never moved, so the hover has to be told.
+      if (!next) lostRef.current();
       setRects((previous) => (sameTableChromeRects(previous, next) ? previous : next));
     };
     const schedule = () => {
