@@ -33,9 +33,14 @@ import {
 import { createPortal } from "react-dom";
 
 import { editorChromeAttributes, type HoverIntent } from "@/core/editor/chrome";
-import { selectedObject } from "@/core/editor/objects";
 
-import { EditorMenu, OverlayIconRow, useChromeSuppressed, useEditorChrome } from "../../chrome";
+import {
+  EditorMenu,
+  OverlayIconRow,
+  useChromeContext,
+  useChromeSuppressed,
+  useEditorChrome,
+} from "../../chrome";
 import {
   TableCellMenuItems,
   TableColumnMenuItems,
@@ -45,6 +50,7 @@ import {
 import {
   cellDocPosition,
   measureTableChrome,
+  pointerHoldsTableChrome,
   sameTableChromeRects,
   type TableChromePiece,
   type TableChromeRects,
@@ -62,15 +68,11 @@ import {
 } from "./table-commands";
 import { tableChromeCopy } from "./table-copy";
 
-/** What the pointer question asks about: this lane's own portalled chrome. */
-const TABLE_CHROME_SELECTOR = "[data-table-chrome]";
-
 type Axis = "row" | "column";
 /** The four shapes a table menu takes, each a different thing to act on. */
 type TableMenuShape = Axis | "cells" | "table";
 
 export function TableChrome({ editor }: { editor: Editor }) {
-  useEditorRevision(editor);
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
   const editable = editor.isEditable;
@@ -131,17 +133,26 @@ export function TableChrome({ editor }: { editor: Editor }) {
     // two mechanisms in a 120ms race across a tree boundary, and the race is
     // why a grip stopped being clickable a moment after it appeared.
     //
-    // Asking one question of one event removes the race: is the pointer over a
-    // cell of this editor, or over this table's own chrome?
+    // Asking one question of one event removes the race: is the pointer on a
+    // cell of this editor, or anywhere in the zone this table's chrome lives
+    // in? Geometry rather than the chrome's own elements, because the pixels
+    // BETWEEN the frame and a grip belong to the reveal too.
     const onMove = (event: MouseEvent) => {
       const cell = tableCellUnder(editor.view, event.target);
       if (cell) {
         intent.enter(cell);
         return;
       }
-      // Over the grips the reveal holds: the writer is travelling to a control
-      // this hover put there.
-      if (event.target instanceof Element && event.target.closest(TABLE_CHROME_SELECTOR)) return;
+      // Outside the frame but still on the hover zone the chrome was drawn in:
+      // the writer is travelling to a control this reveal put there. Entering
+      // again rather than merely not leaving is the load-bearing part — the
+      // grace the frame's edge started has to be CANCELLED, or it fires on a
+      // pointer already resting on the grip and fades it out from under them.
+      const held = intent.settled;
+      if (held && pointerHoldsTableChrome(held, event.clientX, event.clientY)) {
+        intent.enter(held);
+        return;
+      }
       intent.leave();
     };
 
@@ -204,10 +215,15 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
   useTableKeymap(chrome, editable);
 
-  const selected = selectedObject(editor.state);
-  const selectedTable = selected?.node.type.name === "table" ? selected : null;
+  // The kernel's resolved context, not a per-transaction re-render: this
+  // surface's only reading of the document is "is a table selected", and the
+  // context store answers it, notifying when that answer changes rather than
+  // on every keystroke of the chapter.
+  const context = useChromeContext(editor);
+  const selectedTablePos =
+    context.owner === "object" && context.nodeType === "table" ? context.pos : null;
   const selectedTableDOM =
-    selectedTable && !editor.isDestroyed ? editor.view.nodeDOM(selectedTable.pos) : null;
+    selectedTablePos !== null && !editor.isDestroyed ? editor.view.nodeDOM(selectedTablePos) : null;
   const tableElement = selectedTableDOM instanceof HTMLElement ? selectedTableDOM : null;
 
   const visible = (hovering || openMenu !== null) && !suppressed;
@@ -521,18 +537,4 @@ function useTableChromeRects(
   }, [cell, editor]);
 
   return rects;
-}
-
-function useEditorRevision(editor: Editor) {
-  const [, setRevision] = useState(0);
-
-  useEffect(() => {
-    const bump = () => setRevision((revision) => revision + 1);
-    editor.on("selectionUpdate", bump);
-    editor.on("transaction", bump);
-    return () => {
-      editor.off("selectionUpdate", bump);
-      editor.off("transaction", bump);
-    };
-  }, [editor]);
 }

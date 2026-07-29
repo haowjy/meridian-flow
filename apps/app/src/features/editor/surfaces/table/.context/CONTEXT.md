@@ -52,6 +52,12 @@ decides whether a grip fits has to know how big it is.
 | Add column tab | 18px circle, 9px right of the table's right edge, vertically centred |
 | Add row tab | 18px circle, 9px below the table's bottom edge, horizontally centred |
 
+`tableHoverZone` is the other half of the same decision: the frame expanded by
+each side's band (19 top, 21 left, 27 right and bottom), which is what the
+pointer has to stay inside for a reveal to hold. Placement and hover are
+checked against each other in the tests — a piece drawn outside the zone would
+dismiss itself as the writer reached for it.
+
 **Null rather than clamped.** A grip pushed back inside the port would sit
 beside a row it does not serve, and chrome pointing at the wrong row is worse
 than chrome that is not there. The document toolbar needs no special case: it
@@ -120,7 +126,9 @@ control, so it takes the outer band. This lane's half is
 `table.left - ROW_GRIP_GAP - GRIP_SHORT`, which is 21px inside the frame at
 any column width; M9's handle clears 22, one pixel outside it. `ROW_GRIP_GAP`
 is the one number to change here if the ruling ever goes the other way, and
-the grip cannot vacate inward much: it is 15px around a 13px icon.
+the grip cannot vacate inward much: it is 15px around a 13px icon. The hover
+zone's left edge is the same 21: it has to reach the grip and must not reach
+past it, or the band the handle is hovered in belongs to two surfaces again.
 
 M9's [`blocks/.context/CONTEXT.md`](../../blocks/.context/CONTEXT.md) states
 the same split from the other side; change one and the other is wrong.
@@ -137,13 +145,30 @@ two mechanisms in a 120ms race across a tree boundary, and the race is why a
 grip stopped being clickable a moment after it appeared: the reveal faded,
 `pointer-events: none` went on, and the right-click fell through to the
 browser. One `mousemove` on the document asks one question instead, `is the
-pointer over a cell of this editor or over this table's own chrome`, and the
-answer is the same on both sides of the portal.
+pointer on a cell of this editor, or anywhere in the zone this table's chrome
+lives in`, and the answer is the same on both sides of the portal.
+
+**The zone, not the chrome's elements.** Asking whether the pointer is over a
+grip leaves the pixels BETWEEN the frame and the grip belonging to nobody, and
+the pointer crosses them on every approach: measured, 4px above the frame and
+6px left of it. It also has to RE-ENTER rather than merely not leave. A
+`mousemove` that answers "still here" by returning leaves the grace the frame's
+edge scheduled in flight, and 120ms later it fades the grip out from under a
+pointer already resting on it — after which the closed chrome takes no pointer
+events and `elementFromPoint` over the grip answers the prose underneath.
 
 While a menu is open the anchor is frozen: a stray hover would slide the grips
 out from under the menu and leave it pointing at another row. On close the
 pointer's real position is read back from `intent.settled`, or the chrome
 lingers where the writer left it.
+
+**The selected table's ⋮ reads the kernel's context, not the document.** This
+surface is mounted for the whole session, so a blunt per-transaction
+subscription re-rendered it on every keystroke of the chapter to answer a
+question that changes rarely. `useChromeContext` reports `owner: "object"` with
+`nodeType: "table"` and the position, and the store only notifies when that
+answer changes. The rects follow the document separately, and only while a cell
+is anchored.
 
 Each grip is its own Radix trigger, so nothing here uses the pointer anchor.
 `GripButton` composes Radix's injected `onPointerDown` rather than replacing

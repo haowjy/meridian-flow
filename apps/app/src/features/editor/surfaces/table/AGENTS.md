@@ -72,6 +72,13 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   new row and drops what it could not fit. `mergeTableCells` joins first, uses
   the library's own structural emptiness test rather than `textContent`, and
   refuses a rectangle that spans the header row and the body.
+- **The hover surface is the frame PLUS the bands the chrome hangs in.**
+  Every piece is drawn outside the frame, so a hover that ends at the frame
+  dismisses the grip the writer is travelling to, a few pixels before they
+  reach it. `tableHoverZone` expands the table's rect by exactly what is drawn
+  on each side; it holds a reveal, never starts one. Its left edge is the
+  grips' half of the shared margin and stops one pixel short of the block
+  handle's.
 - **Chrome that has left the manuscript's pane does not draw.** Placement is
   clipped to the scrollport in `table-anchors.ts`, so a grip cannot ride up
   over the toolbar when the writer scrolls without moving the pointer.
@@ -85,6 +92,12 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - Watching the pointer from the editor's DOM. The grips are portalled outside
   it, so that listener cannot see the pointer reach them, and pairing it with a
   React handler on the portal is a race the grips lose.
+- Answering a `mousemove` over the chrome by doing nothing. Not-leaving is not
+  re-entering: the grace the frame's edge already scheduled still fires, and it
+  fades the grip out from under the pointer resting on it.
+- Following the document with a per-transaction re-render to learn whether a
+  table is selected. The kernel's context store answers that, and notifies when
+  the answer changes rather than on every keystroke of the chapter.
 - Rendering anything inside the table. Grips, tabs, and menus are portalled and
   measured; the frame stays clean.
 - Reaching for prosemirror-tables' `toggleHeaderRow`. It toggles the SELECTED

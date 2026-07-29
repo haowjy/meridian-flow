@@ -27,6 +27,20 @@ const ADD_TAB_GAP = 9;
 
 export type Box = { left: number; top: number; right: number; bottom: number };
 
+/**
+ * How far past each edge of the frame this lane's chrome reaches.
+ *
+ * Derived from the placements below rather than chosen: each piece is drawn in
+ * the band on its own side, so a band is that side's gap plus that piece's
+ * size, and the hover zone covers every piece by construction.
+ */
+const CHROME_BAND = {
+  top: COLUMN_GRIP_GAP + GRIP_SHORT,
+  left: ROW_GRIP_GAP + GRIP_SHORT,
+  right: ADD_TAB_GAP + ADD_TAB,
+  bottom: ADD_TAB_GAP + ADD_TAB,
+} as const;
+
 /** One piece of chrome, in viewport coordinates. */
 export type TableChromePiece = { left: number; top: number; width: number; height: number };
 
@@ -132,6 +146,46 @@ export function tableChromePieces({
       port,
     ),
   };
+}
+
+/**
+ * The frame plus the bands its chrome hovers in: the surface a revealed table
+ * chrome is held by, which is NOT the table's own rect.
+ *
+ * Chrome outside the frame (Q6) is only reachable if the pointer can travel to
+ * it, and the travel leaves the frame several pixels before it arrives — the
+ * gap alone dismissed the grips the writer was reaching for. The zone reveals
+ * nothing: a cell does that. It only decides when a reveal is over.
+ *
+ * The left band stops exactly at the row grip's outer edge, 21px, because the
+ * margin is shared: M9's block handle owns everything past 22 (see
+ * `.context/CONTEXT.md`). Widening this side takes the handle's band with it.
+ */
+export function tableHoverZone(table: Box): Box {
+  return {
+    left: table.left - CHROME_BAND.left,
+    top: table.top - CHROME_BAND.top,
+    right: table.right + CHROME_BAND.right,
+    bottom: table.bottom + CHROME_BAND.bottom,
+  };
+}
+
+function boxHolds(box: Box, clientX: number, clientY: number): boolean {
+  return clientX >= box.left && clientX <= box.right && clientY >= box.top && clientY <= box.bottom;
+}
+
+/**
+ * The pointer is still on the hover surface of the table this cell belongs to
+ * — over the frame, in the gap beside it, or on a grip drawn there.
+ */
+export function pointerHoldsTableChrome(
+  cell: HTMLElement,
+  clientX: number,
+  clientY: number,
+): boolean {
+  const table = cell.closest("table");
+  if (!table) return false;
+  return boxHolds(tableHoverZone(boxOf(table)), clientX, clientY);
 }
 
 function boxOf(element: Element): Box {
