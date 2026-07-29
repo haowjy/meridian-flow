@@ -343,12 +343,15 @@ Three rules a lane holding one should follow:
   peer writes.
 
 A deleted thing's anchor resolves to the seam it left behind, so "is it still
-there" needs an answer of its own, and positions cannot give it. `BlockHold`
-([`anchors.ts`](../anchors.ts)) is the worked example every block surface uses:
-the block's two seams for where it is, plus the **Yjs element** behind it for
-which block it is. The element is the same object for as long as the block
-lives — local typing, a peer's typing, an AI write all mutate it in place — and
-a different one for anything that is really a new block.
+there" needs an answer of its own, and positions cannot give it. `NodeHold`
+([`anchors.ts`](../anchors.ts)) is that answer, and every long-lived surface in
+the editor holds one: the node's two seams for where it is, plus the **Yjs
+element** behind it for which node it is, plus its type as the read-back check.
+The element is the same object for as long as the node lives — local typing, a
+peer's typing, an AI write all mutate it in place — and a different one for
+anything that is really a new node. It is found by walking the Yjs tree and the
+document in step, so a hold works at any depth: a top-level figure, an inline
+image inside a paragraph, a cell two levels down.
 
 Both halves earn their place. Without identity, a peer deleting the document's
 only heading leaves the schema to supply an empty paragraph in its place, and
@@ -356,6 +359,29 @@ the seams describe that replacement perfectly: uncollapsed, at depth 0, a
 good-looking block a menu would happily delete. Without the seams, an editor
 with no shared document has no deletion signal at all, because there is no
 element to compare.
+
+`holdBlock` / `resolveBlockHold` / `followBlock` are the same hold with one
+extra rule — it must still be a TOP-LEVEL block — which is what the block
+surfaces need and what a wrap into a blockquote breaks.
+
+## Elements are geometry, holds are identity
+
+A DOM element is the other thing a surface is tempted to remember, and it is
+never the answer to "what is this aimed at". ProseMirror rebuilds node views and
+decoration spans whenever it decides they no longer match, which is not the same
+question as whether the writer's content is still there:
+
+- a keyed peer-mark widget is rebuilt when the mark is emphasised or its author's
+  name arrives, while the mark has not moved;
+- a node view is replaced when a rebuild reconciles a same-type sibling onto its
+  desc, while the node it was showing lives on somewhere else.
+
+So an element is read for exactly one purpose — where something is drawn, right
+now — and dropped. `useNodeHold`
+([`features/editor/chrome/useNodeHold.ts`](../../../features/editor/chrome/useNodeHold.ts))
+is the React binding: take a hold, carry it through every transaction, let go
+when the node is gone. Letting go IS a surface's dismissal, which is what keeps
+a menu from retaining state for a block that has been deleted.
 
 ## TipTap v3 defaults we intentionally disable
 

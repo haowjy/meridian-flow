@@ -18,7 +18,7 @@ document:
 - **The position has to survive the drag.** A peer's edit or an AI write can
   land while the pointer is down, because nothing gates a write (law 9). The
   block the writer grabbed has to be the block that lands, so it is held here,
-  once, rather than in every consumer — as a `BlockHold`
+  once, rather than in every consumer — as a `NodeHold`
   (`core/editor/anchors.ts`), because a remote write replaces the whole
   document and a mapped number would report the grab deleted every time.
 

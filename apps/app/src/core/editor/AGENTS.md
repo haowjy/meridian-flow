@@ -107,12 +107,17 @@ change-trail events, not manuscript content.
   classifier. TipTap's link extension does not know the internal family and
   must be configured against ours.
 
-- **A surface that outlives a keystroke cannot hold raw positions.** Every
-  remote change rebuilds the whole document, so ProseMirror's mapping reports
-  every position deleted whatever actually happened, and Yjs relative positions
-  are what survive it. [`anchors.ts`](anchors.ts) is the one mechanism: hold an
-  `EditorAnchor`, never a number, and never a second copy of the machinery. The
-  contract and the three rules that come with it are in
+- **A surface that outlives a keystroke cannot hold raw positions, and cannot
+  hold DOM.** Every remote change rebuilds the whole document, so ProseMirror's
+  mapping reports every position deleted whatever actually happened, and the
+  node views and decoration spans in the page are rebuilt under it. Yjs relative
+  positions plus Yjs element identity are what survive both.
+  [`anchors.ts`](anchors.ts) is the one mechanism: hold an `EditorAnchor` for a
+  range, a `NodeHold` for a node, never a number and never an element, and never
+  a second copy of the machinery. **Elements are geometry, holds are identity**:
+  read an element to measure or to run a verb this frame, and let go of it.
+  `features/editor/chrome/useNodeHold.ts` is the React half. The contract and
+  the three rules that come with it are in
   [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for session, peer-mark, draft-review,

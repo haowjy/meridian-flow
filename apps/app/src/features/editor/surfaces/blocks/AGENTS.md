@@ -65,7 +65,7 @@ gesture is holding, and whether it has lifted.
   Release, browser cancel, lost capture, window blur, Escape, unmount, and a
   peer deleting the held block are seven doors into one function. A gesture
   that ends without it leaves the kernel suppressing every surface on the page.
-- **Every block held across a transaction is a `BlockHold`, carried by
+- **Every block held across a transaction is a `NodeHold`, carried by
   `followBlock`** (`core/editor/anchors.ts`). Position alone cannot say whether
   the block is still there: a remote write replaces the whole document, so the
   mapping calls every position deleted, and a deleted block's seams resolve to

@@ -89,6 +89,13 @@ target.
   target is hovered is one kernel answer for the whole editor
   (`core/editor/chrome/hover-anchor.ts`); a lane that keeps its own will
   disagree with the others the first time the writer scrolls.
+- **Elements are geometry, holds are identity.** What a surface aims at between
+  frames is a `NodeHold` (`core/editor/anchors.ts`), through `useNodeHold`: it
+  carries the hold across every transaction and answers null once the node is
+  gone, and null is a surface's dismissal. An element answers only "where is
+  this drawn, right now" — a node view is replaced by rebuilds the document
+  never asked for, and a keyed decoration widget is rebuilt when its own label
+  changes. Reading an element per frame is correct; remembering one is not.
 - **Anchoring is not re-implemented per lane.** `EditorMenu` at a point hangs
   off `pointer-anchor.ts`; its position is inline style, because a utility class
   that failed to reach it would silently drop every claimed menu in the top-left
