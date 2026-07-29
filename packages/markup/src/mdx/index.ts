@@ -13,7 +13,11 @@ import {
   normalizeGfmTableHardBreaks,
 } from "../markdown/blocks/table.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
-import { remarkWikiLink } from "../markdown/wikilink.js";
+import {
+  canonicalizeLabeledWikilinkDestinations,
+  normalizeLabeledWikilinkDestinations,
+  remarkWikiLink,
+} from "../markdown/wikilink.js";
 import type { AssetPathResolver, BlockCodec, MarkupPlugin } from "../types.js";
 import {
   createFigureCodec,
@@ -39,10 +43,17 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
     blocks: mdxBlockCodecs(options?.components),
     marks: markdownMarkCodecs,
     remarkPlugins: [remarkMdx, remarkWikiLink],
-    preprocess: (text) => escapeProseForMdxIngress(normalizeGfmTableHardBreaks(text)),
+    preprocess: (text) =>
+      escapeProseForMdxIngress(
+        normalizeLabeledWikilinkDestinations(normalizeGfmTableHardBreaks(text)),
+      ),
     postParse: demoteAutolinks,
     postSerializeBlock: (node, serialized, ctx) =>
-      serializeLayoutBlock(node, canonicalizeGfmTableHardBreaks(serialized), ctx),
+      serializeLayoutBlock(
+        node,
+        canonicalizeLabeledWikilinkDestinations(canonicalizeGfmTableHardBreaks(serialized)),
+        ctx,
+      ),
   };
 }
 

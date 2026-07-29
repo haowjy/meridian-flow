@@ -25,7 +25,11 @@ import {
   strikeMarkCodec,
   strongMarkCodec,
 } from "./marks/index.js";
-import { remarkWikiLink } from "./wikilink.js";
+import {
+  canonicalizeLabeledWikilinkDestinations,
+  normalizeLabeledWikilinkDestinations,
+  remarkWikiLink,
+} from "./wikilink.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,
@@ -57,9 +61,10 @@ export function markdown(): MarkupPlugin {
     blocks: markdownBlockCodecs,
     marks: markdownMarkCodecs,
     remarkPlugins: [remarkWikiLink],
-    preprocess: normalizeGfmTableHardBreaks,
+    preprocess: (text) => normalizeLabeledWikilinkDestinations(normalizeGfmTableHardBreaks(text)),
     postParse: demoteAutolinks,
-    postSerializeBlock: (_node, serialized) => canonicalizeGfmTableHardBreaks(serialized),
+    postSerializeBlock: (_node, serialized) =>
+      canonicalizeLabeledWikilinkDestinations(canonicalizeGfmTableHardBreaks(serialized)),
   };
 }
 

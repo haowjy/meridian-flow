@@ -19,6 +19,7 @@ import type {
 import type { Plugin } from "unified";
 
 import type { MdastWikiLink } from "../ast.js";
+import { closesFence, openingFenceAt } from "./container.js";
 
 declare module "micromark-util-types" {
   interface TokenTypeMap {
@@ -31,6 +32,8 @@ declare module "micromark-util-types" {
 const LEFT_BRACKET = 91;
 const RIGHT_BRACKET = 93;
 const PIPE = 124;
+const WIKILINK_SPACE_REFERENCE = "&#x20;";
+const WIKILINK_TAB_REFERENCE = "&#x9;";
 
 const tokenizeWikiLink = (effects: Effects, ok: State, nok: State): State => {
   let targetSize = 0;
@@ -149,3 +152,168 @@ export const remarkWikiLink: Plugin = function () {
   data.fromMarkdownExtensions.push(fromMarkdownWikiLink());
   data.toMarkdownExtensions.push(toMarkdownWikiLink());
 };
+
+export function normalizeLabeledWikilinkDestinations(source: string): string {
+  // CommonMark refuses whitespace in a raw link destination. Character
+  // references let its parser recover the intended href without changing the
+  // target held by the ProseMirror link mark.
+  return rewriteLabeledWikilinkDestinations(source, (target) => {
+    const canonicalTarget = target.trim();
+    return canonicalTarget
+      .replaceAll(" ", WIKILINK_SPACE_REFERENCE)
+      .replaceAll("\t", WIKILINK_TAB_REFERENCE);
+  });
+}
+
+export function canonicalizeLabeledWikilinkDestinations(source: string): string {
+  return rewriteLabeledWikilinkDestinations(source, (target) => target.trim(), {
+    acceptEscapedOpening: true,
+    acceptLiteralDestination: true,
+  });
+}
+
+interface RewriteOptions {
+  acceptEscapedOpening?: boolean;
+  acceptLiteralDestination?: boolean;
+}
+
+function rewriteLabeledWikilinkDestinations(
+  source: string,
+  rewriteTarget: (target: string) => string,
+  options: RewriteOptions = {},
+): string {
+  const lines = source.split("\n");
+  let fence: { marker: string; length: number } | null = null;
+  let codeSpanTicks = 0;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    if (fence) {
+      if (closesFence(lines, lineIndex, fence)) fence = null;
+      continue;
+    }
+
+    if (codeSpanTicks === 0) {
+      const openingFence = openingFenceAt(lines, lineIndex);
+      if (openingFence) {
+        fence = openingFence;
+        continue;
+      }
+    }
+
+    const rewritten = rewriteLine(lines, lineIndex, codeSpanTicks, rewriteTarget, options);
+    lines[lineIndex] = rewritten.value;
+    codeSpanTicks = rewritten.codeSpanTicks;
+  }
+
+  return lines.join("\n");
+}
+
+function rewriteLine(
+  lines: readonly string[],
+  lineIndex: number,
+  initialCodeSpanTicks: number,
+  rewriteTarget: (target: string) => string,
+  options: RewriteOptions,
+): { value: string; codeSpanTicks: number } {
+  let value = lines[lineIndex] ?? "";
+  let codeSpanTicks = initialCodeSpanTicks;
+
+  for (let index = 0; index < value.length; index++) {
+    if (value[index] === "`" && !isEscaped(value, index)) {
+      const ticks = markerRunLength(value, index, "`");
+      if (codeSpanTicks === 0 && hasClosingCodeSpan(lines, lineIndex, index + ticks, ticks)) {
+        codeSpanTicks = ticks;
+      } else if (codeSpanTicks === ticks) codeSpanTicks = 0;
+      index += ticks - 1;
+      continue;
+    }
+    if (codeSpanTicks !== 0 || value[index] !== "]") continue;
+
+    const destination = labeledWikilinkDestinationAt(value, index, options);
+    if (!destination) continue;
+    const rewrittenTarget = rewriteTarget(destination.target);
+    const replacement = `([[${rewrittenTarget}]]`;
+    value = `${value.slice(0, index + 1)}${replacement}${value.slice(destination.end)}`;
+    index += replacement.length;
+  }
+
+  return { value, codeSpanTicks };
+}
+
+function hasClosingCodeSpan(
+  lines: readonly string[],
+  openingLine: number,
+  openingEnd: number,
+  ticks: number,
+): boolean {
+  const marker = "`".repeat(ticks);
+  for (let lineIndex = openingLine; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex] ?? "";
+    if (lineIndex > openingLine && line.trim().length === 0) return false;
+    let index = lineIndex === openingLine ? openingEnd : 0;
+    index = line.indexOf(marker, index);
+    while (index !== -1) {
+      if (markerRunLength(line, index, "`") === ticks && !isEscaped(line, index)) {
+        return true;
+      }
+      index += marker.length;
+      index = line.indexOf(marker, index);
+    }
+  }
+  return false;
+}
+
+function labeledWikilinkDestinationAt(
+  value: string,
+  labelEnd: number,
+  options: RewriteOptions,
+): { target: string; end: number } | null {
+  if (value[labelEnd + 1] !== "(" || !hasLabelOpening(value, labelEnd)) return null;
+
+  let index = labelEnd + 2;
+  const literal = options.acceptLiteralDestination && value[index] === "<";
+  if (literal) index++;
+
+  const escapedOpening = options.acceptEscapedOpening && value.startsWith("\\[\\[", index);
+  if (escapedOpening) index += 4;
+  else if (value.startsWith("[[", index)) index += 2;
+  else return null;
+
+  const targetEnd = value.indexOf("]]", index);
+  if (targetEnd === -1) return null;
+  const target = value.slice(index, targetEnd);
+  if (target.trim().length === 0 || /[\r\n\]|]/.test(target)) return null;
+
+  index = targetEnd + 2;
+  if (literal) {
+    if (value[index] !== ">") return null;
+    index++;
+  }
+  if (value[index] !== ")" && !/[ \t]/.test(value[index] ?? "")) return null;
+  return { target, end: index };
+}
+
+function hasLabelOpening(value: string, labelEnd: number): boolean {
+  let depth = 1;
+  for (let index = labelEnd - 1; index >= 0; index--) {
+    if (isEscaped(value, index)) continue;
+    if (value[index] === "]") depth++;
+    else if (value[index] === "[") {
+      depth--;
+      if (depth === 0) return true;
+    }
+  }
+  return false;
+}
+
+function markerRunLength(value: string, start: number, marker: string): number {
+  let end = start + 1;
+  while (value[end] === marker) end++;
+  return end - start;
+}
+
+function isEscaped(value: string, index: number): boolean {
+  let backslashes = 0;
+  while (index > 0 && value[--index] === "\\") backslashes++;
+  return backslashes % 2 === 1;
+}

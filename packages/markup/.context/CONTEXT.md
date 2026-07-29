@@ -130,3 +130,7 @@ an alternate spelling. A parsed wikilink uses the ordinary ProseMirror `link`
 mark, so it needs no schema node or extra mark attributes. Resolution never
 occurs in the codec; unresolved targets round-trip unchanged. Outer whitespace
 inside the brackets is canonicalized away; whitespace within a target is kept.
+When display text differs from the target, ordinary Markdown link and image
+resources may carry the same href, such as `[label]([[target]])` or
+`![alt]([[target]])`. Those resource spellings round-trip too; they do not make
+`[[target|label]]` valid wikilink syntax.

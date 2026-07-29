@@ -120,6 +120,51 @@ describe("codec presets", () => {
     );
   });
 
+  it.each([
+    "[label]([[X]])",
+    "[修炼 arc]([[第一章 雪夜]])",
+  ])("round-trips a labeled wikilink href byte-exact: %s", (input) => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      expect(wikilinkCodec.serialize(wikilinkCodec.parse(input).blocks)).toBe(`${input}\n`);
+    }
+  });
+
+  it.each([
+    ["image href", "![alt]([[X]])", "![alt]([[X]])"],
+    ["image href with spaces", "![alt]([[Realm Map]])", "![alt]([[Realm Map]])"],
+    ["link title", '[label]([[X]] "t")', '[label]([[X]] "t")'],
+    ["escaped closing bracket in label", "[a\\]b]([[X]])", "[a\\]b]([[X]])"],
+    ["nested brackets in label", "[a[b]c]([[X]])", "[a\\[b\\]c]([[X]])"],
+    ["outer target whitespace", "[label]([[ X ]])", "[label]([[X]])"],
+  ])("handles a wikilink resource with %s deterministically", (_case, input, expected) => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      const parsed = wikilinkCodec.parse(input).blocks;
+      const serialized = wikilinkCodec.serialize(parsed);
+      expect(serialized).toBe(`${expected}\n`);
+      expect(docFrom(wikilinkCodec.parse(serialized).blocks).toJSON()).toEqual(
+        docFrom(parsed).toJSON(),
+      );
+    }
+  });
+
+  it.each([
+    "`[label]([[A B]])`",
+    "```md\n[label]([[A B]])\n```",
+  ])("does not rewrite labeled wikilink text inside code: %s", (input) => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      expect(wikilinkCodec.serialize(wikilinkCodec.parse(input).blocks)).toBe(`${input}\n`);
+    }
+  });
+
   it("keeps character-reference-looking target text literal", () => {
     const wikilinkCodec = markdownCodec({
       schema,

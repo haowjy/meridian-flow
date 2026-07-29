@@ -9,6 +9,9 @@
 - `packages/markup`: `[[target]]` is now first-class markdown/MDX wire syntax.
   It round-trips as an ordinary editor link without embedding resolution state,
   so links to documents that do not exist yet remain valid prose.
+- `packages/markup`: labeled links and images whose destination is a wikilink,
+  including targets with spaces, now round-trip without escaped-bracket
+  corruption.
 - `apps/server`: project links now resolve through one owner-gated endpoint.
   Wikilink titles and aliases, manuscript and Work locations, and relative
   paths all return one canonical document or an ordinary unresolved result;
