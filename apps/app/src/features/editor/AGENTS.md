@@ -27,12 +27,13 @@ the design, from the primitives.
   `chrome/chrome-surfaces.tsx`. `EditorView.tsx` mounts `EditorChromeHost` once
   and takes no further surfaces; a lane that edits it has taken a shared file
   hostage.
-- Anything opened over the manuscript hands the caret back on close
-  (`onCloseAutoFocus` → prose) and defers Escape to the kernel's chain. Both
-  come free from the `chrome/` wrappers; a hand-rolled Radix root does not get
-  them.
+- Anything opened over the manuscript hands the caret back on close and defers
+  Escape to the kernel's chain. Both come free from the `chrome/` wrappers as
+  `useChromeLayer`'s two handlers; a hand-rolled Radix root does not get them,
+  and neither does one that keeps its own focus return.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`chrome/AGENTS.md`](chrome/AGENTS.md)
 → [`surfaces/toolbar/AGENTS.md`](surfaces/toolbar/AGENTS.md)
+→ [`surfaces/link/AGENTS.md`](surfaces/link/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)

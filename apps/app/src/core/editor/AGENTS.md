@@ -55,3 +55,4 @@ and navigation contracts.
 
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
+→ [`links/AGENTS.md`](links/AGENTS.md) — the link system
