@@ -15,6 +15,7 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useState } from "react";
 
+import { isEditorChromeElement } from "@/core/editor/chrome";
 import {
   useChromeContext,
   useChromeSuppressed,
@@ -30,14 +31,6 @@ export type ObjectApproach = {
   /** Drives the fade. False with a live target means "on its way out". */
   visible: boolean;
 };
-
-/**
- * Anything a Radix layer put on the page counts as chrome the pointer is
- * allowed to travel onto: the row itself carries `data-editor-chrome`, and a
- * menu it opened lives in the popper wrapper. Without this, moving the pointer
- * from a diagram to its own ⋮ would read as leaving the diagram.
- */
-const CHROME_SELECTOR = "[data-editor-chrome], [data-radix-popper-content-wrapper]";
 
 export function useApproachedObject(
   editor: Editor,
@@ -62,7 +55,12 @@ export function useApproachedObject(
 
     const onPointerOver = (event: Event) => {
       const target = event.target;
-      if (target instanceof Element && target.closest(CHROME_SELECTOR)) return;
+      // Travelling onto this editor's own chrome is not leaving the object.
+      // The kernel qualifies the mark by chrome id, so two documents open side
+      // by side each answer for their own row rather than holding each other's
+      // open. A menu opened from the row needs no reading here: the lane pins
+      // the approach while one is up.
+      if (target instanceof Element && isEditorChromeElement(chrome, target)) return;
       const found = objectSurfaceAt(editor.view, target);
       if (found) intent.enter(found.element);
       else intent.leave();
