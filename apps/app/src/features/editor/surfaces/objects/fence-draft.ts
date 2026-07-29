@@ -32,7 +32,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
 
-import { isMermaidFence, type ObjectSurfaceTarget, objectSurfaceAt } from "./object-anchors";
+import { isDiagramFence, type ObjectSurfaceTarget, objectSurfaceAt } from "./object-anchors";
 
 /** What the pane is showing, where it lives, and what has happened since. */
 export type FenceRebase = {
@@ -130,7 +130,7 @@ export function fenceSourceTransaction(
   if (from < 0 || to > state.doc.content.size) return null;
 
   const $from = state.doc.resolve(from);
-  if (!isMermaidFence($from.parent)) return null;
+  if (!isDiagramFence($from.parent)) return null;
   if (from < $from.start() || to > $from.end()) return null;
 
   return state.tr.insertText(patch.text, from, to);

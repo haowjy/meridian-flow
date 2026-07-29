@@ -18,7 +18,9 @@ export type { ImageIngressNotice, ImageIngressStatus } from "./image-ingress-sto
 export {
   insertImageFile,
   openImagePicker,
+  openImageReplacePicker,
   removePendingImage,
+  replaceImageFile,
   retryPendingImage,
 } from "./image-uploads";
 export {

@@ -21,16 +21,9 @@ import type { NodeType, Node as PMNode, ResolvedPos, Schema } from "@tiptap/pm/m
 import type { Transaction } from "@tiptap/pm/state";
 import { Selection } from "@tiptap/pm/state";
 
+import { defaultDiagramProvider } from "../../diagrams";
 import { engageObject } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
-
-/**
- * Starter source for a new diagram, so the writer sees a diagram rather than
- * an empty fence (law 2's sole auto-edit: there is nothing to view yet). Not
- * localized: mermaid keywords are syntax, and the two node labels are document
- * content the writer overwrites immediately.
- */
-const DIAGRAM_STARTER_SOURCE = "flowchart TD\n  A[Start] --> B[Next]";
 
 const TABLE_COLUMNS = 3;
 const TABLE_ROWS = 3;
@@ -102,17 +95,26 @@ const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
     },
     caret: "inside",
   },
-  diagram: {
-    node: {
-      type: "code_block",
-      attrs: { language: "mermaid" },
-      content: [{ type: "text", text: DIAGRAM_STARTER_SOURCE }],
-    },
-    caret: "inside",
-  },
+  // "Diagram" means the catalog's first provider, and its starter source comes
+  // from the same row (law 2's sole auto-edit: a new diagram has nothing to view
+  // yet, so it opens on something that draws). Other dialects are reached
+  // through the fence's language menu rather than a slash entry each.
+  diagram: diagramInsertion(),
   code: { node: { type: "code_block" }, caret: "inside" },
   image: { node: emptyParagraph, caret: "inside", hostDispatched: true },
 };
+
+function diagramInsertion(): SlashInsertion {
+  const provider = defaultDiagramProvider();
+  return {
+    node: {
+      type: "code_block",
+      attrs: { language: provider.language },
+      content: [{ type: "text", text: provider.starterSource }],
+    },
+    caret: "inside",
+  };
+}
 
 /** The type an entry would put in the document, for asking whether it may. */
 function insertionType(schema: Schema, id: SlashCommandId): NodeType | null {

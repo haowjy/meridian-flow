@@ -22,12 +22,17 @@
   selection/focus. New interaction behavior — placement settled first
   (tab-direction E). `EditorSurfaceFrame.tsx`.
 
-- **`image` versus `figure`.** ([#91](https://github.com/haowjy/meridian-flow/issues/91))
-  Ingress (insert, upload, paste, import, pending lifecycle) lives in
-  `core/editor/images/`. What remains undecided is the relationship between the
-  inline `image` node and the captioned block `figure` node, whose node view
-  still carries its own editing form. `FigureNodeView.tsx`,
-  `meridian-extensions.ts`.
+- **`image` versus `figure`: two nodes, one concept.**
+  ([#91](https://github.com/haowjy/meridian-flow/issues/91))
+  Settled: the verbs are one surface. Alt text, Replace, and the figure's caption
+  and label are all `features/editor/surfaces/objects`, both node views are
+  presentation, and the registration's `surfaceFields` is what differs.
+  Still open, and schema-shaped: whether `figure` should exist at all, or a
+  caption and label should be attributes of `image` in a block context. Also
+  open, from §5.6: `figure`'s `src` is a passthrough that does not run the asset
+  resolver, so it neither resolves `asset:` refs nor enforces the signed-URL
+  exclusion the inline image does. `core/editor/FigureNodeView.tsx`,
+  `packages/prosemirror-schema`.
 
 - **Unify rendered-markdown (Streamdown) styling with the editor.**
   ([#93](https://github.com/haowjy/meridian-flow/issues/93))

@@ -35,22 +35,13 @@ import {
 } from "./pending-images";
 
 /**
- * Ask the writer for an image file.
+ * Ask the writer for an image file, and hand it to whoever asked.
  *
  * The input is created and clicked rather than rendered: a host that has to
  * keep a hidden `<input>` in its tree is a host that owns part of this
- * lifecycle. Refusing out loud when there is no project is the same law-5 rule
- * as the greyed toolbar control — a picker that leads nowhere is worse than a
- * control that says why.
+ * lifecycle.
  */
-export function openImagePicker(editor: Editor | null): void {
-  const storage = imageIngressStorage(editor);
-  if (!editor || !storage) return;
-  if (!editor.isEditable) return;
-  if (!storage.host) {
-    storage.status.refuse(t`Images need a project before they can be uploaded.`);
-    return;
-  }
+function pickImageFile(onFile: (file: File) => void): void {
   const input = window.document.createElement("input");
   input.type = "file";
   input.accept = "image/*";
@@ -58,13 +49,69 @@ export function openImagePicker(editor: Editor | null): void {
   input.addEventListener("change", () => {
     const file = input.files?.[0];
     input.remove();
-    if (file) insertImageFile(editor, file);
+    if (file) onFile(file);
   });
   // In the document while the chooser is open, out of it afterwards. A detached
   // input's click opens the chooser in Chrome and in nothing else, and a
   // chooser the browser does not report is a chooser no test can answer.
   window.document.body.append(input);
   input.click();
+}
+
+/**
+ * Is there anywhere for a picture to go? Refusing out loud when there is no
+ * project is the same law-5 rule as the greyed toolbar control — a picker that
+ * leads nowhere is worse than a control that says why.
+ */
+function ingressHost(editor: Editor | null): ImageIngressHost | null {
+  const storage = imageIngressStorage(editor);
+  if (!editor || !storage || !editor.isEditable) return null;
+  if (!storage.host) {
+    storage.status.refuse(t`Images need a project before they can be uploaded.`);
+    return null;
+  }
+  return storage.host;
+}
+
+/** A new picture, at the caret. */
+export function openImagePicker(editor: Editor | null): void {
+  if (!editor || !ingressHost(editor)) return;
+  pickImageFile((file) => insertImageFile(editor, file));
+}
+
+/**
+ * Another picture for a slot the writer already placed (§5.6's Replace verb, on
+ * the object surface's ⋮).
+ *
+ * The node stays exactly where it is and keeps everything the writer wrote about
+ * it — its alt text, and a figure's caption and label. The ordinary upload
+ * lifecycle then runs over that slot: same entry, same progress, same failure,
+ * and a landing that writes one attribute. So nothing is inserted, nothing is
+ * removed, the manuscript does not move, and undo takes the replacement back in
+ * one step.
+ */
+export function openImageReplacePicker(editor: Editor | null, pos: number): void {
+  if (!editor || !ingressHost(editor)) return;
+  pickImageFile((file) => replaceImageFile(editor, pos, file));
+}
+
+export function replaceImageFile(editor: Editor | null, pos: number, file: File): void {
+  const storage = imageIngressStorage(editor);
+  const host = ingressHost(editor);
+  if (!editor || !storage || !host) return;
+  if (!isImageFile(file)) {
+    storage.status.refuse(
+      t`${file.name} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG.`,
+    );
+    return;
+  }
+  const node = editor.state.doc.nodeAt(pos);
+  if (!node) return;
+  // The writer's own alt text outlives the picture it described only if they
+  // wrote one; a slot that never had one takes the new file's name, as an insert
+  // does.
+  const existing = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
+  startUpload(editor, host, { file, alt: existing || imageAltFromFilename(file.name), at: pos });
 }
 
 /**
@@ -83,17 +130,15 @@ export function insertImageFile(editor: Editor | null, file: File, pos?: number)
     );
     return;
   }
-  if (!storage.host) {
-    storage.status.refuse(t`Images need a project before they can be uploaded.`);
-    return;
-  }
+  const host = ingressHost(editor);
+  if (!host) return;
   const alt = imageAltFromFilename(file.name);
   const at = insertPendingImageNode(editor, alt, pos);
   if (at === null) {
     storage.status.refuse(t`A picture cannot go there.`);
     return;
   }
-  startUpload(editor, storage.host, { file, alt, at });
+  startUpload(editor, host, { file, alt, at });
 }
 
 /** Send a failed picture again, from the same slot with the same bytes. */

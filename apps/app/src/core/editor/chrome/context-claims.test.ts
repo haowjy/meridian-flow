@@ -12,6 +12,7 @@ import {
 const objectContext: ChromeContext = {
   owner: "object",
   nodeType: "figure",
+  objectSpec: "figure",
   pos: 8,
   chain: ["document", "object"],
   objectPos: null,

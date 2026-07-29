@@ -13,6 +13,7 @@ import {
 const objectContext: ChromeContext = {
   owner: "object",
   nodeType: "figure",
+  objectSpec: "figure",
   pos: 12,
   chain: ["document", "object"],
   objectPos: null,
@@ -21,6 +22,7 @@ const objectContext: ChromeContext = {
 const sourceContext: ChromeContext = {
   owner: "source-block",
   nodeType: "code_block",
+  objectSpec: null,
   pos: 12,
   chain: ["document", "source-block"],
   objectPos: null,
@@ -29,6 +31,7 @@ const sourceContext: ChromeContext = {
 const cellContext: ChromeContext = {
   owner: "table-cell",
   nodeType: "table_cell",
+  objectSpec: null,
   pos: 30,
   // The table around the cell: Esc's first step out of a cell is onto it.
   chain: ["document", "table", "table-cell"],

@@ -66,6 +66,7 @@ describe("resolveChromeContext", () => {
     expect(resolveChromeContext(instance.state)).toEqual({
       owner: "document",
       nodeType: null,
+      objectSpec: null,
       pos: null,
       chain: ["document"],
       objectPos: null,
@@ -113,6 +114,8 @@ describe("resolveChromeContext", () => {
     expect(resolveChromeContext(instance.state)).toEqual({
       owner: "object",
       nodeType: "figure",
+      // The registration, not the node type: what a per-object keymap matches.
+      objectSpec: "figure",
       pos,
       chain: ["document", "object"],
       objectPos: null,

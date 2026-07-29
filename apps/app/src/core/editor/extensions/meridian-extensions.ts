@@ -26,12 +26,12 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { pendingImageSignature } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
-import { MermaidCodeBlockNodeView } from "../MermaidCodeBlock";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -145,16 +145,17 @@ export const MeridianListItem = ListItem.extend({
   },
 });
 
-// One node view for every fence. A `mermaid` fence renders as a diagram and
-// hides its own `<pre>`; every other language is the fence itself, lowlight and
-// all. The hazard that once kept this unregistered — a caret in a hidden
-// element silently eating keystrokes — is answered inside the view: the source
-// comes back whenever a caret is in it (interaction model §5.2).
+// One node view for every fence. A fence whose language a diagram provider
+// claims renders as a diagram and hides its own `<pre>` (the catalog decides
+// which, `../diagrams/diagram-providers.ts`); every other language is the fence
+// itself, lowlight and all. The hazard that once kept this unregistered — a
+// caret in a hidden element silently eating keystrokes — is answered inside the
+// view: the source comes back whenever a caret is in it (interaction model §5.2).
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
 
   addNodeView() {
-    return ReactNodeViewRenderer(MermaidCodeBlockNodeView);
+    return ReactNodeViewRenderer(CodeBlockNodeView);
   },
 
   // The fence trigger belongs to `MarkdownAutoformatExtension`, which accepts

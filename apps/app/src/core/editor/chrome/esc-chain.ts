@@ -94,6 +94,7 @@ export function advanceEscSituation(situation: EscSituation, step: EscStep): Esc
         context: {
           owner: "object",
           nodeType: situation.context.nodeType,
+          objectSpec: situation.context.objectSpec,
           pos: step.pos,
           chain: ["document", "object"],
           objectPos: null,

@@ -237,14 +237,15 @@ Yjs document session. It must stay structurally aligned with
   asked: `"engage"` for something that already exists, `"created"` for one made
   a moment ago. Law 2's sole exception rides that distinction — a new empty
   diagram opens ready to work rather than showing a viewer with nothing in it.
-- A `code_block` whose `language` is `mermaid` renders as a diagram and hides
-  its own `<pre>`; every other language is the fence itself.
-  `MermaidCodeBlock.tsx` is that node view and `mermaid-render.ts` is the async
-  parser edge behind it. It has three faces and none of them is a code block
-  (§5.2, "the page never shows Mermaid syntax"): the render; the LAST GOOD
-  render plus a parse note, once an edit stops parsing; and an error card with
-  mermaid's own message and an Edit source button, for source that has never
-  rendered at all. Source access belongs to the diagram dialog
+- A `code_block` whose `language` a diagram provider claims renders as a diagram
+  and hides its own `<pre>`; every other language is the fence itself. WHICH
+  languages those are is the catalog's answer (`diagrams/AGENTS.md`), never a
+  name in the node view: `CodeBlockNodeView.tsx` is that node view and a
+  provider row carries the async parser edge behind it. It has three faces and
+  none of them is a code block (§5.2, "the page never shows a diagram's
+  syntax"): the render; the LAST GOOD render plus a parse note, once an edit
+  stops parsing; and an error card with the renderer's own message and an Edit
+  source button, for source that has never rendered at all. Source access belongs to the diagram dialog
   (`features/editor/surfaces/objects`); caret-enters-source is not coming back.
   The one exception the view owns is a caret INSIDE the fence — a fence typed
   as markdown is filled in by hand, and a caret in a hidden element eats every
@@ -253,11 +254,13 @@ Yjs document session. It must stay structurally aligned with
   not itself change the selection.** The second half is structural. The
   `NodeViewContent` host is the wrapper's first child and never conditional,
   and the render layer is one stable sibling after it, mounted for the life of
-  a mermaid fence — so neither a face swap nor a parse settling moves DOM in
+  a diagram fence — so neither a face swap nor a parse settling moves DOM in
   front of ProseMirror's live selection. DOM vanishing ahead of a live
   selection is what made the two faces alternate, and
-  `MermaidCodeBlock.test.tsx` asserts the sibling list ahead of the host across
-  both transitions. The face is derived from the current selection on every
+  `CodeBlockNodeView.test.tsx` asserts the sibling list ahead of the host across
+  both transitions. The render layer is keyed by provider: a language change is
+  a document change, so remounting there is allowed, and it keeps one provider's
+  render state from being handed to another. The face is derived from the current selection on every
   render (`useSyncExternalStore`, no local face state) and tests nothing about
   how the caret arrived, so a keystroke, a command, a peer's mapped write and a
   press all converge after one render. Do not reintroduce a provenance test:
@@ -265,11 +268,13 @@ Yjs document session. It must stay structurally aligned with
   outside press may land is `pointer-boundary.ts`; object physics selecting an
   opaque body on the PRESS (see `objects/.context`) is one more entry it
   closes, and neither of them is what makes the node view safe.
-- `useMermaidSvg` keeps the LAST GOOD svg across a failing edit, which is what
-  lets the dialog show a live preview beside source that does not parse yet.
-  Every consumer gets its own render id: mermaid writes it into the markup, and
-  two faces of one diagram sharing an id collide over the arrow markers they
-  reference.
+- `useDiagramRender` keeps the LAST GOOD svg across a failing edit, which is
+  what lets the dialog show a live preview beside source that does not parse
+  yet. It is provider-neutral — the debounce, the out-of-order guard, and the
+  palette redraw are the same problem for every diagram language — so a provider
+  brings only its `render`. Every consumer gets its own render id: a renderer
+  writes it into the markup, and two faces of one diagram sharing an id collide
+  over the arrow markers they reference.
 - The clipboard has two doors, one per flavour it can carry. HTML goes through
   `sanitize-paste.ts`, which rebuilds rather than scrubs: allowed elements are
   copied into a fresh document under an attribute allowlist, so a
@@ -474,7 +479,7 @@ to fail there rather than in a manuscript.
 - The code fence takes the whole GFM info string, lowercased. TipTap's rule
   captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
   block at all. Lowercasing is what makes the attr a usable key: highlighting
-  and the plain-editable `mermaid` block both look it up. The opening run is
+  and the diagram-provider catalog both look it up. The opening run is
   captured apart from the info token, because the two differ per fence
   character — a backtick fence's info string may not hold backticks, a tilde
   fence's may hold anything — and because a run longer than three is one fence
