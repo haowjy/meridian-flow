@@ -110,6 +110,10 @@ export type SlashTarget =
  * a bullet. A blockquote is deliberately absent: its children ARE ordinary
  * blocks that happen to be quoted, and a writer quoting a passage who asks for
  * a code block wants it in the quote.
+ *
+ * Only the insert-after walk consults this. Convert cannot reach inside one:
+ * a cell holds a single `paragraph` and a list item must open with one, so the
+ * schema refuses every conversion an owning structure could hold.
  */
 const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
   "bullet_list",
