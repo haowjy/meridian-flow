@@ -67,6 +67,7 @@ const objectContext: ChromeContext = {
   owner: "object",
   nodeType: "figure",
   pos: 8,
+  objectPos: 8,
   chain: ["document", "object"],
 };
 
@@ -205,6 +206,7 @@ describe("the right-click claim", () => {
       owner: "table-cell",
       nodeType: "table_cell",
       pos: 4,
+      objectPos: null,
       chain: ["document", "table", "table-cell"],
     };
 
