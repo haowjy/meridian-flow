@@ -40,6 +40,15 @@ beforeEach(() => {
       content: [{ type: "paragraph", content: [{ type: "text", text: "before" }] }],
     } satisfies JSONContent,
   });
+  // Returning the caret scrolls it into view, and ProseMirror measures the
+  // selection to do that. jsdom has no layout to measure — the same gap
+  // `elementFromPoint` fills for the context-menu router's tests.
+  vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  });
 });
 
 afterEach(() => {
