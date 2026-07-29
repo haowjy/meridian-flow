@@ -326,21 +326,24 @@ export const ObjectPhysicsExtension = Extension.create({
           },
 
           /**
-           * A printable character while an OPAQUE object is selected types
-           * BESIDE it (law 1's other half).
+           * A printable character while an object is selected types BESIDE it
+           * (law 1's other half).
            *
            * ProseMirror replaces the selection, which is right for prose and
            * wrong here: closing an image's full-screen view leaves the picture
            * node-selected, and the next letter used to be the end of the
-           * picture. Only `Delete` and `Backspace` are destructive verbs, and
-           * they still are.
+           * picture. A table selected by the join gesture lost every cell to
+           * the same keystroke. Only `Delete` and `Backspace` are destructive
+           * verbs, and they still are.
            *
-           * `text` bodies are left alone: a table's cells ARE prose (§5.4),
-           * and typing into them is typing.
+           * `selectedObject` is the whole gate, which is why a writer sweeping
+           * across some cells still types over them: that is a partial
+           * `CellSelection` — a deliberate edit inside the table — and the
+           * table is not standing there as an object.
            */
           handleTextInput(view, _from, _to, text) {
             const selected = selectedObject(view.state);
-            if (!selected || objectTypeSpec(selected.node)?.body !== "opaque") return false;
+            if (!selected) return false;
             const transaction = typeBesideObjectTransaction(view.state, selected.pos, text);
             if (!transaction) return false;
             view.dispatch(transaction);

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { Editor, type JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
@@ -106,6 +107,24 @@ function typeCharacter(instance: Editor, character: string): void {
       cancelable: true,
     }),
   );
+}
+
+function cellTexts(instance: Editor): string[] {
+  const texts: string[] = [];
+  instance.state.doc.descendants((node) => {
+    if (node.type.name === "table_cell") texts.push(node.textContent);
+    return true;
+  });
+  return texts;
+}
+
+function cellPositions(instance: Editor): number[] {
+  const positions: number[] = [];
+  instance.state.doc.descendants((node, pos) => {
+    if (node.type.name === "table_cell") positions.push(pos);
+    return true;
+  });
+  return positions;
 }
 
 function nodeCount(instance: Editor, type: string): number {
@@ -346,7 +365,7 @@ describe("a press on an object body", () => {
   });
 });
 
-describe("a printable character beside a selected opaque object", () => {
+describe("a printable character beside a selected object", () => {
   // Closing an image's full-screen view leaves the picture node-selected, and
   // one letter used to replace it. A letter is not a destructive verb.
 
@@ -391,7 +410,7 @@ describe("a printable character beside a selected opaque object", () => {
     expect(instance.state.doc.lastChild?.textContent).toBe("Q");
   });
 
-  it("leaves a table to its own text handling: its cells are prose already", () => {
+  it("types after a table the join gesture selected, leaving its cells alone", () => {
     const instance = mount([paragraph("above"), table, paragraph("below")]);
     instance.commands.setTextSelection("above".length + 1);
     press(instance, { key: "Delete" });
@@ -399,6 +418,23 @@ describe("a printable character beside a selected opaque object", () => {
     typeCharacter(instance, "Q");
 
     expect(nodeCount(instance, "table")).toBe(1);
+    expect(cellTexts(instance)).toEqual(["Terrace", "Question", "First", "Who are you?"]);
+    expect(instance.state.doc.lastChild?.textContent).toBe("Qbelow");
+  });
+
+  it("still replaces the cells a writer swept across", () => {
+    // A partial cell selection is a deliberate text edit inside the table, not
+    // the table standing there as an object.
+    const instance = mount([paragraph("above"), table, paragraph("below")]);
+    const cells = cellPositions(instance);
+    instance.view.dispatch(
+      instance.state.tr.setSelection(CellSelection.create(instance.state.doc, cells[0], cells[1])),
+    );
+
+    typeCharacter(instance, "Q");
+
+    expect(nodeCount(instance, "table")).toBe(1);
+    expect(cellTexts(instance)).toEqual(["", "Q", "First", "Who are you?"]);
     expect(instance.state.doc.lastChild?.textContent).toBe("below");
   });
 });

@@ -196,14 +196,14 @@ function paragraphAfterTransaction(state: EditorState, $after: ResolvedPos): Tra
 }
 
 /**
- * Where a printable character lands while an opaque object is selected: the
- * text position after it, or a paragraph made for the purpose.
+ * Where a printable character lands while an object is selected: the text
+ * position after it, or a paragraph made for the purpose.
  *
  * A letter is not a destructive verb. ProseMirror's answer is to replace the
  * selection, so the picture a writer was looking at a moment ago disappears
- * under the first thing they type — and a figure vanishing under a "Q" is not
- * something anyone attributes to the "Q". Delete and Backspace still delete;
- * those said so.
+ * under the first thing they type, and a table selected whole loses every
+ * cell — and neither is something anyone attributes to the "Q". Delete and
+ * Backspace still delete; those said so.
  *
  * Unlike Esc's walk home this never lands in FRONT of the object. The writer
  * is typing forward, so a paragraph after it beats a caret before it.

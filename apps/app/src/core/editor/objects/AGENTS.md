@@ -47,12 +47,14 @@ re-deriving it, so there is one answer to "is this an object".
   `text` body declines, because a table's cells already own the pointer that
   sweeps across them. The registration is the answer; nothing downstream reads
   a node name to guess it.
-- **A letter types beside an opaque object; only Delete and Backspace
+- **A letter types beside a selected object; only Delete and Backspace
   destroy it.** ProseMirror replaces the selection on any input, so one
   printable character used to be the end of a picture the writer had just
-  closed the lightbox on. `typeBesideObjectTransaction` lands the caret after
-  the object (making a paragraph when there is nothing after) and inserts
-  there. A `text` body is exempt: a table's cells are prose.
+  closed the lightbox on, or of every cell in a table.
+  `typeBesideObjectTransaction` lands the caret after the object (making a
+  paragraph when there is nothing after) and inserts there. `selectedObject`
+  is the whole gate: a partial `CellSelection` is a writer editing inside the
+  table, so typing still replaces the cells they swept.
 - **The destructive verbs take the NODE, not the selection.** A table is
   selected as a `CellSelection` over every cell, so `deleteSelection` blanks
   the cells and leaves the grid standing. `deleteObjectTransaction` removes
