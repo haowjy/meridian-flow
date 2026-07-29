@@ -52,3 +52,4 @@ export {
   useEditorChrome,
   useEditorRevision,
 } from "./useEditorChrome";
+export { useFadeHold } from "./useFadeHold";

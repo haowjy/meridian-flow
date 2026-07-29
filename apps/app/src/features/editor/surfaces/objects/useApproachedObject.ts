@@ -15,12 +15,12 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useState } from "react";
 
-import { CHROME_TIMING } from "@/core/editor/chrome";
 import {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
   useEditorRevision,
+  useFadeHold,
 } from "@/features/editor/chrome";
 
 import { type ObjectSurfaceTarget, objectSurfaceAt, objectSurfaceAtPos } from "./object-anchors";
@@ -80,7 +80,7 @@ export function useApproachedObject(
 
   const selectedElement = selectedObjectElement(editor, context.owner, context.pos);
   const active = hovered ?? selectedElement;
-  const held = useFadeHold(active, CHROME_TIMING.fadeMs);
+  const held = useFadeHold(active);
   const anchor = pinned ? (active ?? held) : held;
 
   return {
@@ -108,20 +108,4 @@ function selectedObjectElement(
 function surfaceForElement(editor: Editor, element: HTMLElement): ObjectSurfaceTarget | null {
   if (!element.isConnected) return null;
   return objectSurfaceAt(editor.view, element);
-}
-
-/** Keep the last value for `ms` after it goes away, so a fade has something to fade. */
-function useFadeHold<T>(value: T | null, ms: number): T | null {
-  const [held, setHeld] = useState<T | null>(value);
-
-  useEffect(() => {
-    if (value !== null) {
-      setHeld(value);
-      return;
-    }
-    const timer = window.setTimeout(() => setHeld(null), ms);
-    return () => window.clearTimeout(timer);
-  }, [value, ms]);
-
-  return value ?? held;
 }
