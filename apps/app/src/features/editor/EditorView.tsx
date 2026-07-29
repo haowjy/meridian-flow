@@ -38,7 +38,13 @@ import {
 
 import { uploadFigure } from "@/client/api/figures-api";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { anchorPosition, followAnchor } from "@/core/editor/anchors";
+import {
+  anchorPosition,
+  anchorRange,
+  type EditorAnchor,
+  followAnchor,
+  resolveAnchorIn,
+} from "@/core/editor/anchors";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SlashCommandItem } from "@/core/editor/extensions/slash";
@@ -141,6 +147,16 @@ function mountIdentity(props: EditorViewProps): EditorMountIdentity {
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
   return files.find(isImageFile) ?? null;
+}
+
+/**
+ * Put the writer back where they were. Null when the words they were standing
+ * in are gone, in which case leaving the caret alone beats guessing.
+ */
+function restoreSelection(editor: Editor | null, held: EditorAnchor): void {
+  if (!editor || editor.isDestroyed) return;
+  const at = resolveAnchorIn(editor.state, held);
+  if (at) editor.chain().setTextSelection(at).focus().run();
 }
 
 function insertImageNode(editor: Editor | null, attrs: ImageAttrs, pos?: number): boolean {
@@ -300,7 +316,7 @@ function ActiveSessionEditorView({
   const [dragActive, setDragActive] = useState(false);
   const [peerMarkTarget, setPeerMarkTarget] = useState<PeerMarkPopoverTarget | null>(null);
   const effectiveEditableRef = useRef(true);
-  const pointerSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const pointerSelectionRef = useRef<EditorAnchor | null>(null);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
   const effectiveEditable = editable && !snapshot.schemaFence;
   effectiveEditableRef.current = effectiveEditable;
@@ -337,22 +353,22 @@ function ActiveSessionEditorView({
         .getSnapshot()
         .find((candidate) => candidate.changeId === changeId && !candidate.dismissed);
       if (!marker) return false;
-      const currentSelection = editorRef.current?.state.selection;
+      const activeEditor = editorRef.current;
+      const selection = activeEditor?.state.selection;
+      // The pointer's own reading, taken before the press moved anything, or
+      // wherever the caret is for the keyboard door.
       const editorSelection =
-        activation === "pointer" && pointerSelectionRef.current
-          ? pointerSelectionRef.current
-          : {
-              from: currentSelection?.from ?? 0,
-              to: currentSelection?.to ?? currentSelection?.from ?? 0,
-            };
+        (activation === "pointer" ? pointerSelectionRef.current : null) ??
+        (activeEditor
+          ? anchorRange(activeEditor.state, {
+              from: selection?.from ?? 0,
+              to: selection?.to ?? selection?.from ?? 0,
+            })
+          : { from: 0, to: 0, relative: null });
       setPeerMarkTarget({ marker, element, activation, editorSelection });
       pointerSelectionRef.current = null;
       if (activation === "pointer") {
-        requestAnimationFrame(() => {
-          const activeEditor = editorRef.current;
-          if (!activeEditor || activeEditor.isDestroyed) return;
-          activeEditor.chain().setTextSelection(editorSelection).focus().run();
-        });
+        requestAnimationFrame(() => restoreSelection(editorRef.current, editorSelection));
       }
       return true;
     },
@@ -556,10 +572,10 @@ function ActiveSessionEditorView({
             event.target instanceof Element &&
             event.target.closest<HTMLElement>("[data-peer-mark]")
           ) {
-            pointerSelectionRef.current = {
+            pointerSelectionRef.current = anchorRange(view.state, {
               from: view.state.selection.from,
               to: view.state.selection.to,
-            };
+            });
             // A peer mark is an explanatory decoration, not a new caret
             // destination. Keep the editor focused until the click opens
             // the pointer-mode popover.
@@ -757,9 +773,7 @@ function ActiveSessionEditorView({
               if (closingTarget.element.isConnected) closingTarget.element.focus();
               return;
             }
-            const activeEditor = editorRef.current;
-            if (!activeEditor || activeEditor.isDestroyed || !closingTarget) return;
-            activeEditor.chain().setTextSelection(closingTarget.editorSelection).focus().run();
+            if (closingTarget) restoreSelection(editorRef.current, closingTarget.editorSelection);
           });
         }}
       />

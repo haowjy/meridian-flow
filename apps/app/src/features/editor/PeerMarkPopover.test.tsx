@@ -138,7 +138,7 @@ function target(): PeerMarkPopoverTarget {
       getBoundingClientRect: () => ({}) as DOMRect,
     } as HTMLElement,
     activation: "pointer",
-    editorSelection: { from: 1, to: 1 },
+    editorSelection: { from: 1, to: 1, relative: null },
   };
 }
 

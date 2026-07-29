@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { bodyFromTrailHashline, changeTrailDetailKey } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import type { EditorAnchor } from "@/core/editor/anchors";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
@@ -19,7 +20,12 @@ export type PeerMarkPopoverTarget = {
   marker: SessionMarker;
   element: HTMLElement;
   activation: "pointer" | "keyboard";
-  editorSelection: { from: number; to: number };
+  /**
+   * Where the writer's caret was when the mark was opened, held rather than
+   * numbered: a popover stays open while the writer reads, and this document's
+   * peers are writing the whole time.
+   */
+  editorSelection: EditorAnchor;
 };
 
 export function PeerMarkPopover({
