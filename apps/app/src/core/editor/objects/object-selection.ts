@@ -121,22 +121,41 @@ export function caretBesideObjectTransaction(
 }
 
 /**
- * Where Esc lands when it leaves an object (law 3's last step): after it, or
- * before it when the object ends the document. "Caret after the object" is the
- * design's spelling of the common case, not a place that always exists, and a
- * writer must never be left standing on a thing they asked to leave.
+ * Where Esc lands when it leaves an object (law 3's last step): after it,
+ * before it when the object ends the document, and — when the object IS the
+ * document — in a paragraph made for the purpose.
  *
- * Null only when the object is the entire document, where there is no prose to
- * go home to. Esc then leaves the key alone rather than inventing a paragraph:
- * writing to the shared document is not a dismissal.
+ * That last case is a write to the shared document on a dismissal, which is
+ * not something to do lightly. It is still right: a chapter whose only content
+ * is one diagram has no prose to go home to, and law 3 says nobody is ever
+ * trapped. One empty paragraph is a smaller cost than a writer standing on a
+ * thing they asked to leave, and it is a paragraph any editor would have given
+ * them anyway. Yjs carries it like any other edit and undo takes it back.
+ *
+ * Null only when the schema refuses a paragraph there — a code-schema
+ * document, whose one block is the whole file by definition.
  */
 export function caretHomeFromObjectTransaction(
   state: EditorState,
   pos: number,
 ): Transaction | null {
-  return (
-    caretBesideObjectTransaction(state, pos, 1) ?? caretBesideObjectTransaction(state, pos, -1)
-  );
+  const beside =
+    caretBesideObjectTransaction(state, pos, 1) ?? caretBesideObjectTransaction(state, pos, -1);
+  if (beside) return beside;
+
+  const node = state.doc.nodeAt(pos);
+  const paragraph = state.schema.nodes.paragraph;
+  if (!node || !paragraph) return null;
+
+  const after = pos + node.nodeSize;
+  const $after = state.doc.resolve(after);
+  const index = $after.index($after.depth);
+  if (!$after.parent.canReplaceWith(index, index, paragraph)) return null;
+
+  const transaction = state.tr.insert(after, paragraph.create());
+  return transaction
+    .setSelection(TextSelection.near(transaction.doc.resolve(after), 1))
+    .scrollIntoView();
 }
 
 /** Enter's `caret-inside` engagement: the first text position within. */

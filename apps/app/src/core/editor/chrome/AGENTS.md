@@ -44,6 +44,22 @@ or suppress arbiter beside it.
 - **`at-home` is a real answer.** When the editor has nothing left to give
   back, Esc is left unhandled so the browser, an IME, or a native dialog can
   still have it.
+- **Escape reaches the chain three ways, and a surface has to pick one.** In
+  the prose, ProseMirror's `handleKeyDown` runs it. Inside a Radix surface,
+  Radix's own listener does, deferring through `onEscapeKeyDown`. Anywhere
+  else — a hand-rolled portal, or any layer at all once focus has moved to the
+  chat composer — the kernel's document backstop does, and only for layers
+  registered `dismissal: "kernel"` (the default). A surface that declares
+  `"self"` without actually listening will survive Escape, and "nobody is ever
+  trapped" stops being true quietly.
+- **A layer says who it is inside, not when it arrived.** React mounts child
+  effects before parent effects, so registration order is the reverse of
+  visual depth for the one case the design mandates (a new empty diagram opens
+  with its source pane showing). Depth comes from `parentId`, which the React
+  hook fills from context.
+- **A scope is a place, not a priority.** `keymapScopeApplies` enforces it, so
+  a table verb is unreachable in a paragraph whether or not its lane
+  remembered to check.
 - Object-ness is a registration in
   [`../objects/object-types.ts`](../objects/object-types.ts), never a
   structural guess. This module imports that table rather than re-deriving it.
@@ -54,6 +70,12 @@ or suppress arbiter beside it.
   own `setTimeout` for hover reveal. Both drift; read the kernel.
 - Reaching into `EditorChromeController`. It belongs to the extension.
 - Widening `EditorChrome` with per-surface state. A lane's state is a lane's.
+- Guarding a keymap contribution by re-reading the selection inside the
+  binding. Say the scope, and narrow with `appliesTo` if the scope is too
+  broad.
+- Reading `event.defaultPrevented` to learn whether Escape was handled.
+  ProseMirror calls `preventDefault` on keyCode 27 unconditionally, so the
+  flag reports ProseMirror. Read the state the chain left behind.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for the seam contracts six
   surface lanes build on

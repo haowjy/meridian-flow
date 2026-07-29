@@ -224,9 +224,24 @@
   font-size: 0.8125rem;
 }
 
+/* An inline node view's outer wrapper is `display: inline` by default, so its
+   box is the line box rather than the thing inside it — a 64px image wears a
+   22px ring with its horizontals painted behind the picture. ProseMirror puts
+   the selected-node class on exactly this element, so it has to bound the
+   object. TipTap emits a `span` wrapper only for inline nodes, which is what
+   makes this structural rather than a list of node names; it applies at rest
+   too, so selecting reflows nothing. */
+.meridian-editor .ProseMirror span.react-renderer {
+  display: inline-block;
+  vertical-align: bottom;
+}
+
 /* The jade ring a selected object wears — law 1's click, read back. A ring
    rather than an outline so it follows the object's own radius, and jade
-   rather than the focus tone because selection is a state, not focus. */
+   rather than the focus tone because selection is a state, not focus.
+   A selected table is the exception: prosemirror-tables paints its own cell
+   tint across every cell, which is the schema's way of saying "the whole
+   table", and a ring around the wrapper would be a second answer. */
 .meridian-editor .ProseMirror-selectednode {
   outline: none;
   border-radius: var(--radius-md);

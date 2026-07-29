@@ -183,6 +183,35 @@ describe("selecting and leaving an object", () => {
     ).toBeNull();
   });
 
+  it("makes a home when the object IS the document, rather than trapping", () => {
+    const instance = mount([figure]);
+    const pos = positionOf(instance, "figure");
+
+    const transaction = caretHomeFromObjectTransaction(instance.state, pos);
+    // There is no prose either side, so law 3 has nowhere to walk to. Writing
+    // one paragraph is a smaller cost than a writer standing on a thing they
+    // asked to leave.
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+
+    expect(instance.state.selection.empty).toBe(true);
+    expect(instance.state.selection.$head.parent.type.name).toBe("paragraph");
+    expect(instance.state.doc.childCount).toBe(2);
+  });
+
+  it("makes a home out of a lone source block too", () => {
+    const instance = mount([
+      { type: "code_block", attrs: { language: "ts" }, content: [{ type: "text", text: "x" }] },
+    ]);
+    const pos = positionOf(instance, "code_block");
+
+    const transaction = caretHomeFromObjectTransaction(instance.state, pos);
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+
+    expect(instance.state.selection.$head.parent.type.name).toBe("paragraph");
+  });
+
   it("sends Esc home in front of an object that ends the document", () => {
     const instance = mount([paragraph("before"), figure]);
     const transaction = caretHomeFromObjectTransaction(

@@ -6,7 +6,7 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import { mergeAttributes, Node } from "@tiptap/core";
+import { mergeAttributes, Node, wrappingInputRule } from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
@@ -151,6 +151,13 @@ export const MeridianListItem = ListItem.extend({
 // dialog that owns source access (interaction model §5.2).
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
+
+  // The fence trigger belongs to `MarkdownAutoformatExtension`, which accepts
+  // the whole GFM info string and completes on Enter. Keeping TipTap's narrower
+  // rules here would leave two rules racing for the same keystrokes.
+  addInputRules() {
+    return [];
+  },
 });
 
 /** Keeps block alignment live when the resize plugin takes over table rendering. */
@@ -288,6 +295,9 @@ export const MeridianLink = Link.extend({
 // (toggleBulletList / toggleOrderedList) must be pointed at the renamed item type
 // via `itemTypeName` — otherwise they resolve "listItem", which isn't in the
 // schema, and throw.
+/** Markdown list tightness is a serialization fact, never a DOM attribute. */
+const tightAttribute = { default: false, renderHTML: () => ({}) };
+
 export const MeridianBulletList = BulletList.extend({
   name: "bullet_list",
   content: "list_item+",
@@ -295,7 +305,7 @@ export const MeridianBulletList = BulletList.extend({
 
   addAttributes() {
     return {
-      tight: { default: false },
+      tight: tightAttribute,
     };
   },
 }).configure({ itemTypeName: "list_item" });
@@ -307,9 +317,32 @@ export const MeridianOrderedList = OrderedList.extend({
 
   addAttributes() {
     return {
-      order: { default: 1 },
-      tight: { default: false },
+      // GFM's list start number. TipTap calls it `start`; the shared schema
+      // calls it `order`, so the rename has to reach the DOM mapping and the
+      // input rule below as well as the attr itself — an inherited `start`
+      // silently falls out of the schema, and the writer's `3. ` opens at one.
+      order: {
+        default: 1,
+        parseHTML: (element) => {
+          const start = Number.parseInt(element.getAttribute("start") ?? "", 10);
+          return Number.isFinite(start) ? start : 1;
+        },
+        renderHTML: (attrs) =>
+          typeof attrs.order === "number" && attrs.order !== 1 ? { start: attrs.order } : {},
+      },
+      tight: tightAttribute,
     };
+  },
+
+  addInputRules() {
+    return [
+      wrappingInputRule({
+        find: /^(\d+)\.\s$/,
+        type: this.type,
+        getAttributes: (match) => ({ order: Number(match[1]) }),
+        joinPredicate: (match, node) => node.childCount + Number(node.attrs.order) === +match[1],
+      }),
+    ];
   },
 }).configure({ itemTypeName: "list_item" });
 
