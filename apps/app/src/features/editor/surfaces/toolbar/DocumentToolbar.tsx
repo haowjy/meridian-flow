@@ -28,7 +28,7 @@ import {
   Redo2,
   Undo2,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEditorRevision } from "@/features/editor/chrome";
 import { cn } from "@/lib/utils";
 import { LinkControl } from "./LinkPopover";
 import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./ToolbarButton";
@@ -275,25 +276,4 @@ function AlignmentControl({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-/**
- * The toolbar reads the editor on every render, so it re-renders on anything
- * that can move the selection or the document. TipTap emits both events for a
- * transaction; the state bump is deliberately coarse because the whole matrix
- * is derived, not stored.
- */
-function useEditorRevision(editor: Editor | null) {
-  const [, setRevision] = useState(0);
-
-  useEffect(() => {
-    if (!editor) return;
-    const bump = () => setRevision((revision) => revision + 1);
-    editor.on("selectionUpdate", bump);
-    editor.on("transaction", bump);
-    return () => {
-      editor.off("selectionUpdate", bump);
-      editor.off("transaction", bump);
-    };
-  }, [editor]);
 }

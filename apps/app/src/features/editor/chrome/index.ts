@@ -34,10 +34,12 @@ export {
   type OverlayIconRowItem,
   type OverlayIconRowProps,
 } from "./OverlayIconRow";
+export { type AnchorRect, useAnchorRect } from "./useAnchorRect";
 export {
   useChromeContext,
   useChromeLayer,
   useChromeSuppressed,
   useEditorChrome,
+  useEditorRevision,
   useReturnFocusToProse,
 } from "./useEditorChrome";
