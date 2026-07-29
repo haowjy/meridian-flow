@@ -1,4 +1,5 @@
 import type { MarkCodec } from "../../types.js";
+import { wikilinkTarget } from "../wikilink-target.js";
 
 type LinkAst = { type: string; url?: string; title?: string | null; target?: string };
 
@@ -18,16 +19,13 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
     if (ast.type === "wikiLink" && typeof ast.target === "string") {
       return { href: `[[${ast.target}]]`, title: null };
     }
+    if (ast.type === "wikiLinkResource" && typeof ast.target === "string") {
+      return { href: `[[${ast.target}]]`, title: ast.title ?? null };
+    }
     if (ast.type !== "link") return null;
     return { href: ast.url ?? "", title: ast.title ?? null };
   },
 };
-
-function wikilinkTarget(href: string): string | null {
-  if (!href.startsWith("[[") || !href.endsWith("]]")) return null;
-  const target = href.slice(2, -2);
-  return target.length > 0 && !/[\r\n\]|]/.test(target) ? target : null;
-}
 
 function markdownText(value: string): string {
   return value.replace(/\\([!-/:-@[-`{-~])/g, "$1");

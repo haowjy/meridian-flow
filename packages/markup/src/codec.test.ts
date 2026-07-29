@@ -139,6 +139,7 @@ describe("codec presets", () => {
     ["escaped closing bracket in label", "[a\\]b]([[X]])", "[a\\]b]([[X]])"],
     ["nested brackets in label", "[a[b]c]([[X]])", "[a\\[b\\]c]([[X]])"],
     ["outer target whitespace", "[label]([[ X ]])", "[label]([[X]])"],
+    ["invalid wikilink target", "[label]([[X|Y]])", "[label](\\[\\[X|Y]])"],
   ])("handles a wikilink resource with %s deterministically", (_case, input, expected) => {
     for (const wikilinkCodec of [
       markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
@@ -181,6 +182,45 @@ describe("codec presets", () => {
     expect(docFrom(wikilinkCodec.parse(wikilinkCodec.serialize(parsed)).blocks).toJSON()).toEqual(
       docFrom(parsed).toJSON(),
     );
+  });
+
+  it.each([
+    "    [label]([[A B]])",
+    '<span title="[label]([[A B]])">x</span>',
+  ])("keeps labeled-wikilink-looking Markdown literal content opaque: %s", (input) => {
+    const wikilinkCodec = markdownCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    });
+    const parsed = wikilinkCodec.parse(input).blocks;
+    expect(parsed[0]?.textContent).toContain("[label]([[A B]])");
+    expectStable(wikilinkCodec, input);
+  });
+
+  it.each([
+    "> ```md\n> code\n\n[label]([[A B]])",
+    "- ```md\n  code\n\n[label]([[A B]])",
+  ])("recognizes a link after a container implicitly closes its fence", (input) => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      const parsed = wikilinkCodec.parse(input).blocks;
+      const link = parsed.at(-1)?.firstChild;
+      expect(link?.marks[0]?.attrs.href).toBe("[[A B]]");
+    }
+  });
+
+  it("keeps character references opaque in a labeled wikilink target", () => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      const input = "[label]([[A&amp; B]])";
+      const parsed = wikilinkCodec.parse(input).blocks;
+      expect(parsed[0]?.firstChild?.marks[0]?.attrs.href).toBe("[[A&amp; B]]");
+      expect(wikilinkCodec.serialize(parsed)).toBe(`${input}\n`);
+    }
   });
 
   it("keeps character-reference-looking target text literal", () => {

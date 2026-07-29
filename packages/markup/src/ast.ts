@@ -20,8 +20,10 @@ export type MdastInline =
   | MdastInlineCode
   | MdastLink
   | MdastWikiLink
+  | MdastWikiLinkResource
   | MdastBreak
   | MdastImage
+  | MdastWikiLinkImage
   | MdastJsxText
   | MdastUnknown;
 
@@ -63,6 +65,13 @@ export interface MdastWikiLink {
   children: MdastInline[];
 }
 
+export interface MdastWikiLinkResource {
+  type: "wikiLinkResource";
+  target: string;
+  title: string | null;
+  children: MdastInline[];
+}
+
 export interface MdastBreak {
   type: "break";
 }
@@ -70,6 +79,13 @@ export interface MdastBreak {
 export interface MdastImage {
   type: "image";
   url: string;
+  alt: string | null;
+  title: string | null;
+}
+
+export interface MdastWikiLinkImage {
+  type: "wikiLinkImage";
+  target: string;
   alt: string | null;
   title: string | null;
 }

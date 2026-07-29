@@ -49,12 +49,7 @@ function isPascalCaseComponentName(name: string): boolean {
   return /^[A-Z][A-Za-z0-9]*$/.test(name);
 }
 
-export function skipBalanced(
-  text: string,
-  start: number,
-  open: string,
-  close: string,
-): number | null {
+function skipBalanced(text: string, start: number, open: string, close: string): number | null {
   if (text[start] !== open) return null;
   let depth = 0;
   for (let i = start; i < text.length; i++) {
@@ -71,7 +66,7 @@ export function skipBalanced(
   return null;
 }
 
-export function tryConsumeJsxTag(text: string, start: number): number | null {
+function tryConsumeJsxTag(text: string, start: number): number | null {
   if (text[start] !== "<") return null;
   let i = start + 1;
   const closing = text[i] === "/";

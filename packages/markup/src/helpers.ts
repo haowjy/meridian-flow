@@ -13,6 +13,7 @@ import type {
   MdastParagraph,
   MdastRoot,
   MdastText,
+  MdastWikiLinkImage,
   MdxJsxAttribute,
   MdxJsxAttributeValueExpression,
 } from "./ast.js";
@@ -22,6 +23,7 @@ import {
   type ComponentSpec,
   type PropSpec,
 } from "./components.js";
+import { wikilinkTarget } from "./markdown/wikilink-target.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
 
@@ -42,6 +44,7 @@ export type {
   MdastTable,
   MdastTableCell,
   MdastThematicBreak,
+  MdastWikiLinkImage,
   MdxJsxAttribute,
 } from "./ast.js";
 
@@ -105,11 +108,14 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
       case "image": {
         ensureBlockCodecRegistered("image", ctx);
         const src = String(child.attrs.src ?? "");
+        const url = src.startsWith("asset:")
+          ? ctx.assetPathResolver.pathForAsset(src.slice("asset:".length))
+          : src;
+        const target = wikilinkTarget(url);
         tokens.push({
-          type: "image",
-          url: src.startsWith("asset:")
-            ? ctx.assetPathResolver.pathForAsset(src.slice("asset:".length))
-            : src,
+          ...(target === null
+            ? { type: "image" as const, url }
+            : { type: "wikiLinkImage" as const, target }),
           alt: attrStringOrNull(child.attrs.alt),
           title: attrStringOrNull(child.attrs.title),
           marks: child.marks,
@@ -139,7 +145,8 @@ export function parseInlineChildren(
       case "break":
         out.push(ctx.schema.node("hard_break"));
         break;
-      case "image": {
+      case "image":
+      case "wikiLinkImage": {
         const imageCodec = getRuntime(ctx).blockMap.get("image");
         if (!imageCodec) throw new Error('mdast->pm: missing "image" codec');
         const image = imageCodec.parse(child, ctx);
@@ -346,7 +353,8 @@ function inlineChildrenOf(node: MdastInline): MdastInline[] {
 type InlineToken =
   | (MdastText & { marks: readonly Mark[] })
   | (MdastBreak & { marks: readonly Mark[] })
-  | (MdastImage & { marks: readonly Mark[] });
+  | (MdastImage & { marks: readonly Mark[] })
+  | (MdastWikiLinkImage & { marks: readonly Mark[] });
 
 function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeContext): MdastInline[] {
   const out: MdastInline[] = [];
@@ -422,6 +430,7 @@ function plainText(tokens: readonly InlineToken[]): string {
         case "break":
           return "\n";
         case "image":
+        case "wikiLinkImage":
           return token.alt ?? "";
         default:
           return "";
