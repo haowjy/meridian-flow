@@ -31,3 +31,72 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* Clickable only once it is legible: `step-end` holds the hit target off for
+   the whole fade in, so a handle appearing under a resting pointer cannot take
+   a press the writer meant for the margin. Leaving needs no such care — the
+   base rule transitions opacity alone, so `closed` goes inert immediately. */
+.meridian-block-handle[data-state="open"] {
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 120ms ease-out,
+    background-color 120ms ease-out,
+    pointer-events 120ms step-end allow-discrete;
+}
+
+/* Held but not shown. The grip stays mounted for the whole gesture because it
+   owns the pointer capture that keeps a touch drag from becoming a page
+   scroll, and it keeps taking pointer events for the same reason — it is just
+   nowhere the writer is looking, since the drop line is the feedback now. */
+.meridian-block-handle[data-state="dragging"] {
+  opacity: 0;
+}
+
+.meridian-block-handle:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+
+.meridian-block-handle:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
+
+.meridian-block-handle:active {
+  cursor: grabbing;
+}
+
+.meridian-block-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The jade seam the block would land on, with a dot on the column edge so a
+   line drawn between two paragraphs still reads as a destination. */
+.meridian-block-drop-line {
+  position: fixed;
+  z-index: 30;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  pointer-events: none;
+}
+
+.meridian-block-drop-line::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: -2.75px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-primary);
+}
+
+/* The lifted block, while its drop line looks for a seam. A decoration class
+   rather than an attribute set by hand: ProseMirror re-renders a node whose
+   DOM changed behind its back, taking the attribute with it. */
+.meridian-editor .ProseMirror .meridian-block-lifted {
+  opacity: 0.45;
+}

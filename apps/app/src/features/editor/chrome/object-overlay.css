@@ -22,6 +22,15 @@
   pointer-events: none;
 }
 
+/* Clickable only once it is legible. `step-end` holds the hit target off for
+   the whole fade in, so an overlay revealing under a resting pointer cannot eat
+   the click the writer aimed at the prose beneath it. Leaving is the other way
+   round — the base rule transitions opacity alone, so a closing overlay stops
+   taking clicks on the frame it starts to fade. */
 .meridian-object-overlay[data-state="open"] {
   opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 120ms ease-out,
+    pointer-events 120ms step-end allow-discrete;
 }
