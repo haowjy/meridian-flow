@@ -9,9 +9,9 @@
  * inside it so no keystroke is ever swallowed by a hidden element.
  *
  * `useMermaidSvg` is the render pipeline both faces share. It keeps the LAST
- * GOOD svg across a failing edit, which is what lets the dialog show a live
- * preview beside source that does not parse yet (§5.2's "keeps the last good
- * render and names the line").
+ * GOOD svg across a failing edit (§5.2's "keeps the last good render and names
+ * the line") — and naming the line is half the promise, so a stale render
+ * carries the parse error beside it here as well as in the dialog's pane.
  */
 import { t } from "@lingui/core/macro";
 import type { Editor, NodeViewProps } from "@tiptap/core";
@@ -130,6 +130,10 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
 
   const showDiagram = isMermaid && svg !== null && !caretInside;
   const showFence = !isMermaid || caretInside || (error !== null && svg === null);
+  // A render that no longer matches its source. The picture stays — it is
+  // still the truest thing on the page about this diagram — but a failure the
+  // writer cannot see is one they cannot fix (law 5).
+  const renderIsStale = isMermaid && error !== null && svg !== null;
 
   return (
     <NodeViewWrapper
@@ -145,6 +149,12 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
           <p className="font-medium">{t`Diagram could not be rendered`}</p>
           <p className="mt-1 whitespace-pre-wrap font-mono text-xs">{error}</p>
         </div>
+      ) : null}
+      {renderIsStale ? (
+        <p className="meridian-diagram-parse-note mb-2" contentEditable={false} role="status">
+          {t`This diagram stopped parsing. Showing the last version that rendered.`}
+          <code>{error}</code>
+        </p>
       ) : null}
       {isMermaid && pending && !caretInside ? (
         <div

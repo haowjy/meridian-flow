@@ -248,9 +248,9 @@ function SourcePane({
         onChange={(event) => onChange(event.target.value)}
       />
       {error ? (
-        <p className="meridian-lightbox-parse-note" role="status">
-          {error}
-          <span className="block text-ink-subtle">{t`Showing the last good render.`}</span>
+        <p className="meridian-diagram-parse-note meridian-lightbox-parse-note" role="status">
+          {t`This diagram stopped parsing. The preview is the last version that rendered.`}
+          <code>{error}</code>
         </p>
       ) : null}
     </div>

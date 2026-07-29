@@ -1096,8 +1096,10 @@
   overflow: auto;
 }
 
-.meridian-lightbox-parse-note {
-  margin: 0 0.75rem 0.75rem;
+/* What a diagram says when its source stopped parsing. The same note in the
+   page and in the dialog's source pane, because it is the same fact: the
+   picture on screen is the last one that rendered. */
+.meridian-diagram-parse-note {
   padding: 0.45rem 0.65rem;
   border: 1px solid var(--color-warning-border);
   border-radius: var(--radius-md);
@@ -1105,6 +1107,19 @@
   color: var(--color-warning-foreground);
   font-size: 0.75rem;
   line-height: 1.45;
+}
+
+.meridian-diagram-parse-note code {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
+.meridian-lightbox-parse-note {
+  margin: 0 0.75rem 0.75rem;
 }
 
 /* The canvas: a dot grid so pan and zoom have something to move against, and
