@@ -16,4 +16,17 @@ describe("asset image load failure", () => {
       action: "error",
     });
   });
+
+  it("ignores a failure while a load is in flight: the URL on screen is the one being replaced", () => {
+    const spent = { automaticRefreshUsed: true };
+
+    expect(reduceAssetImageLoadFailure({ automaticRefreshUsed: false }, true)).toEqual({
+      state: { automaticRefreshUsed: false },
+      action: "ignore",
+    });
+    // Even with the budget spent, a refresh already running is the answer —
+    // this is the window a signed URL expires in, so erroring here would put a
+    // placeholder over a picture that is about to load.
+    expect(reduceAssetImageLoadFailure(spent, true)).toEqual({ state: spent, action: "ignore" });
+  });
 });

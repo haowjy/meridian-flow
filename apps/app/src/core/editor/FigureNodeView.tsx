@@ -83,6 +83,7 @@ export function FigureNodeView(props: NodeViewProps) {
           <img
             src={renderUrl}
             alt={attrs.alt ?? ""}
+            onLoad={renderActions.imageDisplayed}
             onError={renderActions.imageLoadFailed}
             draggable={false}
           />
@@ -176,7 +177,13 @@ export function ImageNodeView(props: NodeViewProps) {
   return (
     <NodeViewWrapper as="span" className="meridian-image-node" data-type="image">
       {state.url ? (
-        <img src={state.url} alt={alt} draggable={false} onError={actions.imageLoadFailed} />
+        <img
+          src={state.url}
+          alt={alt}
+          draggable={false}
+          onLoad={actions.imageDisplayed}
+          onError={actions.imageLoadFailed}
+        />
       ) : (
         <span
           className="meridian-image-node__placeholder"
