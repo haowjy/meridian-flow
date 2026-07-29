@@ -15,7 +15,7 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useState } from "react";
 
-import { isEditorChromeElement } from "@/core/editor/chrome";
+import { hoverOwner } from "@/core/editor/chrome";
 import {
   useChromeContext,
   useChromeSuppressed,
@@ -46,34 +46,24 @@ export function useApproachedObject(
 
   const [hovered, setHovered] = useState<HTMLElement | null>(null);
 
+  // The approach is the kernel's: it owns the timing, the pointer, and which
+  // block owns chrome right now. This lane only says which object is at a
+  // point. Travelling onto the row's own chrome and re-asking after a scroll
+  // are both the coordinator's, so neither is answered here — and the block's
+  // handle and this row settle together on the block they share, rather than
+  // on two blocks that happened to settle at different moments.
   useEffect(() => {
     if (!chrome) return;
-
-    // Timing comes from the kernel, never a local timer: the kernel cancels
-    // hover intent the moment a drag or a sweep starts.
-    const intent = chrome.createHoverIntent<HTMLElement>({ onSettle: setHovered });
-
-    const onPointerOver = (event: Event) => {
-      const target = event.target;
-      // Travelling onto this editor's own chrome is not leaving the object.
-      // The kernel qualifies the mark by chrome id, so two documents open side
-      // by side each answer for their own row rather than holding each other's
-      // open. A menu opened from the row needs no reading here: the lane pins
-      // the approach while one is up.
-      if (target instanceof Element && isEditorChromeElement(chrome, target)) return;
-      const found = objectSurfaceAt(editor.view, target);
-      if (found) intent.enter(found.element);
-      else intent.leave();
-    };
-
-    // On the document rather than the editor: the pointer leaves the prose
-    // constantly, and only a listener that sees where it went can tell
-    // "travelled onto the row" from "left the object".
-    document.addEventListener("pointerover", onPointerOver, true);
-    return () => {
-      document.removeEventListener("pointerover", onPointerOver, true);
-      intent.dispose();
-    };
+    return chrome.registerHoverAnchor<HTMLElement>({
+      id: "object-approach",
+      probe: ({ element }) => {
+        const found = objectSurfaceAt(editor.view, element);
+        if (!found) return null;
+        const owner = hoverOwner(editor.view, found.element);
+        return owner ? { owner, value: found.element } : null;
+      },
+      onSettle: setHovered,
+    });
   }, [chrome, editor]);
 
   const selectedElement = selectedObjectElement(editor, context.owner, context.pos);

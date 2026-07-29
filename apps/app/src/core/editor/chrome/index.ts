@@ -44,6 +44,14 @@ export {
   type GesturePhase,
 } from "./esc-chain";
 export {
+  createHoverAnchors,
+  type HoverAnchorLane,
+  type HoverAnchors,
+  type HoverProbe,
+  type HoverProbeResolver,
+  hoverOwner,
+} from "./hover-anchor";
+export {
   CHROME_TIMING,
   createHoverIntent,
   type HoverIntent,
@@ -58,3 +66,4 @@ export {
   type KeymapContribution,
   type KeymapScope,
 } from "./keymap";
+export { watchManuscriptLayout } from "./manuscript-layout";
