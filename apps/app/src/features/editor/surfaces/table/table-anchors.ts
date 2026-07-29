@@ -9,7 +9,7 @@
  * renders inside the table, and nothing here can shift a line of text.
  *
  * Placement is a pure function of four rectangles, so where a piece goes and
- * whether it fits are decided in one testable place. `editor.css` keeps the
+ * whether it fits are decided in one testable place. `table-chrome.css` keeps the
  * look; every number that decides a position is here.
  */
 

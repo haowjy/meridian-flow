@@ -33,6 +33,7 @@ import { editorChromeAttributes } from "@/core/editor/chrome";
 
 import { useAnchorRect } from "./useAnchorRect";
 import { useChromeSuppressed, useEditorChrome } from "./useEditorChrome";
+import "./overlay-icon-row.css";
 
 /** Matches mockup 03b: the row sits inside the bounds, not on the edge. */
 const OVERLAY_INSET_PX = 10;

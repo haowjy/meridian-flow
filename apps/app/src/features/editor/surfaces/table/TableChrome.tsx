@@ -67,6 +67,7 @@ import {
   tableVerbStates,
 } from "./table-commands";
 import { tableChromeCopy } from "./table-copy";
+import "./table-chrome.css";
 
 type Axis = "row" | "column";
 /** The four shapes a table menu takes, each a different thing to act on. */

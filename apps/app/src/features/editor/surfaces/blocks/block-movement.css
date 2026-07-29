@@ -1,0 +1,33 @@
+/**
+ * The block movement surface (§5.8, mockup 08): the margin handle, the drop
+ * line, and the lifted block.
+ *
+ * The handle and the line are measured onto the page rather than inserted
+ * into it (law 7), so the manuscript reserves nothing for them.
+ */
+
+/* The handle lives in the margin and is measured onto the page, so it can
+   never take a pixel from the manuscript (law 7). Fading rather than
+   unmounting on the way out: a grip that blinks off the frame the pointer
+   left reads as a glitch. */
+.meridian-block-handle {
+  position: fixed;
+  /* The browser must not read a drag off the grip as a page scroll: this
+     gesture is the writer moving a block, start to finish. */
+  touch-action: none;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--color-muted-foreground);
+  cursor: grab;
+  transition:
+    opacity 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.meridian-block-handle[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}

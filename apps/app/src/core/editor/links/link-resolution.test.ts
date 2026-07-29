@@ -2,7 +2,8 @@
 /**
  * The three answers a link can get, and the fourth that is not an answer.
  *
- * The DOM assertions are load-bearing: the CSS in `editor.css` reaches the
+ * The DOM assertions are load-bearing: the link surface's stylesheet reaches
+ * the
  * anchor through `a:has([data-link-state="unresolved"])`, which only works
  * because ProseMirror renders an inline decoration inside the mark. A change
  * to that nesting is a silently unstyled unresolved link, so the shape is

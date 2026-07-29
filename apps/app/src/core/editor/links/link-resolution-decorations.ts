@@ -10,7 +10,8 @@
  *
  * ProseMirror puts an inline decoration's attributes on a span INSIDE the link
  * mark's `<a>`, so the CSS reaches the anchor through `:has()`. That is a fact
- * about how marks and decorations nest, not a choice — see `editor.css`.
+ * about how marks and decorations nest, not a choice — see the link
+ * surface's `link-surfaces.css`.
  */
 
 import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
