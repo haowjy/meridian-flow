@@ -8,7 +8,10 @@ import type { ComponentRegistry } from "../components.js";
 import { escapeProseForMdxIngress } from "../escape.js";
 import { demoteAutolinks } from "../helpers.js";
 import { tableCodec } from "../markdown/blocks/index.js";
-import { normalizeGfmTableHardBreaks } from "../markdown/blocks/table.js";
+import {
+  canonicalizeGfmTableHardBreaks,
+  normalizeGfmTableHardBreaks,
+} from "../markdown/blocks/table.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
 import type { AssetPathResolver, BlockCodec, MarkupPlugin } from "../types.js";
 import {
@@ -37,7 +40,8 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
     remarkPlugins: [remarkMdx],
     preprocess: (text) => escapeProseForMdxIngress(normalizeGfmTableHardBreaks(text)),
     postParse: demoteAutolinks,
-    postSerializeBlock: serializeLayoutBlock,
+    postSerializeBlock: (node, serialized, ctx) =>
+      serializeLayoutBlock(node, canonicalizeGfmTableHardBreaks(serialized), ctx),
   };
 }
 

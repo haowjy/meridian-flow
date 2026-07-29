@@ -86,7 +86,9 @@ rows, literal newlines, ragged rows, and per-cell alignment overrides escalate
 to canonical raw HTML. Both spellings parse to the same `table` node. Hard
 breaks remain GFM-expressible through the canonical backslash-newline spelling;
 pipe-table ingress folds that continuation before remark parsing and restores
-the `hard_break` node.
+the `hard_break` node. Nested block serializers canonicalize remark's interim
+`<br />` form back to backslash-newline with the surrounding quote/list prefix,
+so container composition does not change the table dialect.
 
 The HTML table path accepts positive `colspan` and `rowspan`, inline marks,
 links, images, and `<br>` while declining unknown table structure as inert raw

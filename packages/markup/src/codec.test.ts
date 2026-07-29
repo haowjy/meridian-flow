@@ -694,6 +694,32 @@ describe("mdx codec round-trip corpus", () => {
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
   });
 
+  it("keeps pipe-cell hard breaks canonical through blockquotes and lists", () => {
+    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const breakCell = bodyCell.type.create(bodyCell.attrs, [
+      paragraph(t("a"), schema.node("hard_break"), t("b")),
+    ]);
+    const breakTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [breakCell]),
+    ]);
+    const originals = [
+      schema.node("blockquote", null, [breakTable]),
+      schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [paragraph(t("Details")), breakTable]),
+      ]),
+    ];
+
+    for (const original of originals) {
+      const serialized = codec.serializeBlock(original);
+      expect(serialized).toContain("\\\n");
+      expect(serialized).not.toContain("<br");
+      expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
+    }
+  });
+
   it("declines unsupported or conflicting HTML alignment styles", () => {
     for (const cell of [
       '<td style="color:red">A</td>',

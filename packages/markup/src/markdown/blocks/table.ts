@@ -57,6 +57,13 @@ export function normalizeGfmTableHardBreaks(source: string): string {
   return out.join("\n");
 }
 
+export function canonicalizeGfmTableHardBreaks(serialized: string): string {
+  return serialized
+    .split("\n")
+    .flatMap((line) => canonicalTableLine(line))
+    .join("\n");
+}
+
 export const tableCodec: BlockCodec<MdastTable> = {
   name: "table",
 
@@ -224,14 +231,16 @@ function replaceHardBreaks(
 
 function pipeRowAt(lines: readonly string[], start: number): { value: string; end: number } | null {
   const first = lines[start];
-  if (first === undefined || !/^ {0,3}\|/.test(first)) return null;
+  const prefix = first === undefined ? null : tableLinePrefix(first);
+  if (first === undefined || prefix === null) return null;
 
   let value = first;
   let end = start;
   while (hasOddTrailingBackslash(value)) {
     const continuation = lines[end + 1];
-    if (continuation === undefined) return null;
-    value = `${value.slice(0, -1)}${GFM_INGRESS_HARD_BREAK}${continuation}`;
+    const continuedPrefix = continuationPrefix(prefix);
+    if (continuation === undefined || !continuation.startsWith(continuedPrefix)) return null;
+    value = `${value.slice(0, -1)}${GFM_INGRESS_HARD_BREAK}${continuation.slice(continuedPrefix.length)}`;
     end++;
   }
   return value.trimEnd().endsWith("|") ? { value, end } : null;
@@ -243,11 +252,70 @@ function hasOddTrailingBackslash(value: string): boolean {
 }
 
 function isDelimiterRow(value: string): boolean {
-  const cells = value.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
+  const cells = value
+    .slice(value.indexOf("|"))
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|");
   return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()));
 }
 
 function closesFence(line: string, fence: { marker: string; length: number }): boolean {
   const marker = fence.marker === "`" ? "`" : "~";
   return new RegExp(`^[\\t ]{0,3}${marker}{${fence.length},}[\\t ]*$`).test(line);
+}
+
+function canonicalTableLine(line: string): string[] {
+  const firstPipe = line.indexOf("|");
+  if (firstPipe === -1 || !line.includes("<br")) return [line];
+
+  const prefix = continuationPrefix(line.slice(0, firstPipe));
+  const out: string[] = [""];
+  let codeFenceLength = 0;
+  let offset = 0;
+
+  while (offset < line.length) {
+    if (line[offset] === "`") {
+      let runLength = 1;
+      while (line[offset + runLength] === "`") runLength++;
+      if (codeFenceLength === 0) codeFenceLength = runLength;
+      else if (codeFenceLength === runLength) codeFenceLength = 0;
+      out[out.length - 1] += line.slice(offset, offset + runLength);
+      offset += runLength;
+      continue;
+    }
+
+    const hardBreak = line.slice(offset).match(/^<br\s*\/>/i)?.[0];
+    if (codeFenceLength === 0 && hardBreak && line[offset - 1] !== "\\") {
+      out[out.length - 1] += "\\";
+      out.push(prefix);
+      offset += hardBreak.length;
+      continue;
+    }
+
+    out[out.length - 1] += line[offset];
+    offset++;
+  }
+
+  return out;
+}
+
+function continuationPrefix(prefix: string): string {
+  return prefix.replace(/(^|> )([-+*] |\d+[.)] )$/, (_match, container: string, marker: string) => {
+    return `${container}${" ".repeat(marker.length)}`;
+  });
+}
+
+function tableLinePrefix(line: string): string | null {
+  const pipe = line.indexOf("|");
+  if (pipe === -1) return null;
+  const prefix = line.slice(0, pipe);
+  let remainder = prefix;
+  while (true) {
+    const quote = remainder.match(/^ {0,3}> ?/);
+    if (!quote) break;
+    remainder = remainder.slice(quote[0].length);
+  }
+  return /^(?: {0,3}| {0,3}(?:[-+*] |\d+[.)] ))$/.test(remainder) ? prefix : null;
 }
