@@ -65,6 +65,24 @@ Both return an unregister. Both are no-ops on an editor without chrome.
   both, and `selectObjectTransaction` still dispatches a `NodeSelection`
   because the tables plugin converts it on the way in.
 
+## The ring is a decoration, not a lifecycle call
+
+`SELECTED_OBJECT_CLASS` is painted by a ProseMirror decoration derived from the
+selection on every view update. It deliberately does NOT use ProseMirror's own
+`ProseMirror-selectednode`.
+
+That class is applied once, imperatively, by a node view's `selectNode`
+lifecycle call. A remote write never goes through it: y-prosemirror rebuilds
+the document from the Yjs type rather than applying the peer's steps, the node
+views are replaced under a selection that never changed, and nothing tells the
+new one it is selected. The ring vanished on a peer's first keystroke and did
+not come back on re-selecting — only on a reload. A decoration has no lifecycle
+to miss, so a rebuilt view is constructed already holding the class.
+
+Anything else that has to survive a peer's write belongs in the same place. If
+you find yourself reaching for a node view's lifecycle hook to mark editor
+state, that is the shape of this bug.
+
 ## The walk
 
 `objectBeside(state, direction)` answers "what would the caret walk onto",
@@ -82,6 +100,16 @@ paragraph of a list item shares its edge with the list).
 `walk()` in the extension is then two cases: an object is selected, so pass
 beyond it; or the caret is beside one, so step onto it. Anything else returns
 false and the editor's own caret movement stands.
+
+**Esc does not reuse the arrow walk.** They ask different questions, and
+conflating them once sent the caret backward. `caretBesideObjectTransaction` is
+the arrow's: strictly the position immediately beside the object, null when
+that side is a dead end, so a leaf sitting against the object is something the
+next arrow press steps ONTO. `caretHomeFromObjectTransaction` is Esc's: the
+first position forward where the writer can type, stepping OVER a leaf that
+holds no text — leaving object-land should not land on another object with the
+next keystroke poised to replace it. Only when nothing lies ahead does it look
+behind.
 
 The arrows register at `block` scope, not `object`. Walking onto an object
 begins in the prose beside it, where nothing is selected yet, so an `object`
