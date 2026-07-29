@@ -184,6 +184,21 @@ export function TableChrome({ editor }: { editor: Editor }) {
     [anchorPos, editor],
   );
 
+  /**
+   * An open grip menu re-arms its axis whenever the held cell moves.
+   *
+   * Every verb on that menu reads the selection, and a rectangle of cells is the
+   * one selection a remote write cannot carry: the Yjs binding restores the
+   * writer's place as a caret, so the row the writer opened the menu on stops
+   * being selected the moment a collaborator types anywhere. Re-arming is safe
+   * because an open menu already owns the anchor, and it runs only when the cell
+   * moved — never against a selection the writer made themselves.
+   */
+  useEffect(() => {
+    if (openMenu === null || anchorPos === null) return;
+    selectAxis(openMenu);
+  }, [anchorPos, openMenu, selectAxis]);
+
   // A right-click on a grip is the same door as a left-click: one entry point,
   // so the menu cannot behave differently depending on which button opened it.
   useEffect(() => {
