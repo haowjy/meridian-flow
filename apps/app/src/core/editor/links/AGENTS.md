@@ -46,7 +46,12 @@ pointer, and calls into it.
   the surface acts on whatever slid into the coordinates.
 - **Unresolved is normal, not an error.** Serial writers link chapters before
   they write them, so an internal target that resolves to nothing is a state
-  the UI renders, never a failure it reports.
+  the UI renders, never a failure it reports. A request that *failed* is a
+  third thing: no answer at all, rendered as an ordinary link.
+- **No resolution is ever stored.** The state rides a decoration, not a schema
+  attribute (law 9), so `[[Chapter 214]]` from an LLM needs no extra
+  attributes and no peer receives an answer that was true in someone else's
+  project.
 - Register keys and claims from the plugin's `view()`, never TipTap's
   `onCreate` — it fires a macrotask late and the first Ctrl+K misses it.
 
@@ -57,5 +62,7 @@ pointer, and calls into it.
 - Gating an AI write on link validity. Marks inform; nothing approves.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) — the seam, the behavior matrix,
-  and what the wikilink lane plugs into
+  the resolution port, and how a state nobody stored gets drawn
+→ [`../extensions/wikilink/AGENTS.md`](../extensions/wikilink/AGENTS.md) — the
+  `[[` trigger that writes one of these links
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md) — the kernel this registers with
