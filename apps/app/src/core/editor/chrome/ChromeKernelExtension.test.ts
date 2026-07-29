@@ -3,6 +3,8 @@ import { Editor, type JSONContent, Node } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { installJsdomLayout } from "@/test-support/jsdom-layout";
+
 import { createStandaloneEditorExtensions } from "../config";
 import { editorChromeAttributes, getEditorChrome } from "./ChromeKernelExtension";
 
@@ -53,9 +55,10 @@ function mount(content: JSONContent[], extras: Node[] = []): Editor {
   const element = document.createElement("div");
   document.body.append(element);
   // jsdom has no layout, so ProseMirror's `posAtCoords` has nothing to hit
-  // test against. The claim ladder's routing matrix is covered as data in
+  // test against and its key handling throws where it measures a line. The
+  // claim ladder's routing matrix is covered as data in
   // `context-claims.test.ts`; what this file proves is the wiring.
-  document.elementFromPoint ??= () => null;
+  installJsdomLayout();
   editor = new Editor({
     element,
     extensions: [...createStandaloneEditorExtensions(), ...extras],

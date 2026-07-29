@@ -3,6 +3,8 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { installJsdomLayout } from "@/test-support/jsdom-layout";
+
 import { createStandaloneEditorExtensions } from "../config";
 import {
   engageObject,
@@ -11,6 +13,10 @@ import {
 } from "./ObjectPhysicsExtension";
 
 let editor: Editor | null = null;
+
+// Arrow keys reach gapcursor, which measures the line to decide whether Down
+// leaves the block. jsdom cannot measure.
+installJsdomLayout();
 
 afterEach(() => {
   editor?.destroy();

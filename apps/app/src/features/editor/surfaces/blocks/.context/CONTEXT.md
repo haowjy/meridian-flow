@@ -116,6 +116,20 @@ either: the handle belongs to the selected block until another is chosen.
 
 ## The block menu
 
+Two doors, one call. A left-click on the grip and a right-click on it both land
+in `openBlockMenuAt`, so the menu is in one place, about one block, whichever
+way the writer asked. The right-click goes through the kernel's claim ladder at
+the `grip` rung, matched by the `data-block-handle` marker — the table's grips
+carry their own and the two never both match. Declining is a real answer there:
+a right-click during a drag is not a menu request, and one with no handle under
+it belongs to the browser.
+
+The claim reads the target from render rather than remembering it per element,
+which an object's row has to do. There is only ever one block handle, and it
+exists only once the approach has settled on a block, so there is nothing to
+disambiguate.
+
+
 Opening it stands the writer on the block: a caret in prose, a node selection
 on an object (law 1, a click reads). That is not decoration — it is what lets
 `turn-into.ts` ask the toolbar's own predicates about a block the writer merely

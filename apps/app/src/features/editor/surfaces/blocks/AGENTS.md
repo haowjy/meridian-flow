@@ -50,6 +50,10 @@ gesture is holding, and whether it has lifted.
 - **The manuscript's DOM is ProseMirror's.** Styling a block by setting an
   attribute on its element does not survive: the DOM observer treats it as
   corruption and re-renders the node without it. The lift is a decoration.
+- **The grip claims its own right-click** (`grip` rung). The kernel's default
+  IS the browser's menu, so a surface that registers nothing gets the native
+  menu over its own control by saying nothing. Every door — click, right-click,
+  and later the keyboard twin — ends in the same open call.
 - **Touch has its own door.** A tap has no hover to settle, so on coarse input
   the handle belongs to the block the selection landed in. The grip takes
   pointer capture and carries `touch-action: none`, or the browser reads the
