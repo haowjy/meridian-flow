@@ -101,6 +101,26 @@ export function selectionIsInsideTable(state: EditorState): boolean {
 }
 
 /**
+ * Follow a block position through an edit, or null when the block itself went
+ * away.
+ *
+ * `mapping.map` cannot say "deleted": it answers with the boundary the deleted
+ * range collapsed to, which is where the NEXT block now starts. Chrome that
+ * trusted that answer would keep pointing at a stranger — an open block menu
+ * whose Delete now names the neighbour, a handle beside a block the writer
+ * never approached. Every position this surface holds across a transaction
+ * goes through here.
+ */
+export function followBlockPos(transaction: Transaction, pos: number): number | null {
+  const mapped = transaction.mapping.mapResult(pos);
+  if (mapped.deleted) return null;
+  // A surviving position must still be a block boundary at document depth: a
+  // peer who wrapped the block in something else left it somewhere this
+  // surface cannot act on.
+  return transaction.doc.resolve(mapped.pos).depth === 0 ? mapped.pos : null;
+}
+
+/**
  * Move the block at `source.index` to seam `seamIndex`. Null when the move
  * would not move anything: the seams on either side of a block are where it
  * already is, and a writer who drops a paragraph back onto its own edge has

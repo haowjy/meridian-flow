@@ -8,24 +8,33 @@
  * `block-targets.ts`, the measuring half is `block-geometry.ts`; this file is
  * the gesture, and it decides nothing about the document itself.
  *
+ * Two rules run through all of it, and both are about a document that moves
+ * while a hand is on it (law 9: nothing gates a write):
+ *
+ * - **Every position held across a transaction goes through `followBlockPos`.**
+ *   A block a peer deleted must take its chrome with it rather than handing
+ *   Delete to the neighbour.
+ * - **One finalizer ends the gesture, and everything that can end it calls
+ *   that one.** Release, browser cancel, lost capture, a blurred window,
+ *   Escape, and a peer deleting the block under the pointer are six ways to
+ *   stop; five are interruptions, and any of them leaving the kernel
+ *   suppressed would freeze every surface on the page until reload.
+ *
  * The kernel owns the timing and the standing-down. Hover comes from
- * `chrome.createHoverIntent`, so a pointer crossing the page on its way
- * somewhere else is ignored and a gesture cancels the reveal outright; a drag
- * is declared with `chrome.beginDrag`, so every other surface goes quiet while
- * it runs and re-evaluates on release. Nothing here keeps its own timer and
- * nothing here decides whether another surface may exist.
+ * `chrome.createHoverIntent`; a drag is declared with `chrome.beginDrag`, whose
+ * closer is token-guarded, so calling it late is safe and calling it twice is
+ * nothing.
  */
 
 import type { Editor } from "@tiptap/core";
-import type { Transaction } from "@tiptap/pm/state";
-import { TextSelection } from "@tiptap/pm/state";
+import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { GripVertical } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
 import {
   CHROME_TIMING,
-  EDITOR_CHROME_ATTRIBUTE,
+  editorChromeAttributes,
   type HoverIntent,
   type KeymapBinding,
 } from "@/core/editor/chrome";
@@ -53,6 +62,7 @@ import {
   blockForSelection,
   deleteBlockTransaction,
   duplicateBlockTransaction,
+  followBlockPos,
   moveBlockStepTransaction,
   moveBlockToSeamTransaction,
   selectionIsInsideTable,
@@ -64,11 +74,24 @@ export const BLOCK_MOVEMENT_SURFACE_ID = "block-movement";
 /** Pointer travel that turns a press on the handle into a drag, not a click. */
 const DRAG_SLOP_PX = 4;
 
+/**
+ * A press on the handle, from the moment it lands to whatever ends it.
+ *
+ * The drop target is NOT stored. It is derived from `pointerY` every time it
+ * is needed, because a child index goes stale the instant a peer inserts a
+ * block above, and the jade line would then promise a seam the drop would
+ * miss. The pointer is the writer's intent and the geometry under it is the
+ * truth; a seam is only ever a reading of the two.
+ */
 type Gesture = {
+  pointerId: number;
   startX: number;
   startY: number;
-  seamIndex: number;
-  /** Non-null once the press became a drag and the kernel was told. */
+  /** Last seen pointer y, the only input the drop seam is computed from. */
+  pointerY: number;
+  /** False while the press might still turn out to be a click. */
+  lifted: boolean;
+  /** The kernel's closer, once the press became a drag. */
   endDrag: (() => void) | null;
 };
 
@@ -78,11 +101,15 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
 
-  const [settled, setSettled] = useState<number | null>(null);
+  // What the handle points at, and whether the pointer is currently on it.
+  // ONE position, deliberately: the hover intent used to keep its own copy,
+  // and a copy that transactions do not remap is a handle that walks back onto
+  // a block a peer moved out from under it.
   const [anchorPos, setAnchorPos] = useState<number | null>(null);
+  const [hovered, setHovered] = useState(false);
   const [menuPos, setMenuPos] = useState<number | null>(null);
-  const [pressing, setPressing] = useState(false);
   const [seamIndex, setSeamIndex] = useState<number | null>(null);
+  const [gesturing, setGesturing] = useState(false);
   // A re-measure ticket: the value is never read, incrementing it is the whole
   // point. Block boxes move for reasons a ResizeObserver on one element never
   // sees — a peer typing three paragraphs above, an AI write landing — so
@@ -91,8 +118,15 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   const intentRef = useRef<HoverIntent<number> | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  const handleRef = useRef<HTMLButtonElement | null>(null);
   const showingRef = useRef(false);
   showingRef.current = anchorPos !== null || menuPos !== null;
+  /**
+   * The writer's last input device. A tap has no hover to settle, so on touch
+   * the handle follows the selection instead (§5.8, law 8) — and a hybrid
+   * machine answers for the hand actually on it rather than for a media query.
+   */
+  const coarseRef = useRef(false);
 
   const editable = editor.isEditable;
 
@@ -100,7 +134,12 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   useEffect(() => {
     if (!chrome) return;
-    const intent = chrome.createHoverIntent<number>({ onSettle: setSettled });
+    const intent = chrome.createHoverIntent<number>({
+      onSettle: (target) => {
+        setHovered(target !== null);
+        if (target !== null) setAnchorPos(target);
+      },
+    });
     intentRef.current = intent;
     return () => {
       intentRef.current = null;
@@ -110,50 +149,131 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   // The handle fades rather than vanishing: the hover intent's grace lets the
   // pointer travel onto it, and this keeps the element mounted one fade longer
-  // so the way out looks like the way in.
+  // so the way out looks like the way in. On touch there is no leaving to
+  // handle — the handle belongs to the selected block until another is chosen.
   useEffect(() => {
-    if (settled !== null) {
-      setAnchorPos(settled);
-      return;
-    }
-    if (menuPos !== null) return;
+    if (hovered || menuPos !== null || coarseRef.current) return;
     const timer = window.setTimeout(() => setAnchorPos(null), CHROME_TIMING.fadeMs);
     return () => window.clearTimeout(timer);
-  }, [settled, menuPos]);
+  }, [hovered, menuPos]);
+
+  /**
+   * End the gesture, once. `commit` is what the writer asked for: a release
+   * commits, every interruption does not.
+   *
+   * Ordering matters twice over. The held position is read before the hold is
+   * released, because letting go is what forgets it; and `gestureRef` is
+   * cleared first, so the transactions this dispatches cannot re-enter here.
+   */
+  const finishGesture = useCallback(
+    (commit: boolean) => {
+      const gesture = gestureRef.current;
+      if (!gesture) return;
+      gestureRef.current = null;
+
+      releasePointerCapture(handleRef.current, gesture.pointerId);
+      const held = editor.isDestroyed ? null : draggedBlockPos(editor.state);
+
+      if (commit && held !== null && !editor.isDestroyed) {
+        if (gesture.lifted) dropHeldBlock(editor, held, gesture.pointerY);
+        // A press that never travelled is a click, and a click opens the menu.
+        else openBlockMenuAt(editor, held, setMenuPos);
+      }
+
+      if (!editor.isDestroyed) endBlockDrag(editor);
+      // Token-guarded by the kernel: a closer for a drag that was already
+      // abandoned does nothing, so this is safe on every path.
+      gesture.endDrag?.();
+      setSeamIndex(null);
+      setGesturing(false);
+    },
+    [editor],
+  );
 
   useEffect(() => {
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
-      setMenuPos((pos) => (pos === null ? pos : transaction.mapping.map(pos)));
-      // Only what is on screen pays for a keystroke.
+      const gesture = gestureRef.current;
+
+      if (gesture && draggedBlockPos(editor.state) === null) {
+        // A peer deleted the block under the pointer. The document has already
+        // let go of it; the gesture has to as well, or the drop line keeps
+        // hunting a seam on behalf of a block that no longer exists.
+        finishGesture(false);
+      } else if (gesture?.lifted) {
+        // The seam is re-derived rather than mapped: the document moved under
+        // a pointer that did not, and the line belongs under the pointer.
+        setSeamIndex(seamIndexAtPointer(editor.view, gesture.pointerY));
+      }
+
+      setMenuPos((pos) => (pos === null ? pos : followBlockPos(transaction, pos)));
+      setAnchorPos((pos) => {
+        if (pos === null) return pos;
+        const followed = followBlockPos(transaction, pos);
+        // The hover intent still holds the old position; dropping the reveal
+        // is how it finds out, and the next pointer move re-earns it.
+        if (followed === null) intentRef.current?.cancel();
+        return followed;
+      });
+
       if (gestureRef.current || showingRef.current) remeasure((tick) => tick + 1);
     };
     editor.on("transaction", onTransaction);
     return () => {
       editor.off("transaction", onTransaction);
     };
-  }, [editor]);
+  }, [editor, finishGesture]);
+
+  /**
+   * The touch path (§5.8, law 8). A tap has no hover to settle, so on coarse
+   * input the handle belongs to whatever the tap landed on — the writer's own
+   * caret is the approach.
+   */
+  useEffect(() => {
+    if (!editable) return;
+    const onSelection = () => {
+      if (!coarseRef.current || gestureRef.current || editor.isDestroyed) return;
+      setAnchorPos(blockForSelection(editor.state)?.pos ?? null);
+    };
+    editor.on("selectionUpdate", onSelection);
+    return () => {
+      editor.off("selectionUpdate", onSelection);
+    };
+  }, [editor, editable]);
 
   // Approach: the pointer spends most of it in the margin, where `posAtCoords`
   // has nothing to say, so x is pulled into the column before asking.
   useEffect(() => {
-    if (!editable) return;
+    if (!editable || !chrome) return;
     const scroller = editor.view.dom.closest("[data-stable-layout-scroll]") ?? editor.view.dom;
+    const chromeSelector = Object.entries(editorChromeAttributes(chrome))
+      .map(([name, value]) => `[${name}="${value}"]`)
+      .join("");
 
     const onPointerMove = (event: Event) => {
+      const pointer = event as PointerEvent;
+      if (pointer.pointerType !== "mouse") {
+        // A finger does not hover. Remember the hand and let the selection
+        // path place the handle.
+        coarseRef.current = true;
+        return;
+      }
+      coarseRef.current = false;
       if (gestureRef.current || editor.isDestroyed) return;
-      const { clientX, clientY } = event as PointerEvent;
-      const block = blockUnderPointer(editor.view, clientX, clientY);
+      const block = blockUnderPointer(editor.view, pointer.clientX, pointer.clientY);
       if (block) intentRef.current?.enter(block.pos);
       else intentRef.current?.leave();
     };
+
     const onPointerLeave = (event: Event) => {
+      if (coarseRef.current) return;
       // The handle is portalled out of the scroller, so travelling onto it
       // reads to the DOM as leaving the editor — and the browser delivers that
       // leave AFTER the handle's own enter, so a naive `leave()` here undoes
-      // the reveal the writer was reaching for. Chrome carrying the kernel's
-      // attribute is the editor: the approach continues.
+      // the reveal the writer was reaching for. THIS editor's own chrome is
+      // still the editor: the approach continues. Another document's row open
+      // beside it is not, which is why the mark carries a kernel id.
       const related = (event as PointerEvent).relatedTarget;
-      if (related instanceof Element && related.closest(`[${EDITOR_CHROME_ATTRIBUTE}]`)) return;
+      if (related instanceof Element && related.closest(chromeSelector)) return;
       intentRef.current?.leave();
     };
 
@@ -163,106 +283,81 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       scroller.removeEventListener("pointermove", onPointerMove);
       scroller.removeEventListener("pointerleave", onPointerLeave);
     };
-  }, [editor, editable]);
-
-  const endGesture = useCallback(() => {
-    const gesture = gestureRef.current;
-    gestureRef.current = null;
-    gesture?.endDrag?.();
-    endBlockDrag(editor);
-    setPressing(false);
-    setSeamIndex(null);
-    return gesture;
-  }, [editor]);
-
-  const openMenuAt = useCallback(
-    (pos: number) => {
-      const target = blockAt(editor.state.doc, pos);
-      if (!target) return;
-      // Law 1: pressing a block's handle READS that block — a caret in prose,
-      // a selection on an object. The menu's verbs then run against the same
-      // selection the toolbar's fence reads, which is what keeps one refusal
-      // rule behind both surfaces.
-      const selection = isEditorObject(target.node)
-        ? selectObjectTransaction(editor.state, target.pos)
-        : editor.state.tr.setSelection(
-            TextSelection.near(editor.state.doc.resolve(target.pos + 1)),
-          );
-      if (selection) editor.view.dispatch(selection);
-      setMenuPos(target.pos);
-    },
-    [editor],
-  );
+  }, [editor, editable, chrome]);
 
   const onPointerMove = useCallback(
     (event: PointerEvent) => {
       const gesture = gestureRef.current;
-      if (!gesture || !chrome || editor.isDestroyed) return;
+      if (!gesture || gesture.pointerId !== event.pointerId || !chrome || editor.isDestroyed) {
+        return;
+      }
+      gesture.pointerY = event.clientY;
 
-      if (!gesture.endDrag) {
+      if (!gesture.lifted) {
         const travelled =
           Math.abs(event.clientX - gesture.startX) + Math.abs(event.clientY - gesture.startY);
         if (travelled < DRAG_SLOP_PX) return;
         // Only now is it a drag. A press that never travelled is a click, and
         // telling the kernel otherwise would blank every surface on the page
         // for the length of a menu press.
-        gesture.endDrag = chrome.beginDrag(() => {
-          gestureRef.current = null;
-          endBlockDrag(editor);
-          setPressing(false);
-          setSeamIndex(null);
-        });
+        gesture.lifted = true;
+        gesture.endDrag = chrome.beginDrag(() => finishGesture(false));
         liftBlockDrag(editor);
       }
 
-      gesture.seamIndex = seamIndexAtPointer(editor.view, event.clientY);
-      setSeamIndex(gesture.seamIndex);
+      setSeamIndex(seamIndexAtPointer(editor.view, event.clientY));
     },
-    [chrome, editor],
+    [chrome, editor, finishGesture],
   );
 
-  const onPointerUp = useCallback(() => {
-    // The held position is read BEFORE the gesture ends, because letting go is
-    // what forgets it.
-    const held = draggedBlockPos(editor.state);
-    const gesture = endGesture();
-    if (!gesture || held === null || editor.isDestroyed) return;
-
-    if (!gesture.endDrag) {
-      openMenuAt(held);
-      return;
-    }
-
-    const source = blockAt(editor.state.doc, held);
-    if (!source) return;
-    const transaction = moveBlockToSeamTransaction(editor.state, source, gesture.seamIndex);
-    if (transaction) editor.view.dispatch(transaction);
-  }, [editor, endGesture, openMenuAt]);
-
-  // Esc during a drag reaches the kernel's chain only while the prose holds
-  // focus, and a press that began on portalled chrome may have left it
-  // elsewhere. This is the same cancel the chain calls, so both doors land on
-  // one path rather than two.
+  /**
+   * Escape belongs to the kernel's chain whenever the editor can hear it: the
+   * chain cancels the gesture through the handler `beginDrag` was given, which
+   * lands back in the finalizer, and law 3 gets its one key, one step. This
+   * listener covers only what the chain cannot see — a press that began on
+   * portalled chrome may have left focus outside the prose — and it stops the
+   * key there so nothing else takes a second step on it.
+   */
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !gestureRef.current) return;
+      if (editor.view.hasFocus()) return;
       event.preventDefault();
-      endGesture();
+      event.stopPropagation();
+      finishGesture(false);
     },
-    [endGesture],
+    [editor, finishGesture],
   );
 
   useEffect(() => {
-    if (!pressing) return;
+    if (!gesturing) return;
+    const release = () => finishGesture(true);
+    const abandon = () => finishGesture(false);
+
+    // Captured pointer events still bubble to the window, so these hear the
+    // whole gesture whether or not the handle survives it. `pointercancel` is
+    // the browser taking the gesture away (a touch becoming a page scroll),
+    // `lostpointercapture` is the element losing it, and `blur` is the release
+    // that happens where this document cannot hear it.
     window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", abandon);
+    window.addEventListener("lostpointercapture", abandon);
+    window.addEventListener("blur", abandon);
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", abandon);
+      window.removeEventListener("lostpointercapture", abandon);
+      window.removeEventListener("blur", abandon);
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [pressing, onPointerMove, onPointerUp, onKeyDown]);
+  }, [gesturing, onPointerMove, onKeyDown, finishGesture]);
+
+  // Nothing outlives an unmount: a surface torn down mid-drag would leave the
+  // kernel suppressing chrome for a pointer nobody is following.
+  useEffect(() => () => finishGesture(false), [finishGesture]);
 
   const runOnBlock = useCallback(
     (pos: number, build: BlockTransactionBuilder) => {
@@ -274,12 +369,15 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     [editor],
   );
 
-  if (!editable || typeof document === "undefined") return null;
+  if (!editable || !chrome || typeof document === "undefined") return null;
 
   const targetPos = menuPos ?? anchorPos;
   const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
   const dragging = seamIndex !== null;
-  const handle = target && !dragging ? blockHandlePosition(editor.view, target) : null;
+  // The handle stays mounted for the whole gesture even while it is invisible:
+  // it holds the pointer capture that keeps a touch drag from turning into a
+  // page scroll.
+  const handle = target ? blockHandlePosition(editor.view, target) : null;
   // No line on the two seams the block already sits between. Dropping there
   // moves nothing, and a jade line promising a landing is the silent rejection
   // law 5 forbids — said in paint rather than in a click.
@@ -287,17 +385,18 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     seamIndex === null || restingSeam(editor, seamIndex)
       ? null
       : seamLinePosition(editor.view, seamIndex);
-  const visible = !suppressed && (settled !== null || menuPos !== null);
+  const visible = !dragging && !suppressed && (hovered || menuPos !== null || coarseRef.current);
 
   return (
     <>
       {handle
         ? createPortal(
             <button
+              ref={handleRef}
               type="button"
               className="meridian-block-handle"
-              data-state={visible ? "open" : "closed"}
-              data-editor-chrome
+              {...editorChromeAttributes(chrome)}
+              data-state={visible ? "open" : dragging ? "dragging" : "closed"}
               aria-label={blockHandleLabel()}
               aria-haspopup="menu"
               aria-expanded={menuPos !== null}
@@ -310,20 +409,28 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
               onPointerEnter={() => {
                 if (targetPos !== null) intentRef.current?.enter(targetPos);
               }}
-              onPointerLeave={() => intentRef.current?.leave()}
+              onPointerLeave={() => {
+                if (!coarseRef.current) intentRef.current?.leave();
+              }}
               onPointerDown={(event) => {
-                if (event.button !== 0 || targetPos === null) return;
+                if (event.button !== 0 || targetPos === null || gestureRef.current) return;
                 // Keep the caret and the focus exactly where the writer left
                 // them: the press is about a block, not about where to type.
                 event.preventDefault();
+                if (event.pointerType !== "mouse") coarseRef.current = true;
+                // Capture makes the browser hand the whole gesture over rather
+                // than turning a touch drag into a page scroll halfway down.
+                event.currentTarget.setPointerCapture?.(event.pointerId);
                 gestureRef.current = {
+                  pointerId: event.pointerId,
                   startX: event.clientX,
                   startY: event.clientY,
-                  seamIndex: 0,
+                  pointerY: event.clientY,
+                  lifted: false,
                   endDrag: null,
                 };
                 beginBlockDrag(editor, targetPos);
-                setPressing(true);
+                setGesturing(true);
               }}
             >
               <GripVertical aria-hidden />
@@ -336,7 +443,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
         ? createPortal(
             <div
               className="meridian-block-drop-line"
-              data-editor-chrome
+              {...editorChromeAttributes(chrome)}
               aria-hidden
               style={{ top: line.top, left: line.left, width: line.width }}
             />,
@@ -364,6 +471,38 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       ) : null}
     </>
   );
+}
+
+/** Land the held block on whatever seam the pointer is over right now. */
+function dropHeldBlock(editor: Editor, held: number, pointerY: number): void {
+  const source = blockAt(editor.state.doc, held);
+  if (!source) return;
+  const seam = seamIndexAtPointer(editor.view, pointerY);
+  const transaction = moveBlockToSeamTransaction(editor.state, source, seam);
+  if (transaction) editor.view.dispatch(transaction);
+}
+
+/**
+ * Open the menu for a block, standing the writer on it first.
+ *
+ * Law 1: pressing a block's handle READS that block — a caret in prose, a
+ * selection on an object. The menu's verbs then run against the same selection
+ * the toolbar's fence reads, which is what keeps one refusal rule behind both
+ * surfaces.
+ */
+function openBlockMenuAt(editor: Editor, pos: number, open: (pos: number) => void): void {
+  const target = blockAt(editor.state.doc, pos);
+  if (!target) return;
+  const selection = isEditorObject(target.node)
+    ? selectObjectTransaction(editor.state, target.pos)
+    : editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(target.pos + 1)));
+  if (selection) editor.view.dispatch(selection);
+  open(target.pos);
+}
+
+function releasePointerCapture(element: HTMLElement | null, pointerId: number): void {
+  if (!element?.hasPointerCapture?.(pointerId)) return;
+  element.releasePointerCapture(pointerId);
 }
 
 /** True when `seamIndex` is one of the two edges the held block already has. */

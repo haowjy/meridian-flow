@@ -12,6 +12,7 @@ import {
   blockSeams,
   deleteBlockTransaction,
   duplicateBlockTransaction,
+  followBlockPos,
   moveBlockStepTransaction,
   moveBlockToSeamTransaction,
   selectionIsInsideTable,
@@ -294,6 +295,59 @@ describe("Alt+Arrow steps", () => {
     expect(outline(instance)).toEqual(["figure", "paragraph"]);
     expect(instance.state.selection).toBeInstanceOf(NodeSelection);
     expect(blockForSelection(instance.state)?.index).toBe(0);
+  });
+});
+
+describe("following a block position through a peer's edit", () => {
+  it("moves the position when a block is inserted above it", () => {
+    const instance = mount([paragraph("one"), paragraph("two")]);
+    const second = blockOf(instance, 1);
+
+    const tr = instance.state.tr.insert(0, instance.state.schema.nodes.paragraph.create());
+    expect(followBlockPos(tr, second.pos)).toBe(second.pos + 2);
+  });
+
+  // `mapping.map` answers with the boundary the deleted range collapsed to,
+  // which is where the NEXT block starts — an open menu would silently rebind
+  // its Delete to the neighbour.
+  it("reports nothing when the block itself is deleted", () => {
+    const instance = mount([paragraph("one"), paragraph("two"), paragraph("three")]);
+    const middle = blockOf(instance, 1);
+
+    const tr = instance.state.tr.delete(middle.pos, middle.pos + middle.node.nodeSize);
+    expect(followBlockPos(tr, middle.pos)).toBeNull();
+  });
+
+  it("reports nothing when the block is swept up in a wider delete", () => {
+    const instance = mount([paragraph("one"), paragraph("two"), paragraph("three")]);
+    const middle = blockOf(instance, 1);
+    const last = blockOf(instance, 2);
+
+    const tr = instance.state.tr.delete(middle.pos, last.pos + last.node.nodeSize);
+    expect(followBlockPos(tr, middle.pos)).toBeNull();
+  });
+
+  it("reports nothing when the block stops being a top-level block", () => {
+    const instance = mount([paragraph("one"), paragraph("two")]);
+    const second = blockOf(instance, 1);
+
+    const range = instance.state.doc.resolve(second.pos + 1).blockRange();
+    if (!range) throw new Error("fixture");
+    const tr = instance.state.tr.wrap(range, [{ type: instance.state.schema.nodes.blockquote }]);
+    // The paragraph is inside the quote now, so the position lands at depth 1
+    // and this surface has nothing left to act on: it lets go rather than
+    // silently retargeting the quote the writer never approached.
+    expect(followBlockPos(tr, second.pos)).toBeNull();
+    expect(tr.doc.nodeAt(second.pos)?.type.name).toBe("blockquote");
+  });
+
+  it("leaves an untouched position alone", () => {
+    const instance = mount([paragraph("one"), paragraph("two")]);
+    const first = blockOf(instance, 0);
+    const last = blockOf(instance, 1);
+
+    const tr = instance.state.tr.delete(last.pos, last.pos + last.node.nodeSize);
+    expect(followBlockPos(tr, first.pos)).toBe(first.pos);
   });
 });
 

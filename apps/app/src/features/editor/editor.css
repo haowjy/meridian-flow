@@ -771,6 +771,9 @@
    left reads as a glitch. */
 .meridian-block-handle {
   position: fixed;
+  /* The browser must not read a drag off the grip as a page scroll: this
+     gesture is the writer moving a block, start to finish. */
+  touch-action: none;
   z-index: 30;
   display: inline-flex;
   align-items: center;
@@ -790,6 +793,14 @@
 
 .meridian-block-handle[data-state="open"] {
   opacity: 1;
+}
+
+/* Held but not shown. The grip stays mounted for the whole gesture because it
+   owns the pointer capture that keeps a touch drag from becoming a page
+   scroll, and it keeps taking pointer events for the same reason — it is just
+   nowhere the writer is looking, since the drop line is the feedback now. */
+.meridian-block-handle[data-state="dragging"] {
+  opacity: 0;
 }
 
 .meridian-block-handle:hover {
