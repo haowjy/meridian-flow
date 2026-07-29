@@ -46,10 +46,7 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
-import {
-  SlashCommandExtension,
-  type SlashCommandExtensionOptions,
-} from "./extensions/SlashCommandExtension";
+import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { ObjectPhysicsExtension } from "./objects";
@@ -123,7 +120,8 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
   // L-A formatting menu (M4)
   // L-B object controls + diagram (M5)
   // L-C table chrome (M6)
-  // L-D slash (M8)
+  // L-D slash (M8) mounts with the catalog option instead: a surface that
+  // passes no catalog pays for no trigger.
   // L-E block movement (M9)
   // L-F links (M7)
 ];

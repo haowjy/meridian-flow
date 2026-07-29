@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
-import type { SlashCommandCatalog } from "./extensions/SlashCommandExtension";
+import type { SlashCommandCatalog } from "./extensions/slash";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
