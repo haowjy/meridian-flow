@@ -24,7 +24,9 @@ import { EditorScopeProvider } from "../../editor-scope";
 import { ProjectLinkRuntime } from "./ProjectLinkRuntime";
 import { useWikilinkDocuments } from "./useWikilinkDocuments";
 
-const resolveDocumentLink = vi.fn(async () => ({ document: null }));
+const resolveDocumentLink = vi.fn(async (_projectId: string, _body: unknown) => ({
+  document: null,
+}));
 const trees = new Map<string, ProjectContextTreeDirectory | null>();
 
 vi.mock("@lingui/core/macro", () => ({
