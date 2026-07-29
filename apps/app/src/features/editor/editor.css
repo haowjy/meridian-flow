@@ -747,3 +747,78 @@
   box-shadow: var(--shadow-card);
   color: var(--color-foreground);
 }
+
+/* ── L-E: block movement (§5.8, mockup 08) ─────────────────────────────── */
+
+/* The handle lives in the margin and is measured onto the page, so it can
+   never take a pixel from the manuscript (law 7). Fading rather than
+   unmounting on the way out: a grip that blinks off the frame the pointer
+   left reads as a glitch. */
+.meridian-block-handle {
+  position: fixed;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--color-muted-foreground);
+  cursor: grab;
+  transition:
+    opacity 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.meridian-block-handle[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.meridian-block-handle[data-state="open"] {
+  opacity: 1;
+}
+
+.meridian-block-handle:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+
+.meridian-block-handle:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
+
+.meridian-block-handle:active {
+  cursor: grabbing;
+}
+
+.meridian-block-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The jade seam the block would land on, with a dot on the column edge so a
+   line drawn between two paragraphs still reads as a destination. */
+.meridian-block-drop-line {
+  position: fixed;
+  z-index: 30;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  pointer-events: none;
+}
+
+.meridian-block-drop-line::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: -2.75px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-primary);
+}
+
+/* The lifted block, while its drop line looks for a seam. */
+.meridian-editor .ProseMirror > [data-block-dragging="true"] {
+  opacity: 0.45;
+}

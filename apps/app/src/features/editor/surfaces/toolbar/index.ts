@@ -16,6 +16,7 @@ export {
   type ToolbarControlId,
   type ToolbarControlState,
   toggleBulletListBlock,
+  toggleCodeBlockBlock,
   toggleHeadingBlock,
   toggleTextMark,
 } from "./toolbar-commands";

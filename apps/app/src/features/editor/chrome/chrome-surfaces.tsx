@@ -18,6 +18,8 @@
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 
+import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "../surfaces/blocks";
+
 export type EditorChromeSurfaceProps = {
   editor: Editor;
 };
@@ -34,5 +36,9 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
   // L-C table chrome (M6)
   // L-D slash (M8)
   // L-E block movement (M9)
+  {
+    id: BLOCK_MOVEMENT_SURFACE_ID,
+    render: ({ editor }) => <BlockMovementSurface editor={editor} />,
+  },
   // L-F links (M7)
 ];
