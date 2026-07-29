@@ -67,3 +67,11 @@ Three files, three jobs:
   for the claim ladder and the Esc chain
 → design of record: `editor-toolbar-split/interaction-model.md` §5.1, §4,
   §2 laws 5 to 8
+
+## The clipboard block is shared
+
+Cut, Copy, and Paste live in [`clipboard-menu.tsx`](clipboard-menu.tsx) and are
+mounted by this menu and by the link menu (§5.5, mockup 06 state C). The state,
+the wording, the shortcut, and the greying are one answer; a menu supplies only
+`prepare`, which says where the verbs act. Adding a fourth clipboard row, or a
+second reason for a refused one, is an edit here and nowhere else.

@@ -44,7 +44,9 @@ Beside them, two things that are not summoned surfaces:
   nothing silently.
 - **The menu acts by position.** Writers right-click a link paragraphs away
   from the caret constantly; a verb that quietly edited the caret's link
-  instead would be the worst kind of correct.
+  instead would be the worst kind of correct. The clipboard rows are the one
+  exception, and only where the writer made it one: a passage they had already
+  swept around the link is what they chose, so Cut takes that.
 - **Copy comes from the link core.** A component that spells out what a target
   means, or decides whether it can be followed, is a second classifier.
 - **Unresolved is a sentence, never a warning.** The hint says no document
@@ -63,9 +65,9 @@ Beside them, two things that are not summoned surfaces:
   a gesture; a local timer lingers through a drag.
 - Mirroring the store in `useState`. One `useSyncExternalStore` reading is what
   keeps the three from disagreeing.
-- Rendering a clipboard verb that cannot work. Cut, Copy, and Paste are the
-  shared block every claimed menu will carry; they belong to the formatting
-  menu's lane, once, rather than half-working here.
+- A second copy of the clipboard block. Cut, Copy, and Paste are one block two
+  menus mount (`../formatting/clipboard-menu.tsx`); this menu supplies only the
+  subject the verbs act on.
 
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) — the primitives, including
   the `SuggestionMenu` both typed-under menus render through

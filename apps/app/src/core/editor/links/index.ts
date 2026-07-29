@@ -30,6 +30,7 @@ export {
   removeLinkAt,
   resolveLinkAnchor,
   resolveLinkDraft,
+  selectionCoversLink,
 } from "./link-commands";
 export {
   canFollowLink,

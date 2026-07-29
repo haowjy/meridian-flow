@@ -3,7 +3,6 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import type { ClipboardAccess } from "./clipboard-commands";
 import { formattingMenuModel } from "./formatting-menu-items";
 
 let editor: Editor | null = null;
@@ -18,10 +17,8 @@ function editorWith(content: string | JSONContent): Editor {
   return editor;
 }
 
-function modelFor(target: Editor, clipboard: Partial<ClipboardAccess> = {}) {
-  return formattingMenuModel(target, {
-    clipboard: { read: "available", write: "available", ...clipboard },
-  });
+function modelFor(target: Editor) {
+  return formattingMenuModel(target);
 }
 
 function posInsideType(target: Editor, typeName: string): number {
@@ -76,8 +73,6 @@ describe("what the formatting menu offers", () => {
     }
     expect(model.turnIntoBlockedBy).toBeNull();
     expect(model.link.blockedBy).toBeNull();
-    expect(model.clipboard.cut.blockedBy).toBeNull();
-    expect(model.clipboard.paste.blockedBy).toBeNull();
   });
 
   it("lights the mark the selection already wears (law 6)", () => {
@@ -133,27 +128,6 @@ describe("what the formatting menu offers", () => {
     expect(model.marks.bold.blockedBy).toBeNull();
   });
 
-  it("greys Paste with its own reason where the browser withholds the clipboard", () => {
-    const target = editorWith("<p>He had rehearsed this</p>");
-    target.commands.setTextSelection({ from: 1, to: 4 });
-
-    const model = modelFor(target, { read: "unavailable" });
-    expect(model.clipboard.paste.blockedBy).toBe("clipboard-read-blocked");
-    // The two directions are withheld separately.
-    expect(model.clipboard.cut.blockedBy).toBeNull();
-    expect(model.clipboard.copy.blockedBy).toBeNull();
-  });
-
-  it("greys Cut and Copy where the browser withholds clipboard writes", () => {
-    const target = editorWith("<p>He had rehearsed this</p>");
-    target.commands.setTextSelection({ from: 1, to: 4 });
-
-    const model = modelFor(target, { write: "unavailable" });
-    expect(model.clipboard.copy.blockedBy).toBe("clipboard-write-blocked");
-    expect(model.clipboard.cut.blockedBy).toBe("clipboard-write-blocked");
-    expect(model.clipboard.paste.blockedBy).toBeNull();
-  });
-
   it("greys every verb but Copy on a document that turned read only", () => {
     const target = editorWith("<p>He had rehearsed this</p>");
     target.commands.setTextSelection({ from: 1, to: 4 });
@@ -163,9 +137,5 @@ describe("what the formatting menu offers", () => {
     expect(model.marks.bold.blockedBy).toBe("document-read-only");
     expect(model.turnIntoBlockedBy).toBe("document-read-only");
     expect(model.link.blockedBy).toBe("document-read-only");
-    expect(model.clipboard.cut.blockedBy).toBe("document-read-only");
-    expect(model.clipboard.paste.blockedBy).toBe("document-read-only");
-    // Copying is reading, and reading survives.
-    expect(model.clipboard.copy.blockedBy).toBeNull();
   });
 });

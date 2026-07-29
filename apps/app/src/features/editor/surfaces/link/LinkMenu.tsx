@@ -11,6 +11,11 @@
  * a menu that quietly edited the caret's link instead would be the worst kind
  * of correct.
  *
+ * The clipboard block at the bottom is the formatting menu's, mounted rather
+ * than copied: mockup 06 state C ends with Cut, Copy, and Paste, and a writer
+ * must meet the same three rows, the same wording, and the same reason for a
+ * refusal in whichever menu they opened.
+ *
  * Open link is absent, not greyed, when nothing can follow the target (law 5:
  * absent beats disabled). That is the honest state for an internal link while
  * no navigator is registered, and for an href the classifier does not
@@ -29,15 +34,17 @@ import {
   linkMenuRange,
   openLinkForm,
   removeLinkAt,
+  selectionCoversLink,
 } from "@/core/editor/links";
 import {
   EditorMenu,
   EditorMenuItem,
   EditorMenuSeparator,
   EditorMenuShortcut,
+  shortcutLabel,
 } from "@/features/editor/chrome";
 
-import { shortcutLabel } from "./link-shortcuts";
+import { ClipboardMenuItems } from "../formatting";
 
 export function LinkMenu({
   editor,
@@ -111,6 +118,18 @@ export function LinkMenu({
         <Unlink aria-hidden />
         {t`Remove link`}
       </EditorMenuItem>
+      <EditorMenuSeparator />
+      {/* The same block the formatting menu carries, so the writer meets one
+          Cut wherever they ask for it. What differs is the subject: this menu
+          is aimed at a link, so the verbs take the link — unless the writer
+          had already swept a passage around it, in which case they chose. */}
+      <ClipboardMenuItems
+        editor={editor}
+        prepare={() => {
+          if (selectionCoversLink(editor.state, linkMenuRange(menu))) return;
+          editor.commands.setTextSelection(linkMenuRange(menu));
+        }}
+      />
     </EditorMenu>
   );
 }
