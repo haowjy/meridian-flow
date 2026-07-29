@@ -17,13 +17,10 @@ import type { Editor } from "@tiptap/core";
 import {
   Bold,
   ChevronRight,
-  ClipboardPaste,
   Code,
-  Copy,
   Italic,
   Link as LinkIcon,
   Repeat,
-  Scissors,
   Strikethrough,
 } from "lucide-react";
 import { type ComponentType, type ReactNode, useRef, useState } from "react";
@@ -49,27 +46,16 @@ import {
   toggleTextMark,
   turnIntoBlockType,
 } from "../toolbar";
-import {
-  type ClipboardAccess,
-  type ClipboardResult,
-  clipboardAccess,
-  copySelection,
-  cutSelection,
-  pasteIntoSelection,
-} from "./clipboard-commands";
+import { ClipboardMenuItems } from "./clipboard-menu";
 import {
   addLinkLabel,
-  clipboardLabel,
-  clipboardShortcut,
   formattingBlockedMessage,
   formattingMarkLabel,
   turnIntoLabel,
 } from "./formatting-copy";
 import {
-  FORMATTING_CLIPBOARD_IDS,
   FORMATTING_MARK_IDS,
   FORMATTING_MARKS,
-  type FormattingClipboardId,
   type FormattingItemState,
   type FormattingMarkId,
   type FormattingMenuModel,
@@ -85,43 +71,16 @@ const MARK_ICONS: Record<FormattingMarkId, ComponentType<{ className?: string }>
   code: Code,
 };
 
-const CLIPBOARD_ICONS: Record<FormattingClipboardId, ComponentType<{ className?: string }>> = {
-  cut: Scissors,
-  copy: Copy,
-  paste: ClipboardPaste,
-};
-
 export function FormattingMenu({ editor }: { editor: Editor }) {
   const [anchor, setAnchor] = useState<FormattingMenuPoint | null>(null);
-  // A browser that refused once will refuse again, so the control greys with
-  // its shortcut from then on rather than failing silently a second time
-  // (law 5). Capability answers what it can before the writer presses; only a
-  // real refusal can answer the rest.
-  const [clipboard, setClipboard] = useState<ClipboardAccess>(clipboardAccess);
 
   useFormattingMenuDoors(editor, setAnchor);
 
   // Held through the close so the menu fades out with its contents rather than
   // emptying a frame before it goes.
   const lastModel = useRef<FormattingMenuModel | null>(null);
-  if (anchor) lastModel.current = formattingMenuModel(editor, { clipboard });
+  if (anchor) lastModel.current = formattingMenuModel(editor);
   const model = lastModel.current;
-
-  const run = (
-    direction: keyof ClipboardAccess,
-    command: (target: Editor) => Promise<ClipboardResult>,
-  ) => {
-    void command(editor).then((result) => {
-      if (result !== "denied" && result !== "unavailable") return;
-      setClipboard((current) => ({ ...current, [direction]: "unavailable" }));
-    });
-  };
-
-  const clipboardCommands: Record<FormattingClipboardId, () => void> = {
-    cut: () => run("write", cutSelection),
-    copy: () => run("write", copySelection),
-    paste: () => run("read", pasteIntoSelection),
-  };
 
   return (
     <EditorMenu
@@ -160,17 +119,7 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
             onSelect={() => openLinkForm(editor)}
           />
           <EditorMenuSeparator />
-          {FORMATTING_CLIPBOARD_IDS.map((id) => (
-            <FormattingItem
-              key={id}
-              subject="document"
-              label={clipboardLabel(id)}
-              shortcut={clipboardShortcut(id)}
-              icon={CLIPBOARD_ICONS[id]}
-              state={model.clipboard[id]}
-              onSelect={clipboardCommands[id]}
-            />
-          ))}
+          <ClipboardMenuItems editor={editor} />
         </TooltipProvider>
       ) : null}
     </EditorMenu>

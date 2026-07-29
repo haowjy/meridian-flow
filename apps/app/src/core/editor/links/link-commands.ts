@@ -209,6 +209,24 @@ export function commitLinkDraft(
   return applied ? "applied" : "refused";
 }
 
+/**
+ * Whether the writer's own selection already covers this link.
+ *
+ * A clipboard verb on the link menu has two possible subjects, and the writer
+ * decides which by what they swept before right-clicking. The link rung
+ * outranks the selection rung (§5.1), so a writer who selected a sentence
+ * containing a link and right-clicked the link still gets the LINK menu — and
+ * a Cut there that took only the link would throw away the sentence they had
+ * chosen.
+ */
+export function selectionCoversLink(
+  state: EditorState,
+  range: { from: number; to: number },
+): boolean {
+  const { selection } = state;
+  return !selection.empty && selection.from <= range.from && selection.to >= range.to;
+}
+
 /** Drop the link mark over a range the pointer chose, not the caret (§5.5). */
 export function removeLinkAt(editor: Editor, range: { from: number; to: number }): boolean {
   if (editor.isDestroyed || !editor.isEditable) return false;

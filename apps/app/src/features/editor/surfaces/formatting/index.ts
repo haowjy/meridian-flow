@@ -16,8 +16,10 @@ export {
   cutSelection,
   pasteIntoSelection,
 } from "./clipboard-commands";
+export { ClipboardMenuItems, clipboardItemStates } from "./clipboard-menu";
 export { FormattingMenu } from "./FormattingMenu";
 export {
+  FORMATTING_CLIPBOARD_IDS,
   type FormattingClipboardId,
   type FormattingItemState,
   type FormattingMarkId,

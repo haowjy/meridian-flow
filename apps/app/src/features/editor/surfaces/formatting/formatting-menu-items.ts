@@ -5,8 +5,8 @@
  * Derived, never stored, and derived from the toolbar's command layer rather
  * than from a second reading of the document — the menu and the toolbar carry
  * the same verbs, so they must refuse the same targets for the same reasons.
- * The only judgment this module adds is the clipboard's, which no toolbar
- * control has.
+ * The clipboard rows are not here: they are the block two claimed menus share,
+ * and they live with it in [`clipboard-menu.tsx`](./clipboard-menu.tsx).
  */
 
 import type { Editor } from "@tiptap/core";
@@ -19,12 +19,12 @@ import {
   type ToolbarMarkName,
   textMarkState,
 } from "../toolbar";
-import type { ClipboardAccess } from "./clipboard-commands";
 import type { FormattingBlockedReason } from "./formatting-copy";
 
 export type FormattingMarkId = "bold" | "italic" | "strike" | "code";
-export type FormattingClipboardId = "cut" | "copy" | "paste";
 
+/** The three verbs of the clipboard block (`clipboard-menu.tsx`). */
+export type FormattingClipboardId = "cut" | "copy" | "paste";
 export type FormattingItemState = {
   active: boolean;
   blockedBy: FormattingBlockedReason | null;
@@ -40,7 +40,6 @@ export type FormattingMenuModel = {
    */
   turnIntoBlockedBy: FormattingBlockedReason | null;
   link: FormattingItemState;
-  clipboard: Record<FormattingClipboardId, FormattingItemState>;
 };
 
 /** The mark each row of the quick marks row toggles. */
@@ -51,6 +50,8 @@ export const FORMATTING_MARKS: Record<FormattingMarkId, ToolbarMarkName> = {
   code: "code",
 };
 
+export const FORMATTING_CLIPBOARD_IDS: readonly FormattingClipboardId[] = ["cut", "copy", "paste"];
+
 export const FORMATTING_MARK_IDS: readonly FormattingMarkId[] = [
   "bold",
   "italic",
@@ -58,23 +59,11 @@ export const FORMATTING_MARK_IDS: readonly FormattingMarkId[] = [
   "code",
 ];
 
-export const FORMATTING_CLIPBOARD_IDS: readonly FormattingClipboardId[] = ["cut", "copy", "paste"];
-
-export function formattingMenuModel(
-  editor: Editor,
-  { clipboard }: { clipboard: ClipboardAccess },
-): FormattingMenuModel {
+export function formattingMenuModel(editor: Editor): FormattingMenuModel {
   // The menu only opens on a writable document (see `formatting-triggers`),
   // but a document can turn read-only while it is open — a schema fence, a
   // lost lease — and every item must say so rather than silently no-op.
   const readOnly: FormattingBlockedReason | null = editor.isEditable ? null : "document-read-only";
-
-  // A browser can withhold either direction of the clipboard, and the writer
-  // needs to hear which one and what to press instead.
-  const clipboardWrite: FormattingBlockedReason | null =
-    clipboard.write === "available" ? null : "clipboard-write-blocked";
-  const clipboardRead: FormattingBlockedReason | null =
-    clipboard.read === "available" ? null : "clipboard-read-blocked";
 
   const turnInto = blockTypeStates(editor);
   const turnIntoStates = Object.fromEntries(
@@ -91,12 +80,6 @@ export function formattingMenuModel(
     turnInto: turnIntoStates,
     turnIntoBlockedBy: sharedBlocker(Object.values(turnIntoStates)),
     link: blockedFirst(readOnly, textMarkState(editor, "link")),
-    clipboard: {
-      cut: { active: false, blockedBy: readOnly ?? clipboardWrite },
-      // Copying is reading; a document nobody may change is still readable.
-      copy: { active: false, blockedBy: clipboardWrite },
-      paste: { active: false, blockedBy: readOnly ?? clipboardRead },
-    },
   };
 }
 
