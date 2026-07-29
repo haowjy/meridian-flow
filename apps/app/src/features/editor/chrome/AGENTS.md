@@ -17,6 +17,10 @@ Four primitives and one host.
 - **`EditorMenu` / `EditorPopover` / `EditorDialog`** — Radix, subordinated.
   Each registers as a layer in the Esc chain, defers Escape when something
   deeper is open, and hands the caret back to the prose on every close path.
+- **`EditorMenuItem` / `EditorMenuCheckboxItem`** — the row, and the one place
+  a refusal is drawn. A lane passes `blockedReason` and gets the greying, the
+  swallowed select, and the reason on hover or focus; `ReasonTooltip` is the
+  shape that reason wears everywhere, the toolbar's controls included.
 - **`SuggestionMenu`** — the list a writer types underneath, for `/` and for
   `[[`. It owns the eight-row cap, the internal scroll that follows the arrow
   keys, the hairline fades, and the announcement the caret's own element has to
@@ -78,6 +82,12 @@ roving focus (decision 2026-07-29). What these add is subordination.
   `editorChromeAttributes(chrome)`**, or right-clicks on it bypass the claim
   ladder. The mark names the editor, because two documents open side by side
   are two kernels listening on one page.
+- **A greyed row shows its LABEL alone** (law 5, ruling 2026-07-29). Grey must
+  still say why, on demand rather than permanently: a reason printed under
+  every refused row is standing information, and three of them turn a menu into
+  a paragraph. Rows wear `aria-disabled`, never Radix's `disabled`, which takes
+  the hover and focus path away and the tooltip with it. One shared note above
+  a whole list — the slash menu's — is a different thing and stays.
 - No raw color. Chip and row styling lives in the stylesheet beside the
   component that renders it; token classes elsewhere.
 
