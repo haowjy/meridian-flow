@@ -46,11 +46,40 @@ describe("chrome layers", () => {
     expect(closeSource).toHaveBeenCalledOnce();
     expect(closeDialog).not.toHaveBeenCalled();
 
-    // The surface's own close path releases the handle; only then does the
-    // chain move on. Closing here and popping here would race the animation.
-    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog", "source"]);
+    // Asked once. The layer leaves the walk on the asking rather than on the
+    // release, so a dismissal that never lands costs one Escape instead of
+    // every Escape after it. The surface may still be on screen finishing its
+    // exit; the chain has simply stopped offering it the key.
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog"]);
     source.release();
     expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog"]);
+  });
+
+  it("orders by nesting, not by the order effects happened to run in", () => {
+    const { chrome } = createEditorChrome();
+    const closeDialog = vi.fn();
+    const closeSource = vi.fn();
+
+    // React mounts child effects first, so this is the order the kernel
+    // actually sees for a dialog that opens with its source pane showing.
+    chrome.openLayer({ id: "source", parentId: "dialog", close: closeSource });
+    chrome.openLayer({ id: "dialog", close: closeDialog });
+
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog", "source"]);
+    chrome.closeTopLayer();
+    expect(closeSource).toHaveBeenCalledOnce();
+    expect(closeDialog).not.toHaveBeenCalled();
+  });
+
+  it("reports how the topmost layer expects Escape to reach it", () => {
+    const { chrome } = createEditorChrome();
+    expect(chrome.topLayerDismissal).toBeNull();
+
+    chrome.openLayer({ id: "dialog", close: () => {}, dismissal: "self" });
+    expect(chrome.topLayerDismissal).toBe("self");
+
+    chrome.openLayer({ id: "source", parentId: "dialog", close: () => {} });
+    expect(chrome.topLayerDismissal).toBe("kernel");
   });
 
   it("reports no layer to close when nothing is open", () => {
@@ -91,6 +120,50 @@ describe("gesture suppression", () => {
     controller.cancelGesture();
 
     expect(abandonDrag).toHaveBeenCalledOnce();
+    expect(chrome.gesture).toBe("idle");
+  });
+
+  it("gives each drag its own end, so a stale one cannot release a newer drag", () => {
+    const { chrome } = createEditorChrome();
+
+    const endFirst = chrome.beginDrag();
+    const endSecond = chrome.beginDrag();
+
+    // The block handle's drag ended a frame late while the column resize is
+    // still running. The late call belongs to a gesture nobody is holding.
+    endFirst();
+    expect(chrome.gesture).toBe("drag");
+    expect(chrome.suppressed).toBe(true);
+
+    endSecond();
+    expect(chrome.gesture).toBe("idle");
+  });
+
+  it("cancels the drag it replaced, so no owner is left holding a dead pointer", () => {
+    const { chrome } = createEditorChrome();
+    const abandonFirst = vi.fn();
+
+    chrome.beginDrag(abandonFirst);
+    chrome.beginDrag();
+
+    expect(abandonFirst).toHaveBeenCalledOnce();
+  });
+
+  it("cancels only the drag that is running", () => {
+    const { chrome, controller } = createEditorChrome();
+    const abandonFirst = vi.fn();
+    const abandonSecond = vi.fn();
+
+    chrome.beginDrag(abandonFirst);
+    chrome.beginDrag(abandonSecond);
+    // Replacing the first drag already cancelled it; what Esc must not do is
+    // reach back and cancel it a second time.
+    abandonFirst.mockClear();
+
+    controller.cancelGesture();
+
+    expect(abandonSecond).toHaveBeenCalledOnce();
+    expect(abandonFirst).not.toHaveBeenCalled();
     expect(chrome.gesture).toBe("idle");
   });
 

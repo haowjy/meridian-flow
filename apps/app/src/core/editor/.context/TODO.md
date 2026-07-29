@@ -44,3 +44,16 @@ cut/paste (delete+insert).
 - Keep any schema-spec change mirrored between `apps/app/src/core/editor` and
   `packages/prosemirror-schema`; the two schemas are built separately and parity
   is currently unenforced.
+
+## Task lists have a schema and a codec but no writer surface
+
+`list_item.checked` is in the shared schema and `packages/markup` reads and
+writes GFM `- [ ] ` / `- [x] ` items, so an AI write or a paste can put a task
+list into a manuscript the writer then cannot author or toggle. TipTap's
+TaskList/TaskItem are deliberately not registered: they add `taskList` and
+`taskItem` node types the shared schema does not have. A writer surface means
+an input rule and a keymap over the existing `list_item` + `checked`, plus a
+checkbox in the list item's DOM, not the upstream nodes.
+
+Found while pinning the markdown autoformat truth table
+(`extensions/MarkdownAutoformatExtension.test.ts`); ruling 18 did not name it.

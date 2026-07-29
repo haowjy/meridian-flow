@@ -16,9 +16,14 @@ const objectContext: ChromeContext = {
   chain: ["document", "object"],
 };
 
+/** A pointer target's element, carrying whatever a lane's `claim` reads off it. */
+function element(dataset: Record<string, string> = {}): Element {
+  return { dataset } as unknown as Element;
+}
+
 function target(overrides: Partial<ContextClaimTarget> = {}): ContextClaimTarget {
   return {
-    element: { dataset: {} } as unknown as HTMLElement,
+    element: element(),
     docPos: 4,
     context: DOCUMENT_CHROME_CONTEXT,
     insideTextSelection: false,
@@ -32,10 +37,14 @@ function claimant(id: ContextClaimId, matches: (t: ContextClaimTarget) => boolea
   return { id, claim: vi.fn(matches) } satisfies ContextClaimHandler;
 }
 
+function datasetOf(target: Element): Record<string, string> {
+  return (target as unknown as { dataset: Record<string, string> }).dataset;
+}
+
 describe("the right-click claim table", () => {
-  const link = claimant("link", (t) => t.element.dataset.link === "true");
+  const link = claimant("link", (t) => datasetOf(t.element).link === "true");
   const selection = claimant("text-selection", (t) => t.insideTextSelection);
-  const grip = claimant("grip", (t) => t.element.dataset.grip === "true");
+  const grip = claimant("grip", (t) => datasetOf(t.element).grip === "true");
   const object = claimant("object", (t) => t.context.owner === "object");
   const all = [object, grip, selection, link];
 
@@ -53,7 +62,7 @@ describe("the right-click claim table", () => {
 
   it("claims a table grip over the object it belongs to", () => {
     const gripTarget = target({
-      element: { dataset: { grip: "true" } } as unknown as HTMLElement,
+      element: element({ grip: "true" }),
       context: objectContext,
     });
     expect(resolveContextClaim(all, gripTarget)).toBe("grip");
@@ -61,7 +70,7 @@ describe("the right-click claim table", () => {
 
   it("gives a link inside a selection to the link: the deepest context wins", () => {
     const linkTarget = target({
-      element: { dataset: { link: "true" } } as unknown as HTMLElement,
+      element: element({ link: "true" }),
       insideTextSelection: true,
     });
     expect(resolveContextClaim(all, linkTarget)).toBe("link");
@@ -77,7 +86,7 @@ describe("the right-click claim table", () => {
   it("resolves by the ladder, never by registration order", () => {
     const registeredLast = [object, link];
     const linkTarget = target({
-      element: { dataset: { link: "true" } } as unknown as HTMLElement,
+      element: element({ link: "true" }),
       context: objectContext,
     });
     expect(resolveContextClaim(registeredLast, linkTarget)).toBe("link");
@@ -91,7 +100,7 @@ describe("the right-click claim table", () => {
 
   it("stops asking once a rung claims", () => {
     const linkTarget = target({
-      element: { dataset: { link: "true" } } as unknown as HTMLElement,
+      element: element({ link: "true" }),
       insideTextSelection: true,
     });
     resolveContextClaim(all, linkTarget);

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/server`: every model now receives the Meridian document dialect in its
+  baked system prompt. The card teaches GFM, wikilinks, fenced diagrams,
+  minimal table spelling, Layout, and asset paths, with a codec round-trip gate
+  preventing the instructions from drifting.
 - `packages/markup`: `[[target]]` is now first-class markdown/MDX wire syntax.
   It round-trips as an ordinary editor link without embedding resolution state,
   so links to documents that do not exist yet remain valid prose.
