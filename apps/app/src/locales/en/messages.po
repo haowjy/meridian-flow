@@ -119,6 +119,10 @@ msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr "{documents, plural, one {# document} other {# documents}}"
 
 #: src/features/editor/EditorView.tsx
+msgid "{filename} could not be read from that site. It stayed a link."
+msgstr "{filename} could not be read from that site. It stayed a link."
+
+#: src/features/editor/EditorView.tsx
 msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
@@ -2511,6 +2515,10 @@ msgstr "The header row does not merge into the body."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
 msgstr "The header row stays first."
+
+#: src/features/editor/EditorView.tsx
+msgid "The image imported, but the editor could not insert it."
+msgstr "The image imported, but the editor could not insert it."
 
 #: src/features/editor/EditorView.tsx
 msgid "The image uploaded, but the editor could not insert it."

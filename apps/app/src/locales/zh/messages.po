@@ -119,6 +119,10 @@ msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
+msgid "{filename} could not be read from that site. It stayed a link."
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
 msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
 
@@ -2510,6 +2514,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "The image imported, but the editor could not insert it."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
