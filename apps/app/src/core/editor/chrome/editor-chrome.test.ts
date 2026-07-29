@@ -94,6 +94,50 @@ describe("gesture suppression", () => {
     expect(chrome.gesture).toBe("idle");
   });
 
+  it("gives each drag its own end, so a stale one cannot release a newer drag", () => {
+    const { chrome } = createEditorChrome();
+
+    const endFirst = chrome.beginDrag();
+    const endSecond = chrome.beginDrag();
+
+    // The block handle's drag ended a frame late while the column resize is
+    // still running. The late call belongs to a gesture nobody is holding.
+    endFirst();
+    expect(chrome.gesture).toBe("drag");
+    expect(chrome.suppressed).toBe(true);
+
+    endSecond();
+    expect(chrome.gesture).toBe("idle");
+  });
+
+  it("cancels the drag it replaced, so no owner is left holding a dead pointer", () => {
+    const { chrome } = createEditorChrome();
+    const abandonFirst = vi.fn();
+
+    chrome.beginDrag(abandonFirst);
+    chrome.beginDrag();
+
+    expect(abandonFirst).toHaveBeenCalledOnce();
+  });
+
+  it("cancels only the drag that is running", () => {
+    const { chrome, controller } = createEditorChrome();
+    const abandonFirst = vi.fn();
+    const abandonSecond = vi.fn();
+
+    chrome.beginDrag(abandonFirst);
+    chrome.beginDrag(abandonSecond);
+    // Replacing the first drag already cancelled it; what Esc must not do is
+    // reach back and cancel it a second time.
+    abandonFirst.mockClear();
+
+    controller.cancelGesture();
+
+    expect(abandonSecond).toHaveBeenCalledOnce();
+    expect(abandonFirst).not.toHaveBeenCalled();
+    expect(chrome.gesture).toBe("idle");
+  });
+
   it("drops revealed approach chrome the moment a gesture starts", () => {
     const { chrome } = createEditorChrome();
     const { timers, advance } = fakeTimers();

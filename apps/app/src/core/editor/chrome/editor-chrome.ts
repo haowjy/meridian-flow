@@ -19,7 +19,7 @@ import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 import type { ContextClaimHandler } from "./context-claims";
 import type { ChromeLayer, GesturePhase } from "./esc-chain";
 import { createHoverIntent, type HoverIntent, type HoverIntentOptions } from "./hover-intent";
-import type { KeymapContribution } from "./keymap";
+import { assertKeymapContribution, type KeymapContribution } from "./keymap";
 
 export type ChromeLayerOptions = {
   /** Stable within one open; used in traces and by the Esc chain. */
@@ -39,6 +39,12 @@ export type ChromeLayerHandle = {
 };
 
 export type EditorChrome = {
+  /**
+   * Identifies this editor's chrome. Two documents open side by side are two
+   * kernels listening on the same page, so chrome portalled out of the editor
+   * has to say whose it is or both would route a right-click on it.
+   */
+  readonly id: string;
   /** Deepest context under the selection, recomputed per transaction. */
   readonly context: ChromeContext;
   /** Open transient layers in open order; the last is topmost. */
@@ -92,10 +98,14 @@ export type EditorChromeController = {
   destroy: () => void;
 };
 
+let chromeSequence = 0;
+
 export function createEditorChrome(): {
   chrome: EditorChrome;
   controller: EditorChromeController;
 } {
+  chromeSequence += 1;
+  const id = `editor-chrome-${chromeSequence}`;
   const listeners = new Set<() => void>();
   const claims: ContextClaimHandler[] = [];
   const keymaps: KeymapContribution[] = [];
@@ -105,7 +115,8 @@ export function createEditorChrome(): {
   let layers: ChromeLayer[] = [];
   let gesture: GesturePhase = "idle";
   let context: ChromeContext = DOCUMENT_CHROME_CONTEXT;
-  let cancelGesture: (() => void) | null = null;
+  /** The drag that is actually running, if any. Identity, not a flag. */
+  let activeDrag: { token: symbol; cancel?: () => void } | null = null;
   let keymapRevision = 0;
 
   const notify = () => {
@@ -123,6 +134,7 @@ export function createEditorChrome(): {
   };
 
   const chrome: EditorChrome = {
+    id,
     get context() {
       return context;
     },
@@ -178,6 +190,9 @@ export function createEditorChrome(): {
     claimHandlers: () => claims,
 
     registerKeymap(contribution) {
+      // Before the push, so a refused contribution leaves the registry exactly
+      // as it was and the next lane's registration still lands.
+      assertKeymapContribution(contribution);
       keymaps.push(contribution);
       keymapRevision += 1;
       notify();
@@ -195,13 +210,21 @@ export function createEditorChrome(): {
     },
 
     beginDrag(onCancel) {
-      cancelGesture = onCancel ?? null;
+      // A second drag while one is running means the first is over, whatever
+      // its owner still thinks: two owners cannot both hold the pointer. Tell
+      // the older one so it stops drawing a drop line nobody is aiming.
+      abandonActiveDrag();
+
+      const token = Symbol("drag");
+      activeDrag = { token, cancel: onCancel };
       setGesture("drag");
-      let ended = false;
+
       return () => {
-        if (ended) return;
-        ended = true;
-        cancelGesture = null;
+        // A late end from a drag that was already replaced is not this
+        // gesture's to release. Without the token it would unsuppress the
+        // drag the writer is actually running.
+        if (activeDrag?.token !== token) return;
+        activeDrag = null;
         setGesture("idle");
       };
     },
@@ -222,6 +245,12 @@ export function createEditorChrome(): {
     },
   };
 
+  function abandonActiveDrag(): void {
+    const drag = activeDrag;
+    activeDrag = null;
+    drag?.cancel?.();
+  }
+
   const controller: EditorChromeController = {
     setContext(next) {
       if (
@@ -236,12 +265,11 @@ export function createEditorChrome(): {
     },
     setGesture,
     cancelGesture() {
-      const cancel = cancelGesture;
-      cancelGesture = null;
-      cancel?.();
+      abandonActiveDrag();
       setGesture("idle");
     },
     destroy() {
+      activeDrag = null;
       for (const intent of hoverIntents) intent.dispose();
       hoverIntents.clear();
       listeners.clear();

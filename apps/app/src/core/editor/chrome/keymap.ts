@@ -47,14 +47,30 @@ export type KeymapContribution = {
 };
 
 /**
+ * Refuse a contribution the kernel cannot honour, at registration time.
+ *
+ * `Escape` is the one refusal. It belongs to the Esc chain (`escStep`), which
+ * is a policy about the whole editor rather than a key a surface can own; a
+ * surface that wants a step in that walk registers a layer instead.
+ *
+ * Throwing HERE rather than during the merge is the whole point: the stack
+ * still names the lane that wrote the binding, and the registry has not been
+ * touched, so the refusal costs the offending lane its registration and costs
+ * every other lane nothing. Validating late once cost every later registration
+ * silently — a guard against silent rejection failing into silent rejection.
+ */
+export function assertKeymapContribution(contribution: KeymapContribution): void {
+  if (!("Escape" in contribution.bindings)) return;
+  throw new Error(
+    `Keymap contribution "${contribution.id}" bound Escape; the Esc chain owns it — register a chrome layer instead`,
+  );
+}
+
+/**
  * Flatten registered contributions into one ProseMirror keymap. Each key runs
  * its scope ladder in order and stops at the first binding that consumes it,
  * so a contribution that declines (returns false) hands the key down rather
  * than swallowing it — the difference between "not now" and "never again".
- *
- * `Escape` is rejected outright. It belongs to the Esc chain (`escStep`), which
- * is a policy about the whole editor rather than a key a surface can own; a
- * surface that wants a step in that walk registers a layer instead.
  */
 export function mergeKeymapContributions(
   contributions: readonly KeymapContribution[],
@@ -65,11 +81,6 @@ export function mergeKeymapContributions(
     for (const contribution of contributions) {
       if (contribution.scope !== scope) continue;
       for (const [key, binding] of Object.entries(contribution.bindings)) {
-        if (key === "Escape") {
-          throw new Error(
-            `Keymap contribution "${contribution.id}" bound Escape; the Esc chain owns it — register a chrome layer instead`,
-          );
-        }
         const bindings = byKey.get(key);
         if (bindings) bindings.push(binding);
         else byKey.set(key, [binding]);

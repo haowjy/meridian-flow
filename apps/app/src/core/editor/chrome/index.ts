@@ -8,7 +8,7 @@
 
 export {
   ChromeKernelExtension,
-  EDITOR_CHROME_ATTRIBUTE,
+  editorChromeAttributes,
   getEditorChrome,
 } from "./ChromeKernelExtension";
 export {
@@ -17,6 +17,7 @@ export {
   type ChromeContextKind,
   chromeContextAt,
   DOCUMENT_CHROME_CONTEXT,
+  proseSelectionCovers,
   resolveChromeContext,
 } from "./chrome-context";
 export {
@@ -47,10 +48,11 @@ export {
   type HoverIntentOptions,
   type HoverIntentTimers,
 } from "./hover-intent";
+// The validator and the merge are `registerKeymap`'s and the extension's; a
+// lane declares its bindings and the registry does the rest.
 export {
   KEYMAP_SCOPE_ORDER,
   type KeymapBinding,
   type KeymapContribution,
   type KeymapScope,
-  mergeKeymapContributions,
 } from "./keymap";

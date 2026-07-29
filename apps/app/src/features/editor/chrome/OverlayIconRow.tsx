@@ -29,7 +29,9 @@ import { createPortal } from "react-dom";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-import { useChromeSuppressed } from "./useEditorChrome";
+import { editorChromeAttributes } from "@/core/editor/chrome";
+
+import { useChromeSuppressed, useEditorChrome } from "./useEditorChrome";
 
 /** Matches mockup 03b: the row sits inside the bounds, not on the edge. */
 const OVERLAY_INSET_PX = 10;
@@ -70,16 +72,17 @@ export function OverlayIconRow({
   overflow,
   kind,
 }: OverlayIconRowProps) {
+  const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
   const rect = useAnchorRect(anchor);
 
-  if (!anchor || !rect || typeof document === "undefined") return null;
+  if (!anchor || !rect || !chrome || typeof document === "undefined") return null;
 
   return createPortal(
     <TooltipProvider delayDuration={400}>
       <div
         data-overlay-icon-row={kind}
-        data-editor-chrome
+        {...editorChromeAttributes(chrome)}
         data-state={visible && !suppressed ? "open" : "closed"}
         className="meridian-overlay-icon-row"
         style={{

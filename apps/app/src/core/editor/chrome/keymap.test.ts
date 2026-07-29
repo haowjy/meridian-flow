@@ -1,7 +1,11 @@
 import type { EditorState } from "@tiptap/pm/state";
 import { describe, expect, it, vi } from "vitest";
 
-import { type KeymapContribution, mergeKeymapContributions } from "./keymap";
+import {
+  assertKeymapContribution,
+  type KeymapContribution,
+  mergeKeymapContributions,
+} from "./keymap";
 
 const state = {} as EditorState;
 
@@ -39,12 +43,36 @@ describe("mergeKeymapContributions", () => {
     const merged = mergeKeymapContributions([contribution("table", "table", false)]);
     expect(merged["Alt-ArrowUp"](state)).toBe(false);
   });
+});
 
+describe("assertKeymapContribution", () => {
   it("refuses Escape: the walk-home chain owns it, not a surface", () => {
     expect(() =>
-      mergeKeymapContributions([
-        { id: "diagram-dialog", scope: "layer", bindings: { Escape: () => true } },
-      ]),
+      assertKeymapContribution({
+        id: "diagram-dialog",
+        scope: "layer",
+        bindings: { Escape: () => true },
+      }),
     ).toThrow(/Esc chain owns it/);
+  });
+
+  it("names the lane, so the refusal reaches whoever wrote the binding", () => {
+    expect(() =>
+      assertKeymapContribution({
+        id: "slash-menu",
+        scope: "layer",
+        bindings: { Escape: () => true },
+      }),
+    ).toThrow(/"slash-menu"/);
+  });
+
+  it("passes anything else through", () => {
+    expect(() =>
+      assertKeymapContribution({
+        id: "table",
+        scope: "table",
+        bindings: { "Alt-ArrowUp": () => true },
+      }),
+    ).not.toThrow();
   });
 });
