@@ -17,7 +17,8 @@
  */
 
 import { type Editor, Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import type { KeymapBinding } from "../chrome/keymap";
@@ -34,6 +35,22 @@ import { isEditorObject, objectTypeSpec } from "./object-types";
 const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
 export const objectPhysicsPluginKey = new PluginKey(OBJECT_PHYSICS_NAME);
+
+/**
+ * The class the jade ring paints on — law 1's click, read back.
+ *
+ * NOT ProseMirror's own `ProseMirror-selectednode`. That one is applied once,
+ * imperatively, by a node view's `selectNode` lifecycle call, and a remote
+ * write does not go through it: y-prosemirror rebuilds the document from the
+ * Yjs type, the node views are replaced under a selection that never changed,
+ * and nothing tells the new one it is selected. The ring vanished on a peer's
+ * first keystroke and never came back — not even on re-selecting — for the
+ * rest of the session.
+ *
+ * A decoration has no such lifecycle. ProseMirror derives it from state on
+ * every view update, so a rebuilt view is built holding it.
+ */
+export const SELECTED_OBJECT_CLASS = "meridian-object-selected";
 
 /**
  * Opens the object's own surface.
@@ -176,6 +193,21 @@ export const ObjectPhysicsExtension = Extension.create({
         },
 
         props: {
+          /**
+           * The ring, derived rather than remembered. Every node ProseMirror
+           * has selected wears it, which is the same set its own
+           * `ProseMirror-selectednode` covers — a table is the deliberate
+           * exception, because prosemirror-tables normalizes its selection to
+           * every cell and paints its own tint across them.
+           */
+          decorations(state) {
+            const { selection } = state;
+            if (!(selection instanceof NodeSelection)) return null;
+            return DecorationSet.create(state.doc, [
+              Decoration.node(selection.from, selection.to, { class: SELECTED_OBJECT_CLASS }),
+            ]);
+          },
+
           /**
            * Law 1: a click reads. On an object that reading is a selection,
            * never its source. `direct` keeps the click at the node the pointer

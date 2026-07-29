@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
 import { createStandaloneEditorExtensions } from "../config";
+
+
 import { registerObjectEngagement, registerObjectKeymap } from "./ObjectPhysicsExtension";
 
 let editor: Editor | null = null;

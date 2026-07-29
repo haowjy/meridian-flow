@@ -52,6 +52,9 @@ re-deriving it, so there is one answer to "is this an object".
 - Reading `selection instanceof NodeSelection` to find the selected object: a
   table cannot hold one (see the kernel's `.context`). Call `selectedObject`.
 - Registering keys with a new TipTap extension priority instead of a scope.
+- Marking editor state from a node view's `selectNode`/`deselectNode`. Those
+  fire once, and a peer's write rebuilds the node view without them — which is
+  how the jade ring went missing for a whole session. Derive it.
 - Scoping a key by what it is about rather than where it must work. The arrow
   walk is `block` scope, not `object`: walking ONTO an object starts from the
   prose beside it, where no object is selected yet.

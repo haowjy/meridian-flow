@@ -8,7 +8,13 @@
  */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import {
+  type EditorState,
+  NodeSelection,
+  Selection,
+  TextSelection,
+  type Transaction,
+} from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 
 import { isEditorObject } from "./object-types";
@@ -95,14 +101,16 @@ export function selectObjectTransaction(state: EditorState, pos: number): Transa
 }
 
 /**
- * Put the caret past the object at `pos` — forward lands after it, backward
- * before it. This is the second arrow press, and half of the last step of the
- * Esc walk home.
+ * The selection immediately beside the object at `pos` — the second arrow
+ * press, which passes beyond what the first press stepped onto.
  *
  * Null when that side is a dead end. ProseMirror's `near` quietly searches the
  * other way rather than failing, and for an arrow key that is exactly wrong:
  * pressing Right on the last block in the document must not move the caret
- * left.
+ * left. The test is POSITIONAL, not a type check — a leaf atom sitting against
+ * the object (a scene break) is a legitimate landing that arrow-walk should
+ * step onto, and reading "not a TextSelection" as "dead end" is what once sent
+ * Esc backward past the object it was leaving.
  */
 export function caretBesideObjectTransaction(
   state: EditorState,
@@ -113,9 +121,8 @@ export function caretBesideObjectTransaction(
   if (!node) return null;
 
   const edge = direction === 1 ? pos + node.nodeSize : pos;
-  const selection = TextSelection.near(state.doc.resolve(edge), direction);
-  if (!(selection instanceof TextSelection)) return null;
-  if (direction === 1 ? selection.from < edge : selection.from > edge) return null;
+  const selection = Selection.near(state.doc.resolve(edge), direction);
+  if (direction === 1 ? selection.from < edge : selection.to > edge) return null;
 
   return state.tr.setSelection(selection).scrollIntoView();
 }
@@ -139,13 +146,24 @@ export function caretHomeFromObjectTransaction(
   state: EditorState,
   pos: number,
 ): Transaction | null {
-  const beside =
-    caretBesideObjectTransaction(state, pos, 1) ?? caretBesideObjectTransaction(state, pos, -1);
-  if (beside) return beside;
-
   const node = state.doc.nodeAt(pos);
+  if (!node) return null;
+
+  // Forward to the first place the writer can type, stepping OVER a leaf that
+  // holds no text rather than selecting it. Esc asked to leave object-land, so
+  // landing on another selected object would leave the next keystroke poised
+  // to replace it — and searching only for the position immediately beside the
+  // object is what made a scene break look like a dead end and sent the caret
+  // backward into the block above.
+  const forward = Selection.findFrom(state.doc.resolve(pos + node.nodeSize), 1, true);
+  if (forward) return state.tr.setSelection(forward).scrollIntoView();
+
+  // Nothing ahead: in front of the object beats nowhere at all.
+  const backward = Selection.findFrom(state.doc.resolve(pos), -1, true);
+  if (backward) return state.tr.setSelection(backward).scrollIntoView();
+
   const paragraph = state.schema.nodes.paragraph;
-  if (!node || !paragraph) return null;
+  if (!paragraph) return null;
 
   const after = pos + node.nodeSize;
   const $after = state.doc.resolve(after);
