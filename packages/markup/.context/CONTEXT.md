@@ -99,4 +99,5 @@ AST positions stay self-consistent even when preprocessors rewrite input.
 presets. It carries only the target text: `[[target|label]]` is literal text, not
 an alternate spelling. A parsed wikilink uses the ordinary ProseMirror `link`
 mark, so it needs no schema node or extra mark attributes. Resolution never
-occurs in the codec; unresolved targets round-trip unchanged.
+occurs in the codec; unresolved targets round-trip unchanged. Outer whitespace
+inside the brackets is canonicalized away; whitespace within a target is kept.

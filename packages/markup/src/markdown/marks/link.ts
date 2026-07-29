@@ -8,7 +8,7 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
   serialize(text, attrs) {
     const href = String(attrs.href ?? "");
     const wikiTarget = wikilinkTarget(href);
-    if (wikiTarget !== null && text === wikiTarget && attrs.title == null)
+    if (wikiTarget !== null && markdownText(text) === wikiTarget && attrs.title == null)
       return `[[${wikiTarget}]]`;
     const title = attrs.title == null ? "" : ` "${String(attrs.title).replaceAll('"', '\\"')}"`;
     return `[${text.replaceAll("]", "\\]")}](${href}${title})`;
@@ -26,5 +26,9 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
 function wikilinkTarget(href: string): string | null {
   if (!href.startsWith("[[") || !href.endsWith("]]")) return null;
   const target = href.slice(2, -2);
-  return target.length > 0 && !target.includes("|") ? target : null;
+  return target.length > 0 && !/[\r\n\]|]/.test(target) ? target : null;
+}
+
+function markdownText(value: string): string {
+  return value.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 }

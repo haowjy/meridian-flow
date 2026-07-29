@@ -1,6 +1,6 @@
 /** Pure resolution policy shared by persisted and in-memory document-link adapters. */
 
-import { isUuid } from "../../shared/uuid.js";
+import { parseRequestId } from "../../shared/uuid.js";
 import type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
@@ -100,9 +100,9 @@ function parseSchemeLocation(
 
   const body = uri.slice("work://".length).replace(/^\/+/, "");
   const [first, ...rest] = body.split("/");
-  const hasAuthority = isUuid(first);
-  const workId = hasAuthority ? first : fallbackWorkId;
-  const path = normalizeAbsolutePath(hasAuthority ? rest.join("/") : body);
+  const authority = parseRequestId(first);
+  const workId = authority ?? fallbackWorkId;
+  const path = normalizeAbsolutePath(authority ? rest.join("/") : body);
   return workId && path ? { scheme: "work", path, workId } : null;
 }
 

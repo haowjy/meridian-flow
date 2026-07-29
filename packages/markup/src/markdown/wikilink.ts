@@ -34,6 +34,7 @@ const PIPE = 124;
 
 const tokenizeWikiLink = (effects: Effects, ok: State, nok: State): State => {
   let targetSize = 0;
+  let hasNonSpace = false;
 
   return openFirst;
 
@@ -57,13 +58,14 @@ const tokenizeWikiLink = (effects: Effects, ok: State, nok: State): State => {
       return nok(code);
     }
     if (code === RIGHT_BRACKET) {
-      if (targetSize === 0) return nok(code);
+      if (targetSize === 0 || !hasNonSpace) return nok(code);
       effects.exit("wikiLinkTarget");
       effects.enter("wikiLinkMarker");
       effects.consume(code);
       return closeSecond;
     }
     targetSize += 1;
+    if (code !== 32) hasNonSpace = true;
     effects.consume(code);
     return target;
   }
@@ -98,8 +100,14 @@ const enterWikiLinkTarget: FromMarkdownHandle = function (this: CompileContext, 
 
 const exitWikiLinkTarget: FromMarkdownHandle = function (this: CompileContext, token: Token) {
   const node = this.stack[this.stack.length - 2] as unknown as MdastWikiLink;
-  node.target = this.sliceSerialize(token);
   this.config.exit.data?.call(this, token);
+  const text = node.children[0];
+  const target =
+    text?.type === "text" && typeof text.value === "string"
+      ? text.value
+      : this.sliceSerialize(token);
+  node.target = target.trim();
+  if (text?.type === "text") text.value = node.target;
 };
 
 const exitWikiLink: FromMarkdownHandle = function (this: CompileContext, token: Token) {

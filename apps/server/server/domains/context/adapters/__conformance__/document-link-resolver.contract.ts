@@ -6,7 +6,7 @@ import type { DocumentLinkResolver } from "../../ports/document-link-resolver.js
 
 export const DOCUMENT_LINK_CONTRACT_IDS = {
   project: "00000000-0000-4000-8000-000000000901",
-  work: "00000000-0000-4000-8000-000000000902",
+  work: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
   chapter: "00000000-0000-4000-8000-000000000903",
   character: "00000000-0000-4000-8000-000000000904",
   workNote: "00000000-0000-4000-8000-000000000905",
@@ -80,8 +80,10 @@ export function registerDocumentLinkResolverContract(
       await expect(
         harness.resolver.resolve({
           projectId: DOCUMENT_LINK_CONTRACT_IDS.project,
-          workId: DOCUMENT_LINK_CONTRACT_IDS.work,
-          target: { kind: "scheme", uri: "work://notes/Pacing.md" },
+          target: {
+            kind: "scheme",
+            uri: `work://${DOCUMENT_LINK_CONTRACT_IDS.work.toUpperCase()}/notes/Pacing.md`,
+          },
         }),
       ).resolves.toMatchObject({
         documentId: DOCUMENT_LINK_CONTRACT_IDS.workNote,

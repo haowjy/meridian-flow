@@ -91,15 +91,22 @@ describe("codec presets", () => {
     ["markdown", markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })],
     ["mdx", mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components })],
   ])("round-trips first-class wikilinks through the %s preset", (_name, wikilinkCodec) => {
-    const input = "Before [[Chapter 213]] and [[characters/Kael]].";
+    const input =
+      "Before [[Chapter 213]], [[characters/Kael]], [[AT&T]], [[chapter_one]], and [[#prologue]].";
     const parsed = wikilinkCodec.parse(input).blocks;
 
     expect(parsed[0]?.toJSON()).toEqual(
       paragraph(
         t("Before "),
         t("Chapter 213", [m("link", { href: "[[Chapter 213]]", title: null })]),
-        t(" and "),
+        t(", "),
         t("characters/Kael", [m("link", { href: "[[characters/Kael]]", title: null })]),
+        t(", "),
+        t("AT&T", [m("link", { href: "[[AT&T]]", title: null })]),
+        t(", "),
+        t("chapter_one", [m("link", { href: "[[chapter_one]]", title: null })]),
+        t(", and "),
+        t("#prologue", [m("link", { href: "[[#prologue]]", title: null })]),
         t("."),
       ).toJSON(),
     );
@@ -107,6 +114,33 @@ describe("codec presets", () => {
     expect(docFrom(wikilinkCodec.parse(wikilinkCodec.serialize(parsed)).blocks).toJSON()).toEqual(
       docFrom(parsed).toJSON(),
     );
+  });
+
+  it("keeps character-reference-looking target text literal", () => {
+    const wikilinkCodec = markdownCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    });
+    const parsed = wikilinkCodec.parse("[[A&amp;B]]").blocks;
+
+    expect(parsed[0]?.textContent).toBe("A&amp;B");
+    expect(parsed[0]?.child(0).marks[0]?.attrs.href).toBe("[[A&amp;B]]");
+    expect(wikilinkCodec.serialize(parsed)).toBe("[[A&amp;B]]\n");
+  });
+
+  it.each([
+    "star*turn",
+    " Chapter 214 ",
+  ])("preserves markdown-sensitive wikilink target %j", (target) => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      const wire = `[[${target}]]`;
+      expect(wikilinkCodec.serialize(wikilinkCodec.parse(wire).blocks)).toBe(
+        `[[${target.trim()}]]\n`,
+      );
+    }
   });
 
   it("keeps malformed, labeled, and code-contained bracket text literal", () => {
