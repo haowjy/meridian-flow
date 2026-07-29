@@ -26,14 +26,18 @@ the actions row is withheld rather than drawn half-empty.
 
 ## Key rules
 
-- **Focus goes back the way it came.** A pointer press leaves the caret in the
+- **Focus goes back the way it came**, through the popover's `returnFocus` and
+  never a timer of this lane's own. A pointer press leaves the caret in the
   sentence the writer was reading (`focusOnOpen="prose"`) and close restores the
   held selection; the keyboard door takes focus into the popover and close hands
-  it back to the mark's current span, queried rather than remembered.
+  it back to the mark's current span, queried rather than remembered. Racing
+  Radix's teardown from a `requestAnimationFrame` looks right and loses: the
+  layer's own hand-back lands a frame later and puts the caret in the prose.
 - **Nothing is handed back when another surface opened.** The kernel replaces the
   open transient, so Mod+K reaches this surface as a close: the caret then
   belongs to whatever opened, and restoring it would pull focus out of a form on
-  the frame it appeared.
+  the frame it appeared. That guard is the layer's, which is the whole reason the
+  return runs there.
 - **The rect is asked for, never captured.** Marks are decorations and every
   remote write rebuilds them; a held span measures as a rect of zeros.
 

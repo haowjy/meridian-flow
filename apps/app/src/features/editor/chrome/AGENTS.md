@@ -59,6 +59,13 @@ target.
   pulls focus out of a surface on the frame it appeared — which Radix reads as
   an outside interaction and dismisses. A close returns the caret only when it
   was the last thing on screen.
+- **A lane that returns focus somewhere else passes `returnFocus`**, and never
+  its own timer. The guards above are the reason: a lane racing Radix's teardown
+  from a `requestAnimationFrame` loses, and worse, it hands focus back over the
+  surface that just replaced it. `returnFocus` runs in the layer's place, under
+  the same two guards. The peer-mark popover is the case that earns it — its door
+  is a focusable span inside the prose, so a writer who arrived by Tab continues
+  from the mark rather than from the caret.
 - **`onEscapeKeyDown` → `useChromeLayer(...).onEscapeKeyDown`.** Without it a
   single Esc closes a dialog and the pane inside it, spending two steps of the
   walk home on one key.

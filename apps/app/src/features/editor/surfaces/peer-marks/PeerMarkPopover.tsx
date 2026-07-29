@@ -40,10 +40,13 @@ export function PeerMarkPopover({
   editor,
   target,
   onOpenChange,
+  returnFocus,
 }: {
   editor: Editor | null;
   target: PeerMarkPopoverTarget | null;
   onOpenChange: (open: boolean) => void;
+  /** Where focus goes on close, when nothing took this popover's place. */
+  returnFocus?: () => void;
 }) {
   const marker = target?.marker ?? null;
   const agentAuthor = marker?.author.kind === "agent" ? marker.author : null;
@@ -114,6 +117,7 @@ export function PeerMarkPopover({
       // A pointer press already left the caret in the sentence the writer was
       // reading; only the keyboard door asks to be taken inside.
       focusOnOpen={target.activation === "pointer" ? "prose" : "content"}
+      returnFocus={returnFocus}
       className="w-80 text-caption"
     >
       <div className="space-y-3" data-peer-mark-popover>

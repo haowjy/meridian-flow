@@ -11,17 +11,20 @@
  * marker object taken at press time would keep reporting the state it had then.
  */
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 
 import {
   type PeerMarkerStorage,
   peerMarkElement,
   peerMarks,
 } from "@/core/editor/extensions/PeerMarkerExtension";
-import { restorePeerMarkSelection } from "@/core/editor/extensions/peer-mark-press";
+import {
+  type PeerMarkPress,
+  restorePeerMarkSelection,
+} from "@/core/editor/extensions/peer-mark-press";
 import type { SessionMarkerSnapshot } from "@/core/editor/session-marker-store";
 
-import { type EditorChromeSurfaceProps, useEditorChrome } from "../../chrome";
+import type { EditorChromeSurfaceProps } from "../../chrome";
 import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 
 const NO_SUBSCRIPTION = () => () => {};
@@ -32,29 +35,34 @@ const noMarkers = () => NO_MARKERS;
 export function PeerMarkSurface({ editor }: EditorChromeSurfaceProps) {
   const lane = useMemo(() => peerMarks(editor), [editor]);
   const target = usePeerMarkTarget(lane);
-  const chrome = useEditorChrome(editor);
+
+  // The press that is closing, kept for one beat: focus comes back during the
+  // popover's teardown, by which time the store has already let go.
+  const closing = useRef<PeerMarkPress | null>(null);
+  closing.current = lane?.press.press ?? closing.current;
 
   const onOpenChange = useCallback(
     (open: boolean) => {
-      const closing = lane?.press.press;
-      if (open || !closing || !lane) return;
-      lane.press.close();
-      requestAnimationFrame(() => {
-        // Another surface took our place — the kernel replaces the open
-        // transient, so Mod+K arrives here as a close. The caret belongs to
-        // whatever opened, not to the sentence this popover came from.
-        if (chrome && chrome.layers.length > 0) return;
-        if (closing.activation === "keyboard") {
-          // Queried, not remembered: the mark the writer tabbed to is drawn by
-          // whichever span exists once the popover has gone.
-          peerMarkElement(editor, closing.changeId)?.focus();
-          return;
-        }
-        restorePeerMarkSelection(editor, closing.editorSelection);
-      });
+      if (open) return;
+      lane?.press.close();
     },
-    [chrome, editor, lane],
+    [lane],
   );
+
+  // Where the writer goes back to, run by the layer only when nothing took this
+  // surface's place: Mod+K reaches here as a close, and the caret then belongs
+  // to the form that opened.
+  const returnFocus = useCallback(() => {
+    const press = closing.current;
+    if (!press) return;
+    if (press.activation === "keyboard") {
+      // Queried, not remembered: the mark the writer tabbed to is drawn by
+      // whichever span exists once the popover has gone.
+      peerMarkElement(editor, press.changeId)?.focus();
+      return;
+    }
+    restorePeerMarkSelection(editor, press.editorSelection);
+  }, [editor]);
 
   if (!target) return null;
 
@@ -66,6 +74,7 @@ export function PeerMarkSurface({ editor }: EditorChromeSurfaceProps) {
       editor={editor}
       target={target}
       onOpenChange={onOpenChange}
+      returnFocus={returnFocus}
     />
   );
 }

@@ -54,6 +54,8 @@ export type EditorPopoverProps = {
   side?: ComponentProps<typeof PopoverContent>["side"];
   /** `prose` leaves the caret where it was; the default takes focus in. */
   focusOnOpen?: "content" | "prose";
+  /** Where focus goes on close; the default hands the caret back to the prose. */
+  returnFocus?: () => void;
   className?: string;
   children: ReactNode;
 };
@@ -69,6 +71,7 @@ export function EditorPopover({
   align = "start",
   side = "bottom",
   focusOnOpen = "content",
+  returnFocus,
   className,
   children,
 }: EditorPopoverProps) {
@@ -80,6 +83,7 @@ export function EditorPopover({
     open,
     close: () => onOpenChange(false),
     dismissal: "self",
+    returnFocus,
   });
 
   // Read through a ref so the anchor object stays identical across renders:
