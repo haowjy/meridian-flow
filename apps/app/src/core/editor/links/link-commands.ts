@@ -13,13 +13,8 @@ import { type Editor, getMarkRange } from "@tiptap/core";
 import type { Mark } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
-import type * as Y from "yjs";
 
-import {
-  relativePositionForIndex,
-  relativePositionRuntimeFromState,
-  resolveRelativeRange,
-} from "../relative-position-runtime";
+import { anchorRange, type EditorAnchor, followAnchor, resolveAnchor } from "../anchors";
 import { normalizeLinkHref } from "./link-target";
 
 export type LinkSelection = {
@@ -69,60 +64,16 @@ export function linkHref(link: LinkSelection): string {
 }
 
 /**
- * A range that survives what ProseMirror's own mapping cannot.
- *
- * Every remote change — a peer typing, an AI write landing — reaches this
- * editor as a replacement of the WHOLE document: y-prosemirror rebuilds the
- * ProseMirror doc from the Yjs type and dispatches one replace step. So every
- * position maps to a boundary and reports itself deleted, and a surface holding
- * raw numbers across one is pointing at nothing. Yjs relative positions are
- * what survive it, and they are already how this editor follows peer marks and
- * live ranges.
- *
- * `relative` is null on an editor with no shared document (a standalone
- * surface, a test), where the mapping is the whole story because there are no
- * remote changes to survive.
+ * A range that survives what ProseMirror's own mapping cannot — the shared
+ * [`EditorAnchor`](../anchors.ts), under the name link surfaces know it by.
  */
-export type LinkAnchor = {
-  from: number;
-  to: number;
-  relative: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
-};
+export type LinkAnchor = EditorAnchor;
 
 /** Pin a range so a surface can find it again after the document moves. */
-export function anchorLinkRange(
-  state: EditorState,
-  range: { from: number; to: number },
-): LinkAnchor {
-  const runtime = relativePositionRuntimeFromState(state);
-  const start = runtime && relativePositionForIndex(runtime, range.from);
-  const end = runtime && relativePositionForIndex(runtime, range.to);
-  return { ...range, relative: start && end ? { start, end } : null };
-}
+export const anchorLinkRange = anchorRange;
 
 /** Where that range sits now, or null when it is gone. */
-export function resolveLinkAnchor(
-  state: EditorState,
-  anchor: LinkAnchor,
-  mapping: Mappable,
-): { from: number; to: number } | null {
-  const runtime = relativePositionRuntimeFromState(state);
-  if (runtime && anchor.relative) return resolveRelativeRange(runtime, anchor.relative);
-
-  // An empty range is a caret, and both of its edges are the same edge: text a
-  // peer types there belongs to the document, so the caret stays in front of
-  // it. Biasing them apart would invert the range, and a commit against an
-  // inverted range writes somewhere nobody asked for.
-  if (anchor.from === anchor.to) {
-    const at = mapping.mapResult(anchor.from, -1);
-    return at.deleted ? null : { from: at.pos, to: at.pos };
-  }
-
-  const from = mapping.mapResult(anchor.from, 1);
-  const to = mapping.mapResult(anchor.to, -1);
-  if (from.deleted || to.deleted || to.pos < from.pos) return null;
-  return { from: from.pos, to: to.pos };
-}
+export const resolveLinkAnchor = resolveAnchor;
 
 export type LinkDraft = LinkAnchor & {
   /** Range the commit rewrites: the selection, or the whole existing link.
@@ -179,8 +130,8 @@ export function mapLinkDraft(
   draft: LinkDraft,
   mapping: Mappable,
 ): LinkDraft | null {
-  const at = resolveLinkAnchor(state, draft, mapping);
-  return at ? { ...draft, ...anchorLinkRange(state, at) } : null;
+  const at = followAnchor(state, draft, mapping);
+  return at ? { ...draft, ...at } : null;
 }
 
 /**
