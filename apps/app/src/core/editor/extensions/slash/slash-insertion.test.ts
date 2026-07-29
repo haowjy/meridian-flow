@@ -12,6 +12,7 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
+import { type ObjectAt, registerObjectEngagement } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
 import { applySlashCommand } from "./slash-insertion";
 
@@ -130,21 +131,52 @@ describe("slash insertion semantics", () => {
     expect(caretChain(instance)).toEqual(["table", "table_row", "table_header", "paragraph"]);
   });
 
-  it("opens a code block and a diagram with the caret in the fence", () => {
-    const fence = mountWithTrigger("", "/code");
-    applySlashCommand(fence.editor, fence.range, item("code"), catalog());
-    expect(caretChain(fence.editor)).toEqual(["code_block"]);
-    expect(fence.editor.state.doc.firstChild?.textContent).toBe("");
+  it("opens a code block with the caret in the fence", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/code");
+    applySlashCommand(instance, range, item("code"), catalog());
 
-    fence.editor.destroy();
+    expect(caretChain(instance)).toEqual(["code_block"]);
+    expect(instance.state.doc.firstChild?.textContent).toBe("");
+  });
 
-    const diagram = mountWithTrigger("", "/diagram");
-    applySlashCommand(diagram.editor, diagram.range, item("diagram"), catalog());
-    const node = diagram.editor.state.doc.firstChild;
-    expect(node?.type.name).toBe("code_block");
+  /**
+   * A diagram's readiness is a surface, not a caret: law 2's exception says a
+   * just-made object opens ready to edit, and the object lane owns what
+   * "open" means for one. This asserts the hand-off rather than the fence,
+   * because the fence is what the writer sees only until M5's dialog exists.
+   */
+  it("hands a new diagram to the object lane, at the position it landed", () => {
+    const { editor: instance, range } = mountWithTrigger("The gate stood open. ", "/diagram");
+    const opened: ObjectAt[] = [];
+    registerObjectEngagement(instance, "code_block", (target) => opened.push(target));
+
+    applySlashCommand(instance, range, item("diagram"), catalog());
+
+    expect(opened).toHaveLength(1);
+    expect(instance.state.doc.nodeAt(opened[0].pos)).toBe(opened[0].node);
+    expect(opened[0].node.attrs.language).toBe("mermaid");
+    expect(opened[0].node.textContent).toContain("flowchart");
+  });
+
+  it("leaves a diagram editable in place while no lane has registered its surface", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/diagram");
+    applySlashCommand(instance, range, item("diagram"), catalog());
+
+    const node = instance.state.doc.firstChild;
     expect(node?.attrs.language).toBe("mermaid");
     expect(node?.textContent).toContain("flowchart");
-    expect(caretChain(diagram.editor)).toEqual(["code_block"]);
+    expect(caretChain(instance)).toEqual(["code_block"]);
+  });
+
+  it("asks no surface for a table: its readiness is the caret in its first cell", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/table");
+    const opened: ObjectAt[] = [];
+    registerObjectEngagement(instance, "table", (target) => opened.push(target));
+
+    applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(opened).toHaveLength(0);
+    expect(caretChain(instance)).toEqual(["table", "table_row", "table_header", "paragraph"]);
   });
 
   it("opens a list with the caret in its first item", () => {

@@ -80,6 +80,24 @@ export function registerObjectEngagement(
 }
 
 /**
+ * Open an object's own surface without the writer pressing Enter on it.
+ *
+ * Law 2 allows exactly one caller: a just-created empty object has nothing to
+ * view yet, so the lane that made it asks for the same surface Enter would.
+ * False means no lane has registered one, and the caller keeps whatever
+ * opening it already made.
+ */
+export function engageObject(editor: Editor, target: ObjectAt): boolean {
+  const storage = physicsStorage(editor);
+  const spec = objectTypeSpec(target.node);
+  if (!storage || spec?.engage !== "surface") return false;
+  const engagement = storage.engagements.get(spec.nodeType);
+  if (!engagement) return false;
+  engagement(target);
+  return true;
+}
+
+/**
  * Keys that apply only while an object of `nodeType` is selected — Ctrl+Enter
  * for a diagram's source hatch, Alt+Arrows for a move the type owns. They
  * register at the kernel's `object` scope, so an open menu still wins.
@@ -145,7 +163,7 @@ export const ObjectPhysicsExtension = Extension.create({
             chrome?.registerKeymap({
               id: "object-engage",
               scope: "object",
-              bindings: { Enter: (state, dispatch) => engage(state, dispatch, engagements) },
+              bindings: { Enter: (state, dispatch) => engage(editor, state, dispatch) },
             }),
           ];
 
@@ -228,9 +246,9 @@ const warnedMissingEngagement = new Set<string>();
  * pressing Enter on a diagram and getting nothing.
  */
 function engage(
+  editor: Editor,
   state: Parameters<KeymapBinding>[0],
   dispatch: Parameters<KeymapBinding>[1],
-  engagements: Map<string, ObjectEngagement>,
 ): boolean {
   const selected = selectedObject(state);
   if (!selected) return false;
@@ -239,9 +257,7 @@ function engage(
   if (!spec) return false;
 
   if (spec.engage === "surface") {
-    const engagement = engagements.get(spec.nodeType);
-    if (engagement) engagement(selected);
-    else reportMissingEngagement(spec.nodeType);
+    if (!engageObject(editor, selected)) reportMissingEngagement(spec.nodeType);
     return true;
   }
 

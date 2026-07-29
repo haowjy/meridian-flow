@@ -21,6 +21,7 @@ import type { NodeType, Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 import { Selection } from "@tiptap/pm/state";
 
+import { engageObject } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
 
 /**
@@ -193,14 +194,14 @@ export function applySlashCommand(
   const target = slashTarget(deleted.doc, deleted.mapping.map(range.from), node.type);
   if (!target) return false;
 
-  return editor
+  const start = target.mode === "convert" ? target.from : target.pos;
+  const applied = editor
     .chain()
     .focus()
     .deleteRange(range)
     .command(({ tr, dispatch }) => {
       if (!dispatch) return true;
 
-      const start = target.mode === "convert" ? target.from : target.pos;
       if (target.mode === "convert") tr.replaceWith(target.from, target.to, node);
       else tr.insert(target.pos, node);
 
@@ -208,6 +209,29 @@ export function applySlashCommand(
       return true;
     })
     .run();
+
+  if (applied) openNewObject(editor, start);
+  return applied;
+}
+
+/**
+ * Law 2's one exception: a just-created object has nothing to view yet, so it
+ * opens ready to edit. Which objects those are is the object table's answer,
+ * not a second list here — a type registered `engage: "surface"` gets the same
+ * surface Enter would open, and everything else keeps the caret this module
+ * already placed.
+ *
+ * TODO(M5): the diagram is the only entry that reaches this today, and the
+ * surface it wants is the diagram dialog. The object lane registers it with
+ * `registerObjectEngagement(editor, "code_block", …)`, and when it does, the
+ * mermaid entry's `caret: "inside"` becomes wrong: a rendered fence has no
+ * inside, so the caret rule turns into a selection and the dialog is the
+ * opening. Until then a mermaid fence is plain editable source and the caret
+ * in it is the whole readiness.
+ */
+function openNewObject(editor: Editor, pos: number) {
+  const landed = editor.state.doc.nodeAt(pos);
+  if (landed) engageObject(editor, { node: landed, pos });
 }
 
 function landCaret(tr: Transaction, start: number, size: number, caret: "inside" | "after") {
