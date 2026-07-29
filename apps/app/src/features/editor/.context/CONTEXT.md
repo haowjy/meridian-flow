@@ -32,11 +32,24 @@ an untitled tab materializes. Never re-encode these classes at a call site.
 (The document identity bar deliberately does NOT share the column: it is
 pane-wide navigation chrome, like the tab strip.)
 
-The bottom padding (`pb-[50vh]`) on the ProseMirror node is deliberate: it
-keeps the active writing line near the vertical center of the viewport in long
-manuscripts, and makes clicking below the last line focus the editor at the
-document end. This padding lives in `editorProseClass`, not in editor CSS —
-it is geometry, owned by `editor-column.ts`.
+**Scroll past end**: `editorProseScrollPastEnd` reserves half a viewport of
+padding under the last block, so a manuscript keeps scrolling until its final
+line sits in the upper half of the pane and a writer never types against the
+bottom edge. The reserve is on the ProseMirror node rather than a wrapper, so a
+press in it is ProseMirror's to answer: the caret lands at the end of the
+document, and after an object it lands as a gapcursor rather than selecting the
+object. Chrome that measures the manuscript checks a block's own box
+(`surfaces/blocks/block-geometry.ts`), because the prose node keeps answering
+`posAtCoords` far below the last line and a handle beside blank page belongs to
+nothing.
+
+The reserve only works because the prose node also carries `shrink-0`. It is a
+flex item in the fill chain, and `min-h-full` replaces the automatic minimum
+size that would otherwise hold a flex item at its content height; without
+`shrink-0` the flex algorithm squashes the box back to the scroll viewport, and
+the padding is drawn behind the blocks instead of below them. The failure is
+quiet — the manuscript still scrolls, it just stops dead at its last block — so
+verify past-the-end scrolling in a browser after touching this chain.
 
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
