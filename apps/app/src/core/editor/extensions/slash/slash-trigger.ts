@@ -46,8 +46,13 @@ export function allowsSlashTrigger(doc: PMNode, from: number): boolean {
   // Block start: nothing to be in the middle of.
   if ($from.parentOffset === 0) return true;
 
-  // Word boundary. An empty string is what a leaf before the caret reads as —
-  // a hard break, an inline image — and neither is a word to be inside of.
-  const before = doc.textBetween(from - 1, from);
-  return before === "" || /\s/u.test(before);
+  // Word boundary, read from the inline node the `/` was typed against rather
+  // than from its text: an inline leaf has no text, and the two kinds differ.
+  // A hard break starts a line, so `/` after one is at a start. An inline
+  // image is a thing standing in the sentence, and typing `/` against it is no
+  // more a boundary than typing it against a word.
+  const before = $from.nodeBefore;
+  if (!before) return false;
+  if (before.isText) return /\s$/u.test(before.text ?? "");
+  return before.type.name === "hard_break";
 }

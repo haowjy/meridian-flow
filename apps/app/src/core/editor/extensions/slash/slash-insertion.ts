@@ -179,7 +179,7 @@ export function applySlashCommand(
 ): boolean {
   if (item.id === "image") {
     const consumed = editor.chain().focus().deleteRange(range).run();
-    catalog.requestImageUpload?.();
+    catalog.requestImageUpload();
     return consumed;
   }
 

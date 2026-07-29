@@ -41,7 +41,12 @@ export type SlashCommandCatalog = {
   items: readonly SlashCommandItem[];
   menuLabel: string;
   groupLabels: Record<SlashCommandGroupId, string>;
-  requestImageUpload?: () => void;
+  /**
+   * Required, not optional: `Image` is a visible row, and a host that offers
+   * the catalog without a picker offers a row that eats the trigger text and
+   * shows nothing. A surface with no picker returns no catalog at all.
+   */
+  requestImageUpload: () => void;
 };
 
 export type SlashCommandExtensionOptions = {

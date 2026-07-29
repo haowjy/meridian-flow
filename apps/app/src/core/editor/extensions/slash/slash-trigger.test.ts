@@ -90,8 +90,14 @@ describe("slash trigger envelope", () => {
     );
   });
 
-  it("treats a leaf before the caret as a boundary, not a word", () => {
+  it("opens after a hard break, which starts a line", () => {
     expect(opensOn([paragraph(text("line"), { type: "hard_break" }, text("/"))])).toBe(true);
+  });
+
+  it("stays plain text against an inline image, which is neither a line start nor a space", () => {
+    expect(
+      opensOn([paragraph(text("a "), { type: "image", attrs: { src: "asset:1" } }, text("/"))]),
+    ).toBe(false);
   });
 
   it("refuses positions outside the document", () => {
