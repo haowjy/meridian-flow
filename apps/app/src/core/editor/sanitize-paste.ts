@@ -1,6 +1,6 @@
 /** Sanitizes clipboard HTML down to the elements understood by the editor schema. */
 
-import { normalizeLinkHref } from "./link-url";
+import { normalizeLinkHref } from "./links";
 
 const DANGEROUS_ELEMENTS = new Set(["script", "style", "iframe", "embed", "object", "form"]);
 

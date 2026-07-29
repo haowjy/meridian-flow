@@ -25,7 +25,6 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { Plugin } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
@@ -249,32 +248,10 @@ export const MeridianTableCell = TableCell.extend({
 // ─── Customized extensions ──────────────────────────────────────────
 // Extensions that add behavior beyond what TipTap defaults provide.
 
+// What a link IS. What pressing one DOES belongs to the link surface
+// (`core/editor/links/`), which owns the click, the hover, and the menu.
 export const MeridianLink = Link.extend({
   inclusive: false,
-
-  addProseMirrorPlugins() {
-    return [
-      ...(this.parent?.() ?? []),
-      new Plugin({
-        props: {
-          handleDOMEvents: {
-            // An editable link click must place a cursor, not navigate away
-            // from the manuscript. Returning false still lets ProseMirror
-            // handle the selection.
-            click: (view, event) => {
-              if (!view.editable) return false;
-              const target = event.target;
-              if (!(target instanceof Element)) return false;
-              const link = target.closest("a");
-              if (!link || !view.dom.contains(link)) return false;
-              event.preventDefault();
-              return false;
-            },
-          },
-        },
-      }),
-    ];
-  },
 
   addAttributes() {
     return {

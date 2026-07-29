@@ -2,7 +2,7 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createStandaloneEditorExtensions } from "@/core/editor/config";
+import { createStandaloneEditorExtensions } from "../config";
 import { commitLinkDraft, mapLinkDraft, resolveLinkDraft } from "./link-commands";
 
 let editor: Editor | null = null;

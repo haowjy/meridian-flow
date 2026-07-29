@@ -51,6 +51,7 @@ import {
   type SlashCommandExtensionOptions,
 } from "./extensions/SlashCommandExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
+import { LinkSurfaceExtension } from "./links";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
@@ -125,7 +126,7 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
   // L-C table chrome (M6)
   // L-D slash (M8)
   // L-E block movement (M9)
-  // L-F links (M7)
+  LinkSurfaceExtension,
 ];
 
 /**

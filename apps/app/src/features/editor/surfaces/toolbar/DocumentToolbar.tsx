@@ -24,6 +24,7 @@ import {
   Heading1,
   ImageUp,
   Italic,
+  Link as LinkIcon,
   List,
   Redo2,
   Undo2,
@@ -39,8 +40,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { openLinkForm } from "@/core/editor/links";
 import { cn } from "@/lib/utils";
-import { LinkControl } from "./LinkPopover";
 import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./ToolbarButton";
 import {
   canRedoDocument,
@@ -148,7 +149,12 @@ export function DocumentToolbar({
           >
             <List className="size-3.5" aria-hidden />
           </ToolbarControl>
-          <LinkControl editor={editor} state={controls.link} />
+          {/* The link form is not the toolbar's surface: it belongs to the
+            link lane and opens over the writer's own words, wherever they are.
+            The button is one more door into it, beside Ctrl+K and Add link. */}
+          <ToolbarControl id="link" state={controls.link} onPress={() => openLinkForm(editor)}>
+            <LinkIcon className="size-3.5" aria-hidden />
+          </ToolbarControl>
           <AlignmentControl editor={editor} state={controls.alignment} />
           <ToolbarControl
             id="uploadFigure"

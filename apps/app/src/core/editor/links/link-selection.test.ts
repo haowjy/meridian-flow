@@ -2,8 +2,8 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { linkAtSelection, linkAttributesAtSelection } from "./link-selection";
+import { createStandaloneEditorExtensions } from "../config";
+import { linkAtSelection, linkAttributesAtSelection } from "./link-commands";
 
 let editor: Editor | null = null;
 

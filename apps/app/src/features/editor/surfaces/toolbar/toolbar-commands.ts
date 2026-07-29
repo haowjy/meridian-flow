@@ -27,14 +27,13 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import { AllSelection, NodeSelection } from "@tiptap/pm/state";
-
+import { linkAttributesAtSelection } from "@/core/editor/links";
 import {
   alignableBlocksInSelection,
   alignSelectedBlocks,
   type BlockAlignment,
   currentAlignableBlock,
 } from "../../block-alignment";
-import { linkAttributesAtSelection } from "../../link-selection";
 
 export type ToolbarControlId =
   | "undo"

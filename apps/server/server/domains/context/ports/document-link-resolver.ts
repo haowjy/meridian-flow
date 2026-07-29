@@ -1,23 +1,19 @@
-/** Port for resolving every internal-link spelling to one project document. */
+/**
+ * Port for resolving every internal-link spelling to one project document.
+ *
+ * The target and resolved shapes are the wire contract the editor also speaks
+ * (`@meridian/contracts/protocol`), so a new spelling is added once rather
+ * than on both sides of the endpoint.
+ */
 
-export type DocumentLinkTarget =
-  | { kind: "wikilink"; name: string }
-  | { kind: "scheme"; uri: string }
-  | { kind: "relative"; path: string; baseUri: string };
+import type { DocumentLinkTarget, ResolvedDocumentLink } from "@meridian/contracts/protocol";
+
+export type { DocumentLinkTarget, ResolvedDocumentLink };
 
 export interface ResolveDocumentLinkInput {
   projectId: string;
   workId?: string | null;
   target: DocumentLinkTarget;
-}
-
-export interface ResolvedDocumentLink {
-  documentId: string;
-  title: string;
-  scheme: "manuscript" | "work";
-  path: string;
-  uri: string;
-  workId: string | null;
 }
 
 export interface DocumentLinkResolver {
