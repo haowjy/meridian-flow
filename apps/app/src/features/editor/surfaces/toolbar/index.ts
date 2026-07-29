@@ -8,11 +8,22 @@
  */
 export { DocumentToolbar, type DocumentToolbarProps } from "./DocumentToolbar";
 export {
+  BLOCK_TYPE_IDS,
+  type BlockTypeId,
+  type BlockTypeRefusalReason,
+  blockTypeRefusal,
+  blockTypeStates,
+  codeBlockRefusal,
   documentToolbarControls,
   type ToolbarBlockedReason,
   type ToolbarControlId,
   type ToolbarControlState,
+  type ToolbarMarkName,
+  textMarkState,
   toggleBulletListBlock,
+  toggleCodeBlockBlock,
   toggleHeadingBlock,
   toggleTextMark,
+  turnIntoBlockType,
 } from "./toolbar-commands";
+export { type BlockedSubject, blockedReasonMessage, blockTypeReasonMessage } from "./toolbar-copy";

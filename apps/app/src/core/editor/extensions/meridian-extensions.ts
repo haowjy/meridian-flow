@@ -29,6 +29,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
+import { MermaidCodeBlockNodeView } from "../MermaidCodeBlock";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -142,14 +143,17 @@ export const MeridianListItem = ListItem.extend({
   },
 });
 
-// Deliberately no node view: a `mermaid` fence is a plain, editable code block.
-// `MermaidCodeBlock.tsx` stays in the tree unregistered because rendering the
-// diagram hides the fence's `<pre>`, and with the caret-enters-source escape
-// hatch gone the caret lands in a hidden element and silently drops keystrokes.
-// The rebuild's diagram lane re-registers this node view together with the
-// dialog that owns source access (interaction model §5.2).
+// One node view for every fence. A `mermaid` fence renders as a diagram and
+// hides its own `<pre>`; every other language is the fence itself, lowlight and
+// all. The hazard that once kept this unregistered — a caret in a hidden
+// element silently eating keystrokes — is answered inside the view: the source
+// comes back whenever a caret is in it (interaction model §5.2).
 export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   name: "code_block",
+
+  addNodeView() {
+    return ReactNodeViewRenderer(MermaidCodeBlockNodeView);
+  },
 
   // The fence trigger belongs to `MarkdownAutoformatExtension`, which accepts
   // the whole GFM info string and completes on Enter. Keeping TipTap's narrower

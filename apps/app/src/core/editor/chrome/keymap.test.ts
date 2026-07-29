@@ -66,7 +66,13 @@ describe("keymap scopes", () => {
     expect(keymapScopeApplies("object", inProse)).toBe(false);
     expect(
       keymapScopeApplies("object", {
-        context: { owner: "object", nodeType: "figure", pos: 4, chain: ["document", "object"] },
+        context: {
+          owner: "object",
+          nodeType: "figure",
+          pos: 4,
+          chain: ["document", "object"],
+          objectPos: null,
+        },
         layerCount: 0,
       }),
     ).toBe(true);
@@ -81,6 +87,7 @@ describe("keymap scopes", () => {
           nodeType: "table_cell",
           pos: 9,
           chain: ["document", "table", "table-cell"],
+          objectPos: 3,
         },
         layerCount: 0,
       }),
@@ -94,7 +101,13 @@ describe("keymap scopes", () => {
 
   it("drops a contribution the scope admitted but its own narrowing refuses", () => {
     const object: KeymapApplicability = {
-      context: { owner: "object", nodeType: "figure", pos: 4, chain: ["document", "object"] },
+      context: {
+        owner: "object",
+        nodeType: "figure",
+        pos: 4,
+        chain: ["document", "object"],
+        objectPos: null,
+      },
       layerCount: 0,
     };
     const diagramOnly = vi.fn(() => true);

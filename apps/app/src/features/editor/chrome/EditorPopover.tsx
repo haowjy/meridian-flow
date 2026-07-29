@@ -1,32 +1,59 @@
 /**
- * EditorPopover — the editor's anchored form surface (link editing, alt text).
+ * EditorPopover — the editor's anchored surface (link editing, alt text, the
+ * slash menu).
  *
  * Same subordination contract as `EditorMenu`: it registers as a layer so the
  * Esc chain knows about it, and closing hands the caret back to the prose.
  *
- * The difference is where focus goes on the way IN. A popover holds a form, so
- * Radix's opening focus is correct and stays: the writer opened it to type.
- * And on the way out it ignores focus alone: see `onFocusOutside` below.
+ * Two things it lets a lane decide that `EditorMenu` cannot, and one it does
+ * not: focus alone never dismisses a popover here. Focus is always in motion
+ * around an editor surface — a menu unmounting drops it to the body, every
+ * close hands the caret back to the prose — and Radix would read each move as
+ * a reason to close, killing a form on the frame it appeared. Escape and a
+ * pointer outside still dismiss, which is what a writer means by it.
+ *
+ * **Where focus goes on the way in.** A popover holding a form takes focus,
+ * because the writer opened it to type in it. A popover the writer is still
+ * typing UNDERNEATH — the slash menu, filtering as the query grows — must
+ * leave the caret in the prose, or the next keystroke lands in the surface.
+ *
+ * **Whether the anchor can move.** Both anchors are one mechanism, a virtual
+ * reference floating-ui measures: `at` is a point that will never move (a
+ * right-click landed there), `anchorRect` is a rect that will (the `/` the
+ * writer is typing after, inside a manuscript that scrolls). Naming the
+ * editor's DOM as the anchor's `contextElement` is what lets floating-ui find
+ * the scroll container to watch; without it a virtual anchor only hears the
+ * window.
  */
 
 import type { Editor } from "@tiptap/core";
 import type { ComponentProps, ReactNode } from "react";
+import { useMemo, useRef } from "react";
 
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useChromeLayer } from "./chrome-layers";
-import { pointerAnchorStyle } from "./pointer-anchor";
+
+/** floating-ui's measurable reference, plus the element whose scrolling moves it. */
+type EditorPopoverAnchor = {
+  getBoundingClientRect: () => DOMRect;
+  contextElement?: Element;
+};
 
 export type EditorPopoverProps = {
   editor: Editor | null;
   id: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Client coordinates, for a popover anchored to a place rather than a control. */
+  /** Client coordinates for a surface anchored to a place that cannot move. */
   at?: { x: number; y: number } | null;
+  /** A rect read on every reposition, for a surface anchored to the text. */
+  anchorRect?: (() => DOMRect | null) | null;
   trigger?: ReactNode;
   align?: ComponentProps<typeof PopoverContent>["align"];
   side?: ComponentProps<typeof PopoverContent>["side"];
+  /** `prose` leaves the caret where it was; the default takes focus in. */
+  focusOnOpen?: "content" | "prose";
   className?: string;
   children: ReactNode;
 };
@@ -37,9 +64,11 @@ export function EditorPopover({
   open,
   onOpenChange,
   at = null,
+  anchorRect = null,
   trigger,
   align = "start",
   side = "bottom",
+  focusOnOpen = "content",
   className,
   children,
 }: EditorPopoverProps) {
@@ -53,44 +82,50 @@ export function EditorPopover({
     dismissal: "self",
   });
 
+  // Read through a ref so the anchor object stays identical across renders:
+  // Radix re-points the popper at `virtualRef.current` on every render, and a
+  // fresh object each time would restart positioning mid-keystroke.
+  const measure = useRef<() => DOMRect | null>(() => null);
+  measure.current = anchorRect ?? (() => (at ? new DOMRect(at.x, at.y, 0, 0) : null));
+
+  const contextElement = editor && !editor.isDestroyed ? editor.view.dom : undefined;
+  const virtualRef = useMemo<{ current: EditorPopoverAnchor }>(
+    () => ({
+      current: {
+        getBoundingClientRect: () => measure.current() ?? new DOMRect(),
+        contextElement,
+      },
+    }),
+    [contextElement],
+  );
+
   return (
-    // Keyed on the anchor point for the same reason `EditorMenu` is: floating-ui
-    // never sees a fixed anchor move, so a re-open at a new point must be a new
-    // popover.
-    <Popover
-      key={at ? `${at.x},${at.y}` : "trigger"}
-      open={open}
-      onOpenChange={onOpenChange}
-      modal={false}
-    >
+    <Popover open={open} onOpenChange={onOpenChange} modal={false}>
       {trigger ? (
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       ) : (
-        <PopoverAnchor
-          aria-hidden
-          // The pointer's own position, with no size and no hit area: it
-          // exists to be measured, never pressed. Geometry rather than theme,
-          // so it is inline style — a utility class that failed to ship would
-          // silently drop the menu in the top-left corner.
-          style={pointerAnchorStyle(at)}
-        />
+        <PopoverAnchor virtualRef={virtualRef} />
       )}
       <PopoverContent
         align={align}
         side={side}
         className={cn("w-auto", className)}
+        onOpenAutoFocus={focusOnOpen === "prose" ? preventFocusIn : undefined}
         onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
-        // A popover holds a form, and in this editor focus is always in
-        // motion around one: a menu item that opened this popover drops focus
-        // to the body as it unmounts, and every surface hands the caret back
-        // to the prose on its way out. Radix would read either as a reason to
-        // dismiss, closing a form on the frame it appeared. Escape and a
-        // pointer outside still close it, which is what a writer means.
-        onFocusOutside={(event) => event.preventDefault()}
+        // Focus alone is not a dismissal here; see the header.
+        onFocusOutside={preventDismissal}
       >
         {layer.scope(children)}
       </PopoverContent>
     </Popover>
   );
+}
+
+function preventFocusIn(event: Event) {
+  event.preventDefault();
+}
+
+function preventDismissal(event: { preventDefault: () => void }) {
+  event.preventDefault();
 }

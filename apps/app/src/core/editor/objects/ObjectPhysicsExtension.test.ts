@@ -146,3 +146,39 @@ describe("per-type keymap contributions", () => {
     expect(openSource).toHaveBeenCalledOnce();
   });
 });
+
+describe("double-click engages", () => {
+  it("opens the object's surface without a selection step first", () => {
+    const instance = mount([paragraph("before"), mermaid]);
+    const pos = positionOf(instance, "code_block");
+    const opened: number[] = [];
+    registerObjectEngagement(instance, "code_block", ({ pos: at }) => {
+      opened.push(at);
+      return true;
+    });
+
+    // §5.2's second door into the dialog: a double-click on the diagram in the
+    // page, with no click-to-select beforehand.
+    const node = instance.state.doc.nodeAt(pos);
+    if (!node) throw new Error("no diagram in the fixture");
+    const handled = instance.view.someProp("handleDoubleClickOn", (handler) =>
+      handler(instance.view, pos + 1, node, pos, new MouseEvent("dblclick"), true),
+    );
+
+    expect(handled).toBe(true);
+    expect(opened).toEqual([pos]);
+  });
+
+  it("leaves a double-click in prose to the browser's word selection", () => {
+    const instance = mount([paragraph("before"), mermaid]);
+    const pos = positionOf(instance, "paragraph");
+    const node = instance.state.doc.nodeAt(pos);
+    if (!node) throw new Error("no paragraph in the fixture");
+
+    const handled = instance.view.someProp("handleDoubleClickOn", (handler) =>
+      handler(instance.view, pos + 1, node, pos, new MouseEvent("dblclick"), true),
+    );
+
+    expect(handled).toBeFalsy();
+  });
+});

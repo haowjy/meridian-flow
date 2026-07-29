@@ -7,6 +7,7 @@
  */
 
 export {
+  engageObject,
   type ObjectEngagement,
   ObjectPhysicsExtension,
   objectPhysicsPluginKey,

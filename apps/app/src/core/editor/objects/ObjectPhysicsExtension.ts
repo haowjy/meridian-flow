@@ -80,6 +80,24 @@ export function registerObjectEngagement(
 }
 
 /**
+ * Open an object's own surface without the writer pressing Enter on it.
+ *
+ * Law 2 allows exactly one caller: a just-created empty object has nothing to
+ * view yet, so the lane that made it asks for the same surface Enter would.
+ * False means no lane has registered one, and the caller keeps whatever
+ * opening it already made.
+ */
+export function engageObject(editor: Editor, target: ObjectAt): boolean {
+  const storage = physicsStorage(editor);
+  const spec = objectTypeSpec(target.node);
+  if (!storage || spec?.engage !== "surface") return false;
+  const engagement = storage.engagements.get(spec.nodeType);
+  if (!engagement) return false;
+  engagement(target);
+  return true;
+}
+
+/**
  * Keys that apply only while an object of `nodeType` is selected — Ctrl+Enter
  * for a diagram's source hatch, Alt+Arrows for a move the type owns. They
  * register at the kernel's `object` scope, so an open menu still wins.
@@ -145,7 +163,7 @@ export const ObjectPhysicsExtension = Extension.create({
             chrome?.registerKeymap({
               id: "object-engage",
               scope: "object",
-              bindings: { Enter: (state, dispatch) => engage(state, dispatch, engagements) },
+              bindings: { Enter: (state, dispatch) => engage(editor, state, dispatch) },
             }),
           ];
 
@@ -171,6 +189,24 @@ export const ObjectPhysicsExtension = Extension.create({
             view.dispatch(transaction);
             view.focus();
             return true;
+          },
+
+          /**
+           * The pointer's twin of Enter (§5.2, §5.6): a double-click on an
+           * object engages it, with no click-to-select step in between.
+           *
+           * The same registered engagement Enter uses, so a lane wires its
+           * surface once and both doors open it. In prose this stands aside
+           * and the browser's word selection happens as it always did.
+           */
+          handleDoubleClickOn(view, _pos, node, nodePos, _event, direct) {
+            if (!direct || !isEditorObject(node)) return false;
+            const selected = selectObjectTransaction(view.state, nodePos);
+            if (!selected) return false;
+            // Select first: engaging leaves the object selected underneath, so
+            // closing its surface lands on the object rather than past it.
+            view.dispatch(selected);
+            return engage(editor, view.state, view.dispatch.bind(view));
           },
         },
       }),
@@ -228,9 +264,9 @@ const warnedMissingEngagement = new Set<string>();
  * pressing Enter on a diagram and getting nothing.
  */
 function engage(
+  editor: Editor,
   state: Parameters<KeymapBinding>[0],
   dispatch: Parameters<KeymapBinding>[1],
-  engagements: Map<string, ObjectEngagement>,
 ): boolean {
   const selected = selectedObject(state);
   if (!selected) return false;
@@ -239,9 +275,7 @@ function engage(
   if (!spec) return false;
 
   if (spec.engage === "surface") {
-    const engagement = engagements.get(spec.nodeType);
-    if (engagement) engagement(selected);
-    else reportMissingEngagement(spec.nodeType);
+    if (!engageObject(editor, selected)) reportMissingEngagement(spec.nodeType);
     return true;
   }
 

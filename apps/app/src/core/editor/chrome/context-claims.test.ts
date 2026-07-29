@@ -14,6 +14,7 @@ const objectContext: ChromeContext = {
   nodeType: "figure",
   pos: 8,
   chain: ["document", "object"],
+  objectPos: null,
 };
 
 /** A pointer target's element, carrying whatever a lane's `claim` reads off it. */

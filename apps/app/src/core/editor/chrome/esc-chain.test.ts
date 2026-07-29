@@ -15,6 +15,7 @@ const objectContext: ChromeContext = {
   nodeType: "figure",
   pos: 12,
   chain: ["document", "object"],
+  objectPos: null,
 };
 
 const sourceContext: ChromeContext = {
@@ -22,13 +23,16 @@ const sourceContext: ChromeContext = {
   nodeType: "code_block",
   pos: 12,
   chain: ["document", "source-block"],
+  objectPos: null,
 };
 
 const cellContext: ChromeContext = {
   owner: "table-cell",
   nodeType: "table_cell",
   pos: 30,
+  // The table around the cell: Esc's first step out of a cell is onto it.
   chain: ["document", "table", "table-cell"],
+  objectPos: 24,
 };
 
 const situation = (overrides: Partial<EscSituation> = {}): EscSituation => ({
@@ -77,8 +81,13 @@ describe("escStep", () => {
     expect(escStep(situation())).toEqual({ kind: "at-home" });
   });
 
-  it("is already home in a table cell: cell text is prose", () => {
-    expect(escStep(situation({ context: cellContext }))).toEqual({ kind: "at-home" });
+  it("steps out of a table cell onto the table before leaving it", () => {
+    const selectTable = escStep(situation({ context: cellContext }));
+    expect(selectTable).toEqual({ kind: "select-object", pos: 24 });
+
+    // And the second Esc leaves the table the first one selected.
+    const selected = advanceEscSituation(situation({ context: cellContext }), selectTable);
+    expect(escStep(selected)).toEqual({ kind: "caret-after-block", pos: 24 });
   });
 });
 
@@ -99,12 +108,14 @@ describe("the walk home", () => {
           const start = situation({ gesture, layers, context });
           const steps = escWalkHome(start);
 
-          // One step per thing standing between the writer and the page:
-          // the gesture, each layer, and at most one object to step out of.
+          // One step per thing standing between the writer and the page: the
+          // gesture, each layer, the object the caret is inside, and the
+          // object it is standing on.
           const expected =
             (gesture === "idle" ? 0 : 1) +
             layers.length +
-            (context.owner === "object" || context.owner === "source-block" ? 1 : 0);
+            (context.owner === "object" || context.owner === "source-block" ? 1 : 0) +
+            (context.objectPos === null ? 0 : 2);
           expect(steps).toHaveLength(expected);
 
           const home = steps.reduce(advanceEscSituation, start);

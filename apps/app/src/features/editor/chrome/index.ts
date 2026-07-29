@@ -6,7 +6,6 @@
  * on the first Radix upgrade.
  */
 
-export { type AnchorRect, useAnchorRect } from "./anchor-rect";
 export {
   type ChromeLayerBinding,
   type UseChromeLayerOptions,
@@ -40,8 +39,10 @@ export {
   type OverlayIconRowItem,
   type OverlayIconRowProps,
 } from "./OverlayIconRow";
+export { type AnchorRect, useAnchorRect } from "./useAnchorRect";
 export {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
+  useEditorRevision,
 } from "./useEditorChrome";

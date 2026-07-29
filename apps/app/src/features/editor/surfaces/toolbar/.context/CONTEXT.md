@@ -16,7 +16,8 @@ which is why the same code can read differently per control.
 | Schema fence or read-only host | all ten | `document-read-only` |
 | Node selection on a non-textblock (figure, image, rule, table) | heading, bullet list, marks, link | `object-selection` |
 | Same selection | alignment | `no-alignable-block` |
-| Every target is a code block | heading, bullet list, marks, link (NOT code block) | `code-block` |
+| Every target is a code block | heading, bullet list, marks, link (NOT code block, NOT turn-into-paragraph) | `code-block` |
+| Every target is a rendered object fence (a mermaid diagram) | all of them, conversions included | `embedded-block` |
 | Every target is a registered component (`jsx_leaf`) | heading, code block, bullet list, marks, link | `embedded-block` |
 | Every target sits in a table cell | heading, code block, bullet list | `table-cell` |
 | Some but not all targets are protected (the Ctrl+A case) | heading, code block, bullet list | `mixed-selection` |
@@ -44,11 +45,14 @@ The two command families fence differently, and the difference is the design:
   (a fence or a `jsx_leaf`, both text blocks by ProseMirror's reckoning), or a
   paragraph inside a table cell, which holds exactly one paragraph and can be
   nothing else. Classifying by `isTextblock` is what let a select-all flatten a
-  mermaid fence and a component conversion drop its name and props. The code
-  block control shares that fence with one exception: a code block is what it
-  REVERSES, so `code-block` alone is not a refusal for it. A mixed selection
-  still is, because fencing the prose around a fence rewrites the fence's
-  attributes with it.
+  mermaid fence and a component conversion drop its name and props. Two commands
+  share that fence with one exception: the code-block toggle and "turn into
+  paragraph" are what a PLAIN fence REVERSES, so `code-block` alone is not a
+  refusal for either. A mixed selection still is, because fencing the prose
+  around a fence rewrites the fence's attributes with it — and a rendered
+  object fence is not reversible at all (its reason is `embedded-block`),
+  because un-fencing a diagram is the same loss as converting one to a
+  heading.
 - **Marks** (bold, italic, code, link) land per node, so they refuse only when
   NOTHING in the selection can take them. Availability comes from
   `editor.can().setMark`, which is the command's own answer: schema allowance
@@ -56,17 +60,36 @@ The two command families fence differently, and the difference is the design:
   refuses. The one exclusion in this schema is the inline code mark, which
   excludes every other mark from the text it covers.
 
+`blockTypeStates` is that matrix for the eight types "Turn into" offers, and
+`turnIntoBlockType` is the command behind them: a true toggle, so choosing the
+checked type returns the block to a paragraph (law 6). `textMarkState` is the
+same pair for one mark. Both exist because the formatting menu and the block
+menu carry these verbs and must refuse exactly what this fence refuses.
+
 Alignment has no fence: it writes to every alignable block the selection
 touches, so a select-all centers the chapter rather than greying.
+
+`blockTypeRefusal` and `codeBlockRefusal` are exported, and `BlockTypeRefusalReason`
+names their answers. Every other surface that rewrites a whole block — the block
+menu's Turn into — calls them rather than re-deriving the rule, so a new protected
+node type is one edit here instead of one per surface. `blockTypeReasonMessage`
+is the matching copy.
+## The reason copy
+`blockedReasonMessage(subject, reason)` branches on the subject's family, not
+on the individual control: block type, link, or plain formatting. A surface
+whose controls are not toolbar rows passes the family (`"block-type"`,
+`"mark"`) or `"document"` where only the document's own reasons can reach it.
+One reason, one wording, wherever the writer meets it.
 
 ## The Link button
 
 The button is a door into the link lane's form (`core/editor/links` plus
-`features/editor/surfaces/link`), which also answers Ctrl+K and the right-click
-menu. `active` still comes from this module's matrix, because the row's
-lit-or-greyed language is one answer for all ten controls; everything the form
-does — draft resolution, range mapping, commit, removal — belongs to the link
-lane, and nothing about it is decided here.
+[`../link/AGENTS.md`](../../link/AGENTS.md)), which also answers Ctrl+K, the
+formatting menu's Add link, and the right-click menu. `active` and the blocked
+reason still come from this module's matrix, because the row's lit-or-greyed
+language is one answer for all ten controls; everything the form does — draft
+resolution, range mapping, commit, removal — belongs to the link lane, and
+nothing about it is decided here.
 
 ## Closing a surface returns the caret
 

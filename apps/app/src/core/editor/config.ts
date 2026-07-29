@@ -18,6 +18,7 @@ import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { AgentNameStore } from "./agent-name-store";
+import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
@@ -47,10 +48,7 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
-import {
-  SlashCommandExtension,
-  type SlashCommandExtensionOptions,
-} from "./extensions/SlashCommandExtension";
+import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { LinkSurfaceExtension } from "./links";
 import { markdownTableClipboardParser } from "./markdown-paste";
@@ -125,9 +123,10 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
   // L-A formatting menu (M4)
   // L-B object controls + diagram (M5)
   // L-C table chrome (M6)
-  // L-D slash (M8)
-  // L-E block movement (M9)
-  LinkSurfaceExtension,
+  // L-D slash (M8) mounts with the catalog option instead: a surface that
+  // passes no catalog pays for no trigger.
+  BlockDragExtension, // L-E block movement (M9)
+  LinkSurfaceExtension, // L-F links (M7)
 ];
 
 /**

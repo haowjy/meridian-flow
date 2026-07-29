@@ -1,0 +1,20 @@
+# Future work — surfaces/blocks
+
+- Nested reordering. The movable unit is a top-level block, so a writer cannot
+  reorder one list item among its siblings from the handle. Rows and columns
+  belong to the table surface (§4, deepest owner) and already have Alt+Arrows
+  reserved for them; list items have no design yet. Whatever lands must keep
+  the property that makes the current drop model safe: every seam resolves at a
+  depth where the schema allows the moved node.
+
+- Drag-scroll at the viewport edges. A drag that reaches the top or bottom of
+  the scroll area currently stops there; a long manuscript wants the page to
+  follow. Alt+↑/↓ is the keyboard answer meanwhile, and it scrolls the landing
+  into view.
+
+- Touch, verified on a real device. The path exists (coarse input anchors the
+  handle to the selection, the grip captures the pointer and blocks
+  `touch-action`), and it was probed with synthetic touch pointer events plus a
+  keyboard-driven selection. Nobody has yet dragged a block with a finger on
+  hardware, where a long-press, a scroll fighting the capture, or a stylus
+  hover would show up.

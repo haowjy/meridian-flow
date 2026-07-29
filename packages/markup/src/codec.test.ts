@@ -539,6 +539,29 @@ describe("mdx codec round-trip corpus", () => {
     }
   });
 
+  it("carries a resized column across a merged cell, which spans two grid slots", () => {
+    // What the editor produces: merge a header row, then drag the boundary of
+    // its second grid column. prosemirror-tables sizes `colwidth` to the cell's
+    // colspan and leaves the untouched slots at zero.
+    const cell = (type: "table_header" | "table_cell", text: string, attrs = {}) =>
+      schema.node(type, attrs, [paragraph(t(text))]);
+    const table = schema.node("table", null, [
+      schema.node("table_row", null, [
+        cell("table_header", "Status", { colspan: 2, colwidth: [0, 266] }),
+      ]),
+      // The resize wrote the new width into every row of that grid column.
+      schema.node("table_row", null, [
+        cell("table_cell", "Class"),
+        cell("table_cell", "Warden", { colwidth: [266] }),
+      ]),
+    ]);
+
+    const serialized = codec.serializeBlock(table);
+    expect(serialized).toContain('widths=",266"');
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(table.toJSON());
+    expectStable(codec, serialized);
+  });
+
   it("validates widths and normalizes them onto every cell in each column", () => {
     const input =
       '<Layout widths="120,,80">\n  | A | B | C |\n  | - | - | - |\n  | 1 | 2 | 3 |\n</Layout>';
@@ -1044,15 +1067,29 @@ describe("mdx codec round-trip corpus", () => {
     const table = firstParsedBlock(codec, "| A |\n| - |\n| 1 |");
     const firstRow = table.child(0);
     const firstCell = firstRow.child(0);
-    const malformedCell = firstCell.type.create(
-      { ...firstCell.attrs, colwidth: [0] },
-      firstCell.content,
-    );
-    const malformedRow = firstRow.type.create(firstRow.attrs, [malformedCell]);
-    const malformedTable = table.type.create(table.attrs, [malformedRow, table.child(1)]);
-    expect(() => codec.serializeBlock(malformedTable)).toThrow(
-      "table cell colwidth must be null or one positive integer",
-    );
+    const withColwidth = (colwidth: unknown) => {
+      const cell = firstCell.type.create({ ...firstCell.attrs, colwidth }, firstCell.content);
+      return table.type.create(table.attrs, [
+        firstRow.type.create(firstRow.attrs, [cell]),
+        table.child(1),
+      ]);
+    };
+
+    // One entry per spanned column, non-negative: a slot count that cannot
+    // describe the cell, a negative width, and a fraction are all lies.
+    for (const colwidth of [[120, 80], [], [-1], ["120"], [Number.NaN]]) {
+      expect(() => codec.serializeBlock(withColwidth(colwidth))).toThrow(
+        "colwidth must be null or one non-negative width per spanned column",
+      );
+    }
+
+    // Sizing a spanned column divides the cell's box by its colspan, so a
+    // fraction is what a real drag leaves behind. The wire rounds it.
+    expect(codec.serializeBlock(withColwidth([173.5]))).toContain('widths="174"');
+
+    // Zero is not malformed: it is prosemirror-tables' "this column has no
+    // width", which a resize leaves in every slot it did not touch.
+    expect(codec.serializeBlock(withColwidth([0]))).not.toContain("widths=");
   });
 
   it("rejects the align-left ghost state", () => {

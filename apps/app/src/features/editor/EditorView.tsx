@@ -40,7 +40,7 @@ import { uploadFigure } from "@/client/api/figures-api";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import type { SlashCommandItem } from "@/core/editor/extensions/SlashCommandExtension";
+import type { SlashCommandItem } from "@/core/editor/extensions/slash";
 import {
   createEditorAssetPathResolver,
   imageAltFromFilename,
@@ -383,21 +383,53 @@ function ActiveSessionEditorView({
     if (identity.schemaType !== "document" || !effectiveEditable) return null;
     return {
       menuLabel: t`Insert block`,
+      groupLabels: { text: t`Text`, insert: t`Insert` },
       requestImageUpload: () => imageInputRef.current?.click(),
       items: [
         {
-          id: "scene-break",
-          label: t`Scene break`,
-          aliases: [t`divider`, t`hr`, t`rule`, t`break`],
+          id: "heading-1",
+          group: "text",
+          label: t`Heading 1`,
+          aliases: [t`title`, t`h1`, t`section`],
         },
-        { id: "heading", label: t`Heading`, aliases: [t`title`, t`h1`, t`h2`, t`section`] },
-        { id: "quote", label: t`Quote`, aliases: [t`blockquote`] },
-        { id: "bullet-list", label: t`Bullet list`, aliases: [t`list`] },
-        { id: "numbered-list", label: t`Numbered list`, aliases: [t`ordered`] },
-        { id: "table", label: t`Table`, aliases: [t`grid`, t`stat block`, t`status`, t`litrpg`] },
-        { id: "image", label: t`Image`, aliases: [t`picture`, t`photo`, t`upload`] },
-        { id: "code", label: t`Code`, aliases: [t`fence`, t`codeblock`] },
-        { id: "diagram", label: t`Diagram`, aliases: [t`mermaid`, t`flowchart`, t`chart`] },
+        { id: "heading-2", group: "text", label: t`Heading 2`, aliases: [t`h2`, t`subsection`] },
+        { id: "heading-3", group: "text", label: t`Heading 3`, aliases: [t`h3`] },
+        { id: "bullet-list", group: "text", label: t`Bulleted list`, aliases: [t`list`, t`ul`] },
+        {
+          id: "numbered-list",
+          group: "text",
+          label: t`Numbered list`,
+          aliases: [t`ordered`, t`ol`],
+        },
+        { id: "quote", group: "text", label: t`Quote`, aliases: [t`blockquote`, t`epigraph`] },
+        {
+          id: "divider",
+          group: "text",
+          label: t`Divider`,
+          aliases: [t`scene break`, t`hr`, t`rule`],
+        },
+        {
+          id: "table",
+          group: "insert",
+          label: t`Table`,
+          aliases: [t`grid`, t`stat block`, t`status`, t`litrpg`],
+          hint: t`3 by 3, header row`,
+        },
+        {
+          id: "diagram",
+          group: "insert",
+          label: t`Diagram`,
+          aliases: [t`mermaid`, t`flowchart`, t`chart`],
+          hint: t`Mermaid`,
+        },
+        { id: "code", group: "insert", label: t`Code block`, aliases: [t`fence`, t`codeblock`] },
+        {
+          id: "image",
+          group: "insert",
+          label: t`Image`,
+          aliases: [t`picture`, t`photo`, t`upload`],
+          hint: t`Upload or paste`,
+        },
       ] satisfies SlashCommandItem[],
     };
   }, [effectiveEditable, identity.schemaType]);

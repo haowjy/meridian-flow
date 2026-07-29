@@ -8,7 +8,7 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import {
   type ChromeContext,
@@ -49,4 +49,28 @@ export function useChromeSuppressed(editor: Editor | null): boolean {
     () => chrome?.suppressed ?? false,
     () => false,
   );
+}
+
+/**
+ * Re-render on every editor change.
+ *
+ * The bluntest possible subscription, and the right one for chrome that reads
+ * the document directly — a toolbar's lit states, a chip cluster's language
+ * label. Surfaces that only need the resolved context or suppression should
+ * read those stores instead: they notify when their answer changes, not when
+ * the document does.
+ */
+export function useEditorRevision(editor: Editor | null): void {
+  const [, setRevision] = useState(0);
+
+  useEffect(() => {
+    if (!editor) return;
+    const bump = () => setRevision((revision) => revision + 1);
+    editor.on("selectionUpdate", bump);
+    editor.on("transaction", bump);
+    return () => {
+      editor.off("selectionUpdate", bump);
+      editor.off("transaction", bump);
+    };
+  }, [editor]);
 }

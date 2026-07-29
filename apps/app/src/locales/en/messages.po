@@ -62,19 +62,6 @@ msgstr "{agentName} deleted a passage"
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
-#: src/features/chat/tool-result-preview.ts
-#~ msgid "(fetched)"
-#~ msgstr "(fetched)"
-
-#: src/features/chat/tool-result-preview.ts
-#~ msgid "(untitled)"
-#~ msgstr "(untitled)"
-
-#. placeholder {0}: results.total
-#: src/features/chat/tool-result-preview.ts
-#~ msgid "{0, plural, one {# document} other {# documents}}"
-#~ msgstr "{0, plural, one {# document} other {# documents}}"
-
 #. placeholder {0}: serverPendingCount ?? 0
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
@@ -131,10 +118,6 @@ msgid "{hours}h"
 msgstr "{hours}h"
 
 #: src/features/chat/tool-result-preview.ts
-#~ msgid "{matches} results in {documents}"
-#~ msgstr "{matches} results in {documents}"
-
-#: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr "{matches} results in {inDocuments}"
 
@@ -164,6 +147,10 @@ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
+#: src/features/editor/EditorView.tsx
+msgid "3 by 3, header row"
+msgstr "3 by 3, header row"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "A figure is uploading."
 msgstr "A figure is uploading."
@@ -187,12 +174,16 @@ msgid "A folder named {trimmed} already exists in this location."
 msgstr "A folder named {trimmed} already exists in this location."
 
 #: src/features/editor/EditorView.tsx
-#~ msgid "A project is required before figures can be uploaded."
-#~ msgstr "A project is required before figures can be uploaded."
-
-#: src/features/editor/EditorView.tsx
 msgid "A project is required before images can be uploaded."
 msgstr "A project is required before images can be uploaded."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "A table keeps at least one column."
+msgstr "A table keeps at least one column."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "A table keeps at least one row."
+msgstr "A table keeps at least one row."
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
@@ -224,25 +215,18 @@ msgstr "Actually…"
 msgid "Add a caption for this figure."
 msgstr "Add a caption for this figure."
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Add column left"
-#~ msgstr "Add column left"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Add column"
+msgstr "Add column"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Add column right"
-#~ msgstr "Add column right"
-
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Add link"
 msgstr "Add link"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Add row above"
-#~ msgstr "Add row above"
-
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Add row below"
-#~ msgstr "Add row below"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Add row"
+msgstr "Add row"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Added"
@@ -274,17 +258,17 @@ msgstr "AI edits wait here for your review."
 msgid "AI write mode"
 msgstr "AI write mode"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Align column center"
-#~ msgstr "Align column center"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align center"
+msgstr "Align center"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Align column left"
-#~ msgstr "Align column left"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align left"
+msgstr "Align left"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Align column right"
-#~ msgstr "Align column right"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Align right"
+msgstr "Align right"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Alignment applies to paragraphs, headings, and tables."
@@ -381,6 +365,7 @@ msgstr "Block alignment"
 msgid "blockquote"
 msgstr "blockquote"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
 msgstr "Bold"
@@ -393,18 +378,19 @@ msgstr "Brainstorm away"
 msgid "Breadcrumb"
 msgstr "Breadcrumb"
 
-#: src/features/editor/EditorView.tsx
-msgid "break"
-msgstr "break"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "Built-in"
 msgstr "Built-in"
 
-#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
 msgstr "Bullet list"
+
+#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Bulleted list"
+msgstr "Bulleted list"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Buy extra usage"
@@ -435,6 +421,10 @@ msgstr "Capture experiments, methods, and observations in a structured log."
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Center"
 msgstr "Center"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Centered"
+msgstr "Centered"
 
 #: src/features/editor/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
@@ -524,16 +514,11 @@ msgid "Closed"
 msgstr "Closed"
 
 #: src/features/editor/EditorView.tsx
-msgid "Code"
-msgstr "Code"
-
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code block"
 msgstr "Code block"
-
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Code block options"
-#~ msgstr "Code block options"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code blocks keep their own block type."
@@ -547,9 +532,9 @@ msgstr "Code blocks take no formatting."
 msgid "Code blocks take no links."
 msgstr "Code blocks take no links."
 
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Code language"
-#~ msgstr "Code language"
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Code copied"
+msgstr "Code copied"
 
 #: src/features/editor/EditorView.tsx
 msgid "codeblock"
@@ -579,13 +564,9 @@ msgstr "Collapse sidebar  ["
 msgid "Color theme"
 msgstr "Color theme"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Column text alignment"
-#~ msgstr "Column text alignment"
-
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Columns"
-#~ msgstr "Columns"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Column options"
+msgstr "Column options"
 
 #. placeholder {0}: proposal.contributingTurnIds.length
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -613,9 +594,26 @@ msgstr "Context"
 msgid "Copied"
 msgstr "Copied"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Copy"
+msgstr "Copy"
+
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Copy code"
+msgstr "Copy code"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Copy image"
+msgstr "Copy image"
+
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Copy link address"
 msgstr "Copy link address"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Copy Mermaid source"
+msgstr "Copy Mermaid source"
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
@@ -753,9 +751,17 @@ msgstr "Create file or folder"
 msgid "Create project"
 msgstr "Create project"
 
+#: src/features/editor/surfaces/blocks/BlockMenu.tsx
+msgid "Current block type"
+msgstr "Current block type"
+
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
 msgstr "Custom amount (USD)"
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Cut"
+msgstr "Cut"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Dark"
@@ -769,14 +775,17 @@ msgstr "Data Analysis"
 msgid "Default alignment"
 msgstr "Default alignment"
 
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
 msgstr "Delete"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Delete column"
-#~ msgstr "Delete column"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete column"
+msgstr "Delete column"
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete file?"
@@ -786,13 +795,13 @@ msgstr "Delete file?"
 msgid "Delete folder?"
 msgstr "Delete folder?"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Delete row"
-#~ msgstr "Delete row"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete row"
+msgstr "Delete row"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Delete table"
-#~ msgstr "Delete table"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Delete table"
+msgstr "Delete table"
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
@@ -815,16 +824,13 @@ msgid "Dev-login failed"
 msgstr "Dev-login failed"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Diagram"
 msgstr "Diagram"
 
 #: src/core/editor/MermaidCodeBlock.tsx
 msgid "Diagram could not be rendered"
 msgstr "Diagram could not be rendered"
-
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Diagram view"
-#~ msgstr "Diagram view"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -845,8 +851,8 @@ msgid "Dismiss"
 msgstr "Dismiss"
 
 #: src/features/editor/EditorView.tsx
-msgid "divider"
-msgstr "divider"
+msgid "Divider"
+msgstr "Divider"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -867,6 +873,11 @@ msgstr "Documents the AI reads in this chat appear here."
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
 msgstr "Download {name}"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Download image"
+msgstr "Download image"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Draft"
@@ -898,32 +909,23 @@ msgid "Drafts are waiting"
 msgstr "Drafts are waiting"
 
 #: src/features/editor/EditorView.tsx
-#~ msgid "Drop an image file to insert a figure."
-#~ msgstr "Drop an image file to insert a figure."
-
-#: src/features/editor/EditorView.tsx
 msgid "Drop image to insert it"
 msgstr "Drop image to insert it"
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "Drop image to upload a figure"
-#~ msgstr "Drop image to upload a figure"
-
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Edit"
-#~ msgstr "Edit"
-
-#: src/core/editor/MermaidCodeBlock.tsx
-#~ msgid "Edit diagram"
-#~ msgstr "Edit diagram"
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Duplicate"
+msgstr "Duplicate"
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
 msgstr "Edit link"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Edit table"
-#~ msgstr "Edit table"
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Edit source"
+msgstr "Edit source"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Edited"
@@ -935,20 +937,8 @@ msgid "edited {0}"
 msgstr "edited {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Edited {count} chapters"
-#~ msgstr "Edited {count} chapters"
-
-#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {count} documents"
 msgstr "Edited {count} documents"
-
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Edited {title}"
-#~ msgstr "Edited {title}"
-
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Edited 1 chapter"
-#~ msgstr "Edited 1 chapter"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited 1 document"
@@ -1002,6 +992,10 @@ msgstr "Enter an amount in USD."
 #~ msgid "Enter an http, https, or mailto link."
 #~ msgstr "Enter an http, https, or mailto link."
 
+#: src/features/editor/EditorView.tsx
+msgid "epigraph"
+msgstr "epigraph"
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
@@ -1045,10 +1039,6 @@ msgstr "Explored folders"
 msgid "Exploring"
 msgstr "Exploring"
 
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Exploring {folder}…"
-#~ msgstr "Exploring {folder}…"
-
 #: src/features/chat/command-descriptor.ts
 msgid "Exploring folders…"
 msgstr "Exploring folders…"
@@ -1073,10 +1063,6 @@ msgstr "fig:result"
 msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "Figure upload failed."
-#~ msgstr "Figure upload failed."
-
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr "File name"
@@ -1092,6 +1078,10 @@ msgstr "Files"
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
 msgstr "First name"
+
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Fit"
+msgstr "Fit"
 
 #: src/features/editor/EditorView.tsx
 msgid "flowchart"
@@ -1126,9 +1116,38 @@ msgid "h2"
 msgstr "h2"
 
 #: src/features/editor/EditorView.tsx
+msgid "h3"
+msgstr "h3"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Header row"
+msgstr "Header row"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
 msgstr "Heading"
+
+#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 1"
+msgstr "Heading 1"
+
+#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 2"
+msgstr "Heading 2"
+
+#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Heading 3"
+msgstr "Heading 3"
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Hide source"
+msgstr "Hide source"
 
 #: src/features/chat/placeholders.ts
 msgid "Hold on…"
@@ -1164,6 +1183,7 @@ msgid "Idle"
 msgstr "Idle"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Image"
 msgstr "Image"
 
@@ -1171,25 +1191,30 @@ msgstr "Image"
 msgid "Image artifact"
 msgstr "Image artifact"
 
-#: src/features/editor/EditorImageBubble.tsx
-#~ msgid "Image controls"
-#~ msgstr "Image controls"
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Image copied"
+msgstr "Image copied"
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "Image could not be displayed."
 msgstr "Image could not be displayed."
 
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Image downloaded"
+msgstr "Image downloaded"
+
 #: src/features/editor/EditorView.tsx
 msgid "Image upload failed."
 msgstr "Image upload failed."
 
-#: src/features/editor/EditorImageBubble.tsx
-#~ msgid "Image URL"
-#~ msgstr "Image URL"
-
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
 msgstr "Includes your edits"
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Inline code"
+msgstr "Inline code"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Inline code takes no links."
@@ -1200,17 +1225,28 @@ msgid "Inline code takes no other formatting."
 msgstr "Inline code takes no other formatting."
 
 #: src/features/editor/EditorView.tsx
+msgid "Insert"
+msgstr "Insert"
+
+#: src/features/editor/EditorView.tsx
 msgid "Insert block"
 msgstr "Insert block"
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Insert image"
-#~ msgstr "Insert image"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert column left"
+msgstr "Insert column left"
 
-#. placeholder {0}: state.filename
-#: src/features/editor/EditorView.tsx
-#~ msgid "Inserted {0} as a figure."
-#~ msgstr "Inserted {0} as a figure."
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert column right"
+msgstr "Insert column right"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert row above"
+msgstr "Insert row above"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Insert row below"
+msgstr "Insert row below"
 
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
@@ -1245,6 +1281,7 @@ msgstr "Invoking a skill…"
 msgid "Invoking the {skill} skill…"
 msgstr "Invoking the {skill} skill…"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
 msgstr "Italic"
@@ -1285,6 +1322,10 @@ msgstr "Later edits build on this change. View the change instead of undoing it.
 msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr "Leading or trailing whitespace detected in file or folder name."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Left"
+msgstr "Left"
+
 #: src/features/chat/placeholders.ts
 msgid "Let's work on it"
 msgstr "Let's work on it"
@@ -1292,11 +1333,6 @@ msgstr "Let's work on it"
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
 msgstr "Light"
-
-#. placeholder {0}: row.line
-#: src/features/chat/tool-result-preview.ts
-#~ msgid "Line {0}"
-#~ msgstr "Line {0}"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -1408,9 +1444,21 @@ msgstr "Maximum is {0}."
 msgid "Medium"
 msgstr "Medium"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merge cells"
+msgstr "Merge cells"
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Merged"
 msgstr "Merged"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merged cells stay where they are."
+msgstr "Merged cells stay where they are."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Merging works on a rectangle of cells."
+msgstr "Merging works on a rectangle of cells."
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
@@ -1419,6 +1467,19 @@ msgstr "Meridian removed a small part of this chapter that this version can't di
 #: src/features/editor/EditorView.tsx
 msgid "mermaid"
 msgstr "mermaid"
+
+#: src/features/editor/EditorView.tsx
+msgid "Mermaid"
+msgstr "Mermaid"
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Mermaid source"
+msgstr "Mermaid source"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Mermaid source copied"
+msgstr "Mermaid source copied"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1438,24 +1499,38 @@ msgid "Monthly usage"
 msgstr "Monthly usage"
 
 #: src/features/editor/chrome/OverlayIconRow.tsx
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "More"
 msgstr "More"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move column left"
-#~ msgstr "Move column left"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move column left"
+msgstr "Move column left"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move column right"
-#~ msgstr "Move column right"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move column right"
+msgstr "Move column right"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move row down"
-#~ msgstr "Move row down"
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Move down"
+msgstr "Move down"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Move row up"
-#~ msgstr "Move row up"
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Move or change this block"
+msgstr "Move or change this block"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move row down"
+msgstr "Move row down"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Move row up"
+msgstr "Move row up"
+
+#: src/features/editor/surfaces/blocks/block-copy.ts
+msgid "Move up"
+msgstr "Move up"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -1560,6 +1635,10 @@ msgstr "No billing activity yet."
 msgid "No chats yet — start one to get going."
 msgstr "No chats yet — start one to get going."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "No column has been resized yet."
+msgstr "No column has been resized yet."
+
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "No context files yet."
@@ -1623,6 +1702,8 @@ msgid "now"
 msgstr "now"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Numbered list"
 msgstr "Numbered list"
 
@@ -1630,9 +1711,17 @@ msgstr "Numbered list"
 msgid "Object"
 msgstr "Object"
 
+#: src/features/editor/EditorView.tsx
+msgid "ol"
+msgstr "ol"
+
 #: src/lib/date-groups.ts
 msgid "Older"
 msgstr "Older"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "One cell across the selection"
+msgstr "One cell across the selection"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
@@ -1651,10 +1740,6 @@ msgstr "Only part of this change could be reversed."
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
-
-#: src/features/chat/DocumentName.tsx
-#~ msgid "Open {fullName}"
-#~ msgstr "Open {fullName}"
 
 #: src/features/chat/DocumentName.tsx
 msgid "Open {title}"
@@ -1683,6 +1768,10 @@ msgstr "Open conversation"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
 msgstr "Open existing"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Open full screen"
+msgstr "Open full screen"
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Open link"
@@ -1733,6 +1822,11 @@ msgstr "ordered"
 msgid "Over your monthly usage"
 msgstr "Over your monthly usage"
 
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Paragraph"
+msgstr "Paragraph"
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent unknown"
 msgstr "Parent unknown"
@@ -1745,6 +1839,10 @@ msgstr "Parent:"
 msgid "Part of this selection keeps its own block type."
 msgstr "Part of this selection keeps its own block type."
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Paste"
+msgstr "Paste"
+
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 #~ msgid "Paste a link"
 #~ msgstr "Paste a link"
@@ -1752,10 +1850,6 @@ msgstr "Part of this selection keeps its own block type."
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Paste a link or type [[a document name]]"
 msgstr "Paste a link or type [[a document name]]"
-
-#: src/features/editor/EditorLinkBubble.tsx
-#~ msgid "Paste or type a link"
-#~ msgstr "Paste or type a link"
 
 #: src/features/editor/EditorView.tsx
 msgid "photo"
@@ -1765,9 +1859,9 @@ msgstr "photo"
 msgid "picture"
 msgstr "picture"
 
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Plain text"
-#~ msgstr "Plain text"
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Plain text"
+msgstr "Plain text"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
@@ -1784,14 +1878,6 @@ msgstr "Popular"
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
 msgstr "Preferences"
-
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Press Enter to use this language"
-#~ msgstr "Press Enter to use this language"
-
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Preview"
-#~ msgstr "Preview"
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"
@@ -1810,21 +1896,19 @@ msgstr "Project"
 msgid "Protocol Designer"
 msgstr "Protocol Designer"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Put the caret in a table first."
+msgstr "Put the caret in a table first."
+
 #: src/features/chat/placeholders.ts
 msgid "Quick thought"
 msgstr "Quick thought"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Quote"
 msgstr "Quote"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Ran skill"
-#~ msgstr "Ran skill"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Ran the {skillName} skill"
-#~ msgstr "Ran the {skillName} skill"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Read"
@@ -1912,10 +1996,6 @@ msgstr "Refresh"
 msgid "remaining"
 msgstr "remaining"
 
-#: src/features/editor/EditorImageBubble.tsx
-#~ msgid "Remove image"
-#~ msgstr "Remove image"
-
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
@@ -1954,17 +2034,13 @@ msgstr "Rendering diagram…"
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
 
-#: src/features/editor/EditorImageBubble.tsx
-#~ msgid "Replace image"
-#~ msgstr "Replace image"
-
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr "Required"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Reset table layout"
-#~ msgstr "Reset table layout"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Reset column widths"
+msgstr "Reset column widths"
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
@@ -2020,13 +2096,14 @@ msgstr "Review draft"
 msgid "Rewrote"
 msgstr "Rewrote"
 
+#: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
 msgstr "Right"
 
-#: src/features/editor/EditorTableBubble.tsx
-#~ msgid "Rows"
-#~ msgstr "Rows"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Row options"
+msgstr "Row options"
 
 #: src/features/editor/EditorView.tsx
 msgid "rule"
@@ -2036,15 +2113,9 @@ msgstr "rule"
 msgid "Running"
 msgstr "Running"
 
-#: src/features/chat/tool-activity-vocabulary.ts
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Running skill…"
-#~ msgstr "Running skill…"
-
-#. placeholder {0}: humanizeSkillSlug(slug)
-#: src/features/chat/tool-activity-vocabulary.ts
-#~ msgid "Running the {0} skill…"
-#~ msgstr "Running the {0} skill…"
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Runs the text together in one cell"
+msgstr "Runs the text together in one cell"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
@@ -2055,8 +2126,8 @@ msgid "Saved locally (offline)"
 msgstr "Saved locally (offline)"
 
 #: src/features/editor/EditorView.tsx
-msgid "Scene break"
-msgstr "Scene break"
+msgid "scene break"
+msgstr "scene break"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Scratch"
@@ -2094,6 +2165,10 @@ msgstr "section"
 msgid "Select a document."
 msgstr "Select a document."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Select more than one cell to merge them."
+msgstr "Select more than one cell to merge them."
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Select text to add a link."
 msgstr "Select text to add a link."
@@ -2105,6 +2180,10 @@ msgstr "Select text to change the block type."
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Select text to format it."
 msgstr "Select text to format it."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Select the merged cell on its own to split it."
+msgstr "Select the merged cell on its own to split it."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Select…"
@@ -2129,6 +2208,10 @@ msgstr "Settings"
 #: src/features/account/SettingsDialog.tsx
 msgid "Settings sections"
 msgstr "Settings sections"
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Showing the last good render."
+msgstr "Showing the last good render."
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -2184,6 +2267,10 @@ msgstr "Something went wrong while making that change."
 msgid "Sorted {0}"
 msgstr "Sorted {0}"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Split cell"
+msgstr "Split cell"
+
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
 msgstr "Start a quick chat without a project"
@@ -2225,6 +2312,10 @@ msgstr "Stopped."
 msgid "Streaming"
 msgstr "Streaming"
 
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Strikethrough"
+msgstr "Strikethrough"
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Subagent:"
 msgstr "Subagent:"
@@ -2236,6 +2327,10 @@ msgstr "Submit"
 #: src/features/billing/BillingPage.tsx
 msgid "Subscribe"
 msgstr "Subscribe"
+
+#: src/features/editor/EditorView.tsx
+msgid "subsection"
+msgstr "subsection"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Suggested text is prefilled; edit it before submitting if needed."
@@ -2259,12 +2354,25 @@ msgid "Switch work"
 msgstr "Switch work"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
 msgstr "Table"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Table cells hold plain paragraphs."
 msgstr "Table cells hold plain paragraphs."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table controls"
+msgstr "Table controls"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table options"
+msgstr "Table options"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Table placement"
+msgstr "Table placement"
 
 #: src/features/chat/placeholders.ts
 msgid "Talk it out"
@@ -2274,9 +2382,14 @@ msgstr "Talk it out"
 msgid "Task Assignment"
 msgstr "Task Assignment"
 
+#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Text"
 msgstr "Text"
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Text alignment"
+msgstr "Text alignment"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Text size"
@@ -2298,9 +2411,17 @@ msgstr "That change couldn't be made."
 msgid "That chapter is no longer available, so this change can't be reversed."
 msgstr "That chapter is no longer available, so this change can't be reversed."
 
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "That did not work."
+msgstr "That did not work."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
 msgstr "That document couldn't be found."
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "That image could not be read."
+msgstr "That image could not be read."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "That location does not exist"
@@ -2334,13 +2455,21 @@ msgstr "The AI asked you a question"
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
 msgstr "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
 
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "The browser blocked the clipboard. Check this site's permissions."
+msgstr "The browser blocked the clipboard. Check this site's permissions."
+
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "The figure uploaded, but the editor could not insert it."
-#~ msgstr "The figure uploaded, but the editor could not insert it."
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "The header row does not merge into the body."
+msgstr "The header row does not merge into the body."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "The header row stays first."
+msgstr "The header row stays first."
 
 #: src/features/editor/EditorView.tsx
 msgid "The image uploaded, but the editor could not insert it."
@@ -2379,6 +2508,26 @@ msgstr "Thinking part {0}"
 msgid "This browser cannot display the PDF inline."
 msgstr "This browser cannot display the PDF inline."
 
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "This browser will not export this diagram as an image. Copy the Mermaid source instead."
+msgstr "This browser will not export this diagram as an image. Copy the Mermaid source instead."
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
+msgstr "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
+
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
+msgstr "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "This browser will not turn that into an image."
+msgstr "This browser will not turn that into an image."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This cell is not merged."
+msgstr "This cell is not merged."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."
@@ -2416,6 +2565,10 @@ msgstr "This chapter was opened in a newer version of Meridian. Refresh to keep 
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This column is already at the edge."
+msgstr "This column is already at the edge."
+
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
 msgstr "This device"
@@ -2424,6 +2577,7 @@ msgstr "This device"
 msgid "This document changed elsewhere. Reopen it and try again."
 msgstr "This document changed elsewhere. Reopen it and try again."
 
+#: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This document is read only right now."
 msgstr "This document is read only right now."
@@ -2469,13 +2623,13 @@ msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the
 msgid "This project has no chats yet."
 msgstr "This project has no chats yet."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "This row is already at the edge."
+msgstr "This row is already at the edge."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This skill is no longer available in this chat — start a new chat to use the current version."
 msgstr "This skill is no longer available in this chat — start a new chat to use the current version."
-
-#: src/core/editor/FigureNodeView.tsx
-#~ msgid "This stored figure needs a project and document before it can be rendered."
-#~ msgstr "This stored figure needs a project and document before it can be rendered."
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "This stored figure needs a project before it can be rendered."
@@ -2518,13 +2672,18 @@ msgstr "Try again"
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "Type / to insert…"
-#~ msgstr "Type / to insert…"
+#: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/formatting/formatting-copy.ts
+msgid "Turn into"
+msgstr "Turn into"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr "Type your answer…"
+
+#: src/features/editor/EditorView.tsx
+msgid "ul"
+msgstr "ul"
 
 #: src/core/editor/MermaidCodeBlock.tsx
 msgid "Unable to render diagram"
@@ -2564,10 +2723,6 @@ msgstr "Untitled document"
 msgid "Untitled project"
 msgstr "Untitled project"
 
-#: src/features/editor/EditorImageBubble.tsx
-#~ msgid "Update image"
-#~ msgstr "Update image"
-
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Update link"
 msgstr "Update link"
@@ -2583,6 +2738,10 @@ msgstr "upload"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr "Upload figure"
+
+#: src/features/editor/EditorView.tsx
+msgid "Upload or paste"
+msgstr "Upload or paste"
 
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent
@@ -2652,6 +2811,10 @@ msgstr "Working…"
 msgid "Workspace navigation"
 msgstr "Workspace navigation"
 
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Wrap lines"
+msgstr "Wrap lines"
+
 #: src/features/chat/placeholders.ts
 msgid "Write away"
 msgstr "Write away"
@@ -2697,3 +2860,11 @@ msgstr "Your saved preference is unavailable. Sync is paused until retry succeed
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
 msgstr "Your WorkOS profile, as seen by Meridian."
+
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Zoom in"
+msgstr "Zoom in"
+
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Zoom out"
+msgstr "Zoom out"

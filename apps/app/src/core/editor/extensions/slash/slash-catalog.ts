@@ -1,36 +1,52 @@
 /**
- * Slash-command catalog seam.
+ * The slash catalog — what the menu offers, and who says so.
  *
- * The trigger plugin was deleted with the rest of the condemned editor chrome
- * (interaction model §8: "salvage the catalog getter, rewrite the trigger").
- * What survives is the seam the host already speaks: the item/catalog shape,
- * the fuzzy filter, and the read-at-open getter. The extension therefore
- * currently mounts no ProseMirror plugin — typing `/` inserts a literal slash
- * until the rebuild lands a trigger against the new contract.
+ * This is the seam that survived the toolkit demolition (§8: "salvage the
+ * catalog getter, rewrite the trigger"): the item shape, the fuzzy filter, and
+ * the read-at-open getter. The host owns the catalog because the labels are
+ * localized and the image entry needs the host's file picker; everything else
+ * in this directory builds around it.
+ *
+ * Ids are a closed union on purpose. The surface renders an icon per id and
+ * `slash-insertion.ts` builds a node per id, so an entry that reached the
+ * catalog without either is a compile error rather than a blank row.
  */
-import { Extension } from "@tiptap/core";
 
 export type SlashCommandId =
-  | "scene-break"
-  | "heading"
-  | "quote"
+  | "heading-1"
+  | "heading-2"
+  | "heading-3"
   | "bullet-list"
   | "numbered-list"
+  | "quote"
+  | "divider"
   | "table"
-  | "image"
+  | "diagram"
   | "code"
-  | "diagram";
+  | "image";
+
+/** The menu's two halves (§5.7): retype this block, or make a new object. */
+export type SlashCommandGroupId = "text" | "insert";
 
 export type SlashCommandItem = {
   id: SlashCommandId;
+  group: SlashCommandGroupId;
   label: string;
   aliases: readonly string[];
+  /** A second line of answer for entries whose result is not obvious. */
+  hint?: string;
 };
 
 export type SlashCommandCatalog = {
   items: readonly SlashCommandItem[];
   menuLabel: string;
-  requestImageUpload?: () => void;
+  groupLabels: Record<SlashCommandGroupId, string>;
+  /**
+   * Required, not optional: `Image` is a visible row, and a host that offers
+   * the catalog without a picker offers a row that eats the trigger text and
+   * shows nothing. A surface with no picker returns no catalog at all.
+   */
+  requestImageUpload: () => void;
 };
 
 export type SlashCommandExtensionOptions = {
@@ -78,11 +94,3 @@ export function filterSlashCommandItems(
     .sort((left, right) => left.score - right.score || left.order - right.order)
     .map(({ item }) => item);
 }
-
-export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptions>({
-  name: "slashCommand",
-
-  addOptions() {
-    return { catalog: () => null };
-  },
-});

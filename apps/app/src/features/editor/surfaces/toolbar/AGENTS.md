@@ -13,6 +13,13 @@ cannot run here, why — and owns the commands behind the controls.
 `DocumentToolbar.tsx` renders that answer and dispatches. A control's
 behavior is never decided in a component.
 
+**That layer is shared.** The formatting menu carries the same marks, the same
+block conversions, and the same link form, so it reads `textMarkState`,
+`blockTypeStates`, `turnIntoBlockType`, `blockedReasonMessage`, and
+`LinkForm`/`useLinkDraft` from here rather than growing a second answer to
+"will this be refused". A surface that needs a verb this module does not
+expose extends it; it never forks the fence.
+
 ## Key rules
 
 - **Fixed geometry** (ruling 15). Ten controls, always, in one order. A
@@ -26,15 +33,19 @@ behavior is never decided in a component.
   the Code button fences a block and un-fences it (human ruling: it makes a
   ``` block, it does not format text); bullet list un-lists; marks remove. If a
   TipTap command only applies in one direction, spell out the reverse here.
-- **The inline code mark is not on this row.** Its writer surfaces are Ctrl+E
-  today and the formatting menu later; `toggleTextMark` keeps the command so
-  those surfaces share this one.
+- **The inline code mark is not on this row**, and neither is strikethrough or
+  seven of the eight block types. Their writer surface is the formatting menu;
+  the commands live here so both surfaces share one fence.
 - **Block-type commands refuse non-text targets themselves.** The greyed
   button is the first fence, the command is the second, and the second is
   load-bearing: a selected figure converting to a heading is the accident this
   module exists to make unreachable (F6). ANY protected target in the selection
   refuses the whole conversion, and protected is judged by node type, never by
-  `isTextblock` — a mermaid fence and a `jsx_leaf` are both text blocks.
+  `isTextblock` — a mermaid fence and a `jsx_leaf` are both text blocks. A
+  RENDERED object fence reads as an embedded block rather than a code block, so
+  the two commands a plain fence reverses (un-fence, turn into paragraph)
+  refuse it too: un-fencing a diagram destroys it the way converting one to a
+  heading does.
 - **A control may not advertise what dispatch refuses.** Availability comes
   from the same predicate the command runs, and for marks that predicate is
   `editor.can().setMark`. A control that looks live and does nothing is the
