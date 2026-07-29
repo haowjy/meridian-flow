@@ -4,6 +4,8 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 
 import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
 
+const RAW_HTML_CANDIDATE = /<(?:!--|!\[CDATA\[|[!?]|\/?[A-Za-z][A-Za-z0-9-]*(?=[\t\n\f\r />]))/;
+
 export function escapeProseForMdxIngress(text: string): string {
   const lines = protectRawHtmlLiterals(text).split("\n");
   const out: string[] = [];
@@ -48,7 +50,7 @@ export function escapeProseForMdxIngress(text: string): string {
 }
 
 function protectRawHtmlLiterals(text: string): string {
-  if (!text.includes("<")) return text;
+  if (!RAW_HTML_CANDIDATE.test(text)) return text;
   const ranges: Array<{ start: number; end: number; value: string }> = [];
   // CommonMark owns raw-HTML recognition. Reimplementing its block and inline
   // contexts here would make MDX ingress another partial Markdown parser.
@@ -93,21 +95,34 @@ function isPreservedMarkupSyntax(value: string): boolean {
 }
 
 function encodeRawHtmlSource(source: string, value: string): string | null {
-  const sourceLines = source.split("\n");
-  const valueLines = value.split("\n");
+  const sourceLines = splitLines(source);
+  const valueLines = splitLines(value);
   if (sourceLines.length !== valueLines.length) return null;
 
   const encoded: string[] = [];
   for (let index = 0; index < sourceLines.length; index++) {
-    const sourceLine = sourceLines[index] ?? "";
-    const valueLine = valueLines[index] ?? "";
-    if (!sourceLine.endsWith(valueLine)) return null;
+    const sourceLine = sourceLines[index];
+    const valueLine = valueLines[index];
+    if (!sourceLine || !valueLine || !sourceLine.body.endsWith(valueLine.body)) return null;
     encoded.push(
-      sourceLine.slice(0, sourceLine.length - valueLine.length) +
-        encodeMarkdownPunctuation(valueLine),
+      sourceLine.body.slice(0, sourceLine.body.length - valueLine.body.length) +
+        encodeMarkdownPunctuation(valueLine.body) +
+        sourceLine.ending,
     );
   }
-  return encoded.join("\n");
+  return encoded.join("");
+}
+
+function splitLines(value: string): Array<{ body: string; ending: string }> {
+  const lines: Array<{ body: string; ending: string }> = [];
+  let start = 0;
+  for (const match of value.matchAll(/\r\n?|\n/g)) {
+    const index = match.index;
+    lines.push({ body: value.slice(start, index), ending: match[0] });
+    start = index + match[0].length;
+  }
+  lines.push({ body: value.slice(start), ending: "" });
+  return lines;
 }
 
 function encodeMarkdownPunctuation(value: string): string {

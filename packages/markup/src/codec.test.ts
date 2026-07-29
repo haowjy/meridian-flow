@@ -195,6 +195,7 @@ describe("codec presets", () => {
       "<!-- [label]([[A B]]) -->",
       "<script>[label]([[A B]])</script>",
       "<div>\n[label]([[A B]])\n</div>",
+      "> <div>\r> [label]([[A B]])\r> </div>",
     ]) {
       const parsed = wikilinkCodec.parse(input).blocks;
       expect(docFrom(parsed).rangeHasMark(0, docFrom(parsed).content.size, schema.marks.link)).toBe(
