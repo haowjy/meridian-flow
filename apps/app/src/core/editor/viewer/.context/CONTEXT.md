@@ -13,7 +13,6 @@ const viewer = createPanZoomViewer({
   maxScale: 8,
   padding: 24,   // clear space kept around a fitted view
   stepFactor: 1.6, // one double-click, one zoom button
-  onChange: () => {},
 });
 
 viewer.scale;            // applied scale; 1 is the content's intrinsic size
@@ -40,9 +39,10 @@ in the `viewBox`, so a wrapper left to itself collapses to zero.
 
 ## Invariants
 
-- **A subscriber sees state that is already true.** `onChange` and the
-  listeners fire during `commit`, before the frame that writes the DOM. Every
-  getter is correct at that moment.
+- **A subscriber sees state that is already true.** Listeners fire during
+  `commit`, before the frame that writes the DOM, so every getter is correct
+  at that moment. `subscribe` is the only notification channel — an `onChange`
+  option beside it would be a second way to learn the same thing.
 - **`fitted` survives only until a gesture.** `resize()` refits a fitted view
   and leaves a moved one alone: a window resize or a source pane opening is
   not a request to lose your place. `fit()` restores the flag.

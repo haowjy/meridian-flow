@@ -54,8 +54,6 @@ export type PanZoomViewerOptions = {
   padding?: number;
   /** Factor for one double-click or one zoom button press. */
   stepFactor?: number;
-  /** Fires after any change to scale or pan, before the DOM write. */
-  onChange?: () => void;
 };
 
 export type ViewerSizes = {
@@ -105,7 +103,6 @@ export function createPanZoomViewer({
   maxScale = DEFAULTS.maxScale,
   padding = DEFAULTS.padding,
   stepFactor = DEFAULTS.stepFactor,
-  onChange,
 }: PanZoomViewerOptions): PanZoomViewer {
   const listeners = new Set<() => void>();
   const pointers = new Map<number, ViewerPoint>();
@@ -148,7 +145,6 @@ export function createPanZoomViewer({
     if (!keepsFit) fitted = false;
     // Writes coalesce to one per frame; readers never wait for it.
     if (frame === 0) frame = requestAnimationFrame(write);
-    onChange?.();
     for (const listener of listeners) listener();
   };
 

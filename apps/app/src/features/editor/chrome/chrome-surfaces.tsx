@@ -18,6 +18,8 @@
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 
+import { ObjectControls } from "@/features/editor/surfaces/objects";
+
 export type EditorChromeSurfaceProps = {
   editor: Editor;
 };
@@ -31,6 +33,7 @@ export type EditorChromeSurface = {
 export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
   // L-A formatting menu (M4)
   // L-B object controls + diagram (M5)
+  { id: "object-controls", render: ({ editor }) => <ObjectControls editor={editor} /> },
   // L-C table chrome (M6)
   // L-D slash (M8)
   // L-E block movement (M9)
