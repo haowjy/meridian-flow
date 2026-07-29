@@ -765,6 +765,11 @@
   font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.4;
+  /* A destination is as long as the writer's URL. It stays one line and ends
+     in an ellipsis rather than wrapping into a paragraph over the manuscript. */
+  max-width: calc(100vw - 1rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
   transition: opacity 120ms ease-out;

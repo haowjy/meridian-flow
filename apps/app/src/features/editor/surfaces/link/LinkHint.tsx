@@ -12,35 +12,76 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { CHROME_TIMING } from "@/core/editor/chrome";
 import { type LinkHint as LinkHintTarget, linkDestinationLabel } from "@/core/editor/links";
-import { useAnchorRect, useChromeSuppressed } from "@/features/editor/chrome";
+import { type AnchorRect, useAnchorRect, useChromeSuppressed } from "@/features/editor/chrome";
 
 /** Below the link's baseline, clear of the descenders and the underline. */
 const HINT_GAP_PX = 6;
+/** How close to the viewport edge the hint may sit before it slides back in. */
+const HINT_MARGIN_PX = 8;
 
 export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarget | null }) {
   const suppressed = useChromeSuppressed(editor);
   const shown = useFadingHint(hint);
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
   const rect = useAnchorRect(shown?.element ?? null);
+  const position = useHintPosition(element, rect);
   const visible = Boolean(hint) && !suppressed;
 
   if (!shown || !rect || typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      ref={setElement}
       data-link-hint
       data-state={visible ? "open" : "closed"}
       className="meridian-link-hint"
-      style={{ left: rect.left, top: rect.bottom + HINT_GAP_PX }}
+      style={position ?? { left: rect.left, top: rect.bottom + HINT_GAP_PX }}
     >
       {linkDestinationLabel(shown.target)}
     </div>,
     document.body,
   );
+}
+
+/**
+ * Below the link, inside the viewport. A destination is as long as the writer's
+ * URL, and a link near the right edge or the last line of the pane would put
+ * the hint somewhere it cannot be read — so it slides back in, and flips above
+ * the link when there is no room under it.
+ *
+ * Measured in a layout effect, which runs before paint: the correction is not a
+ * frame the writer can see.
+ */
+function useHintPosition(
+  hint: HTMLElement | null,
+  rect: AnchorRect | null,
+): { left: number; top: number } | null {
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!hint || !rect) {
+      setPosition(null);
+      return;
+    }
+    const box = hint.getBoundingClientRect();
+    const left = Math.max(
+      HINT_MARGIN_PX,
+      Math.min(rect.left, window.innerWidth - box.width - HINT_MARGIN_PX),
+    );
+    const below = rect.bottom + HINT_GAP_PX;
+    const fitsBelow = below + box.height + HINT_MARGIN_PX <= window.innerHeight;
+    const top = fitsBelow ? below : rect.top - box.height - HINT_GAP_PX;
+    setPosition((previous) =>
+      previous && previous.left === left && previous.top === top ? previous : { left, top },
+    );
+  }, [hint, rect]);
+
+  return position;
 }
 
 /**
