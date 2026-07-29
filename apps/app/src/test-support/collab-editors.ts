@@ -1,0 +1,69 @@
+/**
+ * Two editors over one shared document, for surfaces that have to survive a
+ * peer's write.
+ *
+ * The hazard these tests exist for cannot be faked with a hand-built
+ * transaction: what makes a remote write different is that y-prosemirror
+ * REBUILDS the ProseMirror doc from the Yjs type and dispatches one replace
+ * step over the whole document. Only a real second binding produces that, so
+ * this runs a real second editor and hands its updates over the way a server
+ * would.
+ */
+
+import { Editor, type JSONContent } from "@tiptap/core";
+import { Awareness } from "y-protocols/awareness";
+import * as Y from "yjs";
+
+import { createEditorConfig } from "@/core/editor/config";
+
+export type CollabPair = {
+  /** The editor under test. */
+  local: Editor;
+  /** The collaborator. Write through this, then `sync()`. */
+  peer: Editor;
+  /** Exchange updates both ways, as a connected server would. */
+  sync: () => void;
+  destroy: () => void;
+};
+
+function editorOn(doc: Y.Doc): Editor {
+  return new Editor({
+    element: document.createElement("div"),
+    ...createEditorConfig({ document: doc, awareness: new Awareness(doc) }),
+  });
+}
+
+function push(from: Y.Doc, to: Y.Doc): void {
+  Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
+}
+
+/**
+ * Both editors bound to the same content. The local one is filled first and
+ * its state handed over before the peer mounts: two bindings both initializing
+ * an empty document would each contribute a paragraph.
+ */
+export function createCollabPair(content: JSONContent): CollabPair {
+  const localDoc = new Y.Doc({ gc: false });
+  const peerDoc = new Y.Doc({ gc: false });
+
+  const local = editorOn(localDoc);
+  local.commands.setContent(content);
+  push(localDoc, peerDoc);
+  const peer = editorOn(peerDoc);
+
+  const sync = () => {
+    push(localDoc, peerDoc);
+    push(peerDoc, localDoc);
+  };
+  sync();
+
+  return {
+    local,
+    peer,
+    sync,
+    destroy: () => {
+      peer.destroy();
+      local.destroy();
+    },
+  };
+}
