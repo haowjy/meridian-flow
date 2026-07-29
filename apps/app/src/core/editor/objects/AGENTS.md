@@ -33,6 +33,12 @@ re-deriving it, so there is one answer to "is this an object".
 - **Click reads** (law 1). `handleClickOn` acts only on the node the pointer
   directly hit; without that, a click in a table cell would walk out and select
   the whole table.
+- **An object body that refuses a caret takes the PRESS**, not the click.
+  `handleClickOn` runs on mouseup, and between the two events the browser has
+  already hunted for the nearest editable position — which, inside a node view
+  that hides its own text, is that hidden text. The rule is the DOM's own
+  (`contenteditable="false"` under the pointer), never a list of node types, so
+  a plain fence and a table cell keep their caret.
 - **Arrows never leap out of a sentence.** A block object is beside the caret
   only at the very edge of its text block; an inline image is beside it
   directly.

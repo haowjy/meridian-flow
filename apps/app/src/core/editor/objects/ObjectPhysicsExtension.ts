@@ -1,7 +1,9 @@
 /**
  * ObjectPhysicsExtension — the second register's physics (§1, laws 1–3).
  *
- * A click selects an object instead of opening it. Arrows walk onto it and
+ * A click selects an object instead of opening it — and on an object with no
+ * inside, the PRESS does, before the browser can park a caret in content the
+ * object is not showing (`selectObjectUnderPress`). Arrows walk onto it and
  * then past it. Enter engages it, per type. Esc walks home, which is the
  * kernel's chain rather than this file's business. A tap is a click, so touch
  * comes free.
@@ -18,7 +20,7 @@
 
 import { type Editor, Extension } from "@tiptap/core";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
@@ -153,6 +155,83 @@ export function registerObjectKeymap(
   });
 }
 
+/**
+ * The object whose body `element` is part of, or null outside every object.
+ *
+ * Reads the DOM rather than the pointer's coordinates: a press lands on a
+ * `<polygon>` in a diagram or on an `<img>`, and both are somewhere ProseMirror
+ * can map back to a position, while coordinates can fall in a gap between
+ * boxes. The walk is over the DOCUMENT — the position's own ancestors — so it
+ * finds the object however many node views the press happened to land inside.
+ */
+function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
+  let pos: number;
+  try {
+    pos = view.posAtDOM(element, 0);
+  } catch {
+    return null;
+  }
+  if (pos < 0 || pos > view.state.doc.content.size) return null;
+
+  const $pos = view.state.doc.resolve(pos);
+  // A leaf object — an image, a scene break — is what the position sits
+  // directly before; a block one is an ancestor of the position inside it.
+  const after = $pos.nodeAfter;
+  if (after && isEditorObject(after)) return { node: after, pos: $pos.pos };
+
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const node = $pos.node(depth);
+    if (isEditorObject(node)) return { node, pos: $pos.before(depth) };
+  }
+  return null;
+}
+
+/**
+ * Law 1 at PRESS time, for an object body the writer cannot type into.
+ *
+ * `handleClickOn` is a mouseup path, and one repaint too late. Between the two
+ * events the browser answers the press its own way: pressing something marked
+ * `contenteditable="false"` sends it hunting for the nearest editable position,
+ * and inside a node view that hides its own text — a rendered diagram — the
+ * nearest one is that hidden text. The caret lands there, the node view brings
+ * the source back so those keystrokes stay reachable, the page moves under the
+ * pointer, and the mouseup lands in the source it just revealed. A press that
+ * travels more than a few pixels never reaches `handleClickOn` at all, so the
+ * source simply stays.
+ *
+ * The rule is the DOM's own, not a list of node types: **an object body that
+ * refuses a caret takes the press.** A plain fence and a table cell are
+ * editable, their click IS a caret (§5.3, §5.4), and neither is touched here.
+ *
+ * Bound as a plain listener rather than through `handleDOMEvents`, which reads
+ * a prevented default as "the plugin owns the whole press" and skips the mouse
+ * machinery that counts clicks and double-clicks. This has to run beside that
+ * machinery, not instead of it.
+ */
+function selectObjectUnderPress(view: EditorView, event: MouseEvent): void {
+  // The primary button only: a right-click belongs to the context-claim
+  // ladder, and the browser's own default is how it gets there.
+  if (event.button !== 0 || event.defaultPrevented || !view.editable) return;
+
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const opaque = target.closest('[contenteditable="false"]');
+  if (!opaque || !view.dom.contains(opaque)) return;
+
+  const found = objectAtDOM(view, opaque);
+  if (!found) return;
+  const transaction = selectObjectTransaction(view.state, found.pos);
+  if (!transaction) return;
+
+  // Refusing the default IS the fix: the hunt for an editable position is the
+  // browser's default action, and nothing later can take a caret back.
+  event.preventDefault();
+  view.dispatch(transaction);
+  // The refused default would have focused the editor, and every object key
+  // and the Esc chain need it focused all the same.
+  view.focus();
+}
+
 export const ObjectPhysicsExtension = Extension.create({
   name: OBJECT_PHYSICS_NAME,
   // Under the chrome kernel (1050) and undo (1100): object physics is the
@@ -176,7 +255,7 @@ export const ObjectPhysicsExtension = Extension.create({
          * event, which is emitted a macrotask late — long enough for a first
          * keystroke to miss it.
          */
-        view() {
+        view(editorView) {
           const chrome = getEditorChrome(editor);
           // Two contributions, because the arrows and Enter are live in
           // different places. Walking ONTO an object starts from prose beside
@@ -207,8 +286,12 @@ export const ObjectPhysicsExtension = Extension.create({
             }),
           ];
 
+          const onMouseDown = (event: MouseEvent) => selectObjectUnderPress(editorView, event);
+          editorView.dom.addEventListener("mousedown", onMouseDown);
+
           return {
             destroy() {
+              editorView.dom.removeEventListener("mousedown", onMouseDown);
               for (const release of releases) release?.();
               engagements.clear();
             },

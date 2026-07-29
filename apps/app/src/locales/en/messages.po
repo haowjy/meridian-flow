@@ -853,8 +853,8 @@ msgid "Diagram"
 msgstr "Diagram"
 
 #: src/core/editor/MermaidCodeBlock.tsx
-msgid "Diagram could not be rendered"
-msgstr "Diagram could not be rendered"
+#~ msgid "Diagram could not be rendered"
+#~ msgstr "Diagram could not be rendered"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -946,6 +946,7 @@ msgstr "Duplicate"
 msgid "Edit link"
 msgstr "Edit link"
 
+#: src/core/editor/MermaidCodeBlock.tsx
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Edit source"
@@ -2616,6 +2617,14 @@ msgstr "This column is already at the edge."
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
 msgstr "This device"
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "This diagram has a syntax problem"
+msgstr "This diagram has a syntax problem"
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "This diagram has a syntax problem, so there is nothing to preview yet."
+msgstr "This diagram has a syntax problem, so there is nothing to preview yet."
 
 #: src/core/editor/MermaidCodeBlock.tsx
 msgid "This diagram stopped parsing. Showing the last version that rendered."

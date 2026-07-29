@@ -71,8 +71,10 @@ control and a labeled control floating alone over code reads as part of it.
   the picture's height.
 - Putting a control inside the viewer's gesture host. The host takes pointer
   capture on `pointerdown`, so a button in it never receives its own click.
-- Rendering source in the page. The page never shows Mermaid syntax; the two
-  exceptions belong to the node view (`core/editor/MermaidCodeBlock.tsx`).
+- Rendering source in the page. The page never shows Mermaid syntax; the one
+  exception (a caret inside the fence) belongs to the node view
+  (`core/editor/MermaidCodeBlock.tsx`), which answers a failed first render
+  with an error card rather than a fence.
 - Discarding an export promise (`void copyImage(...)`). An unhandled rejection
   is a failure the writer never hears about.
 - Reading the approached object inside a menu handler. Menus carry their own

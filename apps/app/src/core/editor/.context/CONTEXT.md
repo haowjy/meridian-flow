@@ -189,12 +189,16 @@ Yjs document session. It must stay structurally aligned with
 - A `code_block` whose `language` is `mermaid` renders as a diagram and hides
   its own `<pre>`; every other language is the fence itself.
   `MermaidCodeBlock.tsx` is that node view and `mermaid-render.ts` is the async
-  parser edge behind it. The hazard that once kept the view unregistered — a
-  caret in a hidden element eating keystrokes — is answered inside the view:
-  the source comes back whenever a live caret is inside the node, and a fence
-  that has never rendered shows itself so a broken diagram stays reachable.
-  Source access otherwise belongs to the diagram dialog
+  parser edge behind it. It has three faces and none of them is a code block
+  (§5.2, "the page never shows Mermaid syntax"): the render; the LAST GOOD
+  render plus a parse note, once an edit stops parsing; and an error card with
+  mermaid's own message and an Edit source button, for source that has never
+  rendered at all. Source access belongs to the diagram dialog
   (`features/editor/surfaces/objects`); caret-enters-source is not coming back.
+  The one exception the view owns is a caret INSIDE the fence — a fence typed
+  as markdown is filled in by hand, and a caret in a hidden element eats every
+  keystroke it is given. A pointer never produces that caret: object physics
+  selects an opaque object body on the PRESS (see `objects/.context`).
 - `useMermaidSvg` keeps the LAST GOOD svg across a failing edit, which is what
   lets the dialog show a live preview beside source that does not parse yet.
   Every consumer gets its own render id: mermaid writes it into the markup, and

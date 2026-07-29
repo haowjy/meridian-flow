@@ -853,8 +853,8 @@ msgid "Diagram"
 msgstr ""
 
 #: src/core/editor/MermaidCodeBlock.tsx
-msgid "Diagram could not be rendered"
-msgstr ""
+#~ msgid "Diagram could not be rendered"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -946,6 +946,7 @@ msgstr ""
 msgid "Edit link"
 msgstr ""
 
+#: src/core/editor/MermaidCodeBlock.tsx
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Edit source"
@@ -2615,6 +2616,14 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
+msgstr ""
+
+#: src/core/editor/MermaidCodeBlock.tsx
+msgid "This diagram has a syntax problem"
+msgstr ""
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "This diagram has a syntax problem, so there is nothing to preview yet."
 msgstr ""
 
 #: src/core/editor/MermaidCodeBlock.tsx

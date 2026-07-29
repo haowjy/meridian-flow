@@ -33,9 +33,6 @@ import { copyText, downloadPng } from "./object-commands";
 import { ViewerCanvas } from "./ViewerCanvas";
 import { useVerbFeedback, VerbNoticePill } from "./verb-feedback";
 
-/** Long enough to read as a pause in typing, short enough to feel live. */
-const PREVIEW_DEBOUNCE_MS = 350;
-
 /** Past the dialog's and the menu's focus restoration, under a blink. */
 const SOURCE_FOCUS_DELAY_MS = 120;
 
@@ -124,11 +121,10 @@ function DiagramFace({
   // the document it was typed against.
   const draft = useFenceDraft(editor, target);
   const source = draft.value;
-  // The preview follows a pause in typing rather than every keystroke: mermaid
-  // reparses the whole diagram per render, and a half-typed arrow is not a
-  // diagram yet.
-  const settled = useDebounced(source, PREVIEW_DEBOUNCE_MS);
-  const { svg, error } = useMermaidSvg(settled);
+  // The pause between a keystroke and a reparse belongs to the render hook,
+  // which the page's own diagram shares: one answer to "when is this source
+  // settled enough to draw".
+  const { svg, error, rendered } = useMermaidSvg(source);
 
   // The pane is its own layer, which is what makes law 3's walk fall out of one
   // rule: Esc closes the source, then the dialog, then leaves the diagram
@@ -138,6 +134,14 @@ function DiagramFace({
     open: sourceOpen,
     close: () => onSourceOpenChange(false),
   });
+
+  // Source that has never rendered has nothing for the viewer to show, which
+  // is law 2's reason for opening a brand-new diagram on its source as well.
+  // One-way: a writer who closes the pane over a broken diagram keeps it closed.
+  const nothingToView = svg === null && error !== null;
+  useEffect(() => {
+    if (nothingToView) onSourceOpenChange(true);
+  }, [nothingToView, onSourceOpenChange]);
 
   // Ctrl+Enter is the escape hatch's keyboard twin (§4), inside the dialog as
   // well as on the selected block.
@@ -199,7 +203,8 @@ function DiagramFace({
             onChange={draft.onChange}
             // Only report a failure the writer can act on: a message about
             // source they have already changed is noise.
-            error={settled === source ? error : null}
+            error={rendered === source ? error : null}
+            hasPreview={svg !== null}
           />
         ) : null}
         <ViewerCanvas contentKey={svg ?? ""}>
@@ -220,10 +225,13 @@ function SourcePane({
   value,
   onChange,
   error,
+  hasPreview,
 }: {
   value: string;
   onChange: (next: string) => void;
   error: string | null;
+  /** False when nothing has ever rendered, which changes what the note can promise. */
+  hasPreview: boolean;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -249,7 +257,9 @@ function SourcePane({
       />
       {error ? (
         <p className="meridian-diagram-parse-note meridian-lightbox-parse-note" role="status">
-          {t`This diagram stopped parsing. The preview is the last version that rendered.`}
+          {hasPreview
+            ? t`This diagram stopped parsing. The preview is the last version that rendered.`
+            : t`This diagram has a syntax problem, so there is nothing to preview yet.`}
           <code>{error}</code>
         </p>
       ) : null}
@@ -274,15 +284,4 @@ function ImageFace({ target }: { target: ObjectSurfaceTarget }) {
       </div>
     </>
   );
-}
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [settled, setSettled] = useState(value);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSettled(value), ms);
-    return () => window.clearTimeout(timer);
-  }, [value, ms]);
-
-  return settled;
 }
