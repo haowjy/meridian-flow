@@ -48,6 +48,17 @@ function type(editor: Editor, text: string) {
   }
 }
 
+/** One character reported as replacing `[from, to]` rather than landing at the caret. */
+function typeOverRange(editor: Editor, from: number, to: number, character: string): boolean {
+  return (
+    editor.view.someProp("handleTextInput", (handleTextInput) =>
+      handleTextInput(editor.view, from, to, character, () =>
+        editor.state.tr.insertText(character, from, to),
+      ),
+    ) ?? false
+  );
+}
+
 function press(editor: Editor, key: string): boolean {
   const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
   return (
@@ -245,6 +256,38 @@ describe("typing the closer steps over the one that was written", () => {
     type(editor, "]");
 
     expect(shape(editor)).toBe("[]|]");
+  });
+});
+
+describe("a keystroke reported as a block replacement", () => {
+  it("pairs when the reported range carries no text", () => {
+    const editor = openEditor();
+
+    // The browser swapped an empty paragraph's trailing `<br>` for the
+    // character, so ProseMirror reads the diff back as the whole block being
+    // replaced. Live, this is the first character typed into an empty
+    // paragraph, and it stopped pairing entirely when the caret was ignored.
+    expect(typeOverRange(editor, 0, editor.state.doc.content.size, "[")).toBe(true);
+    expect(shape(editor)).toBe("[|]");
+  });
+
+  it("pairs into the empty block a select-all Backspace left behind", () => {
+    const editor = openEditor("<p>Hello</p>");
+    editor.commands.selectAll();
+    editor.commands.deleteSelection();
+    // The selection still spans the emptied document, which is the state the
+    // writer's next character actually arrives in.
+    editor.commands.selectAll();
+
+    expect(typeOverRange(editor, 0, editor.state.doc.content.size, "[")).toBe(true);
+    expect(shape(editor)).toBe("[|]");
+  });
+
+  it("stands aside when the writer is typing over their own selection", () => {
+    const editor = openEditor("<p>Hello</p>");
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+
+    expect(typeOverRange(editor, 1, 6, "[")).toBe(false);
   });
 });
 

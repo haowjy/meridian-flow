@@ -113,6 +113,35 @@ export function autoClosedRunLength(state: EditorState, pos: number): number {
   }
 }
 
+/**
+ * The caret this keystroke lands at, or null when it is replacing something.
+ *
+ * ProseMirror reports the range the typed text replaces, and that range is
+ * routinely wider than a caret even when nothing is being destroyed. Typing
+ * into an empty paragraph swaps the block's trailing `<br>` for the character,
+ * and the diff read back from the DOM is the whole block; select-all followed
+ * by Backspace leaves the selection spanning the emptied document, and the
+ * next character arrives against that. Both were the writer's first keystroke
+ * on a blank page, and both stopped pairing while this only trusted a caret.
+ *
+ * So the question is not how wide the range is but whether it holds anything:
+ * a range with no text in it destroys nothing, and when it is one text block
+ * the character belongs inside that block. A range carrying text is a real
+ * replacement and belongs to whoever wants it.
+ */
+function insertionCaret(state: EditorState, from: number, to: number): number | null {
+  const { selection } = state;
+  if (selection.empty && from <= selection.from && selection.from <= to) return selection.from;
+
+  if (state.doc.textBetween(from, to, "", "") !== "") return null;
+
+  const caret = TextSelection.near(state.doc.resolve(from), 1);
+  if (!caret.empty) return null;
+  // Wider than the block it lands in and the replacement would join blocks —
+  // a document shape this cannot reproduce by inserting at one caret.
+  return from >= caret.$from.before() && to <= caret.$from.after() ? caret.from : null;
+}
+
 /** `[` here means `[]` with the caret in the middle. */
 function openPairTransaction(state: EditorState, at: number, typed: string): Transaction | null {
   const $at = state.doc.resolve(at);
@@ -216,17 +245,20 @@ export const AutoPairExtension = Extension.create({
 
         props: {
           /**
-           * One character, no selection, no composition. A paste arrives as a
-           * slice rather than text input; an IME is mid-word and dispatching
-           * underneath it corrupts the composition — both are somebody else's
-           * keystroke and this plugin declines them.
+           * One character, no composition, nothing being replaced. A paste
+           * arrives as a slice rather than text input; an IME is mid-word and
+           * dispatching underneath it corrupts the composition — both are
+           * somebody else's keystroke and this plugin declines them.
            */
           handleTextInput(view, from, to, text) {
-            if (from !== to || text.length !== 1 || view.composing) return false;
+            if (text.length !== 1 || view.composing) return false;
+
+            const at = insertionCaret(view.state, from, to);
+            if (at === null) return false;
 
             const transaction =
-              stepOverTransaction(view.state, from, text) ??
-              openPairTransaction(view.state, from, text);
+              stepOverTransaction(view.state, at, text) ??
+              openPairTransaction(view.state, at, text);
             if (!transaction) return false;
 
             view.dispatch(transaction);
