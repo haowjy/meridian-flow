@@ -184,6 +184,12 @@ export function deleteBlockTransaction(
  * inside the block; a selected object stays selected, which is also how a
  * moved table keeps its whole-table selection — prosemirror-tables normalizes
  * the node selection back into a `CellSelection` itself.
+ *
+ * Everything held keeps its OFFSET inside the block, objects included. The
+ * block travels whole, so the offset is exact — and an inline image is not its
+ * block: re-selecting the landing position itself would ring the paragraph
+ * that carried the picture, and the next character typed would then replace a
+ * sentence the writer never selected.
  */
 function carrySelection(
   state: EditorState,
@@ -196,10 +202,12 @@ function carrySelection(
   const inside = selection.from >= source.pos && selection.to <= source.pos + size;
   if (!inside) return tr;
 
-  if (selectedObject(state)) {
-    const node = tr.doc.nodeAt(landing);
+  const object = selectedObject(state);
+  if (object) {
+    const at = landing + (object.pos - source.pos);
+    const node = tr.doc.nodeAt(at);
     if (node && NodeSelection.isSelectable(node)) {
-      return tr.setSelection(NodeSelection.create(tr.doc, landing));
+      return tr.setSelection(NodeSelection.create(tr.doc, at));
     }
   }
 

@@ -51,6 +51,11 @@ const figure: JSONContent = { type: "figure", attrs: { src: "asset:1", caption: 
 
 const rule: JSONContent = { type: "horizontal_rule" };
 
+const image: JSONContent = { type: "image", attrs: { src: "asset:2", alt: null, title: null } };
+
+/** What an upload leaves behind: a picture alone in its own paragraph. */
+const imageAlone: JSONContent = { type: "paragraph", content: [image] };
+
 const bulletList: JSONContent = {
   type: "bullet_list",
   content: [
@@ -226,6 +231,30 @@ describe("drop seams", () => {
 
     expect(moveBlockToSeamTransaction(instance.state, first, -1)).toBeNull();
     expect(moveBlockToSeamTransaction(instance.state, first, 3)).toBeNull();
+  });
+
+  it("leaves a dropped picture selected, not the paragraph that carried it", () => {
+    const instance = mount([paragraph("one"), imageAlone, paragraph("two")]);
+    const carrier = blockOf(instance, 1);
+    instance.view.dispatch(
+      // What a click on the picture leaves: the image node itself, inside the
+      // paragraph the drag moves.
+      instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, carrier.pos + 1)),
+    );
+
+    const tr = moveBlockToSeamTransaction(instance.state, blockOf(instance, 1), 3);
+    expect(tr).not.toBeNull();
+    if (tr) instance.view.dispatch(tr);
+
+    const dropped = instance.state.selection;
+    expect(dropped).toBeInstanceOf(NodeSelection);
+    expect((dropped as NodeSelection).node.type.name).toBe("image");
+
+    // And the next keystroke replaces the picture the writer was holding,
+    // rather than the paragraph plus whatever the stray selection covered.
+    instance.view.dispatch(instance.state.tr.insertText("Q"));
+    expect(outline(instance)).toEqual(["paragraph", "paragraph", "paragraph"]);
+    expect(textOutline(instance)).toEqual(["one", "two", "Q"]);
   });
 
   it("moves a table to the end of the document and keeps it whole", () => {
