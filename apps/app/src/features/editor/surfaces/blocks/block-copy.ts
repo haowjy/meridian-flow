@@ -7,7 +7,10 @@
  */
 import { t } from "@lingui/core/macro";
 
-import type { TurnIntoTargetId } from "./turn-into";
+// Straight at the primitive, not through `chrome/index.ts`: that barrel also
+// carries the surface registry this lane is listed in, and the round trip is a
+// module cycle.
+import { shortcutLabel } from "../../chrome/shortcut-label";
 
 export function blockHandleLabel(): string {
   return t`Move or change this block`;
@@ -28,42 +31,11 @@ export function blockMenuLabel(id: "moveUp" | "moveDown" | "duplicate" | "turnIn
   }
 }
 
-export function turnIntoLabel(id: TurnIntoTargetId): string {
-  switch (id) {
-    case "paragraph":
-      return t`Paragraph`;
-    case "heading1":
-      return t`Heading 1`;
-    case "heading2":
-      return t`Heading 2`;
-    case "heading3":
-      return t`Heading 3`;
-    case "bulletList":
-      return t`Bulleted list`;
-    case "orderedList":
-      return t`Numbered list`;
-    case "quote":
-      return t`Quote`;
-    case "codeBlock":
-      return t`Code block`;
-  }
-}
-
 /**
  * The keyboard twin of a drag, spelled the way the writer's own keyboard
  * spells it. Alt is Option on Apple keyboards, and a menu that says "Alt"
  * beside a key labelled ⌥ is a shortcut the writer has to translate.
  */
 export function blockMoveShortcut(direction: "up" | "down"): string {
-  const arrow = direction === "up" ? "↑" : "↓";
-  return isAppleKeyboard() ? `⌥${arrow}` : `Alt+${arrow}`;
-}
-
-function isAppleKeyboard(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const platform =
-    (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ??
-    navigator.platform ??
-    "";
-  return /mac|iphone|ipad|ipod/i.test(platform);
+  return shortcutLabel(`Alt+${direction === "up" ? "↑" : "↓"}`);
 }

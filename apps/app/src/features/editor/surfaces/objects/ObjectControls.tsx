@@ -59,6 +59,7 @@ import {
 } from "./object-commands";
 import { useApproachedObject } from "./useApproachedObject";
 import { ObjectVerbNotice, useVerbFeedback } from "./verb-feedback";
+import "./object-controls.css";
 
 /** Runs a verb and keeps its answer, success or failure. */
 export type RunVerb = (work: Promise<unknown>, done: string) => void;

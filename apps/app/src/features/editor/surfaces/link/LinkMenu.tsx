@@ -35,9 +35,8 @@ import {
   EditorMenuItem,
   EditorMenuSeparator,
   EditorMenuShortcut,
+  shortcutLabel,
 } from "@/features/editor/chrome";
-
-import { shortcutLabel } from "./link-shortcuts";
 
 export function LinkMenu({
   editor,

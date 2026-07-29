@@ -56,8 +56,13 @@ export function alignSelectedBlocks(state: EditorState, align: BlockAlignment): 
   return transaction;
 }
 
+/**
+ * Alignment IS an attribute, so the schema already answers this: paragraphs,
+ * headings, and tables carry `align` today. A node name list here would have
+ * to be kept in step with the schema by hand, and a table cell — which carries
+ * its own `alignment` and not this one — is exactly the kind of near-miss that
+ * makes hand-keeping fail.
+ */
 function isAlignable(node: PMNode): boolean {
-  return (
-    node.type.name === "paragraph" || node.type.name === "heading" || node.type.name === "table"
-  );
+  return node.type.spec.attrs !== undefined && "align" in node.type.spec.attrs;
 }

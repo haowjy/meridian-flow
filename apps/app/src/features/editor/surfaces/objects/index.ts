@@ -19,12 +19,10 @@ export { ObjectControls, type RunVerb } from "./ObjectControls";
 export { ObjectLightbox, type ObjectLightboxProps } from "./ObjectLightbox";
 export {
   isMermaidFence,
-  type ObjectSurfaceKind,
   type ObjectSurfaceTarget,
   objectPosForElement,
   objectSurfaceAt,
   objectSurfaceAtPos,
-  objectSurfaceKind,
 } from "./object-anchors";
 export {
   copyImageFrom,

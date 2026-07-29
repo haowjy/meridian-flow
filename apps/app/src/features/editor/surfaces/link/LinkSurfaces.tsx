@@ -15,6 +15,7 @@ import { LinkForm } from "./LinkForm";
 import { LinkHint } from "./LinkHint";
 import { LinkMenu } from "./LinkMenu";
 import { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
+import "./link-surfaces.css";
 
 export function LinkSurfaces({ editor }: { editor: Editor }) {
   const surface = useLinkSurface(editor);

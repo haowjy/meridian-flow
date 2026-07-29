@@ -77,6 +77,7 @@ import {
   moveBlockToSeamTransaction,
   selectionIsInsideTable,
 } from "./block-targets";
+import "./block-movement.css";
 
 /** Names this surface in `EDITOR_CHROME_SURFACES` and in probes. */
 export const BLOCK_MOVEMENT_SURFACE_ID = "block-movement";

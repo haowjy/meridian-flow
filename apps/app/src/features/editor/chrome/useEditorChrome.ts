@@ -59,6 +59,9 @@ export function useChromeSuppressed(editor: Editor | null): boolean {
  * label. Surfaces that only need the resolved context or suppression should
  * read those stores instead: they notify when their answer changes, not when
  * the document does.
+ *
+ * One subscription, not two: a selection change IS a transaction, so listening
+ * for both rendered every caret move twice.
  */
 export function useEditorRevision(editor: Editor | null): void {
   const [, setRevision] = useState(0);
@@ -66,10 +69,8 @@ export function useEditorRevision(editor: Editor | null): void {
   useEffect(() => {
     if (!editor) return;
     const bump = () => setRevision((revision) => revision + 1);
-    editor.on("selectionUpdate", bump);
     editor.on("transaction", bump);
     return () => {
-      editor.off("selectionUpdate", bump);
       editor.off("transaction", bump);
     };
   }, [editor]);

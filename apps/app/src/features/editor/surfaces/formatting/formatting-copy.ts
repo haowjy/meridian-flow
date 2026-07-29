@@ -10,12 +10,8 @@
  */
 import { t } from "@lingui/core/macro";
 
-import {
-  type BlockedSubject,
-  type BlockTypeId,
-  blockedReasonMessage,
-  type ToolbarBlockedReason,
-} from "../toolbar";
+import { shortcutLabel } from "../../chrome/shortcut-label";
+import { type BlockedSubject, blockedReasonMessage, type ToolbarBlockedReason } from "../toolbar";
 import type { FormattingClipboardId, FormattingMarkId } from "./formatting-menu-items";
 
 /** The toolbar's reasons plus the two only a clipboard control can hit. */
@@ -41,27 +37,6 @@ export function turnIntoLabel(): string {
   return t`Turn into`;
 }
 
-export function blockTypeLabel(id: BlockTypeId): string {
-  switch (id) {
-    case "paragraph":
-      return t`Paragraph`;
-    case "heading1":
-      return t`Heading 1`;
-    case "heading2":
-      return t`Heading 2`;
-    case "heading3":
-      return t`Heading 3`;
-    case "bulletList":
-      return t`Bulleted list`;
-    case "orderedList":
-      return t`Numbered list`;
-    case "blockquote":
-      return t`Quote`;
-    case "codeBlock":
-      return t`Code block`;
-  }
-}
-
 export function addLinkLabel(): string {
   return t`Add link`;
 }
@@ -81,11 +56,11 @@ export function clipboardLabel(id: FormattingClipboardId): string {
 export function clipboardShortcut(id: FormattingClipboardId): string {
   switch (id) {
     case "cut":
-      return shortcutLabel("X");
+      return shortcutLabel("Mod+X");
     case "copy":
-      return shortcutLabel("C");
+      return shortcutLabel("Mod+C");
     case "paste":
-      return shortcutLabel("V");
+      return shortcutLabel("Mod+V");
   }
 }
 
@@ -94,25 +69,12 @@ export function formattingBlockedMessage(
   reason: FormattingBlockedReason | null,
 ): string | null {
   if (reason === "clipboard-read-blocked") {
-    const shortcut = shortcutLabel("V");
+    const shortcut = shortcutLabel("Mod+V");
     return t`This browser will not hand the clipboard to the page. Press ${shortcut} to paste.`;
   }
   if (reason === "clipboard-write-blocked") {
-    const shortcut = shortcutLabel("C");
+    const shortcut = shortcutLabel("Mod+C");
     return t`This browser will not let the page write to the clipboard. Press ${shortcut} to copy.`;
   }
   return blockedReasonMessage(subject, reason);
-}
-
-function shortcutLabel(key: string): string {
-  return isApplePlatform() ? `⌘${key}` : `Ctrl+${key}`;
-}
-
-/**
- * Mod is Cmd on macOS throughout (§4). Read from the browser rather than
- * configured: the shortcut is the OS's, not the document's.
- */
-function isApplePlatform(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 }

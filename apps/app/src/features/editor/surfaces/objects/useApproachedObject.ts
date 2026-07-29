@@ -15,12 +15,13 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useState } from "react";
 
-import { CHROME_TIMING } from "@/core/editor/chrome";
+import { isEditorChromeElement } from "@/core/editor/chrome";
 import {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
   useEditorRevision,
+  useFadeHold,
 } from "@/features/editor/chrome";
 
 import { type ObjectSurfaceTarget, objectSurfaceAt, objectSurfaceAtPos } from "./object-anchors";
@@ -30,14 +31,6 @@ export type ObjectApproach = {
   /** Drives the fade. False with a live target means "on its way out". */
   visible: boolean;
 };
-
-/**
- * Anything a Radix layer put on the page counts as chrome the pointer is
- * allowed to travel onto: the row itself carries `data-editor-chrome`, and a
- * menu it opened lives in the popper wrapper. Without this, moving the pointer
- * from a diagram to its own ⋮ would read as leaving the diagram.
- */
-const CHROME_SELECTOR = "[data-editor-chrome], [data-radix-popper-content-wrapper]";
 
 export function useApproachedObject(
   editor: Editor,
@@ -62,7 +55,12 @@ export function useApproachedObject(
 
     const onPointerOver = (event: Event) => {
       const target = event.target;
-      if (target instanceof Element && target.closest(CHROME_SELECTOR)) return;
+      // Travelling onto this editor's own chrome is not leaving the object.
+      // The kernel qualifies the mark by chrome id, so two documents open side
+      // by side each answer for their own row rather than holding each other's
+      // open. A menu opened from the row needs no reading here: the lane pins
+      // the approach while one is up.
+      if (target instanceof Element && isEditorChromeElement(chrome, target)) return;
       const found = objectSurfaceAt(editor.view, target);
       if (found) intent.enter(found.element);
       else intent.leave();
@@ -80,7 +78,7 @@ export function useApproachedObject(
 
   const selectedElement = selectedObjectElement(editor, context.owner, context.pos);
   const active = hovered ?? selectedElement;
-  const held = useFadeHold(active, CHROME_TIMING.fadeMs);
+  const held = useFadeHold(active);
   const anchor = pinned ? (active ?? held) : held;
 
   return {
@@ -108,20 +106,4 @@ function selectedObjectElement(
 function surfaceForElement(editor: Editor, element: HTMLElement): ObjectSurfaceTarget | null {
   if (!element.isConnected) return null;
   return objectSurfaceAt(editor.view, element);
-}
-
-/** Keep the last value for `ms` after it goes away, so a fade has something to fade. */
-function useFadeHold<T>(value: T | null, ms: number): T | null {
-  const [held, setHeld] = useState<T | null>(value);
-
-  useEffect(() => {
-    if (value !== null) {
-      setHeld(value);
-      return;
-    }
-    const timer = window.setTimeout(() => setHeld(null), ms);
-    return () => window.clearTimeout(timer);
-  }, [value, ms]);
-
-  return value ?? held;
 }

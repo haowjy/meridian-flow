@@ -14,8 +14,8 @@ import type { Editor } from "@tiptap/core";
 import {
   BLOCK_TYPE_IDS,
   type BlockTypeId,
+  blockedFirst,
   blockTypeStates,
-  type ToolbarControlState,
   type ToolbarMarkName,
   textMarkState,
 } from "../toolbar";
@@ -105,11 +105,4 @@ function sharedBlocker(states: readonly FormattingItemState[]): FormattingBlocke
   const first = states[0]?.blockedBy ?? null;
   if (!first) return null;
   return states.every((state) => state.blockedBy === first) ? first : null;
-}
-
-function blockedFirst(
-  readOnly: FormattingBlockedReason | null,
-  state: ToolbarControlState,
-): FormattingItemState {
-  return readOnly ? { active: state.active, blockedBy: readOnly } : state;
 }

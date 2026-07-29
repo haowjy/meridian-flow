@@ -46,6 +46,18 @@ describe("current block alignment", () => {
     expect(alignableBlocksInSelection(state)).toHaveLength(1);
   });
 
+  it("refuses a block the schema gives no align attribute", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("code_block", { language: "ts" }, schema.text("const gate = 3")),
+    ]);
+    const state = EditorState.create({ doc, selection: TextSelection.create(doc, 1) });
+
+    // A fence keeps its own layout, and a table CELL carries `alignment`
+    // rather than `align` — near-misses a list of node names would invite.
+    expect(alignableBlocksInSelection(state)).toHaveLength(0);
+    expect(alignSelectedBlocks(state, "center")).toBeNull();
+  });
+
   it("clears alignment on the current block", () => {
     const doc = schema.node("doc", null, [
       schema.node("heading", { level: 2, align: "center" }, schema.text("heading")),

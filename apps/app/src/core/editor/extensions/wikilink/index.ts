@@ -22,4 +22,4 @@ export {
   type WikilinkMenuItem,
 } from "./wikilink-catalog";
 export { insertWikilink } from "./wikilink-insertion";
-export { allowsWikilinkTrigger, WIKILINK_TRIGGER_BLOCKS } from "./wikilink-trigger";
+export { allowsWikilinkTrigger } from "./wikilink-trigger";

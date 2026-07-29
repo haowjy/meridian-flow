@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 
 import { EditorPopover } from "./EditorPopover";
 import { useChromeSuppressed } from "./useEditorChrome";
+import "./suggestion-menu.css";
 
 export type SuggestionMenuRow = {
   /** Stable within one menu: the React key and the option's id. */

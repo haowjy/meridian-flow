@@ -1,0 +1,37 @@
+/**
+ * The object row's own styles (ruling 8, mockup 03b).
+ *
+ * Portalled to the body, so nothing here nests under `.meridian-editor` — the
+ * `meridian-` prefix is what scopes it instead. Imported by the component, so
+ * a lane that never renders a row still gets the rules the moment it does.
+ */
+
+/* Overlaid just inside the object's top-right bounds, with no footprint: the
+   row is fixed to a measured rect and pulled back over its own width, so the
+   manuscript never reserves a pixel for it. */
+.meridian-overlay-icon-row {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  gap: 0.375rem;
+  transform: translateX(-100%);
+  transition: opacity 120ms ease-out;
+}
+
+.meridian-overlay-icon-row[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.meridian-overlay-icon-row[data-state="open"] {
+  opacity: 1;
+}
+
+/* Its own card chip, so a verb still reads where it lands on a diagram line. */
+.meridian-overlay-icon-chip {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  color: var(--color-foreground);
+}

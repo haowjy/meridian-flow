@@ -20,12 +20,16 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { CHROME_TIMING } from "@/core/editor/chrome";
 import { type LinkHint as LinkHintTarget, linkTargetHref } from "@/core/editor/links";
-import { type AnchorRect, useAnchorRect, useChromeSuppressed } from "@/features/editor/chrome";
+import {
+  type AnchorRect,
+  useAnchorRect,
+  useChromeSuppressed,
+  useFadeHold,
+} from "@/features/editor/chrome";
 
 import { useLinkResolution } from "./useLinkResolution";
 
@@ -36,7 +40,8 @@ const HINT_MARGIN_PX = 8;
 
 export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarget | null }) {
   const suppressed = useChromeSuppressed(editor);
-  const shown = useFadingHint(hint);
+  // Held one fade past its own disappearance, so the hint fades where it stood.
+  const shown = useFadeHold(hint);
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const rect = useAnchorRect(shown?.element ?? null);
   const position = useHintPosition(element, rect);
@@ -99,26 +104,4 @@ function useHintPosition(
   }, [hint, rect]);
 
   return position;
-}
-
-/**
- * The hint to render: the current one, or the one leaving. Holding the leaving
- * hint is what turns a disappearance into a fade; dropping it afterwards keeps
- * an invisible element and its anchor from outliving the paragraph they came
- * from. The timer is exit animation, not hover timing — the kernel's hover
- * intent already decided this hint is over.
- */
-function useFadingHint(hint: LinkHintTarget | null): LinkHintTarget | null {
-  const [shown, setShown] = useState<LinkHintTarget | null>(hint);
-
-  useEffect(() => {
-    if (hint) {
-      setShown(hint);
-      return;
-    }
-    const handle = window.setTimeout(() => setShown(null), CHROME_TIMING.fadeMs);
-    return () => window.clearTimeout(handle);
-  }, [hint]);
-
-  return shown;
 }

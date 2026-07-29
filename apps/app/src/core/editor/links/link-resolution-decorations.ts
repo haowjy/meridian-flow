@@ -10,13 +10,16 @@
  *
  * ProseMirror puts an inline decoration's attributes on a span INSIDE the link
  * mark's `<a>`, so the CSS reaches the anchor through `:has()`. That is a fact
- * about how marks and decorations nest, not a choice — see `editor.css`.
+ * about how marks and decorations nest, not a choice — see the link
+ * surface's `link-surfaces.css`.
  */
 
-import type { Node as PMNode } from "@tiptap/pm/model";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
+import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
+import { AddMarkStep, RemoveMarkStep } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
+import { isRemoteDocumentRebuild } from "../anchors";
 import type { LinkResolution } from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
@@ -42,9 +45,34 @@ export function linkResolutionPlugin(resolution: LinkResolution): Plugin {
 
     state: {
       init: (_config, state) => read(state.doc, resolution),
-      apply(transaction, value, _old, state) {
-        if (!transaction.docChanged && !transaction.getMeta(linkResolutionPluginKey)) return value;
-        return read(state.doc, resolution);
+      /**
+       * A scan of the whole document per keystroke is what this avoids, and
+       * the three cases are not interchangeable:
+       *
+       * - An answer landed: nothing moved, but what to draw changed. Rebuild.
+       * - A peer's write: y-prosemirror replaces the WHOLE document in one
+       *   step, so `map` reports every position deleted and would drop every
+       *   decoration on the page (see `core/editor/anchors.ts`). Rebuild.
+       * - A local edit that reaches a link, by mark or by text: the ranges
+       *   themselves changed. Rebuild.
+       *
+       * Everything else is prose moving past decorations that still describe
+       * the same links, and mapping carries them for the cost of the edit
+       * rather than the cost of the document.
+       */
+      apply(transaction, value, old, state) {
+        if (transaction.getMeta(linkResolutionPluginKey)) return read(state.doc, resolution);
+        if (!transaction.docChanged) return value;
+        if (
+          isRemoteDocumentRebuild(transaction) ||
+          reachesLink(transaction, old.schema.marks.link)
+        ) {
+          return read(state.doc, resolution);
+        }
+        return {
+          decorations: value.decorations.map(transaction.mapping, transaction.doc),
+          hrefs: value.hrefs,
+        };
       },
     },
 
@@ -85,6 +113,44 @@ export function linkResolutionPlugin(resolution: LinkResolution): Plugin {
       };
     },
   });
+}
+
+/**
+ * True when anything this transaction changed involved a link — the mark
+ * going on or coming off, or text inside one moving.
+ *
+ * A mark step carries no position change at all, so it is asked about
+ * directly; every other step is judged by what its own changed ranges held
+ * before and hold after.
+ */
+function reachesLink(transaction: Transaction, linkType: MarkType | undefined): boolean {
+  // A code file's schema has no link mark, and nothing here can be drawn on it.
+  if (!linkType) return false;
+
+  return transaction.steps.some((step, index) => {
+    if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
+      return step.mark.type === linkType;
+    }
+
+    const before = transaction.docs[index];
+    const after = transaction.docs[index + 1] ?? transaction.doc;
+    let reached = false;
+    step.getMap().forEach((oldStart, oldEnd, newStart, newEnd) => {
+      reached ||=
+        linkAround(before, linkType, oldStart, oldEnd) ||
+        linkAround(after, linkType, newStart, newEnd);
+    });
+    return reached;
+  });
+}
+
+/**
+ * Widened by one position on each side. Typing at either edge of a link lands
+ * inside the range the writer sees as the link, and a changed range that only
+ * touches a boundary holds no mark of its own to report.
+ */
+function linkAround(doc: PMNode, linkType: MarkType, from: number, to: number): boolean {
+  return doc.rangeHasMark(Math.max(0, from - 1), Math.min(doc.content.size, to + 1), linkType);
 }
 
 function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginState {

@@ -7,6 +7,7 @@
 import { t } from "@lingui/core/macro";
 
 import type {
+  BlockTypeId,
   BlockTypeRefusalReason,
   ToolbarBlockedReason,
   ToolbarControlId,
@@ -44,6 +45,32 @@ export function toolbarControlLabel(control: ToolbarControlId): string {
       return t`Block alignment`;
     case "uploadFigure":
       return t`Upload figure`;
+  }
+}
+
+/**
+ * What a block type is called, wherever "Turn into" is offered — the block
+ * menu's submenu and the formatting menu's alike. One writer-facing name per
+ * type, beside the table the surfaces read their state from.
+ */
+export function blockTypeLabel(id: BlockTypeId): string {
+  switch (id) {
+    case "paragraph":
+      return t`Paragraph`;
+    case "heading1":
+      return t`Heading 1`;
+    case "heading2":
+      return t`Heading 2`;
+    case "heading3":
+      return t`Heading 3`;
+    case "bulletList":
+      return t`Bulleted list`;
+    case "orderedList":
+      return t`Numbered list`;
+    case "blockquote":
+      return t`Quote`;
+    case "codeBlock":
+      return t`Code block`;
   }
 }
 
