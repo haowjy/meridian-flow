@@ -11,9 +11,10 @@
  * Two rules run through all of it, and both are about a document that moves
  * while a hand is on it (law 9: nothing gates a write):
  *
- * - **Every position held across a transaction goes through `followBlockPos`.**
+ * - **Every position held across a transaction goes through `followBlock`.**
  *   A block a peer deleted must take its chrome with it rather than handing
- *   Delete to the neighbour.
+ *   Delete to the neighbour, and a peer's write moves every position in the
+ *   document at once.
  * - **One finalizer ends the gesture, and everything that can end it calls
  *   that one.** Release, browser cancel, lost capture, a blurred window,
  *   Escape, and a peer deleting the block under the pointer are six ways to
@@ -56,13 +57,15 @@ import {
   seamLinePosition,
 } from "./block-geometry";
 import {
+  type BlockHold,
   type BlockMoveDirection,
   type BlockTarget,
   blockAt,
   blockForSelection,
   deleteBlockTransaction,
   duplicateBlockTransaction,
-  followBlockPos,
+  followBlock,
+  holdBlock,
   moveBlockStepTransaction,
   moveBlockToSeamTransaction,
   selectionIsInsideTable,
@@ -102,12 +105,12 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const suppressed = useChromeSuppressed(editor);
 
   // What the handle points at, and whether the pointer is currently on it.
-  // ONE position, deliberately: the hover intent used to keep its own copy,
-  // and a copy that transactions do not remap is a handle that walks back onto
-  // a block a peer moved out from under it.
-  const [anchorPos, setAnchorPos] = useState<number | null>(null);
+  // ONE hold, deliberately: the hover intent used to keep its own copy, and a
+  // copy that changes do not carry is a handle that walks back onto a block a
+  // peer moved out from under it.
+  const [anchorHold, setAnchorHold] = useState<BlockHold | null>(null);
   const [hovered, setHovered] = useState(false);
-  const [menuPos, setMenuPos] = useState<number | null>(null);
+  const [menuHold, setMenuHold] = useState<BlockHold | null>(null);
   const [seamIndex, setSeamIndex] = useState<number | null>(null);
   const [gesturing, setGesturing] = useState(false);
   // A re-measure ticket: the value is never read, incrementing it is the whole
@@ -120,7 +123,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const gestureRef = useRef<Gesture | null>(null);
   const handleRef = useRef<HTMLButtonElement | null>(null);
   const showingRef = useRef(false);
-  showingRef.current = anchorPos !== null || menuPos !== null;
+  showingRef.current = anchorHold !== null || menuHold !== null;
   /**
    * The writer's last input device. A tap has no hover to settle, so on touch
    * the handle follows the selection instead (§5.8, law 8) — and a hybrid
@@ -137,7 +140,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     const intent = chrome.createHoverIntent<number>({
       onSettle: (target) => {
         setHovered(target !== null);
-        if (target !== null) setAnchorPos(target);
+        if (target !== null) setAnchorHold(holdBlock(editor.state, target));
       },
     });
     intentRef.current = intent;
@@ -145,7 +148,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       intentRef.current = null;
       intent.dispose();
     };
-  }, [chrome]);
+  }, [chrome, editor]);
 
   // The handle fades rather than vanishing: the hover intent's grace lets the
   // pointer travel onto it, and this keeps the element mounted one fade longer
@@ -157,10 +160,10 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     // handle unmount there would drop the pointer capture the drag is holding
     // — the browser would report lost capture and the drag would end on its
     // own first frame.
-    if (hovered || menuPos !== null || gesturing || coarseRef.current) return;
-    const timer = window.setTimeout(() => setAnchorPos(null), CHROME_TIMING.fadeMs);
+    if (hovered || menuHold !== null || gesturing || coarseRef.current) return;
+    const timer = window.setTimeout(() => setAnchorHold(null), CHROME_TIMING.fadeMs);
     return () => window.clearTimeout(timer);
-  }, [hovered, menuPos, gesturing]);
+  }, [hovered, menuHold, gesturing]);
 
   /**
    * End the gesture, once. `commit` is what the writer asked for: a release
@@ -182,7 +185,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       if (commit && held !== null && !editor.isDestroyed) {
         if (gesture.lifted) dropHeldBlock(editor, held, gesture.pointerY);
         // A press that never travelled is a click, and a click opens the menu.
-        else openBlockMenuAt(editor, held, setMenuPos);
+        else openBlockMenuAt(editor, held, setMenuHold);
       }
 
       if (!editor.isDestroyed) endBlockDrag(editor);
@@ -210,10 +213,11 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
         setSeamIndex(seamIndexAtPointer(editor.view, gesture.pointerY));
       }
 
-      setMenuPos((pos) => (pos === null ? pos : followBlockPos(transaction, pos)));
-      setAnchorPos((pos) => {
-        if (pos === null) return pos;
-        const followed = followBlockPos(transaction, pos);
+      const follow = (hold: BlockHold) => followBlock(editor.state, hold, transaction.mapping);
+      setMenuHold((hold) => (hold === null ? hold : follow(hold)));
+      setAnchorHold((hold) => {
+        if (hold === null) return hold;
+        const followed = follow(hold);
         // The hover intent still holds the old position; dropping the reveal
         // is how it finds out, and the next pointer move re-earns it.
         if (followed === null) intentRef.current?.cancel();
@@ -237,7 +241,8 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     if (!editable) return;
     const onSelection = () => {
       if (!coarseRef.current || gestureRef.current || editor.isDestroyed) return;
-      setAnchorPos(blockForSelection(editor.state)?.pos ?? null);
+      const selected = blockForSelection(editor.state);
+      setAnchorHold(selected ? holdBlock(editor.state, selected.pos) : null);
     };
     editor.on("selectionUpdate", onSelection);
     return () => {
@@ -376,7 +381,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   if (!editable || !chrome || typeof document === "undefined") return null;
 
-  const targetPos = menuPos ?? anchorPos;
+  const targetPos = (menuHold ?? anchorHold)?.from ?? null;
   const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
   const dragging = seamIndex !== null;
   // The handle stays mounted for the whole gesture even while it is invisible:
@@ -390,7 +395,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     seamIndex === null || restingSeam(editor, seamIndex)
       ? null
       : seamLinePosition(editor.view, seamIndex);
-  const visible = !dragging && !suppressed && (hovered || menuPos !== null || coarseRef.current);
+  const visible = !dragging && !suppressed && (hovered || menuHold !== null || coarseRef.current);
 
   return (
     <>
@@ -404,7 +409,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
               data-state={visible ? "open" : dragging ? "dragging" : "closed"}
               aria-label={blockHandleLabel()}
               aria-haspopup="menu"
-              aria-expanded={menuPos !== null}
+              aria-expanded={menuHold !== null}
               style={{
                 top: handle.top,
                 left: handle.left,
@@ -456,22 +461,22 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
           )
         : null}
 
-      {target && menuPos !== null && handle ? (
+      {target && menuHold !== null && handle ? (
         <BlockMenu
           editor={editor}
           target={target}
           at={{ x: handle.left, y: handle.top }}
           open
           onOpenChange={(open) => {
-            if (!open) setMenuPos(null);
+            if (!open) setMenuHold(null);
           }}
           onMove={(direction) =>
-            runOnBlock(menuPos, (state, source) =>
+            runOnBlock(menuHold.from, (state, source) =>
               moveBlockStepTransaction(state, source, direction),
             )
           }
-          onDuplicate={() => runOnBlock(menuPos, duplicateBlockTransaction)}
-          onDelete={() => runOnBlock(menuPos, deleteBlockTransaction)}
+          onDuplicate={() => runOnBlock(menuHold.from, duplicateBlockTransaction)}
+          onDelete={() => runOnBlock(menuHold.from, deleteBlockTransaction)}
         />
       ) : null}
     </>
@@ -495,14 +500,17 @@ function dropHeldBlock(editor: Editor, held: number, pointerY: number): void {
  * the toolbar's fence reads, which is what keeps one refusal rule behind both
  * surfaces.
  */
-function openBlockMenuAt(editor: Editor, pos: number, open: (pos: number) => void): void {
+function openBlockMenuAt(editor: Editor, pos: number, open: (hold: BlockHold) => void): void {
   const target = blockAt(editor.state.doc, pos);
   if (!target) return;
   const selection = isEditorObject(target.node)
     ? selectObjectTransaction(editor.state, target.pos)
     : editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(target.pos + 1)));
   if (selection) editor.view.dispatch(selection);
-  open(target.pos);
+  // Held from the state the selection left behind: the block moved if the
+  // press selected an object, and the menu belongs to where it is now.
+  const hold = holdBlock(editor.state, target.pos);
+  if (hold) open(hold);
 }
 
 function releasePointerCapture(element: HTMLElement | null, pointerId: number): void {

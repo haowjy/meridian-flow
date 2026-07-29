@@ -20,7 +20,9 @@
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import type { Mappable } from "@tiptap/pm/transform";
 
+import { anchorRange, type EditorAnchor, followAnchor } from "@/core/editor/anchors";
 import { selectedObject } from "@/core/editor/objects";
 
 export type BlockTarget = {
@@ -101,23 +103,39 @@ export function selectionIsInsideTable(state: EditorState): boolean {
 }
 
 /**
- * Follow a block position through an edit, or null when the block itself went
- * away.
+ * A block this surface has hold of, as its two seams.
  *
- * `mapping.map` cannot say "deleted": it answers with the boundary the deleted
- * range collapsed to, which is where the NEXT block now starts. Chrome that
- * trusted that answer would keep pointing at a stranger — an open block menu
- * whose Delete now names the neighbour, a handle beside a block the writer
- * never approached. Every position this surface holds across a transaction
- * goes through here.
+ * The pair is the whole trick. A single position cannot say whether the block
+ * is still there: a deleted block's anchor resolves to the seam it left behind,
+ * which is where the NEXT block now starts, and chrome that trusted it would
+ * point at a stranger — a menu whose Delete names the neighbour, a handle
+ * beside a block the writer never approached. Both seams of a deleted block
+ * land on that same seam, so a collapsed hold IS "the block went away", and a
+ * block a peer typed into simply grew.
+ *
+ * `hold.from` is the block's position. Every position this surface keeps
+ * across a transaction is one of these.
  */
-export function followBlockPos(transaction: Transaction, pos: number): number | null {
-  const mapped = transaction.mapping.mapResult(pos);
-  if (mapped.deleted) return null;
+export type BlockHold = EditorAnchor;
+
+/** Take hold of the block at `pos`, so chrome can find it after a write. */
+export function holdBlock(state: EditorState, pos: number): BlockHold | null {
+  const target = blockAt(state.doc, pos);
+  return target && anchorRange(state, { from: target.pos, to: target.pos + target.node.nodeSize });
+}
+
+/** Where the held block is now, or null when the block itself went away. */
+export function followBlock(
+  state: EditorState,
+  hold: BlockHold,
+  mapping: Mappable,
+): BlockHold | null {
+  const at = followAnchor(state, hold, mapping);
+  if (!at || at.from >= at.to) return null;
   // A surviving position must still be a block boundary at document depth: a
   // peer who wrapped the block in something else left it somewhere this
   // surface cannot act on.
-  return transaction.doc.resolve(mapped.pos).depth === 0 ? mapped.pos : null;
+  return state.doc.resolve(at.from).depth === 0 ? at : null;
 }
 
 /**
