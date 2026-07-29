@@ -240,6 +240,18 @@
   box-shadow: 0 0 0 0.125rem var(--color-primary);
 }
 
+/* An object's body is not text, so it does not wear the text caret. The
+   browser hands every child of a contenteditable the I-beam unless told
+   otherwise; on a picture that promises a caret the press will never place
+   (the press selects — see core/editor/objects). The arrow is the honest
+   cursor: click reads, drag moves, and neither is typing. */
+.meridian-editor .ProseMirror .node-image,
+.meridian-editor .ProseMirror .meridian-figure-node,
+.meridian-editor .ProseMirror .meridian-diagram-block,
+.meridian-editor .ProseMirror hr {
+  cursor: default;
+}
+
 /* A table wears the same ring, one node in and turned inward.
    In: the node ProseMirror decorates is prosemirror-tables' scroll wrapper,
    which is the full column even when the grid is narrower or aligned right.
