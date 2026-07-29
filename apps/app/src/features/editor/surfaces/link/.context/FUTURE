@@ -2,9 +2,10 @@
 
 - `[[` autocomplete inside the Ctrl+K form's Link field (impl-plan P4c names
   "in prose and inside the Ctrl+K field"). The field already accepts and
-  normalizes the wikilink spelling, and `filterWikilinkItems` plus
-  `getWikilinkCatalog(editor)` would supply the rows; what is missing is a
-  listbox under the input whose Escape closes the list before the popover.
+  normalizes the wikilink spelling, and `filterWikilinkItems` would rank the
+  rows; what is missing is a way for the form to reach the host's document
+  list (the trigger reads it from its own options today) and a listbox under
+  the input whose Escape closes the list before the popover.
   Deferred deliberately: the prose trigger is the path a writer and an LLM
   share, and a second keyboard surface inside the form is where M7's focus
   contract is easiest to break.
