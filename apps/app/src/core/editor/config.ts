@@ -155,7 +155,12 @@ function pickCursorColor(awareness: Awareness): string {
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
   dropcursor: false,
-  gapcursor: false,
+  // Gapcursor stays ON: it is display-only (no schema or wire impact) and it
+  // is the caret's only way BELOW a trailing table — without it a writer can
+  // reach the document end and never type again (the trailing-table trap).
+  // The rest of this list is off for Yjs or schema-parity reasons; gapcursor
+  // never was, it was swept up with them.
+  gapcursor: true,
   link: false,
   listKeymap: false,
   trailingNode: false,
