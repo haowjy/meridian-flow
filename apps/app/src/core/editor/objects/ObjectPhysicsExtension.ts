@@ -27,10 +27,12 @@ import type { KeymapBinding } from "../chrome/keymap";
 import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
+  deleteObjectTransaction,
   type ObjectAt,
   objectBeside,
   selectedObject,
   selectObjectTransaction,
+  typeBesideObjectTransaction,
 } from "./object-selection";
 import { isEditorObject, objectTypeSpec } from "./object-types";
 
@@ -274,6 +276,11 @@ export const ObjectPhysicsExtension = Extension.create({
               },
             }),
             chrome?.registerKeymap({
+              id: "object-remove",
+              scope: "object",
+              bindings: { Delete: removeSelected, Backspace: removeSelected },
+            }),
+            chrome?.registerKeymap({
               id: "object-engage",
               // Not `object` scope: §4's Enter row covers a selected plain
               // fence too, and a plain fence is not an object. The binding
@@ -312,6 +319,28 @@ export const ObjectPhysicsExtension = Extension.create({
             return DecorationSet.create(state.doc, [
               Decoration.node(selection.from, selection.to, { class: SELECTED_OBJECT_CLASS }),
             ]);
+          },
+
+          /**
+           * A printable character while an OPAQUE object is selected types
+           * BESIDE it (law 1's other half).
+           *
+           * ProseMirror replaces the selection, which is right for prose and
+           * wrong here: closing an image's full-screen view leaves the picture
+           * node-selected, and the next letter used to be the end of the
+           * picture. Only `Delete` and `Backspace` are destructive verbs, and
+           * they still are.
+           *
+           * `text` bodies are left alone: a table's cells ARE prose (§5.4),
+           * and typing into them is typing.
+           */
+          handleTextInput(view, _from, _to, text) {
+            const selected = selectedObject(view.state);
+            if (!selected || objectTypeSpec(selected.node)?.body !== "opaque") return false;
+            const transaction = typeBesideObjectTransaction(view.state, selected.pos, text);
+            if (!transaction) return false;
+            view.dispatch(transaction);
+            return true;
           },
 
           /**
@@ -379,6 +408,25 @@ function reportMissingEngagement(nodeType: string): void {
     `[editor] "${nodeType}" is registered with engage: "surface", but no lane called registerObjectEngagement — Enter on it does nothing.`,
   );
 }
+
+/**
+ * Delete and Backspace take the whole object, not the selection over it.
+ *
+ * They differ for exactly one type and that is the type it matters for: a
+ * table is selected as a `CellSelection` across every cell, so the base
+ * keymap's `deleteSelection` empties the cells and leaves the grid. The join
+ * reflex — Delete at the end of the line above a table — lands on that
+ * selection, so the second press wiped the table's contents while its shell
+ * stayed put.
+ */
+const removeSelected: KeymapBinding = (state, dispatch) => {
+  const selected = selectedObject(state);
+  if (!selected) return false;
+  const transaction = deleteObjectTransaction(state, selected.pos);
+  if (!transaction) return false;
+  dispatch?.(transaction);
+  return true;
+};
 
 const walkForward: KeymapBinding = (state, dispatch) => walk(state, dispatch, 1);
 const walkBackward: KeymapBinding = (state, dispatch) => walk(state, dispatch, -1);
