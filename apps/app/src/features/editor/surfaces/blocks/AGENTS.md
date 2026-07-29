@@ -35,11 +35,15 @@ gesture is holding, and whether it has lifted.
   Release, browser cancel, lost capture, window blur, Escape, unmount, and a
   peer deleting the held block are seven doors into one function. A gesture
   that ends without it leaves the kernel suppressing every surface on the page.
-- **Every position held across a transaction goes through `followBlockPos`.**
-  `mapping.map` cannot say "deleted" — it answers with the boundary the
-  deleted range collapsed to, which is the NEXT block. Nothing here stores a
-  child index across a transaction either: the drop seam is derived from the
-  pointer, every time.
+- **Every block held across a transaction is a `BlockHold`, carried by
+  `followBlock`.** The hold is the block's two seams as one `EditorAnchor`
+  (`core/editor/anchors.ts`), because neither half of the question has a
+  cheaper answer: a remote write replaces the whole document, so the mapping
+  calls every position deleted, and a deleted block's own anchor resolves to
+  the seam it left behind — which is where the NEXT block starts. Both seams
+  landing together IS "the block went away". Nothing here stores a child index
+  across a transaction either: the drop seam is derived from the pointer, every
+  time.
 - **Overlays are measured onto the page, never inserted into it** (law 7). A
   widget decoration between two blocks inherits the manuscript's block spacing
   and pushes the page down by its own height.

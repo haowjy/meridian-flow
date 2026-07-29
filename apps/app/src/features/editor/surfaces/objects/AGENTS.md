@@ -18,6 +18,15 @@ enough — while the element stays itself. So hover, selection, the open
 lightbox, and an open context menu all remember an element and resolve its
 position on every render.
 
+The source pane is the exception, because it diffs rather than points: what a
+textarea reports is a whole string, and the base it must be read against is the
+one the writer edited. That base survives local edits by mapping and cannot
+survive a remote one at all (`isRemoteDocumentRebuild`), so a peer's write
+either moves the fence — re-read it, keep the base — or changes the fence
+itself, in which case the pane has no usable base until the next render gives
+it one. Refusing there is the point: diffing a stale base against the merged
+text would delete the line the peer just wrote.
+
 **Approach is not identity.** Hover decides what the row hangs off; a menu
 decides what its items act on. They are usually the same object and must never
 be the same state: a right-click claims an object before hover intent has

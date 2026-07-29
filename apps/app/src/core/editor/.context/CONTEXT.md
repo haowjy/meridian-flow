@@ -224,25 +224,32 @@ The mechanism that survives it is Yjs relative positions, through
 [`relative-position-runtime.ts`](../relative-position-runtime.ts). It is what
 y-prosemirror itself uses to carry the selection across the rebuild, and what
 peer marks, live-range navigation, and inline review already hold their anchors
-with. The shape, from `core/editor/links/link-commands.ts`:
+with. [`anchors.ts`](../anchors.ts) is that mechanism as one type, and every
+surface holding a position consumes it — links, blocks, the fence source pane,
+the peer-mark popover, an image upload's drop point. A second copy of the
+machinery is the thing this module exists to prevent.
 
 ```ts
-type Anchor = {
+type EditorAnchor = {
   from: number;
   to: number;
   /** null on an editor with no shared document: there is nothing to survive. */
   relative: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
 };
 
-// Pin it when the surface opens.
-const runtime = relativePositionRuntimeFromState(state);
-const relative = runtime && { start: relativePositionForIndex(runtime, from), … };
-
-// Find it again on every transaction.
-const runtime = relativePositionRuntimeFromState(state);
-if (runtime && anchor.relative) return resolveRelativeRange(runtime, anchor.relative);
-return mappedFallback(anchor, transaction.mapping); // no shared document
+const anchor = anchorRange(state, { from, to });   // pin when the surface opens
+followAnchor(state, anchor, transaction.mapping);  // re-pin on every transaction
+resolveAnchorIn(state, anchor);                    // read it where no mapping is in hand
 ```
+
+`carryAnchor` and `resolveAnchorIn` are the halves behind those, for a holder
+that cannot do both at once — a plugin's `apply` runs before the Yjs binding
+has finished describing the new document, so it carries the numbers there and
+resolves at read time (`BlockDragExtension`).
+
+`isRemoteDocumentRebuild(transaction)` names the same fact for surfaces that
+diff rather than point: the fence source pane cannot carry its base's offsets
+across a rebuild, so it re-reads instead.
 
 Three rules a lane holding one should follow:
 
@@ -256,6 +263,13 @@ Three rules a lane holding one should follow:
   end of the document, and resolving one past it throws inside a Yjs update
   handler, where the throw is swallowed and the editor quietly stops applying
   peer writes.
+
+A deleted thing's anchor resolves to the seam it left behind, so "is it still
+there" needs an answer of its own. A range over the thing's whole extent is the
+cheapest one: both of its edges land on that seam, so a collapsed hold means
+gone. `BlockHold` (`surfaces/blocks/block-targets.ts`) is that shape, and it is
+what lets a block menu follow a peer typing into its paragraph while closing
+when a peer deletes it.
 
 ## TipTap v3 defaults we intentionally disable
 

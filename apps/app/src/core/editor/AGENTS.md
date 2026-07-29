@@ -64,8 +64,10 @@ change-trail events, not manuscript content.
 - **A surface that outlives a keystroke cannot hold raw positions.** Every
   remote change rebuilds the whole document, so ProseMirror's mapping reports
   every position deleted whatever actually happened, and Yjs relative positions
-  are what survive it. The contract and the three rules that come with it are
-  in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+  are what survive it. [`anchors.ts`](anchors.ts) is the one mechanism: hold an
+  `EditorAnchor`, never a number, and never a second copy of the machinery. The
+  contract and the three rules that come with it are in
+  [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for session, peer-mark, draft-review,
 and navigation contracts.

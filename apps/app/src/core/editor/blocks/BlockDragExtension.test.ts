@@ -2,6 +2,8 @@
 import { Editor, type JSONContent } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createCollabPair } from "@/test-support/collab-editors";
+
 import { createStandaloneEditorExtensions } from "../config";
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "./BlockDragExtension";
 
@@ -33,37 +35,37 @@ function blockPos(instance: Editor, index: number): number {
   return pos;
 }
 
-/** What a peer's write looks like from here: a transaction nobody local made. */
-function peerInsertAtStart(instance: Editor) {
+/** A local edit above the held block — what the mapping alone can carry. */
+function insertAtStart(instance: Editor) {
   instance.view.dispatch(
     instance.state.tr.insert(0, instance.state.schema.nodes.paragraph.create()),
   );
 }
 
-function peerDeleteBlock(instance: Editor, index: number) {
+function deleteBlock(instance: Editor, index: number) {
   const pos = blockPos(instance, index);
   const node = instance.state.doc.child(index);
   instance.view.dispatch(instance.state.tr.delete(pos, pos + node.nodeSize));
 }
 
 describe("the document's hold on a dragged block", () => {
-  it("follows the block when a peer writes above it", () => {
+  it("follows the block when an edit lands above it", () => {
     const instance = mount([paragraph("one"), paragraph("two"), paragraph("three")]);
     const held = blockPos(instance, 1);
     beginBlockDrag(instance, held);
 
-    peerInsertAtStart(instance);
+    insertAtStart(instance);
 
     expect(draggedBlockPos(instance.state)).toBe(held + 2);
     expect(instance.state.doc.nodeAt(held + 2)?.textContent).toBe("two");
   });
 
-  it("lets go when a peer deletes the block being held", () => {
+  it("lets go when the block being held is deleted", () => {
     const instance = mount([paragraph("one"), paragraph("two"), paragraph("three")]);
     beginBlockDrag(instance, blockPos(instance, 1));
     liftBlockDrag(instance);
 
-    peerDeleteBlock(instance, 1);
+    deleteBlock(instance, 1);
 
     expect(draggedBlockPos(instance.state)).toBeNull();
   });
@@ -84,6 +86,50 @@ describe("the document's hold on a dragged block", () => {
     endBlockDrag(instance);
 
     expect(draggedBlockPos(instance.state)).toBeNull();
+  });
+
+  it("survives a real peer's write, which reports every position deleted", () => {
+    const pair = createCollabPair({
+      type: "doc",
+      content: [paragraph("one"), paragraph("two"), paragraph("three")],
+    });
+    try {
+      const held = blockPos(pair.local, 1);
+      beginBlockDrag(pair.local, held);
+      liftBlockDrag(pair.local);
+
+      pair.peer.commands.insertContentAt(1, "PEER ");
+      pair.sync();
+
+      // The gesture is still holding the paragraph the writer grabbed, five
+      // characters further down the document than it was.
+      expect(draggedBlockPos(pair.local.state)).toBe(held + 5);
+      expect(pair.local.state.doc.nodeAt(held + 5)?.textContent).toBe("two");
+    } finally {
+      pair.destroy();
+    }
+  });
+
+  it("lets go when a peer deletes the block under the pointer", () => {
+    const pair = createCollabPair({
+      type: "doc",
+      content: [paragraph("one"), paragraph("two"), paragraph("three")],
+    });
+    try {
+      beginBlockDrag(pair.local, blockPos(pair.local, 1));
+      liftBlockDrag(pair.local);
+
+      const pos = blockPos(pair.peer, 1);
+      pair.peer.commands.deleteRange({
+        from: pos,
+        to: pos + pair.peer.state.doc.child(1).nodeSize,
+      });
+      pair.sync();
+
+      expect(draggedBlockPos(pair.local.state)).toBeNull();
+    } finally {
+      pair.destroy();
+    }
   });
 
   it("adds nothing to the writer's undo history", () => {
