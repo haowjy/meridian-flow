@@ -209,8 +209,30 @@ export const ChromeKernelExtension = Extension.create({
           },
 
           handleDOMEvents: {
+            /**
+             * A non-primary press is the claim ladder's, and ProseMirror never
+             * hears it.
+             *
+             * Returning true is how a plugin tells ProseMirror it handled a DOM
+             * event — `runCustomHandler` runs before the built-in handler and
+             * skips it — and skipping is the whole point. ProseMirror arms its
+             * click machinery on ANY button (its own class is called
+             * `LeftMouseDown`), and the matching release runs the full click
+             * path: `handleClickOn`, then its own `selectClickedLeaf`. On a
+             * right-click that release lands AFTER the ladder has already
+             * opened the claimed menu, and re-selecting the node there syncs
+             * the selection back into the editor, takes focus out of the menu,
+             * and dismisses it. Whether the release beat the menu's first paint
+             * decided whether the writer saw a menu at all: a quick right-click
+             * on a diagram showed nothing, a held one worked.
+             *
+             * It refuses no default, so the `contextmenu` event still comes —
+             * on the press where Linux and macOS raise it, and on the release
+             * where Windows does. Ruling 11's native menu is untouched.
+             */
             mousedown(_view, event) {
-              if (event.button === 0) sweepOrigin = { x: event.clientX, y: event.clientY };
+              if (event.button !== 0) return true;
+              sweepOrigin = { x: event.clientX, y: event.clientY };
               return false;
             },
             mousemove(_view, event) {
