@@ -1,9 +1,14 @@
 # features/editor — app-facing editor surface
 
-This directory owns the TipTap host and its writer-facing chrome: shared frame
-and toolbar, draft-review controls, synchronization status, and peer-mark
-detail. Document schemas, session infrastructure, and ProseMirror extensions
-belong under `core/editor`; project context owns pane and tab composition.
+This directory owns the TipTap host and its writer-facing chrome: shared frame,
+draft-review controls, synchronization status, and peer-mark detail. Document
+schemas, session infrastructure, and ProseMirror extensions belong under
+`core/editor`; project context owns pane and tab composition.
+
+The manuscript is currently chromeless. The formatting toolbar and the
+contextual bubbles were deleted whole; a ground-up redesign of that interaction
+layer is approved and rebuilds them. Do not restore the old surfaces or grow
+new ones ad hoc here — build against the design.
 
 ## Entry rules
 

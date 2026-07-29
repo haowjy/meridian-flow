@@ -5,7 +5,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
@@ -94,7 +94,10 @@ if (!DATABASE_URL) throw new Error("DATABASE_URL is required for DB tests");
 assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
 export const db = createDb(DATABASE_URL, { max: 4 });
 const documentSchema = buildDocumentSchema();
-const markupCodec = mdxCodec({ schema: documentSchema });
+const markupCodec = mdxCodec({
+  schema: documentSchema,
+  assetPathResolver: unresolvedAssetPathResolver,
+});
 const agentEditCodec = createAgentEditCodec(markupCodec);
 const model = yProsemirrorModel(documentSchema);
 

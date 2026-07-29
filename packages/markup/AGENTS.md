@@ -6,7 +6,7 @@ not import from `@meridian/agent-edit` or any app/server shell.
 
 ## Mental model
 
-`createMarkupCodec({ schema })` returns a builder. Plugins register block and
+`createMarkupCodec({ schema, assetPathResolver })` returns a builder. Plugins register block and
 mark codecs plus optional remark and parse hooks. Built codecs parse text into
 ProseMirror blocks and serialize ProseMirror blocks back to text; hash-prefixed
 agent-edit echo/view formatting lives outside this package.
@@ -22,6 +22,11 @@ agent-edit echo/view formatting lives outside this package.
   threaded through parse/serialize contexts.
 - Runtime source is the preprocessed source so AST positions and fallback slicing
   agree.
+- Every codec requires an `AssetPathResolver`. A consumer with no project asset
+  namespace passes `unresolvedAssetPathResolver` and gets a throw; never supply
+  a permissive stand-in. `assetForPath` must decline anything it cannot resolve
+  to exactly one asset, because a wrong guess writes a reference into the
+  document that can never render.
 
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the public API and builder
 contract.

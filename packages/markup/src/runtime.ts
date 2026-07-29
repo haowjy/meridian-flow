@@ -1,6 +1,6 @@
 /** Hidden runtime threaded through codec contexts for helper dispatch. */
 
-import type { Schema } from "prosemirror-model";
+import type { Node as PMNode, Schema } from "prosemirror-model";
 
 import type { MdastRoot } from "./ast.js";
 import type { BlockCodec, MarkCodec, ParseContext, SerializeContext } from "./types.js";
@@ -31,6 +31,7 @@ export interface CodecRuntime {
   markMap: ReadonlyMap<string, MarkCodec>;
   parseMarkdown(content: string): MdastRoot;
   stringifyMarkdown(root: MdastRoot): string;
+  serializeBlock(node: PMNode, ctx: SerializeContext): string;
 }
 
 const runtimeKey: unique symbol = Symbol("markup-codec-runtime");

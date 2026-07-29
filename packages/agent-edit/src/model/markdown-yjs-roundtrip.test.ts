@@ -1,11 +1,11 @@
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 
 import { prosemirrorRootOf, yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 const model = yProsemirrorModel(schema);
 
 const longParagraph = Array.from({ length: 360 }, (_, index) => {

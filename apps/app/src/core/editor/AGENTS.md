@@ -36,6 +36,9 @@ change-trail events, not manuscript content.
   coalesced into a mixed delete-and-insert transaction is intentionally not
   classified, so do not weaken the delete-only gate without a sound attribution
   design.
+- An image's `src` is a stable `asset:<documentId>`, never the signed URL the
+  upload just returned. Node views resolve a short-lived read URL at render
+  time; storing one puts an expiring value into the shared document.
 - Do not persist, branch-project, or locally author peer marks. Resolve
   awareness cursor colors to concrete RGB before publication.
 

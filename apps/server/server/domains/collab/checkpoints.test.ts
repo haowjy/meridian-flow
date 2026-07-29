@@ -5,7 +5,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -14,7 +14,9 @@ import { createCheckpointService } from "./checkpoints.js";
 
 const DOC_ID = "chapter.md";
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const model = yProsemirrorModel(schema);
 
 function document(markdown: string): Y.Doc {

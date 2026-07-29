@@ -2,8 +2,8 @@
  * EditorView — the collaborative document editor surface.
  *
  * Binds a `DocumentSession` (Yjs `Y.Doc` + awareness + cursor provider) to a
- * TipTap/ProseMirror editor and renders the surrounding chrome (toolbar,
- * sync-status indicator, figure-upload drag/drop + inline-command flow).
+ * TipTap/ProseMirror editor and renders the surrounding chrome (sync-status
+ * indicator, image-upload drag/drop/paste + inline-command flow).
  * Used by the Context screen to open any document. Filename chrome is the
  * host's job (desktop tab strip / phone top-bar breadcrumb), so this view
  * renders no title header of its own.
@@ -14,8 +14,13 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import {
+  type ProjectContextTreeNode,
+  WS_CLOSE,
+  type YjsTrackedSchemaType,
+} from "@meridian/contracts/protocol";
 import type { Editor, EditorOptions, JSONContent } from "@tiptap/core";
+import type { Mapping } from "@tiptap/pm/transform";
 import { EditorContent } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import {
@@ -31,15 +36,20 @@ import {
 } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
+import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import type { SlashCommandItem } from "@/core/editor/extensions/SlashCommandExtension";
 import {
-  type FigureNodeAttrs,
-  figureUploadDefaults,
+  createEditorAssetPathResolver,
+  imageAltFromFilename,
+  imageAttrsFromUpload,
   isImageFile,
-  uploadResponseToFigureNodeAttrs,
-} from "@/core/editor/figure-workflow";
+  resolveAssetPathsFromClipboard,
+  resolveAssetRefsForClipboard,
+} from "@/core/editor/image-workflow";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
+import { markdownTableClipboardParser } from "@/core/editor/markdown-paste";
 import {
   type EditorMountIdentity,
   editorMountKey,
@@ -50,7 +60,6 @@ import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-qu
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
-import { EditorToolbar } from "./EditorToolbar";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
@@ -70,8 +79,6 @@ export type EditorViewProps = {
   className?: string;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
-  /** Formatting chrome is hidden for mobile read-only viewing. */
-  showToolbar?: boolean;
   /** Accessible label override when the surface is read-only. */
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
@@ -86,11 +93,13 @@ export type EditorViewProps = {
   onReviewSessionUnavailable?: () => void;
 };
 
-type FigureUploadState =
+type ImageUploadState =
   | { kind: "idle" }
   | { kind: "uploading"; filename: string; percent: number | null }
   | { kind: "success"; filename: string }
   | { kind: "error"; message: string };
+
+type ImageAttrs = { src: string; alt: string | null; title: null };
 
 let editorSessionOwnerSequence = 0;
 
@@ -122,13 +131,20 @@ function droppedImageFile(event: DragEvent): File | null {
   return files.find(isImageFile) ?? null;
 }
 
-function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: number): boolean {
+function insertImageNode(editor: Editor | null, attrs: ImageAttrs, pos?: number): boolean {
   if (!editor || editor.isDestroyed) return false;
-  const content = { type: "figure", attrs } satisfies JSONContent;
+  const content = { type: "paragraph", content: [{ type: "image", attrs }] } satisfies JSONContent;
   const chain = editor.chain().focus();
   return typeof pos === "number"
     ? chain.insertContentAt(pos, content).run()
     : chain.insertContent(content).run();
+}
+
+function imageFileFromClipboard(event: ClipboardEvent): File | null {
+  const item = Array.from(event.clipboardData?.items ?? []).find(
+    (candidate) => candidate.kind === "file" && candidate.type.startsWith("image/"),
+  );
+  return item?.getAsFile() ?? null;
 }
 
 export function EditorView(props: EditorViewProps) {
@@ -242,7 +258,6 @@ function ActiveSessionEditorView({
   identity,
   className,
   editable = true,
-  showToolbar = true,
   ariaLabel,
   reviewWorkId = null,
   onReviewSessionUnavailable,
@@ -258,9 +273,16 @@ function ActiveSessionEditorView({
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const figureInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [figureUploadState, setFigureUploadState] = useState<FigureUploadState>({ kind: "idle" });
+  const [imageUploadState, setImageUploadState] = useState<ImageUploadState>({ kind: "idle" });
+  // One resolver per mounted editor: `asset:` refs are only meaningful inside
+  // this project's asset namespace, and the clipboard translation must not see
+  // another project's paths.
+  const assetPathResolver = useMemo(() => createEditorAssetPathResolver(), []);
+  const { tree: manuscriptTree } = useProjectContextTree(projectId ?? "", "manuscript", {
+    enabled: Boolean(projectId),
+  });
   const [dragActive, setDragActive] = useState(false);
   const [peerMarkTarget, setPeerMarkTarget] = useState<PeerMarkPopoverTarget | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -323,68 +345,121 @@ function ActiveSessionEditorView({
     [inReview, session],
   );
 
+  useEffect(() => {
+    if (!manuscriptTree) return;
+    const remember = (node: ProjectContextTreeNode) => {
+      if (node.kind === "file") {
+        if (!node.editable && node.fileType === "image") {
+          assetPathResolver.remember(node.documentId, node.path.replace(/^\//, ""));
+        }
+        return;
+      }
+      for (const child of node.children) remember(child);
+    };
+    remember(manuscriptTree);
+  }, [assetPathResolver, manuscriptTree]);
+
+  // Read when the slash menu opens, so the `t` macros resolve against whatever
+  // locale is active then — a locale switch relabels the menu without touching
+  // the editor's lifetime.
+  //
+  // A fence has to withdraw the catalog, not just the surface's editability:
+  // slash commands dispatch through TipTap chains, which run on a non-editable
+  // editor, so a menu already open when the fence lands would still insert.
+  const slashCommandCatalog = useCallback(() => {
+    if (identity.schemaType !== "document" || !effectiveEditable) return null;
+    return {
+      menuLabel: t`Insert block`,
+      requestImageUpload: () => imageInputRef.current?.click(),
+      items: [
+        {
+          id: "scene-break",
+          label: t`Scene break`,
+          aliases: [t`divider`, t`hr`, t`rule`, t`break`],
+        },
+        { id: "heading", label: t`Heading`, aliases: [t`title`, t`h1`, t`h2`, t`section`] },
+        { id: "quote", label: t`Quote`, aliases: [t`blockquote`] },
+        { id: "bullet-list", label: t`Bullet list`, aliases: [t`list`] },
+        { id: "numbered-list", label: t`Numbered list`, aliases: [t`ordered`] },
+        { id: "table", label: t`Table`, aliases: [t`grid`, t`stat block`, t`status`, t`litrpg`] },
+        { id: "image", label: t`Image`, aliases: [t`picture`, t`photo`, t`upload`] },
+        { id: "code", label: t`Code`, aliases: [t`fence`, t`codeblock`] },
+        { id: "diagram", label: t`Diagram`, aliases: [t`mermaid`, t`flowchart`, t`chart`] },
+      ] satisfies SlashCommandItem[],
+    };
+  }, [effectiveEditable, identity.schemaType]);
+
   const clearUploadLater = useCallback(() => {
     if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
     clearUploadTimerRef.current = setTimeout(() => {
-      setFigureUploadState({ kind: "idle" });
+      setImageUploadState({ kind: "idle" });
       clearUploadTimerRef.current = null;
     }, 3000);
   }, []);
 
-  const handleFigureFile = useCallback(
-    async (file: File, insertPos?: number): Promise<void> => {
-      if (!projectId) {
-        setFigureUploadState({
-          kind: "error",
-          message: t`A project is required before figures can be uploaded.`,
-        });
-        return;
-      }
+  const uploadImageFile = useCallback(
+    async (file: File): Promise<ImageAttrs> => {
+      if (!projectId) throw new Error(t`A project is required before images can be uploaded.`);
+      if (!isImageFile(file)) throw new Error(t`Choose an image file.`);
 
-      if (!isImageFile(file)) {
-        setFigureUploadState({ kind: "error", message: t`Drop an image file to insert a figure.` });
-        return;
-      }
-
-      const defaults = figureUploadDefaults(file);
-      setFigureUploadState({ kind: "uploading", filename: file.name, percent: null });
-
+      setImageUploadState({ kind: "uploading", filename: file.name, percent: null });
       try {
         const reference = await uploadFigure({
           projectId,
-          documentId,
+          hostDocumentId: documentId,
           file,
-          alt: defaults.alt,
-          caption: defaults.caption,
-          onProgress: ({ percent }) => {
-            setFigureUploadState({ kind: "uploading", filename: file.name, percent });
-          },
+          alt: imageAltFromFilename(file.name),
+          onProgress: ({ percent }) =>
+            setImageUploadState({ kind: "uploading", filename: file.name, percent }),
         });
+        assetPathResolver.remember(reference.assetDocumentId, reference.assetPath);
+        setImageUploadState({ kind: "success", filename: file.name });
+        clearUploadLater();
+        return imageAttrsFromUpload(reference);
+      } catch (error) {
+        setImageUploadState({
+          kind: "error",
+          message: error instanceof Error ? error.message : t`Image upload failed.`,
+        });
+        clearUploadLater();
+        throw error;
+      }
+    },
+    [assetPathResolver, clearUploadLater, documentId, projectId],
+  );
+
+  const handleImageFile = useCallback(
+    async (file: File, insertPos?: number): Promise<void> => {
+      const targetEditor = editorRef.current;
+      // The writer keeps typing during the upload, so the drop/paste position
+      // has to ride the same mapping every other transaction does.
+      let mappedPos = insertPos;
+      const mapPosition = ({ transaction }: { transaction: { mapping: Mapping } }) => {
+        if (mappedPos !== undefined) mappedPos = transaction.mapping.map(mappedPos, 1);
+      };
+      if (targetEditor && mappedPos !== undefined) targetEditor.on("transaction", mapPosition);
+      try {
+        const attrs = await uploadImageFile(file);
+        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
+        // The upload outlives the connection that started it: re-read the fence
+        // at insert time so a document fenced mid-upload takes no write.
         const inserted =
           effectiveEditableRef.current && !session.getSnapshot().schemaFence
-            ? insertFigureNode(
-                editorRef.current,
-                uploadResponseToFigureNodeAttrs(reference),
-                insertPos,
-              )
+            ? insertImageNode(targetEditor, attrs, mappedPos)
             : false;
-        setFigureUploadState(
+        setImageUploadState(
           inserted
             ? { kind: "success", filename: file.name }
             : {
                 kind: "error",
-                message: t`The figure uploaded, but the editor could not insert it.`,
+                message: t`The image uploaded, but the editor could not insert it.`,
               },
         );
-        clearUploadLater();
-      } catch (error) {
-        setFigureUploadState({
-          kind: "error",
-          message: error instanceof Error ? error.message : t`Figure upload failed.`,
-        });
+      } catch {
+        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
       }
     },
-    [clearUploadLater, documentId, projectId, session],
+    [session, uploadImageFile],
   );
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
@@ -393,21 +468,15 @@ function ActiveSessionEditorView({
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({
       attributes: {
-        class: editorProseClass(showToolbar ? "docked" : "none"),
+        class: editorProseClass,
         "aria-label": ariaLabel ?? t`Collaborative document editor`,
       },
-      handleTextInput(view, from, _to, text) {
-        if (!view.editable || text !== " ") return false;
-        const commandText = "/figure";
-        const textBefore = view.state.selection.$from.parent.textBetween(
-          0,
-          view.state.selection.$from.parentOffset,
-          "\n",
-          "\n",
-        );
-        if (!textBefore.endsWith(commandText)) return false;
-        view.dispatch(view.state.tr.delete(from - commandText.length, from));
-        figureInputRef.current?.click();
+      handlePaste(view, event) {
+        if (!view.editable) return false;
+        const file = imageFileFromClipboard(event);
+        if (!file) return false;
+        event.preventDefault();
+        void handleImageFile(file, view.state.selection.from);
         return true;
       },
       handleDrop(view, event) {
@@ -417,9 +486,14 @@ function ActiveSessionEditorView({
         event.preventDefault();
         setDragActive(false);
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-        void handleFigureFile(file, pos);
+        void handleImageFile(file, pos);
         return true;
       },
+      // Assets travel as stable refs inside the editor and as project-relative
+      // paths on the clipboard, so an id never escapes into another surface.
+      clipboardTextParser: markdownTableClipboardParser(undefined, assetPathResolver),
+      transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetPathResolver),
+      transformPasted: (slice) => resolveAssetPathsFromClipboard(slice, assetPathResolver),
       handleDOMEvents: {
         pointerdown(view, event) {
           if (
@@ -469,7 +543,7 @@ function ActiveSessionEditorView({
         },
       },
     }),
-    [ariaLabel, handleFigureFile, openPeerMark, showToolbar],
+    [ariaLabel, assetPathResolver, handleImageFile, openPeerMark],
   );
 
   const editor = useMountedEditor({
@@ -477,6 +551,7 @@ function ActiveSessionEditorView({
     session,
     agentNames,
     placeholder: t`Start writing…`,
+    slashCommandCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
   });
@@ -565,7 +640,7 @@ function ActiveSessionEditorView({
         <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
       ) : null}
       <input
-        ref={figureInputRef}
+        ref={imageInputRef}
         type="file"
         accept="image/*"
         className="hidden"
@@ -574,22 +649,11 @@ function ActiveSessionEditorView({
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           event.currentTarget.value = "";
-          if (file) void handleFigureFile(file);
+          if (file) void handleImageFile(file);
         }}
       />
       <TrackedEditorCanvas
         editor={editor}
-        toolbar={
-          showToolbar ? (
-            <EditorToolbar
-              editor={editor}
-              disabled={!effectiveEditable}
-              onFigureButtonClick={() => figureInputRef.current?.click()}
-              figureUploadBusy={figureUploadState.kind === "uploading"}
-              figureUploadDisabled={!projectId}
-            />
-          ) : undefined
-        }
         scrollRef={scrollContainerRef}
         dragActive={dragActive}
         onScroll={(event) => {
@@ -603,12 +667,12 @@ function ActiveSessionEditorView({
             <div className="meridian-editor-drop-overlay" aria-hidden>
               <UploadCloud className="size-8" />
               <span>
-                <Trans>Drop image to upload a figure</Trans>
+                <Trans>Drop image to insert it</Trans>
               </span>
             </div>
           ) : undefined
         }
-        uploadStatus={<FigureUploadStatus state={figureUploadState} />}
+        uploadStatus={<ImageUploadStatus state={imageUploadState} />}
       />
       <PeerMarkPopover
         key={peerMarkTarget?.marker.changeId ?? "closed"}
@@ -632,7 +696,7 @@ function ActiveSessionEditorView({
   );
 }
 
-function PendingEditorShell({ className, showToolbar = true }: EditorViewProps) {
+function PendingEditorShell({ className }: EditorViewProps) {
   return (
     <section
       className={cn(
@@ -640,17 +704,13 @@ function PendingEditorShell({ className, showToolbar = true }: EditorViewProps) 
         className,
       )}
     >
-      <TrackedEditorCanvas
-        editor={null}
-        toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
-      />
+      <TrackedEditorCanvas editor={null} />
     </section>
   );
 }
 
 function TrackedEditorCanvas({
   editor,
-  toolbar,
   scrollRef,
   dragActive = false,
   onScroll,
@@ -658,7 +718,6 @@ function TrackedEditorCanvas({
   uploadStatus,
 }: {
   editor: Editor | null;
-  toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   dragActive?: boolean;
   onScroll?: UIEventHandler<HTMLDivElement>;
@@ -667,7 +726,6 @@ function TrackedEditorCanvas({
 }) {
   return (
     <EditorSurfaceFrame
-      toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}
       scrollClassName={cn(
@@ -685,15 +743,15 @@ function TrackedEditorCanvas({
   );
 }
 
-function FigureUploadStatus({ state }: { state: FigureUploadState }) {
+function ImageUploadStatus({ state }: { state: ImageUploadState }) {
   if (state.kind === "idle") return null;
 
   return (
     <div
       className={cn(
-        "meridian-figure-upload-status",
-        state.kind === "error" && "meridian-figure-upload-status--error",
-        state.kind === "success" && "meridian-figure-upload-status--success",
+        "meridian-image-upload-status",
+        state.kind === "error" && "meridian-image-upload-status--error",
+        state.kind === "success" && "meridian-image-upload-status--success",
       )}
       role={state.kind === "error" ? "alert" : "status"}
     >
@@ -710,7 +768,7 @@ function FigureUploadStatus({ state }: { state: FigureUploadState }) {
             </Trans>
           )
         ) : null}
-        {state.kind === "success" ? <Trans>Inserted {state.filename} as a figure.</Trans> : null}
+        {state.kind === "success" ? <Trans>Inserted {state.filename}.</Trans> : null}
         {state.kind === "error" ? state.message : null}
       </span>
     </div>

@@ -22,6 +22,7 @@ import {
   createInMemoryCollabDomain,
 } from "../domains/collab/index.js";
 import {
+  createDrizzleAssetPathResolver,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
@@ -295,8 +296,10 @@ export async function createProductionAppPorts(input: {
   let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
+  const assetPathResolver = await createDrizzleAssetPathResolver(db);
   const documentSync = createCollabDomain({
     db,
+    assetPathResolver,
     documentAccess,
     eventSink,
     notices,
@@ -328,18 +331,23 @@ export async function createProductionAppPorts(input: {
     objectStore,
     eventSink,
   });
-  const figureAssets = createFigureAssetService({
-    objectStore,
-    documents: createDrizzleFigureDocumentRepository({ db }),
-    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    eventSink,
-  });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({ objectStore, results });
   contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
+  });
+  // Upload creates the asset as a context document, so the service needs the
+  // context ports; it feeds each new path straight back into the resolver the
+  // codec reads.
+  const figureAssets = createFigureAssetService({
+    objectStore,
+    documents: createDrizzleFigureDocumentRepository({ db }),
+    contextPorts,
+    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    eventSink,
+    assetPaths: assetPathResolver,
   });
   const packageRepository = createDrizzlePackageStore({ db });
   const marsPackageFetcher = createGitHubMarsPackageFetcher({

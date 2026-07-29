@@ -29,7 +29,7 @@
   margin-top: 0.9em;
 }
 
-.meridian-editor .ProseMirror p.is-editor-empty:first-child::before {
+.meridian-editor .ProseMirror p.is-empty::before {
   float: left;
   height: 0;
   color: var(--color-muted-foreground);
@@ -148,11 +148,36 @@
   border-radius: var(--radius-md);
 }
 
+.meridian-editor .ProseMirror table[data-align] {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.meridian-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+
 .meridian-editor .ProseMirror th,
 .meridian-editor .ProseMirror td {
+  position: relative;
   border: 1px solid var(--color-border-subtle);
   padding: 0.5rem 0.625rem;
   vertical-align: top;
+}
+
+.meridian-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  z-index: 2;
+  width: 4px;
+  background: var(--color-border-focus);
+  pointer-events: none;
+}
+
+.meridian-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
 }
 
 .meridian-editor .ProseMirror th {
@@ -163,6 +188,26 @@
 .meridian-editor .ProseMirror img {
   max-width: 100%;
   border-radius: var(--radius-md);
+}
+
+.meridian-editor .ProseMirror .meridian-image-node {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+}
+
+.meridian-image-node__placeholder {
+  display: inline-flex;
+  min-width: 8rem;
+  min-height: 6rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-muted);
+  padding: 0.75rem;
+  color: var(--color-muted-foreground);
 }
 
 .meridian-editor .ProseMirror figure {
@@ -437,7 +482,7 @@
   pointer-events: none;
 }
 
-.meridian-figure-upload-status {
+.meridian-image-upload-status {
   position: absolute;
   right: 1rem;
   bottom: 1rem;
@@ -455,12 +500,12 @@
   padding: 0.625rem 0.75rem;
 }
 
-.meridian-figure-upload-status--error {
+.meridian-image-upload-status--error {
   border-color: var(--color-destructive);
   color: var(--color-destructive);
 }
 
-.meridian-figure-upload-status--success {
+.meridian-image-upload-status--success {
   border-color: var(--color-border-focus);
   color: var(--color-primary);
 }

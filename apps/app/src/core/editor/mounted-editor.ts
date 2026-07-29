@@ -14,16 +14,17 @@
  */
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
+import type { SlashCommandCatalog } from "./extensions/SlashCommandExtension";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
   documentId: string;
-  /** Figure rendering resolves references against the owning project. */
+  /** Asset image rendering resolves `asset:` refs against the owning project. */
   projectId?: string;
   schemaType: YjsTrackedSchemaType;
   /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
@@ -81,6 +82,12 @@ export type MountedEditorInput = {
   /** Subscribable name lookup; the projection repaints, the editor is not rebuilt. */
   agentNames: AgentNameStore;
   placeholder: string;
+  /**
+   * Reads the insertion catalog when the menu opens. Mounting the extension is
+   * a construction fact; its localized labels and host callbacks are not, so
+   * they arrive through this getter instead of the mount key.
+   */
+  slashCommandCatalog?: () => SlashCommandCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
@@ -91,9 +98,15 @@ export function useMountedEditor({
   session,
   agentNames,
   placeholder,
+  slashCommandCatalog,
   surface,
   evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
+  // The getter is read at menu-open time, so freezing the reference is safe
+  // only if it never goes stale. Keep the live one in a ref the frozen getter
+  // reads through.
+  const catalogRef = useRef(slashCommandCatalog);
+  catalogRef.current = slashCommandCatalog;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
@@ -103,13 +116,14 @@ export function useMountedEditor({
       awareness: session.awareness,
       cursorProvider: session.cursorProvider,
       schemaType: identity.schemaType,
-      figureRenderContext: { projectId: identity.projectId, documentId: identity.documentId },
+      assetRenderContext: { projectId: identity.projectId },
       showCollaborationDecorations: identity.collaborationDecorations,
       enableDraftInlineReview: identity.surface === "review",
       markerStore: identity.surface === "review" ? undefined : session.markerStore,
       agentNames,
       placeholder,
       autofocus: false,
+      slashCommands: { catalog: () => catalogRef.current?.() ?? null },
     });
     return {
       editorConfig,

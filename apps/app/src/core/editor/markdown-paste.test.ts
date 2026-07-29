@@ -1,4 +1,4 @@
-import { mdxCodec } from "@meridian/markup";
+import { createAssetPathResolver, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Fragment, Node as PMNode, ResolvedPos, Schema, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
@@ -76,6 +76,25 @@ describe("markdownTableClipboardParser", () => {
     expect(containsNodeType(slice as Slice, "table")).toBe(true);
   });
 
+  it("resolves a known pasted asset path to its stable image ref", () => {
+    const parser = markdownTableClipboardParser(
+      schema,
+      createAssetPathResolver([["map-id", "assets/map.png"]]),
+    );
+    const slice = parser(
+      "![Realm map](assets/map.png)",
+      paragraphContext,
+      false,
+      editorViewFor(schema),
+    );
+    if (!slice) throw new Error("expected markdown image slice");
+    let src: unknown;
+    slice.content.descendants((node) => {
+      if (node.type.name === "image") src = node.attrs.src;
+    });
+    expect(src).toBe("asset:map-id");
+  });
+
   it("builds a table Slice from CRLF table markdown", () => {
     const parser = markdownTableClipboardParser(schema);
     const slice = parser(
@@ -107,7 +126,10 @@ describe("markdownTableClipboardParser", () => {
     const slice = parser(tableMarkdown, paragraphContext, false, editorViewFor(schema));
     if (!slice) throw new Error("expected markdown table slice");
 
-    const originalBlocks = mdxCodec({ schema }).parse(tableMarkdown).blocks;
+    const originalBlocks = mdxCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    }).parse(tableMarkdown).blocks;
     expect(blocksFromSlice(slice).map((node) => node.toJSON())).toEqual(
       originalBlocks.map((node) => node.toJSON()),
     );

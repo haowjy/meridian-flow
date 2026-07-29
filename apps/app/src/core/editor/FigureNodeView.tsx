@@ -3,23 +3,22 @@
  *
  * Renders an uploaded figure inside ProseMirror with loading/error/retry states
  * and refreshes object-store signed URLs before they expire. Owns the figure
- * node's in-editor presentation; upload/url helpers live in `figure-workflow`.
+ * node's in-editor presentation; shared asset URL helpers live in `image-workflow`.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { NodeViewProps } from "@tiptap/core";
 import { NodeViewWrapper } from "@tiptap/react";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
-import { getFigureSignedUrl } from "@/client/api/figures-api";
 import { Button } from "@/components/ui/button";
-import { isObjectStoreFigureSrc, signedUrlRefreshDelayMs } from "@/core/editor/figure-workflow";
 import { cn } from "@/lib/utils";
+
+import { useAssetImageRenderState } from "./asset-image-render-state";
 
 type MeridianFigureExtensionOptions = {
   projectId?: string;
-  documentId?: string;
 };
 
 type FigureAttrs = {
@@ -28,12 +27,6 @@ type FigureAttrs = {
   label: string | null;
   caption: string;
 };
-
-type RenderState =
-  | { kind: "idle"; url: string | null; message?: string }
-  | { kind: "loading"; url: string | null; message?: string }
-  | { kind: "ready"; url: string; expiresAt?: string }
-  | { kind: "error"; url: string | null; message: string };
 
 function textAttr(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
@@ -57,88 +50,11 @@ function getExtensionOptions(props: NodeViewProps): MeridianFigureExtensionOptio
   return (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
 }
 
-function useFigureRenderState(input: {
-  projectId?: string;
-  documentId?: string;
-  src: string;
-}): [RenderState, () => void] {
-  const { projectId, documentId, src } = input;
-  const [refreshToken, setRefreshToken] = useState(0);
-  const [state, setState] = useState<RenderState>(() => {
-    if (!src) return { kind: "idle", url: null, message: t`Missing figure source` };
-    return isObjectStoreFigureSrc(src)
-      ? { kind: "loading", url: null }
-      : { kind: "ready", url: src };
-  });
-
-  const refresh = useCallback(() => setRefreshToken((token) => token + 1), []);
-
-  useEffect(() => {
-    if (!src) {
-      setState({ kind: "idle", url: null, message: t`Missing figure source` });
-      return;
-    }
-
-    if (!isObjectStoreFigureSrc(src)) {
-      setState({ kind: "ready", url: src });
-      return;
-    }
-
-    if (!projectId || !documentId) {
-      setState({
-        kind: "error",
-        url: null,
-        message: t`This stored figure needs a project and document before it can be rendered.`,
-      });
-      return;
-    }
-
-    let cancelled = false;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const routeProjectId = projectId;
-    const routeDocumentId = documentId;
-
-    async function loadSignedUrl(skipCache: boolean) {
-      setState((current) => ({ kind: "loading", url: current.url }));
-
-      try {
-        const signed = await getFigureSignedUrl({
-          projectId: routeProjectId,
-          documentId: routeDocumentId,
-          src,
-          skipCache,
-        });
-        if (cancelled) return;
-        setState({ kind: "ready", url: signed.signedUrl, expiresAt: signed.signedUrlExpiresAt });
-        const delay = signedUrlRefreshDelayMs(signed.signedUrlExpiresAt);
-        refreshTimer = setTimeout(() => void loadSignedUrl(true), delay);
-      } catch (error) {
-        if (cancelled) return;
-        setState({
-          kind: "error",
-          url: null,
-          message: error instanceof Error ? error.message : t`Figure could not be loaded.`,
-        });
-      }
-    }
-
-    void loadSignedUrl(refreshToken > 0);
-
-    return () => {
-      cancelled = true;
-      if (refreshTimer) clearTimeout(refreshTimer);
-    };
-  }, [documentId, projectId, refreshToken, src]);
-
-  return [state, refresh];
-}
-
 export function FigureNodeView(props: NodeViewProps) {
   const attrs = getFigureAttrs(props);
-  const { projectId, documentId } = getExtensionOptions(props);
-  const [renderState, refreshRenderUrl] = useFigureRenderState({
+  const { projectId } = getExtensionOptions(props);
+  const [renderState, renderActions] = useAssetImageRenderState({
     projectId,
-    documentId,
     src: attrs.src,
   });
 
@@ -167,7 +83,7 @@ export function FigureNodeView(props: NodeViewProps) {
           <img
             src={renderUrl}
             alt={attrs.alt ?? ""}
-            onError={() => refreshRenderUrl()}
+            onError={renderActions.imageLoadFailed}
             draggable={false}
           />
         ) : (
@@ -192,7 +108,7 @@ export function FigureNodeView(props: NodeViewProps) {
           >
             <AlertCircle className="size-3" aria-hidden />
             <span>{renderState.message}</span>
-            <Button type="button" variant="ghost" size="xs" onClick={refreshRenderUrl}>
+            <Button type="button" variant="ghost" size="xs" onClick={renderActions.retry}>
               <RefreshCw className="size-3" aria-hidden />
               <Trans>Retry</Trans>
             </Button>
@@ -246,6 +162,40 @@ export function FigureNodeView(props: NodeViewProps) {
           </label>
         </div>
       ) : null}
+    </NodeViewWrapper>
+  );
+}
+
+/** Inline image node view that translates stable asset refs to short-lived read URLs. */
+export function ImageNodeView(props: NodeViewProps) {
+  const src = textAttr(props.node.attrs.src);
+  const alt = nullableTextAttr(props.node.attrs.alt) ?? "";
+  const { projectId } = getExtensionOptions(props);
+  const [state, actions] = useAssetImageRenderState({ projectId, src });
+
+  return (
+    <NodeViewWrapper as="span" className="meridian-image-node" data-type="image">
+      {state.url ? (
+        <img src={state.url} alt={alt} draggable={false} onError={actions.imageLoadFailed} />
+      ) : (
+        <span
+          className="meridian-image-node__placeholder"
+          role="img"
+          aria-label={"message" in state ? state.message : t`Loading image`}
+        >
+          {state.kind === "loading" ? (
+            <Loader2 className="size-6 animate-spin" />
+          ) : (
+            <>
+              <ImageIcon className="size-6" />
+              <Button type="button" variant="ghost" size="xs" onClick={actions.retry}>
+                <RefreshCw className="size-3" aria-hidden />
+                <Trans>Retry</Trans>
+              </Button>
+            </>
+          )}
+        </span>
+      )}
     </NodeViewWrapper>
   );
 }

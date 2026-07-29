@@ -2,24 +2,19 @@
  * The editor's prose column — ONE geometry, owned here.
  *
  * Every editor surface (tracked and temp) shares a centered 48rem column.
- * Chrome rows (toolbar, temp save bar) must start exactly where the prose
- * starts, so nothing jumps when switching tabs or when chrome appears.
  *
  * The horizontal inset is split across two layers — a wrapper and the
  * ProseMirror node's own padding. The whole editor pane is click-to-focus
  * territory (EditorSurfaceFrame routes gutter presses to the caret), so the
- * split is pure geometry now; the sum invariant these recipes encode is:
+ * split is pure geometry now; the sum these recipes encode is the column
+ * edge any future chrome row must align to:
  *
- *   chrome inset  =  canvas wrapper inset  +  prose inset
+ *   column edge   =  canvas wrapper inset  +  prose inset
  *   px-8/10/16    =  px-2/4/6              +  px-6/6/10
  *
  * Change any inset only by editing this file; never re-encode these classes
  * at a call site.
  */
-import { cn } from "@/lib/utils";
-
-/** Chrome rows aligned to the prose edge (the toolbar row). */
-export const editorColumnChrome = "mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16";
 
 /** The scrolling canvas wrapper around `EditorContent`. */
 export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6";
@@ -36,14 +31,8 @@ export const editorColumnFill = "flex min-h-full flex-1 flex-col";
 
 /**
  * ProseMirror node classes (TipTap `editorProps.attributes.class`).
- * The top inset depends on the toolbar: the docked row already provides the
- * breathing room, so the prose trims its own reserve. Chosen at editor
- * creation — hosts don't toggle the toolbar after mount. The bottom inset
- * keeps the active line away from the viewport edge in long manuscripts.
+ * The manuscript carries no chrome above it, so the prose owns its own top
+ * reserve. The bottom inset keeps the active line away from the viewport edge
+ * in long manuscripts.
  */
-export function editorProseClass(toolbar: "docked" | "none"): string {
-  return cn(
-    "prose-tokens min-h-full px-6 pb-[50vh] md:px-10",
-    toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
-  );
-}
+export const editorProseClass = "prose-tokens min-h-full px-6 pt-6 pb-[50vh] md:px-10 md:pt-8";

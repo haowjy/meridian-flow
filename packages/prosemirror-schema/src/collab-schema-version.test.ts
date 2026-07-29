@@ -183,8 +183,12 @@ describe("collab schema compatibility algebra", () => {
   });
 
   it("uses major.minor for client state keys", () => {
-    expect(collabSchemaKeyTag()).toBe("v0.1");
     expect(collabSchemaKeyTag(v(2, 3, 999))).toBe("v2.3");
-    expect(COLLAB_SCHEMA_VERSION).toEqual(v(0, 1, 0));
+    // The no-arg call must read the live constant. Its literal value is pinned
+    // by schema-shape.test.ts against the surface history, which is the guard
+    // that can actually catch a wrong bump; repeating the literal here would
+    // only break on every correct one.
+    const { major, minor } = COLLAB_SCHEMA_VERSION;
+    expect(collabSchemaKeyTag()).toBe(`v${major}.${minor}`);
   });
 });

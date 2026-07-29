@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+- `apps/app`, `packages/markup`, `packages/prosemirror-schema`: chapters now
+  carry tables, Mermaid fences, and block alignment. A mermaid fence stays an
+  editable code block for now; its SVG renderer ships unregistered until the
+  diagram surface that owns source access lands. Tables render and round-trip
+  through the clipboard, and center or right alignment on a paragraph, heading,
+  or table travels as a `Layout` wrapper in MDX, so a document nobody has
+  aligned still serializes as byte-identical plain markdown. The writer-facing controls for
+  this structure are being redesigned and land separately.
+- `apps/app`: the manuscript has no formatting toolbar for now. Keyboard
+  shortcuts still apply marks, and the editing chrome returns as a ground-up
+  redesign rather than the ported one, which silently ignored most of what a
+  writer clicked.
+- `apps/app`: editable link clicks place a cursor rather than navigating away,
+  and pasted HTML is rebuilt through an element and attribute allowlist.
+- `apps/app`, `apps/server`, `packages/contracts`, `packages/markup`: uploaded
+  images become their own documents under `manuscript://assets/`. Prose holds a
+  stable `asset:<documentId>` reference instead of an expiring storage URL, so an
+  image survives a rename and renders through a signed URL fetched at display
+  time. `FigureAssetReference` now carries `assetDocumentId` and a
+  project-relative `assetPath`; figure upload no longer attaches file metadata to
+  the host document.
+- `packages/prosemirror-schema`: collaboration schema surface is now `0.2.0`.
+  Block alignment adds an `align` attr to paragraphs, headings, and tables, so
+  clients below `0.2` no longer bind documents that carry one.
 - `apps/app`: chapters now wait briefly for complete local and server state
   before binding, then report schema-normalized prose in a dismissible copyable
   notice without blocking editing; repairs that arrive during live
@@ -89,7 +113,6 @@
   section per document separated by a rule, a match count beside each name, and
   "N more" to grow a document's passages in place. The searched word is the
   handle you click, and each passage opens at its own place in the document.
-
 - `apps/app`: the TipTap editor schema and the server document schema are
   structurally compared again by a parity unit test, so drift fails `pnpm check`
   instead of surfacing as decode/sync errors.

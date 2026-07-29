@@ -3,7 +3,7 @@
 import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -29,7 +29,9 @@ const TURN_ID = "00000000-0000-4000-8000-000000000005" as TurnId;
 const USER_W = "00000000-0000-4000-8000-000000000006" as UserId;
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const model = yProsemirrorModel(schema);
 
 function projectedChange(

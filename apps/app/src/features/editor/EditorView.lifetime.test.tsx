@@ -3,8 +3,8 @@
  * Editor lifetime contract: only a change to the editor's mount identity may
  * rebuild it. A rebuild destroys the Yjs UndoManager and drops keystrokes in
  * flight, so query churn (a thread-list refetch) and live surface config
- * (editability, accessible label, toolbar chrome) must reach the running
- * instance instead of replacing it.
+ * (editability, accessible label) must reach the running instance instead of
+ * replacing it.
  *
  * Instances are compared through printable tags: a failed `toBe` on an Editor
  * makes the reporter walk the ProseMirror view into jsdom internals.
@@ -126,6 +126,14 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: threadList.current, isError: false, isFetching: false }),
+}));
+vi.mock("@/client/query/useProjectContextTree", () => ({
+  useProjectContextTree: () => ({
+    tree: null,
+    isError: false,
+    isFetching: false,
+    refetch: () => {},
+  }),
 }));
 vi.mock("@/features/change-trail/trail-detail-query", () => ({
   usePrefetchTrailDetails: () => {},
@@ -268,7 +276,7 @@ describe("editor lifetime", () => {
 
       // Live surface config: editability and chrome apply to the same instance.
       await act(async () => {
-        applyProps({ editable: false, ariaLabel: "Read-only live document", showToolbar: false });
+        applyProps({ editable: false, ariaLabel: "Read-only live document" });
       });
       const afterSurfaceChange = mountedEditor();
       expect(tagOf(afterSurfaceChange, "editor")).toBe(original);
@@ -311,15 +319,6 @@ describe("editor lifetime", () => {
       expect(tagOf(mountedEditor(), "editor")).toBe(original);
       expect(mountedEditor().isEditable).toBe(false);
       expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
-      const fencedHtml = mountedEditor().getHTML();
-      const toolbarButtons =
-        document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button');
-      expect(toolbarButtons.length).toBeGreaterThan(0);
-      expect([...toolbarButtons].every((button) => button.disabled)).toBe(true);
-      await act(async () => {
-        document.querySelector<HTMLButtonElement>('button[aria-label="Bold"]')?.click();
-      });
-      expect(mountedEditor().getHTML()).toBe(fencedHtml);
       expect(document.querySelector("[data-schema-fence]")?.textContent).toBe(
         "This chapter was opened in a newer version of Meridian. Refresh to keep writing.",
       );

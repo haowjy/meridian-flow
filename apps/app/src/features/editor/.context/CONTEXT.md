@@ -3,25 +3,20 @@
 Reference depth for the app-facing editor surface. Read
 [`AGENTS.md`](../AGENTS.md) first.
 
-## Toolbar — placement contract
+## The manuscript is chromeless
 
-The formatting toolbar is a **docked prose-aligned row** above the scroll area.
-No card chrome, no rule beneath it: the row is bare controls sitting on canvas,
-separated from the prose by whitespace only.
-
-`EditorToolbar` owns the control cluster and command dispatch.
-`EditorSurfaceFrame` owns the placement invariant around it: an in-flow
-`h-9` row that is a **sibling of the scroll container** (so it stays put
-while text scrolls beneath), aligned to the prose column.
+There is no formatting toolbar and no contextual bubble. The whole interaction
+layer was deleted; the surfaces that replace it are specified in the editor
+toolkit interaction model and belong to the rebuild, not to incremental
+patches here. What remains on this surface is the prose column, the sync
+indicator, the image-upload flow, and the notice/popover surfaces below.
 
 **One column, one owner**: `editor-column.ts` is the single home of prose
-geometry — the chrome alignment (toolbar row), the canvas wrapper, and
-`editorProseClass(toolbar)` for the ProseMirror node (the top inset depends on
-whether a docked toolbar already supplies the breathing room; hosts choose at
-editor creation). Tracked and untitled documents share this column exactly, so
-nothing moves when an untitled tab materializes. Never re-encode these classes
-at a call site. (The document identity bar deliberately does NOT share the
-column: it is pane-wide navigation chrome, like the tab strip.)
+geometry — the canvas wrapper and `editorProseClass` for the ProseMirror node.
+Tracked and untitled documents share this column exactly, so nothing moves when
+an untitled tab materializes. Never re-encode these classes at a call site.
+(The document identity bar deliberately does NOT share the column: it is
+pane-wide navigation chrome, like the tab strip.)
 
 The bottom padding (`pb-[50vh]`) on the ProseMirror node is deliberate: it
 keeps the active writing line near the vertical center of the viewport in long
@@ -42,7 +37,7 @@ Two self-contained surfaces, both resolving their own state from
   its document is under inline review.
 - `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
   ABOVE the identity bar (order: tab strip → review strip → identity bar →
-  toolbar → prose). Matches the DraftDock strip's geometry and tone
+  prose). Matches the DraftDock strip's geometry and tone
   (`min-h-7`, `bg-dock-surface`, `text-caption`); destructive verb left,
   jade primary pill far right — the same order as the dock.
 
@@ -69,18 +64,28 @@ visible signal that the draft surface is active.
 
 ## Component API
 
-`EditorToolbar` is the canonical formatting control cluster (H1 / B /
-I / code / list / link / figure). It subscribes to the editor's selection and
-transaction events to keep active-mark highlighting in sync.
+### Command modules waiting on their surfaces
 
-Props:
+`block-alignment.ts`, `link-selection.ts`, and `core/editor/table-operations.ts`
+outlived the chrome that called them. They are the command and resolution layer
+the rebuilt surfaces consume; they are kept deliberately, not by oversight.
 
-- `editor: Editor | null` — the TipTap instance. `null` is valid (pre-mount shell).
-- `disabled` — blocks every mutating command while the host is read-only.
-- `figureUpload*` — delegates back to the host for the file-input flow.
+`linkAttributesAtSelection` exists because `editor.isActive("link")` can miss an
+empty selection at a mark boundary, notably the link's start. It uses
+`getMarkRange` for carets so a link control stays available at either edge. Any
+control that opens on a mark-touching caret should resolve the same way rather
+than gating on `isActive` alone.
 
-`EditorSurfaceFrame` accepts the optional `toolbar`, the host-specific
-`toolbarPositionClassName`, scrolling content, and the tracked editor's optional
+### Slash insertion catalog
+
+`EditorView` owns the nine-item catalog and hands `useMountedEditor` a *getter*,
+never the catalog itself. The extension mounts as a construction fact; its
+localized labels and the image-upload callback are read when the menu opens, so
+a locale switch relabels the menu instead of appearing in `EditorMountIdentity`
+and remounting the editor. The seam is live; the trigger that consumed it is
+not, so nothing reads the catalog until the rebuild lands a trigger.
+
+`EditorSurfaceFrame` accepts scrolling content and the tracked editor's optional
 scroll class/ref/handler. The frame owns every shared vertical, scroll, and
 prose-trim rule; hosts own their content and horizontal coordinate strategy.
 

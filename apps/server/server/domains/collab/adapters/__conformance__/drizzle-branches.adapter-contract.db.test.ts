@@ -60,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
-    const { mdxCodec } = await import("@meridian/markup");
+    const { mdxCodec, unresolvedAssetPathResolver } = await import("@meridian/markup");
     const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
     const { DrizzleContextDocumentStore } = await import(
@@ -727,13 +727,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         changeEventDelivery: { deliver() {} },
         branchStore: store,
         ...createPushStores(
-          markdownProjectionSerializer(yProsemirrorModel(schema), mdxCodec({ schema })),
+          markdownProjectionSerializer(
+            yProsemirrorModel(schema),
+            mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+          ),
         ),
         branchCoordinator: createBranchCoordinator({ store }),
         journal: livePersistence.journal,
         liveCoordinator,
         model: yProsemirrorModel(schema),
-        codec: mdxCodec({ schema }),
+        codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
       });
 
       const pushed = await branchPush.pushToLive({ branchId: work.branchId });
@@ -770,7 +773,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await livePersistence.lifecycle.ensureDocument(CREATED_B as never);
       const schema = buildDocumentSchema();
       const model = yProsemirrorModel(schema);
-      const codec = mdxCodec({ schema });
+      const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
       const docFromMarkdown = (markdown: string) => {
         const doc = createCollabYDoc({ gc: false });
         model.insertBlocks(toDocHandle(doc), null, codec.parse(markdown));

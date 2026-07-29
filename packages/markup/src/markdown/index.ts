@@ -4,7 +4,7 @@ import type { Schema } from "prosemirror-model";
 
 import { createMarkupCodec } from "../codec.js";
 import { demoteAutolinks } from "../helpers.js";
-import type { BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
+import type { AssetPathResolver, BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
 import {
   blockquoteCodec,
   bulletListCodec,
@@ -58,8 +58,8 @@ export function markdown(): MarkupPlugin {
   };
 }
 
-export function markdownCodec(options: { schema: Schema }) {
-  return createMarkupCodec({ schema: options.schema })
+export function markdownCodec(options: { schema: Schema; assetPathResolver: AssetPathResolver }) {
+  return createMarkupCodec(options)
     .use(markdown())
     .build({ requiredBlockNames: markdownRequiredBlockNames });
 }

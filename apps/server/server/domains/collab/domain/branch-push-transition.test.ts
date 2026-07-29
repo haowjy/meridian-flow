@@ -1,10 +1,12 @@
 import { createAgentEditCodec } from "@meridian/agent-edit/integration";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { detectPureDeletionOffset, renderedBodyText } from "./change-event-projection.js";
 
-const codec = createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema: buildDocumentSchema(), assetPathResolver: unresolvedAssetPathResolver }),
+);
 
 describe("detectPureDeletionOffset", () => {
   it.each([

@@ -1,4 +1,4 @@
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
@@ -14,7 +14,7 @@ import {
 import { yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 const model = yProsemirrorModel(schema);
 
 describe("yProsemirrorModel block hashes", () => {

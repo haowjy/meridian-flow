@@ -1,6 +1,0 @@
-# editor future work
-
-- Add a block-level `+` gutter handle with “Turn into” and “Insert” actions
-  without replacing the formatting toolbar.
-- Add fade-on-scroll behavior for the toolbar row only as a separate
-  interaction slice.

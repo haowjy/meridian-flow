@@ -27,7 +27,7 @@ export function createJsxContainerCodec(components?: ComponentRegistry): BlockCo
     },
 
     parse(ast, ctx) {
-      if (!isMdxJsxFlowElement(ast) || ast.name === "Figure") return null;
+      if (!isMdxJsxFlowElement(ast) || ast.name === "Figure" || ast.name === "Layout") return null;
       const spec = registeredComponent(components, ast.name);
       if (!spec) return invalidJsxFallback(ast, ctx);
       if (spec.kind !== "container" || spec.children !== "block") return null;

@@ -49,14 +49,21 @@ Nodes:
 
 | Node | Notes |
 |---|---|
-| `doc`, `paragraph`, `blockquote`, `heading`, `text`, `hard_break` | Basic ProseMirror nodes, structural fields only. |
+| `doc`, `blockquote`, `text`, `hard_break` | Basic ProseMirror nodes, structural fields only. |
+| `paragraph`, `heading` | Basic nodes plus the `align` attr. |
+| `table`, `table_row`, `table_header`, `table_cell` | GFM table structure. `table` carries `align`; cells carry `alignment`, `colspan`, `rowspan`, and `colwidth` for prosemirror-tables editing. |
 | `code_block` | Adds nullable `language` attr so fenced code survives markdown projection. |
 | `image` | Inline image with `src`, `alt`, and `title` attrs. `src` defaults to an empty string. |
 | `bullet_list`, `ordered_list`, `list_item` | List structure with `tight`/`order` attrs for markdown round-tripping. |
 | `horizontal_rule` | Scene break / thematic break node for markdown `---` round-tripping. |
-| `table`, `table_row`, `table_header`, `table_cell` | Table structure with column, row, and alignment attrs. |
 | `jsx_leaf`, `jsx_container` | MDX component blocks with `name` and `props` attrs; leaf components contain `text*`, containers contain `block+`. |
 | `figure` | Atomic block with `src`, `alt`, `label`, and `caption` attrs for figure workflows. |
+
+`align` is `null`, `"center"`, or `"right"` and validates on the way in. There
+is no `"left"`: unaligned is the default, and a second spelling for it would be
+a ghost state the markup codec has to reject. `@meridian/markup` carries these
+attrs over the wire as a `Layout` wrapper, so an alignable node gains no markup
+until a writer aligns it.
 
 Marks:
 

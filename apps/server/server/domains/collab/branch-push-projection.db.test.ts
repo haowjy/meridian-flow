@@ -16,7 +16,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { desc, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
@@ -126,7 +126,7 @@ describe("branch-push durable projection", () => {
 
     const schema = buildDocumentSchema();
     const model = yProsemirrorModel(schema);
-    const codec = mdxCodec({ schema });
+    const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
     const durableProjectionSerializer = createMarkdownDocumentEngine({
       schema,
       model,
@@ -312,7 +312,7 @@ describe("branch-push durable projection", () => {
 
     const schema = buildDocumentSchema();
     const model = yProsemirrorModel(schema);
-    const codec = mdxCodec({ schema });
+    const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
     const engine = createMarkdownDocumentEngine({
       schema,
       model,
@@ -507,7 +507,7 @@ describe("branch-push durable projection", () => {
 
     const schema = buildDocumentSchema();
     const model = yProsemirrorModel(schema);
-    const codec = mdxCodec({ schema });
+    const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
     const engine = createMarkdownDocumentEngine({
       schema,
       model,
