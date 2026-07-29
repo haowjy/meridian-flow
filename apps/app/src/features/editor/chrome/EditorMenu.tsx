@@ -26,9 +26,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-
+import { useChromeLayer } from "./chrome-layers";
 import { pointerAnchorStyle } from "./pointer-anchor";
-import { useChromeLayer } from "./useEditorChrome";
 
 export type EditorMenuProps = {
   editor: Editor | null;
@@ -58,7 +57,15 @@ export function EditorMenu({
   className,
   children,
 }: EditorMenuProps) {
-  const layer = useChromeLayer(editor, { id, open, close: () => onOpenChange(false) });
+  // Radix carries its own Escape listener, so the kernel must not also
+  // dismiss this one; `scope` is what lets a layer opened inside it — a
+  // source pane — be recognised as the deeper one.
+  const layer = useChromeLayer(editor, {
+    id,
+    open,
+    close: () => onOpenChange(false),
+    dismissal: "self",
+  });
 
   return (
     // A pointer menu summoned at a new point is a NEW menu. Radix positions
@@ -95,7 +102,7 @@ export function EditorMenu({
         onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
-        {children}
+        {layer.scope(children)}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,25 +1,41 @@
 /** MDX ingress escaping for prose that contains JSX-significant characters. */
 
+import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
+
 export function escapeProseForMdxIngress(text: string): string {
   const lines = text.split("\n");
   const out: string[] = [];
-  let inCodeFence = false;
-  let fenceMarker = "";
+  let fence: MarkdownFence | null = null;
+  let htmlTableEnd = -1;
 
-  for (const line of lines) {
-    if (inCodeFence) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
+    if (fence) {
       out.push(line);
-      if (line.trimStart().startsWith(fenceMarker)) {
-        inCodeFence = false;
-        fenceMarker = "";
-      }
+      if (closesFence(lines, index, fence)) fence = null;
       continue;
     }
 
-    const fence = line.match(/^(`{3,}|~{3,})(.*)$/);
-    if (fence) {
-      inCodeFence = true;
-      fenceMarker = fence[1];
+    if (index <= htmlTableEnd) {
+      out.push(line);
+      continue;
+    }
+
+    if (/^[\t ]*(?:(?:>[\t ]*)|(?:[-+*][\t ]+)|(?:\d+[.)][\t ]+))*<table(?:\s|>)/i.test(line)) {
+      const end = lines.findIndex(
+        (candidate, candidateIndex) =>
+          candidateIndex >= index && /<\/table>\s*$/i.test(candidate ?? ""),
+      );
+      if (end >= index) {
+        htmlTableEnd = end;
+        out.push(line);
+        continue;
+      }
+    }
+
+    const openingFence = openingFenceAt(lines, index);
+    if (openingFence) {
+      fence = openingFence;
       out.push(line);
       continue;
     }
@@ -162,6 +178,11 @@ function escapeProseSegment(segment: string): string {
       }
     }
     if (segment[i] === "<") {
+      if (segment.startsWith("<br/>", i)) {
+        out += "<br/>";
+        i += "<br/>".length;
+        continue;
+      }
       const len = tryConsumeJsxTag(segment, i);
       if (len !== null) {
         out += segment.slice(i, i + len);

@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-import { useChromeLayer } from "./useEditorChrome";
+import { useChromeLayer } from "./chrome-layers";
 
 export type EditorDialogProps = {
   editor: Editor | null;
@@ -39,7 +39,15 @@ export function EditorDialog({
   className,
   children,
 }: EditorDialogProps) {
-  const layer = useChromeLayer(editor, { id, open, close: () => onOpenChange(false) });
+  // Radix carries its own Escape listener, so the kernel must not also
+  // dismiss this one; `scope` is what lets a layer opened inside it — a
+  // source pane — be recognised as the deeper one.
+  const layer = useChromeLayer(editor, {
+    id,
+    open,
+    close: () => onOpenChange(false),
+    dismissal: "self",
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -49,7 +57,7 @@ export function EditorDialog({
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
         <DialogTitle className={showTitle ? undefined : "sr-only"}>{title}</DialogTitle>
-        {children}
+        {layer.scope(children)}
       </DialogContent>
     </Dialog>
   );

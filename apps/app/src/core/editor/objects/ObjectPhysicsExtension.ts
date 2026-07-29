@@ -24,6 +24,7 @@ import type { KeymapBinding } from "../chrome/keymap";
 import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
+  type ObjectAt,
   objectBeside,
   selectedObject,
   selectObjectTransaction,
@@ -34,11 +35,16 @@ const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
 export const objectPhysicsPluginKey = new PluginKey(OBJECT_PHYSICS_NAME);
 
-/** Opens the object's own surface. Return false to let the key fall through. */
-export type ObjectEngagement = (target: {
-  node: import("@tiptap/pm/model").Node;
-  pos: number;
-}) => boolean;
+/**
+ * Opens the object's own surface.
+ *
+ * It returns nothing, and that is the contract rather than an omission: Enter
+ * on a selected object is consumed whether or not this runs. Letting the key
+ * fall through would hand a node selection to the base keymap, which splits
+ * the block around it and leaves stray paragraphs in the manuscript — a
+ * structural edit from a key that was supposed to open something.
+ */
+export type ObjectEngagement = (target: ObjectAt) => void;
 
 type ObjectPhysicsStorage = {
   engagements: Map<string, ObjectEngagement>;
@@ -86,16 +92,13 @@ export function registerObjectKeymap(
   const chrome = getEditorChrome(editor);
   if (!chrome) return () => {};
 
-  const scoped: Record<string, KeymapBinding> = {};
-  for (const [key, binding] of Object.entries(bindings)) {
-    scoped[key] = (state, dispatch, view) => {
-      const selected = selectedObject(state);
-      if (!selected || selected.node.type.name !== nodeType) return false;
-      return binding(state, dispatch, view);
-    };
-  }
-
-  return chrome.registerKeymap({ id: `object:${nodeType}`, scope: "object", bindings: scoped });
+  return chrome.registerKeymap({
+    id: `object:${nodeType}`,
+    scope: "object",
+    // The scope already means "an object is selected"; this says which one.
+    appliesTo: (context) => context.nodeType === nodeType,
+    bindings,
+  });
 }
 
 export const ObjectPhysicsExtension = Extension.create({
@@ -122,21 +125,33 @@ export const ObjectPhysicsExtension = Extension.create({
          * keystroke to miss it.
          */
         view() {
-          const release = getEditorChrome(editor)?.registerKeymap({
-            id: "object-physics",
-            scope: "object",
-            bindings: {
-              ArrowRight: walkForward,
-              ArrowDown: walkForward,
-              ArrowLeft: walkBackward,
-              ArrowUp: walkBackward,
-              Enter: (state, dispatch) => engage(state, dispatch, engagements),
-            },
-          });
+          const chrome = getEditorChrome(editor);
+          // Two contributions, because the arrows and Enter are live in
+          // different places. Walking ONTO an object starts from prose beside
+          // it, so the arrows cannot be scoped to "an object is selected" —
+          // they are block-level movement that declines wherever there is no
+          // object to step on. Enter genuinely needs the selection.
+          const releases = [
+            chrome?.registerKeymap({
+              id: "object-walk",
+              scope: "block",
+              bindings: {
+                ArrowRight: walkForward,
+                ArrowDown: walkForward,
+                ArrowLeft: walkBackward,
+                ArrowUp: walkBackward,
+              },
+            }),
+            chrome?.registerKeymap({
+              id: "object-engage",
+              scope: "object",
+              bindings: { Enter: (state, dispatch) => engage(state, dispatch, engagements) },
+            }),
+          ];
 
           return {
             destroy() {
-              release?.();
+              for (const release of releases) release?.();
               engagements.clear();
             },
           };
@@ -162,6 +177,14 @@ export const ObjectPhysicsExtension = Extension.create({
     ];
   },
 });
+
+function reportMissingEngagement(nodeType: string): void {
+  if (!import.meta.env?.DEV || warnedMissingEngagement.has(nodeType)) return;
+  warnedMissingEngagement.add(nodeType);
+  console.warn(
+    `[editor] "${nodeType}" is registered with engage: "surface", but no lane called registerObjectEngagement — Enter on it does nothing.`,
+  );
+}
 
 const walkForward: KeymapBinding = (state, dispatch) => walk(state, dispatch, 1);
 const walkBackward: KeymapBinding = (state, dispatch) => walk(state, dispatch, -1);
@@ -189,15 +212,20 @@ function walk(
   return true;
 }
 
+/** Node types already reported as unengageable, so the warning fires once. */
+const warnedMissingEngagement = new Set<string>();
+
 /**
  * Enter engages the selected object per its registered intent (§4).
  *
  * A selected object ALWAYS consumes the key, even when its intent is `none`
- * or its lane has not shipped the surface yet. Letting Enter fall through
- * hands a node selection to the base keymap, which splits the block around it
- * and leaves stray paragraphs in the manuscript — a structural edit the writer
- * asked for by pressing a key that was supposed to open something. An object
- * whose lane is not here yet is inert, not destructive.
+ * or its lane has not shipped the surface yet — see `ObjectEngagement` for
+ * why falling through would edit the document.
+ *
+ * A `surface` type with no handler is therefore a dead key, which law 5
+ * forbids on anything shipped. It is legal only while its lane is unbuilt, so
+ * it says so in development rather than waiting to be found by a writer
+ * pressing Enter on a diagram and getting nothing.
  */
 function engage(
   state: Parameters<KeymapBinding>[0],
@@ -211,7 +239,9 @@ function engage(
   if (!spec) return false;
 
   if (spec.engage === "surface") {
-    engagements.get(spec.nodeType)?.(selected);
+    const engagement = engagements.get(spec.nodeType);
+    if (engagement) engagement(selected);
+    else reportMissingEngagement(spec.nodeType);
     return true;
   }
 
