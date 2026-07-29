@@ -4,18 +4,21 @@
  * One field over a selection, two fields (text and link) at a bare caret, so
  * creating a link from nothing needs no preconditions (§5.5, law 5). The
  * caret inside an existing link lights the button and pre-fills the form;
- * emptying the URL removes the link. Deliberately no Ctrl+K binding — that key
- * belongs to the later link lane, which absorbs this popover.
+ * emptying the URL removes the link. Closing always hands the caret back to
+ * the prose — the writer opened this from the middle of a sentence, and the
+ * next keystroke belongs to that sentence. Deliberately no Ctrl+K binding:
+ * that key belongs to the later link lane, which absorbs this popover.
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
+import type { Transaction } from "@tiptap/pm/state";
 import { Link as LinkIcon, Unlink } from "lucide-react";
 import { type FormEvent, type Ref, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { commitLinkDraft, type LinkDraft, resolveLinkDraft } from "./link-commands";
+import { commitLinkDraft, type LinkDraft, mapLinkDraft, resolveLinkDraft } from "./link-commands";
 import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./ToolbarButton";
 import type { ToolbarControlState } from "./toolbar-commands";
 import { blockedReasonMessage, toolbarControlLabel } from "./toolbar-copy";
@@ -29,11 +32,25 @@ export function LinkControl({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<LinkDraft | null>(null);
-  const committedRef = useRef(false);
+  // The commit reads the range from here, never from render state: an open
+  // popover outlives the positions it was opened with.
+  const draftRef = useRef<LinkDraft | null>(null);
   const label = toolbarControlLabel("link");
   // Without an editor the matrix already says "still opening"; naming it here
   // is what lets the rest of this component assume one.
   const blockedReason = blockedReasonMessage("link", editor ? state.blockedBy : "editor-loading");
+
+  useEffect(() => {
+    if (!open || !editor) return;
+    const followDocument = ({ transaction }: { transaction: Transaction }) => {
+      if (!transaction.docChanged || !draftRef.current) return;
+      draftRef.current = mapLinkDraft(draftRef.current, transaction.mapping);
+    };
+    editor.on("transaction", followDocument);
+    return () => {
+      editor.off("transaction", followDocument);
+    };
+  }, [open, editor]);
 
   if (!editor || blockedReason) {
     return (
@@ -43,11 +60,6 @@ export function LinkControl({
     );
   }
 
-  const close = (committed: boolean) => {
-    committedRef.current = committed;
-    setOpen(false);
-  };
-
   return (
     <Popover
       open={open}
@@ -55,8 +67,9 @@ export function LinkControl({
         // Resolve at open time: the selection the writer is looking at is the
         // one the commit must rewrite, even after focus moves into the form.
         if (next) {
-          setDraft(resolveLinkDraft(editor));
-          committedRef.current = false;
+          const resolved = resolveLinkDraft(editor);
+          draftRef.current = resolved;
+          setDraft(resolved);
         }
         setOpen(next);
       }}
@@ -79,14 +92,21 @@ export function LinkControl({
         align="start"
         className="w-80 p-2"
         onCloseAutoFocus={(event) => {
-          // A commit already put the caret back in the prose; letting Radix
-          // return focus to the button would pull the writer out of the text.
-          if (!committedRef.current) return;
+          // Radix would hand focus back to the button, where the next Space
+          // reopens the popover the writer just dismissed. The caret is still
+          // in the prose; the focus goes with it.
           event.preventDefault();
           if (!editor.isDestroyed) editor.commands.focus();
         }}
       >
-        {draft ? <LinkForm editor={editor} draft={draft} onClose={close} /> : null}
+        {draft ? (
+          <LinkForm
+            editor={editor}
+            draft={draft}
+            readDraft={() => draftRef.current ?? draft}
+            onClose={() => setOpen(false)}
+          />
+        ) : null}
       </PopoverContent>
     </Popover>
   );
@@ -95,11 +115,13 @@ export function LinkControl({
 function LinkForm({
   editor,
   draft,
+  readDraft,
   onClose,
 }: {
   editor: Editor;
   draft: LinkDraft;
-  onClose: (committed: boolean) => void;
+  readDraft: () => LinkDraft;
+  onClose: () => void;
 }) {
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
@@ -109,19 +131,21 @@ function LinkForm({
   const hrefInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const target = draft.needsText && !draft.text ? textInputRef.current : hrefInputRef.current;
-    target?.focus();
-    target?.select();
-  }, [draft]);
+    // The first empty field is where the writer has something to say.
+    const textInput = textInputRef.current;
+    const input = textInput && !textInput.value ? textInput : hrefInputRef.current;
+    input?.focus();
+    input?.select();
+  }, []);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const result = commitLinkDraft(editor, draft, { text, href });
+    const result = commitLinkDraft(editor, readDraft(), { text, href });
     if (result === "invalid") {
       setInvalid(true);
       return;
     }
-    onClose(result !== "refused");
+    onClose();
   };
 
   return (
@@ -163,8 +187,8 @@ function LinkForm({
             size="sm"
             className="mr-auto"
             onClick={() => {
-              commitLinkDraft(editor, draft, { text, href: "" });
-              onClose(true);
+              commitLinkDraft(editor, readDraft(), { text, href: "" });
+              onClose();
             }}
           >
             <Unlink className="size-3.5" aria-hidden />

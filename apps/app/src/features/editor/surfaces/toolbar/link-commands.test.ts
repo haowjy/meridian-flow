@@ -3,7 +3,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { commitLinkDraft, resolveLinkDraft } from "./link-commands";
+import { commitLinkDraft, mapLinkDraft, resolveLinkDraft } from "./link-commands";
 
 let editor: Editor | null = null;
 
@@ -15,6 +15,26 @@ afterEach(() => {
 function editorWith(content: string): Editor {
   editor = new Editor({ extensions: createStandaloneEditorExtensions(), content });
   return editor;
+}
+
+function linkedText(target: Editor): string {
+  let text = "";
+  target.state.doc.descendants((node) => {
+    if (node.isText && node.marks.some((mark) => mark.type.name === "link")) {
+      text += node.text ?? "";
+    }
+  });
+  return text;
+}
+
+function marksOnLinkedText(target: Editor): string[] {
+  let marks: string[] = [];
+  target.state.doc.descendants((node) => {
+    if (node.isText && node.marks.some((mark) => mark.type.name === "link")) {
+      marks = node.marks.map((mark) => mark.type.name);
+    }
+  });
+  return marks;
 }
 
 function firstLinkHref(target: Editor): string | null {
@@ -29,7 +49,7 @@ function firstLinkHref(target: Editor): string | null {
 describe("link draft resolution", () => {
   it("asks only for a URL over a selection", () => {
     const target = editorWith("<p>the third gate</p>");
-    target.commands.setTextSelection({ from: 5, to: 14 });
+    target.commands.setTextSelection({ from: 5, to: 15 });
 
     expect(resolveLinkDraft(target)).toMatchObject({ needsText: false, existing: false, href: "" });
   });
@@ -56,7 +76,7 @@ describe("link draft resolution", () => {
 describe("link commit", () => {
   it("links the selected phrase", () => {
     const target = editorWith("<p>the third gate</p>");
-    target.commands.setTextSelection({ from: 5, to: 14 });
+    target.commands.setTextSelection({ from: 5, to: 15 });
     const draft = resolveLinkDraft(target);
 
     expect(commitLinkDraft(target, draft, { text: "", href: "example.com/gate" })).toBe("applied");
@@ -109,7 +129,7 @@ describe("link commit", () => {
 
   it("keeps the form open on a URL it cannot use", () => {
     const target = editorWith("<p>the third gate</p>");
-    target.commands.setTextSelection({ from: 5, to: 14 });
+    target.commands.setTextSelection({ from: 5, to: 15 });
     const draft = resolveLinkDraft(target);
 
     expect(commitLinkDraft(target, draft, { text: "", href: "javascript:alert(1)" })).toBe(
@@ -118,9 +138,40 @@ describe("link commit", () => {
     expect(firstLinkHref(target)).toBeNull();
   });
 
+  it("links the phrase the writer selected after the document moves under it", () => {
+    const target = editorWith("<p>the third gate</p>");
+    target.commands.setTextSelection({ from: 5, to: 15 });
+    let draft = resolveLinkDraft(target);
+
+    // A peer types above the open popover; the stored numbers now address the
+    // wrong words unless they travel with the change.
+    const before = target.state.tr.insertText("ZZ ", 1);
+    target.view.dispatch(before);
+    draft = mapLinkDraft(draft, before.mapping);
+
+    expect(commitLinkDraft(target, draft, { text: "", href: "https://example.com/gate" })).toBe(
+      "applied",
+    );
+    expect(linkedText(target)).toBe("third gate");
+  });
+
+  it("keeps the marks the link text already wore", () => {
+    const target = editorWith(
+      '<p><strong><a href="https://example.com/gate">the gate</a></strong> waits</p>',
+    );
+    target.commands.setTextSelection(3);
+    const draft = resolveLinkDraft(target);
+
+    expect(commitLinkDraft(target, draft, { text: "the third gate", href: draft.href })).toBe(
+      "applied",
+    );
+    expect(target.state.doc.textContent).toBe("the third gate waits");
+    expect(marksOnLinkedText(target).sort()).toEqual(["link", "strong"]);
+  });
+
   it("refuses a read-only document", () => {
     const target = editorWith("<p>the third gate</p>");
-    target.commands.setTextSelection({ from: 5, to: 14 });
+    target.commands.setTextSelection({ from: 5, to: 15 });
     const draft = resolveLinkDraft(target);
     target.setEditable(false);
 
