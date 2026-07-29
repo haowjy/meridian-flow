@@ -12,6 +12,11 @@ in the kernel's
 | image (`image`, `figure`) | `[fullscreen] [copy image] [⋮]` | Download image, Duplicate, Delete | lightbox |
 | code block (any other language) | `[language ▾ | copy | ⋮]` | Wrap lines, Duplicate, Delete | (caret, not an object) |
 
+Diagrams and images open their lightbox three ways: the fullscreen chip, Enter
+on the selection, and a double-click in the page. The last two are the same
+registration — `handleDoubleClickOn` at the object-physics seam selects the
+object and runs the engagement Enter runs — so a lane wires its surface once.
+
 Alt text and Replace are absent from the image ⋮ rather than dead: their
 surfaces belong to the upload lane (§5.6), and law 5 prefers the gap.
 
@@ -53,6 +58,41 @@ nothing here guesses at `posAtDOM`'s off-by-one.
 `renderedBounds` is the one place a node's DOM and its *visible* bounds are
 allowed to differ: an inline image anchors to its `<img>`, because TipTap lays
 its wrapper out as text and that wrapper's box is a line box.
+
+## Editing source without eating a collaborator's words
+
+A `<textarea>` reports a whole string. Diffed against the *current* document
+that string is a lie the moment anyone else is typing: text a peer added since
+the pane rendered was never in the writer's textarea, so the diff reads it as a
+deletion and Yjs merges that faithfully.
+
+`fence-draft.ts` holds the base the writer actually edited — what the pane
+rendered — plus a `Mapping` of everything that has landed since, and carries
+the diff's offsets forward through it. With nobody else typing the mapping is
+empty and this is one `insertText`. The write refuses a fence that has been
+deleted or turned into another language while the pane was open: writing
+Mermaid into a TypeScript block is worse than doing nothing.
+
+The rebase resets on every render that shows new document text, and again
+immediately after a dispatch, so the base and the mapping can never disagree
+about which version they describe.
+
+## What a verb says back
+
+`useVerbFeedback` runs a promise and keeps its answer; `ObjectVerbNotice`
+renders it over the object's corner, `VerbNoticePill` inside the dialog where
+the page's own notices are behind the scrim. Every door goes through it —
+a chip, a row ⋮, the lightbox ⋮ — so no path can quietly drop a rejection, and
+the two failures browsers actually produce here keep their meaning:
+
+| Failure | What the writer is told |
+|---|---|
+| `NotAllowedError` | the browser blocked the clipboard, check permissions |
+| `SecurityError` (tainted canvas) | this browser will not export the diagram, copy the source instead |
+| `ExportError` | the image could not be read, or cannot be turned into an image |
+
+The second one points at the door that always works, which is why the row's
+copy chip carries Mermaid source rather than an image.
 
 ## The lightbox
 
@@ -109,9 +149,13 @@ time.
 stands down when a successor layer is still open, and when the manuscript is
 behind a modal scrim (`aria-hidden` / `inert`).
 
-## Known blocked
+## Right-click
 
-Right-click on a diagram or an image does not reach the claim ladder: TipTap's
-`NodeView.stopEvent` swallows `contextmenu` before ProseMirror routes it. The
-claim is registered and correct; the fix is the kernel's and arrives by merge.
-Until then the ⋮ is the only door to the object menu.
+Claimed at the `object` rung, and only for diagrams and images: a code block's
+right-click stays the browser's, so spellcheck and paste survive inside a
+fence. The claim remembers the ELEMENT it claimed, not the hovered one, and
+selects the object so the menu says what it is about.
+
+(The kernel's capture-phase router landed with the editor-core merge; before
+it, TipTap's `NodeView.stopEvent` swallowed `contextmenu` and this claim never
+ran.)

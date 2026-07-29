@@ -14,8 +14,15 @@ until it happened.
 
 **Anchors are elements, positions are derived.** A held position goes stale the
 moment anything above it changes — a peer typing three paragraphs up is
-enough — while the element stays itself. So hover, selection, and the open
-lightbox all remember an element and resolve its position on every render.
+enough — while the element stays itself. So hover, selection, the open
+lightbox, and an open context menu all remember an element and resolve its
+position on every render.
+
+**Approach is not identity.** Hover decides what the row hangs off; a menu
+decides what its items act on. They are usually the same object and must never
+be the same state: a right-click claims an object before hover intent has
+settled on it, so a menu reading hover would run Delete on whatever the pointer
+passed over last.
 
 **Chrome shapes follow the ruling, not the node type.** Diagram and image get
 `OverlayIconRow` (ruling 8: icon-only chips inside the top-right bounds, ⋮
@@ -30,9 +37,16 @@ control and a labeled control floating alone over code reads as part of it.
   that loop and works in every browser. Image copy and download live in the ⋮.
 - **Absent beats disabled** on every menu here. A diagram that has not rendered
   has no image to hand over, so those items are not there — not greyed.
-- **A verb that can fail says so where the writer is looking.** The copy chip
-  wears its answer (a check, or a warning with the reason in its tooltip) for
-  a moment and goes back to being a verb.
+- **Every verb answers, and keeps its reason.** Copy and download reach a
+  clipboard the browser can refuse and a canvas it can call tainted, so every
+  one of them runs through `useVerbFeedback` and says what happened over the
+  corner the writer just pressed. "The browser blocked the clipboard" and "this
+  browser will not export this diagram" call for different next moves; a bare
+  "try again" is the silent rejection law 5 forbids, one step quieter.
+- **A textarea reports a string, not an edit.** Source editing diffs against
+  what the pane RENDERED and maps the result forward, or it deletes whatever a
+  collaborator typed in the meantime. `fence-draft.ts` owns that; nothing else
+  may write a fence's text from a full string.
 - **View state is disposable.** The viewer's pan and zoom, and a fence's
   wrapped lines, live as long as their element and no longer. Neither is
   written to the document: how one writer reads one block on one screen is not
@@ -50,6 +64,10 @@ control and a labeled control floating alone over code reads as part of it.
   capture on `pointerdown`, so a button in it never receives its own click.
 - Rendering source in the page. The page never shows Mermaid syntax; the two
   exceptions belong to the node view (`core/editor/MermaidCodeBlock.tsx`).
+- Discarding an export promise (`void copyImage(...)`). An unhandled rejection
+  is a failure the writer never hears about.
+- Reading the approached object inside a menu handler. Menus carry their own
+  target.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`core/editor/viewer`](../../../../core/editor/viewer/AGENTS.md) — pan/zoom
