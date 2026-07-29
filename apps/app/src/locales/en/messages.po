@@ -62,6 +62,11 @@ msgstr "{agentName} deleted a passage"
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
+#. placeholder {0}: item.matchedAlias
+#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+msgid "(also {0})"
+msgstr "(also {0})"
+
 #. placeholder {0}: serverPendingCount ?? 0
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
@@ -402,6 +407,7 @@ msgstr "Can't undo"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -491,6 +497,7 @@ msgstr "Choose an image file."
 msgid "Choose an option"
 msgstr "Choose an option"
 
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -743,13 +750,30 @@ msgstr "Couldn't undo"
 msgid "Couldn't write"
 msgstr "Couldn't write"
 
+#. placeholder {0}: item.name
+#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+msgid "Create “{0}”"
+msgstr "Create “{0}”"
+
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
 msgstr "Create file or folder"
 
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "Create it now and the link starts working. Nothing about the link changes."
+msgstr "Create it now and the link starts working. Nothing about the link changes."
+
 #: src/features/chat/IndependentChatView.tsx
 msgid "Create project"
 msgstr "Create project"
+
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "Create the document"
+msgstr "Create the document"
+
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "Creating…"
+msgstr "Creating…"
 
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 msgid "Current block type"
@@ -1339,6 +1363,10 @@ msgstr "Light"
 msgid "Link"
 msgstr "Link"
 
+#: src/features/editor/EditorView.tsx
+msgid "Link a document"
+msgstr "Link a document"
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Link text"
 msgstr "Link text"
@@ -1346,6 +1374,10 @@ msgstr "Link text"
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 #~ msgid "Link URL"
 #~ msgstr "Link URL"
+
+#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+msgid "links now, page later"
+msgstr "links now, page later"
 
 #: src/features/editor/EditorView.tsx
 msgid "list"
@@ -1426,6 +1458,10 @@ msgstr "Loading…"
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
 msgstr "Log out"
+
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "Looking for the document this link names."
+msgstr "Looking for the document this link names."
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
@@ -1644,6 +1680,14 @@ msgstr "No column has been resized yet."
 msgid "No context files yet."
 msgstr "No context files yet."
 
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "No document answers to this name. A document can be created for it once the name works as a filename."
+msgstr "No document answers to this name. A document can be created for it once the name works as a filename."
+
+#: src/features/editor/surfaces/link/LinkHint.tsx
+msgid "No document with this name yet"
+msgstr "No document with this name yet"
+
 #: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
 msgstr "No fields required; confirm to continue."
@@ -1679,6 +1723,10 @@ msgstr "No results yet."
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "Not Found"
+
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "Nothing carries that name yet"
+msgstr "Nothing carries that name yet"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
@@ -1809,6 +1857,10 @@ msgstr "Open this document in a project to upload figures."
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
+
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "Opening the link"
+msgstr "Opening the link"
 
 #: src/features/project/context/ContextViewer.tsx
 msgid "Or pick a file from the tree."
@@ -2423,6 +2475,10 @@ msgstr "That document couldn't be found."
 msgid "That image could not be read."
 msgstr "That image could not be read."
 
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "That link could not be checked"
+msgstr "That link could not be checked"
+
 #: src/features/project/context/context-entry-name.ts
 msgid "That location does not exist"
 msgstr "That location does not exist"
@@ -2459,6 +2515,10 @@ msgstr "The assistant referred to this document, but it isn't there now. It may 
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr "The browser blocked the clipboard. Check this site's permissions."
 
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "The document could not be created. Try again."
+msgstr "The document could not be created. Try again."
+
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -2474,6 +2534,10 @@ msgstr "The header row stays first."
 #: src/features/editor/EditorView.tsx
 msgid "The image uploaded, but the editor could not insert it."
 msgstr "The image uploaded, but the editor could not insert it."
+
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+msgid "The project could not be reached. The link itself is fine."
+msgstr "The project could not be reached. The link itself is fine."
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "The removed text could not be recovered."
@@ -2665,6 +2729,7 @@ msgid "Try a web address, a document path, or [[a document name]]."
 msgstr "Try a web address, a document path, or [[a document name]]."
 
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
 msgid "Try again"
 msgstr "Try again"
 
@@ -2676,6 +2741,10 @@ msgstr "Try again, or return to the live document."
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Turn into"
 msgstr "Turn into"
+
+#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+msgid "two documents share this name"
+msgstr "two documents share this name"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
