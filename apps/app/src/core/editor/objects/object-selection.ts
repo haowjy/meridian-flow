@@ -1,0 +1,125 @@
+/**
+ * The document half of object physics: what is selected, what is beside it,
+ * and where the caret lands when you walk past.
+ *
+ * Pure over `EditorState` — every function returns a `Transaction` or a
+ * reading, never dispatches. The extension beside it does the dispatching, so
+ * the walk itself can be reasoned about (and tested) without a view.
+ */
+
+import type { Node as PMNode } from "@tiptap/pm/model";
+import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
+
+import { isEditorObject } from "./object-types";
+
+export type ObjectAt = { node: PMNode; pos: number };
+
+/** The object the selection is standing on, or null in prose. */
+export function selectedObject(state: EditorState): ObjectAt | null {
+  const { selection } = state;
+  if (!(selection instanceof NodeSelection)) return null;
+  return isEditorObject(selection.node) ? { node: selection.node, pos: selection.from } : null;
+}
+
+/**
+ * The object the caret would walk onto next (§4: "arrow keys crossing an
+ * object → the object becomes selected").
+ *
+ * Two neighbourhoods, in order. An inline image sits inside the paragraph, so
+ * it is beside the caret directly. A block object is beside the caret only at
+ * the very edge of its text block — arrowing through prose must never leap out
+ * of the sentence, so a caret one character short of the end walks a character.
+ */
+export function objectBeside(state: EditorState, direction: 1 | -1): ObjectAt | null {
+  const { selection } = state;
+  if (!selection.empty) return null;
+  const $pos = selection.$head;
+
+  const inline = direction === 1 ? $pos.nodeAfter : $pos.nodeBefore;
+  if (inline && isEditorObject(inline)) {
+    return { node: inline, pos: direction === 1 ? $pos.pos : $pos.pos - inline.nodeSize };
+  }
+
+  const atEdge =
+    direction === 1 ? $pos.parentOffset === $pos.parent.content.size : $pos.parentOffset === 0;
+  if (!atEdge) return null;
+
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const parent = $pos.node(depth - 1);
+    const siblingIndex = $pos.index(depth - 1) + direction;
+    // No sibling at this depth: the edge belongs to the level above, so keep
+    // climbing (the last paragraph of a list item shares its edge with the list).
+    if (siblingIndex < 0 || siblingIndex >= parent.childCount) continue;
+
+    const sibling = parent.child(siblingIndex);
+    // The immediate neighbour is what "beside" means. A paragraph next door
+    // ends the walk rather than hiding an object two blocks away behind it.
+    if (!isEditorObject(sibling)) return null;
+
+    let pos = $pos.start(depth - 1);
+    for (let index = 0; index < siblingIndex; index += 1) pos += parent.child(index).nodeSize;
+    return { node: sibling, pos };
+  }
+
+  return null;
+}
+
+/** Select the object at `pos`. Null when the schema refuses a node selection. */
+export function selectObjectTransaction(state: EditorState, pos: number): Transaction | null {
+  const node = state.doc.nodeAt(pos);
+  if (!node || !isEditorObject(node) || !NodeSelection.isSelectable(node)) return null;
+  return state.tr.setSelection(NodeSelection.create(state.doc, pos)).scrollIntoView();
+}
+
+/**
+ * Put the caret past the object at `pos` — forward lands after it, backward
+ * before it. This is the second arrow press, and half of the last step of the
+ * Esc walk home.
+ *
+ * Null when that side is a dead end. ProseMirror's `near` quietly searches the
+ * other way rather than failing, and for an arrow key that is exactly wrong:
+ * pressing Right on the last block in the document must not move the caret
+ * left.
+ */
+export function caretBesideObjectTransaction(
+  state: EditorState,
+  pos: number,
+  direction: 1 | -1,
+): Transaction | null {
+  const node = state.doc.nodeAt(pos);
+  if (!node) return null;
+
+  const edge = direction === 1 ? pos + node.nodeSize : pos;
+  const selection = TextSelection.near(state.doc.resolve(edge), direction);
+  if (!(selection instanceof TextSelection)) return null;
+  if (direction === 1 ? selection.from < edge : selection.from > edge) return null;
+
+  return state.tr.setSelection(selection).scrollIntoView();
+}
+
+/**
+ * Where Esc lands when it leaves an object (law 3's last step): after it, or
+ * before it when the object ends the document. "Caret after the object" is the
+ * design's spelling of the common case, not a place that always exists, and a
+ * writer must never be left standing on a thing they asked to leave.
+ *
+ * Null only when the object is the entire document, where there is no prose to
+ * go home to. Esc then leaves the key alone rather than inventing a paragraph:
+ * writing to the shared document is not a dismissal.
+ */
+export function caretHomeFromObjectTransaction(
+  state: EditorState,
+  pos: number,
+): Transaction | null {
+  return (
+    caretBesideObjectTransaction(state, pos, 1) ?? caretBesideObjectTransaction(state, pos, -1)
+  );
+}
+
+/** Enter's `caret-inside` engagement: the first text position within. */
+export function caretInsideObjectTransaction(state: EditorState, pos: number): Transaction | null {
+  const node = state.doc.nodeAt(pos);
+  if (!node || node.isAtom || node.content.size === 0) return null;
+  const selection = TextSelection.near(state.doc.resolve(pos + 1), 1);
+  return state.tr.setSelection(selection).scrollIntoView();
+}
