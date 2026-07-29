@@ -36,16 +36,23 @@ expose extends it; it never forks the fence.
 - **The inline code mark is not on this row**, and neither is strikethrough or
   seven of the eight block types. Their writer surface is the formatting menu;
   the commands live here so both surfaces share one fence.
+- **The greying reason comes from the chrome kernel, not from the selection.**
+  `resolveChromeContext` already answers "what is the selection standing
+  inside" for the Esc chain and the context-menu router; the fence reads that
+  answer as a reason, so a caret in a diagram nested in a table cell greys with
+  the DIAGRAM's reason and a selected table greys as an object rather than as
+  one of its cells. Only where the document itself owns the context does what
+  the selection SPANS decide, and then each block is read through the same
+  resolver. Inspecting the selection here a second time is a second answer to a
+  question the kernel already answers.
 - **Block-type commands refuse non-text targets themselves.** The greyed
   button is the first fence, the command is the second, and the second is
   load-bearing: a selected figure converting to a heading is the accident this
   module exists to make unreachable (F6). ANY protected target in the selection
-  refuses the whole conversion, and protected is judged by node type, never by
-  `isTextblock` — a mermaid fence and a `jsx_leaf` are both text blocks. A
-  RENDERED object fence reads as an embedded block rather than a code block, so
-  the two commands a plain fence reverses (un-fence, turn into paragraph)
-  refuse it too: un-fencing a diagram destroys it the way converting one to a
-  heading does.
+  refuses the whole conversion. A RENDERED object fence reads as an embedded
+  block rather than a code block, so the two commands a plain fence reverses
+  (un-fence, turn into paragraph) refuse it too: un-fencing a diagram destroys
+  it the way converting one to a heading does.
 - **A control may not advertise what dispatch refuses.** Availability comes
   from the same predicate the command runs, and for marks that predicate is
   `editor.can().setMark`. A control that looks live and does nothing is the
@@ -62,11 +69,17 @@ expose extends it; it never forks the fence.
 
 - Reading enablement from `editor.can()` inside a component. The matrix is
   one function; call it.
+- Classifying the selection by hand — `instanceof NodeSelection`, an ancestor
+  walk for table cells, `isTextblock`. Every one of those has been wrong here:
+  a selected table is a `CellSelection`, and a mermaid fence and a `jsx_leaf`
+  are both text blocks.
 - Adding a contextual control (language selector, table verbs, alt text) to
   this row.
 - Rebuilding a surface another lane owns because the button is here.
 - Reviving `EditorLinkBubble` or any raise-on-click surface.
 
+→ contracts, the full reason matrix, and the two readings behind it:
+  [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`../../AGENTS.md`](../../AGENTS.md)
 → design of record: `editor-toolbar-split/interaction-model.md` §2 laws,
   §10 rulings 14 to 17

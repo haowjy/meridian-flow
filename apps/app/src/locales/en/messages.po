@@ -1836,8 +1836,8 @@ msgid "Parent:"
 msgstr "Parent:"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-msgid "Part of this selection keeps its own block type."
-msgstr "Part of this selection keeps its own block type."
+#~ msgid "Part of this selection keeps its own block type."
+#~ msgstr "Part of this selection keeps its own block type."
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
@@ -2626,6 +2626,10 @@ msgstr "This project has no chats yet."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This row is already at the edge."
 msgstr "This row is already at the edge."
+
+#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+msgid "This selection holds blocks that keep their own block type."
+msgstr "This selection holds blocks that keep their own block type."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This skill is no longer available in this chat — start a new chat to use the current version."
