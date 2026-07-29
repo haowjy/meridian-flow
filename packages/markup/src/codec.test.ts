@@ -654,6 +654,18 @@ describe("asset path resolution", () => {
       expect(codec.parse(`![](${src})`).blocks[0]?.firstChild?.attrs.src).toBe(src);
     }
   });
+
+  // A picture the editor has reserved a slot for but not uploaded yet carries
+  // `src: ""` — the one source that names nothing. The wire has to hold it
+  // without inventing an address and without throwing: an `asset:` ref minted
+  // before its asset exists would reach `pathForAsset` and take the whole
+  // document's serialization with it.
+  it("round-trips a source-less image instead of resolving one", () => {
+    const pending = paragraph(schema.node("image", { src: "", alt: "cover art", title: null }));
+    const serialized = codec.serialize([pending]);
+    expect(serialized).toBe("![cover art]()\n");
+    expect(parsedDoc(codec, serialized).toJSON()).toEqual(docFrom([pending]).toJSON());
+  });
 });
 
 describe("mdx codec round-trip corpus", () => {
