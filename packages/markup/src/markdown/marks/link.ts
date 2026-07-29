@@ -12,7 +12,7 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
     if (wikiTarget !== null && markdownText(text) === wikiTarget && attrs.title == null)
       return `[[${wikiTarget}]]`;
     const title = attrs.title == null ? "" : ` "${String(attrs.title).replaceAll('"', '\\"')}"`;
-    return `[${text.replaceAll("]", "\\]")}](${href}${title})`;
+    return `[${text.replaceAll("]", "\\]")}](${markdownLinkDestination(href)}${title})`;
   },
 
   parse(ast) {
@@ -29,4 +29,9 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
 
 function markdownText(value: string): string {
   return value.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+}
+
+function markdownLinkDestination(href: string): string {
+  if (!href.includes("\t")) return href;
+  return `<${href.replace(/[\\<>]/g, "\\$&")}>`;
 }

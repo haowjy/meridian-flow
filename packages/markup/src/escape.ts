@@ -1,13 +1,43 @@
 /** MDX ingress escaping for prose that contains JSX-significant characters. */
 
 import { fromMarkdown } from "mdast-util-from-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMdx from "remark-mdx";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 
 import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
 
 const RAW_HTML_CANDIDATE = /<(?:!--|!\[CDATA\[|[!?]|\/?[A-Za-z][A-Za-z0-9-]*(?=[\t\n\f\r />]))/;
+const MDX_SYNTAX_PARSER = unified().use(remarkParse).use(remarkGfm).use(remarkMdx);
 
 export function escapeProseForMdxIngress(text: string): string {
-  const lines = protectRawHtmlLiterals(text).split("\n");
+  const protectedText = protectRawHtmlLiterals(text);
+  const enclosedDestinations = findEnclosedDestinations(protectedText);
+  const candidate = escapePreparedMdxIngress(protectedText, enclosedDestinations.starts);
+  if (enclosedDestinations.starts.size === 0) return candidate;
+
+  try {
+    const parsed = MDX_SYNTAX_PARSER.parse(candidate);
+    if (containsExpectedResources(parsed, enclosedDestinations.resources)) return candidate;
+  } catch {
+    // A destination that MDX cannot consume stays escaped rather than becoming
+    // a JSX opener.
+  }
+  return escapePreparedMdxIngress(protectedText, new Set());
+}
+
+function escapePreparedMdxIngress(
+  text: string,
+  enclosedDestinationStarts: ReadonlySet<number>,
+): string {
+  const lines = text.split("\n");
+  const lineStarts: number[] = [];
+  let sourceOffset = 0;
+  for (const line of lines) {
+    lineStarts.push(sourceOffset);
+    sourceOffset += line.length + 1;
+  }
   const out: string[] = [];
   let fence: MarkdownFence | null = null;
   let htmlTableEnd = -1;
@@ -44,7 +74,7 @@ export function escapeProseForMdxIngress(text: string): string {
       continue;
     }
 
-    out.push(escapeProseSegment(line));
+    out.push(escapeProseSegment(line, lineStarts[index] ?? 0, enclosedDestinationStarts));
   }
   return out.join("\n");
 }
@@ -139,6 +169,8 @@ function encodeMarkdownPunctuation(value: string): string {
 
 interface MarkdownNode {
   type?: string;
+  title?: unknown;
+  url?: unknown;
   value?: unknown;
   children?: unknown[];
   position?: {
@@ -254,7 +286,11 @@ function tryConsumeWikilink(text: string, start: number): number | null {
   return close + 2 - start;
 }
 
-function escapeProseSegment(segment: string): string {
+function escapeProseSegment(
+  segment: string,
+  segmentOffset: number,
+  enclosedDestinationStarts: ReadonlySet<number>,
+): string {
   let out = "";
   let i = 0;
   while (i < segment.length) {
@@ -280,6 +316,11 @@ function escapeProseSegment(segment: string): string {
       }
     }
     if (segment[i] === "<") {
+      if (enclosedDestinationStarts.has(segmentOffset + i)) {
+        out += "<";
+        i++;
+        continue;
+      }
       if (segment.startsWith("<br/>", i)) {
         out += "<br/>";
         i += "<br/>".length;
@@ -304,4 +345,87 @@ function escapeProseSegment(segment: string): string {
     i++;
   }
   return out;
+}
+
+function findEnclosedDestinations(text: string): {
+  starts: ReadonlySet<number>;
+  resources: Array<{ type: "link" | "image"; url: string; title: string | null }>;
+} {
+  const starts = new Set<number>();
+  const resources: Array<{ type: "link" | "image"; url: string; title: string | null }> = [];
+  if (!text.includes("](<")) return { starts, resources };
+
+  visitMarkdownNodes(fromMarkdown(text), (node) => {
+    if (node.type !== "link" && node.type !== "image") return;
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (typeof start !== "number" || typeof end !== "number") return;
+    const resource = text.slice(start, end);
+    const destinationStart = enclosedDestinationStart(resource, node.title);
+    if (destinationStart === null || typeof node.url !== "string") return;
+    starts.add(start + destinationStart);
+    resources.push({
+      type: node.type,
+      url: node.url,
+      title: typeof node.title === "string" ? node.title : null,
+    });
+  });
+  return { starts, resources };
+}
+
+function containsExpectedResources(
+  tree: unknown,
+  expected: ReadonlyArray<{ type: "link" | "image"; url: string; title: string | null }>,
+): boolean {
+  const remaining = [...expected];
+  visitMarkdownNodes(tree, (node) => {
+    const match = remaining.findIndex(
+      (resource) =>
+        node.type === resource.type &&
+        node.url === resource.url &&
+        (node.title ?? null) === resource.title,
+    );
+    if (match !== -1) remaining.splice(match, 1);
+  });
+  return remaining.length === 0;
+}
+
+function enclosedDestinationStart(resource: string, title: unknown): number | null {
+  if (!resource.endsWith(")")) return null;
+  let cursor = skipMarkdownWhitespaceBackward(resource, resource.length - 1);
+
+  if (typeof title === "string") {
+    const close = resource[cursor - 1];
+    const open = close === ")" ? "(" : close;
+    if ((open !== '"' && open !== "'" && open !== "(") || close === undefined) return null;
+    cursor--;
+    while (cursor > 0) {
+      cursor--;
+      if (resource[cursor] === open && !isEscaped(resource, cursor)) break;
+    }
+    if (resource[cursor] !== open) return null;
+    cursor = skipMarkdownWhitespaceBackward(resource, cursor);
+  }
+
+  const destinationEnd = cursor - 1;
+  if (resource[destinationEnd] !== ">") return null;
+  for (let index = destinationEnd - 1; index >= 2; index--) {
+    if (resource[index] !== "<" || isEscaped(resource, index)) continue;
+    return resource[index - 1] === "(" && resource[index - 2] === "]" ? index : null;
+  }
+  return null;
+}
+
+function skipMarkdownWhitespaceBackward(value: string, start: number): number {
+  let index = start;
+  while (index > 0 && /[\t\n\r ]/.test(value[index - 1] ?? "")) index--;
+  return index;
+}
+
+function isEscaped(value: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor--) {
+    backslashes++;
+  }
+  return backslashes % 2 === 1;
 }

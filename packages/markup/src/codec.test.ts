@@ -157,6 +157,89 @@ describe("codec presets", () => {
   });
 
   it.each([
+    [
+      "link with an internal tab",
+      paragraph(t("label", [m("link", { href: "[[A\tB]]", title: null })])),
+    ],
+    [
+      "image with an internal tab",
+      paragraph(schema.node("image", { src: "[[A\tB]]", alt: "alt", title: null })),
+    ],
+    [
+      "titled link with an internal tab",
+      paragraph(t("label", [m("link", { href: "[[A\tB]]", title: "t" })])),
+    ],
+    [
+      "titled image with an internal tab",
+      paragraph(schema.node("image", { src: "[[A\tB]]", alt: "alt", title: "t" })),
+    ],
+    ["link with an outer tab", paragraph(t("X", [m("link", { href: "[[\tX]]", title: null })]))],
+    [
+      "image with an outer tab",
+      paragraph(schema.node("image", { src: "[[\tX]]", alt: "alt", title: null })),
+    ],
+  ])("keeps an HTAB-containing wikilink-looking %s parseable", (_case, block) => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      const serialized = wikilinkCodec.serialize([block]);
+      const reparsed = wikilinkCodec.parse(serialized).blocks;
+      expect(docFrom(reparsed).toJSON()).toEqual(docFrom([block]).toJSON());
+      expect(wikilinkCodec.serialize(reparsed)).toBe(serialized);
+    }
+  });
+
+  it.each([
+    ["link", "[a\\](<b](<[[A\tB]]>)"],
+    ["image", "![a\\](<b](<[[A\tB]]>)"],
+    ["image with a nested-link alt", "![a [b](<inner>)](<[[A\tB]]>)"],
+  ])("finds an enclosed %s destination after an escaped label delimiter", (_case, input) => {
+    for (const wikilinkCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components }),
+    ]) {
+      const parsed = wikilinkCodec.parse(input).blocks;
+      const serialized = wikilinkCodec.serialize(parsed);
+      const reparsed = wikilinkCodec.parse(serialized).blocks;
+      expect(docFrom(reparsed).toJSON()).toEqual(docFrom(parsed).toJSON());
+      expect(wikilinkCodec.serialize(reparsed)).toBe(serialized);
+    }
+  });
+
+  it.each([
+    ["link with a quoted title", '[x](<[[A\tB]]>\n"title")'],
+    ["image with a quoted title", '![x](<[[A\tB]]>\n"title")'],
+    ["link with a parenthesized title", "[x](<[[A\tB]]>\n(title))"],
+    ["image with a parenthesized title", "![x](<[[A\tB]]>\n(title))"],
+  ])("keeps a multiline enclosed %s parseable", (_case, input) => {
+    const markdownParsed = markdownCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    }).parse(input).blocks;
+    const wikilinkCodec = mdxCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+      components,
+    });
+    const parsed = wikilinkCodec.parse(input).blocks;
+
+    expect(docFrom(parsed).toJSON()).toEqual(docFrom(markdownParsed).toJSON());
+    expectStable(wikilinkCodec, input);
+  });
+
+  it("keeps an MDX-incompatible nested-link label deterministic", () => {
+    const wikilinkCodec = mdxCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+      components,
+    });
+    const input = "[a[b](<c)](<[[A\tB]]>)";
+
+    expectStable(wikilinkCodec, input);
+  });
+
+  it.each([
     "`[label]([[A B]])`",
     "```md\n[label]([[A B]])\n```",
   ])("does not rewrite labeled wikilink text inside code: %s", (input) => {

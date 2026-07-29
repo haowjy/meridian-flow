@@ -125,6 +125,12 @@ MDX ingress asks CommonMark to classify raw-HTML literal ranges, then hides
 their punctuation behind character references before the MDX parse. Valid
 PascalCase components, supported HTML tables, and the hard-break spelling stay
 active markup; syntax-looking text inside other raw HTML stays inert prose.
+Whole-source CommonMark-classified enclosed link/image destinations likewise
+keep their `<` delimiter active when an MDX syntax probe preserves the same
+resource, including multiline titles.
+If MDX cannot consume the resource (for example, a link label containing
+nested link syntax), ingress keeps the delimiter escaped and the result
+deterministic instead of exposing it as a JSX opener.
 
 ## Wikilinks
 
@@ -134,6 +140,10 @@ an alternate spelling. A parsed wikilink uses the ordinary ProseMirror `link`
 mark, so it needs no schema node or extra mark attributes. Resolution never
 occurs in the codec; unresolved targets round-trip unchanged. Outer whitespace
 inside the brackets is canonicalized away; whitespace within a target is kept.
+Horizontal tabs and line endings are not valid target content.
+Recognition belongs to the micromark label-end grammar and opaque mdast
+resource nodes; do not normalize wikilink-looking destinations with a
+source-wide scanner.
 When display text differs from the target, ordinary Markdown link and image
 resources may carry the same href, such as `[label]([[target]])` or
 `![alt]([[target]])`. Those resource spellings round-trip too; they do not make
