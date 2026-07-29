@@ -1,16 +1,24 @@
 /**
- * FigureNodeView — the React node view for the editor's custom `figure` node.
+ * FigureNodeView — what a captioned figure looks like in the manuscript.
  *
- * Renders an uploaded figure inside ProseMirror with loading/error/retry states
- * and refreshes object-store signed URLs before they expire. Owns the figure
- * node's in-editor presentation; the inline `image` node view lives in `images/`.
+ * Presentation and status, and nothing else: the picture, the caption and label
+ * the document holds, and whether the signed URL behind the picture is loading
+ * or failed. It refreshes object-store signed URLs before they expire.
+ *
+ * **No form.** Alt text, the caption, the label, and Replace are VERBS on the
+ * registered object surface — the ⋮ over the figure, with the words themselves
+ * edited in a small popover (§5.6, `features/editor/surfaces/objects`). A figure
+ * is the captioned block form of an image, not a second editing system: a
+ * permanent form under every figure is manuscript height the chapter pays for at
+ * rest, and a second owner for attributes the object surface already writes.
+ *
+ * The inline `image` node view lives in `images/`, and both are served by that
+ * one surface.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { NodeViewProps } from "@tiptap/core";
 import { NodeViewWrapper } from "@tiptap/react";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
-import { useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -21,13 +29,6 @@ type MeridianFigureExtensionOptions = {
   projectId?: string;
 };
 
-type FigureAttrs = {
-  src: string;
-  alt: string | null;
-  label: string | null;
-  caption: string;
-};
-
 function textAttr(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
@@ -36,45 +37,22 @@ function nullableTextAttr(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function getFigureAttrs(props: NodeViewProps): FigureAttrs {
-  const attrs = props.node.attrs;
-  return {
-    src: textAttr(attrs.src),
-    alt: nullableTextAttr(attrs.alt),
-    label: nullableTextAttr(attrs.label),
-    caption: textAttr(attrs.caption),
-  };
-}
-
-function getExtensionOptions(props: NodeViewProps): MeridianFigureExtensionOptions {
-  return (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
-}
-
 export function FigureNodeView(props: NodeViewProps) {
-  const attrs = getFigureAttrs(props);
-  const { projectId } = getExtensionOptions(props);
-  const [renderState, renderActions] = useAssetImageRenderState({
-    projectId,
-    src: attrs.src,
-  });
+  const src = textAttr(props.node.attrs.src);
+  const alt = nullableTextAttr(props.node.attrs.alt);
+  const label = nullableTextAttr(props.node.attrs.label);
+  const caption = textAttr(props.node.attrs.caption);
+  const { projectId } = (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
+  const [renderState, renderActions] = useAssetImageRenderState({ projectId, src });
 
   const selectedClass = props.selected ? "border-border-focus shadow-card" : "border-border-subtle";
   const renderUrl = renderState.url;
-  const editable = props.editor.isEditable;
-  const altSummary = useMemo(() => attrs.alt?.trim() || t`No alt text yet`, [attrs.alt]);
-
-  const updateAttr = useCallback(
-    (name: keyof Pick<FigureAttrs, "alt" | "label" | "caption">, value: string) => {
-      props.updateAttributes({ [name]: name === "caption" ? value : value.trim() || null });
-    },
-    [props],
-  );
 
   return (
     <NodeViewWrapper
       as="figure"
       data-type="figure"
-      data-label={attrs.label ?? undefined}
+      data-label={label ?? undefined}
       className={cn("meridian-figure-node", selectedClass)}
       draggable={false}
     >
@@ -82,7 +60,7 @@ export function FigureNodeView(props: NodeViewProps) {
         {renderUrl ? (
           <img
             src={renderUrl}
-            alt={attrs.alt ?? ""}
+            alt={alt ?? ""}
             onLoad={renderActions.imageDisplayed}
             onError={renderActions.imageLoadFailed}
             draggable={false}
@@ -117,51 +95,14 @@ export function FigureNodeView(props: NodeViewProps) {
         ) : null}
       </div>
 
-      <figcaption className="meridian-figure-node__caption">
-        {attrs.label ? <span className="meridian-figure-node__label">{attrs.label}</span> : null}
-        <span>{attrs.caption || <Trans>Add a caption for this figure.</Trans>}</span>
-      </figcaption>
-
-      <div className="meridian-figure-node__meta">
-        <span className="meridian-figure-node__alt">
-          <Trans>Alt: {altSummary}</Trans>
-        </span>
-      </div>
-
-      {editable ? (
-        <div className="meridian-figure-node__editor" contentEditable={false}>
-          <label>
-            <span>
-              <Trans>Alt text</Trans>
-            </span>
-            <input
-              value={attrs.alt ?? ""}
-              onChange={(event) => updateAttr("alt", event.currentTarget.value)}
-              placeholder={t`Describe the image for accessibility`}
-            />
-          </label>
-          <label>
-            <span>
-              <Trans>Label</Trans>
-            </span>
-            <input
-              value={attrs.label ?? ""}
-              onChange={(event) => updateAttr("label", event.currentTarget.value)}
-              placeholder={t`fig:result`}
-            />
-          </label>
-          <label className="meridian-figure-node__caption-input">
-            <span>
-              <Trans>Caption</Trans>
-            </span>
-            <textarea
-              value={attrs.caption}
-              onChange={(event) => updateAttr("caption", event.currentTarget.value)}
-              placeholder={t`Summarize what this figure shows`}
-              rows={2}
-            />
-          </label>
-        </div>
+      {/* Absent while there is nothing to say, rather than a prompt in the
+          chapter: an empty caption is an empty caption, and the verb that fills
+          it is in the ⋮. */}
+      {label || caption ? (
+        <figcaption className="meridian-figure-node__caption">
+          {label ? <span className="meridian-figure-node__label">{label}</span> : null}
+          {caption ? <span>{caption}</span> : null}
+        </figcaption>
       ) : null}
     </NodeViewWrapper>
   );
