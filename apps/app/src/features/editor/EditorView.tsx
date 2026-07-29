@@ -21,7 +21,7 @@ import {
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { Editor, EditorOptions, JSONContent } from "@tiptap/core";
-import type { Mapping } from "@tiptap/pm/transform";
+import type { Transaction } from "@tiptap/pm/state";
 import { EditorContent } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import {
@@ -38,6 +38,7 @@ import {
 
 import { uploadFigure } from "@/client/api/figures-api";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import { anchorPosition, followAnchor } from "@/core/editor/anchors";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { SlashCommandItem } from "@/core/editor/extensions/slash";
@@ -476,16 +477,26 @@ function ActiveSessionEditorView({
   const handleImageFile = useCallback(
     async (file: File, insertPos?: number): Promise<void> => {
       const targetEditor = editorRef.current;
-      // The writer keeps typing during the upload, so the drop/paste position
-      // has to ride the same mapping every other transaction does.
-      let mappedPos = insertPos;
-      const mapPosition = ({ transaction }: { transaction: { mapping: Mapping } }) => {
-        if (mappedPos !== undefined) mappedPos = transaction.mapping.map(mappedPos, 1);
+      // An upload takes seconds, and the manuscript does not wait: the writer
+      // keeps typing, a peer keeps writing, an AI write may land. The drop
+      // point is held as an anchor for the whole of it, because a peer's write
+      // replaces the document wholesale and a mapped number would land the
+      // picture at the top of the chapter.
+      let hold =
+        targetEditor && insertPos !== undefined
+          ? anchorPosition(targetEditor.state, insertPos)
+          : null;
+      const followDrop = ({ transaction }: { transaction: Transaction }) => {
+        if (!hold || !targetEditor) return;
+        hold = followAnchor(targetEditor.state, hold, transaction.mapping);
       };
-      if (targetEditor && mappedPos !== undefined) targetEditor.on("transaction", mapPosition);
+      if (targetEditor && hold) targetEditor.on("transaction", followDrop);
       try {
         const attrs = await uploadImageFile(file);
-        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
+        if (targetEditor) targetEditor.off("transaction", followDrop);
+        // The drop point outlived the words it was dropped into: insert at the
+        // caret rather than at a place that no longer exists.
+        const mappedPos = hold?.from;
         // The upload outlives the connection that started it: re-read the fence
         // at insert time so a document fenced mid-upload takes no write.
         const inserted =
@@ -501,7 +512,7 @@ function ActiveSessionEditorView({
               },
         );
       } catch {
-        if (targetEditor && mappedPos !== undefined) targetEditor.off("transaction", mapPosition);
+        if (targetEditor) targetEditor.off("transaction", followDrop);
       }
     },
     [session, uploadImageFile],
