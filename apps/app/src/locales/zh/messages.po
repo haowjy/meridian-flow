@@ -1432,6 +1432,10 @@ msgstr ""
 msgid "Monthly usage"
 msgstr ""
 
+#: src/features/editor/chrome/OverlayIconRow.tsx
+msgid "More"
+msgstr ""
+
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Move column left"
 #~ msgstr ""

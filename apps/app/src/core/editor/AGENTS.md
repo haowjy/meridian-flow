@@ -42,5 +42,16 @@ change-trail events, not manuscript content.
 - Do not persist, branch-project, or locally author peer marks. Resolve
   awareness cursor colors to concrete RGB before publication.
 
+- Control-surface policy is the chrome kernel's, not an extension's private
+  habit. `ChromeKernelExtension` owns the Esc chain, the right-click claim
+  table, deepest-context resolution, and gesture suppression; object physics
+  reads one registration table for what a selectable object is. An extension
+  that wants a key, a menu, or a dismissal registers with the kernel rather
+  than binding it. See [`chrome/AGENTS.md`](chrome/AGENTS.md) and
+  [`objects/AGENTS.md`](objects/AGENTS.md).
+
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for session, peer-mark, draft-review,
 and navigation contracts.
+
+→ [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
+→ [`objects/AGENTS.md`](objects/AGENTS.md) — object physics

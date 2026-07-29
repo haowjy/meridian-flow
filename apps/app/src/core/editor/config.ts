@@ -18,6 +18,7 @@ import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { AgentNameStore } from "./agent-name-store";
+import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
@@ -51,6 +52,7 @@ import {
 } from "./extensions/SlashCommandExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
+import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import type { SessionMarkerStore } from "./session-marker-store";
@@ -99,6 +101,32 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 };
 
 const lowlight = createLowlight(common);
+
+/**
+ * Chrome extension registration list — the append-only seam every surface
+ * lane touches.
+ *
+ * One line per lane, in this order, and nothing else: a surface's behavior
+ * lives in its own module and reaches the editor through the kernel's
+ * registries (`getEditorChrome`, `registerObjectEngagement`), not through a
+ * new configuration knob here.
+ *
+ * Order is precedence. The kernel comes first because it resolves the context
+ * everything below reads; object physics next because it is the deepest thing
+ * in the document. Above all of it, unlisted, sits `UndoRedoKeymapExtension`
+ * at TipTap priority 1100 (ruling 17) — undo is the writer's recovery over LLM
+ * writes and no surface may shadow it.
+ */
+const EDITOR_CHROME_EXTENSIONS: Extensions = [
+  ChromeKernelExtension,
+  ObjectPhysicsExtension,
+  // L-A formatting menu (M4)
+  // L-B object controls + diagram (M5)
+  // L-C table chrome (M6)
+  // L-D slash (M8)
+  // L-E block movement (M9)
+  // L-F links (M7)
+];
 
 /**
  * Collaboration cursor default. The composition path resolves its token before
@@ -289,6 +317,9 @@ export function createStandaloneEditorExtensions({
     ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
     LiveRangeNavigationExtension,
     PassageHighlightExtension,
+    // Chrome mounts only on the document schema: a code file is one code
+    // block with no objects and no surfaces to own.
+    ...EDITOR_CHROME_EXTENSIONS,
   ];
 }
 
