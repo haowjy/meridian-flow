@@ -198,6 +198,14 @@ export function createEditorChrome(): {
     },
 
     openLayer({ id, parentId = null, close, dismissal = "kernel" }) {
+      // Law 4: one transient surface. A surface summoned at the top level
+      // REPLACES whatever was there — the slash menu and the link form both
+      // staying live left two inputs competing for the same keystrokes. A
+      // layer opened inside another (a submenu, a dialog's source pane) is
+      // not a rival; it is part of the surface that is already open, which is
+      // exactly what `parentId` distinguishes.
+      if (parentId === null) replaceOpenTransients();
+
       // One id, one open layer: a surface that re-registers without releasing
       // would leave a ghost step in the walk home.
       const key = layerRecords.has(id) ? `${id}#${layerSequence}` : id;
@@ -320,6 +328,29 @@ export function createEditorChrome(): {
     active.sort((a, b) => depthOf(a) - depthOf(b) || a.sequence - b.sequence);
     layers = active.map((record) => ({ id: record.id }));
     notify();
+  }
+
+  /**
+   * Ask every open top-level surface to close, and take its subtree out of the
+   * walk with it. Marked before the call, like `closeTopLayer`, so a surface
+   * whose dismissal never lands cannot keep the chain pointed at it.
+   */
+  function replaceOpenTransients(): void {
+    const roots = [...layerRecords.values()].filter(
+      (record) => record.parentId === null && !record.closing,
+    );
+    if (roots.length === 0) return;
+
+    const replaced = new Set(roots.map((record) => record.id));
+    for (const record of layerRecords.values()) {
+      if (record.parentId !== null && replaced.has(record.parentId)) replaced.add(record.id);
+    }
+    for (const record of layerRecords.values()) {
+      if (replaced.has(record.id)) record.closing = true;
+    }
+    reorderLayers();
+
+    for (const root of roots) root.close();
   }
 
   function topRecord(): ChromeLayerRecord | null {

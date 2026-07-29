@@ -52,6 +52,10 @@ or suppress arbiter beside it.
   registered `dismissal: "kernel"` (the default). A surface that declares
   `"self"` without actually listening will survive Escape, and "nobody is ever
   trapped" stops being true quietly.
+- **Opening a top-level layer closes the one that was open.** Law 4 lives in
+  `openLayer`, so no surface needs a close call for a rival it cannot see. Say
+  `parentId` for anything opened INSIDE another surface, or it will be read as
+  a replacement.
 - **A layer says who it is inside, not when it arrived.** React mounts child
   effects before parent effects, so registration order is the reverse of
   visual depth for the one case the design mandates (a new empty diagram opens

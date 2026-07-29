@@ -119,6 +119,24 @@ describe("resolveChromeContext", () => {
     });
   });
 
+  it("gives a SELECTED plain fence to the source block, not to the document", () => {
+    const instance = mount([
+      paragraph("before"),
+      { type: "code_block", attrs: { language: "ts" }, content: [{ type: "text", text: "x" }] },
+    ]);
+    const pos = positionOf(instance, "code_block");
+    instance.view.dispatch(
+      instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, pos)),
+    );
+
+    // Reporting the document here left Esc with nothing to walk out of and
+    // handed Enter to the base keymap.
+    const context = resolveChromeContext(instance.state);
+    expect(context.owner).toBe("source-block");
+    expect(context.pos).toBe(pos);
+    expect(context.nodeType).toBe("code_block");
+  });
+
   it("treats a selected mermaid fence as an object, not a source block", () => {
     const instance = mount([
       {
