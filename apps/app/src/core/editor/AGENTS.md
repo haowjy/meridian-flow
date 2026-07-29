@@ -41,6 +41,11 @@ change-trail events, not manuscript content.
   time; storing one puts an expiring value into the shared document.
 - Do not persist, branch-project, or locally author peer marks. Resolve
   awareness cursor colors to concrete RGB before publication.
+- Markdown autoformat is mostly inherited: TipTap's own input rules already
+  resolve the parity schema and already refuse to run inside code. Check
+  whether a trigger is already firing before writing a rule for it, because a
+  second rule races the first. `MarkdownAutoformatExtension` owns the
+  exceptions and its test is the truth table for the whole surface.
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for session, peer-mark, draft-review,
 and navigation contracts.

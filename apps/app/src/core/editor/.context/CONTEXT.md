@@ -206,6 +206,47 @@ Yjs document session. It must stay structurally aligned with
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
 
+## Markdown autoformat while typing (ruling 18)
+
+The surface is mostly inherited. TipTap's node and mark extensions ship GFM
+input rules, its engine refuses to run any of them inside a node or mark whose
+spec is `code`, and it completes a rule on Enter as well as on the trigger
+character. Because the parity wrappers rename types and nothing else, those
+rules resolve `strong`, `em`, `bullet_list`, `code_block` on their own. So the
+whole ruled set — `# `…`###### `, `**b**` / `*i*` / `~~s~~` / `` `c` ``, `> `,
+`- ` / `* ` / `+ `, `1. `, `---`, and the fence — is live without a second set
+of rules to race the first.
+
+Two places the live surface is wider than ruling 18's wording, deliberately.
+Headings go to `######` rather than stopping at `###`: the schema, the codec and
+every paste path already carry h4-h6, so denying the trigger would leave a
+writer who typed valid markdown holding literal `#### `. Fences accept `~~~` as
+well as ``` , and bullets accept `+`, for the same reason — both are GFM the
+codec reads, and both produce the same node.
+
+`MarkdownAutoformatExtension` owns only what inheritance gets wrong, and
+`MarkdownAutoformatExtension.test.ts` is the truth table for the surface as a
+whole, inherited rules included: a dependency upgrade that drops a trigger has
+to fail there rather than in a manuscript.
+
+- The code fence takes the whole GFM info string, lowercased. TipTap's rule
+  captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
+  block at all. Lowercasing is what makes the attr a usable key: highlighting
+  and the plain-editable `mermaid` block both look it up. The fence rules live
+  here and `MeridianCodeBlockLowlight` yields its own.
+- Backspace reverts the transform the last keystroke made. TipTap reaches for
+  `undoInputRule` too, but from the core keymap, which sits below every node
+  extension's: CodeBlock's "delete the empty block" binding got to a just-opened
+  fence first and swallowed the ``` that opened it. A rule completed by Enter
+  restores a literal newline along with its source, and that newline comes back
+  out — Enter is a key, not a character the writer typed.
+
+Attribute names are parity too, not just type names, and an inherited rule that
+writes TipTap's name loses the value: the ordered-list rule writes `start` where
+the schema says `order`, so every list opened at one whatever number was typed.
+`MeridianOrderedList` renames it across the input rule and the DOM mapping
+both. Expect the same shape from any other inherited rule that carries attrs.
+
 ## Draft review — projection-only view extension
 
 Colocated under `extensions/inline-review/`. The extension is a ProseMirror
