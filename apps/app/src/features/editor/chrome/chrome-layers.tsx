@@ -46,11 +46,14 @@ export type ChromeLayerBinding = {
    * to the trigger, which is right for a page and wrong for a manuscript: the
    * writer never left the sentence, so the next Space must be a space.
    *
-   * Unless another surface is still open. A menu item that opens a form leaves
-   * exactly that behind, and handing the caret back then pulls focus out of a
-   * surface on the frame it appeared — which Radix reads as an outside
-   * interaction and dismisses. So a close returns the caret only when it was
-   * the last thing on screen.
+   * Unless the prose cannot take it. Two ways that happens: another surface is
+   * still open — a menu item that opened a form leaves exactly that behind, and
+   * handing the caret back pulls focus out of a surface on the frame it
+   * appeared, which Radix reads as an outside interaction and dismisses — or
+   * the page itself is behind a modal scrim, `aria-hidden` and untouchable, in
+   * which case the dialog drags focus back asynchronously and lands it on
+   * whatever happens to be first inside. Either way the caret stays where the
+   * writer left it.
    */
   onCloseAutoFocus: (event: Event) => void;
   /** Wrap whatever this surface renders, so a layer inside it knows its parent. */
@@ -113,11 +116,15 @@ export function useChromeLayer(
   const onCloseAutoFocus = useCallback(
     (event: Event) => {
       event.preventDefault();
+      if (!editor || editor.isDestroyed) return;
       // A layer being dismissed may not have released yet, so "another
       // surface" means any layer that is not this one.
       const successor = chrome?.layers.some((layer) => layer.id !== layerId);
       if (successor) return;
-      if (editor && !editor.isDestroyed) editor.commands.focus();
+      // A modal surface that is not a chrome layer leaves no successor to
+      // find, and still hides the manuscript behind it.
+      if (editor.view.dom.closest('[aria-hidden="true"], [inert]')) return;
+      editor.commands.focus();
     },
     [chrome, editor, layerId],
   );

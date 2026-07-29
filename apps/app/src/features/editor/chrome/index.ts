@@ -39,8 +39,10 @@ export {
   type OverlayIconRowItem,
   type OverlayIconRowProps,
 } from "./OverlayIconRow";
+export { type AnchorRect, useAnchorRect } from "./useAnchorRect";
 export {
   useChromeContext,
   useChromeSuppressed,
   useEditorChrome,
+  useEditorRevision,
 } from "./useEditorChrome";

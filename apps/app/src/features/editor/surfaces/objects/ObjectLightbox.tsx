@@ -1,0 +1,288 @@
+/**
+ * The lightbox an object opens over the page (Q1, mockup 04).
+ *
+ * A popup, never a route and never a takeover: the chapter stays visible and
+ * mounted behind the scrim, so the object's place in the document is seen
+ * rather than stated, and X or Esc lands the writer back exactly where they
+ * were reading.
+ *
+ * The viewer face is the dialog's whole job. Revision is not — writers revise
+ * machine-authored diagrams through the normal chat (the ask-AI hook was ruled
+ * out), so the only editing surface here is the demoted source escape hatch
+ * behind ⋮, which opens the raw Mermaid beside the live preview.
+ */
+
+import { t } from "@lingui/core/macro";
+import type { Editor } from "@tiptap/core";
+import { Code2, Copy, Download, MoreVertical } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+
+import { IconButton } from "@/components/ui/icon-button";
+import { useMermaidSvg } from "@/core/editor/MermaidCodeBlock";
+import {
+  EditorDialog,
+  EditorMenu,
+  EditorMenuItem,
+  EditorMenuSeparator,
+  useChromeLayer,
+} from "@/features/editor/chrome";
+
+import { useFenceDraft } from "./fence-draft";
+import { type ObjectSurfaceTarget, renderedImage } from "./object-anchors";
+import { copyText, downloadPng } from "./object-commands";
+import { ViewerCanvas } from "./ViewerCanvas";
+import { useVerbFeedback, VerbNoticePill } from "./verb-feedback";
+
+/** Long enough to read as a pause in typing, short enough to feel live. */
+const PREVIEW_DEBOUNCE_MS = 350;
+
+/** Past the dialog's and the menu's focus restoration, under a blink. */
+const SOURCE_FOCUS_DELAY_MS = 120;
+
+export type ObjectLightboxProps = {
+  editor: Editor;
+  target: ObjectSurfaceTarget | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The source escape hatch — a layer of its own inside the dialog. */
+  sourceOpen: boolean;
+  onSourceOpenChange: (open: boolean) => void;
+};
+
+export function ObjectLightbox({
+  editor,
+  target,
+  open,
+  onOpenChange,
+  sourceOpen,
+  onSourceOpenChange,
+}: ObjectLightboxProps) {
+  const isDiagram = target?.kind === "diagram";
+
+  return (
+    <EditorDialog
+      editor={editor}
+      id="object-lightbox"
+      open={open && target !== null}
+      onOpenChange={onOpenChange}
+      title={isDiagram ? t`Diagram` : t`Image`}
+      className="meridian-object-lightbox"
+    >
+      {target && isDiagram ? (
+        <DiagramFace
+          editor={editor}
+          target={target}
+          sourceOpen={sourceOpen}
+          onSourceOpenChange={onSourceOpenChange}
+        />
+      ) : null}
+      {target && !isDiagram ? <ImageFace target={target} /> : null}
+    </EditorDialog>
+  );
+}
+
+/**
+ * Right padding leaves the dialog's own close control its corner: two controls
+ * sharing one corner is how a writer presses the other one.
+ */
+function LightboxHeader({
+  title,
+  menu,
+  notice,
+}: {
+  title: string;
+  menu?: ReactNode;
+  notice?: ReactNode;
+}) {
+  return (
+    <div className="meridian-lightbox-header">
+      <span className="font-medium text-ink-muted text-sm">{title}</span>
+      <span className="flex-1" />
+      {/* Inside the dialog, because the page's own notices are behind the
+          scrim and a writer who just pressed something is looking here. */}
+      {notice}
+      {menu}
+    </div>
+  );
+}
+
+function DiagramFace({
+  editor,
+  target,
+  sourceOpen,
+  onSourceOpenChange,
+}: {
+  editor: Editor;
+  target: ObjectSurfaceTarget;
+  sourceOpen: boolean;
+  onSourceOpenChange: (open: boolean) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { notice, run } = useVerbFeedback();
+  // The pane's value and its change handler come from one place, because
+  // interpreting a textarea's string as an edit needs to know which version of
+  // the document it was typed against.
+  const draft = useFenceDraft(editor, target);
+  const source = draft.value;
+  // The preview follows a pause in typing rather than every keystroke: mermaid
+  // reparses the whole diagram per render, and a half-typed arrow is not a
+  // diagram yet.
+  const settled = useDebounced(source, PREVIEW_DEBOUNCE_MS);
+  const { svg, error } = useMermaidSvg(settled);
+
+  // The pane is its own layer, which is what makes law 3's walk fall out of one
+  // rule: Esc closes the source, then the dialog, then leaves the diagram
+  // selected on the page.
+  useChromeLayer(editor, {
+    id: "diagram-source",
+    open: sourceOpen,
+    close: () => onSourceOpenChange(false),
+  });
+
+  // Ctrl+Enter is the escape hatch's keyboard twin (§4), inside the dialog as
+  // well as on the selected block.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+      event.preventDefault();
+      onSourceOpenChange(!sourceOpen);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onSourceOpenChange, sourceOpen]);
+
+  return (
+    <>
+      <LightboxHeader
+        title={t`Diagram`}
+        notice={<VerbNoticePill notice={notice} />}
+        menu={
+          <EditorMenu
+            editor={editor}
+            id="diagram-lightbox-menu"
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            align="end"
+            trigger={
+              <IconButton type="button" size="sm" variant="ghost" aria-label={t`More`}>
+                <MoreVertical aria-hidden />
+              </IconButton>
+            }
+          >
+            <EditorMenuItem onSelect={() => onSourceOpenChange(!sourceOpen)}>
+              <Code2 aria-hidden />
+              {sourceOpen ? t`Hide source` : t`Edit source`}
+            </EditorMenuItem>
+            <EditorMenuSeparator />
+            <EditorMenuItem onSelect={() => run(copyText(source), t`Mermaid source copied`)}>
+              <Copy aria-hidden />
+              {t`Copy Mermaid source`}
+            </EditorMenuItem>
+            {/* Absent rather than disabled while nothing has rendered: there is
+                no image to hand over yet, and law 5 prefers the gap. */}
+            {svg ? (
+              <EditorMenuItem
+                onSelect={() => run(downloadPng(svg, "diagram.png"), t`Image downloaded`)}
+              >
+                <Download aria-hidden />
+                {t`Download image`}
+              </EditorMenuItem>
+            ) : null}
+          </EditorMenu>
+        }
+      />
+
+      <div className={sourceOpen ? "meridian-lightbox-split" : "meridian-lightbox-body"}>
+        {sourceOpen ? (
+          <SourcePane
+            value={source}
+            onChange={draft.onChange}
+            // Only report a failure the writer can act on: a message about
+            // source they have already changed is noise.
+            error={settled === source ? error : null}
+          />
+        ) : null}
+        <ViewerCanvas contentKey={svg ?? ""}>
+          {svg ? (
+            <div
+              className="meridian-diagram"
+              // Mermaid's strict security mode sanitizes authored labels before producing the SVG.
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          ) : null}
+        </ViewerCanvas>
+      </div>
+    </>
+  );
+}
+
+function SourcePane({
+  value,
+  onChange,
+  error,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  error: string | null;
+}) {
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // The writer asked for this pane and it exists to be typed in, so it takes
+  // the caret — but it has to win an argument first. The dialog's focus scope
+  // and the ⋮ menu that opened the pane both restore focus asynchronously on
+  // their way out, so a focus set now is taken back a moment later. Claiming
+  // it once the churn has passed is the whole trick; measured in the browser.
+  useEffect(() => {
+    const timer = window.setTimeout(() => areaRef.current?.focus(), SOURCE_FOCUS_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="meridian-lightbox-source">
+      <textarea
+        ref={areaRef}
+        className="meridian-lightbox-source-text"
+        spellCheck={false}
+        aria-label={t`Mermaid source`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {error ? (
+        <p className="meridian-lightbox-parse-note" role="status">
+          {error}
+          <span className="block text-ink-subtle">{t`Showing the last good render.`}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ImageFace({ target }: { target: ObjectSurfaceTarget }) {
+  const image = renderedImage(target.element);
+  const source = image?.currentSrc || image?.src || "";
+  const alt = image?.alt ?? "";
+
+  return (
+    <>
+      <LightboxHeader title={alt || t`Image`} />
+      <div className="meridian-lightbox-body">
+        {/* A photograph opens at its own size at most: Fit that enlarges a small
+            raster to fill the frame just shows the writer bigger pixels. */}
+        <ViewerCanvas contentKey={source} maxFitScale={1}>
+          {source ? <img src={source} alt={alt} draggable={false} /> : null}
+        </ViewerCanvas>
+      </div>
+    </>
+  );
+}
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(value), ms);
+    return () => window.clearTimeout(timer);
+  }, [value, ms]);
+
+  return settled;
+}

@@ -177,6 +177,24 @@ Yjs document session. It must stay structurally aligned with
   in-page source escape hatch, so the caret lands in a hidden element and drops
   keystrokes. The rebuild re-registers the node view together with the diagram
   dialog that owns source access; caret-enters-source is not coming back.
+- `SlashCommandExtension` is a catalog seam with no trigger: the item shape,
+  the fuzzy filter, and a read-at-open catalog getter supplied by the mounting
+  surface. The trigger plugin was deleted with the condemned chrome and the
+  rebuild owns its replacement, so typing `/` currently inserts a literal slash.
+- A `code_block` whose `language` is `mermaid` renders as a diagram and hides
+  its own `<pre>`; every other language is the fence itself.
+  `MermaidCodeBlock.tsx` is that node view and `mermaid-render.ts` is the async
+  parser edge behind it. The hazard that once kept the view unregistered — a
+  caret in a hidden element eating keystrokes — is answered inside the view:
+  the source comes back whenever a live caret is inside the node, and a fence
+  that has never rendered shows itself so a broken diagram stays reachable.
+  Source access otherwise belongs to the diagram dialog
+  (`features/editor/surfaces/objects`); caret-enters-source is not coming back.
+- `useMermaidSvg` keeps the LAST GOOD svg across a failing edit, which is what
+  lets the dialog show a live preview beside source that does not parse yet.
+  Every consumer gets its own render id: mermaid writes it into the markup, and
+  two faces of one diagram sharing an id collide over the arrow markers they
+  reference.
 - Clipboard HTML is rebuilt, not scrubbed: `sanitize-paste.ts` copies allowed
   elements into a fresh document with an attribute allowlist, so a
   newly-supported browser attribute is unsafe by default. `createEditorConfig`

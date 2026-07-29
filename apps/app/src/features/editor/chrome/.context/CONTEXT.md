@@ -74,6 +74,13 @@ focusable, and its rows cancel their own mousedown.
 Menu parts are re-exported with editor names (`EditorMenuItem`,
 `EditorMenuSeparator`, `EditorMenuSub`, …) so a lane has one import.
 
+**Focus returns to the prose unless the prose cannot take it.** `useChromeLayer`
+gives every surface an `onCloseAutoFocus` that stands down in two cases: a
+successor layer is still open (a menu item that opened a form), or the
+manuscript is behind a modal scrim (`aria-hidden` / `inert`), where the dialog
+would drag focus back asynchronously and land it on whatever is first inside.
+Either way the caret stays where the writer left it.
+
 Opening from inside a `contextmenu` handler works: Radix does not dismiss on
 the pointer sequence that produced the event. Verified in the browser across
 the whole split matrix.
@@ -90,6 +97,10 @@ the whole split matrix.
   overflow={(chip) => <EditorMenu trigger={chip} …>…</EditorMenu>}
 />
 ```
+
+The chip handed to `overflow` is a real trigger: it spreads whatever Radix
+merges onto it (`aria-haspopup`, the press handlers, the ref). A chip that
+swallowed those would look like a menu and behave like a dead button.
 
 `anchor` and `visible` are separate on purpose. `anchor` is which object is
 being approached; `visible` fades the row over it. A row that unmounted on the
@@ -134,6 +145,7 @@ return layer.scope(<div>{children}</div>);
 const context = useChromeContext(editor);     // the deepest owner, law 4
 const suppressed = useChromeSuppressed(editor); // drag or sweep in flight
 const chrome = useEditorChrome(editor);       // registrations; may be null
+useEditorRevision(editor);                    // re-render on every change
 ```
 
 Reach for these by module (`./useEditorChrome`, `./EditorMenu`) rather than
@@ -141,6 +153,15 @@ through `chrome/index.ts`. That barrel also carries `chrome-surfaces`, the
 registry every surface is listed in, so a surface importing the barrel closes a
 module cycle — Vite reports the registry's own export being read before
 initialization, and the lane's surface never mounts.
+`useEditorRevision` is the blunt one, for chrome that reads the document
+directly — a toolbar's lit states, a chip cluster's language label. Anything
+that only needs the resolved context or suppression reads those stores instead:
+they notify when their answer changes, not when the document does.
+`useAnchorRect(element)` is the shared measurement behind every inside-corner
+surface. It follows an element through scroll (capture phase, because the
+manuscript scrolls in a pane) and resize, coalesces to one measurement per
+frame, and keeps its result identity-stable so a scroll that does not move the
+anchor costs no render.
 
 `useChromeContext` and `useChromeSuppressed` are `useSyncExternalStore`
 readings of one store, so two surfaces can never disagree about what owns

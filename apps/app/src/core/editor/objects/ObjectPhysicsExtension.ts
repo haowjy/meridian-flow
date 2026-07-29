@@ -190,6 +190,24 @@ export const ObjectPhysicsExtension = Extension.create({
             view.focus();
             return true;
           },
+
+          /**
+           * The pointer's twin of Enter (§5.2, §5.6): a double-click on an
+           * object engages it, with no click-to-select step in between.
+           *
+           * The same registered engagement Enter uses, so a lane wires its
+           * surface once and both doors open it. In prose this stands aside
+           * and the browser's word selection happens as it always did.
+           */
+          handleDoubleClickOn(view, _pos, node, nodePos, _event, direct) {
+            if (!direct || !isEditorObject(node)) return false;
+            const selected = selectObjectTransaction(view.state, nodePos);
+            if (!selected) return false;
+            // Select first: engaging leaves the object selected underneath, so
+            // closing its surface lands on the object rather than past it.
+            view.dispatch(selected);
+            return engage(view.state, view.dispatch.bind(view), engagements);
+          },
         },
       }),
     ];

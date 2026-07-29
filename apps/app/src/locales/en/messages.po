@@ -531,6 +531,10 @@ msgstr "Code blocks take no formatting."
 msgid "Code blocks take no links."
 msgstr "Code blocks take no links."
 
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Code copied"
+msgstr "Code copied"
+
 #: src/features/editor/EditorView.tsx
 msgid "codeblock"
 msgstr "codeblock"
@@ -592,6 +596,19 @@ msgstr "Copied"
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Copy"
 msgstr "Copy"
+
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Copy code"
+msgstr "Copy code"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Copy image"
+msgstr "Copy image"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Copy Mermaid source"
+msgstr "Copy Mermaid source"
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
@@ -754,6 +771,8 @@ msgid "Default alignment"
 msgstr "Default alignment"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -800,6 +819,7 @@ msgid "Dev-login failed"
 msgstr "Dev-login failed"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Diagram"
 msgstr "Diagram"
 
@@ -849,6 +869,11 @@ msgstr "Documents the AI reads in this chat appear here."
 msgid "Download {name}"
 msgstr "Download {name}"
 
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Download image"
+msgstr "Download image"
+
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Draft"
 msgstr "Draft"
@@ -883,8 +908,15 @@ msgid "Drop image to insert it"
 msgstr "Drop image to insert it"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
 msgid "Duplicate"
 msgstr "Duplicate"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Edit source"
+msgstr "Edit source"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Edited"
@@ -1038,6 +1070,10 @@ msgstr "Files"
 msgid "First name"
 msgstr "First name"
 
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Fit"
+msgstr "Fit"
+
 #: src/features/editor/EditorView.tsx
 msgid "flowchart"
 msgstr "flowchart"
@@ -1100,6 +1136,10 @@ msgstr "Heading 2"
 msgid "Heading 3"
 msgstr "Heading 3"
 
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Hide source"
+msgstr "Hide source"
+
 #: src/features/chat/placeholders.ts
 msgid "Hold on…"
 msgstr "Hold on…"
@@ -1134,6 +1174,7 @@ msgid "Idle"
 msgstr "Idle"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Image"
 msgstr "Image"
 
@@ -1141,9 +1182,18 @@ msgstr "Image"
 msgid "Image artifact"
 msgstr "Image artifact"
 
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Image copied"
+msgstr "Image copied"
+
 #: src/core/editor/asset-image-render-state.ts
 msgid "Image could not be displayed."
 msgstr "Image could not be displayed."
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Image downloaded"
+msgstr "Image downloaded"
 
 #: src/features/editor/EditorView.tsx
 msgid "Image upload failed."
@@ -1413,6 +1463,15 @@ msgstr "mermaid"
 msgid "Mermaid"
 msgstr "Mermaid"
 
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Mermaid source"
+msgstr "Mermaid source"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Mermaid source copied"
+msgstr "Mermaid source copied"
+
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Minimum is {0}."
@@ -1431,6 +1490,8 @@ msgid "Monthly usage"
 msgstr "Monthly usage"
 
 #: src/features/editor/chrome/OverlayIconRow.tsx
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "More"
 msgstr "More"
 
@@ -1699,6 +1760,10 @@ msgstr "Open conversation"
 msgid "Open existing"
 msgstr "Open existing"
 
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Open full screen"
+msgstr "Open full screen"
+
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"
 msgstr "Open navigation"
@@ -1776,6 +1841,10 @@ msgstr "photo"
 #: src/features/editor/EditorView.tsx
 msgid "picture"
 msgstr "picture"
+
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Plain text"
+msgstr "Plain text"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
@@ -2122,6 +2191,10 @@ msgstr "Settings"
 msgid "Settings sections"
 msgstr "Settings sections"
 
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Showing the last good render."
+msgstr "Showing the last good render."
+
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
 msgstr "Sign in as dev user"
@@ -2320,9 +2393,17 @@ msgstr "That change couldn't be made."
 msgid "That chapter is no longer available, so this change can't be reversed."
 msgstr "That chapter is no longer available, so this change can't be reversed."
 
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "That did not work."
+msgstr "That did not work."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
 msgstr "That document couldn't be found."
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "That image could not be read."
+msgstr "That image could not be read."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "That location does not exist"
@@ -2355,6 +2436,10 @@ msgstr "The AI asked you a question"
 #: src/features/project/context/ContextViewer.tsx
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
 msgstr "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "The browser blocked the clipboard. Check this site's permissions."
+msgstr "The browser blocked the clipboard. Check this site's permissions."
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -2405,6 +2490,10 @@ msgstr "Thinking part {0}"
 msgid "This browser cannot display the PDF inline."
 msgstr "This browser cannot display the PDF inline."
 
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "This browser will not export this diagram as an image. Copy the Mermaid source instead."
+msgstr "This browser will not export this diagram as an image. Copy the Mermaid source instead."
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
 msgstr "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
@@ -2412,6 +2501,10 @@ msgstr "This browser will not hand the clipboard to the page. Press {shortcut} t
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
 msgstr "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "This browser will not turn that into an image."
+msgstr "This browser will not turn that into an image."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This cell is not merged."
@@ -2696,6 +2789,10 @@ msgstr "Working…"
 msgid "Workspace navigation"
 msgstr "Workspace navigation"
 
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Wrap lines"
+msgstr "Wrap lines"
+
 #: src/features/chat/placeholders.ts
 msgid "Write away"
 msgstr "Write away"
@@ -2741,3 +2838,11 @@ msgstr "Your saved preference is unavailable. Sync is paused until retry succeed
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
 msgstr "Your WorkOS profile, as seen by Meridian."
+
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Zoom in"
+msgstr "Zoom in"
+
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Zoom out"
+msgstr "Zoom out"

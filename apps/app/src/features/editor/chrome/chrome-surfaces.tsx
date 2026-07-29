@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "../surfaces/blocks";
 import { FormattingMenu } from "../surfaces/formatting";
+import { ObjectControls } from "../surfaces/objects";
 import { SlashMenu } from "../surfaces/slash";
 import { TableChrome } from "../surfaces/table";
 
@@ -36,6 +37,7 @@ export type EditorChromeSurface = {
 export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
   { id: "formatting-menu", render: ({ editor }) => <FormattingMenu editor={editor} /> },
   // L-B object controls + diagram (M5)
+  { id: "object-controls", render: ({ editor }) => <ObjectControls editor={editor} /> }, // L-B objects (M5)
   { id: "table-chrome", render: ({ editor }) => <TableChrome editor={editor} /> }, // L-C table (M6)
   { id: "slash-menu", render: (props) => <SlashMenu {...props} /> }, // L-D slash (M8)
   // L-E block movement (M9)
