@@ -32,6 +32,11 @@ function mount(content: JSONContent[]): Editor {
     extensions: createStandaloneEditorExtensions(),
     content: { type: "doc", content },
   });
+  // An arrow key that falls through to gapcursor asks whether the caret sits
+  // at the edge of its textblock, which ProseMirror answers by measuring, and
+  // jsdom has no layout. Unstubbed it throws out of band and vitest fails the
+  // run on an unhandled error while every assertion here passes.
+  vi.spyOn(editor.view, "endOfTextblock").mockReturnValue(false);
   return editor;
 }
 
