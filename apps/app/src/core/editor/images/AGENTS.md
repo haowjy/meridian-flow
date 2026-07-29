@@ -31,7 +31,7 @@ every door refuses out loud rather than opening onto nothing.
 |---|---|
 | `ImageIngressExtension.ts` | The wiring: storage, the plugin, the drop and clipboard props, decorations |
 | `image-ingress-runtime.ts` | The editor's record of what is in flight, and the one way to write to it |
-| `image-uploads.ts` | A picture from this machine: picker, insert, upload, land, Retry, Remove |
+| `image-uploads.ts` | A picture from this machine: picker, insert, Replace, upload, land, Retry, Remove |
 | `image-imports.ts` | A picture the clipboard pointed at: fetch, upload, replace the link |
 | `pending-images.ts` | What the document knows about a picture in flight, and how it is drawn |
 | `image-workflow.ts` | Pure answers: what a drop means, what a paste carries, asset paths |
@@ -67,6 +67,12 @@ every door refuses out loud rather than opening onto nothing.
 - **One entry per upload.** Two pictures arriving together are two lifecycles.
   Nothing about one upload gates another, which is why the toolbar's image
   control has no busy state.
+- **Replace is an upload aimed at a slot that already exists.** The object
+  surface's Replace verb (§5.6) starts the ordinary lifecycle on the node the
+  writer is pointing at, so nothing is inserted or removed, the alt text and a
+  figure's caption and label survive, and undo takes the whole replacement back
+  in one step. It works for the `figure` node for the same reason: the landing
+  writes `src` on whatever node the hold resolves to.
 
 ## Anti-patterns
 

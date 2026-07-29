@@ -28,6 +28,17 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import { gapCursorFits, isSourceBlock, objectBody } from "./objects";
 
+/**
+ * Does this node's body stand in for text the page does not show?
+ *
+ * The object registration's one body column answers it: everything a press can
+ * take hold of is opaque, and everything else shows its own text (see
+ * `objects/object-types.ts`).
+ */
+function isOpaqueBody(node: PMNode): boolean {
+  return objectBody(node) !== "text";
+}
+
 /** A top-level block's vertical extent in viewport coordinates. */
 export type BlockBand = {
   /** Document position of the block itself. */
@@ -237,7 +248,7 @@ function placeText(doc: PMNode, pos: number): PointerBoundaryDecision {
  * paragraph.
  */
 function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | null {
-  if (objectBody(node) === "opaque") return null;
+  if (isOpaqueBody(node)) return null;
   if (node.isTextblock) {
     if (isSourceBlock(node)) return null;
     return direction === 1 ? pos + 1 : pos + 1 + node.content.size;
@@ -281,7 +292,7 @@ function nearestWriterText(doc: PMNode, boundary: number, direction: 1 | -1): nu
 /** Is this position inside a body that stands in for text the page never shows? */
 function inOpaqueObject($pos: ResolvedPos): boolean {
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    if (objectBody($pos.node(depth)) === "opaque") return true;
+    if (isOpaqueBody($pos.node(depth))) return true;
   }
   return false;
 }

@@ -117,6 +117,12 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
+#. placeholder {0}: provider.name
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "{0} source copied"
+msgstr "{0} source copied"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr "{count, plural, one {# match} other {# matches}}"
@@ -156,6 +162,10 @@ msgstr "{matches} results in {inDocuments}"
 #: src/lib/date-groups.ts
 msgid "{minutes}m"
 msgstr "{minutes}m"
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "{name} source"
+msgstr "{name} source"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "{pendingChangeCount} changes waiting for review"
@@ -248,8 +258,8 @@ msgid "Actually…"
 msgstr "Actually…"
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "Add a caption for this figure."
-msgstr "Add a caption for this figure."
+#~ msgid "Add a caption for this figure."
+#~ msgstr "Add a caption for this figure."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add column"
@@ -310,13 +320,13 @@ msgstr "Align right"
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr "Alignment applies to paragraphs, headings, and tables."
 
-#: src/core/editor/FigureNodeView.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr "Alt text"
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "Alt: {altSummary}"
-msgstr "Alt: {altSummary}"
+#~ msgid "Alt: {altSummary}"
+#~ msgstr "Alt: {altSummary}"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Another chat needs attention"
@@ -446,7 +456,7 @@ msgstr "Cancel"
 msgid "Cancel editing"
 msgstr "Cancel editing"
 
-#: src/core/editor/FigureNodeView.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Caption"
 msgstr "Caption"
 
@@ -638,12 +648,18 @@ msgstr "Copied"
 msgid "Copy"
 msgstr "Copy"
 
+#. placeholder {0}: provider.name
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Copy {0} source"
+msgstr "Copy {0} source"
+
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Copy code"
 msgstr "Copy code"
 
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Copy image"
 msgstr "Copy image"
 
@@ -653,8 +669,8 @@ msgstr "Copy link address"
 
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-msgid "Copy Mermaid source"
-msgstr "Copy Mermaid source"
+#~ msgid "Copy Mermaid source"
+#~ msgstr "Copy Mermaid source"
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
@@ -835,7 +851,7 @@ msgstr "Default alignment"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -870,8 +886,12 @@ msgid "Demo image"
 msgstr "Demo image"
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "Describe the image for accessibility"
-msgstr "Describe the image for accessibility"
+#~ msgid "Describe the image for accessibility"
+#~ msgstr "Describe the image for accessibility"
+
+#: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
+msgid "Describe the picture for a reader who cannot see it"
+msgstr "Describe the picture for a reader who cannot see it"
 
 #: src/routes/dev-login.tsx
 msgid "Dev login"
@@ -928,7 +948,7 @@ msgstr "Documents the AI reads in this chat appear here."
 msgid "Download {name}"
 msgstr "Download {name}"
 
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Download image"
 msgstr "Download image"
@@ -968,7 +988,7 @@ msgstr "Drop image to insert it"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Duplicate"
 msgstr "Duplicate"
 
@@ -976,8 +996,8 @@ msgstr "Duplicate"
 msgid "Edit link"
 msgstr "Edit link"
 
-#: src/core/editor/MermaidDiagramBody.tsx
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/core/editor/diagrams/DiagramBody.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Edit source"
 msgstr "Edit source"
@@ -1107,8 +1127,12 @@ msgid "fence"
 msgstr "fence"
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "fig:result"
-msgstr "fig:result"
+#~ msgid "fig:result"
+#~ msgstr "fig:result"
+
+#: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
+msgid "fig:terrace"
+msgstr "fig:terrace"
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "Figure could not be loaded."
@@ -1239,7 +1263,7 @@ msgstr "Image"
 msgid "Image artifact"
 msgstr "Image artifact"
 
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Image copied"
 msgstr "Image copied"
 
@@ -1247,7 +1271,7 @@ msgstr "Image copied"
 msgid "Image could not be displayed."
 msgstr "Image could not be displayed."
 
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Image downloaded"
 msgstr "Image downloaded"
@@ -1350,7 +1374,7 @@ msgstr "Knowledge Base"
 msgid "Lab Notebook"
 msgstr "Lab Notebook"
 
-#: src/core/editor/FigureNodeView.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Label"
 msgstr "Label"
 
@@ -1526,21 +1550,21 @@ msgid "Meridian removed a small part of this chapter that this version can't dis
 msgstr "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
-msgid "mermaid"
-msgstr "mermaid"
+#~ msgid "mermaid"
+#~ msgstr "mermaid"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
-msgid "Mermaid"
-msgstr "Mermaid"
+#~ msgid "Mermaid"
+#~ msgstr "Mermaid"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-msgid "Mermaid source"
-msgstr "Mermaid source"
+#~ msgid "Mermaid source"
+#~ msgstr "Mermaid source"
 
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-msgid "Mermaid source copied"
-msgstr "Mermaid source copied"
+#~ msgid "Mermaid source copied"
+#~ msgstr "Mermaid source copied"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1678,8 +1702,8 @@ msgid "No agents available."
 msgstr "No agents available."
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "No alt text yet"
-msgstr "No alt text yet"
+#~ msgid "No alt text yet"
+#~ msgstr "No alt text yet"
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
@@ -1841,7 +1865,7 @@ msgstr "Open conversation"
 msgid "Open existing"
 msgstr "Open existing"
 
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Open full screen"
 msgstr "Open full screen"
 
@@ -2096,13 +2120,17 @@ msgstr "Rename this document or move it somewhere else in your project."
 msgid "Renamed to {trimmed}"
 msgstr "Renamed to {trimmed}"
 
-#: src/core/editor/MermaidDiagramBody.tsx
+#: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
+
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
+msgid "Replace image"
+msgstr "Replace image"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
@@ -2413,8 +2441,8 @@ msgid "Suggested: {0}"
 msgstr "Suggested: {0}"
 
 #: src/core/editor/FigureNodeView.tsx
-msgid "Summarize what this figure shows"
-msgstr "Summarize what this figure shows"
+#~ msgid "Summarize what this figure shows"
+#~ msgstr "Summarize what this figure shows"
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens or manage your account."
@@ -2600,8 +2628,12 @@ msgid "This browser cannot display the PDF inline."
 msgstr "This browser cannot display the PDF inline."
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
-msgid "This browser will not export this diagram as an image. Copy the Mermaid source instead."
-msgstr "This browser will not export this diagram as an image. Copy the Mermaid source instead."
+msgid "This browser will not export this diagram as an image. Copy the diagram source instead."
+msgstr "This browser will not export this diagram as an image. Copy the diagram source instead."
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+#~ msgid "This browser will not export this diagram as an image. Copy the Mermaid source instead."
+#~ msgstr "This browser will not export this diagram as an image. Copy the Mermaid source instead."
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
@@ -2664,7 +2696,7 @@ msgstr "This column is already at the edge."
 msgid "This device"
 msgstr "This device"
 
-#: src/core/editor/MermaidDiagramBody.tsx
+#: src/core/editor/diagrams/DiagramBody.tsx
 msgid "This diagram has a syntax problem"
 msgstr "This diagram has a syntax problem"
 
@@ -2672,7 +2704,7 @@ msgstr "This diagram has a syntax problem"
 msgid "This diagram has a syntax problem, so there is nothing to preview yet."
 msgstr "This diagram has a syntax problem, so there is nothing to preview yet."
 
-#: src/core/editor/MermaidDiagramBody.tsx
+#: src/core/editor/diagrams/DiagramBody.tsx
 msgid "This diagram stopped parsing. Showing the last version that rendered."
 msgstr "This diagram stopped parsing. Showing the last version that rendered."
 
@@ -2809,7 +2841,7 @@ msgstr "Type your answer…"
 msgid "ul"
 msgstr "ul"
 
-#: src/core/editor/mermaid-render-state.ts
+#: src/core/editor/diagrams/diagram-render-state.ts
 msgid "Unable to render diagram"
 msgstr "Unable to render diagram"
 
@@ -2908,6 +2940,10 @@ msgstr "Waiting on you"
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
 msgstr "What are you working on?"
+
+#: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
+msgid "What this figure shows"
+msgstr "What this figure shows"
 
 #: src/features/chat/placeholders.ts
 msgid "What's next?"

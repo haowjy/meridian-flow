@@ -45,9 +45,9 @@ import {
   fenceLanguage,
   fenceLanguageLabel,
 } from "./fence-menu-items";
-import type { RunVerb } from "./ObjectControls";
 import type { ObjectSurfaceTarget } from "./object-anchors";
 import { copyText } from "./object-commands";
+import type { RunVerb } from "./verb-feedback";
 
 export type CodeBlockChipsProps = {
   editor: Editor;

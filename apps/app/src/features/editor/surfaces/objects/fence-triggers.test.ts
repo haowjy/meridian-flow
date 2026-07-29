@@ -57,6 +57,7 @@ function rightClick(overrides: Partial<ContextClaimTarget> = {}): ContextClaimTa
 const objectContext: ChromeContext = {
   owner: "object",
   nodeType: "code_block",
+  objectSpec: "diagram:mermaid",
   pos: 0,
   objectPos: 0,
   chain: ["document", "object"],

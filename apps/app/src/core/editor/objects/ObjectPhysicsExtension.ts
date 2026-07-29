@@ -34,7 +34,7 @@ import {
   selectObjectTransaction,
   typeBesideObjectTransaction,
 } from "./object-selection";
-import { isEditorObject, objectDrag, objectTypeSpec } from "./object-types";
+import { isEditorObject, objectBody, objectTypeSpec } from "./object-types";
 
 const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
@@ -97,20 +97,24 @@ function physicsStorage(editor: Editor): ObjectPhysicsStorage | null {
 }
 
 /**
- * Supply what Enter opens for one object type (its `surface` intent). Keyed by
- * node type: a type that is only sometimes an object — a mermaid fence — gets
- * the whole node and decides for itself.
+ * Supply what Enter opens for one object registration (its `surface` intent).
+ *
+ * Keyed by the registration's `id`, never by its node type: one node type
+ * carries several registrations — every fenced diagram dialect is a `code_block`
+ * — and a node-type key would let the second dialect overwrite the first's
+ * surface. `objectTypeSpec(node).id` is how a caller names the registration a
+ * node matched.
  */
 export function registerObjectEngagement(
   editor: Editor,
-  nodeType: string,
+  specId: string,
   engagement: ObjectEngagement,
 ): () => void {
   const storage = physicsStorage(editor);
   if (!storage) return () => {};
-  storage.engagements.set(nodeType, engagement);
+  storage.engagements.set(specId, engagement);
   return () => {
-    if (storage.engagements.get(nodeType) === engagement) storage.engagements.delete(nodeType);
+    if (storage.engagements.get(specId) === engagement) storage.engagements.delete(specId);
   };
 }
 
@@ -129,30 +133,34 @@ export function engageObject(editor: Editor, target: ObjectAt, opening: ObjectOp
   const storage = physicsStorage(editor);
   const spec = objectTypeSpec(target.node);
   if (!storage || spec?.engage !== "surface") return false;
-  const engagement = storage.engagements.get(spec.nodeType);
+  const engagement = storage.engagements.get(spec.id);
   if (!engagement) return false;
   engagement(target, opening);
   return true;
 }
 
 /**
- * Keys that apply only while an object of `nodeType` is selected — Ctrl+Enter
- * for a diagram's source hatch, Alt+Arrows for a move the type owns. They
- * register at the kernel's `object` scope, so an open menu still wins.
+ * Keys that apply only while an object of this registration is selected —
+ * Ctrl+Enter for a diagram's source hatch, Alt+Arrows for a move the type owns.
+ * They register at the kernel's `object` scope, so an open menu still wins.
+ *
+ * Keyed by registration for the same reason engagements are: the selected fence
+ * is a diagram of one particular dialect, and the resolved context names which
+ * (`chrome/chrome-context.ts`).
  */
 export function registerObjectKeymap(
   editor: Editor,
-  nodeType: string,
+  specId: string,
   bindings: Readonly<Record<string, KeymapBinding>>,
 ): () => void {
   const chrome = getEditorChrome(editor);
   if (!chrome) return () => {};
 
   return chrome.registerKeymap({
-    id: `object:${nodeType}`,
+    id: `object:${specId}`,
     scope: "object",
     // The scope already means "an object is selected"; this says which one.
-    appliesTo: (context) => context.nodeType === nodeType,
+    appliesTo: (context) => context.objectSpec === specId,
     bindings,
   });
 }
@@ -230,7 +238,7 @@ function selectObjectUnderPress(view: EditorView, event: MouseEvent): void {
 
   const found = objectAtDOM(view, opaque);
   if (!found) return;
-  if (objectDrag(found.node) === "inline") return;
+  if (objectBody(found.node) === "inline-drag") return;
   const transaction = selectObjectTransaction(view.state, found.pos);
   if (!transaction) return;
 
@@ -417,11 +425,11 @@ function engageSourceBlock(
   return true;
 }
 
-function reportMissingEngagement(nodeType: string): void {
-  if (!import.meta.env?.DEV || warnedMissingEngagement.has(nodeType)) return;
-  warnedMissingEngagement.add(nodeType);
+function reportMissingEngagement(specId: string): void {
+  if (!import.meta.env?.DEV || warnedMissingEngagement.has(specId)) return;
+  warnedMissingEngagement.add(specId);
   console.warn(
-    `[editor] "${nodeType}" is registered with engage: "surface", but no lane called registerObjectEngagement — Enter on it does nothing.`,
+    `[editor] "${specId}" is registered with engage: "surface", but no lane called registerObjectEngagement — Enter on it does nothing.`,
   );
 }
 
@@ -481,7 +489,7 @@ function walk(
   return true;
 }
 
-/** Node types already reported as unengageable, so the warning fires once. */
+/** Registrations already reported as unengageable, so the warning fires once. */
 const warnedMissingEngagement = new Set<string>();
 
 /**
@@ -508,7 +516,7 @@ function engage(
   if (!spec) return false;
 
   if (spec.engage === "surface") {
-    if (!engageObject(editor, selected, "engage")) reportMissingEngagement(spec.nodeType);
+    if (!engageObject(editor, selected, "engage")) reportMissingEngagement(spec.id);
     return true;
   }
 

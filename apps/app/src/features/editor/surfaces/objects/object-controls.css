@@ -259,3 +259,42 @@
   z-index: 31;
   transform: translate(-100%, calc(-100% - 0.5rem));
 }
+
+/* The object's own words, in the small popover the ⋮ opens (§5.6). Narrow on
+   purpose: an alt sentence and a caption are one line of reading each, and a
+   panel as wide as the manuscript would read as a dialog rather than a note
+   hanging off the picture. */
+.meridian-object-fields {
+  display: grid;
+  gap: 0.625rem;
+  width: 20rem;
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.75rem;
+}
+
+.meridian-object-field {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--color-ink-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.meridian-object-field-input {
+  width: 100%;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.4;
+  padding: 0.375rem 0.5rem;
+  resize: vertical;
+}
+
+.meridian-object-field-input:focus {
+  border-color: var(--color-border-focus);
+  outline: none;
+  box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--color-border-focus) 24%, transparent);
+}

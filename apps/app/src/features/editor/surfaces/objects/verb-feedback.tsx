@@ -29,6 +29,9 @@ const NOTICE_LIFETIME_MS = 2600;
 
 export type VerbNotice = { tone: "done" | "failed"; message: string };
 
+/** Runs a verb and keeps its answer, success or failure. */
+export type RunVerb = (work: Promise<unknown>, done: string) => void;
+
 /**
  * Why a verb failed, in the writer's terms.
  *
@@ -49,9 +52,9 @@ export function verbFailureMessage(error: unknown): string {
   }
   if (name === "SecurityError") {
     // A canvas drawn from an SVG that reaches outside the page is tainted, and
-    // the export is refused at the last step. Mermaid source always copies, so
-    // the writer is pointed at the door that works.
-    return t`This browser will not export this diagram as an image. Copy the Mermaid source instead.`;
+    // the export is refused at the last step. A diagram's source always copies,
+    // so the writer is pointed at the door that works.
+    return t`This browser will not export this diagram as an image. Copy the diagram source instead.`;
   }
   return t`That did not work.`;
 }
@@ -59,7 +62,7 @@ export function verbFailureMessage(error: unknown): string {
 export function useVerbFeedback(): {
   notice: VerbNotice | null;
   /** Run a verb and keep its answer. Never rejects; the notice is the answer. */
-  run: (work: Promise<unknown>, done: string) => void;
+  run: RunVerb;
 } {
   const [notice, setNotice] = useState<VerbNotice | null>(null);
 

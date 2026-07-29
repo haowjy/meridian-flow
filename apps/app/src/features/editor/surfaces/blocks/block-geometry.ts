@@ -13,7 +13,7 @@
 
 import type { EditorView } from "@tiptap/pm/view";
 
-import { type ObjectDrag, objectDrag } from "@/core/editor/objects";
+import { type ObjectBody, objectBody } from "@/core/editor/objects";
 
 import { type BlockTarget, blockAt, objectIsWholeBlock } from "./block-targets";
 
@@ -166,7 +166,7 @@ export function objectBodyDragTarget(view: EditorView, event: PointerEvent): Blo
   if (!(event.target instanceof Element)) return null;
   if (onEditableText(event.target) || event.target.closest(OBJECT_BODY_CONTROLS)) return null;
 
-  const object = objectAtPointer(view, event.clientX, event.clientY, "block");
+  const object = objectAtPointer(view, event.clientX, event.clientY, "block-drag");
   if (object === null || !objectIsWholeBlock(view.state.doc, object)) return null;
   return blockAt(view.state.doc, object);
 }
@@ -188,7 +188,7 @@ export function objectBodyDragTarget(view: EditorView, event: PointerEvent): Blo
  */
 export function nativeDragCarriesObject(view: EditorView, event: DragEvent): boolean {
   if (event.target instanceof Element && onEditableText(event.target)) return false;
-  return objectAtPointer(view, event.clientX, event.clientY, "block") !== null;
+  return objectAtPointer(view, event.clientX, event.clientY, "block-drag") !== null;
 }
 
 /**
@@ -205,19 +205,19 @@ function onEditableText(element: Element): boolean {
 }
 
 /**
- * The position of the object under these coordinates whose body starts `drag`,
- * or null when the coordinates are on something else.
+ * The position of the object under these coordinates whose body is `body`, or
+ * null when the coordinates are on something else.
  */
 function objectAtPointer(
   view: EditorView,
   clientX: number,
   clientY: number,
-  drag: ObjectDrag,
+  body: ObjectBody,
 ): number | null {
   const at = view.posAtCoords({ left: clientX, top: clientY });
   if (!at || at.inside < 0) return null;
   const node = view.state.doc.nodeAt(at.inside);
-  return node && objectDrag(node) === drag ? at.inside : null;
+  return node && objectBody(node) === body ? at.inside : null;
 }
 
 /**

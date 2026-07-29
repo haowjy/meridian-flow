@@ -14,6 +14,7 @@ import {
   SELECTED_OBJECT_CLASS,
 } from "./ObjectPhysicsExtension";
 import { selectedObject } from "./object-selection";
+import { objectTypeSpec } from "./object-types";
 
 let editor: Editor | null = null;
 
@@ -71,6 +72,18 @@ function positionOf(instance: Editor, type: string): number {
   });
   if (found === null) throw new Error(`no ${type} in the fixture`);
   return found;
+}
+
+/**
+ * The registration the node at `pos` matched. Engagements and per-object keys
+ * are keyed by it rather than by the node type, because one node type carries
+ * several registrations: every fenced diagram dialect is a `code_block`.
+ */
+function specIdAt(instance: Editor, pos: number): string {
+  const node = instance.state.doc.nodeAt(pos);
+  const spec = node ? objectTypeSpec(node) : null;
+  if (!spec) throw new Error(`nothing registered at ${pos}`);
+  return spec.id;
 }
 
 function select(instance: Editor, pos: number) {
@@ -148,9 +161,10 @@ describe("Enter on a selected object", () => {
   it("opens the surface its lane registered", () => {
     const instance = mount([paragraph("before"), mermaid, paragraph("after")]);
     const open = vi.fn(() => true);
-    registerObjectEngagement(instance, "code_block", open);
+    const pos = positionOf(instance, "code_block");
+    registerObjectEngagement(instance, specIdAt(instance, pos), open);
 
-    select(instance, positionOf(instance, "code_block"));
+    select(instance, pos);
     expect(press(instance, { key: "Enter" })).toBe(true);
     expect(open).toHaveBeenCalledOnce();
   });
@@ -210,6 +224,54 @@ describe("Enter on a selected object", () => {
   });
 });
 
+describe("which registration a surface belongs to", () => {
+  it("routes Enter by the matched registration, not by the node type", () => {
+    const instance = mount([paragraph("before"), mermaid, paragraph("after")]);
+    const pos = positionOf(instance, "code_block");
+    const opened: string[] = [];
+
+    registerObjectEngagement(instance, specIdAt(instance, pos), () => {
+      opened.push("registration");
+    });
+    // A second diagram dialect would be another `code_block` registration with
+    // its own surface. The node type cannot be the key, or the two would
+    // overwrite each other and the first fence to render would win both.
+    registerObjectEngagement(instance, "code_block", () => {
+      opened.push("node-type");
+    });
+
+    select(instance, pos);
+    expect(press(instance, { key: "Enter" })).toBe(true);
+    expect(opened).toEqual(["registration"]);
+  });
+
+  it("leaves a plain fence out of the diagram registration entirely", () => {
+    const plainFence: JSONContent = {
+      type: "code_block",
+      attrs: { language: "ts" },
+      content: [{ type: "text", text: "const gate = 3;" }],
+    };
+    const instance = mount([paragraph("before"), mermaid, plainFence]);
+    const diagram = positionOf(instance, "code_block");
+    const opened: number[] = [];
+    registerObjectEngagement(instance, specIdAt(instance, diagram), ({ pos }) => {
+      opened.push(pos);
+    });
+
+    // The plain fence matches no registration, so Enter is §4's caret-into-code
+    // rather than a surface opening on a block that has no diagram in it.
+    let plain: number | null = null;
+    instance.state.doc.forEach((node, pos) => {
+      if (node.type.name === "code_block" && pos !== diagram) plain = pos;
+    });
+    if (plain === null) throw new Error("no plain fence in the fixture");
+    select(instance, plain);
+    press(instance, { key: "Enter" });
+
+    expect(opened).toEqual([]);
+  });
+});
+
 describe("arrow walking", () => {
   it("selects the object, then passes beyond it", () => {
     const instance = mount([paragraph("before"), mermaid, paragraph("after")]);
@@ -235,7 +297,9 @@ describe("per-type keymap contributions", () => {
   it("fires only while that type is the selected object", () => {
     const instance = mount([paragraph("before"), mermaid, { type: "horizontal_rule" }]);
     const openSource = vi.fn(() => true);
-    registerObjectKeymap(instance, "code_block", { "Mod-Enter": openSource });
+    registerObjectKeymap(instance, specIdAt(instance, positionOf(instance, "code_block")), {
+      "Mod-Enter": openSource,
+    });
 
     select(instance, positionOf(instance, "horizontal_rule"));
     press(instance, { key: "Enter", ctrlKey: true });
@@ -252,7 +316,7 @@ describe("double-click engages", () => {
     const instance = mount([paragraph("before"), mermaid]);
     const pos = positionOf(instance, "code_block");
     const opened: number[] = [];
-    registerObjectEngagement(instance, "code_block", ({ pos: at }) => {
+    registerObjectEngagement(instance, specIdAt(instance, pos), ({ pos: at }) => {
       opened.push(at);
       return true;
     });
@@ -285,9 +349,9 @@ describe("double-click engages", () => {
 
 describe("why a surface is opening", () => {
   /** Records the opening each door reports, so the two can be told apart. */
-  function captureOpenings(instance: Editor): string[] {
+  function captureOpenings(instance: Editor, pos: number): string[] {
     const openings: string[] = [];
-    registerObjectEngagement(instance, "code_block", (_target, opening) => {
+    registerObjectEngagement(instance, specIdAt(instance, pos), (_target, opening) => {
       openings.push(opening);
       return true;
     });
@@ -296,8 +360,8 @@ describe("why a surface is opening", () => {
 
   it("says a just-created object has nothing to view yet", () => {
     const instance = mount([paragraph("before"), mermaid]);
-    const openings = captureOpenings(instance);
     const pos = positionOf(instance, "code_block");
+    const openings = captureOpenings(instance, pos);
     const node = instance.state.doc.nodeAt(pos);
     if (!node) throw new Error("no diagram in the fixture");
 
@@ -310,8 +374,8 @@ describe("why a surface is opening", () => {
 
   it("says an existing object is being engaged", () => {
     const instance = mount([paragraph("before"), mermaid]);
-    const openings = captureOpenings(instance);
     const pos = positionOf(instance, "code_block");
+    const openings = captureOpenings(instance, pos);
     const node = instance.state.doc.nodeAt(pos);
     if (!node) throw new Error("no diagram in the fixture");
 

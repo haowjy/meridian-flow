@@ -8,23 +8,35 @@ first, and the kernel's
 
 ```ts
 // object-types.ts — append-only, one row per type
-{ nodeType: "figure", drag: "block", engage: "surface" },
-{ nodeType: "code_block", matches: (node) => node.attrs.language === "mermaid",
-  drag: "block", engage: "surface" },
+{ id: "figure", nodeType: "figure", body: "block-drag", engage: "surface",
+  surfaceKind: "image", surfaceFields: ["alt", "caption", "label"] },
+{ id: "table", nodeType: "table", body: "text", engage: "caret-inside" },
 ```
 
-`drag` says what taking hold of the body does:
+A fenced diagram needs no row: one is generated per diagram provider, keyed
+`diagram:<language>` (`../../diagrams/AGENTS.md`).
 
-| Column | A press on the body starts | Where it lands |
-|---|---|---|
-| `block` | the block drag the margin handle starts | a seam between top-level blocks, behind the jade line |
-| `inline` | ProseMirror's own drag, untouched | anywhere a caret can go, behind the dropcursor |
-| `none` | nothing; the body owns its pointer | — |
+`body` says what a press on the body does, in one column:
 
-`inline` is only legal for a node the schema calls inline, and its node view
-must carry `data-drag-handle`: TipTap's node view refuses the browser's
-dragstart on any node view without one, so the row alone would be a promise
-nothing keeps.
+| Column | An outside press may land | A press on the body starts | Where it lands |
+|---|---|---|---|
+| `text` | yes, like prose | nothing; the body owns its pointer | — |
+| `block-drag` | no | the block drag the margin handle starts | a seam between top-level blocks, behind the jade line |
+| `inline-drag` | no | ProseMirror's own drag, untouched | anywhere a caret can go, behind the dropcursor |
+
+One column because the two questions have one answer: everything a press can
+take hold of is opaque, and everything that shows its own text takes a caret and
+is swept rather than picked up. A row that needs the fourth combination is the
+signal to split it again, and `object-types.test.ts` is where that shows up.
+
+`inline-drag` is only legal for a node the schema calls inline, and its node view
+must carry `data-drag-handle`: TipTap's node view refuses the browser's dragstart
+on any node view without one, so the row alone would be a promise nothing keeps.
+
+`surfaceFields` names the node attributes the object's surface offers as verbs
+(§5.6) — `alt` for a picture, plus `caption` and `label` for a figure. The
+surface renders one ⋮ item per field and edits it in a small popover; a node view
+that grows its own form for the same attribute is two owners for one fact.
 
 `engage` says what Enter — and a double-click on the object — means:
 
@@ -81,21 +93,28 @@ useEffect(() => registerObjectEngagement(editor, "figure", ({ node, pos }) => {
   openDialog(pos);
 }), [editor]);
 
-useEffect(() => registerObjectKeymap(editor, "code_block", {
+useEffect(() => registerObjectKeymap(editor, "diagram:mermaid", {
   "Mod-Enter": () => { openDialogWithSource(); return true; },
 }), [editor]);
 ```
 
-Engagements are keyed by node type, so a type that is only sometimes an object
-gets the whole node and decides for itself. `registerObjectKeymap` registers at the kernel's `object` scope with an
-`appliesTo` on the node type, so the binding runs only when that type is the
-selected object and does not re-check the selection itself.
+Both are keyed by the registration's `id`, never by its node type: every fenced
+diagram dialect is a `code_block`, and a node-type key would let the second
+dialect overwrite the first's surface. A lane that has a node in hand names the
+registration with `objectTypeSpec(node).id`; a lane that serves a whole class of
+objects filters `EDITOR_OBJECT_TYPES` (which is how `ObjectControls` registers
+for every surface-bearing row without naming one).
+
+`registerObjectKeymap` registers at the kernel's `object` scope with an
+`appliesTo` on `context.objectSpec` — the resolved context carries the
+registration that owns chrome, not only its node type — so the binding runs only
+when that object is selected and does not re-check the selection itself.
 
 Both return an unregister. Both are no-ops on an editor without chrome.
 
 ## What "selected" means, per node
 
-- **Figures, images, rules, mermaid fences**: a `NodeSelection`.
+- **Figures, images, rules, diagram fences**: a `NodeSelection`.
 - **Tables**: a `CellSelection` covering every cell. prosemirror-tables
   normalizes a `NodeSelection` on a table into exactly that, so it is not an
   approximation — it is the only spelling available. `selectedObject` reads
@@ -114,7 +133,7 @@ break go through.
 on something marked `contenteditable="false"` inside an object. That case needs
 the earlier door because the browser answers a press before mouseup: pressing a
 non-editable element sends it hunting for the nearest editable position, and
-inside a node view that hides its own text — a rendered mermaid fence — the
+inside a node view that hides its own text — a rendered diagram fence — the
 nearest one is that hidden text. The caret landed there, the node view brought
 the source back to keep those keystrokes reachable, the page moved under the
 pointer, and the mouseup landed in the source it had just revealed. Past the
@@ -135,7 +154,7 @@ Two things make this a rule rather than an exception:
 Refusing the default is the whole mechanism: nothing later can take a caret
 back, so it must never be placed.
 
-The objects registered `drag: "inline"` opt out of this door entirely, and the
+The objects registered `body: "inline-drag"` opt out of this door entirely, and the
 same mechanism is why: Chrome starts no drag out of a press whose default was
 refused, so refusing here would refuse the gesture the 2026-07-29 ruling asks
 for (a picture dragged between two words). Nothing is lost by leaving the press

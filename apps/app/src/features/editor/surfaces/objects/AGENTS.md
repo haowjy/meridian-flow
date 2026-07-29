@@ -1,8 +1,13 @@
 # surfaces/objects — the second register's controls
 
 Every verb a diagram, an image, or a code block offers in the page, plus the
-lightbox they open. One surface entry (`ObjectControls`), one approach reading,
-three shapes of chrome.
+lightbox and the field popover they open. One surface entry (`ObjectControls`),
+one approach reading, three shapes of chrome.
+
+**This lane owns image verbs for BOTH image nodes.** The inline `image` and the
+captioned block `figure` are one surface here — alt text, Replace, caption and
+label, copy, download, duplicate, delete — because they are one concept with two
+node shapes. Their node views render; they do not edit.
 
 ## Mental model
 
@@ -36,6 +41,13 @@ be the same state: a right-click claims an object before hover intent has
 settled on it, so a menu reading hover would run Delete on whatever the pointer
 passed over last.
 
+**Nothing here names an object type.** Which objects this surface serves is
+`EDITOR_OBJECT_TYPES` filtered by `surfaceKind`; what a diagram's verbs are
+called and how its picture exports comes from its provider row
+(`core/editor/diagrams`); which fields a ⋮ can edit comes from the row's
+`surfaceFields`. A new object kind — a new diagram provider included — reaches
+this lane as data, which is what "one row plus its renderer" means downstream.
+
 **Chrome shapes follow the ruling, not the node type.** Diagram and image get
 `OverlayIconRow` (ruling 8: icon-only chips inside the top-right bounds, ⋮
 last). A code block gets the chip cluster (ruling 15, the Notion reference):
@@ -45,16 +57,28 @@ Both shapes cap at one line of the text they decorate (human ruling), so every
 control in them is the dense `xs` button size.
 
 **Two rungs of the claim ladder land here.** `object` is a right-click on a
-diagram or an image and opens the ⋮ it already has. `caret` is a right-click
+diagram, an image, or a figure and opens the ⋮ it already has. `caret` is a right-click
 INSIDE a plain fence and opens the fence's verbs as one list (human ruling,
 2026-07-29). A plain fence is not an object — clicking it places a caret — so
 its rung is the ladder's floor rather than the object rung.
 
 ## Key rules
 
-- **The row's copy chip copies Mermaid source**, not an image (ruling 8's
-  delegated call). Revision runs through the chat, so source is the bridge into
-  that loop and works in every browser. Image copy and download live in the ⋮.
+- **The row's copy chip copies the diagram's source**, not an image (ruling 8's
+  delegated call), and the provider's name is what the label spells. Revision
+  runs through the chat, so source is the bridge into that loop and works in
+  every browser. Image copy and download live in the ⋮.
+- **An object's own words are written straight through, in a popover.** Alt text,
+  a figure's caption, and its label are attributes every peer can see, so
+  `ObjectFieldPopover` dispatches one `setNodeMarkup` per keystroke rather than
+  holding a draft behind a Save button. The ⋮ item the writer picked decides
+  which field takes the caret; the popover shows every field the registration
+  declares, so a figure reaches its label without going back to the menu.
+- **Replace is offered whether or not there is a project**, and refuses out loud
+  when there is not: the ingress lane already says "Images need a project before
+  they can be uploaded", and a ⋮ whose shape changes with the document teaches
+  nothing. It reuses the ordinary upload lifecycle on the slot that is already
+  there, so nothing is inserted or removed and undo takes it back in one step.
 - **Absent beats disabled** on every menu here. A diagram that has not rendered
   has no image to hand over, so those items are not there — not greyed.
 - **Every verb answers, and keeps its reason.** Copy and download reach a
@@ -89,10 +113,13 @@ its rung is the ladder's floor rather than the object rung.
   the picture's height.
 - Putting a control inside the viewer's gesture host. The host takes pointer
   capture on `pointerdown`, so a button in it never receives its own click.
-- Rendering source in the page. The page never shows Mermaid syntax; the one
+- Rendering source in the page. The page never shows a diagram's syntax; the one
   exception (a caret inside the fence) belongs to the node view
-  (`core/editor/MermaidCodeBlock.tsx`), which answers a failed first render
+  (`core/editor/CodeBlockNodeView.tsx`), which answers a failed first render
   with an error card rather than a fence.
+- Editing a node's attributes from its node view. Alt text, caption, and label
+  are verbs on this surface; a form in the node view is a second owner and
+  permanent furniture in the manuscript.
 - Discarding an export promise (`void copyImage(...)`). An unhandled rejection
   is a failure the writer never hears about.
 - Reading the approached object inside a menu handler. Menus carry their own

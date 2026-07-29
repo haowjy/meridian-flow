@@ -42,8 +42,8 @@ export type ObjectSurfaceTarget = {
   container: HTMLElement;
 };
 
-/** A fence the registry renders as a diagram, rather than one to type in. */
-export function isMermaidFence(node: PMNode): boolean {
+/** A fence a provider renders as a diagram, rather than one to type in. */
+export function isDiagramFence(node: PMNode): boolean {
   return objectSurfaceKind(node) === "diagram";
 }
 

@@ -4,10 +4,12 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
+import { EDITOR_DIAGRAM_PROVIDERS } from "../diagrams";
 import {
+  EDITOR_OBJECT_TYPES,
   isEditorObject,
   isSourceBlock,
-  objectDrag,
+  objectBody,
   objectSurfaceKind,
   objectTypeSpec,
 } from "./object-types";
@@ -72,18 +74,20 @@ describe("what counts as an object", () => {
   });
 });
 
-describe("which drag a body starts", () => {
+describe("what a press on the body does", () => {
   it("drags a figure and a rule as blocks: neither has an inline place to land", () => {
     expect(
-      objectDrag(nodeOfType([{ type: "figure", attrs: { src: "a", caption: "" } }], "figure")),
-    ).toBe("block");
-    expect(objectDrag(nodeOfType([{ type: "horizontal_rule" }], "horizontal_rule"))).toBe("block");
-    expect(objectDrag(nodeOfType([fence("mermaid")], "code_block"))).toBe("block");
+      objectBody(nodeOfType([{ type: "figure", attrs: { src: "a", caption: "" } }], "figure")),
+    ).toBe("block-drag");
+    expect(objectBody(nodeOfType([{ type: "horizontal_rule" }], "horizontal_rule"))).toBe(
+      "block-drag",
+    );
+    expect(objectBody(nodeOfType([fence("mermaid")], "code_block"))).toBe("block-drag");
   });
 
   it("drags a picture inline, which is how it lands between two words", () => {
     expect(
-      objectDrag(
+      objectBody(
         nodeOfType(
           [
             {
@@ -97,12 +101,12 @@ describe("which drag a body starts", () => {
           "image",
         ),
       ),
-    ).toBe("inline");
+    ).toBe("inline-drag");
   });
 
   it("leaves a table's cells their own pointer, and says nothing about prose", () => {
     expect(
-      objectDrag(
+      objectBody(
         nodeOfType(
           [
             {
@@ -121,12 +125,40 @@ describe("which drag a body starts", () => {
           "table",
         ),
       ),
-    ).toBe("none");
+    ).toBe("text");
     expect(
-      objectDrag(
+      objectBody(
         nodeOfType([{ type: "paragraph", content: [{ type: "text", text: "x" }] }], "paragraph"),
       ),
-    ).toBe("none");
+    ).toBe("text");
+  });
+
+  it("keeps caret-landing and drag-start one answer for every registration", () => {
+    // The invariant the second column used to hold: opaque exactly when the
+    // body is a grip. A row that wanted the fourth combination would fail here
+    // and is the signal to split the column again.
+    for (const spec of EDITOR_OBJECT_TYPES) {
+      expect(
+        spec.body === "text" || spec.body === "block-drag" || spec.body === "inline-drag",
+      ).toBe(true);
+    }
+  });
+});
+
+describe("what a registration is named", () => {
+  it("gives every row a unique id, because surfaces register against it", () => {
+    const ids = EDITOR_OBJECT_TYPES.map((spec) => spec.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("names each diagram dialect apart, though all of them are code blocks", () => {
+    const diagrams = EDITOR_OBJECT_TYPES.filter((spec) => spec.surfaceKind === "diagram");
+    expect(diagrams.length).toBe(EDITOR_DIAGRAM_PROVIDERS.length);
+    for (const provider of EDITOR_DIAGRAM_PROVIDERS) {
+      const spec = diagrams.find((candidate) => candidate.id === `diagram:${provider.language}`);
+      expect(spec?.nodeType).toBe("code_block");
+      expect(spec?.engage).toBe("surface");
+    }
   });
 });
 
