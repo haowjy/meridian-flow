@@ -93,7 +93,12 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   const [lightboxElement, setLightboxElement] = useState<HTMLElement | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
 
-  const { target, visible } = useApproachedObject(editor, menuOpen || contextMenu !== null);
+  // Any open menu here holds the approach: the chip cluster or row must not
+  // fade out from under the verbs the writer opened on it.
+  const { target, visible } = useApproachedObject(
+    editor,
+    menuOpen || contextMenu !== null || fenceMenu !== null,
+  );
 
   const openLightbox = useCallback(
     (pos: number, withSource = false) => {
