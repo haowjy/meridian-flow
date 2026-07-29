@@ -41,7 +41,17 @@ change-trail events, not manuscript content.
   time; storing one puts an expiring value into the shared document. Nor an
   address from the web: a pasted `<img>` lands as a link to where it came from,
   and the import that follows replaces the link with the picture once the bytes
-  belong to the project.
+  belong to the project. The third source is `""` — a picture whose slot exists
+  and whose bytes do not yet — and it belongs to the ingress lifecycle below.
+
+- **A picture in flight is a document node, not a status report.** The `image`
+  node stands in its final slot before a byte leaves, and the upload updates it
+  in place, so the writer can move, delete, or undo it and the manuscript never
+  reflows on completion. Progress, the bytes, and the abort live in
+  `images/`'s plugin state keyed by an anchored hold — never in an attribute
+  (the wire would carry every percent) and never in the shell (one scalar
+  cannot hold two uploads, and it describes an insertion that has not
+  happened). See [`images/AGENTS.md`](images/AGENTS.md).
 - Do not persist, branch-project, or locally author peer marks. Resolve
   awareness cursor colors to concrete RGB before publication.
 - Markdown autoformat is mostly inherited: TipTap's own input rules already
@@ -124,3 +134,4 @@ and navigation contracts.
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
 → [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag
 → [`links/AGENTS.md`](links/AGENTS.md) — the link system
+→ [`images/AGENTS.md`](images/AGENTS.md) — how a picture gets into a document

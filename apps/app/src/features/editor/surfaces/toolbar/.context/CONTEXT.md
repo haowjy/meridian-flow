@@ -30,7 +30,6 @@ selection. See [Two readings, owner first](#two-readings-owner-first).
 | Yjs undo or redo stack empty | undo, redo | `empty-history` |
 | Code-schema file | upload figure | `code-document` |
 | Document opened without a project | upload figure | `no-project` |
-| An upload already in flight | upload figure | `upload-in-flight` |
 
 Read-only outranks every contextual reason: on a document the writer cannot
 change, saying so once is the honest answer.

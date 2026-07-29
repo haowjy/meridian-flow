@@ -27,10 +27,12 @@
   way to enter/edit/remove a link. Needs a popover/inline input over the stock
   TipTap Link mark. `EditorToolbar.tsx`.
 
-- **Image support.** ([#91](https://github.com/haowjy/meridian-flow/issues/91))
-  Image insert/upload/paste/render needs hardening, and the `image` node vs
-  custom `figure` node relationship needs a decision. `meridian-extensions.ts`,
-  `EditorView.tsx`, `FigureNodeView.tsx`.
+- **`image` versus `figure`.** ([#91](https://github.com/haowjy/meridian-flow/issues/91))
+  Ingress (insert, upload, paste, import, pending lifecycle) now lives in
+  `core/editor/images/`. What remains undecided is the relationship between the
+  inline `image` node and the captioned block `figure` node, whose node view
+  still carries its own editing form. `FigureNodeView.tsx`,
+  `meridian-extensions.ts`.
 
 - **Better tables — creation UI, table toolbar, robust markdown paste.**
   ([#92](https://github.com/haowjy/meridian-flow/issues/92))

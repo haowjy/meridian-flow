@@ -36,6 +36,13 @@ the design, from the primitives.
   `chrome/chrome-surfaces.tsx`. `EditorView.tsx` mounts `EditorChromeHost` once
   and takes no further surfaces; a lane that edits it has taken a shared file
   hostage.
+- **A concern the project owns is a runtime, not a growing host.** Links and
+  images both need the project, which chrome surfaces are never given, so each
+  has one component `EditorView` mounts — `ProjectLinkRuntime`,
+  `ImageIngressRuntime` — that registers its ports and otherwise renders
+  nothing. Anything belonging to that concern (state, timers, editor props,
+  status) goes behind those ports; `EditorView` keeps session and mount lifetime
+  and composes.
 - Anything opened over the manuscript hands the caret back on close
   (`onCloseAutoFocus` → prose) and defers Escape to the kernel's chain. Both
   come free from the `chrome/` wrappers; a hand-rolled Radix root does not get
@@ -53,4 +60,5 @@ the design, from the primitives.
 → [`surfaces/formatting/AGENTS.md`](surfaces/formatting/AGENTS.md)
 → [`surfaces/table/AGENTS.md`](surfaces/table/AGENTS.md)
 → [`surfaces/link/AGENTS.md`](surfaces/link/AGENTS.md)
+→ [`surfaces/images/AGENTS.md`](surfaces/images/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)

@@ -150,8 +150,9 @@ Yjs document session. It must stay structurally aligned with
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.
-- Inserted images are inline `image` nodes wrapped in their own paragraph. Their
-  `src` is a stable `asset:<documentId>`; `ImageNodeView` resolves a signed read
+- Inserted images are inline `image` nodes: inline where the insertion point can
+  hold one, in a paragraph of their own where it cannot. Their `src` is a stable
+  `asset:<documentId>`; `ImageNodeView` resolves a signed read
   URL through `asset-image-render-state.ts`, while the markup codec materializes
   project-relative paths. One failed media load may refresh the signed URL
   automatically; the next one surfaces an error instead of looping. That budget
@@ -160,16 +161,26 @@ Yjs document session. It must stay structurally aligned with
   would leave every later expiry with a placeholder. A failure arriving while a
   load is in flight is ignored: a refresh keeps the expiring URL on screen, and
   the request already running is the answer.
+- A picture in flight is a document node. `images/ImageIngressExtension` inserts
+  the `image` node with `src: ""` before the upload starts and sets `src` on that
+  same node when the bytes land, so nothing is inserted at completion and the
+  manuscript does not reflow. The hold on the slot is an `EditorAnchor` plus a
+  read-back of the node; progress, the file, and the abort live in the plugin's
+  state; losing the slot (a delete, an undone insert) aborts the request. Failure
+  keeps the node with Retry and Remove on it. The empty `src` is the wire-safety
+  decision: it round-trips as `![alt]()`, while an `asset:` ref minted before its
+  asset exists throws in the codec's `pathForAsset`.
 - Assets cross the clipboard as project-relative paths and live inside the
-  editor as stable refs. `image-workflow.ts` owns both directions, and the
-  resolver behind them is per-editor because a path only means something inside
-  one project's asset namespace.
+  editor as stable refs. `images/image-workflow.ts` owns both directions, and the
+  asset index behind them lives in the ingress extension's storage because a path
+  only means something inside one project's asset namespace.
 - A paste never lands an image the project does not own.
   `resolveImagesFromClipboard` is the one seam: a copied path comes home as its
-  ref, and every other address becomes a link to itself. `EditorView` then
-  attempts the import — fetch the bytes, take the ordinary upload path, and
-  replace the link with the picture — so an external `src` is never written to
-  the shared document even briefly. A site that refuses the fetch (CORS is the
+  ref, and every other address becomes a link to itself. The ingress extension
+  then attempts the import — fetch the bytes through its port, take the ordinary
+  upload path, and replace the link with the picture — so an external `src` is
+  never written to the shared document even briefly. Each import owns its own
+  entry in the pending state, so two pasted pictures are two lifecycles. A site that refuses the fetch (CORS is the
   common answer) leaves the link, which is the honest result rather than a
   broken figure. The link is found again through `pastedContentRange` plus
   `pastedImageLinkRange`, held as an `EditorAnchor` for the length of the
@@ -304,7 +315,7 @@ y-prosemirror itself uses to carry the selection across the rebuild, and what
 peer marks, live-range navigation, and inline review already hold their anchors
 with. [`anchors.ts`](../anchors.ts) is that mechanism as one type, and every
 surface holding a position consumes it — links, blocks, the fence source pane,
-the peer-mark popover, an image upload's drop point. A second copy of the
+the peer-mark popover, the slot a picture is being uploaded into. A second copy of the
 machinery is the thing this module exists to prevent.
 
 ```ts

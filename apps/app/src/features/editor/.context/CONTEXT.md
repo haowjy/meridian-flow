@@ -13,8 +13,10 @@ the contextual surfaces that replace the deleted bubbles anchor to the block
 they serve and belong to the rebuild, not to incremental patches here. See
 [`surfaces/toolbar/AGENTS.md`](../surfaces/toolbar/AGENTS.md).
 
-The rest of this surface is the prose column, the sync indicator, the
-image-upload flow, and the notice/popover surfaces below.
+The rest of this surface is the prose column, the sync indicator, and the
+notice/popover surfaces below. Image ingress is not here: it is a lane of its
+own ([`surfaces/images/AGENTS.md`](../surfaces/images/AGENTS.md)) whose runtime
+`EditorView` mounts, exactly as it mounts the link runtime.
 
 Block alignment is a shared command module, not the toolbar's own:
 `block-alignment.ts` resolves every alignable block a selection touches (a
@@ -120,8 +122,8 @@ than gating on `isActive` alone.
 `EditorView` owns §5.7's eleven-entry slash catalog and the `[[` menu's
 document list, and hands `useMountedEditor` a *getter* for each, never the
 catalog itself. The extension mounts as a construction fact;
-its localized labels, group headings, hints, and the image-upload callback are
-read when the menu opens, so a locale switch relabels the menu instead of
+its localized labels, group headings, hints, and the door into the image picker
+are read when the menu opens, so a locale switch relabels the menu instead of
 appearing in `EditorMountIdentity` and remounting the editor. The getter returns
 null on a code surface, on a read-only host, and behind a schema fence — the
 last because a slash command dispatches through a chain, and chains run on a
