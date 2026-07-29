@@ -147,12 +147,42 @@ describe("link commit", () => {
     // wrong words unless they travel with the change.
     const before = target.state.tr.insertText("ZZ ", 1);
     target.view.dispatch(before);
-    draft = mapLinkDraft(draft, before.mapping);
+    const moved = mapLinkDraft(target.state, draft, before.mapping);
+    expect(moved).not.toBeNull();
+    draft = moved ?? draft;
 
     expect(commitLinkDraft(target, draft, { text: "", href: "https://example.com/gate" })).toBe(
       "applied",
     );
     expect(linkedText(target)).toBe("third gate");
+  });
+
+  it("gives up the phrase rather than linking whatever replaced it", () => {
+    const target = editorWith("<p>the third gate</p>");
+    target.commands.setTextSelection({ from: 5, to: 15 });
+    const draft = resolveLinkDraft(target);
+
+    // A peer rewrites the selected words while the form is open. Mapping the
+    // range would collapse it into the replacement and the commit would link
+    // someone else's sentence.
+    const rewrite = target.state.tr.replaceWith(5, 15, target.state.schema.text("vault door"));
+    target.view.dispatch(rewrite);
+
+    expect(mapLinkDraft(target.state, draft, rewrite.mapping)).toBeNull();
+  });
+
+  it("keeps a bare caret in front of what a peer types at it", () => {
+    const target = editorWith("<p>the third gate</p>");
+    target.commands.setTextSelection(5);
+    const draft = resolveLinkDraft(target);
+
+    const typed = target.state.tr.insertText("ZZ", 5);
+    target.view.dispatch(typed);
+    const moved = mapLinkDraft(target.state, draft, typed.mapping);
+
+    // Biasing the two edges apart would invert the range and the commit would
+    // write outside it.
+    expect(moved).toMatchObject({ from: 5, to: 5 });
   });
 
   it("keeps the marks the link text already wore", () => {

@@ -3,7 +3,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
-import { linkAtSelection, linkAttributesAtSelection } from "./link-commands";
+import { linkAt, linkAtSelection, linkAttributesAtSelection } from "./link-commands";
 
 let editor: Editor | null = null;
 
@@ -24,6 +24,20 @@ describe("linkAttributesAtSelection", () => {
       expect(linkAttributesAtSelection(editor)).toMatchObject({ href: "https://example.com" });
       expect(linkAtSelection(editor)).toMatchObject({ from: 1, to: 7 });
     }
+  });
+
+  it("answers null for a position outside the document instead of throwing", () => {
+    // `linkAt` is handed positions that came from a Yjs relative position, and
+    // one resolved at the very end of a document plus a character is off the
+    // end. It arrives inside a Yjs update handler, where a throw is swallowed
+    // and the editor quietly stops applying peer writes.
+    editor = new Editor({
+      extensions: createStandaloneEditorExtensions(),
+      content: '<p><a href="https://example.com">linked</a></p>',
+    });
+
+    expect(linkAt(editor.state, editor.state.doc.content.size + 1)).toBeNull();
+    expect(linkAt(editor.state, -1)).toBeNull();
   });
 
   it("does not treat a caret in plain text as an existing link", () => {

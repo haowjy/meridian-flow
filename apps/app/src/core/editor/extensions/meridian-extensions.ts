@@ -28,7 +28,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
-import { classifyLinkTarget, normalizeLinkHref } from "../links/link-target";
+import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -273,8 +273,12 @@ export const MeridianLink = Link.extend({
    */
   renderHTML({ HTMLAttributes }) {
     const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
+    // The rendered href is the classifier's, never the stored one. A peer or
+    // an AI writes marks straight into the document, and a browser reads a URL
+    // more loosely than any parser does: what lands in the DOM has to be the
+    // destination this editor actually approved.
     const attributes = target
-      ? { ...HTMLAttributes, "data-link-kind": target.kind }
+      ? { ...HTMLAttributes, href: linkTargetHref(target), "data-link-kind": target.kind }
       : { ...HTMLAttributes, href: "" };
     return ["a", mergeAttributes(this.options.HTMLAttributes, attributes), 0];
   },

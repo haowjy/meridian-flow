@@ -26,6 +26,7 @@ import {
   followLink,
   type LinkMenuRequest,
   type LinkSurface,
+  linkMenuRange,
   openLinkForm,
   removeLinkAt,
 } from "@/core/editor/links";
@@ -68,7 +69,7 @@ export function LinkMenu({
       {followable ? (
         <EditorMenuItem
           onSelect={() => {
-            followLink(menu.target, surface.navigator);
+            followLink({ target: menu.target, disposition: "current" }, surface.navigator);
             close();
           }}
         >
@@ -92,7 +93,7 @@ export function LinkMenu({
         onSelect={() => {
           // Selecting the link first is what makes the form's own resolution
           // land on it: one draft path serves Ctrl+K, the toolbar, and here.
-          editor.commands.setTextSelection(menu.range);
+          editor.commands.setTextSelection(linkMenuRange(menu));
           openLinkForm(editor);
         }}
       >
@@ -103,7 +104,7 @@ export function LinkMenu({
       <EditorMenuSeparator />
       <EditorMenuItem
         onSelect={() => {
-          removeLinkAt(editor, menu.range);
+          removeLinkAt(editor, linkMenuRange(menu));
           close();
         }}
       >

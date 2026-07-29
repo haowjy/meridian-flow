@@ -49,6 +49,23 @@ const INTERNAL_SCHEMES: ReadonlySet<string> = new Set<string>([...CONTEXT_URI_SC
 /** Web schemes a link mark may carry. Anything else is not a link we honor. */
 const EXTERNAL_SCHEMES: ReadonlySet<string> = new Set(["http:", "https:", "mailto:"]);
 
+/**
+ * True when the target carries a C0 control or DEL anywhere in it.
+ *
+ * A browser strips tab, LF, and CR out of a URL before resolving it, and a
+ * parser does not: `java<TAB>script:` reads as a path here and as a script URL
+ * there, and the gap between those two readings is a live JavaScript URL in
+ * the manuscript. Nothing legitimate carries them, so refusing is cheaper than
+ * agreeing with the browser about exactly which ones it drops.
+ */
+function hasAsciiControl(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
 const EXPLICIT_SCHEME = /^([a-z][a-z\d+.-]*):/i;
 
 /**
@@ -67,7 +84,7 @@ const DOCUMENT_PATH = /\.mdx?($|[?#])/i;
  */
 export function classifyLinkTarget(href: string): LinkTarget | null {
   const value = href.trim();
-  if (!value) return null;
+  if (!value || hasAsciiControl(value)) return null;
 
   const name = wikilinkName(value);
   if (name) return { kind: "wikilink", name };
@@ -111,7 +128,7 @@ export function documentLinkTarget(target: LinkTarget, baseUri: string): Documen
  */
 export function normalizeLinkHref(input: string): string | null {
   const value = input.trim();
-  if (!value) return null;
+  if (!value || hasAsciiControl(value)) return null;
 
   const name = wikilinkName(value);
   if (name) return `[[${name}]]`;
@@ -128,11 +145,14 @@ export function normalizeLinkHref(input: string): string | null {
 }
 
 /**
- * What the destination reads as on hover and in a menu (mockup 06). A wikilink
- * shows its own brackets because that is what the writer typed and what an LLM
- * emits; everything else shows the href it will follow.
+ * The href a classified target actually addresses — what a link renders and
+ * what the hover hint shows.
+ *
+ * Rendering this rather than the stored attribute is the second half of the
+ * fence: whatever reached the mark, the DOM carries only a destination this
+ * module read and approved, spelled the way the URL parser itself spells it.
  */
-export function linkDestinationLabel(target: LinkTarget): string {
+export function linkTargetHref(target: LinkTarget): string {
   switch (target.kind) {
     case "wikilink":
       return `[[${target.name}]]`;
@@ -155,17 +175,26 @@ function wikilinkName(value: string): string | null {
 }
 
 function externalTarget(candidate: string): LinkTarget | null {
-  const url = validExternalHref(candidate);
-  return url ? { kind: "external", url } : null;
+  const url = parseExternalUrl(candidate);
+  // The parser's own spelling, not the writer's: a backslash, an escaped host,
+  // or an odd case reads one way to `new URL` and another to a naive consumer,
+  // and only one of those two is what the browser will navigate to.
+  return url ? { kind: "external", url: url.href } : null;
 }
 
 /** The web-scheme fence: an allowed scheme that parses and addresses something. */
 function validExternalHref(candidate: string): string | null {
+  // The writer's own spelling survives into the document; only rendering and
+  // following use the parser's.
+  return parseExternalUrl(candidate) ? candidate : null;
+}
+
+function parseExternalUrl(candidate: string): URL | null {
   try {
     const url = new URL(candidate);
     if (!EXTERNAL_SCHEMES.has(url.protocol)) return null;
-    if (url.protocol === "mailto:") return url.pathname ? candidate : null;
-    return url.hostname ? candidate : null;
+    if (url.protocol === "mailto:") return url.pathname ? url : null;
+    return url.hostname ? url : null;
   } catch {
     return null;
   }

@@ -13,7 +13,9 @@ export {
   openLinkForm,
 } from "./LinkSurfaceExtension";
 export {
+  anchorLinkRange,
   commitLinkDraft,
+  type LinkAnchor,
   type LinkCommit,
   type LinkCommitResult,
   type LinkDraft,
@@ -23,7 +25,9 @@ export {
   linkAttributesAtSelection,
   linkHref,
   mapLinkDraft,
+  relocateLink,
   removeLinkAt,
+  resolveLinkAnchor,
   resolveLinkDraft,
 } from "./link-commands";
 export {
@@ -31,20 +35,25 @@ export {
   followLink,
   type InternalLinkNavigator,
   LINK_CLICK_SLOP_PX,
-  type LinkClickAction,
   type LinkClickGesture,
+  type LinkClickIntent,
+  type LinkFollowDisposition,
+  type LinkFollowRequest,
   type LinkFollowResult,
-  linkClickAction,
+  linkClickIntent,
+  MIDDLE_BUTTON,
 } from "./link-navigation";
 export {
   createLinkSurface,
   type LinkFormRequest,
   type LinkHint,
   type LinkMenuRequest,
+  type LinkMenuTarget,
   type LinkPoint,
   type LinkRange,
   type LinkSurface,
   type LinkSurfaceState,
+  linkMenuRange,
 } from "./link-surface";
 export {
   classifyLinkTarget,
@@ -52,6 +61,6 @@ export {
   isInternalLinkTarget,
   type LinkTarget,
   type LinkTargetKind,
-  linkDestinationLabel,
+  linkTargetHref,
   normalizeLinkHref,
 } from "./link-target";

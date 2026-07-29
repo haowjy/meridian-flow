@@ -13,7 +13,13 @@ import { type Editor, getMarkRange } from "@tiptap/core";
 import type { Mark } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
+import type * as Y from "yjs";
 
+import {
+  relativePositionForIndex,
+  relativePositionRuntimeFromState,
+  resolveRelativeRange,
+} from "../relative-position-runtime";
 import { normalizeLinkHref } from "./link-target";
 
 export type LinkSelection = {
@@ -39,7 +45,11 @@ export function linkAtSelection(editor: Editor): LinkSelection | null {
 /** The link mark covering `pos`, whole. What a right-click hit. */
 export function linkAt(state: EditorState, pos: number): LinkSelection | null {
   const linkType = state.schema.marks.link;
-  if (!linkType) return null;
+  // Callers arrive with positions a Yjs relative position resolved to, which
+  // can sit at the very end of the document, and with the character after
+  // them. Resolving off the end throws inside a Yjs update handler, where the
+  // throw is swallowed and the editor quietly stops applying peer writes.
+  if (!linkType || pos < 0 || pos > state.doc.content.size) return null;
   const range = getMarkRange(state.doc.resolve(pos), linkType);
   if (!range) return null;
 
@@ -58,10 +68,65 @@ export function linkHref(link: LinkSelection): string {
   return String(link.attributes.href ?? "");
 }
 
-export type LinkDraft = {
-  /** Range the commit rewrites: the selection, or the whole existing link. */
+/**
+ * A range that survives what ProseMirror's own mapping cannot.
+ *
+ * Every remote change — a peer typing, an AI write landing — reaches this
+ * editor as a replacement of the WHOLE document: y-prosemirror rebuilds the
+ * ProseMirror doc from the Yjs type and dispatches one replace step. So every
+ * position maps to a boundary and reports itself deleted, and a surface holding
+ * raw numbers across one is pointing at nothing. Yjs relative positions are
+ * what survive it, and they are already how this editor follows peer marks and
+ * live ranges.
+ *
+ * `relative` is null on an editor with no shared document (a standalone
+ * surface, a test), where the mapping is the whole story because there are no
+ * remote changes to survive.
+ */
+export type LinkAnchor = {
   from: number;
   to: number;
+  relative: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
+};
+
+/** Pin a range so a surface can find it again after the document moves. */
+export function anchorLinkRange(
+  state: EditorState,
+  range: { from: number; to: number },
+): LinkAnchor {
+  const runtime = relativePositionRuntimeFromState(state);
+  const start = runtime && relativePositionForIndex(runtime, range.from);
+  const end = runtime && relativePositionForIndex(runtime, range.to);
+  return { ...range, relative: start && end ? { start, end } : null };
+}
+
+/** Where that range sits now, or null when it is gone. */
+export function resolveLinkAnchor(
+  state: EditorState,
+  anchor: LinkAnchor,
+  mapping: Mappable,
+): { from: number; to: number } | null {
+  const runtime = relativePositionRuntimeFromState(state);
+  if (runtime && anchor.relative) return resolveRelativeRange(runtime, anchor.relative);
+
+  // An empty range is a caret, and both of its edges are the same edge: text a
+  // peer types there belongs to the document, so the caret stays in front of
+  // it. Biasing them apart would invert the range, and a commit against an
+  // inverted range writes somewhere nobody asked for.
+  if (anchor.from === anchor.to) {
+    const at = mapping.mapResult(anchor.from, -1);
+    return at.deleted ? null : { from: at.pos, to: at.pos };
+  }
+
+  const from = mapping.mapResult(anchor.from, 1);
+  const to = mapping.mapResult(anchor.to, -1);
+  if (from.deleted || to.deleted || to.pos < from.pos) return null;
+  return { from: from.pos, to: to.pos };
+}
+
+export type LinkDraft = LinkAnchor & {
+  /** Range the commit rewrites: the selection, or the whole existing link.
+   *  Carried as a `LinkAnchor`, so it survives an AI write landing under it. */
   /** A link mark already covers the range; committing edits or removes it. */
   existing: boolean;
   /**
@@ -81,11 +146,18 @@ export type LinkCommitResult = "applied" | "removed" | "invalid" | "refused";
 export function resolveLinkDraft(editor: Editor): LinkDraft {
   const { empty, from, to } = editor.state.selection;
   const link = linkAtSelection(editor);
-  if (!link) return { from, to, existing: false, needsText: empty, text: "", href: "" };
+  if (!link) {
+    return {
+      ...anchorLinkRange(editor.state, { from, to }),
+      existing: false,
+      needsText: empty,
+      text: "",
+      href: "",
+    };
+  }
 
   return {
-    from: link.from,
-    to: link.to,
+    ...anchorLinkRange(editor.state, { from: link.from, to: link.to }),
     existing: true,
     needsText: empty,
     text: editor.state.doc.textBetween(link.from, link.to),
@@ -94,15 +166,45 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
 }
 
 /**
- * Where the draft's range sits after a document change. A form is open for as
- * long as the writer takes to type a URL, and the document moves underneath it
- * — a peer types above the selection, an AI write lands — so raw positions go
- * stale and would address whatever slid into their place. Both edges bias away
- * from the range: text typed against either boundary belongs to the document,
- * not to the phrase the writer selected.
+ * Where the draft's range sits after a document change, or null when the words
+ * it was opened for are gone.
+ *
+ * A form is open for as long as the writer takes to type a URL, and the
+ * document moves underneath it. Both edges bias away from the range: text
+ * typed against either boundary belongs to the document, not to the phrase the
+ * writer selected.
  */
-export function mapLinkDraft(draft: LinkDraft, mapping: Mappable): LinkDraft {
-  return { ...draft, from: mapping.map(draft.from, 1), to: mapping.map(draft.to, -1) };
+export function mapLinkDraft(
+  state: EditorState,
+  draft: LinkDraft,
+  mapping: Mappable,
+): LinkDraft | null {
+  const at = resolveLinkAnchor(state, draft, mapping);
+  return at ? { ...draft, ...anchorLinkRange(state, at) } : null;
+}
+
+/**
+ * The same link after a document change, or null when the writer's link is
+ * gone. What keeps a surface aimed at one link from acting on another.
+ *
+ * Coordinates outlive the thing that was at them. A peer deletes the link and
+ * the words after it slide back into those numbers; a peer edits the href and
+ * the same range now means a different destination. Both read as "still there"
+ * to a position alone, so the mark decides: same attributes, same destination,
+ * and anything else means this surface has nothing left to act on.
+ */
+export function relocateLink(
+  state: EditorState,
+  link: { anchor: LinkAnchor; identity: Mark },
+  mapping: Mappable,
+): LinkSelection | null {
+  const at = resolveLinkAnchor(state, link.anchor, mapping);
+  if (!at) return null;
+
+  // One character in, and re-read whole: a writer typing inside a link grows
+  // it, and the surface should follow the mark rather than the old edges.
+  const current = linkAt(state, at.from + 1);
+  return current?.identity.eq(link.identity) ? current : null;
 }
 
 /**

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyLinkTarget,
   documentLinkTarget,
-  linkDestinationLabel,
+  linkTargetHref,
   normalizeLinkHref,
 } from "./link-target";
 
@@ -24,7 +24,9 @@ describe("classifyLinkTarget", () => {
       "https://example.com/threads/pacing",
       { kind: "external", url: "https://example.com/threads/pacing" },
     ],
-    ["http://example.com", { kind: "external", url: "http://example.com" }],
+    // `url` is the parser's own spelling, which is why a bare origin gains its
+    // root path: that is the string the browser will navigate to.
+    ["http://example.com", { kind: "external", url: "http://example.com/" }],
     ["mailto:writer@example.com", { kind: "external", url: "mailto:writer@example.com" }],
     ["//example.com/path", { kind: "external", url: "https://example.com/path" }],
   ])("classifies %s", (href, expected) => {
@@ -118,20 +120,50 @@ describe("normalizeLinkHref", () => {
   });
 });
 
-describe("linkDestinationLabel", () => {
-  it("shows a wikilink as the writer spelled it", () => {
-    expect(linkDestinationLabel({ kind: "wikilink", name: "The Second Gate" })).toBe(
+describe("control characters", () => {
+  // Browsers strip tab, LF, and CR out of a URL before resolving it; a parser
+  // that only looks at the outside of the string does not. That gap is the
+  // whole smuggling trick, and an AI or a collab peer writes marks straight
+  // into the document without ever passing a form.
+  it.each([
+    "java\tscript:globalThis.owned=1",
+    "java\nscript:alert(1)",
+    "java\rscript:alert(1)",
+    "javascript:alert(1)",
+    "data\t:text/html,unsafe",
+    "https://exam\tple.com",
+    "\u0001javascript:alert(1)",
+  ])("refuses %j", (href) => {
+    expect(classifyLinkTarget(href)).toBeNull();
+    expect(normalizeLinkHref(href)).toBeNull();
+  });
+
+  it("still accepts a target the writer merely padded", () => {
+    expect(classifyLinkTarget("\t https://example.com \n")).toEqual({
+      kind: "external",
+      url: "https://example.com/",
+    });
+  });
+});
+
+describe("linkTargetHref", () => {
+  it("is what a link renders, so the DOM never carries an href nobody classified", () => {
+    expect(linkTargetHref({ kind: "wikilink", name: "The Second Gate" })).toBe(
       "[[The Second Gate]]",
+    );
+    expect(linkTargetHref({ kind: "scheme", uri: "manuscript://a.md" })).toBe("manuscript://a.md");
+    expect(linkTargetHref({ kind: "relative", path: "../a.md" })).toBe("../a.md");
+    expect(linkTargetHref({ kind: "external", url: "https://example.com/" })).toBe(
+      "https://example.com/",
     );
   });
 
-  it("shows every other kind as the href it follows", () => {
-    expect(linkDestinationLabel({ kind: "external", url: "https://example.com" })).toBe(
-      "https://example.com",
-    );
-    expect(linkDestinationLabel({ kind: "scheme", uri: "manuscript://a.md" })).toBe(
-      "manuscript://a.md",
-    );
-    expect(linkDestinationLabel({ kind: "relative", path: "../a.md" })).toBe("../a.md");
+  it("hands back the URL parser's own reading of an external target", () => {
+    // What the classifier validated and what the browser resolves have to be
+    // the same string, or the fence guards a URL nobody navigates to.
+    expect(classifyLinkTarget("https:\\\\example.com\\path")).toEqual({
+      kind: "external",
+      url: "https://example.com/path",
+    });
   });
 });

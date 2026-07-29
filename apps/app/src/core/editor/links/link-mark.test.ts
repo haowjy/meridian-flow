@@ -57,6 +57,40 @@ describe("the link mark carries the whole internal family", () => {
     expect(hrefsIn(target)).toEqual([href]);
   });
 
+  it.each([
+    ["java\tscript:globalThis.owned=1", "javascript:"],
+    ["java\nscript:globalThis.owned=1", "javascript:"],
+    ["\u0001javascript:globalThis.owned=1", "javascript:"],
+  ])("renders no live destination for %j, which a browser would read as %s", (href) => {
+    // The path an AI or a collab peer takes: a mark written straight into the
+    // document, never through a form. The browser strips the control character
+    // out of the URL before resolving it, so a classifier that reads the
+    // string literally sees a harmless path and renders a script URL.
+    const target = editorWith("<p>linked</p>");
+    target.view.dispatch(
+      target.state.tr.addMark(1, 7, target.state.schema.marks.link.create({ href, title: null })),
+    );
+
+    const anchor = target.view.dom.querySelector("a");
+    expect(anchor?.getAttribute("href")).toBe("");
+    expect((anchor as HTMLAnchorElement | null)?.protocol).not.toBe("javascript:");
+  });
+
+  it("renders the classifier's spelling of an href, not the one that was stored", () => {
+    const target = editorWith("<p>linked</p>");
+    target.view.dispatch(
+      target.state.tr.addMark(
+        1,
+        7,
+        target.state.schema.marks.link.create({ href: "https:\\\\example.com\\path", title: null }),
+      ),
+    );
+
+    expect(target.view.dom.querySelector("a")?.getAttribute("href")).toBe(
+      "https://example.com/path",
+    );
+  });
+
   it("refuses a script URL on the way in and renders no destination for one that got in", () => {
     const parsed = editorWith('<p><a href="javascript:alert(1)">linked</a></p>');
     expect(hrefsIn(parsed)).toEqual([]);

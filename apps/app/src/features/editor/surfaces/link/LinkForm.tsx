@@ -47,17 +47,22 @@ export function LinkForm({
   // The commit reads the range from here, never from render state: an open
   // form outlives the positions it was opened with.
   const draftRef = useRef(draft);
+  const close = surface.closeForm;
 
   useEffect(() => {
     const followDocument = ({ transaction }: { transaction: Transaction }) => {
       if (!transaction.docChanged) return;
-      draftRef.current = mapLinkDraft(draftRef.current, transaction.mapping);
+      const moved = mapLinkDraft(editor.state, draftRef.current, transaction.mapping);
+      draftRef.current = moved ?? draftRef.current;
+      // The words this form was opened for are gone. Committing would write
+      // the writer's link into whatever a peer put in their place.
+      if (!moved) close();
     };
     editor.on("transaction", followDocument);
     return () => {
       editor.off("transaction", followDocument);
     };
-  }, [editor]);
+  }, [editor, close]);
 
   return (
     <EditorPopover

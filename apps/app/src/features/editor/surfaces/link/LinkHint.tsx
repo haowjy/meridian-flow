@@ -16,7 +16,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { CHROME_TIMING } from "@/core/editor/chrome";
-import { type LinkHint as LinkHintTarget, linkDestinationLabel } from "@/core/editor/links";
+import { type LinkHint as LinkHintTarget, linkTargetHref } from "@/core/editor/links";
 import { type AnchorRect, useAnchorRect, useChromeSuppressed } from "@/features/editor/chrome";
 
 /** Below the link's baseline, clear of the descenders and the underline. */
@@ -42,7 +42,7 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
       className="meridian-link-hint"
       style={position ?? { left: rect.left, top: rect.bottom + HINT_GAP_PX }}
     >
-      {linkDestinationLabel(shown.target)}
+      {linkTargetHref(shown.target)}
     </div>,
     document.body,
   );

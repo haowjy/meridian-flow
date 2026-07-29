@@ -13,6 +13,9 @@
  * have to remember to clear a hint.
  */
 
+import type { Mark } from "@tiptap/pm/model";
+
+import type { LinkAnchor } from "./link-commands";
 import type { InternalLinkNavigator } from "./link-navigation";
 import type { LinkTarget } from "./link-target";
 
@@ -38,14 +41,37 @@ export type LinkFormRequest = {
   seq: number;
 };
 
-/** The right-click menu, on the link the pointer hit rather than the caret. */
-export type LinkMenuRequest = {
-  at: LinkPoint;
-  range: LinkRange;
+/**
+ * The link a menu is aimed at, as it stands right now.
+ *
+ * Kept current by the document rather than captured once: the menu is open for
+ * as long as the writer reads it, and every verb on it rewrites a range. A
+ * range that stopped describing the writer's link is a verb aimed at someone
+ * else's sentence.
+ */
+export type LinkMenuTarget = {
+  /** Where the link is, pinned so it can be found again after a remote write. */
+  anchor: LinkAnchor;
   href: string;
   target: LinkTarget | null;
+  /**
+   * The mark this menu opened on. Coordinates outlive the thing that was at
+   * them, so identity is what tells "the same link, moved" from "a different
+   * link now sitting where that one was".
+   */
+  identity: Mark;
+};
+
+/** The right-click menu, on the link the pointer hit rather than the caret. */
+export type LinkMenuRequest = LinkMenuTarget & {
+  at: LinkPoint;
   seq: number;
 };
+
+/** The range a menu verb rewrites. */
+export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
+  return { from: menu.anchor.from, to: menu.anchor.to };
+}
 
 export type LinkSurfaceState = {
   hint: LinkHint | null;
@@ -60,7 +86,13 @@ export type LinkSurface = {
   showHint: (hint: LinkHint | null) => void;
   openForm: (at: LinkPoint) => void;
   closeForm: () => void;
-  openMenu: (request: Omit<LinkMenuRequest, "seq">) => void;
+  openMenu: (request: LinkMenuTarget & { at: LinkPoint }) => void;
+  /**
+   * Follow the open menu's link through a document change. `null` closes it:
+   * a menu whose link is gone has nothing left to be about, and re-aiming it
+   * at whatever occupies the old coordinates would be worse than closing.
+   */
+  retargetMenu: (target: LinkMenuTarget | null) => void;
   closeMenu: () => void;
 
   /**
@@ -119,6 +151,10 @@ export function createLinkSurface(): LinkSurface {
     openMenu(request) {
       sequence += 1;
       set({ menu: { ...request, seq: sequence }, form: null, hint: null });
+    },
+    retargetMenu(target) {
+      if (!state.menu) return;
+      set({ menu: target && { ...state.menu, ...target } });
     },
     closeMenu() {
       set({ menu: null });
