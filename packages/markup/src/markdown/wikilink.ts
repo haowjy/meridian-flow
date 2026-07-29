@@ -19,6 +19,7 @@ import type {
 import type { Plugin } from "unified";
 
 import type { MdastWikiLink } from "../ast.js";
+import { skipBalanced, tryConsumeJsxTag } from "../escape.js";
 import { closesFence, openingFenceAt } from "./container.js";
 
 declare module "micromark-util-types" {
@@ -153,20 +154,31 @@ export const remarkWikiLink: Plugin = function () {
   data.toMarkdownExtensions.push(toMarkdownWikiLink());
 };
 
-export function normalizeLabeledWikilinkDestinations(source: string): string {
+export function normalizeLabeledWikilinkDestinations(
+  source: string,
+  options: { protectMdxSyntax?: boolean } = {},
+): string {
   // CommonMark refuses whitespace in a raw link destination. Character
   // references let its parser recover the intended href without changing the
   // target held by the ProseMirror link mark.
-  return rewriteLabeledWikilinkDestinations(source, (target) => {
-    const canonicalTarget = target.trim();
-    return canonicalTarget
-      .replaceAll(" ", WIKILINK_SPACE_REFERENCE)
-      .replaceAll("\t", WIKILINK_TAB_REFERENCE);
-  });
+  return rewriteLabeledWikilinkDestinations(
+    source,
+    (target) => {
+      const canonicalTarget = target.trim();
+      return canonicalTarget
+        .replaceAll(" ", WIKILINK_SPACE_REFERENCE)
+        .replaceAll("\t", WIKILINK_TAB_REFERENCE);
+    },
+    options,
+  );
 }
 
-export function canonicalizeLabeledWikilinkDestinations(source: string): string {
+export function canonicalizeLabeledWikilinkDestinations(
+  source: string,
+  options: { protectMdxSyntax?: boolean } = {},
+): string {
   return rewriteLabeledWikilinkDestinations(source, (target) => target.trim(), {
+    ...options,
     acceptEscapedOpening: true,
     acceptLiteralDestination: true,
   });
@@ -175,6 +187,7 @@ export function canonicalizeLabeledWikilinkDestinations(source: string): string 
 interface RewriteOptions {
   acceptEscapedOpening?: boolean;
   acceptLiteralDestination?: boolean;
+  protectMdxSyntax?: boolean;
 }
 
 function rewriteLabeledWikilinkDestinations(
@@ -219,6 +232,18 @@ function rewriteLine(
   let codeSpanTicks = initialCodeSpanTicks;
 
   for (let index = 0; index < value.length; index++) {
+    if (codeSpanTicks === 0 && options.protectMdxSyntax) {
+      const protectedLength =
+        value[index] === "<"
+          ? tryConsumeJsxTag(value, index)
+          : value[index] === "{"
+            ? balancedSpanLength(value, index, "{", "}")
+            : null;
+      if (protectedLength !== null) {
+        index += protectedLength - 1;
+        continue;
+      }
+    }
     if (value[index] === "`" && !isEscaped(value, index)) {
       const ticks = markerRunLength(value, index, "`");
       if (codeSpanTicks === 0 && hasClosingCodeSpan(lines, lineIndex, index + ticks, ticks)) {
@@ -238,6 +263,16 @@ function rewriteLine(
   }
 
   return { value, codeSpanTicks };
+}
+
+function balancedSpanLength(
+  value: string,
+  start: number,
+  open: string,
+  close: string,
+): number | null {
+  const end = skipBalanced(value, start, open, close);
+  return end === null ? null : end - start;
 }
 
 function hasClosingCodeSpan(

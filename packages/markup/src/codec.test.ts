@@ -165,6 +165,24 @@ describe("codec presets", () => {
     }
   });
 
+  it("does not rewrite labeled-wikilink-looking text inside MDX props", () => {
+    const wikilinkCodec = mdxCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+      components,
+    });
+    const input = '<StatBlock value={7} config={{"note":"[label]([[A B]])"}} />';
+    const parsed = wikilinkCodec.parse(input).blocks;
+
+    expect(parsed[0]?.attrs.props).toEqual({
+      value: 7,
+      config: { note: "[label]([[A B]])" },
+    });
+    expect(docFrom(wikilinkCodec.parse(wikilinkCodec.serialize(parsed)).blocks).toJSON()).toEqual(
+      docFrom(parsed).toJSON(),
+    );
+  });
+
   it("keeps character-reference-looking target text literal", () => {
     const wikilinkCodec = markdownCodec({
       schema,

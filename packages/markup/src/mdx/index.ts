@@ -45,13 +45,17 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
     remarkPlugins: [remarkMdx, remarkWikiLink],
     preprocess: (text) =>
       escapeProseForMdxIngress(
-        normalizeLabeledWikilinkDestinations(normalizeGfmTableHardBreaks(text)),
+        normalizeLabeledWikilinkDestinations(normalizeGfmTableHardBreaks(text), {
+          protectMdxSyntax: true,
+        }),
       ),
     postParse: demoteAutolinks,
     postSerializeBlock: (node, serialized, ctx) =>
       serializeLayoutBlock(
         node,
-        canonicalizeLabeledWikilinkDestinations(canonicalizeGfmTableHardBreaks(serialized)),
+        canonicalizeLabeledWikilinkDestinations(canonicalizeGfmTableHardBreaks(serialized), {
+          protectMdxSyntax: true,
+        }),
         ctx,
       ),
   };
