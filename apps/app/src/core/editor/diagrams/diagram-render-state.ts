@@ -1,22 +1,28 @@
 /**
- * What mermaid has made of a diagram's source so far.
+ * What a diagram provider has made of a fence's source so far, and which face
+ * that puts on the page.
  *
- * The async parser's state and nothing else. Render status changes when a
- * parse settles; which face a node view wears changes when the selection
- * moves. They are separate clocks, and keeping them apart is what makes the
- * node view's one invariant checkable — see `MermaidCodeBlock.tsx`.
+ * Provider-neutral on purpose: the async parse, the pause before re-parsing, the
+ * out-of-order guard, and the palette redraw are the same problem for every
+ * diagram language, so a provider brings only its `render` (see
+ * `diagram-providers.ts`) and inherits the rest.
+ *
+ * Render status changes when a parse settles; which face a node view wears
+ * changes when the selection moves. They are separate clocks, and keeping them
+ * apart is what makes the node view's one invariant checkable — see
+ * `../CodeBlockNodeView.tsx`.
  */
 import { t } from "@lingui/core/macro";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import { DEFAULT_UI_THEME, resolveUiTheme, subscribeUiTheme } from "@/lib/ui-theme";
 
-import { renderMermaid } from "./mermaid-render";
+import type { DiagramProvider } from "./diagram-providers";
 
 /**
  * How long source rests before it is parsed again.
  *
- * Mermaid reparses and re-lays-out the whole diagram per render, so a fence
+ * A provider reparses and re-lays-out the whole diagram per render, so a fence
  * being typed into would run one full parse per keystroke and throw all but the
  * last away. The pause costs nothing visible: the last good render stays on
  * screen throughout. It is a render cost, never a face timer — no face waits
@@ -24,14 +30,14 @@ import { renderMermaid } from "./mermaid-render";
  */
 const RENDER_DEBOUNCE_MS = 250;
 
-export type MermaidRender = {
+export type DiagramRender = {
   /**
    * The last source that rendered, markup and all. Stays non-null while
    * `error` is set: a broken edit keeps the previous diagram on screen rather
    * than blanking the canvas mid-keystroke.
    */
   svg: string | null;
-  /** Mermaid's message for `rendered`, which usually names the line. */
+  /** The provider's message for `rendered`, which usually names the line. */
   error: string | null;
   /**
    * The source `svg` and `error` describe. Null until the first render
@@ -42,20 +48,21 @@ export type MermaidRender = {
 };
 
 /**
- * Render `source` to SVG.
+ * Render `source` through `provider`.
  *
- * Every consumer gets its own id because mermaid writes it into the markup:
+ * Every consumer gets its own id because a renderer writes it into the markup:
  * two faces of one diagram sharing an id would collide over the arrow markers
  * they reference by id, and the page's diagram would lose its arrowheads the
  * moment the dialog opened.
  */
-export function useMermaidSvg(source: string): MermaidRender {
+export function useDiagramRender(provider: DiagramProvider, source: string): DiagramRender {
+  const { language, render } = provider;
   const reactId = useId();
-  const [render, setRender] = useState<MermaidRender>({ svg: null, error: null, rendered: null });
+  const [result, setResult] = useState<DiagramRender>({ svg: null, error: null, rendered: null });
   // Renders resolve out of order under fast typing; only the newest may land.
   const generation = useRef(0);
   // A diagram is drawn in the manuscript's ink, so switching palettes has to
-  // redraw it. Mermaid bakes its colors into the markup; nothing about an
+  // redraw it. A renderer bakes its colors into the markup; nothing about an
   // already-rendered SVG follows a token.
   const uiTheme = useSyncExternalStore(subscribeUiTheme, resolveUiTheme, () => DEFAULT_UI_THEME);
 
@@ -63,16 +70,16 @@ export function useMermaidSvg(source: string): MermaidRender {
     const run = () => {
       generation.current += 1;
       const current = generation.current;
-      const id = `meridian-mermaid-${reactId.replaceAll(":", "")}-${current}`;
+      const id = `meridian-${language}-${reactId.replaceAll(":", "")}-${current}`;
 
-      void renderMermaid(id, source)
+      void render(id, source)
         .then((svg) => {
-          if (generation.current === current) setRender({ svg, error: null, rendered: source });
+          if (generation.current === current) setResult({ svg, error: null, rendered: source });
         })
         .catch((error: unknown) => {
           if (generation.current !== current) return;
           const message = error instanceof Error ? error.message : t`Unable to render diagram`;
-          setRender((previous) => ({ svg: previous.svg, error: message, rendered: source }));
+          setResult((previous) => ({ svg: previous.svg, error: message, rendered: source }));
         });
     };
 
@@ -86,9 +93,9 @@ export function useMermaidSvg(source: string): MermaidRender {
 
     const timer = window.setTimeout(run, RENDER_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [reactId, source, uiTheme]);
+  }, [language, render, reactId, source, uiTheme]);
 
-  return render;
+  return result;
 }
 
 /** Which of §5.2's faces the diagram is wearing right now. */
@@ -102,7 +109,7 @@ export type DiagramFace =
   /** Nothing has been parsed yet. */
   | "pending";
 
-export function diagramFace({ svg, error }: MermaidRender): DiagramFace {
+export function diagramFace({ svg, error }: DiagramRender): DiagramFace {
   if (svg) return error ? "stale" : "rendered";
   return error ? "unrendered" : "pending";
 }

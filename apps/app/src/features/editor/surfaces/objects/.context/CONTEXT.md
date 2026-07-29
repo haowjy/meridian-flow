@@ -8,9 +8,14 @@ in the kernel's
 
 | Object | Row / cluster | ⋮ | Enter |
 |---|---|---|---|
-| diagram (`code_block` + `language: mermaid`) | `[fullscreen] [copy source] [⋮]` | Edit source, Copy image, Download image, Duplicate, Delete | lightbox |
-| image (`image`, `figure`) | `[fullscreen] [copy image] [⋮]` | Download image, Duplicate, Delete | lightbox |
-| code block (any other language) | `[language ▾ | copy | ⋮]` | Wrap lines, Duplicate, Delete | (caret, not an object) |
+| diagram (`code_block` in a provider's language) | `[fullscreen] [copy source] [⋮]` | Edit source, Copy image, Download image, Duplicate, Delete | lightbox |
+| image (`image`) | `[fullscreen] [copy image] [⋮]` | Alt text, Replace image, Download image, Duplicate, Delete | lightbox |
+| figure (`figure`) | `[fullscreen] [copy image] [⋮]` | Alt text, Caption, Label, Replace image, Download image, Duplicate, Delete | lightbox |
+| code block (any other language) | `[language ▾, copy, ⋮]` | Wrap lines, Duplicate, Delete | (caret, not an object) |
+
+Not one of those rows is written down as a branch. The diagram's verbs come from
+`diagramProviderFor(node)`, the metadata verbs from the registration's
+`surfaceFields`, and the shape from `surfaceKind`.
 
 Diagrams and images open their lightbox three ways: the fullscreen chip, Enter
 on the selection, and a double-click in the page. The last two are the same
@@ -37,12 +42,30 @@ Diagrams are drawn from the design tokens, read at render time
 (`core/editor/mermaid-theme.ts`), so a theme switch repaints them. Nothing in
 this lane names a color.
 
-Alt text and Replace are absent from the image ⋮ rather than dead: their
-surfaces belong to the upload lane (§5.6), and law 5 prefers the gap.
-
 The lightbox's own ⋮ is the mockup's three: Edit source / Hide source, Copy
-Mermaid source, Download image. An image lightbox carries no ⋮ — its verbs are
+<provider> source, Download image. An image lightbox carries no ⋮ — its verbs are
 all on the row that opened it.
+
+## The object's own words
+
+Alt text, and a figure's caption and label, are edited in `ObjectFieldPopover` —
+the small popover §5.6 asks for, anchored to the object's rendered bounds and
+holding a `NodeHold` like every other surface here. Three rules:
+
+- **Which fields exist is the registration's**, `surfaceFields`. The inline
+  picture has `alt`; the figure adds `caption` and `label`, which are the words
+  it shows under the picture. Neither node view carries a form.
+- **Every keystroke is a document write.** These attributes are shared, so a
+  draft held behind a Save button would be a second copy of the truth for as long
+  as the popover stayed open — and undo, not a Cancel button, is the writer's way
+  back (`setObjectField`).
+- **The field the writer asked for takes the caret**, through a callback ref, and
+  Radix's own entry focus is declined: it would take the first control, which is
+  the wrong one whenever the writer picked Caption or Label.
+
+Replace runs `openImageReplacePicker` from `core/editor/images`: the same upload
+lifecycle as an insert, aimed at the node that is already there, so the writer's
+alt text, caption, and label survive and the manuscript does not move.
 
 ## The approach reading
 
@@ -125,7 +148,7 @@ rendered — plus a `Mapping` of every LOCAL change that has landed since, and
 carries the diff's offsets forward through it. With nobody else typing the
 mapping is empty and this is one `insertText`. The write refuses a fence that
 has been deleted or turned into another language while the pane was open:
-writing Mermaid into a TypeScript block is worse than doing nothing.
+writing a diagram's source into a TypeScript block is worse than doing nothing.
 
 A peer's write is the one thing a mapping cannot carry. It arrives as a
 replacement of the whole document (see
@@ -161,7 +184,7 @@ the two failures browsers actually produce here keep their meaning:
 | `ExportError` | the image could not be read, or cannot be turned into an image |
 
 The second one points at the door that always works, which is why the row's
-copy chip carries Mermaid source rather than an image.
+copy chip carries the diagram's source rather than an image.
 
 ## The lightbox
 
@@ -220,7 +243,7 @@ behind a modal scrim (`aria-hidden` / `inert`).
 
 ## Right-click
 
-Claimed at the `object` rung, and only for diagrams and images: a code block's
+Claimed at the `object` rung, and only for diagrams, images, and figures: a code block's
 right-click stays the browser's, so spellcheck and paste survive inside a
 fence. The claim remembers the ELEMENT it claimed, not the hovered one, and
 selects the object so the menu says what it is about.

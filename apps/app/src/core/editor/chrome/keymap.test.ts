@@ -69,6 +69,7 @@ describe("keymap scopes", () => {
         context: {
           owner: "object",
           nodeType: "figure",
+          objectSpec: "figure",
           pos: 4,
           chain: ["document", "object"],
           objectPos: null,
@@ -85,6 +86,7 @@ describe("keymap scopes", () => {
         context: {
           owner: "table-cell",
           nodeType: "table_cell",
+          objectSpec: null,
           pos: 9,
           chain: ["document", "table", "table-cell"],
           objectPos: 3,
@@ -104,6 +106,7 @@ describe("keymap scopes", () => {
       context: {
         owner: "object",
         nodeType: "figure",
+        objectSpec: "figure",
         pos: 4,
         chain: ["document", "object"],
         objectPos: null,

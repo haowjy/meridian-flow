@@ -11,6 +11,13 @@
  * cluster instead (ruling 15): same inside-corner physics, different shape,
  * because its language is a labeled control.
  *
+ * **Nothing here names an object type.** Which objects this surface serves, what
+ * their ⋮ offers, and which keys they answer are all reads of
+ * `EDITOR_OBJECT_TYPES`: the surfaces are registered per registration id, the
+ * verbs come from `object-menu-items.tsx`, and the fields a ⋮ can edit come from
+ * the row's `surfaceFields`. A new object kind — a new diagram provider included
+ * — reaches this file as data.
+ *
  * Two of the claim ladder's rungs land here. `object` is a right-click on a
  * diagram or an image, which opens the ⋮ it already has. `caret` is a
  * right-click INSIDE a plain fence, which used to reach the browser and now
@@ -22,78 +29,62 @@
  * settled on it, so a menu reading hover state would run Delete on whatever the
  * pointer passed over last.
  *
- * **Elements are geometry, holds are identity.** Every surface here — two
- * menus and the lightbox — remembers a `NodeHold` and resolves it to the
- * current node and the current DOM on every render. The element a right-click
- * landed on is gone as soon as a peer writes, and the writer is still looking at
- * the same diagram.
+ * **Elements are geometry, holds are identity.** Every surface here — two menus,
+ * the field popover, and the lightbox — remembers a `NodeHold` and resolves it
+ * to the current node and the current DOM on every render. The element a
+ * right-click landed on is gone as soon as a peer writes, and the writer is
+ * still looking at the same diagram.
  */
 
-import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { Code2, Copy, CopyPlus, Download, ImageDown, Maximize2, Trash2 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  EDITOR_OBJECT_TYPES,
+  type ObjectSurfaceField,
   registerObjectEngagement,
   registerObjectKeymap,
   selectObjectTransaction,
 } from "@/core/editor/objects";
-import {
-  EditorMenu,
-  EditorMenuItem,
-  EditorMenuSeparator,
-  OverlayIconRow,
-  type OverlayIconRowItem,
-  useEditorChrome,
-  useNodeHold,
-} from "@/features/editor/chrome";
+import { EditorMenu, OverlayIconRow, useEditorChrome, useNodeHold } from "@/features/editor/chrome";
 
 import { CodeBlockChips } from "./CodeBlockChips";
 import { FenceMenuItems } from "./fence-menu-items";
 import { fenceUnderPointer } from "./fence-triggers";
+import { ObjectFieldPopover } from "./ObjectFieldPopover";
 import { ObjectLightbox } from "./ObjectLightbox";
-import {
-  isMermaidFence,
-  type ObjectSurfaceTarget,
-  objectSurfaceAt,
-  objectSurfaceAtPos,
-  objectSurfaceForHold,
-  renderedImage,
-} from "./object-anchors";
-import {
-  copyImageFrom,
-  copySvgImage,
-  copyText,
-  deleteObject,
-  downloadImageFrom,
-  downloadPng,
-  duplicateObject,
-  fenceSource,
-  renderedDiagramSvg,
-} from "./object-commands";
+import { objectSurfaceAt, objectSurfaceAtPos, objectSurfaceForHold } from "./object-anchors";
+import { ObjectMenuItems, objectRowItems } from "./object-menu-items";
 import { useApproachedObject } from "./useApproachedObject";
 import { ObjectVerbNotice, useVerbFeedback } from "./verb-feedback";
 import "./object-controls.css";
 
-/** Runs a verb and keeps its answer, success or failure. */
-export type RunVerb = (work: Promise<unknown>, done: string) => void;
-
 /** Where a right-click landed. Geometry, so the menu opens under the pointer. */
 type MenuPoint = { x: number; y: number };
+
+/**
+ * The registrations whose surface this lane owns: every object whose Enter opens
+ * something and whose chrome is a row rather than a caret. A registration that
+ * ships later is served the moment its row exists.
+ */
+const SURFACE_SPECS = EDITOR_OBJECT_TYPES.filter(
+  (spec) => spec.engage === "surface" && spec.surfaceKind !== undefined,
+);
 
 export function ObjectControls({ editor }: { editor: Editor }) {
   const chrome = useEditorChrome(editor);
   const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
 
-  // Three surfaces, three holds. A hold is released the moment its object stops
+  // Four surfaces, four holds. A hold is released the moment its object stops
   // existing, which is what closes the surface: no state here can outlive the
   // thing it points at.
   const [contextMenu, holdContextMenu] = useNodeHold(editor);
   const [fenceMenu, holdFenceMenu] = useNodeHold(editor);
   const [lightbox, holdLightbox] = useNodeHold(editor);
+  const [fieldPopover, holdFieldPopover] = useNodeHold(editor);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [field, setField] = useState<ObjectSurfaceField>("alt");
 
   // The pointer's own place, in a ref rather than state: it decides nothing
   // about what a menu acts on, and it is read once when the menu opens.
@@ -104,7 +95,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   // fade out from under the verbs the writer opened on it.
   const { target, visible } = useApproachedObject(
     editor,
-    menuOpen || contextMenu !== null || fenceMenu !== null,
+    menuOpen || contextMenu !== null || fenceMenu !== null || fieldPopover !== null,
   );
 
   const openLightbox = useCallback(
@@ -117,6 +108,14 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     [editor, holdLightbox],
   );
 
+  const openField = useCallback(
+    (pos: number, name: ObjectSurfaceField) => {
+      setField(name);
+      holdFieldPopover(pos);
+    },
+    [holdFieldPopover],
+  );
+
   // A diagram a peer deleted takes its dialog with it, and the source hatch
   // belongs to the dialog rather than to the next one the writer opens.
   useEffect(() => {
@@ -124,31 +123,35 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   }, [lightbox]);
 
   // Enter and a double-click both engage the selected object (§4, §5.2).
-  // Registered per node type, from the mounted component, because the surface
-  // they open is React's.
+  // Registered per registration, from the mounted component, because the surface
+  // they open is React's — and per registration rather than per node type so two
+  // diagram dialects can each have their own.
   useEffect(() => {
-    const releases = ["code_block", "image", "figure"].map((nodeType) =>
-      registerObjectEngagement(editor, nodeType, ({ node, pos }, opening) => {
-        if (nodeType === "code_block" && !isMermaidFence(node)) return false;
-        // Law 2's exception, as the mockups draw it: a diagram made a moment
-        // ago has nothing to view, so it opens on its starter source and the
+    const releases = SURFACE_SPECS.map((spec) =>
+      registerObjectEngagement(editor, spec.id, ({ pos }, opening) =>
+        // Law 2's exception, as the mockups draw it: a diagram made a moment ago
+        // has nothing to view, so it opens on its starter source and the
         // writer's first act is typing rather than looking.
-        return openLightbox(pos, opening === "created" && nodeType === "code_block");
-      }),
+        openLightbox(pos, opening === "created" && spec.surfaceKind === "diagram"),
+      ),
     );
     return () => {
       for (const release of releases) release();
     };
   }, [editor, openLightbox]);
 
-  // Ctrl+Enter opens the dialog with the source hatch already open (§4).
-  useEffect(
-    () =>
-      registerObjectKeymap(editor, "code_block", {
+  // Ctrl+Enter opens the dialog with the source hatch already open (§4), for
+  // every object whose surface HAS a source: a diagram's fence.
+  useEffect(() => {
+    const releases = SURFACE_SPECS.filter((spec) => spec.surfaceKind === "diagram").map((spec) =>
+      registerObjectKeymap(editor, spec.id, {
         "Mod-Enter": (state) => openLightbox(state.selection.from, true),
       }),
-    [editor, openLightbox],
-  );
+    );
+    return () => {
+      for (const release of releases) release();
+    };
+  }, [editor, openLightbox]);
 
   // Right-click on an object opens the same ⋮ menu (§5.2). The kernel routes
   // the event; deciding is synchronous, opening may be a state update.
@@ -182,10 +185,10 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     if (!chrome) return;
     return chrome.registerContextClaim({
       id: "caret",
-      claim: (target) => {
-        const pos = fenceUnderPointer(editor, target);
+      claim: (claimed) => {
+        const pos = fenceUnderPointer(editor, claimed);
         if (pos === null || !objectSurfaceAtPos(editor.view, pos)) return false;
-        fenceAt.current = { x: target.event.clientX, y: target.event.clientY };
+        fenceAt.current = { x: claimed.event.clientX, y: claimed.event.clientY };
         holdFenceMenu(pos);
         return true;
       },
@@ -198,6 +201,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   const lightboxTarget = objectSurfaceForHold(editor.view, lightbox);
   const contextTarget = objectSurfaceForHold(editor.view, contextMenu);
   const fenceTarget = objectSurfaceForHold(editor.view, fenceMenu);
+  const fieldTarget = objectSurfaceForHold(editor.view, fieldPopover);
 
   return (
     <>
@@ -220,7 +224,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
           kind={target.kind}
           corner={{ inside: target.container }}
           visible={visible}
-          items={rowItems({ editor, target, run, openLightbox })}
+          items={objectRowItems({ editor, target, run, openLightbox, openField })}
           overflow={(chip) => (
             <EditorMenu
               editor={editor}
@@ -230,7 +234,13 @@ export function ObjectControls({ editor }: { editor: Editor }) {
               align="end"
               trigger={chip}
             >
-              {objectMenuItems({ editor, target, run, openLightbox })}
+              <ObjectMenuItems
+                editor={editor}
+                target={target}
+                run={run}
+                openLightbox={openLightbox}
+                openField={openField}
+              />
             </EditorMenu>
           )}
         />
@@ -244,9 +254,15 @@ export function ObjectControls({ editor }: { editor: Editor }) {
           onOpenChange={(open) => !open && holdContextMenu(null)}
           at={contextAt.current}
         >
-          {contextTarget
-            ? objectMenuItems({ editor, target: contextTarget, run, openLightbox })
-            : null}
+          {contextTarget ? (
+            <ObjectMenuItems
+              editor={editor}
+              target={contextTarget}
+              run={run}
+              openLightbox={openLightbox}
+              openField={openField}
+            />
+          ) : null}
         </EditorMenu>
       ) : null}
 
@@ -261,6 +277,14 @@ export function ObjectControls({ editor }: { editor: Editor }) {
           {fenceTarget ? <FenceMenuItems editor={editor} target={fenceTarget} run={run} /> : null}
         </EditorMenu>
       ) : null}
+
+      <ObjectFieldPopover
+        editor={editor}
+        target={fieldTarget}
+        field={field}
+        open={fieldPopover !== null}
+        onOpenChange={(open) => !open && holdFieldPopover(null)}
+      />
 
       <ObjectLightbox
         editor={editor}
@@ -283,103 +307,4 @@ export function ObjectControls({ editor }: { editor: Editor }) {
       />
     </>
   );
-}
-
-type VerbContext = {
-  editor: Editor;
-  target: ObjectSurfaceTarget;
-  run: RunVerb;
-  openLightbox: (pos: number, withSource?: boolean) => boolean;
-};
-
-/**
- * The row: fullscreen, one copy, and the ⋮ (ruling 8).
- *
- * A diagram's copy puts **Mermaid source** on the clipboard, not an image —
- * revision runs through the chat, so source is the bridge into that loop, and
- * it works in every browser where image-copy is the clipboard API's fussiest
- * corner. The image forms live in the ⋮.
- */
-function rowItems({ editor, target, run, openLightbox }: VerbContext): OverlayIconRowItem[] {
-  const copyItem: OverlayIconRowItem =
-    target.kind === "diagram"
-      ? {
-          id: "copy",
-          label: t`Copy Mermaid source`,
-          icon: <Copy aria-hidden />,
-          onSelect: () => run(copyText(fenceSource(editor, target.pos)), t`Mermaid source copied`),
-        }
-      : {
-          id: "copy",
-          label: t`Copy image`,
-          icon: <Copy aria-hidden />,
-          onSelect: () => run(copyImageFrom(imageSource(target)), t`Image copied`),
-        };
-
-  return [
-    {
-      id: "fullscreen",
-      label: t`Open full screen`,
-      icon: <Maximize2 aria-hidden />,
-      onSelect: () => openLightbox(target.pos),
-    },
-    copyItem,
-  ];
-}
-
-/**
- * The ⋮, shared by the row's overflow and the right-click menu — one menu with
- * two doors, per the kernel's rule that a surface has one entry point rather
- * than three.
- */
-function objectMenuItems({ editor, target, run, openLightbox }: VerbContext): ReactNode {
-  const svg = target.kind === "diagram" ? renderedDiagramSvg(target.element) : null;
-  const source = target.kind === "image" ? imageSource(target) : "";
-
-  return (
-    <>
-      {target.kind === "diagram" ? (
-        <EditorMenuItem onSelect={() => openLightbox(target.pos, true)}>
-          <Code2 aria-hidden />
-          {t`Edit source`}
-        </EditorMenuItem>
-      ) : null}
-
-      {/* Absent, never dead: a diagram that has not rendered has no image to
-          hand over yet (law 5). */}
-      {svg ? (
-        <EditorMenuItem onSelect={() => run(copySvgImage(svg), t`Image copied`)}>
-          <ImageDown aria-hidden />
-          {t`Copy image`}
-        </EditorMenuItem>
-      ) : null}
-      {svg ? (
-        <EditorMenuItem onSelect={() => run(downloadPng(svg, "diagram.png"), t`Image downloaded`)}>
-          <Download aria-hidden />
-          {t`Download image`}
-        </EditorMenuItem>
-      ) : null}
-      {source ? (
-        <EditorMenuItem onSelect={() => run(downloadImageFrom(source), t`Image downloaded`)}>
-          <Download aria-hidden />
-          {t`Download image`}
-        </EditorMenuItem>
-      ) : null}
-
-      <EditorMenuSeparator />
-      <EditorMenuItem onSelect={() => duplicateObject(editor, target.pos)}>
-        <CopyPlus aria-hidden />
-        {t`Duplicate`}
-      </EditorMenuItem>
-      <EditorMenuItem variant="destructive" onSelect={() => deleteObject(editor, target.pos)}>
-        <Trash2 aria-hidden />
-        {t`Delete`}
-      </EditorMenuItem>
-    </>
-  );
-}
-
-function imageSource(target: ObjectSurfaceTarget): string {
-  const image = renderedImage(target.element);
-  return image?.currentSrc || image?.src || "";
 }

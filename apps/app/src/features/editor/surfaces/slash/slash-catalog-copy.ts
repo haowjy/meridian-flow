@@ -10,6 +10,7 @@
 
 import { t } from "@lingui/core/macro";
 
+import { defaultDiagramProvider } from "@/core/editor/diagrams";
 import type { SlashCommandCatalog } from "@/core/editor/extensions/slash";
 
 /**
@@ -20,6 +21,11 @@ import type { SlashCommandCatalog } from "@/core/editor/extensions/slash";
  * resolve against whatever locale is active when the menu OPENS — a locale
  * switch has to relabel the menu without touching the editor's lifetime.
  */
+/** What the writer's verbs call the diagram this row makes. Never localized. */
+function diagramName(): string {
+  return defaultDiagramProvider().name;
+}
+
 export function documentSlashCatalog(requestImageUpload: () => void): SlashCommandCatalog {
   return {
     menuLabel: t`Insert block`,
@@ -54,8 +60,11 @@ export function documentSlashCatalog(requestImageUpload: () => void): SlashComma
         id: "diagram",
         group: "insert",
         label: t`Diagram`,
-        aliases: [t`mermaid`, t`flowchart`, t`chart`],
-        hint: t`Mermaid`,
+        // The provider's name is the row's hint and one of its aliases, so a
+        // writer who thinks in the syntax finds the row: the entry inserts the
+        // catalog's default dialect, and the rest are the fence's language menu.
+        aliases: [t`flowchart`, t`chart`, diagramName().toLowerCase()],
+        hint: diagramName(),
       },
       { id: "code", group: "insert", label: t`Code block`, aliases: [t`fence`, t`codeblock`] },
       {

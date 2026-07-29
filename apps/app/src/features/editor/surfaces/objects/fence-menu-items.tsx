@@ -19,6 +19,7 @@ import type { Editor } from "@tiptap/core";
 import { ChevronDown, Copy, CopyPlus, Trash2, WrapText } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { diagramProviderForLanguage, EDITOR_DIAGRAM_PROVIDERS } from "@/core/editor/diagrams";
 import {
   EditorMenuCheckboxItem,
   EditorMenuItem,
@@ -29,36 +30,25 @@ import {
   EditorMenuSubContent,
   EditorMenuSubTrigger,
 } from "@/features/editor/chrome";
-import type { RunVerb } from "./ObjectControls";
 import type { ObjectSurfaceTarget } from "./object-anchors";
 import { copyText, deleteObject, duplicateObject, setFenceLanguage } from "./object-commands";
+import type { RunVerb } from "./verb-feedback";
 
 const PLAIN_LANGUAGE = "plain";
 
 /**
- * The languages a fiction writer's manuscript actually carries, plus mermaid
- * as the door into a diagram. A full lowlight roster would be a scrolling list
- * of grammars nobody in this product writes.
+ * The languages a fiction writer's manuscript actually carries, plus every
+ * registered diagram dialect as the door into a picture. A full lowlight roster
+ * would be a scrolling list of grammars nobody in this product writes.
+ *
+ * The diagram half comes from the provider catalog, so a new diagram kind is
+ * reachable from this menu the moment its row exists — that is the writer's way
+ * to turn a fence into one.
  *
  * Only `plain` is translated: the rest are the names of the languages
  * themselves, which do not change with the reader.
  */
-const LANGUAGE_IDS = [
-  PLAIN_LANGUAGE,
-  "mermaid",
-  "bash",
-  "css",
-  "diff",
-  "json",
-  "markdown",
-  "python",
-  "sql",
-  "typescript",
-  "yaml",
-] as const;
-
-const PROPER_NAMES: Record<string, string> = {
-  mermaid: "Mermaid",
+const CODE_LANGUAGE_NAMES: Record<string, string> = {
   bash: "Bash",
   css: "CSS",
   diff: "Diff",
@@ -70,9 +60,16 @@ const PROPER_NAMES: Record<string, string> = {
   yaml: "YAML",
 };
 
+const LANGUAGE_IDS: readonly string[] = [
+  PLAIN_LANGUAGE,
+  ...EDITOR_DIAGRAM_PROVIDERS.map((provider) => provider.language),
+  ...Object.keys(CODE_LANGUAGE_NAMES),
+];
+
 export function fenceLanguageLabel(language: unknown): string {
   const id = typeof language === "string" && language ? language : PLAIN_LANGUAGE;
-  return id === PLAIN_LANGUAGE ? t`Plain text` : (PROPER_NAMES[id] ?? id);
+  if (id === PLAIN_LANGUAGE) return t`Plain text`;
+  return diagramProviderForLanguage(id)?.name ?? CODE_LANGUAGE_NAMES[id] ?? id;
 }
 
 /** The language the fence carries now, spelled the way the menu spells it. */

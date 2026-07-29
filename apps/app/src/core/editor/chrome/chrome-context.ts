@@ -15,7 +15,7 @@ import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import { AllSelection, type EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 
 import { selectedObject } from "../objects/object-selection";
-import { isEditorObject, isSourceBlock } from "../objects/object-types";
+import { isEditorObject, isSourceBlock, objectTypeSpec } from "../objects/object-types";
 
 /**
  * The contexts chrome can be owned by, shallowest first. The order is the
@@ -37,6 +37,15 @@ export type ChromeContext = {
   owner: ChromeContextKind;
   /** Owner node's schema type name. Null only at the document level. */
   nodeType: string | null;
+  /**
+   * The object REGISTRATION that owns chrome (`EDITOR_OBJECT_TYPES` `id`), null
+   * whenever the owner is not a registered object.
+   *
+   * Separate from `nodeType` because one node type carries several
+   * registrations: a mermaid fence and any other fenced diagram dialect are both
+   * `code_block`, and a per-object keymap has to know which one is selected.
+   */
+  objectSpec: string | null;
   /** Owner node's document position. Null only at the document level. */
   pos: number | null;
   /** Document down to the owner, deepest last; `chain.at(-1) === owner`. */
@@ -57,6 +66,7 @@ export type ChromeContext = {
 export const DOCUMENT_CHROME_CONTEXT: ChromeContext = {
   owner: "document",
   nodeType: null,
+  objectSpec: null,
   pos: null,
   chain: ["document"],
   objectPos: null,
@@ -94,6 +104,7 @@ export function resolveChromeContext(state: EditorState): ChromeContext {
     return {
       owner: "object",
       nodeType: object.node.type.name,
+      objectSpec: objectTypeSpec(object.node)?.id ?? null,
       pos: object.pos,
       chain: [...ancestors.chain, "object"],
       objectPos: ancestors.objectPos,
@@ -110,6 +121,7 @@ export function resolveChromeContext(state: EditorState): ChromeContext {
     return {
       owner: "source-block",
       nodeType: fence.node.type.name,
+      objectSpec: null,
       pos: fence.pos,
       chain: [...ancestors.chain, "source-block"],
       objectPos: ancestors.objectPos,
@@ -118,7 +130,9 @@ export function resolveChromeContext(state: EditorState): ChromeContext {
 
   const { chain, nodeType, pos, objectPos } = resolveAncestors(selection.$from);
   const owner = chain[chain.length - 1];
-  return { owner, nodeType, pos, chain, objectPos };
+  // A caret INSIDE something is never standing on an object, whatever it is
+  // nested in: the table around a cell caret is `objectPos`, not the owner.
+  return { owner, nodeType, objectSpec: null, pos, chain, objectPos };
 }
 
 /**
@@ -150,6 +164,7 @@ export function chromeContextAt(doc: PMNode, pos: number): ChromeContext {
     return {
       owner: "object",
       nodeType: node.type.name,
+      objectSpec: objectTypeSpec(node)?.id ?? null,
       pos: clamped,
       chain: [...chain, "object"],
       objectPos,
@@ -157,7 +172,14 @@ export function chromeContextAt(doc: PMNode, pos: number): ChromeContext {
   }
 
   const { chain, nodeType, pos: ownerPos, objectPos } = resolveAncestors($pos);
-  return { owner: chain[chain.length - 1], nodeType, pos: ownerPos, chain, objectPos };
+  return {
+    owner: chain[chain.length - 1],
+    nodeType,
+    objectSpec: null,
+    pos: ownerPos,
+    chain,
+    objectPos,
+  };
 }
 
 type AncestorWalk = {

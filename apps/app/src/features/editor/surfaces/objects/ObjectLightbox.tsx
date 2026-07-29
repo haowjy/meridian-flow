@@ -9,7 +9,11 @@
  * The viewer face is the dialog's whole job. Revision is not — writers revise
  * machine-authored diagrams through the normal chat (the ask-AI hook was ruled
  * out), so the only editing surface here is the demoted source escape hatch
- * behind ⋮, which opens the raw Mermaid beside the live preview.
+ * behind ⋮, which opens the raw source beside the live preview.
+ *
+ * Which diagram language that source is written in is the provider's business,
+ * never this file's: the row names itself in the verbs and brings the renderer
+ * the preview uses (`core/editor/diagrams/diagram-providers.ts`).
  */
 
 import { t } from "@lingui/core/macro";
@@ -18,7 +22,7 @@ import { Code2, Copy, Download, MoreVertical } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
-import { useMermaidSvg } from "@/core/editor/mermaid-render-state";
+import { type DiagramProvider, diagramProviderFor, useDiagramRender } from "@/core/editor/diagrams";
 import {
   EditorDialog,
   EditorMenu,
@@ -30,6 +34,7 @@ import {
 import { useFenceDraft } from "./fence-draft";
 import { type ObjectSurfaceTarget, renderedImage } from "./object-anchors";
 import { copyText, downloadPng } from "./object-commands";
+import { DIAGRAM_EXPORT_FILENAME } from "./object-menu-items";
 import { ViewerCanvas } from "./ViewerCanvas";
 import { useVerbFeedback, VerbNoticePill } from "./verb-feedback";
 
@@ -54,7 +59,7 @@ export function ObjectLightbox({
   sourceOpen,
   onSourceOpenChange,
 }: ObjectLightboxProps) {
-  const isDiagram = target?.kind === "diagram";
+  const provider = target ? diagramProviderFor(target.node) : null;
 
   return (
     <EditorDialog
@@ -66,18 +71,22 @@ export function ObjectLightbox({
       // and closing here would lose the dialog on every peer keystroke.
       open={open}
       onOpenChange={onOpenChange}
-      title={isDiagram ? t`Diagram` : t`Image`}
+      title={provider ? t`Diagram` : t`Image`}
       className="meridian-object-lightbox"
     >
-      {target && isDiagram ? (
+      {target && provider ? (
         <DiagramFace
+          // The render state below belongs to one provider; a language change is
+          // a document change, and the pane starts over on the new one.
+          key={provider.language}
           editor={editor}
           target={target}
+          provider={provider}
           sourceOpen={sourceOpen}
           onSourceOpenChange={onSourceOpenChange}
         />
       ) : null}
-      {target && !isDiagram ? <ImageFace target={target} /> : null}
+      {target && !provider ? <ImageFace target={target} /> : null}
     </EditorDialog>
   );
 }
@@ -110,11 +119,13 @@ function LightboxHeader({
 function DiagramFace({
   editor,
   target,
+  provider,
   sourceOpen,
   onSourceOpenChange,
 }: {
   editor: Editor;
   target: ObjectSurfaceTarget;
+  provider: DiagramProvider;
   sourceOpen: boolean;
   onSourceOpenChange: (open: boolean) => void;
 }) {
@@ -128,7 +139,7 @@ function DiagramFace({
   // The pause between a keystroke and a reparse belongs to the render hook,
   // which the page's own diagram shares: one answer to "when is this source
   // settled enough to draw".
-  const { svg, error, rendered } = useMermaidSvg(source);
+  const { svg, error, rendered } = useDiagramRender(provider, source);
 
   // The pane is its own layer, which is what makes law 3's walk fall out of one
   // rule: Esc closes the source, then the dialog, then leaves the diagram
@@ -182,15 +193,17 @@ function DiagramFace({
               {sourceOpen ? t`Hide source` : t`Edit source`}
             </EditorMenuItem>
             <EditorMenuSeparator />
-            <EditorMenuItem onSelect={() => run(copyText(source), t`Mermaid source copied`)}>
+            <EditorMenuItem
+              onSelect={() => run(copyText(source), t`${provider.name} source copied`)}
+            >
               <Copy aria-hidden />
-              {t`Copy Mermaid source`}
+              {t`Copy ${provider.name} source`}
             </EditorMenuItem>
             {/* Absent rather than disabled while nothing has rendered: there is
                 no image to hand over yet, and law 5 prefers the gap. */}
             {svg ? (
               <EditorMenuItem
-                onSelect={() => run(downloadPng(svg, "diagram.png"), t`Image downloaded`)}
+                onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), t`Image downloaded`)}
               >
                 <Download aria-hidden />
                 {t`Download image`}
@@ -203,6 +216,7 @@ function DiagramFace({
       <div className={sourceOpen ? "meridian-lightbox-split" : "meridian-lightbox-body"}>
         {sourceOpen ? (
           <SourcePane
+            name={provider.name}
             value={source}
             onChange={draft.onChange}
             // Only report a failure the writer can act on: a message about
@@ -226,11 +240,14 @@ function DiagramFace({
 }
 
 function SourcePane({
+  name,
   value,
   onChange,
   error,
   hasPreview,
 }: {
+  /** The provider's name, which is what the pane is labelled with. */
+  name: string;
   value: string;
   onChange: (next: string) => void;
   error: string | null;
@@ -255,7 +272,7 @@ function SourcePane({
         ref={areaRef}
         className="meridian-lightbox-source-text"
         spellCheck={false}
-        aria-label={t`Mermaid source`}
+        aria-label={t`${name} source`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />

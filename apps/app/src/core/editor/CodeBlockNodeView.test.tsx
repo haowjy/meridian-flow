@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "./config";
-import { registerObjectEngagement } from "./objects";
+import { objectTypeSpec, registerObjectEngagement } from "./objects";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
@@ -16,7 +16,7 @@ vi.mock("@lingui/core/macro", () => ({
 // the node view does with a render that succeeded or failed, not mermaid's
 // grammar. `RENDERS` is the source both faces agree parses.
 const RENDERS = "flowchart LR\nA --> B";
-vi.mock("./mermaid-render", () => ({
+vi.mock("./diagrams/mermaid-render", () => ({
   renderMermaid: async (_id: string, source: string) => {
     if (source !== RENDERS) throw new Error("Parse error on line 2");
     return "<svg data-fake-diagram></svg>";
@@ -149,31 +149,31 @@ function selectionInsideFence(mounted: Editor): boolean {
   return from > 0 && to < fence.nodeSize;
 }
 
-describe("Mermaid code blocks", () => {
+describe("a fence a diagram provider claims", () => {
   it("renders a mermaid fence as a diagram and hides its source", async () => {
     mountDocument("mermaid", RENDERS);
 
     await vi.waitFor(() => {
-      expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+      expect(document.querySelector("[data-diagram-preview] svg")).not.toBeNull();
     });
     expect(fenceClass()).toContain("hidden");
   });
 
-  it("keeps a non-mermaid fence a plain code block", async () => {
+  it("keeps a fence no provider claims a plain code block", async () => {
     mountDocument("typescript", "const answer = 42;");
 
     await vi.waitFor(() => {
       expect(document.querySelector("pre > code")?.textContent).toContain("const answer");
     });
-    expect(document.querySelector("[data-mermaid-preview]")).toBeNull();
+    expect(document.querySelector("[data-diagram-preview]")).toBeNull();
     expect(fenceClass()).not.toContain("hidden");
   });
 
   it("shows an error card, never the fence, for source that has never rendered", async () => {
     mountDocument("mermaid", "flowchart LR\nA[");
 
-    // §5.2: the page never shows Mermaid syntax, not even when the syntax is
-    // what broke. The card holds the diagram's place and names the problem.
+    // §5.2: the page never shows a diagram's syntax, not even when the syntax
+    // is what broke. The card holds the diagram's place and names the problem.
     await vi.waitFor(() => {
       expect(errorCard()).not.toBeNull();
     });
@@ -184,7 +184,10 @@ describe("Mermaid code blocks", () => {
   it("engages the source pane from the error card", async () => {
     const mounted = mountDocument("mermaid", "flowchart LR\nA[");
     const openings: string[] = [];
-    registerObjectEngagement(mounted, "code_block", (_target, opening) => {
+    const fence = mounted.state.doc.firstChild;
+    const spec = fence ? objectTypeSpec(fence) : null;
+    if (!spec) throw new Error("the fence matched no object registration");
+    registerObjectEngagement(mounted, spec.id, (_target, opening) => {
       openings.push(opening);
     });
 
@@ -216,7 +219,7 @@ describe("Mermaid code blocks", () => {
 
     await settle();
     expect(fenceClass()).toContain("hidden");
-    expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+    expect(document.querySelector("[data-diagram-preview] svg")).not.toBeNull();
   });
 
   it("holds the diagram through a press that never becomes a click", async () => {
@@ -265,7 +268,7 @@ describe("a diagram that stops parsing", () => {
     const mounted = mountDocument("mermaid", RENDERS);
 
     await vi.waitFor(() => {
-      expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+      expect(document.querySelector("[data-diagram-preview] svg")).not.toBeNull();
     });
 
     // The writer (or a peer) leaves the source unparseable. What was on the
@@ -283,7 +286,7 @@ describe("a diagram that stops parsing", () => {
       expect(document.body.textContent).toContain("Parse error on line 2");
     });
     // Both, not either: the render stays AND the failure is visible.
-    expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+    expect(document.querySelector("[data-diagram-preview] svg")).not.toBeNull();
     expect(fenceClass()).toContain("hidden");
   });
 });
@@ -298,7 +301,7 @@ describe("a caret inside a rendered diagram", () => {
     // land here.
     const mounted = mountDocument("mermaid", RENDERS);
     await vi.waitFor(() => {
-      expect(document.querySelector("[data-mermaid-preview] svg")).not.toBeNull();
+      expect(document.querySelector("[data-diagram-preview] svg")).not.toBeNull();
     });
     await landCaretInProse(mounted);
     expect(mounted.isFocused).toBe(true);

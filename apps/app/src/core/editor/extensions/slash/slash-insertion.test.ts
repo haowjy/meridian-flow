@@ -12,6 +12,7 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
+import { defaultDiagramProvider } from "../../diagrams";
 import { type ObjectAt, registerObjectEngagement } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
 import { applySlashCommand, slashRefusals } from "./slash-insertion";
@@ -152,15 +153,20 @@ describe("slash insertion semantics", () => {
    */
   it("hands a new diagram to the object lane, at the position it landed", () => {
     const { editor: instance, range } = mountWithTrigger("The gate stood open. ", "/diagram");
+    const provider = defaultDiagramProvider();
     const opened: ObjectAt[] = [];
-    registerObjectEngagement(instance, "code_block", (target) => opened.push(target));
+    // Registered against the diagram's own registration, which is how a second
+    // dialect would register its own surface beside this one.
+    registerObjectEngagement(instance, `diagram:${provider.language}`, (target) =>
+      opened.push(target),
+    );
 
     applySlashCommand(instance, range, item("diagram"), catalog());
 
     expect(opened).toHaveLength(1);
     expect(instance.state.doc.nodeAt(opened[0].pos)).toBe(opened[0].node);
-    expect(opened[0].node.attrs.language).toBe("mermaid");
-    expect(opened[0].node.textContent).toContain("flowchart");
+    expect(opened[0].node.attrs.language).toBe(provider.language);
+    expect(opened[0].node.textContent).toBe(provider.starterSource);
   });
 
   it("leaves a diagram editable in place while no lane has registered its surface", () => {
@@ -168,8 +174,8 @@ describe("slash insertion semantics", () => {
     applySlashCommand(instance, range, item("diagram"), catalog());
 
     const node = instance.state.doc.firstChild;
-    expect(node?.attrs.language).toBe("mermaid");
-    expect(node?.textContent).toContain("flowchart");
+    expect(node?.attrs.language).toBe(defaultDiagramProvider().language);
+    expect(node?.textContent).toBe(defaultDiagramProvider().starterSource);
     expect(caretChain(instance)).toEqual(["code_block"]);
   });
 

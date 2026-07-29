@@ -68,6 +68,7 @@ function rightClick(overrides: Partial<ContextClaimTarget> = {}): ContextClaimTa
 const objectContext: ChromeContext = {
   owner: "object",
   nodeType: "figure",
+  objectSpec: "figure",
   pos: 8,
   objectPos: 8,
   chain: ["document", "object"],
@@ -105,6 +106,7 @@ const TABLE_DOC: JSONContent = {
 const cellContext: ChromeContext = {
   owner: "table-cell",
   nodeType: "table_cell",
+  objectSpec: null,
   pos: 4,
   objectPos: null,
   chain: ["document", "table", "table-cell"],

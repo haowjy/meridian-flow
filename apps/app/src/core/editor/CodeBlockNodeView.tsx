@@ -1,11 +1,13 @@
 /**
- * The mermaid fence's node view — the diagram the page shows instead of syntax.
+ * The fence's node view — the diagram the page shows instead of syntax.
  *
- * A `code_block` whose language is `mermaid` renders as a diagram and hides its
- * own `<pre>`; every other language is the fence itself (interaction model
- * §5.2). The three faces the render layer wears are `MermaidDiagramBody`; this
- * file owns the one choice above them, which is whether the writer is looking
- * at the diagram or at its source.
+ * A `code_block` whose language a diagram provider claims renders as a diagram
+ * and hides its own `<pre>`; every other language is the fence itself
+ * (interaction model §5.2). WHICH languages render is the catalog's answer
+ * (`diagrams/diagram-providers.ts`), never a name in this file; the three faces
+ * the render layer wears are `DiagramBody`. What this file owns is the one
+ * choice above them, which is whether the writer is looking at the diagram or at
+ * its source.
  *
  * ## The invariant
  *
@@ -37,8 +39,14 @@ import type { Editor, NodeViewProps } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import { useCallback, useSyncExternalStore } from "react";
-import { MermaidDiagramBody } from "./MermaidDiagramBody";
-import { useMermaidSvg } from "./mermaid-render-state";
+
+import {
+  DiagramBody,
+  type DiagramProvider,
+  diagramProviderFor,
+  useDiagramRender,
+} from "./diagrams";
+import { engageObject, selectObjectTransaction } from "./objects";
 
 /**
  * Is a live caret in this node's text, as opposed to standing on the node?
@@ -85,16 +93,14 @@ function useCaretInsideNode(editor: Editor, getPos: () => number | undefined): b
   return useSyncExternalStore(subscribe, read, read);
 }
 
-export function MermaidCodeBlockNodeView(props: NodeViewProps) {
-  const isMermaid = props.node.attrs.language === "mermaid";
-  const source = props.node.textContent;
-  const render = useMermaidSvg(isMermaid ? source : "");
+export function CodeBlockNodeView(props: NodeViewProps) {
+  const provider = diagramProviderFor(props.node);
   const caretInside = useCaretInsideNode(props.editor, props.getPos);
-  const showSource = !isMermaid || caretInside;
+  const showSource = !provider || caretInside;
 
   return (
     <NodeViewWrapper
-      className={isMermaid ? "meridian-diagram-block" : undefined}
+      className={provider ? "meridian-diagram-block" : undefined}
       data-language={String(props.node.attrs.language ?? "")}
     >
       {/* The content host. First child, unconditional, and never keyed off the
@@ -106,20 +112,67 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
       <pre className={showSource ? undefined : "hidden"}>
         <NodeViewContent as={"code" as never} style={{ whiteSpace: "inherit" }} />
       </pre>
-      {/* The render layer. Mounted for the whole life of a mermaid fence: the
+      {/* The render layer. Mounted for the whole life of a diagram fence: the
           condition is the language attr, which only a document change moves, so
           no selection transition adds or removes this element. Everything
-          inside it changes on the parser's clock instead. */}
-      {isMermaid ? (
+          inside it changes on the parser's clock instead.
+
+          Keyed by provider, because the render layer holds one provider's render
+          state: a language change swaps which renderer is called, and reusing
+          the component across that swap would hand the new provider the old
+          one's hook state. A language change is a document change, so a remount
+          here is allowed where a selection-driven one would not be. */}
+      {provider ? (
         <div className={showSource ? "hidden" : undefined} contentEditable={false}>
-          <MermaidDiagramBody
+          <DiagramRenderLayer
+            key={provider.language}
             editor={props.editor}
             getPos={props.getPos}
-            render={render}
-            describesSource={render.rendered === source}
+            provider={provider}
+            source={props.node.textContent}
           />
         </div>
       ) : null}
     </NodeViewWrapper>
+  );
+}
+
+/**
+ * One provider's render of one fence, and the door back to its source.
+ *
+ * Its own component so the render hook belongs to the provider that owns it (see
+ * the key above) and so the node view above stays the single choice between the
+ * two faces.
+ */
+function DiagramRenderLayer({
+  editor,
+  getPos,
+  provider,
+  source,
+}: {
+  editor: Editor;
+  getPos: () => number | undefined;
+  provider: DiagramProvider;
+  source: string;
+}) {
+  const render = useDiagramRender(provider, source);
+
+  const openSource = () => {
+    const pos = getPos();
+    const node = pos === undefined ? null : editor.state.doc.nodeAt(pos);
+    if (pos === undefined || !node) return;
+    // Select first: engaging leaves the diagram selected underneath, so closing
+    // the dialog lands on it rather than wherever the caret was.
+    const selected = selectObjectTransaction(editor.state, pos);
+    if (selected) editor.view.dispatch(selected);
+    engageObject(editor, { node, pos }, "engage");
+  };
+
+  return (
+    <DiagramBody
+      render={render}
+      describesSource={render.rendered === source}
+      onEditSource={openSource}
+    />
   );
 }

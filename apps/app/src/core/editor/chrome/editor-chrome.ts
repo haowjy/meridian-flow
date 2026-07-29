@@ -416,6 +416,7 @@ export function createEditorChrome(
       if (
         next.owner === context.owner &&
         next.nodeType === context.nodeType &&
+        next.objectSpec === context.objectSpec &&
         next.pos === context.pos
       ) {
         return;

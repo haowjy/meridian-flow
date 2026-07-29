@@ -9,6 +9,9 @@
 import type { Editor } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
 
+import { DIAGRAM_PREVIEW_SELECTOR } from "@/core/editor/diagrams";
+import type { ObjectSurfaceField } from "@/core/editor/objects";
+
 /**
  * An export that could not happen, with the reason kept.
  *
@@ -23,7 +26,7 @@ export class ExportError extends Error {
   }
 }
 
-/** The text a code fence holds — a diagram's Mermaid source, or plain code. */
+/** The text a code fence holds — a diagram's source, or plain code. */
 export function fenceSource(editor: Editor, pos: number): string {
   return editor.state.doc.nodeAt(pos)?.textContent ?? "";
 }
@@ -40,6 +43,33 @@ export function duplicateObject(editor: Editor, pos: number): boolean {
   const node = editor.state.doc.nodeAt(pos);
   if (!node) return false;
   editor.view.dispatch(editor.state.tr.insert(pos + node.nodeSize, node));
+  return true;
+}
+
+/**
+ * Write one of the object's own attributes — its alt text, a figure's caption or
+ * label (§5.6). Which fields an object has is its registration's answer
+ * (`surfaceFields`), so this takes any of them and the surface never branches on
+ * the node type.
+ *
+ * An emptied optional field becomes null rather than an empty string: `caption`
+ * is a plain string in the schema and `alt`/`label` are nullable, and a wire
+ * format that round-trips needs the absent case to be absent.
+ */
+export function setObjectField(
+  editor: Editor,
+  pos: number,
+  field: ObjectSurfaceField,
+  value: string,
+): boolean {
+  const node = editor.state.doc.nodeAt(pos);
+  if (!node) return false;
+  const trimmed = field === "caption" ? value : value.trim();
+  const next = field === "caption" ? trimmed : trimmed || null;
+  if (node.attrs[field] === next) return true;
+  editor.view.dispatch(
+    editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, [field]: next }),
+  );
   return true;
 }
 
@@ -140,10 +170,12 @@ export function downloadPng(svg: string, filename: string): Promise<void> {
  * The SVG the page already rendered for this diagram.
  *
  * Reading it back beats rendering a second copy: it is the exact markup the
- * writer is looking at, mermaid ids and all, and no parse runs to produce it.
+ * writer is looking at, generated ids and all, and no parse runs to produce it.
+ * The selector is the diagram module's own contract, so every provider's render
+ * is found by one reading (`core/editor/diagrams/DiagramBody.tsx`).
  */
 export function renderedDiagramSvg(element: HTMLElement): string | null {
-  return element.querySelector("[data-mermaid-preview] svg")?.outerHTML ?? null;
+  return element.querySelector(`${DIAGRAM_PREVIEW_SELECTOR} svg`)?.outerHTML ?? null;
 }
 
 /**

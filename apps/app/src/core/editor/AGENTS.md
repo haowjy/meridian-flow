@@ -101,7 +101,7 @@ change-trail events, not manuscript content.
   registration.
 
 - **A node view that hides its own text derives that face from the selection,
-  and never restructures around it.** A selection inside a rendered mermaid
+  and never restructures around it.** A selection inside a rendered diagram
   fence implies a visible, connected source content DOM; rendering that
   implication must not change the selection, or the two faces alternate. So the
   content host stays the wrapper's first child and only its visibility changes,
@@ -150,6 +150,7 @@ and navigation contracts.
 → [`extensions/wikilink/AGENTS.md`](extensions/wikilink/AGENTS.md) — the `[[` trigger
 → [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store and reference catalog
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
+→ [`diagrams/AGENTS.md`](diagrams/AGENTS.md) — which fences draw, and who draws them
 → [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag
 → [`links/AGENTS.md`](links/AGENTS.md) — the link system
 → [`images/AGENTS.md`](images/AGENTS.md) — how a picture gets into a document

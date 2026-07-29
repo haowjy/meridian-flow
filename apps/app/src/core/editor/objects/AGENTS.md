@@ -7,16 +7,25 @@ goes home — with nothing about any particular object in it.
 
 ## Mental model
 
-`EDITOR_OBJECT_TYPES` is the whole per-type story: a node name, an optional
-predicate for types that are only sometimes objects, where an outside press
-may land, what taking hold of the body drags, what Enter means, and which
-control surface the object carries. A lane that ships a new object type adds one row and, if Enter opens
-a surface, registers the handler from its mounted React component.
+`EDITOR_OBJECT_TYPES` is the whole per-type story: an id, a node name, an
+optional predicate for types that are only sometimes objects, what a press on
+the body does, what Enter means, which control surface the object carries, and
+which of its own attributes that surface can edit. A lane that ships a new object
+type adds one row and, if Enter opens a surface, registers the handler from its
+mounted React component.
 
 Object-ness is a **registration, never a structural guess**. ProseMirror cannot
-tell a figure from a blockquote, and a mermaid diagram is a `code_block` whose
-`language` attr decides. The chrome kernel imports this table rather than
-re-deriving it, so there is one answer to "is this an object".
+tell a figure from a blockquote, and a diagram is a `code_block` whose `language`
+attr decides. The chrome kernel imports this table rather than re-deriving it, so
+there is one answer to "is this an object".
+
+**The `id` is the registration's identity, and what surfaces register against.**
+Not the node type: fenced diagrams all share `code_block`, and their rows are
+generated from the diagram-provider catalog
+([`../diagrams/AGENTS.md`](../diagrams/AGENTS.md)) so a new diagram kind is one
+row THERE and nothing here. An engagement, a per-object keymap, and the resolved
+chrome context (`objectSpec`) all speak in ids, which is what lets two dialects
+of one node type register apart.
 
 ## Key rules
 
@@ -44,26 +53,29 @@ re-deriving it, so there is one answer to "is this an object".
   starts no drag out of a press whose default was taken away, and beside an
   inline picture the nearest editable position is the sentence it already
   stands in.
-- **`body` decides where an outside press may LAND.** An `opaque` body stands
-  in for text the page does not show, so no press from the gutters, the seams,
-  or the page below the document may put a caret in one — that rule lives in
-  [`../pointer-boundary.ts`](../pointer-boundary.ts) and reads this column for
-  every object alike. A `text` body shows its own text and takes a caret like
-  prose. It is a different question from `drag`, which asks what a press
-  STARTS; the two agree across today's rows and are not required to.
-- **`drag` decides what taking hold of the body does** (§5.8). `block` starts
-  the drag the margin handle starts, in
+- **`body` is ONE column for what a press on the body does** (§5.8), because
+  caret-landing and drag-start are the same fact told twice. `text` shows its own
+  text, takes a caret like prose, and starts no drag: a table's cells take the
+  sweep across them. `block-drag` and `inline-drag` are both opaque — they stand
+  in for text the page does not show, so no press from the gutters, the seams, or
+  the page below may put a caret in one
+  ([`../pointer-boundary.ts`](../pointer-boundary.ts) keeps that rule) — and they
+  differ in the gesture they start. `block-drag` starts the drag the margin
+  handle starts, in
   [`surfaces/blocks`](../../../features/editor/surfaces/blocks/AGENTS.md), and
   that surface still asks whether this occurrence IS the whole block first.
-  `inline` leaves the press to ProseMirror's own drag, which carries the node
-  as an inline slice and lands it anywhere a caret can go — between two words,
-  with the dropcursor drawing the caret there (human ruling, 2026-07-29: a
-  picture drags in between text). A figure has no inline place to land and
-  stays `block`; only a node the schema calls inline can say `inline`, and its
-  node view has to carry `data-drag-handle` or TipTap refuses the browser's
-  dragstart. `none` is a body that already owns its pointer: a table's cells
-  take the sweep across them. The registration is the answer; nothing
-  downstream reads a node name to guess it.
+  `inline-drag` leaves the press to ProseMirror's own drag, which carries the
+  node as an inline slice and lands it anywhere a caret can go — between two
+  words, with the dropcursor drawing the caret there (human ruling, 2026-07-29: a
+  picture drags in between text). A figure has no inline place to land and stays
+  `block-drag`; only a node the schema calls inline can say `inline-drag`, and
+  its node view has to carry `data-drag-handle` or TipTap refuses the browser's
+  dragstart. Splitting this back into two columns takes a real object that wants
+  a combination one value cannot say (tech-lead ruling, 2026-07-29).
+- **`surfaceFields` is what the object's ⋮ can edit** — its alt text, and a
+  figure's caption and label (§5.6). One image surface serves the inline picture
+  and the captioned figure because the row, not the node type, says which fields
+  exist. A node view never grows a form for them.
 - **A letter types beside a selected object; only Delete and Backspace
   destroy it.** ProseMirror replaces the selection on any input, so one
   printable character used to be the end of a picture the writer had just

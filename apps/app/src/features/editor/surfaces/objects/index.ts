@@ -15,10 +15,11 @@ export {
   type TextPatch,
   useFenceDraft,
 } from "./fence-draft";
-export { ObjectControls, type RunVerb } from "./ObjectControls";
+export { ObjectControls } from "./ObjectControls";
+export { ObjectFieldPopover, type ObjectFieldPopoverProps } from "./ObjectFieldPopover";
 export { ObjectLightbox, type ObjectLightboxProps } from "./ObjectLightbox";
 export {
-  isMermaidFence,
+  isDiagramFence,
   type ObjectSurfaceTarget,
   objectPosForElement,
   objectSurfaceAt,
@@ -36,13 +37,21 @@ export {
   fenceSource,
   renderedDiagramSvg,
   setFenceLanguage,
+  setObjectField,
   sizedSvgMarkup,
   svgToPngBlob,
 } from "./object-commands";
+export {
+  ObjectMenuItems,
+  type ObjectVerbContext,
+  objectFieldLabel,
+  objectRowItems,
+} from "./object-menu-items";
 export { useApproachedObject } from "./useApproachedObject";
 export { ViewerCanvas } from "./ViewerCanvas";
 export {
   ObjectVerbNotice,
+  type RunVerb,
   useVerbFeedback,
   type VerbNotice,
   VerbNoticePill,
