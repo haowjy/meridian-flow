@@ -429,6 +429,7 @@ export function ContextViewerSurfaceController({
       projectId={projectId}
       activeThreadId={activeThreadId}
       defaultWorkId={defaultWorkId}
+      activeWorkId={routeWorkId}
       tabs={tabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}
