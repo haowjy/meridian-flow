@@ -194,9 +194,11 @@ function AlignmentControl({
   state: ToolbarControlState;
 }) {
   const label = toolbarControlLabel("alignment");
+  // Without an editor the matrix already says "still opening"; naming it here
+  // is what lets the rest of this component assume one.
   const blockedReason = blockedReasonMessage(
     "alignment",
-    state.blockedBy ?? (editor ? null : "editor-loading"),
+    editor ? state.blockedBy : "editor-loading",
   );
   const value: ToolbarAlignmentValue = editor ? currentAlignmentValue(editor.state) : "default";
   const Icon = ALIGNMENT_ICONS[value];

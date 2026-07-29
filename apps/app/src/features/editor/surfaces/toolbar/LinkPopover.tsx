@@ -31,10 +31,9 @@ export function LinkControl({
   const [draft, setDraft] = useState<LinkDraft | null>(null);
   const committedRef = useRef(false);
   const label = toolbarControlLabel("link");
-  const blockedReason = blockedReasonMessage(
-    "link",
-    state.blockedBy ?? (editor ? null : "editor-loading"),
-  );
+  // Without an editor the matrix already says "still opening"; naming it here
+  // is what lets the rest of this component assume one.
+  const blockedReason = blockedReasonMessage("link", editor ? state.blockedBy : "editor-loading");
 
   if (!editor || blockedReason) {
     return (
