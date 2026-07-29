@@ -30,7 +30,7 @@
  *   suppressed would freeze every surface on the page until reload.
  *
  * The kernel owns the timing and the standing-down. Hover comes from
- * `chrome.createHoverIntent`; a drag is declared with `chrome.beginDrag`, whose
+ * `chrome.registerHoverAnchor`; a drag is declared with `chrome.beginDrag`, whose
  * closer is token-guarded, so calling it late is safe and calling it twice is
  * nothing.
  */
