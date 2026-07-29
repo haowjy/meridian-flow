@@ -1,5 +1,8 @@
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { assembleComposedSystemPrompt } from "../composed-system-prompt.js";
+import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/document-dialect.js";
+import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
 import { assembleNextTurnContext } from "../turn-context-assembly.js";
 
 const createdAt = "2026-06-07T00:00:00.000Z";
@@ -55,11 +58,30 @@ function packageRepository() {
 }
 
 describe("assembleNextTurnContext", () => {
+  it("assembles the non-persisting preview prompt exactly once", async () => {
+    const assembled = await assembleNextTurnContext({
+      thread: thread({ currentAgent: "agent-a" }),
+      turns: [],
+      blocks: [],
+      packageRepository: packageRepository() as never,
+      toolRegistry: { getRegistration: () => undefined } as never,
+      persistBake: false,
+    });
+    const systemMessage = assembled.generateRequest.messages[0];
+    const systemText = Array.isArray(systemMessage?.content)
+      ? systemMessage.content.find((part) => part.type === "text")?.text
+      : systemMessage?.content;
+
+    expect(systemMessage?.role).toBe("system");
+    expect(systemText).toBe(assembled.systemPrompt);
+    expect(systemText?.split(DOCUMENT_DIALECT_CORE_INSTRUCTION)).toHaveLength(2);
+    expect(systemText?.split(RUNTIME_URI_SYSTEM_INSTRUCTION)).toHaveLength(2);
+  });
+
   it("rebuilds context when a losing bake observes another agent's frozen row", async () => {
     const frozenByAgentB = thread({
       currentAgent: "agent-b",
-      composedSystemPrompt:
-        "Prompt for agent-b\n\nContext file URI rules: bare file paths resolve as `manuscript://` -- the writer's manuscript documents. `kb://` is the project knowledge base (durable reference: characters, places, canon). `scratch://` holds working files for this work item -- plans, notes, intermediate material; never the manuscript. It belongs to this work item only: switch work items and you are in a different scratch space. Anything meant to outlive this work item belongs in `kb://` or the manuscript. `uploads://` holds files the writer attached to this work item (same scoping). `user://` is the writer's personal files. Use `write` with command=create/read/insert/replace/undo/redo for document content; use `ls` and `search` for discovery.",
+      composedSystemPrompt: assembleComposedSystemPrompt({ basePrompt: "Prompt for agent-b" }),
       bakedSkillSlugs: [],
       systemPrompt: null,
     });

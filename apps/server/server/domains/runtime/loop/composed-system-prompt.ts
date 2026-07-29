@@ -13,7 +13,8 @@
  *   marker sniffing.
  */
 
-import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./context-builder.js";
+import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "./system-instructions/document-dialect.js";
+import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-uris.js";
 
 export interface AssembleComposedSystemPromptInput {
   basePrompt?: string | null;
@@ -22,7 +23,12 @@ export interface AssembleComposedSystemPromptInput {
 
 /** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
 export function assembleComposedSystemPrompt(input: AssembleComposedSystemPromptInput): string {
-  return [input.basePrompt, input.skillsSystemPromptSection, RUNTIME_URI_SYSTEM_INSTRUCTION]
+  return [
+    input.basePrompt,
+    input.skillsSystemPromptSection,
+    DOCUMENT_DIALECT_CORE_INSTRUCTION,
+    RUNTIME_URI_SYSTEM_INSTRUCTION,
+  ]
     .filter(Boolean)
     .join("\n\n");
 }
