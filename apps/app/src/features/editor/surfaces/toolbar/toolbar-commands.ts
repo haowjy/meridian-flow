@@ -298,12 +298,18 @@ export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
   }
 }
 
-/** Read-only outranks every contextual reason, and still reports the state. */
-function blockedFirst(
-  readOnly: ToolbarBlockedReason | null,
-  state: ToolbarControlState,
-): ToolbarControlState {
-  return readOnly ? { active: state.active, blockedBy: readOnly } : state;
+/**
+ * Read-only outranks every contextual reason, and still reports the state.
+ *
+ * Generic over both reasons because the surfaces layering their own on top of
+ * a toolbar state — the formatting menu's clipboard reasons — layer them the
+ * same way, and one rule for "which reason wins" is the point.
+ */
+export function blockedFirst<Outranking, Reason>(
+  outranking: Outranking | null,
+  state: { active: boolean; blockedBy: Reason | null },
+): { active: boolean; blockedBy: Outranking | Reason | null } {
+  return outranking ? { active: state.active, blockedBy: outranking } : state;
 }
 
 /** True toggle: pressing on an H1 returns the block to a paragraph (law 6). */

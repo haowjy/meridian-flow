@@ -12,6 +12,7 @@ export {
   type BlockTypeId,
   type BlockTypeRefusalReason,
   type BlockTypeState,
+  blockedFirst,
   blockTypeRefusal,
   blockTypeStates,
   codeBlockRefusal,
