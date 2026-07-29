@@ -23,13 +23,7 @@ import {
   useEditorRevision,
 } from "@/features/editor/chrome";
 
-import {
-  type ObjectSurfaceTarget,
-  objectPosForElement,
-  objectSurfaceAt,
-  objectSurfaceAtPos,
-  objectSurfaceKind,
-} from "./object-anchors";
+import { type ObjectSurfaceTarget, objectSurfaceAt, objectSurfaceAtPos } from "./object-anchors";
 
 export type ObjectApproach = {
   target: ObjectSurfaceTarget | null;
@@ -113,12 +107,7 @@ function selectedObjectElement(
  */
 function surfaceForElement(editor: Editor, element: HTMLElement): ObjectSurfaceTarget | null {
   if (!element.isConnected) return null;
-  const pos = objectPosForElement(editor.view, element);
-  if (pos === null) return null;
-
-  const node = editor.state.doc.nodeAt(pos);
-  const kind = node ? objectSurfaceKind(node) : null;
-  return node && kind ? { pos, node, kind, element } : null;
+  return objectSurfaceAt(editor.view, element);
 }
 
 /** Keep the last value for `ms` after it goes away, so a fade has something to fade. */

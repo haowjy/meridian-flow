@@ -111,6 +111,10 @@ function OverlayIconChip({
   onSelect,
   asTrigger = false,
   children,
+  // Radix merges a trigger's whole contract onto the element it is given —
+  // `aria-haspopup`, the press handlers, the ref. Swallowing them here is how
+  // a ⋮ ends up looking like a menu and behaving like a dead button.
+  ...triggerProps
 }: {
   label: string;
   onSelect?: () => void;
@@ -129,6 +133,7 @@ function OverlayIconChip({
       // A press on the chrome must not move the caret out from under the
       // object the chrome belongs to.
       onMouseDown={(event) => event.preventDefault()}
+      {...triggerProps}
     >
       {children}
     </IconButton>

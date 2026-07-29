@@ -25,9 +25,11 @@ export type ViewerCanvasProps = {
    * preview re-renders under a viewer that keeps the writer's pan and zoom.
    */
   contentKey: string;
+  /** Ceiling on Fit. A raster passes 1 rather than opening enlarged and soft. */
+  maxFitScale?: number;
 };
 
-export function ViewerCanvas({ children, contentKey }: ViewerCanvasProps) {
+export function ViewerCanvas({ children, contentKey, maxFitScale }: ViewerCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<PanZoomViewer | null>(null);
@@ -38,7 +40,7 @@ export function ViewerCanvas({ children, contentKey }: ViewerCanvasProps) {
     const stage = stageRef.current;
     if (!host || !stage) return;
 
-    const viewer = createPanZoomViewer({ host, content: stage });
+    const viewer = createPanZoomViewer({ host, content: stage, maxFitScale });
     viewerRef.current = viewer;
     setScale(viewer.scale);
     const unsubscribe = viewer.subscribe(() => setScale(viewer.scale));
@@ -48,7 +50,7 @@ export function ViewerCanvas({ children, contentKey }: ViewerCanvasProps) {
       viewer.destroy();
       viewerRef.current = null;
     };
-  }, []);
+  }, [maxFitScale]);
 
   /**
    * The stage carries the content's intrinsic size because the content itself
@@ -83,19 +85,19 @@ export function ViewerCanvas({ children, contentKey }: ViewerCanvasProps) {
   }, []);
 
   return (
-    <div className="meridian-viewer-canvas" ref={hostRef}>
-      <div className="meridian-viewer-stage" ref={stageRef}>
-        {children}
+    // The pill is a SIBLING of the gesture host, not a child of it. The viewer
+    // takes pointer capture on `pointerdown` anywhere in its host, which would
+    // redirect the `pointerup` away from a button inside and swallow the click
+    // — measured in the browser, not guessed at. The host is the viewport;
+    // chrome sits beside it.
+    <div className="meridian-viewer-frame">
+      <div className="meridian-viewer-canvas" ref={hostRef}>
+        <div className="meridian-viewer-stage" ref={stageRef}>
+          {children}
+        </div>
       </div>
 
-      {/* The pill sits inside the canvas and must not be draggable ground:
-          without this the press that reaches a button also starts a pan. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the handlers only stop gestures reaching the canvas behind; every control here is a button */}
-      <div
-        className="meridian-viewer-pill"
-        onPointerDown={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-      >
+      <div className="meridian-viewer-pill">
         <IconButton
           type="button"
           size="sm"

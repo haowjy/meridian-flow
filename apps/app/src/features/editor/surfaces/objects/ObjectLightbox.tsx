@@ -15,7 +15,7 @@
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Code2, Copy, Download, MoreVertical } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { useMermaidSvg } from "@/core/editor/MermaidCodeBlock";
@@ -27,12 +27,15 @@ import {
   useChromeLayer,
 } from "@/features/editor/chrome";
 
-import type { ObjectSurfaceTarget } from "./object-anchors";
+import { type ObjectSurfaceTarget, renderedImage } from "./object-anchors";
 import { copyText, downloadPng, fenceSource, setFenceSource } from "./object-commands";
 import { ViewerCanvas } from "./ViewerCanvas";
 
 /** Long enough to read as a pause in typing, short enough to feel live. */
 const PREVIEW_DEBOUNCE_MS = 350;
+
+/** Past the dialog's and the menu's focus restoration, under a blink. */
+const SOURCE_FOCUS_DELAY_MS = 120;
 
 export type ObjectLightboxProps = {
   editor: Editor;
@@ -204,13 +207,24 @@ function SourcePane({
   source: string;
   error: string | null;
 }) {
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // The writer asked for this pane and it exists to be typed in, so it takes
+  // the caret — but it has to win an argument first. The dialog's focus scope
+  // and the ⋮ menu that opened the pane both restore focus asynchronously on
+  // their way out, so a focus set now is taken back a moment later. Claiming
+  // it once the churn has passed is the whole trick; measured in the browser.
+  useEffect(() => {
+    const timer = window.setTimeout(() => areaRef.current?.focus(), SOURCE_FOCUS_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <div className="meridian-lightbox-source">
       <textarea
+        ref={areaRef}
         className="meridian-lightbox-source-text"
         spellCheck={false}
-        // biome-ignore lint/a11y/noAutofocus: the writer asked for this pane and it exists to be typed in
-        autoFocus
         aria-label={t`Mermaid source`}
         value={source}
         onChange={(event) => setFenceSource(editor, pos, event.target.value)}
@@ -226,10 +240,7 @@ function SourcePane({
 }
 
 function ImageFace({ target }: { target: ObjectSurfaceTarget }) {
-  // The rendered image already carries a resolved src (an `asset:` ref became a
-  // signed URL on the way into the page); resolving it again here would be a
-  // second answer to a question the node view already answered.
-  const image = target.element.querySelector("img");
+  const image = renderedImage(target.element);
   const source = image?.currentSrc || image?.src || "";
   const alt = image?.alt ?? "";
 
@@ -237,7 +248,9 @@ function ImageFace({ target }: { target: ObjectSurfaceTarget }) {
     <>
       <LightboxHeader title={alt || t`Image`} />
       <div className="meridian-lightbox-body">
-        <ViewerCanvas contentKey={source}>
+        {/* A photograph opens at its own size at most: Fit that enlarges a small
+            raster to fill the frame just shows the writer bigger pixels. */}
+        <ViewerCanvas contentKey={source} maxFitScale={1}>
           {source ? <img src={source} alt={alt} draggable={false} /> : null}
         </ViewerCanvas>
       </div>

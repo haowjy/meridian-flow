@@ -750,6 +750,14 @@
 
 /* ── L-B: object controls, code chips, diagram lightbox (M5) ────────────── */
 
+/* A fence scrolls rather than reflows, which is Notion's default and the
+   reference ruling 15 names: an indented block keeps its shape, and a long
+   line is a long line. Wrap lines in the ⋮ is what turns reflow on. */
+.meridian-editor .ProseMirror [data-node-view-wrapper] pre {
+  white-space: pre;
+  overflow-x: auto;
+}
+
 /* Wrapped lines are view state on the block, not an attribute in the document
    (see CodeBlockChips): one writer's reading of one fence on one screen. */
 .meridian-editor .ProseMirror [data-wrap="on"] pre {
@@ -863,9 +871,17 @@
 /* The canvas: a dot grid so pan and zoom have something to move against, and
    `touch-action: none` because the viewer owns every pointer that lands here —
    without it the browser claims two fingers for its own scroll and pinch. */
-.meridian-viewer-canvas {
+/* The frame holds the gesture host and the pill side by side: a control
+   inside the host loses its click to the viewer's pointer capture. */
+.meridian-viewer-frame {
   position: relative;
   height: 100%;
+  overflow: hidden;
+}
+
+.meridian-viewer-canvas {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   touch-action: none;
   cursor: grab;

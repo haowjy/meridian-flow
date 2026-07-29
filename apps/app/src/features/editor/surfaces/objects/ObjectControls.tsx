@@ -27,7 +27,11 @@ import {
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
-import { registerObjectEngagement, registerObjectKeymap } from "@/core/editor/objects";
+import {
+  registerObjectEngagement,
+  registerObjectKeymap,
+  selectObjectTransaction,
+} from "@/core/editor/objects";
 import {
   EditorMenu,
   EditorMenuItem,
@@ -44,6 +48,7 @@ import {
   type ObjectSurfaceTarget,
   objectSurfaceAt,
   objectSurfaceAtPos,
+  renderedImage,
 } from "./object-anchors";
 import {
   copyImageFrom,
@@ -191,6 +196,14 @@ export function ObjectControls({ editor }: { editor: Editor }) {
         open={lightboxElement !== null}
         onOpenChange={(open) => {
           if (open) return;
+          // Law 3 walks home one step at a time, so closing the dialog has to
+          // land on the object rather than past it — the writer's place is
+          // that diagram, and the next Esc is what leaves it. Hover-opening
+          // skipped the selection step (§5.2), so this is where it happens.
+          if (lightboxTarget) {
+            const selected = selectObjectTransaction(editor.state, lightboxTarget.pos);
+            if (selected) editor.view.dispatch(selected);
+          }
           setLightboxElement(null);
           setSourceOpen(false);
         }}
@@ -328,12 +341,7 @@ function objectMenuItems({
   );
 }
 
-/**
- * The rendered image already carries a resolved src — an `asset:` ref became a
- * signed URL on the way into the page — so the row reads it back rather than
- * resolving the asset a second time.
- */
 function imageSource(target: ObjectSurfaceTarget): string {
-  const image = target.element.querySelector("img");
+  const image = renderedImage(target.element);
   return image?.currentSrc || image?.src || "";
 }

@@ -110,12 +110,21 @@ export function useChromeLayer(
  * contract). Radix restores focus to the trigger, which is right for a page
  * and wrong for a manuscript: the writer never left the sentence, so the next
  * Space must be a space rather than a control re-activating.
+ *
+ * Unless the prose cannot take it. A modal dialog hides the page behind it
+ * (`aria-hidden`) and traps focus inside itself, so handing the caret back to
+ * a sentence under the scrim is a move the dialog immediately undoes — and it
+ * undoes it asynchronously, landing focus on whatever happens to be first in
+ * the dialog. There Radix's own answer is the honest one: the control the
+ * writer pressed, which is where they still are.
  */
 export function useReturnFocusToProse(editor: Editor | null): (event: Event) => void {
   return useCallback(
     (event: Event) => {
+      if (!editor || editor.isDestroyed) return;
+      if (editor.view.dom.closest('[aria-hidden="true"], [inert]')) return;
       event.preventDefault();
-      if (editor && !editor.isDestroyed) editor.commands.focus();
+      editor.commands.focus();
     },
     [editor],
   );

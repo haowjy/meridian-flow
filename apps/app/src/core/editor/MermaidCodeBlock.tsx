@@ -153,7 +153,10 @@ export function MermaidCodeBlockNodeView(props: NodeViewProps) {
           and a node view that dropped its content DOM would drop the writer's
           edits with it. Hidden while the diagram stands in for it. */}
       <pre className={showFence ? undefined : "hidden"}>
-        <NodeViewContent as={"code" as never} />
+        {/* `white-space: inherit` hands the decision back to the `<pre>`, whose
+            CSS the chip cluster's Wrap lines toggles. TipTap's own default
+            (`pre-wrap`, inline) would make that control a no-op. */}
+        <NodeViewContent as={"code" as never} style={{ whiteSpace: "inherit" }} />
       </pre>
       {showDiagram ? (
         <div

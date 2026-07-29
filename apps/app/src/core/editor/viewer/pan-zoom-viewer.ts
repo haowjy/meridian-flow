@@ -54,6 +54,12 @@ export type PanZoomViewerOptions = {
   padding?: number;
   /** Factor for one double-click or one zoom button press. */
   stepFactor?: number;
+  /**
+   * Ceiling on what Fit may reach. A vector diagram is happy filling the
+   * frame; a small photograph enlarged to fill it is just blurry, so a raster
+   * caller passes 1 and lets the writer zoom past it deliberately.
+   */
+  maxFitScale?: number;
 };
 
 export type ViewerSizes = {
@@ -103,6 +109,7 @@ export function createPanZoomViewer({
   maxScale = DEFAULTS.maxScale,
   padding = DEFAULTS.padding,
   stepFactor = DEFAULTS.stepFactor,
+  maxFitScale = Number.POSITIVE_INFINITY,
 }: PanZoomViewerOptions): PanZoomViewer {
   const listeners = new Set<() => void>();
   const pointers = new Map<number, ViewerPoint>();
@@ -127,6 +134,12 @@ export function createPanZoomViewer({
     minScale: Math.min(minScale, fitScale(hostSize(), contentSize(), padding)),
     maxScale,
   });
+
+  /** What Fit is allowed to reach, which is not what a gesture is allowed to. */
+  const fitLimits = () => {
+    const bounds = limits();
+    return { minScale: bounds.minScale, maxScale: Math.min(bounds.maxScale, maxFitScale) };
+  };
 
   const write = () => {
     frame = 0;
@@ -166,7 +179,7 @@ export function createPanZoomViewer({
 
   const fit = () => {
     fitted = true;
-    commit(fitTransform(hostSize(), contentSize(), { padding, limits: limits() }), {
+    commit(fitTransform(hostSize(), contentSize(), { padding, limits: fitLimits() }), {
       keepsFit: true,
     });
   };
@@ -274,7 +287,7 @@ export function createPanZoomViewer({
       return {
         host: size,
         content: box,
-        fitScale: clampScale(fitScale(size, box, padding), limits()),
+        fitScale: clampScale(fitScale(size, box, padding), fitLimits()),
         realZoom: transform.scale,
       };
     },
