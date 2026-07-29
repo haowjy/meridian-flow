@@ -34,6 +34,12 @@ of them is the writer's fix, and the menu never guesses which they meant.
   the match runs to the end of the text node, which is why the catalog returns
   no rows for a query carrying `]` or `|` — a writer who closed their own
   brackets is left alone with their own text.
+- **The brackets after the caret are already there.** Auto-pairing writes `]]`
+  when the writer types the second `[`, so the trigger opens inside `[[]]` and
+  the range a choice replaces has to reach past them —
+  `autoClosedRunLength` is how it asks. A link inserted over the trigger's own
+  range alone would leave `]]` stranded behind it.
+
 - **The create row inserts a link, never a document** (mockup 06 state D).
   "Links now, page later" is the whole point: serial writers link chapters
   before they write them.
@@ -52,6 +58,7 @@ of them is the writer's fix, and the menu never guesses which they meant.
 - Creating a document from the create row. That belongs to the app's navigator,
   where the writer has actually asked to open the thing.
 
+→ [`../auto-pair/AGENTS.md`](../auto-pair/AGENTS.md) — who wrote the `]]`
 → [`../../links/AGENTS.md`](../../links/AGENTS.md) — what a link means once it exists
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the layer, keymap, and Esc contracts
 → design of record: `editor-toolbar-split/interaction-model.md` §5.5, mockup 06
