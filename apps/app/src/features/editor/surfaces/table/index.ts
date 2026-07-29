@@ -9,6 +9,7 @@
  */
 
 export { TableChrome } from "./TableChrome";
+export { TableCaretMenuItems } from "./TableVerbMenu";
 export {
   appendTableAxis,
   runTableVerb,

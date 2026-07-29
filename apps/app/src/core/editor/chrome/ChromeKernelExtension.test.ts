@@ -94,8 +94,13 @@ function press(instance: Editor, init: KeyboardEventInit): boolean {
   return event.defaultPrevented;
 }
 
-function rightClick(instance: Editor): MouseEvent {
-  const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+function rightClick(instance: Editor, init: MouseEventInit = {}): MouseEvent {
+  const event = new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    button: 2,
+    ...init,
+  });
   instance.view.dom.dispatchEvent(event);
   return event;
 }
@@ -168,9 +173,23 @@ describe("the kernel on a live editor", () => {
     expect(instance.state.selection.$head.parent.textContent).toBe("after");
   });
 
-  it("leaves a right-click to the browser when nobody claims (ruling 11)", () => {
+  it("leaves a right-click to the browser when no lane took its rung", () => {
     const instance = mount([paragraph("The thrid gate opened.")]);
     expect(rightClick(instance).defaultPrevented).toBe(false);
+  });
+
+  it("hands Shift+right-click to the browser, where spellcheck lives", () => {
+    const instance = mount([paragraph("The thrid gate opened.")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const claim = vi.fn(() => true);
+    chrome.registerContextClaim({ id: "caret", claim });
+
+    expect(rightClick(instance, { shiftKey: true }).defaultPrevented).toBe(false);
+    expect(claim).not.toHaveBeenCalled();
+    // The same pointer without the modifier is the editor's.
+    expect(rightClick(instance).defaultPrevented).toBe(true);
   });
 
   it("routes a right-click inside a node view that swallows events", () => {

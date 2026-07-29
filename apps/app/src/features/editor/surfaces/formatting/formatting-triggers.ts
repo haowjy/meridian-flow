@@ -8,19 +8,22 @@
  * is the only way a link or an object under the finger can outrank this rung.
  * See `.context/CONTEXT.md` for the platforms that give no such event.
  *
- * Both doors ask the same two questions, and they live here as pure ones so the
- * split matrix is testable without a pointer:
+ * The right-click arrives at one of two rungs, and they ask different
+ * questions of the same menu:
  *
- * 1. is the selection prose this menu can format?
- * 2. is the context under it one this menu owns?
+ * - `text-selection` — the writer swept prose and pointed inside it. The menu
+ *   acts on that sweep.
+ * - `caret` — the ladder's floor. Every right-click in prose that no rung
+ *   above wanted lands here (human ruling, 2026-07-29), and the caret moves to
+ *   where the writer pointed so the verbs act on the block they aimed at.
  *
- * The answers are deliberately narrow. Claiming costs the writer the browser's
- * own menu, and ruling 11 makes that menu load-bearing: spellcheck, lookup, and
- * OS services live in it.
+ * The keyboard twin asks the first question only: Shift+F10 has no pointer, so
+ * there is nowhere to move a caret TO, and a menu over the caret the writer is
+ * already sitting in is what the key already means.
  */
 
 import type { Editor } from "@tiptap/core";
-import type { EditorState } from "@tiptap/pm/state";
+import { type EditorState, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
 import {
@@ -72,25 +75,71 @@ export function formattingMenuOpensFor(editor: Editor): boolean {
 }
 
 /**
- * The claim decision for one right-click, synchronous by contract.
+ * The claim decision for one right-click on a selection, synchronous by
+ * contract.
  *
  * Read-only documents decline. The trade the claim makes is the browser's menu
  * for the editor's verbs, and a document the writer cannot change has no verbs
  * to offer beyond Copy, which the browser's menu already has.
  */
 export function claimsFormattingMenu(editor: Editor, target: ContextClaimTarget): boolean {
-  if (editor.isDestroyed || !editor.isEditable) return false;
+  if (!menuCouldOpenOver(editor, target)) return false;
   // The kernel has already checked that the selection is prose and that the
   // pointer sits inside it. Not "a selection exists": a selection three
   // paragraphs away is not what the writer is pointing at.
-  if (!target.insideTextSelection) return false;
+  return target.insideTextSelection;
+}
+
+/**
+ * The claim decision at the ladder's floor: a right-click in prose that no
+ * more specific rung wanted.
+ *
+ * It does not ask about the selection at all, which is the point — a bare
+ * caret and a right-click three paragraphs away from a sweep are the same
+ * gesture, and both mean "give me the verbs for HERE". `placeCaretForMenu` is
+ * what makes "here" true before the menu reads the document.
+ *
+ * A pointer with no document position under it declines: outside the prose
+ * there is no block to aim the verbs at, and a menu over the editor's margin
+ * would act on wherever the caret happened to be left.
+ */
+export function claimsCaretFormattingMenu(editor: Editor, target: ContextClaimTarget): boolean {
+  if (target.docPos === null) return false;
+  return menuCouldOpenOver(editor, target);
+}
+
+/** What both rungs ask: a writable document, prose under the pointer, no chrome. */
+function menuCouldOpenOver(editor: Editor, target: ContextClaimTarget): boolean {
+  if (editor.isDestroyed || !editor.isEditable) return false;
   // A grip or an object row is chrome standing over the prose; its own lane
-  // takes those right-clicks, further down the ladder than this rung.
+  // takes those right-clicks, further up the ladder than either rung.
   const chrome = getEditorChrome(editor);
   if (chrome && isEditorChromeElement(chrome, target.element)) return false;
   // What the POINTER is over, which is the finer answer: the writer aimed at a
-  // place inside their selection, and that place may be a diagram.
+  // place, and that place may be a diagram or a fence.
   return formattingOwnsContext(target.context);
+}
+
+/**
+ * Move the caret to where the right-click landed, before the menu reads the
+ * document.
+ *
+ * Load-bearing rather than tidy: Turn into converts the block the SELECTION is
+ * in, so a menu opened over the third paragraph while the caret sat in the
+ * first would convert the first. Chrome moves the caret on right-click and
+ * Firefox does not, so the editor does it itself and both behave the same.
+ *
+ * `TextSelection.near` because a position under the pointer is not promised to
+ * hold a caret — the gap between two blocks resolves to one that does not —
+ * and it walks to the nearest that does.
+ */
+export function placeCaretForMenu(editor: Editor, pos: number): boolean {
+  if (editor.isDestroyed) return false;
+  const { state } = editor.view;
+  const clamped = Math.max(0, Math.min(pos, state.doc.content.size));
+  const selection = TextSelection.near(state.doc.resolve(clamped));
+  editor.view.dispatch(state.tr.setSelection(selection));
+  return true;
 }
 
 /**

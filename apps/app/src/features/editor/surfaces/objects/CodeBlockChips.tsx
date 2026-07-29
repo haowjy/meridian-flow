@@ -11,7 +11,9 @@
  *
  * The block's own context surface, so no prose formatting verb appears here
  * (law 4): the caret is in code, and the persistent toolbar keeps its own fixed
- * geometry rather than growing a contextual segment.
+ * geometry rather than growing a contextual segment. A right-click inside the
+ * fence reaches the same verbs as one list — both doors read
+ * [`fence-menu-items.tsx`](./fence-menu-items.tsx).
  *
  * Every control here is the dense `xs` size, including the language: the
  * cluster may not stand taller than one line of the code it decorates (see
@@ -20,7 +22,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { ChevronDown, Copy, CopyPlus, MoreVertical, Trash2, WrapText } from "lucide-react";
+import { ChevronDown, Copy, MoreVertical } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -29,61 +31,20 @@ import { IconButton } from "@/components/ui/icon-button";
 import { editorChromeAttributes } from "@/core/editor/chrome";
 import {
   EditorMenu,
-  EditorMenuCheckboxItem,
-  EditorMenuItem,
-  EditorMenuRadioGroup,
-  EditorMenuRadioItem,
-  EditorMenuSeparator,
   objectOverlayStyle,
   useAnchorRect,
   useChromeSuppressed,
   useEditorChrome,
 } from "@/features/editor/chrome";
+import {
+  FenceLanguageItems,
+  FenceShapeItems,
+  fenceLanguage,
+  fenceLanguageLabel,
+} from "./fence-menu-items";
 import type { RunVerb } from "./ObjectControls";
 import type { ObjectSurfaceTarget } from "./object-anchors";
-import { copyText, deleteObject, duplicateObject, setFenceLanguage } from "./object-commands";
-
-const PLAIN_LANGUAGE = "plain";
-
-/**
- * The languages a fiction writer's manuscript actually carries, plus mermaid
- * as the door into a diagram. A full lowlight roster would be a scrolling list
- * of grammars nobody in this product writes.
- *
- * Only `plain` is translated: the rest are the names of the languages
- * themselves, which do not change with the reader.
- */
-const LANGUAGE_IDS = [
-  PLAIN_LANGUAGE,
-  "mermaid",
-  "bash",
-  "css",
-  "diff",
-  "json",
-  "markdown",
-  "python",
-  "sql",
-  "typescript",
-  "yaml",
-] as const;
-
-const PROPER_NAMES: Record<string, string> = {
-  mermaid: "Mermaid",
-  bash: "Bash",
-  css: "CSS",
-  diff: "Diff",
-  json: "JSON",
-  markdown: "Markdown",
-  python: "Python",
-  sql: "SQL",
-  typescript: "TypeScript",
-  yaml: "YAML",
-};
-
-function languageLabel(language: unknown): string {
-  const id = typeof language === "string" && language ? language : PLAIN_LANGUAGE;
-  return id === PLAIN_LANGUAGE ? t`Plain text` : (PROPER_NAMES[id] ?? id);
-}
+import { copyText } from "./object-commands";
 
 export type CodeBlockChipsProps = {
   editor: Editor;
@@ -107,18 +68,12 @@ export function CodeBlockChips({
   const rect = useAnchorRect(target.element);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const wrapped = useWrappedLines(target.element);
 
   useEffect(() => {
     onMenuOpenChange(languageOpen || overflowOpen);
   }, [languageOpen, overflowOpen, onMenuOpenChange]);
 
   if (!rect || !chrome || typeof document === "undefined") return null;
-
-  const language =
-    typeof target.node.attrs.language === "string" && target.node.attrs.language
-      ? target.node.attrs.language
-      : PLAIN_LANGUAGE;
 
   return createPortal(
     // biome-ignore lint/a11y/noStaticElementInteractions: the mousedown only keeps the caret where it was; every control inside is a button
@@ -144,23 +99,12 @@ export function CodeBlockChips({
         align="end"
         trigger={
           <Button type="button" size="xs" variant="ghost" className="meridian-code-chip-language">
-            {languageLabel(language)}
+            {fenceLanguageLabel(fenceLanguage(target))}
             <ChevronDown aria-hidden />
           </Button>
         }
       >
-        <EditorMenuRadioGroup
-          value={language}
-          onValueChange={(next) =>
-            setFenceLanguage(editor, target.pos, next === PLAIN_LANGUAGE ? "" : next)
-          }
-        >
-          {LANGUAGE_IDS.map((id) => (
-            <EditorMenuRadioItem key={id} value={id}>
-              {languageLabel(id)}
-            </EditorMenuRadioItem>
-          ))}
-        </EditorMenuRadioGroup>
+        <FenceLanguageItems editor={editor} target={target} />
       </EditorMenu>
 
       <span className="meridian-code-chip-divider" aria-hidden />
@@ -187,22 +131,7 @@ export function CodeBlockChips({
           </IconButton>
         }
       >
-        <EditorMenuCheckboxItem
-          checked={wrapped}
-          onCheckedChange={(next) => setWrappedLines(target.element, next)}
-        >
-          <WrapText aria-hidden />
-          {t`Wrap lines`}
-        </EditorMenuCheckboxItem>
-        <EditorMenuSeparator />
-        <EditorMenuItem onSelect={() => duplicateObject(editor, target.pos)}>
-          <CopyPlus aria-hidden />
-          {t`Duplicate`}
-        </EditorMenuItem>
-        <EditorMenuItem variant="destructive" onSelect={() => deleteObject(editor, target.pos)}>
-          <Trash2 aria-hidden />
-          {t`Delete`}
-        </EditorMenuItem>
+        <FenceShapeItems editor={editor} target={target} />
       </EditorMenu>
     </div>,
     // Portalled for the same reason the object rows are: a fixed element inside
@@ -210,32 +139,4 @@ export function CodeBlockChips({
     // viewport, and the manuscript column is not promised to stay untransformed.
     document.body,
   );
-}
-
-/**
- * Line wrapping is view state on the element, not an attribute in the
- * document: how a writer chooses to read one fence on one screen is nobody
- * else's business, least of all a collaborator's. It lives exactly as long as
- * the rendered block does, which is the same lifetime the diagram viewer's pan
- * and zoom get.
- */
-function useWrappedLines(element: HTMLElement): boolean {
-  const [wrapped, setWrapped] = useState(element.dataset.wrap === "on");
-
-  useEffect(() => {
-    setWrapped(element.dataset.wrap === "on");
-  }, [element]);
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => setWrapped(element.dataset.wrap === "on"));
-    observer.observe(element, { attributeFilter: ["data-wrap"] });
-    return () => observer.disconnect();
-  }, [element]);
-
-  return wrapped;
-}
-
-function setWrappedLines(element: HTMLElement, wrapped: boolean): void {
-  if (wrapped) element.dataset.wrap = "on";
-  else delete element.dataset.wrap;
 }

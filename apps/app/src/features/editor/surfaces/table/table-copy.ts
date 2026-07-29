@@ -121,4 +121,6 @@ export const tableChromeCopy = {
   textAlignment: () => t`Text alignment`,
   tablePlacement: () => t`Table placement`,
   wholeTable: () => t`Table`,
+  rowVerbs: () => t`Row`,
+  columnVerbs: () => t`Column`,
 };

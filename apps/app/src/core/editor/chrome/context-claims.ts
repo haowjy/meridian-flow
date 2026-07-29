@@ -1,12 +1,17 @@
 /**
- * The context-menu claim table: who takes the right-click, and who lets the
- * browser have it.
+ * The context-menu claim table: which editor menu takes the right-click, and
+ * the one gesture that gives it back to the browser.
  *
- * Ruling 11 makes the native menu load-bearing rather than a fallback —
- * spellcheck is where a fiction writer actually reaches, and it lives almost
- * entirely at the bare caret. So the router's default is NOT to claim: a
- * `contextmenu` with no matching rule is left alone, `preventDefault` is never
- * called, and the browser's own menu opens.
+ * Every right-click inside the editor opens an editor menu, and the context
+ * picks which one (human ruling, 2026-07-29, superseding ruling 11's fall
+ * through to the browser at a bare caret). A writer who right-clicked in a
+ * table cell and got the browser's list of nothing they wanted is what settled
+ * it: the editor's verbs are the answer the gesture is asking for.
+ *
+ * The browser's menu is still reachable, and reachable deliberately:
+ * **Shift+right-click is never claimed**. Spellcheck suggestions, lookup, and
+ * OS services exist in the native menu and nowhere else, so the escape has to
+ * be a gesture rather than an absence of one.
  *
  * The decision must be synchronous, inside the `contextmenu` event, because
  * `preventDefault` after the event has returned does nothing. Opening the
@@ -26,11 +31,18 @@ import type { ChromeContext } from "./chrome-context";
  * is a node inside it. Grip is spelled first as the more specific of the two,
  * so a future grip drawn OVER its table still resolves to the grip.
  *
- * `cell-selection` is last because it is the widest: a rectangle of table
- * cells the writer swept by hand. A link inside one is still a link, a grip
- * over one is still a grip, and the rung exists because nothing above it wants
- * a `CellSelection` — `text-selection` admits `TextSelection` and
- * `AllSelection` only, which left a swept rectangle with no menu at all.
+ * `cell-selection` is second to last because it is the widest selection: a
+ * rectangle of table cells the writer swept by hand. A link inside one is
+ * still a link, a grip over one is still a grip, and the rung exists because
+ * nothing above it wants a `CellSelection` — `text-selection` admits
+ * `TextSelection` and `AllSelection` only, which left a swept rectangle with
+ * no menu at all.
+ *
+ * `caret` is the floor, and it matches everywhere the rungs above it declined:
+ * a caret in prose, in a table cell, or in a code fence. It is a rung rather
+ * than a kernel default because WHICH menu opens is the owning lane's answer,
+ * and the lanes are disjoint by context — the formatting menu takes prose and
+ * cells, the fence takes its own.
  */
 export const CONTEXT_CLAIM_ORDER = [
   "link",
@@ -38,6 +50,7 @@ export const CONTEXT_CLAIM_ORDER = [
   "grip",
   "object",
   "cell-selection",
+  "caret",
 ] as const;
 
 export type ContextClaimId = (typeof CONTEXT_CLAIM_ORDER)[number];
@@ -87,6 +100,11 @@ export function resolveContextClaim(
   handlers: readonly ContextClaimHandler[],
   target: ContextClaimTarget,
 ): ContextClaimId | null {
+  // The escape to the browser's own menu, above the ladder rather than inside
+  // it: spellcheck suggestions live nowhere else, and a rung that forgot to
+  // check would take the only door to them away.
+  if (target.event.shiftKey) return null;
+
   for (const id of CONTEXT_CLAIM_ORDER) {
     for (const handler of handlers) {
       if (handler.id !== id) continue;

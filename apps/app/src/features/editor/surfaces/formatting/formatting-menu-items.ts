@@ -11,6 +11,8 @@
 
 import type { Editor } from "@tiptap/core";
 
+import { resolveChromeContext } from "@/core/editor/chrome";
+
 import {
   BLOCK_TYPE_IDS,
   type BlockTypeId,
@@ -40,6 +42,13 @@ export type FormattingMenuModel = {
    */
   turnIntoBlockedBy: FormattingBlockedReason | null;
   link: FormattingItemState;
+  /**
+   * The caret is inside a table, so the menu carries the table's own lists
+   * too (human ruling, 2026-07-29). A cell's text is prose either way (§5.4);
+   * what changes is that a right-click in a cell is now the writer's way to
+   * the table without hunting for a grip.
+   */
+  inTable: boolean;
 };
 
 /** The mark each row of the quick marks row toggles. */
@@ -80,6 +89,9 @@ export function formattingMenuModel(editor: Editor): FormattingMenuModel {
     turnInto: turnIntoStates,
     turnIntoBlockedBy: sharedBlocker(Object.values(turnIntoStates)),
     link: blockedFirst(readOnly, textMarkState(editor, "link")),
+    // The kernel's own resolver, not a second reading: a whole selected table
+    // is a `CellSelection` and only that resolver reads both spellings.
+    inTable: resolveChromeContext(editor.state).chain.includes("table"),
   };
 }
 
