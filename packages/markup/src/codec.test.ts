@@ -798,6 +798,56 @@ describe("mdx codec round-trip corpus", () => {
     }
   });
 
+  it("keeps pipe-cell hard breaks canonical in list-nested blockquotes", () => {
+    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
+    const rows = [0, 1].map((rowIndex) => {
+      const row = table.child(rowIndex);
+      const cell = row.child(0);
+      const mark = rowIndex === 0 ? m("strong") : m("em");
+      return row.type.create(row.attrs, [
+        cell.type.create(cell.attrs, [
+          paragraph(
+            t(rowIndex === 0 ? "head" : "body", [mark]),
+            schema.node("hard_break"),
+            t("down"),
+          ),
+        ]),
+      ]);
+    });
+    const breakTable = table.type.create(table.attrs, rows);
+    const nestedQuote = schema.node("blockquote", null, [breakTable]);
+    const originals = [
+      schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [
+          paragraph(t("outer")),
+          schema.node("bullet_list", { tight: true }, [
+            schema.node("list_item", null, [paragraph(t("inner")), nestedQuote]),
+          ]),
+        ]),
+      ]),
+      schema.node("ordered_list", { order: 1, tight: true }, [
+        schema.node("list_item", null, [
+          paragraph(t("outer")),
+          schema.node("bullet_list", { tight: true }, [
+            schema.node("list_item", null, [paragraph(t("inner")), nestedQuote]),
+          ]),
+        ]),
+      ]),
+    ];
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      for (const original of originals) {
+        const serialized = activeCodec.serializeBlock(original);
+        expect(serialized).toContain("\\\n");
+        expect(serialized).not.toContain("<br");
+        expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(original.toJSON());
+      }
+    }
+  });
+
   it("declines unsupported or conflicting HTML alignment styles", () => {
     for (const cell of [
       '<td style="color:red">A</td>',

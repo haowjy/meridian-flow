@@ -301,7 +301,7 @@ function closesFence(
 }
 
 function fenceLineContent(lines: readonly string[], index: number): string | null {
-  const { remainder } = stripQuotePrefix(lines[index] ?? "");
+  const { remainder } = stripIndentedQuotePrefix(lines, index, lines[index] ?? "");
   const listMarker = remainder.match(/^ {0,3}(?:[-+*] |\d+[.)] )/);
   if (listMarker) return remainder.slice(listMarker[0].length).replace(/^ {0,3}/, "");
 
@@ -359,7 +359,7 @@ function tableLinePrefix(lines: readonly string[], index: number): string | null
   const pipe = line.indexOf("|");
   if (pipe === -1) return null;
   const prefix = line.slice(0, pipe);
-  const { remainder } = stripQuotePrefix(prefix);
+  const { remainder } = stripIndentedQuotePrefix(lines, index, prefix);
   if (/^(?: {0,3}| {0,3}(?:[-+*] |\d+[.)] ))$/.test(remainder)) return prefix;
   if (/^ {4,}$/.test(remainder) && hasListContainer(lines, index, remainder.length)) {
     return prefix;
@@ -394,5 +394,29 @@ function stripQuotePrefix(line: string): { depth: number; remainder: string } {
     if (!quote) return { depth, remainder };
     depth++;
     remainder = remainder.slice(quote[0].length);
+  }
+}
+
+function stripIndentedQuotePrefix(
+  lines: readonly string[],
+  index: number,
+  line: string,
+): { depth: number; remainder: string } {
+  let depth = 0;
+  let remainder = line;
+  while (true) {
+    const quote = remainder.match(/^ {0,3}> ?/);
+    if (quote) {
+      depth++;
+      remainder = remainder.slice(quote[0].length);
+      continue;
+    }
+
+    const indentedQuote = remainder.match(/^( {4,})> ?/);
+    if (!indentedQuote?.[1] || !hasListContainer(lines, index, indentedQuote[1].length)) {
+      return { depth, remainder };
+    }
+    depth++;
+    remainder = remainder.slice(indentedQuote[0].length);
   }
 }
