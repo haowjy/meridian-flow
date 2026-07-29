@@ -164,6 +164,10 @@ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
+#: src/features/editor/EditorView.tsx
+msgid "3 by 3, header row"
+msgstr "3 by 3, header row"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "A figure is uploading."
 msgstr "A figure is uploading."
@@ -394,17 +398,20 @@ msgid "Breadcrumb"
 msgstr "Breadcrumb"
 
 #: src/features/editor/EditorView.tsx
-msgid "break"
-msgstr "break"
+#~ msgid "break"
+#~ msgstr "break"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Built-in"
 msgstr "Built-in"
 
-#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
 msgstr "Bullet list"
+
+#: src/features/editor/EditorView.tsx
+msgid "Bulleted list"
+msgstr "Bulleted list"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Buy extra usage"
@@ -523,9 +530,10 @@ msgid "Closed"
 msgstr "Closed"
 
 #: src/features/editor/EditorView.tsx
-msgid "Code"
-msgstr "Code"
+#~ msgid "Code"
+#~ msgstr "Code"
 
+#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Code block"
 msgstr "Code block"
@@ -840,8 +848,12 @@ msgid "Dismiss"
 msgstr "Dismiss"
 
 #: src/features/editor/EditorView.tsx
-msgid "divider"
-msgstr "divider"
+#~ msgid "divider"
+#~ msgstr "divider"
+
+#: src/features/editor/EditorView.tsx
+msgid "Divider"
+msgstr "Divider"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -997,6 +1009,10 @@ msgstr "Enter an amount in USD."
 msgid "Enter an http, https, or mailto link."
 msgstr "Enter an http, https, or mailto link."
 
+#: src/features/editor/EditorView.tsx
+msgid "epigraph"
+msgstr "epigraph"
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
@@ -1121,9 +1137,24 @@ msgid "h2"
 msgstr "h2"
 
 #: src/features/editor/EditorView.tsx
+msgid "h3"
+msgstr "h3"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
 msgstr "Heading"
+
+#: src/features/editor/EditorView.tsx
+msgid "Heading 1"
+msgstr "Heading 1"
+
+#: src/features/editor/EditorView.tsx
+msgid "Heading 2"
+msgstr "Heading 2"
+
+#: src/features/editor/EditorView.tsx
+msgid "Heading 3"
+msgstr "Heading 3"
 
 #: src/features/chat/placeholders.ts
 msgid "Hold on…"
@@ -1193,6 +1224,10 @@ msgstr "Inline code takes no links."
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Inline code takes no other formatting."
 msgstr "Inline code takes no other formatting."
+
+#: src/features/editor/EditorView.tsx
+msgid "Insert"
+msgstr "Insert"
 
 #: src/features/editor/EditorView.tsx
 msgid "Insert block"
@@ -1415,6 +1450,10 @@ msgstr "Meridian removed a small part of this chapter that this version can't di
 msgid "mermaid"
 msgstr "mermaid"
 
+#: src/features/editor/EditorView.tsx
+msgid "Mermaid"
+msgstr "Mermaid"
+
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Minimum is {0}."
@@ -1624,6 +1663,10 @@ msgstr "Numbered list"
 #: src/features/chat/FormBlock.tsx
 msgid "Object"
 msgstr "Object"
+
+#: src/features/editor/EditorView.tsx
+msgid "ol"
+msgstr "ol"
 
 #: src/lib/date-groups.ts
 msgid "Older"
@@ -2045,8 +2088,12 @@ msgid "Saved locally (offline)"
 msgstr "Saved locally (offline)"
 
 #: src/features/editor/EditorView.tsx
-msgid "Scene break"
-msgstr "Scene break"
+msgid "scene break"
+msgstr "scene break"
+
+#: src/features/editor/EditorView.tsx
+#~ msgid "Scene break"
+#~ msgstr "Scene break"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Scratch"
@@ -2227,6 +2274,10 @@ msgstr "Submit"
 msgid "Subscribe"
 msgstr "Subscribe"
 
+#: src/features/editor/EditorView.tsx
+msgid "subsection"
+msgstr "subsection"
+
 #: src/features/chat/TextBlock.tsx
 msgid "Suggested text is prefilled; edit it before submitting if needed."
 msgstr "Suggested text is prefilled; edit it before submitting if needed."
@@ -2264,6 +2315,7 @@ msgstr "Talk it out"
 msgid "Task Assignment"
 msgstr "Task Assignment"
 
+#: src/features/editor/EditorView.tsx
 #: src/features/editor/surfaces/toolbar/LinkPopover.tsx
 msgid "Text"
 msgstr "Text"
@@ -2512,6 +2564,10 @@ msgstr "Try again, or return to the live document."
 msgid "Type your answer…"
 msgstr "Type your answer…"
 
+#: src/features/editor/EditorView.tsx
+msgid "ul"
+msgstr "ul"
+
 #: src/core/editor/MermaidCodeBlock.tsx
 msgid "Unable to render diagram"
 msgstr "Unable to render diagram"
@@ -2569,6 +2625,10 @@ msgstr "upload"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr "Upload figure"
+
+#: src/features/editor/EditorView.tsx
+msgid "Upload or paste"
+msgstr "Upload or paste"
 
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent
