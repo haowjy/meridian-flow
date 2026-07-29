@@ -58,10 +58,16 @@ export function tableVerbLabel(verb: TableVerbId): string {
   }
 }
 
-/** The one line under a verb that says what it will make, where that helps. */
-export function tableVerbHint(verb: TableVerbId): string | null {
-  if (verb === "mergeCells") return t`One cell across the selection`;
-  return null;
+/**
+ * The one line under a verb that says what it will make. Merging is the only
+ * verb whose result a writer cannot see coming, so it says which one it is.
+ */
+export function tableVerbHint(
+  verb: TableVerbId,
+  { mergeJoinsText = false }: { mergeJoinsText?: boolean } = {},
+): string | null {
+  if (verb !== "mergeCells") return null;
+  return mergeJoinsText ? t`Runs the text together in one cell` : t`One cell across the selection`;
 }
 
 export function tableBlockedMessage(

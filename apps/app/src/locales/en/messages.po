@@ -2129,6 +2129,10 @@ msgstr "Running"
 #~ msgid "Running the {0} skill…"
 #~ msgstr "Running the {0} skill…"
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Runs the text together in one cell"
+msgstr "Runs the text together in one cell"
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"

@@ -22,7 +22,6 @@ import {
   deleteColumn,
   deleteRow,
   deleteTable,
-  mergeCells,
   splitCell,
   TableMap,
   toggleHeaderRow,
@@ -32,6 +31,8 @@ import {
   addTableRow,
   alignTableColumn,
   hasHeaderRow,
+  mergeJoinsCellText,
+  mergeTableCells,
   moveTableColumn,
   moveTableRow,
   resetTableColumnWidths,
@@ -112,7 +113,7 @@ export const TABLE_VERB_COMMANDS: Record<TableVerbId, Command> = {
   moveColumnLeft: moveTableColumn(-1),
   moveColumnRight: moveTableColumn(1),
   deleteColumn,
-  mergeCells,
+  mergeCells: mergeTableCells,
   splitCell,
   alignLeft: alignTableColumn("left"),
   alignCenter: alignTableColumn("center"),
@@ -155,6 +156,8 @@ export function selectedColumnAlignment(state: EditorState): TableAlignment | nu
 
   return shared === "left" || shared === "center" || shared === "right" ? shared : null;
 }
+
+export { mergeJoinsCellText };
 
 export function selectedTablePlacement(state: EditorState): TablePlacement {
   const align = tableSelection(state)?.table.attrs.align;
@@ -224,7 +227,7 @@ export function tableVerbStates(
     moveColumnRight: columnMove(columnTo >= map.width - 1),
     deleteColumn: map.width <= 1 ? blocked("single-column") : RUNS,
 
-    mergeCells: mergeCells(state)
+    mergeCells: mergeTableCells(state)
       ? RUNS
       : blocked(cellCount <= 1 ? "one-cell-selected" : "cells-not-rectangular"),
     splitCell: splitCell(state) ? RUNS : blocked("not-merged"),

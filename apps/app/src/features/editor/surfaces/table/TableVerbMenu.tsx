@@ -58,6 +58,8 @@ type VerbProps = {
   states: TableVerbStates;
   alignment: TableAlignment | null;
   placement: TablePlacement;
+  /** Merging here will run two cells' text together; the item says so. */
+  mergeJoinsText: boolean;
 };
 
 function TableVerbItem({
@@ -67,6 +69,7 @@ function TableVerbItem({
   icon,
   shortcut,
   destructive = false,
+  mergeJoinsText = false,
 }: {
   editor: Editor;
   states: TableVerbStates;
@@ -74,10 +77,11 @@ function TableVerbItem({
   icon: ReactNode;
   shortcut?: string;
   destructive?: boolean;
+  mergeJoinsText?: boolean;
 }) {
   const { blockedBy } = states[verb];
   const reason = tableBlockedMessage(verb, blockedBy);
-  const hint = reason ?? tableVerbHint(verb);
+  const hint = reason ?? tableVerbHint(verb, { mergeJoinsText });
 
   return (
     <EditorMenuItem
@@ -105,7 +109,7 @@ function TableVerbItem({
   );
 }
 
-export function TableRowMenuItems({ editor, states, alignment, placement }: VerbProps) {
+export function TableRowMenuItems({ editor, states, mergeJoinsText, ...table }: VerbProps) {
   return (
     <>
       <TableVerbItem
@@ -126,6 +130,7 @@ export function TableRowMenuItems({ editor, states, alignment, placement }: Verb
         states={states}
         verb="mergeCells"
         icon={<TableCellsMerge aria-hidden />}
+        mergeJoinsText={mergeJoinsText}
       />
       <TableVerbItem
         editor={editor}
@@ -157,12 +162,12 @@ export function TableRowMenuItems({ editor, states, alignment, placement }: Verb
         destructive
       />
       <EditorMenuSeparator />
-      <TableSubmenu editor={editor} states={states} alignment={alignment} placement={placement} />
+      <TableSubmenu editor={editor} states={states} mergeJoinsText={mergeJoinsText} {...table} />
     </>
   );
 }
 
-export function TableColumnMenuItems({ editor, states, alignment, placement }: VerbProps) {
+export function TableColumnMenuItems({ editor, states, mergeJoinsText, ...table }: VerbProps) {
   return (
     <>
       <TableVerbItem
@@ -178,13 +183,14 @@ export function TableColumnMenuItems({ editor, states, alignment, placement }: V
         icon={<ArrowRightFromLine aria-hidden />}
       />
       <EditorMenuSeparator />
-      <TableAlignmentItems editor={editor} alignment={alignment} />
+      <TableAlignmentItems editor={editor} alignment={table.alignment} />
       <EditorMenuSeparator />
       <TableVerbItem
         editor={editor}
         states={states}
         verb="mergeCells"
         icon={<TableCellsMerge aria-hidden />}
+        mergeJoinsText={mergeJoinsText}
       />
       <TableVerbItem
         editor={editor}
@@ -216,7 +222,7 @@ export function TableColumnMenuItems({ editor, states, alignment, placement }: V
         destructive
       />
       <EditorMenuSeparator />
-      <TableSubmenu editor={editor} states={states} alignment={alignment} placement={placement} />
+      <TableSubmenu editor={editor} states={states} mergeJoinsText={mergeJoinsText} {...table} />
     </>
   );
 }

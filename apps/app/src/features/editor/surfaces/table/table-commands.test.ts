@@ -21,10 +21,8 @@ afterEach(() => {
   editor = null;
 });
 
-const paragraph = (text: string): JSONContent => ({
-  type: "paragraph",
-  content: [{ type: "text", text }],
-});
+const paragraph = (text: string): JSONContent =>
+  text === "" ? { type: "paragraph" } : { type: "paragraph", content: [{ type: "text", text }] };
 
 function cell(type: "table_header" | "table_cell", text: string): JSONContent {
   return { type, attrs: {}, content: [paragraph(text)] };
@@ -95,6 +93,23 @@ function selectCells(current: Editor, anchor: string, head: string) {
 const states = (current: Editor, options?: { editable?: boolean }) =>
   tableVerbStates(current.state, options);
 
+/** The position before the cell at a grid coordinate, spans aside. */
+function cellPositionAt(current: Editor, row: number, column: number) {
+  const table = tableNode(current);
+  let pos = 1;
+  for (let index = 0; index < row; index += 1) pos += table.child(index).nodeSize;
+  pos += 1;
+  const rowNode = table.child(row);
+  for (let index = 0; index < column; index += 1) pos += rowNode.child(index).nodeSize;
+  return pos;
+}
+
+function tableNode(current: Editor) {
+  const table = current.state.doc.firstChild;
+  if (!table) throw new Error("table is missing");
+  return table;
+}
+
 function rowText(current: Editor): string[][] {
   const table = current.state.doc.firstChild;
   if (!table) return [];
@@ -141,7 +156,7 @@ describe("what a table verb refuses, and why", () => {
     expect(states(current).headerRow.active).toBe(true);
 
     runTableVerb(current, "headerRow");
-    expect(hasHeaderRow(current.state.doc.firstChild!)).toBe(false);
+    expect(hasHeaderRow(tableNode(current))).toBe(false);
     expect(states(current).headerRow.active).toBe(false);
     caretIn(current, "H1");
     expect(states(current).insertRowAbove.blockedBy).toBeNull();
@@ -149,7 +164,7 @@ describe("what a table verb refuses, and why", () => {
 
     // Law 6: the same control reverses, and twice through is where it started.
     runTableVerb(current, "headerRow");
-    expect(hasHeaderRow(current.state.doc.firstChild!)).toBe(true);
+    expect(hasHeaderRow(tableNode(current))).toBe(true);
     caretIn(current, "H1");
     expect(states(current).headerRow.active).toBe(true);
     expect(states(current).insertRowAbove.blockedBy).toBe("header-row-first");
@@ -195,19 +210,43 @@ describe("merge and split", () => {
   });
 
   it("makes a section row out of a merged row, and splits it back", () => {
-    const current = mount();
-    selectCells(current, "A1", "A2");
+    const current = mount([
+      ["Attributes", ""],
+      ["B1", "B2"],
+    ]);
+    current.view.dispatch(
+      current.state.tr.setSelection(
+        CellSelection.create(
+          current.state.doc,
+          cellPositionAt(current, 1, 0),
+          cellPositionAt(current, 1, 1),
+        ),
+      ),
+    );
     expect(runTableVerb(current, "mergeCells")).toBe(true);
 
-    const merged = current.state.doc.firstChild?.child(1);
-    expect(merged?.childCount).toBe(1);
-    expect(merged?.child(0).attrs.colspan).toBe(2);
+    const merged = tableNode(current).child(1);
+    expect(merged.childCount).toBe(1);
+    expect(merged.child(0).attrs.colspan).toBe(2);
+    // A section row keeps its one label: nothing was joined onto it.
+    expect(merged.textContent).toBe("Attributes");
 
     expect(states(current).splitCell.blockedBy).toBeNull();
     expect(states(current).mergeCells.blockedBy).toBe("one-cell-selected");
 
     expect(runTableVerb(current, "splitCell")).toBe(true);
-    expect(current.state.doc.firstChild?.child(1).childCount).toBe(2);
+    expect(tableNode(current).child(1).childCount).toBe(2);
+  });
+
+  it("keeps both cells' text when two filled cells merge", () => {
+    const current = mount();
+    selectCells(current, "A1", "A2");
+    expect(runTableVerb(current, "mergeCells")).toBe(true);
+
+    // A one-paragraph cell schema fits the second paragraph by splitting the
+    // cell into a new row and eating its text; the join is what prevents it.
+    expect(rowText(current)).toEqual([["H1", "H2"], ["A1 A2"], ["B1", "B2"]]);
+    expect(tableNode(current).childCount).toBe(3);
   });
 
   it("holds row and column moves still while any cell is merged, with the reason", () => {

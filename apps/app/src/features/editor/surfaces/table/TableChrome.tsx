@@ -47,6 +47,7 @@ import {
 } from "./table-anchors";
 import {
   appendTableAxis,
+  mergeJoinsCellText,
   selectedColumnAlignment,
   selectedTablePlacement,
   selectTableAxis,
@@ -361,6 +362,7 @@ function GripMenuContent({ editor, axis }: { editor: Editor; axis: Axis | "table
     states,
     alignment: selectedColumnAlignment(editor.state),
     placement: selectedTablePlacement(editor.state),
+    mergeJoinsText: mergeJoinsCellText(editor.state),
   };
 
   if (axis === "row") return <TableRowMenuItems {...props} />;

@@ -8,6 +8,8 @@ import {
   addRowBefore,
   CellSelection,
   isInTable,
+  mergeCells,
+  selectedRect,
   selectionCell,
   TableMap,
 } from "@tiptap/pm/tables";
@@ -293,4 +295,92 @@ export const resetTableColumnWidths: Command = (state, dispatch) => {
   if (!tr.docChanged) return false;
   dispatch?.(tr);
   return true;
+};
+
+/**
+ * The cells in the selected rectangle that hold something, in reading order.
+ *
+ * "Empty" is prosemirror-tables' own reckoning — one childless text block —
+ * because that is what its merge skips, and the two have to agree about which
+ * cells carry text or the join below would move text the merge also appends.
+ */
+function filledCellsInSelection(state: EditorState): { positions: number[]; tableStart: number } {
+  const rect = selectedRect(state);
+  const seen = new Set<number>();
+  const positions: number[] = [];
+
+  for (let row = rect.top; row < rect.bottom; row += 1) {
+    for (let column = rect.left; column < rect.right; column += 1) {
+      const cellPos = rect.map.map[row * rect.map.width + column];
+      if (seen.has(cellPos)) continue;
+      seen.add(cellPos);
+      const cell = rect.table.nodeAt(cellPos);
+      if (cell && cell.content.size > 0 && cell.textContent.length > 0) positions.push(cellPos);
+    }
+  }
+
+  return { positions, tableStart: rect.tableStart };
+}
+
+/**
+ * Whether merging here will run two cells' text together — the one thing about
+ * the verb a writer cannot see before pressing it, so the menu says so.
+ */
+export function mergeJoinsCellText(state: EditorState): boolean {
+  if (!isInTable(state) || !(state.selection instanceof CellSelection)) return false;
+  return filledCellsInSelection(state).positions.length > 1;
+}
+
+/**
+ * Merge, under a schema where a cell holds exactly one paragraph.
+ *
+ * prosemirror-tables appends every filled cell's content into the merged cell,
+ * which is two paragraphs where this schema allows one. The replace is then
+ * fitted to the schema: the cell closes, a new row opens, and a cell's text is
+ * simply gone. Running the text together into one paragraph FIRST leaves a
+ * single filled cell, which the library merges cleanly.
+ *
+ * When cells hold several paragraphs on the wire (the codec escalation), this
+ * join is what goes away, and `mergeCells` stands on its own.
+ */
+export const mergeTableCells: Command = (state, dispatch) => {
+  if (!mergeCells(state)) return false;
+  if (!dispatch) return true;
+
+  const { positions, tableStart } = filledCellsInSelection(state);
+  if (positions.length < 2) return mergeCells(state, dispatch);
+
+  const table = selectedRect(state).table;
+  const space = state.schema.text(" ");
+  let joined = Fragment.empty;
+  for (const cellPos of positions) {
+    const paragraph = table.nodeAt(cellPos)?.firstChild;
+    if (!paragraph || paragraph.content.size === 0) continue;
+    joined =
+      joined.size === 0
+        ? paragraph.content
+        : joined.append(Fragment.from(space)).append(paragraph.content);
+  }
+
+  // Back to front: rewriting a cell's text moves everything after it, and
+  // nothing before it.
+  const tr = state.tr;
+  for (const cellPos of [...positions].reverse()) {
+    const paragraph = table.nodeAt(cellPos)?.firstChild;
+    if (!paragraph) continue;
+    const from = tableStart + cellPos + 2;
+    const to = from + paragraph.content.size;
+    if (cellPos === positions[0]) tr.replaceWith(from, to, joined);
+    else tr.delete(from, to);
+  }
+
+  const withText = state.apply(tr);
+  // A plugin that rewrote the document underneath the join would invalidate
+  // the merge steps below; giving up on the join is better than mis-stepping.
+  if (withText.doc !== tr.doc) return mergeCells(state, dispatch);
+
+  return mergeCells(withText, (mergeTr) => {
+    for (const step of mergeTr.steps) tr.step(step);
+    dispatch(tr.scrollIntoView());
+  });
 };

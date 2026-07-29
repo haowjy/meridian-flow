@@ -2129,6 +2129,10 @@ msgstr "运行中"
 #~ msgid "Running the {0} skill…"
 #~ msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Runs the text together in one cell"
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr ""
