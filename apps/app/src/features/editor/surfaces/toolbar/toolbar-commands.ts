@@ -26,11 +26,10 @@
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Level } from "@tiptap/extension-heading";
-import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
-import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 
+import { type ChromeContext, chromeContextAt, resolveChromeContext } from "@/core/editor/chrome";
 import { linkAttributesAtSelection } from "@/core/editor/links";
-import { isEditorObject } from "@/core/editor/objects";
 
 import {
   alignableBlocksInSelection,
@@ -470,15 +469,39 @@ function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
 }
 
 /**
- * The refusal that makes the F6 accident unreachable: a node selection on
- * anything that is not a text block (figure, image, horizontal rule, table) is
- * not a block-type target, and formatting has no text to land on either.
+ * What the deepest context under the selection refuses, or null when that
+ * context is the document itself and nothing local stands in the way.
+ *
+ * The kernel already resolves that context for the Esc chain and the
+ * context-menu router (`core/editor/chrome`); this reads the same answer as a
+ * reason. Inspecting the selection a second time here is precisely what used
+ * to grey a whole SELECTED table as though the caret were in a cell:
+ * prosemirror-tables spells "this table is selected" as a `CellSelection`, and
+ * only the kernel's resolver reads both spellings.
+ *
+ * The resolver is called rather than the kernel's cached `chrome.context`,
+ * because the commands re-check this fence mid-chain and a code-schema
+ * document mounts no chrome at all.
+ *
+ * A `code_block` reads two ways, and the owner is what decides which: one that
+ * owns an `object` context is a RENDERED fence — a diagram on the page, since
+ * the kernel only names an object what `isEditorObject` accepts — while one
+ * that owns a `source-block` context is a plain fence the writer types in.
  */
-function objectSelectionBlocker(editor: Editor): BlockTypeRefusalReason | null {
-  const { selection } = editor.state;
-  return selection instanceof NodeSelection && !selection.node.isTextblock
-    ? "object-selection"
-    : null;
+function chromeContextRefusal(context: ChromeContext): BlockTypeRefusalReason | null {
+  switch (context.owner) {
+    case "object":
+      return context.nodeType === "code_block" ? "embedded-block" : "object-selection";
+    case "source-block":
+      return context.nodeType === "code_block" ? "code-block" : "embedded-block";
+    // A table never owns the context without a cell owning it more deeply, and
+    // the answer would be the same either way: neither is a conversion target.
+    case "table":
+    case "table-cell":
+      return "table-cell";
+    case "document":
+      return null;
+  }
 }
 
 /**
@@ -486,28 +509,31 @@ function objectSelectionBlocker(editor: Editor): BlockTypeRefusalReason | null {
  * block (the block menu's Turn into, the formatting menu's). Exported so those
  * surfaces refuse the same targets for the same reasons rather than growing a
  * second fence beside this one.
+ *
+ * Two readings, in order. The deepest context under the selection answers
+ * first, because a writer standing inside something is owed that thing's
+ * reason: a caret in a diagram nested in a table cell is in the DIAGRAM. Only
+ * when the document itself owns the context does what the selection SPANS
+ * decide, and then every block it covers is read through the same resolver at
+ * its own position.
  */
 export function blockTypeRefusal(editor: Editor): BlockTypeRefusalReason | null {
-  const objectSelection = objectSelectionBlocker(editor);
-  if (objectSelection) return objectSelection;
+  const owner = chromeContextRefusal(resolveChromeContext(editor.state));
+  if (owner) return owner;
 
-  const targets = textblockTargets(editor);
-  if (targets.length === 0) return "object-selection";
+  const refusals = spannedRefusals(editor.state);
+  if (refusals.length === 0) return "object-selection";
+
+  const refused = refusals.filter((reason) => reason !== null);
+  if (refused.length === 0) return null;
 
   // ANY protected target refuses the whole conversion: a selection spanning a
   // mermaid fence and a paragraph is the ordinary Ctrl+A, and converting it
-  // would drop the fence's language along with the fence.
-  const protectedTargets = targets.filter(
-    (target) => isNonProseTextblock(target.node) || isInsideTableCell(target.$pos),
-  );
-  if (protectedTargets.length === 0) return null;
-  if (protectedTargets.length < targets.length) return "mixed-selection";
-
-  // Every target refuses, so the reason can name the kind that refused. A cell
-  // holds exactly one paragraph, which covers a caret in a cell and a whole
-  // CellSelection alike.
-  const first = protectedTargets[0];
-  return isInsideTableCell(first.$pos) ? "table-cell" : nonProseReason(first.node);
+  // would drop the fence's language along with the fence. The reason may name
+  // one kind only when every block in the span refuses as that kind.
+  const uniform =
+    refused.length === refusals.length && refused.every((reason) => reason === refused[0]);
+  return uniform ? refused[0] : "mixed-selection";
 }
 
 /**
@@ -529,15 +555,8 @@ export function codeBlockRefusal(editor: Editor): BlockTypeRefusalReason | null 
 }
 
 function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlockedReason | null {
-  const objectSelection = objectSelectionBlocker(editor);
-  if (objectSelection) return objectSelection;
-
-  const targets = textblockTargets(editor);
-  // Marks land per node, so only a selection with no prose in it at all is
-  // refused; a mixed selection formats the prose and leaves the rest alone.
-  if (targets.length > 0 && targets.every((target) => isNonProseTextblock(target.node))) {
-    return nonProseReason(targets[0].node);
-  }
+  const noProse = noProseToMark(editor);
+  if (noProse) return noProse;
 
   // A mark that is already there can always come off (law 6), whatever the
   // schema thinks about adding it.
@@ -548,49 +567,54 @@ function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlo
   return editor.can().setMark(mark) ? null : "inline-code";
 }
 
+/**
+ * Why the selection holds no prose a mark could land on, or null when it holds
+ * some: marks land per node, so a mixed selection formats the prose it reaches
+ * and leaves the rest alone.
+ *
+ * A table cell IS prose (§5.4), which is the one place marks part ways with
+ * the block-type fence — a cell refuses to become a heading and takes bold in
+ * the same breath. It matters most for a selected table, whose cells hold
+ * every word in it.
+ */
+function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
+  const { state } = editor;
+  const refusals = spannedRefusals(state);
+  // Nothing in the span holds text at all: a figure, a rule, an empty document.
+  if (refusals.length === 0) {
+    return chromeContextRefusal(resolveChromeContext(state)) ?? "object-selection";
+  }
+  if (refusals.some((reason) => reason === null || reason === "table-cell")) return null;
+  return refusals[0] ?? null;
+}
+
+/**
+ * What each text block the selection covers refuses, in document order.
+ *
+ * Walks `selection.ranges` rather than `from`..`to`: a `CellSelection` reports
+ * only its FIRST cell as that pair, while ProseMirror's own commands run over
+ * every range — so a fence sitting in the fourth cell would be advertised as
+ * convertible and then refused by dispatch, which is the dead control law 5
+ * forbids.
+ *
+ * Each block is read at its own first inside position, so the resolver answers
+ * about the block rather than about its neighbours. A selection is not a
+ * context; asking per block is what tells a select-all across a fence from a
+ * caret inside one.
+ */
+function spannedRefusals(state: EditorState): (BlockTypeRefusalReason | null)[] {
+  const { doc, selection } = state;
+  const refusals: (BlockTypeRefusalReason | null)[] = [];
+  for (const range of selection.ranges) {
+    doc.nodesBetween(range.$from.pos, range.$to.pos, (node, pos) => {
+      if (node.isTextblock) refusals.push(chromeContextRefusal(chromeContextAt(doc, pos + 1)));
+    });
+  }
+  return refusals;
+}
+
 function isMarkActive(editor: Editor, mark: ToolbarMarkName | "link"): boolean {
   return mark === "link" ? linkAttributesAtSelection(editor) !== null : editor.isActive(mark);
-}
-
-type TextblockTarget = { node: PMNode; $pos: ResolvedPos };
-
-function textblockTargets(editor: Editor): TextblockTarget[] {
-  const { doc, selection } = editor.state;
-  const targets: TextblockTarget[] = [];
-  doc.nodesBetween(selection.from, selection.to, (node, pos) => {
-    if (node.isTextblock) targets.push({ node, $pos: doc.resolve(pos) });
-  });
-  return targets;
-}
-
-/**
- * Blocks that hold text but are not prose. ProseMirror calls them text blocks;
- * a writer calls them a code fence and an embedded component, and a block-type
- * conversion silently drops what makes them one — the fence's language, the
- * component's name and props. Classified by the schema's own `code` flag
- * rather than by `isTextblock`, which is what let `jsx_leaf` through.
- */
-function isNonProseTextblock(node: PMNode): boolean {
-  return node.type.spec.code === true;
-}
-
-/**
- * A fence the writer types in is a `code-block`; anything else that holds text
- * but is not prose reads as embedded. A rendered mermaid fence lands in the
- * second group deliberately: it is a diagram on the page, and the reasons that
- * forgive a code block (un-fence it, turn it into a paragraph) would destroy
- * it.
- */
-function nonProseReason(node: PMNode): BlockTypeRefusalReason {
-  return node.type.name === "code_block" && !isEditorObject(node) ? "code-block" : "embedded-block";
-}
-
-function isInsideTableCell($pos: ResolvedPos): boolean {
-  for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    const role = $pos.node(depth).type.spec.tableRole;
-    if (role === "cell" || role === "header_cell") return true;
-  }
-  return false;
 }
 
 function everyControlBlockedBy(reason: ToolbarBlockedReason): ToolbarControlStates {

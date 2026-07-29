@@ -61,6 +61,13 @@ function isBlockTypeControl(control: BlockedSubject): boolean {
  * Why a whole-block conversion cannot run on this target. Shared with every
  * surface carrying the same verbs — the block menu's Turn into — so one
  * refusal reads the same wherever the writer meets it.
+ *
+ * The first four name what the writer is standing in, because the fence asks
+ * the chrome kernel's deepest-context read before it looks at the span. Only
+ * `mixed-selection` is about the span, and it covers two shapes: a selection
+ * that is part convertible, and one whose blocks all refuse but not alike (a
+ * table and a fence caught in the same Ctrl+A). "Holds" is true of both;
+ * "part of" would be a lie about the second.
  */
 export function blockTypeReasonMessage(reason: BlockTypeRefusalReason): string {
   switch (reason) {
@@ -71,7 +78,7 @@ export function blockTypeReasonMessage(reason: BlockTypeRefusalReason): string {
     case "embedded-block":
       return t`Embedded blocks keep their own block type.`;
     case "mixed-selection":
-      return t`Part of this selection keeps its own block type.`;
+      return t`This selection holds blocks that keep their own block type.`;
     case "table-cell":
       return t`Table cells hold plain paragraphs.`;
   }
@@ -99,6 +106,8 @@ export function blockedReasonMessage(
       if (isBlockTypeControl(control)) return blockTypeReasonMessage(reason);
       if (control === "link") return t`Embedded blocks take no links.`;
       return t`Embedded blocks take no formatting.`;
+    // Neither reason reaches a mark: a cell is prose, and a mark lands on the
+    // prose in a mixed selection rather than refusing it.
     case "mixed-selection":
     case "table-cell":
       return blockTypeReasonMessage(reason);

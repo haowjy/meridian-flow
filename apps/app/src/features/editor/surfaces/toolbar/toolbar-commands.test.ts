@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { Editor, type JSONContent } from "@tiptap/core";
+import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
@@ -117,6 +118,62 @@ const TABLE_DOC: JSONContent = {
     },
   ],
 };
+
+/** A cell holding a rendered diagram, beside a cell holding ordinary prose. */
+const TABLE_DIAGRAM_DOC: JSONContent = {
+  type: "doc",
+  content: [
+    {
+      type: "table",
+      content: [
+        {
+          type: "table_row",
+          content: [
+            {
+              type: "table_cell",
+              content: [
+                {
+                  type: "code_block",
+                  attrs: { language: "mermaid" },
+                  content: [{ type: "text", text: "graph TD; A --> B" }],
+                },
+              ],
+            },
+            {
+              type: "table_cell",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "Kael" }] }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+/** Every cell position in document order. */
+function cellPositions(target: Editor): number[] {
+  const positions: number[] = [];
+  target.state.doc.descendants((node, at) => {
+    const role = node.type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") positions.push(at);
+  });
+  return positions;
+}
+
+function selectCells(target: Editor, anchor: number, head: number): void {
+  target.view.dispatch(
+    target.state.tr.setSelection(CellSelection.create(target.state.doc, anchor, head)),
+  );
+}
+
+/**
+ * How "this table is selected" is spelled: prosemirror-tables normalizes a
+ * node selection on a table into a cell selection over every cell.
+ */
+function selectWholeTable(target: Editor): void {
+  const cells = cellPositions(target);
+  selectCells(target, cells[0], cells[cells.length - 1]);
+}
 
 describe("toolbar enablement matrix", () => {
   it("enables every formatting verb at a caret in prose", () => {
@@ -638,5 +695,79 @@ describe("the mark state a surface renders", () => {
     const code = textMarkState(target, "code");
     expect(code.active).toBe(true);
     expect(code.blockedBy).toBeNull();
+  });
+});
+
+describe("the deepest context under the selection decides the reason", () => {
+  it("reads a selected table as an object rather than as one of its cells", () => {
+    const target = editorWith(TABLE_DOC);
+    selectWholeTable(target);
+
+    // The old reading inspected the selection itself, saw paragraphs in cells,
+    // and told the writer about cells while they had a whole table selected.
+    const controls = controlsFor(target);
+    expect(controls.heading.blockedBy).toBe("object-selection");
+    expect(controls.bulletList.blockedBy).toBe("object-selection");
+    expect(controls.codeBlock.blockedBy).toBe("object-selection");
+  });
+
+  it("keeps marks live on a selected table and lands them in every cell", () => {
+    const target = editorWith(TABLE_DOC);
+    selectWholeTable(target);
+
+    expect(controlsFor(target).bold.blockedBy).toBeNull();
+    expect(toggleTextMark(target, "strong")).toBe(true);
+
+    let plain = 0;
+    target.state.doc.descendants((node) => {
+      if (node.isText && !node.marks.some((mark) => mark.type.name === "strong")) plain += 1;
+    });
+    expect(plain).toBe(0);
+  });
+
+  it("gives a diagram inside a table cell the diagram's reason, not the cell's", () => {
+    const target = editorWith(TABLE_DIAGRAM_DOC);
+    target.commands.setTextSelection(posInsideType(target, "code_block") + 1);
+
+    const controls = controlsFor(target);
+    for (const id of ["heading", "bulletList", "codeBlock", "bold", "italic", "link"] as const) {
+      expect(controls[id].blockedBy, id).toBe("embedded-block");
+    }
+    // The cell reason would have forgiven nothing either, but it would have
+    // named the wrong thing — and un-fencing is what destroys this block.
+    expect(toggleCodeBlockBlock(target)).toBe(false);
+    expect(target.state.doc.descendants.length).toBeGreaterThan(0);
+  });
+
+  it("keeps marks live across a cell selection holding a diagram, from either end", () => {
+    // A cell selection reports ONE of its cells as `from`..`to` while the mark
+    // command runs over every range, so reading the pair greys a control that
+    // works — for whichever end of the drag the diagram happens to land on.
+    for (const reversed of [false, true]) {
+      const target = editorWith(TABLE_DIAGRAM_DOC);
+      const [diagramCell, proseCell] = cellPositions(target);
+      selectCells(target, reversed ? proseCell : diagramCell, reversed ? diagramCell : proseCell);
+
+      expect(controlsFor(target).bold.blockedBy, `reversed=${reversed}`).toBeNull();
+      expect(toggleTextMark(target, "strong")).toBe(true);
+      expect(target.state.doc.textContent).toContain("Kael");
+    }
+  });
+
+  it("names no single kind when the blocks in a selection refuse differently", () => {
+    const target = editorWith({
+      type: "doc",
+      content: [
+        TABLE_DOC.content?.[0] as JSONContent,
+        {
+          type: "code_block",
+          attrs: { language: "ts" },
+          content: [{ type: "text", text: "const gate = 3" }],
+        },
+      ],
+    });
+    target.commands.selectAll();
+
+    expect(controlsFor(target).heading.blockedBy).toBe("mixed-selection");
   });
 });
