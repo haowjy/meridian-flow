@@ -141,7 +141,7 @@ change only loosens) and delete the join; `mergeCells` then stands alone.
 
 **Spans** are on the wire now (the codec escalates a spanned table to raw
 HTML), and so are span-sized `colwidth` arrays — see the widths ruling in
-[`packages/markup/.context/CONTEXT.md`](../../../../../../../packages/markup/.context/CONTEXT.md).
+[`packages/markup/.context/CONTEXT.md`](../../../../../../../../packages/markup/.context/CONTEXT.md).
 What remains absent is **multi-paragraph cells**, which is why the merge joins
 text rather than stacking paragraphs.
 
