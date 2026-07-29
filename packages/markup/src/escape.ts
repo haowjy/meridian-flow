@@ -103,10 +103,14 @@ function encodeRawHtmlSource(source: string, value: string): string | null {
   for (let index = 0; index < sourceLines.length; index++) {
     const sourceLine = sourceLines[index];
     const valueLine = valueLines[index];
-    if (!sourceLine || !valueLine || !sourceLine.body.endsWith(valueLine.body)) return null;
+    if (!sourceLine || !valueLine) return null;
+    // CommonMark can expand a list-continuation tab into spaces in html.value.
+    // Match the non-whitespace suffix so the source's container prefix survives.
+    const valueContent = valueLine.body.trimStart();
+    if (!sourceLine.body.endsWith(valueContent)) return null;
     encoded.push(
-      sourceLine.body.slice(0, sourceLine.body.length - valueLine.body.length) +
-        encodeMarkdownPunctuation(valueLine.body) +
+      sourceLine.body.slice(0, sourceLine.body.length - valueContent.length) +
+        encodeMarkdownPunctuation(valueContent) +
         sourceLine.ending,
     );
   }
