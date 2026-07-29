@@ -16,6 +16,13 @@ current state it reads from the kernel, so the host has no growing prop list
 and a lane never has to ask for one. The host renders no element of its own;
 every surface portals or floats, so nothing here can push the manuscript.
 
+What a surface needs about the app rather than the document is the one exception,
+and it is a read rather than a prop: `useEditorScope()`
+(`features/editor/editor-scope.tsx`) answers which project and which Work the
+editor is open in. `EditorView` provides it around the host. This is what closed
+the last two bypasses — a dialog that needed the project used to mount beside the
+host, where the kernel could not see it.
+
 ## Mounting a surface, continued
 
 `EditorChromeHost` takes an `active` flag and `EditorView` passes it down. It
@@ -72,6 +79,12 @@ reason to close. Escape and a pointer outside still dismiss it.
 |---|---|---|---|
 | `EditorMenu` | `at={{x, y}}` for a claimed right-click, or `trigger` for a control | Radix roving focus | no |
 | `EditorPopover` | `at`, `anchorRect`, or `trigger` | Radix's by default; `focusOnOpen="prose"` leaves the caret where it was | no |
+
+Focus on the way OUT is the layer's, and `returnFocus` is how a lane substitutes
+its own answer without losing the guards: it runs only when no other layer took
+this surface's place and the manuscript is not behind a scrim. A lane's own
+`requestAnimationFrame` cannot do that — it fires before Radix's teardown and the
+layer's hand-back overwrites it a frame later.
 | `EditorDialog` | centered lightbox over the still-mounted page | Radix's | yes, with the scrim |
 
 `EditorPopover`'s two anchors are one mechanism — a virtual reference

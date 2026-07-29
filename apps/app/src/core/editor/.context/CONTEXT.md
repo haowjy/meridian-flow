@@ -90,6 +90,12 @@ Yjs document session. It must stay structurally aligned with
   anchored popover lazy-reads trail detail and the originating thread snapshot.
   The popover is evidence and navigation only; producing-turn receipt Undo/Redo
   is the sole reversal authority for AI changes.
+- Opening a mark belongs to the projection, not to the host: the press
+  ([`extensions/peer-mark-press.ts`](../extensions/peer-mark-press.ts)) is a
+  per-editor store the plugin writes from its own DOM handlers, holding the
+  `changeId` and the caret the writer left as an `EditorAnchor`. The surface reads
+  it. An editor with no projection has no press to read, which is why draft
+  review needs no suppression flag.
 - Peer-mark manuscript color describes the change, not the thread identity:
   added/modified marks use jade and deletions use crimson. Ordinary ranges rest
   as an underline only; a sweep is the sole resting warning tint. Per-thread

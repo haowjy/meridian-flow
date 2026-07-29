@@ -31,6 +31,11 @@ export type ContextViewerProps = {
   activeThreadId: string | null;
   /** Active work for work-scoped destinations (Scratch) in identity commits. */
   defaultWorkId: string | null;
+  /**
+   * The Work the open editors are in: the active thread's, or the project's
+   * default when no thread is bound. Scopes link resolution and the `[[` menu.
+   */
+  activeWorkId: string | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
   onSelectTab: (documentId: string) => void;
@@ -72,6 +77,7 @@ export function ContextViewer({
   projectId,
   activeThreadId,
   defaultWorkId,
+  activeWorkId,
   tabs,
   paneState,
   onSelectTab,
@@ -155,6 +161,7 @@ export function ContextViewer({
           >
             <ContextEditorMountHost
               projectId={projectId}
+              workId={activeWorkId}
               trackedTabs={trackedTabs}
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}

@@ -54,6 +54,7 @@ export {
 } from "./link-resolution";
 export {
   createLinkSurface,
+  type LinkFollowOutcome,
   type LinkFormRequest,
   type LinkHint,
   type LinkMenuRequest,

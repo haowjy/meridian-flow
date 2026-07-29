@@ -146,7 +146,9 @@ vi.mock("@/core/editor/document-session-registry", () => ({
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
-vi.mock("./PeerMarkPopover", () => ({ PeerMarkPopover: () => null }));
+// Lifetime is about which editor exists, not what hangs off it. An empty
+// registry keeps every lane's own dependencies out of this suite.
+vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
 
 const { EditorView } = await import("./EditorView");
 

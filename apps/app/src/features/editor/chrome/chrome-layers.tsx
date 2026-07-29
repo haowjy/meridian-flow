@@ -71,11 +71,23 @@ export type UseChromeLayerOptions = {
    * would otherwise survive every Escape pressed outside the editor.
    */
   dismissal?: ChromeLayerDismissal;
+  /**
+   * Where focus goes when this surface closes and nothing took its place. The
+   * default hands the caret back to the prose, which is right for a surface the
+   * writer summoned at the caret.
+   *
+   * A lane supplies its own when its door is a focusable element INSIDE the
+   * manuscript — a peer mark's span, reached by Tab — because a writer who
+   * arrived by keyboard continues from the thing they were on, not from the
+   * caret. It runs under the same two guards, which is the point of routing it
+   * through here rather than racing this handler from a lane's own timer.
+   */
+  returnFocus?: () => void;
 };
 
 export function useChromeLayer(
   editor: Editor | null,
-  { id, open, close, dismissal = "kernel" }: UseChromeLayerOptions,
+  { id, open, close, dismissal = "kernel", returnFocus }: UseChromeLayerOptions,
 ): ChromeLayerBinding {
   const chrome = useEditorChrome(editor);
   const parentId = useContext(ChromeLayerContext);
@@ -85,6 +97,10 @@ export function useChromeLayer(
 
   const closeRef = useRef(close);
   closeRef.current = close;
+  // Read live for the same reason as `close`: Radix calls this during teardown,
+  // when the surface that owns the answer may already have rendered away.
+  const returnFocusRef = useRef(returnFocus);
+  returnFocusRef.current = returnFocus;
 
   useEffect(() => {
     if (!chrome || !open) return;
@@ -124,6 +140,11 @@ export function useChromeLayer(
       // A modal surface that is not a chrome layer leaves no successor to
       // find, and still hides the manuscript behind it.
       if (editor.view.dom.closest('[aria-hidden="true"], [inert]')) return;
+      const lane = returnFocusRef.current;
+      if (lane) {
+        lane();
+        return;
+      }
       editor.commands.focus();
     },
     [chrome, editor, layerId],

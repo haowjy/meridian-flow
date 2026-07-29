@@ -11,12 +11,12 @@ export {
   type UseChromeLayerOptions,
   useChromeLayer,
 } from "./chrome-layers";
-export {
-  EDITOR_CHROME_SURFACES,
-  type EditorChromeSurface,
-  type EditorChromeSurfaceProps,
-} from "./chrome-surfaces";
-export { EditorChromeHost } from "./EditorChromeHost";
+// Types only, deliberately. The surface list names every lane and the host
+// renders it, so a barrel carrying either would make importing one primitive
+// import every surface in the editor — a lane's tests then load every other
+// lane's dependencies. `EditorView` imports the host from its own module; a lane
+// never imports it at all.
+export type { EditorChromeSurface, EditorChromeSurfaceProps } from "./chrome-surfaces";
 export { EditorDialog, type EditorDialogProps } from "./EditorDialog";
 export {
   EditorMenu,

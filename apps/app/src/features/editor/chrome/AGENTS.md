@@ -24,8 +24,12 @@ Four primitives and one host.
   `[[`. It owns the eight-row cap, the internal scroll that follows the arrow
   keys, the hairline fades, and the announcement the caret's own element has to
   carry; a lane brings rows.
-- **`EditorChromeHost`** — the one place chrome mounts. Surfaces arrive
-  through `EDITOR_CHROME_SURFACES`; `EditorView.tsx` never learns about one.
+- **`EditorChromeHost`** — the one place chrome mounts, with nothing rendering
+  editor chrome beside it. Surfaces arrive through `EDITOR_CHROME_SURFACES`;
+  `EditorView.tsx` never learns about one. What a lane needs about the app rather
+  than the document — the project, the active Work — it reads from
+  `features/editor/editor-scope.tsx`, which is how the seam widens without a
+  second mount and without a prop list on the host.
 
 `shortcut-label.ts` sits beside them: `shortcutLabel("Mod+K")` is how every
 lane prints a shortcut, because Mod is Cmd on macOS and a lane that tests the
@@ -55,6 +59,13 @@ target.
   pulls focus out of a surface on the frame it appeared — which Radix reads as
   an outside interaction and dismisses. A close returns the caret only when it
   was the last thing on screen.
+- **A lane that returns focus somewhere else passes `returnFocus`**, and never
+  its own timer. The guards above are the reason: a lane racing Radix's teardown
+  from a `requestAnimationFrame` loses, and worse, it hands focus back over the
+  surface that just replaced it. `returnFocus` runs in the layer's place, under
+  the same two guards. The peer-mark popover is the case that earns it — its door
+  is a focusable span inside the prose, so a writer who arrived by Tab continues
+  from the mark rather than from the caret.
 - **`onEscapeKeyDown` → `useChromeLayer(...).onEscapeKeyDown`.** Without it a
   single Esc closes a dialog and the pane inside it, spending two steps of the
   walk home on one key.
@@ -121,11 +132,18 @@ target.
 - No raw color. Chip and row styling lives in the stylesheet beside the
   component that renders it; token classes elsewhere.
 
+- **`index.ts` carries primitives, never the surface list or the host.** Both
+  name every lane, so a barrel that re-exported either would make importing one
+  primitive import every surface in the editor — and a lane's own tests would
+  load every other lane's dependencies. `EditorView` imports the host from its
+  own module.
+
 ## Anti-patterns
 
 - A lane rendering its own Radix root, its own anchor, or its own focus return.
 - A lane adding a component to `EditorView.tsx` instead of a row to
-  `chrome-surfaces.ts`.
+  `chrome-surfaces.tsx`. That includes a surface that needs the project: the
+  scope provider exists so the answer is a read, not a second mount.
 - Local `useState` mirroring the resolved context or suppression.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)

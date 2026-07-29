@@ -132,12 +132,29 @@ null on a code surface, on a read-only host, and behind a schema fence — the
 last because a slash command dispatches through a chain, and chains run on a
 non-editable editor. The wikilink getter answers null on the same three, plus a
 host with no project: without one there is nothing to search and nothing a link
-could resolve against.
+could resolve against. Its documents are the manuscript plus the active Work's
+scratch, which is the resolver's own candidate set.
 
-`ProjectLinkRuntime` is the exception to "EditorView mounts no surfaces": it is
-not chrome, it is the app's half of the link system (the resolution port and
-the navigator), and it needs the project id that `EDITOR_CHROME_SURFACES` does
-not carry. See
+## The editor's scope
+
+One value, `{ projectId, workId }`, provided by `EditorView` around everything it
+renders (`editor-scope.tsx`) and read with `useEditorScope()`. It answers the
+questions the document itself cannot:
+
+| Consumer | What the Work decides |
+|---|---|
+| `useWikilinkDocuments` | the `[[` menu offers that Work's scratch beside the manuscript |
+| `ResolveDocumentLinkRequest.workId` | a `work://` shorthand has a Work to be relative to |
+| `useOpenProjectDocument` | a followed link is looked for in that Work's scratch |
+
+`workId` arrives as a prop (the active thread's Work, or the project's default)
+and is deliberately NOT part of `EditorMountIdentity`: it is runtime scope, and
+remounting a collaborative editor destroys its UndoManager. `reviewWorkId` is a
+different fact — the Work that owns a draft under review — and stays separate.
+
+The runtimes `EditorView` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
+are ports and render nothing; the surfaces those lanes show the writer mount
+through the chrome host like every other one. See
 [`surfaces/link/.context/CONTEXT.md`](../surfaces/link/.context/CONTEXT.md).
 
 `EditorSurfaceFrame` accepts scrolling content and the tracked editor's optional
@@ -178,17 +195,15 @@ surface is deliberately unstyled and has no reinsertion or approval action.
 
 ## Peer mark popover
 
-`PeerMarkPopover.tsx` is the anchored evidence surface for one live
-session peer mark. The marker projection itself (`SessionMarkerStore` +
-`PeerMarkerExtension`) lives in
-[`core/editor`](../../../core/editor/.context/CONTEXT.md); this component is
-editor-host chrome, not a ProseMirror plugin.
+The lane is [`surfaces/peer-marks/`](../surfaces/peer-marks/AGENTS.md): one
+chrome surface over the press the projection's own plugin writes. `EditorView`
+holds nothing about it — the click, the Enter, the caret the writer left, and the
+mark that is open all live in `core/editor/extensions/` beside the decorations
+they belong to, and the surface reads them.
 
-`EditorView`'s click and keyboard handlers resolve the closest
-`[data-peer-mark]` element to a live `SessionMarker` from the session's
-`markerStore` and set it as the popover target; the popover is suppressed
-during inline draft review (`inReview`), since markers are a live-document
-surface and branch rooms have a different anchor space.
+Review needs no special case. A branch room has its own anchor space, so it
+mounts no projection at all, and a surface with no projection to read stands
+down on its own.
 
 Detail comes from the shared trail-detail cache in
 [`features/change-trail`](../../change-trail/AGENTS.md). `EditorView` prefetches
@@ -208,6 +223,8 @@ Trail-row navigation addresses a matching live session mark first, preserving
 its range/tick anatomy and emphasis treatment. Generic temporary range
 navigation remains the fallback after that mark has cleared or expired.
 
-Popover focus follows activation. Pointer open prevents Radix autofocus and
-pointer close restores the captured editor selection and caret. Keyboard
-activation moves focus into the popover; Escape/close returns focus to the mark.
+Popover focus follows activation. Pointer open leaves the caret in the prose and
+pointer close restores the held selection. Keyboard activation moves focus into
+the popover; Escape or close returns focus to the mark's current span. Neither
+hands anything back when another surface opened in its place — Mod+K reaches the
+popover as a close, and the caret then belongs to what opened.

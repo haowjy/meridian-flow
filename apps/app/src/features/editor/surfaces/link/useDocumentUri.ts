@@ -17,7 +17,10 @@ import { useMemo } from "react";
 
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 
-export function useDocumentUri(projectId: string | undefined, documentId: string): string | null {
+export function useDocumentUri(
+  projectId: string | null | undefined,
+  documentId: string,
+): string | null {
   const { tree } = useProjectContextTree(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
   });

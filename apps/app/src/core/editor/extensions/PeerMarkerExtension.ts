@@ -3,11 +3,11 @@ import { type Editor, Extension } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { i18n } from "@/lib/i18n";
 import type { AgentNameStore } from "../agent-name-store";
-import { isRemoteDocumentRebuild } from "../anchors";
+import { anchorRange, type EditorAnchor, isRemoteDocumentRebuild } from "../anchors";
 import {
   changeMarkLabel,
   collaboratorChangeLabel,
@@ -20,6 +20,12 @@ import {
   resolveRelativeRange,
 } from "../relative-position-runtime";
 import type { SessionMarker, SessionMarkerStore } from "../session-marker-store";
+import {
+  createPeerMarkPressStore,
+  type PeerMarkActivation,
+  type PeerMarkPressStore,
+  restorePeerMarkSelection,
+} from "./peer-mark-press";
 
 const peerMarkerPluginKey = new PluginKey<PeerMarkerPluginState>("peer-markers");
 
@@ -53,6 +59,35 @@ export function peerMarkElement(editor: Editor | null, changeId: string): HTMLEl
 export function peerMarkRect(editor: Editor | null, changeId: string | null): DOMRect | null {
   const element = changeId === null ? null : peerMarkElement(editor, changeId);
   return element ? element.getBoundingClientRect() : null;
+}
+
+export type PeerMarkerOptions = {
+  markerStore: SessionMarkerStore | null;
+  agentNames?: AgentNameStore;
+};
+
+/**
+ * What a surface aimed at this lane reads from the editor: the projection, live,
+ * and which mark the writer opened.
+ *
+ * Null on an editor that draws no marks. A draft-review room has an anchor
+ * space of its own and mounts no projection at all, which is what lets the
+ * surface stand down without asking whether it is in review.
+ */
+export type PeerMarkerStorage = {
+  markers: SessionMarkerStore | null;
+  press: PeerMarkPressStore;
+};
+
+declare module "@tiptap/core" {
+  interface Storage {
+    peerMarkers: PeerMarkerStorage;
+  }
+}
+
+export function peerMarks(editor: Editor | null): PeerMarkerStorage | null {
+  if (!editor || editor.isDestroyed) return null;
+  return editor.storage.peerMarkers ?? null;
 }
 const REBUILD_META = "peer-markers:rebuild";
 const EMPHASIZE_META = "peer-markers:emphasize";
@@ -375,12 +410,12 @@ function anchorsResolve(store: SessionMarkerStore, state: EditorState): void {
   );
 }
 
-export const PeerMarkerExtension = Extension.create<{
-  markerStore: SessionMarkerStore | null;
-  agentNames?: AgentNameStore;
-}>({
+export const PeerMarkerExtension = Extension.create<PeerMarkerOptions, PeerMarkerStorage>({
   name: "peerMarkers",
   addOptions: () => ({ markerStore: null }),
+  addStorage() {
+    return { markers: this.options.markerStore, press: createPeerMarkPressStore() };
+  },
   addCommands() {
     return {
       showPeerMarker:
@@ -423,7 +458,43 @@ export const PeerMarkerExtension = Extension.create<{
   addProseMirrorPlugins() {
     const store = this.options.markerStore;
     const agentNames = this.options.agentNames;
+    const press = this.storage.press;
+    const editor = this.editor;
     if (!store) return [];
+
+    /** The pointer's own reading, taken before the press moved the caret. */
+    let pointerSelection: EditorAnchor | null = null;
+
+    /** The mark under an event, and only while the store still reports it. */
+    const liveMarkAt = (target: EventTarget | null): string | null => {
+      if (!(target instanceof Element)) return null;
+      const changeId = target.closest<HTMLElement>("[data-peer-mark]")?.dataset.peerMark;
+      if (!changeId) return null;
+      const live = store
+        .getSnapshot()
+        .some((marker) => marker.changeId === changeId && !marker.dismissed);
+      return live ? changeId : null;
+    };
+
+    const openPress = (
+      view: EditorView,
+      target: EventTarget | null,
+      activation: PeerMarkActivation,
+    ): boolean => {
+      const changeId = liveMarkAt(target);
+      if (!changeId) return false;
+      const { from, to } = view.state.selection;
+      const editorSelection =
+        (activation === "pointer" ? pointerSelection : null) ??
+        anchorRange(view.state, { from, to });
+      pointerSelection = null;
+      press.open({ changeId, activation, editorSelection });
+      if (activation === "pointer") {
+        requestAnimationFrame(() => restorePeerMarkSelection(editor, editorSelection));
+      }
+      return true;
+    };
+
     return [
       new Plugin<PeerMarkerPluginState>({
         key: peerMarkerPluginKey,
@@ -462,6 +533,30 @@ export const PeerMarkerExtension = Extension.create<{
         props: {
           decorations: (state) =>
             peerMarkerPluginKey.getState(state)?.decorations ?? DecorationSet.empty,
+
+          // Opening a mark belongs to the lane that draws it. The surface reads
+          // the press and renders; it never listens to the manuscript itself.
+          handleDOMEvents: {
+            pointerdown(view, event) {
+              if (!liveMarkAt(event.target)) return false;
+              const { from, to } = view.state.selection;
+              pointerSelection = anchorRange(view.state, { from, to });
+              // A peer mark is an explanatory decoration, not a new caret
+              // destination. Keep the editor focused until the click opens the
+              // pointer-mode popover.
+              event.preventDefault();
+              return true;
+            },
+            click(view, event) {
+              return openPress(view, event.target, "pointer");
+            },
+            keydown(view, event) {
+              if (event.key !== "Enter" && event.key !== " ") return false;
+              if (!openPress(view, event.target, "keyboard")) return false;
+              event.preventDefault();
+              return true;
+            },
+          },
         },
         view(view) {
           let dispatchQueued = false;
@@ -485,6 +580,16 @@ export const PeerMarkerExtension = Extension.create<{
               const state = peerMarkerPluginKey.getState(updatedView.state);
               for (const changeId of state?.pendingClearIds ?? []) store.dismiss(changeId);
               anchorsResolve(store, updatedView.state);
+              // A mark that is gone takes its press with it. A popover about a
+              // mark the writer's own edit cleared has nothing left to be about,
+              // and the document is what decides that.
+              const open = press.press;
+              const survives =
+                open !== null &&
+                store
+                  .getSnapshot()
+                  .some((marker) => marker.changeId === open.changeId && !marker.dismissed);
+              if (open && !survives) press.close();
             },
             destroy() {
               destroyed = true;

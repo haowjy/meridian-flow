@@ -73,10 +73,27 @@ export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
   return { from: menu.anchor.from, to: menu.anchor.to };
 }
 
+/**
+ * What following a link found, once it is worth interrupting the writer about.
+ * A link already resolved never lands here: it just opens.
+ *
+ * The outcome sits in the store rather than in the component that asked,
+ * because the two halves belong on opposite sides of the chrome host. The app
+ * registers the navigator and does the asking; what the writer reads is a
+ * surface the host mounts like every other one. Without this field the asking
+ * half has to render its own dialog, and a dialog the kernel never hears about
+ * is a second owner of Escape.
+ */
+export type LinkFollowOutcome = {
+  state: "checking" | "missing" | "failed";
+  target: LinkTarget;
+};
+
 export type LinkSurfaceState = {
   hint: LinkHint | null;
   form: LinkFormRequest | null;
   menu: LinkMenuRequest | null;
+  follow: LinkFollowOutcome | null;
 };
 
 export type LinkSurface = {
@@ -95,6 +112,10 @@ export type LinkSurface = {
   retargetMenu: (target: LinkMenuTarget | null) => void;
   closeMenu: () => void;
 
+  /** A follow that has something to say. Reported by whoever answered it. */
+  reportFollow: (outcome: LinkFollowOutcome) => void;
+  clearFollow: () => void;
+
   /**
    * Where an internal link goes. Absent is a real state, not a bug: until the
    * app registers one, internal links have no destination the editor can
@@ -106,7 +127,7 @@ export type LinkSurface = {
   destroy: () => void;
 };
 
-const EMPTY_STATE: LinkSurfaceState = { hint: null, form: null, menu: null };
+const EMPTY_STATE: LinkSurfaceState = { hint: null, form: null, menu: null, follow: null };
 
 export function createLinkSurface(): LinkSurface {
   const listeners = new Set<() => void>();
@@ -116,7 +137,12 @@ export function createLinkSurface(): LinkSurface {
 
   const set = (next: Partial<LinkSurfaceState>) => {
     const merged = { ...state, ...next };
-    if (merged.hint === state.hint && merged.form === state.form && merged.menu === state.menu) {
+    if (
+      merged.hint === state.hint &&
+      merged.form === state.form &&
+      merged.menu === state.menu &&
+      merged.follow === state.follow
+    ) {
       return;
     }
     state = merged;
@@ -158,6 +184,13 @@ export function createLinkSurface(): LinkSurface {
     },
     closeMenu() {
       set({ menu: null });
+    },
+
+    reportFollow(outcome) {
+      set({ follow: outcome });
+    },
+    clearFollow() {
+      set({ follow: null });
     },
 
     get navigator() {

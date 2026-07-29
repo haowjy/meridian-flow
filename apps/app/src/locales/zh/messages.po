@@ -279,7 +279,7 @@ msgid "Added"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
-#: src/features/editor/PeerMarkPopover.tsx
+#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "After"
 msgstr ""
 
@@ -292,7 +292,7 @@ msgstr ""
 msgid "Agent: {0}"
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
+#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
 msgstr ""
 
@@ -389,7 +389,7 @@ msgid "Back to workspace"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
-#: src/features/editor/PeerMarkPopover.tsx
+#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Before"
 msgstr ""
 
@@ -446,8 +446,8 @@ msgid "Can't undo"
 msgstr ""
 
 #: src/features/chat/ComposerWriteModeControl.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Cancel"
 msgstr ""
@@ -472,7 +472,7 @@ msgstr ""
 msgid "Centered"
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
+#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr ""
 
@@ -537,7 +537,7 @@ msgstr ""
 msgid "Choose an option"
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -590,7 +590,7 @@ msgstr ""
 msgid "Collaborative document editor"
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
+#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Collaborator"
 msgstr ""
 
@@ -809,7 +809,7 @@ msgstr ""
 msgid "Create file or folder"
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Create it now and the link starts working. Nothing about the link changes."
 msgstr ""
 
@@ -817,11 +817,11 @@ msgstr ""
 msgid "Create project"
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Create the document"
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
 msgstr ""
 
@@ -1508,7 +1508,7 @@ msgstr ""
 msgid "Log out"
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Looking for the document this link names."
 msgstr ""
 
@@ -1729,7 +1729,7 @@ msgstr ""
 msgid "No context files yet."
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "No document answers to this name. A document can be created for it once the name works as a filename."
 msgstr ""
 
@@ -1773,7 +1773,7 @@ msgstr ""
 msgid "Not Found"
 msgstr "未找到"
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Nothing carries that name yet"
 msgstr ""
 
@@ -1857,7 +1857,7 @@ msgstr ""
 msgid "Open context files"
 msgstr ""
 
-#: src/features/editor/PeerMarkPopover.tsx
+#: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Open conversation"
 msgstr ""
 
@@ -1906,7 +1906,7 @@ msgstr ""
 msgid "Opening document…"
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Opening the link"
 msgstr ""
 
@@ -2526,7 +2526,7 @@ msgstr ""
 msgid "That image did not upload."
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "That link could not be checked"
 msgstr ""
 
@@ -2566,7 +2566,7 @@ msgstr ""
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The document could not be created. Try again."
 msgstr ""
 
@@ -2590,7 +2590,7 @@ msgstr ""
 #~ msgid "The image uploaded, but the editor could not insert it."
 #~ msgstr ""
 
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr ""
 
@@ -2816,7 +2816,7 @@ msgid "Try a web address, a document path, or [[a document name]]."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
+#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Try again"
 msgstr ""
 
