@@ -52,7 +52,7 @@ import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./exte
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { LinkSurfaceExtension } from "./links";
-import { markdownTableClipboardParser } from "./markdown-paste";
+import { markdownClipboardParser } from "./markdown-paste";
 import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -370,7 +370,7 @@ export function createEditorConfig({
   };
   const resolvedEditorProps =
     resolvedSchemaType === "document"
-      ? { clipboardTextParser: markdownTableClipboardParser(), ...sanitizedEditorProps }
+      ? { clipboardTextParser: markdownClipboardParser(), ...sanitizedEditorProps }
       : sanitizedEditorProps;
 
   return {

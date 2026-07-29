@@ -195,11 +195,31 @@ Yjs document session. It must stay structurally aligned with
   Every consumer gets its own render id: mermaid writes it into the markup, and
   two faces of one diagram sharing an id collide over the arrow markers they
   reference.
-- Clipboard HTML is rebuilt, not scrubbed: `sanitize-paste.ts` copies allowed
-  elements into a fresh document with an attribute allowlist, so a
+- The clipboard has two doors, one per flavour it can carry. HTML goes through
+  `sanitize-paste.ts`, which rebuilds rather than scrubs: allowed elements are
+  copied into a fresh document under an attribute allowlist, so a
   newly-supported browser attribute is unsafe by default. `createEditorConfig`
   composes it *after* any caller `transformPastedHTML` so a caller can never
   reintroduce markup the schema would accept.
+- Clipboard **text** goes through `markdown-paste.ts` and comes out as the
+  document it describes. It is the same `markdownCodec` the wire uses, so
+  headings, lists, quotes, fences, tables, links and `[[wikilinks]]` all arrive
+  as themselves and nothing in the app has to know what markdown looks like.
+  `markdownCodec` rather than `mdxCodec`: clipboard text comes from anywhere and
+  MDX reads `<` and `{` as syntax, which fiction contains.
+  Four refusals bound it, and each is a behaviour, not an implementation detail:
+  paste-without-formatting yields characters; a caret inside a code block or a
+  table cell yields characters, because block structure cannot live there; and
+  `markdownPasteAddsStructure` declines any parse that amounts to the paragraphs
+  the default paste would have produced anyway. That last one is the
+  false-positive guard, and it is decided on the parsed blocks rather than on a
+  guess about the raw text: pasted prose never takes a detour through a parser
+  that could re-spell it. A lone paragraph comes back as an open slice so a
+  bolded phrase joins the sentence at the caret; anything with blocks comes back
+  closed so its structure survives.
+  Only text-only clipboards reach this door. ProseMirror prefers `text/html`
+  when the source offers both, which is how copying between rendered surfaces
+  already worked.
 - Editable link clicks place a cursor instead of navigating: `openOnClick` is
   off and a plugin calls `preventDefault()` while still letting ProseMirror
   resolve the selection. `link-url.ts` is the single normalizer for
