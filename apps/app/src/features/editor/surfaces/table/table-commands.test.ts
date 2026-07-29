@@ -170,6 +170,35 @@ describe("what a table verb refuses, and why", () => {
     expect(states(current).insertRowAbove.blockedBy).toBe("header-row-first");
   });
 
+  it("toggles the header ROW, not whatever rows happen to be selected", () => {
+    const current = mount();
+    // The whole table selected is how a writer reaches the table's own menu,
+    // and the library's own toggle turns every row into a header from there.
+    current.view.dispatch(
+      current.state.tr.setSelection(
+        CellSelection.create(
+          current.state.doc,
+          cellPositionAt(current, 0, 0),
+          cellPositionAt(current, 2, 1),
+        ),
+      ),
+    );
+    runTableVerb(current, "headerRow");
+
+    const table = tableNode(current);
+    expect(hasHeaderRow(table)).toBe(false);
+    for (let row = 0; row < table.childCount; row += 1) {
+      expect(table.child(row).child(0).type.name).toBe("table_cell");
+    }
+
+    // And back on from a caret in the LAST row: the verb still names row zero.
+    caretIn(current, "B2");
+    runTableVerb(current, "headerRow");
+    const restored = tableNode(current);
+    expect(hasHeaderRow(restored)).toBe(true);
+    expect(restored.child(2).child(0).type.name).toBe("table_cell");
+  });
+
   it("names the edges rather than going quiet at them", () => {
     const current = mount();
     caretIn(current, "B1");

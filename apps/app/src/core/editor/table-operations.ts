@@ -12,6 +12,7 @@ import {
   selectedRect,
   selectionCell,
   TableMap,
+  tableNodeTypes,
 } from "@tiptap/pm/tables";
 
 export type TableSelection = {
@@ -64,6 +65,36 @@ export function tableSelection(state: EditorState): TableSelection | null {
     columnTo: rect.right - 1,
   };
 }
+
+/**
+ * Turn the table's header row on or off (law 6: one control, both directions).
+ *
+ * prosemirror-tables' `toggleHeaderRow` toggles header-ness of whatever ROWS
+ * are selected, so with the table selected it makes every row a header, and
+ * with the caret in the last row it makes THAT row a header. "Header row" names
+ * one row — the first — and means the same thing from wherever it is pressed.
+ */
+export const toggleTableHeaderRow: Command = (state, dispatch) => {
+  const selection = tableSelection(state);
+  if (!selection) return false;
+  if (!dispatch) return true;
+
+  const types = tableNodeTypes(state.schema);
+  const target = hasHeaderRow(selection.table) ? types.cell : types.header_cell;
+  const map = TableMap.get(selection.table);
+  const tableStart = selection.tablePos + 1;
+  const tr = state.tr;
+
+  for (const cellPos of map.cellsInRect({ left: 0, right: map.width, top: 0, bottom: 1 })) {
+    const cell = selection.table.nodeAt(cellPos);
+    if (!cell || cell.type === target) continue;
+    tr.setNodeMarkup(tableStart + cellPos, target, cell.attrs);
+  }
+
+  if (!tr.docChanged) return false;
+  dispatch(tr);
+  return true;
+};
 
 /**
  * Whether row zero is a header row.

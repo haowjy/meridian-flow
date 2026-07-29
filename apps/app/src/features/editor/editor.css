@@ -809,10 +809,18 @@
   height: 11px;
 }
 
+/* The resize widget is a real DOM sibling inside the cell, so the moment a
+   boundary is hovered the cell's paragraph stops being the last child, its
+   bottom margin comes back, and every row in the column grows by it. Anchoring
+   the rule to the last PARAGRAPH ignores the widget and holds the row still —
+   measured: 41px cells with the hairline up and down. */
+.meridian-editor .ProseMirror td > p:last-of-type,
+.meridian-editor .ProseMirror th > p:last-of-type {
+  margin-bottom: 0;
+}
+
 /* Q6's resize affordance: a hairline that appears under the pointer and takes
-   no space of its own, so hovering a boundary never nudges a column. The
-   plugin's widget is absolutely positioned inside the cell, which is what
-   keeps the layout still. */
+   no space of its own, so hovering a boundary never nudges a column. */
 .meridian-editor .ProseMirror .column-resize-handle {
   position: absolute;
   top: 0;

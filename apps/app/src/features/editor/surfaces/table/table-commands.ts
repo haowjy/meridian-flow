@@ -24,7 +24,6 @@ import {
   deleteTable,
   splitCell,
   TableMap,
-  toggleHeaderRow,
 } from "@tiptap/pm/tables";
 
 import {
@@ -39,6 +38,7 @@ import {
   setTablePlacement,
   tableHasSpans,
   tableSelection,
+  toggleTableHeaderRow,
 } from "@/core/editor/table-operations";
 
 export type TableAlignment = "left" | "center" | "right";
@@ -118,7 +118,7 @@ export const TABLE_VERB_COMMANDS: Record<TableVerbId, Command> = {
   alignLeft: alignTableColumn("left"),
   alignCenter: alignTableColumn("center"),
   alignRight: alignTableColumn("right"),
-  headerRow: toggleHeaderRow,
+  headerRow: toggleTableHeaderRow,
   placeLeft: setTablePlacement(null),
   placeCenter: setTablePlacement("center"),
   placeRight: setTablePlacement("right"),

@@ -23,7 +23,7 @@
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { MoreVertical } from "lucide-react";
-import { type ReactNode, useLayoutEffect, useState } from "react";
+import { type ComponentProps, type ReactNode, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { IconButton } from "@/components/ui/icon-button";
@@ -109,8 +109,10 @@ function OverlayIconChip({
   label,
   onSelect,
   asTrigger = false,
+  onMouseDown,
   children,
-}: {
+  ...rest
+}: ComponentProps<"button"> & {
   label: string;
   onSelect?: () => void;
   /** The ⋮ chip is a menu trigger, so the lane's menu owns its press. */
@@ -118,16 +120,23 @@ function OverlayIconChip({
   children: ReactNode;
 }) {
   const chip = (
+    // The rest props are the menu's: a lane hands this chip to Radix as its
+    // trigger, and Radix opens on the `onPointerDown` it injects here. Dropping
+    // them leaves a ⋮ that cannot be pressed.
     <IconButton
+      {...rest}
       type="button"
       variant="ghost"
       size="sm"
       aria-label={label}
       className="meridian-overlay-icon-chip"
-      onClick={asTrigger ? undefined : onSelect}
+      onClick={asTrigger ? rest.onClick : onSelect}
       // A press on the chrome must not move the caret out from under the
       // object the chrome belongs to.
-      onMouseDown={(event) => event.preventDefault()}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onMouseDown?.(event);
+      }}
     >
       {children}
     </IconButton>
