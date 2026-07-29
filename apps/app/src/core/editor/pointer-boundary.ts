@@ -26,7 +26,7 @@ import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import { type Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { gapCursorFits, isSourceBlock, objectTypeSpec } from "./objects";
+import { gapCursorFits, isSourceBlock, objectBody } from "./objects";
 
 /** A top-level block's vertical extent in viewport coordinates. */
 export type BlockBand = {
@@ -237,7 +237,7 @@ function placeText(doc: PMNode, pos: number): PointerBoundaryDecision {
  * paragraph.
  */
 function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | null {
-  if (objectTypeSpec(node)?.body === "opaque") return null;
+  if (objectBody(node) === "opaque") return null;
   if (node.isTextblock) {
     if (isSourceBlock(node)) return null;
     return direction === 1 ? pos + 1 : pos + 1 + node.content.size;
@@ -281,7 +281,7 @@ function nearestWriterText(doc: PMNode, boundary: number, direction: 1 | -1): nu
 /** Is this position inside a body that stands in for text the page never shows? */
 function inOpaqueObject($pos: ResolvedPos): boolean {
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    if (objectTypeSpec($pos.node(depth))?.body === "opaque") return true;
+    if (objectBody($pos.node(depth)) === "opaque") return true;
   }
   return false;
 }

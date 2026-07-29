@@ -13,7 +13,7 @@
 
 import type { EditorView } from "@tiptap/pm/view";
 
-import { isObjectBodyDragSource } from "@/core/editor/objects";
+import { type ObjectDrag, objectDrag } from "@/core/editor/objects";
 
 import { type BlockTarget, blockAt, objectIsWholeBlock } from "./block-targets";
 
@@ -145,45 +145,50 @@ export function blockUnderPointer(
 const OBJECT_BODY_CONTROLS = "input, textarea, select, button, a[href]";
 
 /**
- * The block a press on an object's body should drag, or null when the press is
- * not on one (§5.8).
+ * The block a press on an object's body should drag, or null when the press
+ * starts no block drag (§5.8).
  *
  * `posAtCoords` reports `inside`: the innermost node the coordinates landed in,
- * which for a picture is the picture and for a sentence is its paragraph. That
- * is the whole test — the registry says which bodies are drag sources, so prose
- * and table cells decline by being what they are, without a node name here.
+ * which for a picture is the picture and for a sentence is its paragraph. The
+ * registry then says which drag that body starts, so prose, table cells, and
+ * the objects that land inline all decline by being what they are, without a
+ * node name here.
  *
  * The pointer's own x, not the column-corrected x `blockUnderPointer` uses: a
  * press in the margin beside a picture is a press on the margin.
  *
  * What moves is the object's top-level block, the same unit the margin handle
- * points at — so the object has to BE that block. An uploaded picture is an
- * inline image alone in a paragraph and moving that paragraph moves the
- * picture; a picture mid-sentence declines, and the press stays the text
- * selection the pointer is already drawing. The margin handle still moves the
- * paragraph either way, which is where "move this whole line" lives.
+ * points at — so the object has to BE that block. A figure inside a list item
+ * beside a paragraph is not, and grabbing it would carry prose nobody took
+ * hold of; the margin handle still moves that whole line.
  */
 export function objectBodyDragTarget(view: EditorView, event: PointerEvent): BlockTarget | null {
   if (!(event.target instanceof Element)) return null;
   if (onEditableText(event.target) || event.target.closest(OBJECT_BODY_CONTROLS)) return null;
 
-  const object = objectBodyAt(view, event.clientX, event.clientY);
+  const object = objectAtPointer(view, event.clientX, event.clientY, "block");
   if (object === null || !objectIsWholeBlock(view.state.doc, object)) return null;
   return blockAt(view.state.doc, object);
 }
 
 /**
- * True when the browser's own drag would carry an object off.
+ * True when the browser's own drag would carry a BLOCK object off.
+ *
+ * ProseMirror's drag is the right one for an object that lands inline: it
+ * carries an inline slice, the dropcursor draws the caret between characters,
+ * and the drop is one transaction that undo takes back in a step. It is the
+ * wrong one for a block object, which shows no block drop line under it and
+ * travels by serialize-and-reparse — the route that once brought a figure back
+ * as a bare paragraph.
  *
  * A wider question than where a block drag may begin, and deliberately so: a
  * press on a figure's caption field belongs to the field, but a native drag
- * out of it still takes the whole figure through a serialize-and-reparse that
- * has brought one back as a bare paragraph. Text the writer selected inside a
+ * out of it still takes the whole figure. Text the writer selected inside a
  * source fence is the one thing still theirs to drag.
  */
 export function nativeDragCarriesObject(view: EditorView, event: DragEvent): boolean {
   if (event.target instanceof Element && onEditableText(event.target)) return false;
-  return objectBodyAt(view, event.clientX, event.clientY) !== null;
+  return objectAtPointer(view, event.clientX, event.clientY, "block") !== null;
 }
 
 /**
@@ -199,12 +204,20 @@ function onEditableText(element: Element): boolean {
   return element.closest("[contenteditable]")?.getAttribute("contenteditable") !== "false";
 }
 
-/** The position of the drag-source object under these coordinates, if any. */
-function objectBodyAt(view: EditorView, clientX: number, clientY: number): number | null {
+/**
+ * The position of the object under these coordinates whose body starts `drag`,
+ * or null when the coordinates are on something else.
+ */
+function objectAtPointer(
+  view: EditorView,
+  clientX: number,
+  clientY: number,
+  drag: ObjectDrag,
+): number | null {
   const at = view.posAtCoords({ left: clientX, top: clientY });
   if (!at || at.inside < 0) return null;
   const node = view.state.doc.nodeAt(at.inside);
-  return node && isObjectBodyDragSource(node) ? at.inside : null;
+  return node && objectDrag(node) === drag ? at.inside : null;
 }
 
 /**

@@ -8,10 +8,23 @@ first, and the kernel's
 
 ```ts
 // object-types.ts — append-only, one row per type
-{ nodeType: "figure", engage: "surface" },
+{ nodeType: "figure", drag: "block", engage: "surface" },
 { nodeType: "code_block", matches: (node) => node.attrs.language === "mermaid",
-  engage: "surface" },
+  drag: "block", engage: "surface" },
 ```
+
+`drag` says what taking hold of the body does:
+
+| Column | A press on the body starts | Where it lands |
+|---|---|---|
+| `block` | the block drag the margin handle starts | a seam between top-level blocks, behind the jade line |
+| `inline` | ProseMirror's own drag, untouched | anywhere a caret can go, behind the dropcursor |
+| `none` | nothing; the body owns its pointer | — |
+
+`inline` is only legal for a node the schema calls inline, and its node view
+must carry `data-drag-handle`: TipTap's node view refuses the browser's
+dragstart on any node view without one, so the row alone would be a promise
+nothing keeps.
 
 `engage` says what Enter — and a double-click on the object — means:
 
@@ -121,6 +134,14 @@ Two things make this a rule rather than an exception:
 
 Refusing the default is the whole mechanism: nothing later can take a caret
 back, so it must never be placed.
+
+The objects registered `drag: "inline"` opt out of this door entirely, and the
+same mechanism is why: Chrome starts no drag out of a press whose default was
+refused, so refusing here would refuse the gesture the 2026-07-29 ruling asks
+for (a picture dragged between two words). Nothing is lost by leaving the press
+whole — the nearest editable position beside an inline picture is the sentence
+it is already standing in, not hidden text — and the click that never travels
+still rings the picture one mouseup later through `handleClickOn`.
 
 ## The ring is a decoration, not a lifecycle call
 
