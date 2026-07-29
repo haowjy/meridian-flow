@@ -1,9 +1,11 @@
 # extensions/slash — the `/` trigger
 
-Four small modules and the plugin that wires them: where `/` may open
+Three small modules and the plugin that wires them: where `/` may open
 (`slash-trigger.ts`), what a choice does to the document
-(`slash-insertion.ts`), what the menu is offering (`slash-catalog.ts`), and the
-open menu React reads (`slash-menu-store.ts`). The surface that renders it is
+(`slash-insertion.ts`), and what the menu is offering (`slash-catalog.ts`). The
+open menu React reads is the shared store in
+[`../suggestion/`](../suggestion/suggestion-menu-store.ts), which `[[` uses
+too. The surface that renders it is
 [`features/editor/surfaces/slash/`](../../../../features/editor/surfaces/slash/AGENTS.md).
 
 ## Mental model

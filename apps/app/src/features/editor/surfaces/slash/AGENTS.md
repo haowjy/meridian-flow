@@ -8,17 +8,12 @@ live in [`core/editor/extensions/slash/`](../../../../core/editor/extensions/sla
 
 ## Mental model
 
-The writer never leaves the sentence. The query is the document text after the
-`/`, the caret stays in the prose, and this surface is a read-only view of what
-the trigger already matched. Everything else follows from that:
-
-- `focusOnOpen="prose"` on `EditorPopover`, and every row cancels its own
-  mousedown. A row that took focus would end the filter mid-word.
-- The keyboard is the trigger's, registered at the kernel's `layer` scope while
-  the menu is open. This file follows the highlight with the scroll; it does not
-  bind a key.
-- Escape is the kernel's chain, reached by being an open layer — free from the
-  wrapper.
+Rows, and nothing else. The writer never leaves the sentence — focus stays in
+the prose, the query is the document text after the `/`, the arrow keys belong
+to the trigger — and every bit of that is
+[`chrome/SuggestionMenu`](../../chrome/SuggestionMenu.tsx), which the `[[` menu
+shares. This file answers two questions: what a row says, and when a group
+heading opens above one.
 
 ## Key rules
 
@@ -30,20 +25,13 @@ the trigger already matched. Everything else follows from that:
 - **Icons come from the toolbar's family** (lucide), keyed by catalog id in
   `slash-menu-icons.tsx`. They are not copy and do not belong in the host's
   catalog; every writer-facing string in the menu does.
-- **Measure the scroller from its ref callback, not an effect.** Radix mounts
-  the portal's children a commit after `open` flips, so an effect keyed on
-  `open` runs with nothing to measure and the fades never appear.
-- The height cap, the hidden scrollbar, and the fades live in `editor.css`
-  under the L-D banner. No raw color anywhere.
 
 ## Anti-patterns
 
 - Reading `editor.state` for what the menu should show. The store is the seam;
   it is already the trigger's answer.
-- Binding arrow keys or Enter here. A React effect registers them after the
-  first keystroke a fast writer sends.
-- Anchoring to a captured point. The `/` moves when the manuscript scrolls;
-  `anchorRect` is read on every reposition for exactly that reason.
+- Re-implementing the scroll, the fades, or the announcement here. They live in
+  the shared surface so the two typed-under menus cannot drift apart.
 
 → [`../../AGENTS.md`](../../AGENTS.md)
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the wrappers and the layer contract

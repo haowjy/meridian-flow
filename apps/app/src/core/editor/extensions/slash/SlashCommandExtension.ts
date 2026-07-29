@@ -3,8 +3,9 @@
  *
  * Three modules meet here and none of them is this file's business.
  * `slash-trigger.ts` decides where `/` may open, `slash-insertion.ts` decides
- * what a choice does to the document, and `slash-menu-store.ts` holds the open
- * menu for React. What is left is wiring `@tiptap/suggestion` to them.
+ * what a choice does to the document, and the shared suggestion store holds
+ * the open menu for React. What is left is wiring `@tiptap/suggestion` to
+ * them.
  *
  * Two things this deliberately does NOT do:
  *
@@ -24,18 +25,29 @@ import Suggestion, { exitSuggestion, type SuggestionProps } from "@tiptap/sugges
 
 import { getEditorChrome } from "../../chrome";
 import {
+  createSuggestionMenu,
+  type SuggestionMenu,
+  type SuggestionMenuController,
+  type SuggestionMenuSession,
+  type SuggestionMenuSnapshot,
+} from "../suggestion";
+import {
   filterSlashCommandItems,
   type SlashCommandExtensionOptions,
+  type SlashCommandGroupId,
   type SlashCommandItem,
 } from "./slash-catalog";
 import { applySlashCommand } from "./slash-insertion";
-import {
-  createSlashMenu,
-  type SlashMenu,
-  type SlashMenuController,
-  type SlashMenuSession,
-} from "./slash-menu-store";
 import { allowsSlashTrigger } from "./slash-trigger";
+
+/**
+ * What the menu needs that a row does not carry: the group headings it shows
+ * while the writer is browsing rather than filtering.
+ */
+export type SlashMenuMeta = { groupLabels: Record<SlashCommandGroupId, string> };
+
+export type SlashMenu = SuggestionMenu<SlashCommandItem, SlashMenuMeta>;
+export type SlashMenuSnapshot = SuggestionMenuSnapshot<SlashCommandItem, SlashMenuMeta>;
 
 const SLASH_EXTENSION_NAME = "slashCommand";
 
@@ -46,7 +58,7 @@ const slashCatalogFencePluginKey = new PluginKey(`${SLASH_EXTENSION_NAME}Catalog
 type SlashCommandStorage = {
   menu: SlashMenu;
   /** @internal driven by this extension only. */
-  controller: SlashMenuController;
+  controller: SuggestionMenuController<SlashCommandItem, SlashMenuMeta>;
 };
 
 declare module "@tiptap/core" {
@@ -72,7 +84,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
   },
 
   addStorage(): SlashCommandStorage {
-    return createSlashMenu();
+    return createSuggestionMenu<SlashCommandItem, SlashMenuMeta>();
   },
 
   addProseMirrorPlugins() {
@@ -82,7 +94,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 
     const sessionFrom = (
       props: SuggestionProps<SlashCommandItem, SlashCommandItem>,
-    ): SlashMenuSession | null => {
+    ): SuggestionMenuSession<SlashCommandItem, SlashMenuMeta> | null => {
       const catalog = options.catalog();
       if (!catalog) return null;
       return {
@@ -90,7 +102,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
         query: props.query,
         anchorRect: props.clientRect ?? (() => null),
         label: catalog.menuLabel,
-        groupLabels: catalog.groupLabels,
+        meta: { groupLabels: catalog.groupLabels },
         choose: (item) => props.command(item),
         dismiss: () => exitSuggestion(editor.view, slashCommandPluginKey),
       };

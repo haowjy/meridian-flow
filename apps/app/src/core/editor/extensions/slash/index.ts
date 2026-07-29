@@ -9,6 +9,9 @@
 export {
   getSlashMenu,
   SlashCommandExtension,
+  type SlashMenu,
+  type SlashMenuMeta,
+  type SlashMenuSnapshot,
   slashCommandPluginKey,
 } from "./SlashCommandExtension";
 export {
@@ -19,4 +22,3 @@ export {
   type SlashCommandId,
   type SlashCommandItem,
 } from "./slash-catalog";
-export type { SlashMenu, SlashMenuSnapshot } from "./slash-menu-store";
