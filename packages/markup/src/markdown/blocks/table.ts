@@ -58,10 +58,8 @@ export function normalizeGfmTableHardBreaks(source: string): string {
 }
 
 export function canonicalizeGfmTableHardBreaks(serialized: string): string {
-  return serialized
-    .split("\n")
-    .flatMap((line) => canonicalTableLine(line))
-    .join("\n");
+  const lines = serialized.split("\n");
+  return lines.flatMap((line, index) => canonicalTableLine(lines, index, line)).join("\n");
 }
 
 export const tableCodec: BlockCodec<MdastTable> = {
@@ -231,7 +229,7 @@ function replaceHardBreaks(
 
 function pipeRowAt(lines: readonly string[], start: number): { value: string; end: number } | null {
   const first = lines[start];
-  const prefix = first === undefined ? null : tableLinePrefix(first);
+  const prefix = first === undefined ? null : tableLinePrefix(lines, start);
   if (first === undefined || prefix === null) return null;
 
   let value = first;
@@ -266,11 +264,11 @@ function closesFence(line: string, fence: { marker: string; length: number }): b
   return new RegExp(`^[\\t ]{0,3}${marker}{${fence.length},}[\\t ]*$`).test(line);
 }
 
-function canonicalTableLine(line: string): string[] {
-  const firstPipe = line.indexOf("|");
-  if (firstPipe === -1 || !line.includes("<br")) return [line];
+function canonicalTableLine(lines: readonly string[], index: number, line: string): string[] {
+  const structuralPrefix = tableLinePrefix(lines, index);
+  if (structuralPrefix === null || !line.includes("<br")) return [line];
 
-  const prefix = continuationPrefix(line.slice(0, firstPipe));
+  const prefix = continuationPrefix(structuralPrefix);
   const out: string[] = [""];
   let codeFenceLength = 0;
   let offset = 0;
@@ -307,15 +305,46 @@ function continuationPrefix(prefix: string): string {
   });
 }
 
-function tableLinePrefix(line: string): string | null {
+function tableLinePrefix(lines: readonly string[], index: number): string | null {
+  const line = lines[index];
+  if (line === undefined) return null;
   const pipe = line.indexOf("|");
   if (pipe === -1) return null;
   const prefix = line.slice(0, pipe);
-  let remainder = prefix;
+  const { remainder } = stripQuotePrefix(prefix);
+  if (/^(?: {0,3}| {0,3}(?:[-+*] |\d+[.)] ))$/.test(remainder)) return prefix;
+  if (/^ {4,}$/.test(remainder) && hasListContainer(lines, index, remainder.length)) {
+    return prefix;
+  }
+  return null;
+}
+
+function hasListContainer(lines: readonly string[], index: number, tableIndent: number): boolean {
+  const tableQuoteDepth = stripQuotePrefix(lines[index] ?? "").depth;
+  for (let cursor = index - 1; cursor >= 0; cursor--) {
+    const candidate = stripQuotePrefix(lines[cursor] ?? "");
+    if (candidate.remainder.trim().length === 0) continue;
+    if (candidate.depth !== tableQuoteDepth) return false;
+
+    const marker = candidate.remainder.match(/^( *)(?:[-+*] |\d+[.)] )/);
+    if (marker) {
+      const contentIndent = marker[0].length;
+      if (contentIndent <= tableIndent) return true;
+    }
+
+    const indentation = candidate.remainder.match(/^ */)?.[0].length ?? 0;
+    if (indentation < tableIndent) return false;
+  }
+  return false;
+}
+
+function stripQuotePrefix(line: string): { depth: number; remainder: string } {
+  let depth = 0;
+  let remainder = line;
   while (true) {
     const quote = remainder.match(/^ {0,3}> ?/);
-    if (!quote) break;
+    if (!quote) return { depth, remainder };
+    depth++;
     remainder = remainder.slice(quote[0].length);
   }
-  return /^(?: {0,3}| {0,3}(?:[-+*] |\d+[.)] ))$/.test(remainder) ? prefix : null;
 }

@@ -720,6 +720,58 @@ describe("mdx codec round-trip corpus", () => {
     }
   });
 
+  it("keeps HTML table pipes inert while canonicalizing nested hard breaks", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td colspan="2">left | right<br />down</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      const table = firstParsedBlock(activeCodec, html);
+      expect(activeCodec.serializeBlock(table)).toBe(html);
+      expect(firstParsedBlock(activeCodec, html).toJSON()).toEqual(table.toJSON());
+    }
+  });
+
+  it("keeps pipe-cell hard breaks canonical in nested list tables", () => {
+    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
+    const bodyRow = table.child(1);
+    const bodyCell = bodyRow.child(0);
+    const breakCell = bodyCell.type.create(bodyCell.attrs, [
+      paragraph(t("a", [m("strong")]), schema.node("hard_break"), t("b", [m("strong")])),
+    ]);
+    const breakTable = table.type.create(table.attrs, [
+      table.child(0),
+      bodyRow.type.create(bodyRow.attrs, [breakCell]),
+    ]);
+    const original = schema.node("bullet_list", { tight: true }, [
+      schema.node("list_item", null, [
+        paragraph(t("outer")),
+        schema.node("bullet_list", { tight: true }, [
+          schema.node("list_item", null, [paragraph(t("inner")), breakTable]),
+        ]),
+      ]),
+    ]);
+
+    for (const activeCodec of [
+      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec,
+    ]) {
+      const serialized = activeCodec.serializeBlock(original);
+      expect(serialized).toContain("\\\n");
+      expect(serialized).not.toContain("<br");
+      expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(original.toJSON());
+    }
+  });
+
   it("declines unsupported or conflicting HTML alignment styles", () => {
     for (const cell of [
       '<td style="color:red">A</td>',
