@@ -39,6 +39,7 @@ export {
   type OverlayIconRowItem,
   type OverlayIconRowProps,
 } from "./OverlayIconRow";
+export { objectOverlayStyle } from "./object-overlay";
 export {
   SuggestionMenu,
   type SuggestionMenuProps,
