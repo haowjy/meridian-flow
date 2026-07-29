@@ -2,9 +2,11 @@
 
 The insertion menu from §5.7: two groups while the writer is browsing, a
 best-match list the moment they type, ~8 rows visible with the rest behind an
-internal scroll. It renders the open menu and nothing else — where `/` may
-open, what an entry does to the document, and which keys the menu owns all
-live in [`core/editor/extensions/slash/`](../../../../core/editor/extensions/slash/AGENTS.md).
+internal scroll. It renders the open menu, and owns the manuscript's own list
+of rows in writer copy (`slash-catalog-copy.ts`, handed to the extension by
+the host with its file picker). Where `/` may open, what an entry does to the
+document, and which keys the menu owns all live in
+[`core/editor/extensions/slash/`](../../../../core/editor/extensions/slash/AGENTS.md).
 
 ## Mental model
 
