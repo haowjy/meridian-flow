@@ -150,7 +150,5 @@ export function blockedReasonMessage(
       return t`This file holds code only.`;
     case "no-project":
       return t`Open this document in a project to upload figures.`;
-    case "upload-in-flight":
-      return t`A figure is uploading.`;
   }
 }

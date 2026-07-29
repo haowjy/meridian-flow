@@ -39,7 +39,6 @@ function controlsFor(target: Editor | null, overrides: Partial<ToolbarContext> =
     canUndo: false,
     canRedo: false,
     imageUploadAvailable: true,
-    imageUploadBusy: false,
     ...overrides,
   });
 }
@@ -326,9 +325,9 @@ describe("toolbar enablement matrix", () => {
     expect(controlsFor(target, { imageUploadAvailable: false }).uploadFigure.blockedBy).toBe(
       "no-project",
     );
-    expect(controlsFor(target, { imageUploadBusy: true }).uploadFigure.blockedBy).toBe(
-      "upload-in-flight",
-    );
+    // An upload already in flight blocks nothing: the picture in flight holds
+    // its own slot in the document, so the next one is a normal insertion.
+    expect(controlsFor(target, {}).uploadFigure.blockedBy).toBeNull();
   });
 });
 

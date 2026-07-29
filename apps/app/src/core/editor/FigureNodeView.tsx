@@ -3,7 +3,7 @@
  *
  * Renders an uploaded figure inside ProseMirror with loading/error/retry states
  * and refreshes object-store signed URLs before they expire. Owns the figure
- * node's in-editor presentation; shared asset URL helpers live in `image-workflow`.
+ * node's in-editor presentation; the inline `image` node view lives in `images/`.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -163,50 +163,6 @@ export function FigureNodeView(props: NodeViewProps) {
           </label>
         </div>
       ) : null}
-    </NodeViewWrapper>
-  );
-}
-
-/** Inline image node view that translates stable asset refs to short-lived read URLs. */
-export function ImageNodeView(props: NodeViewProps) {
-  const src = textAttr(props.node.attrs.src);
-  const alt = nullableTextAttr(props.node.attrs.alt) ?? "";
-  const { projectId } = getExtensionOptions(props);
-  const [state, actions] = useAssetImageRenderState({ projectId, src });
-
-  // The whole picture is its own grip (`drag: "inline"` in EDITOR_OBJECT_TYPES):
-  // a writer grabs the picture, not a handle beside it. `data-drag-handle` is
-  // how a TipTap node view says so — without it the node view refuses the
-  // browser's dragstart, and the picture could only ever move as a block.
-  return (
-    <NodeViewWrapper as="span" className="meridian-image-node" data-type="image" data-drag-handle>
-      {state.url ? (
-        <img
-          src={state.url}
-          alt={alt}
-          draggable={false}
-          onLoad={actions.imageDisplayed}
-          onError={actions.imageLoadFailed}
-        />
-      ) : (
-        <span
-          className="meridian-image-node__placeholder"
-          role="img"
-          aria-label={"message" in state ? state.message : t`Loading image`}
-        >
-          {state.kind === "loading" ? (
-            <Loader2 className="size-6 animate-spin" />
-          ) : (
-            <>
-              <ImageIcon className="size-6" />
-              <Button type="button" variant="ghost" size="xs" onClick={actions.retry}>
-                <RefreshCw className="size-3" aria-hidden />
-                <Trans>Retry</Trans>
-              </Button>
-            </>
-          )}
-        </span>
-      )}
     </NodeViewWrapper>
   );
 }

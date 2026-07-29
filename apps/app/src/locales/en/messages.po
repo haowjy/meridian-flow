@@ -97,6 +97,21 @@ msgstr "{0} additional balance"
 msgid "{0} documents"
 msgstr "{0} documents"
 
+#. placeholder {0}: entry.filename
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "{0} imported, but its link had moved on."
+msgstr "{0} imported, but its link had moved on."
+
+#. placeholder {0}: file.name
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+
+#. placeholder {0}: intent.filename
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+
 #. placeholder {0}: destination.name
 #: src/features/project/context/ContextViewer.tsx
 msgid "{0} isn't in {section}."
@@ -118,13 +133,17 @@ msgstr "{days}d"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr "{documents, plural, one {# document} other {# documents}}"
 
-#: src/features/editor/EditorView.tsx
+#: src/core/editor/images/ImageIngressExtension.ts
 msgid "{filename} could not be read from that site. It stayed a link."
 msgstr "{filename} could not be read from that site. It stayed a link."
 
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "{filename} did not import. It stayed a link."
+msgstr "{filename} did not import. It stayed a link."
+
 #: src/features/editor/EditorView.tsx
-msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
-msgstr "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+#~ msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+#~ msgstr "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
 #: src/lib/date-groups.ts
 msgid "{hours}h"
@@ -165,8 +184,8 @@ msgid "3 by 3, header row"
 msgstr "3 by 3, header row"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-msgid "A figure is uploading."
-msgstr "A figure is uploading."
+#~ msgid "A figure is uploading."
+#~ msgstr "A figure is uploading."
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -186,9 +205,13 @@ msgstr "A folder named {0} already exists in this location."
 msgid "A folder named {trimmed} already exists in this location."
 msgstr "A folder named {trimmed} already exists in this location."
 
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "A picture cannot go there."
+msgstr "A picture cannot go there."
+
 #: src/features/editor/EditorView.tsx
-msgid "A project is required before images can be uploaded."
-msgstr "A project is required before images can be uploaded."
+#~ msgid "A project is required before images can be uploaded."
+#~ msgstr "A project is required before images can be uploaded."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
@@ -497,8 +520,8 @@ msgid "Choose a listed option"
 msgstr "Choose a listed option"
 
 #: src/features/editor/EditorView.tsx
-msgid "Choose an image file."
-msgstr "Choose an image file."
+#~ msgid "Choose an image file."
+#~ msgstr "Choose an image file."
 
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
@@ -939,7 +962,7 @@ msgstr "Drafting…"
 msgid "Drafts are waiting"
 msgstr "Drafts are waiting"
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
 msgstr "Drop image to insert it"
 
@@ -1230,8 +1253,12 @@ msgid "Image downloaded"
 msgstr "Image downloaded"
 
 #: src/features/editor/EditorView.tsx
-msgid "Image upload failed."
-msgstr "Image upload failed."
+#~ msgid "Image upload failed."
+#~ msgstr "Image upload failed."
+
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "Images need a project before they can be uploaded."
+msgstr "Images need a project before they can be uploaded."
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
@@ -1275,8 +1302,8 @@ msgstr "Insert row below"
 
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
-msgid "Inserted {0}."
-msgstr "Inserted {0}."
+#~ msgid "Inserted {0}."
+#~ msgstr "Inserted {0}."
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Installed"
@@ -1424,7 +1451,7 @@ msgstr "Loading file…"
 msgid "Loading files…"
 msgstr "Loading files…"
 
-#: src/core/editor/FigureNodeView.tsx
+#: src/core/editor/images/ImageNodeView.tsx
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "Loading image"
@@ -2035,6 +2062,10 @@ msgstr "Refresh"
 msgid "remaining"
 msgstr "remaining"
 
+#: src/core/editor/images/ImageNodeView.tsx
+msgid "Remove"
+msgstr "Remove"
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
@@ -2109,6 +2140,7 @@ msgstr "Resume where I left off on any device"
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
+#: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Retry"
@@ -2462,6 +2494,10 @@ msgstr "That document couldn't be found."
 msgid "That image could not be read."
 msgstr "That image could not be read."
 
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "That image did not upload."
+msgstr "That image did not upload."
+
 #: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
 msgid "That link could not be checked"
 msgstr "That link could not be checked"
@@ -2519,12 +2555,12 @@ msgid "The header row stays first."
 msgstr "The header row stays first."
 
 #: src/features/editor/EditorView.tsx
-msgid "The image imported, but the editor could not insert it."
-msgstr "The image imported, but the editor could not insert it."
+#~ msgid "The image imported, but the editor could not insert it."
+#~ msgstr "The image imported, but the editor could not insert it."
 
 #: src/features/editor/EditorView.tsx
-msgid "The image uploaded, but the editor could not insert it."
-msgstr "The image uploaded, but the editor could not insert it."
+#~ msgid "The image uploaded, but the editor could not insert it."
+#~ msgstr "The image uploaded, but the editor could not insert it."
 
 #: src/features/editor/surfaces/link/ProjectLinkRuntime.tsx
 msgid "The project could not be reached. The link itself is fine."
@@ -2648,6 +2684,10 @@ msgstr "This diagram stopped parsing. The preview is the last version that rende
 msgid "This document changed elsewhere. Reopen it and try again."
 msgstr "This document changed elsewhere. Reopen it and try again."
 
+#: src/core/editor/images/ImageIngressExtension.ts
+msgid "This document is not taking changes right now."
+msgstr "This document is not taking changes right now."
+
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This document is read only right now."
@@ -2685,6 +2725,10 @@ msgstr "This folder is empty."
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder no longer exists."
 msgstr "This folder no longer exists."
+
+#: src/core/editor/images/ImageNodeView.tsx
+msgid "This image never finished uploading."
+msgstr "This image never finished uploading."
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
@@ -2826,11 +2870,16 @@ msgstr "Upload or paste"
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent
 #: src/features/editor/EditorView.tsx
-msgid "Uploading {0} ({1}%)"
-msgstr "Uploading {0} ({1}%)"
+#~ msgid "Uploading {0} ({1}%)"
+#~ msgstr "Uploading {0} ({1}%)"
 
-#. placeholder {0}: state.filename
-#: src/features/editor/EditorView.tsx
+#. placeholder {0}: entry.filename
+#: src/core/editor/images/ImageNodeView.tsx
+msgid "Uploading {0} ({percent}%)"
+msgstr "Uploading {0} ({percent}%)"
+
+#. placeholder {0}: entry.filename
+#: src/core/editor/images/ImageNodeView.tsx
 msgid "Uploading {0}…"
 msgstr "Uploading {0}…"
 

@@ -26,7 +26,9 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-import { FigureNodeView, ImageNodeView } from "../FigureNodeView";
+import { FigureNodeView } from "../FigureNodeView";
+import { ImageNodeView } from "../images/ImageNodeView";
+import { pendingImageSignature } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
 import { MermaidCodeBlockNodeView } from "../MermaidCodeBlock";
@@ -397,7 +399,22 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ImageNodeView);
+    // A picture in flight never changes its node — its slot is final from the
+    // first moment — so the default "re-render when the node changes" would
+    // never repaint the progress. The decoration is what changes, and this is
+    // the node view asking to hear about it.
+    return ReactNodeViewRenderer(ImageNodeView, {
+      update: ({ oldNode, newNode, oldDecorations, newDecorations, updateProps }) => {
+        if (oldNode.type !== newNode.type) return false;
+        if (
+          oldNode !== newNode ||
+          pendingImageSignature(oldDecorations) !== pendingImageSignature(newDecorations)
+        ) {
+          updateProps();
+        }
+        return true;
+      },
+    });
   },
 }).configure({ inline: true, allowBase64: true });
 

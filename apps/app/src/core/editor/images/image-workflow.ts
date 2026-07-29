@@ -3,7 +3,7 @@ import type { UploadFigureAssetResponse } from "@meridian/contracts/protocol";
 import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
-import type { AnchorRange } from "./anchors";
+import type { AnchorRange } from "../anchors";
 
 export function isImageFile(file: Pick<File, "type" | "name">): boolean {
   return file.type.startsWith("image/") || /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(file.name);
@@ -27,6 +27,26 @@ export function fileDropIntent(files: readonly File[]): FileDropIntent | null {
   if (files.length === 0) return null;
   const image = files.find(isImageFile);
   return image ? { kind: "insert", file: image } : { kind: "refuse", filename: files[0].name };
+}
+
+/**
+ * True while a drag carries files.
+ *
+ * `dataTransfer.files` is empty until the drop itself, so the approach cannot
+ * ask what KIND of file is coming — only that one is. That is enough for what
+ * the approach has to do: claim the drop, so the browser does not navigate to
+ * the file the moment it lands.
+ */
+export function draggingFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+/** The picture a paste carried as its own file item, rather than as an address. */
+export function imageFileFromClipboard(event: ClipboardEvent): File | null {
+  const item = Array.from(event.clipboardData?.items ?? []).find(
+    (candidate) => candidate.kind === "file" && candidate.type.startsWith("image/"),
+  );
+  return item?.getAsFile() ?? null;
 }
 
 export function imageAltFromFilename(filename: string): string {

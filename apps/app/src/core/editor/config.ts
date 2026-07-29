@@ -53,8 +53,8 @@ import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./exte
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
+import { ImageIngressExtension } from "./images";
 import { LinkSurfaceExtension } from "./links";
-import { markdownClipboardParser } from "./markdown-paste";
 import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -350,6 +350,11 @@ export function createStandaloneEditorExtensions({
     AutoPairExtension,
     LiveRangeNavigationExtension,
     PassageHighlightExtension,
+    // The one door a picture comes in through — picker, drop, pasted file,
+    // pasted address — and the owner of the clipboard's asset translation,
+    // which is why the markdown text parser is its prop rather than a
+    // view-level default here (a view prop would shadow the plugin's).
+    ImageIngressExtension,
     // Chrome mounts only on the document schema: a code file is one code
     // block with no objects and no surfaces to own.
     ...EDITOR_CHROME_EXTENSIONS,
@@ -383,10 +388,6 @@ export function createEditorConfig({
     transformPastedHTML: (html: string, view: EditorView) =>
       sanitizePastedHTML(callerTransformPastedHTML ? callerTransformPastedHTML(html, view) : html),
   };
-  const resolvedEditorProps =
-    resolvedSchemaType === "document"
-      ? { clipboardTextParser: markdownClipboardParser(), ...sanitizedEditorProps }
-      : sanitizedEditorProps;
 
   return {
     extensions: [
@@ -408,6 +409,6 @@ export function createEditorConfig({
     ],
     editable,
     autofocus,
-    ...(resolvedEditorProps ? { editorProps: resolvedEditorProps } : {}),
+    editorProps: sanitizedEditorProps,
   };
 }

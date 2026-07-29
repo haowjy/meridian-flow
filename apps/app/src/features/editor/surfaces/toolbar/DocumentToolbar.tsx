@@ -69,7 +69,6 @@ export type DocumentToolbarProps = {
   /** A code file takes no figures; the control greys rather than lying. */
   schemaType?: YjsTrackedSchemaType;
   onUploadFigure?: () => void;
-  uploadBusy?: boolean;
   /** Uploads need a project to own the asset; without one the control greys. */
   uploadAvailable?: boolean;
 };
@@ -79,7 +78,6 @@ export function DocumentToolbar({
   editable = true,
   schemaType = "document",
   onUploadFigure,
-  uploadBusy = false,
   uploadAvailable = true,
 }: DocumentToolbarProps) {
   useEditorRevision(editor);
@@ -91,7 +89,6 @@ export function DocumentToolbar({
     canUndo: canUndoDocument(editor),
     canRedo: canRedoDocument(editor),
     imageUploadAvailable: uploadAvailable,
-    imageUploadBusy: uploadBusy,
   });
   const run = (command: (editor: Editor) => unknown) => () => {
     if (editor && !editor.isDestroyed) command(editor);

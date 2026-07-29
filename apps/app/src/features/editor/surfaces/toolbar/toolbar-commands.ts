@@ -63,8 +63,7 @@ export type ToolbarBlockedReason =
   | "no-alignable-block"
   | "empty-history"
   | "code-document"
-  | "no-project"
-  | "upload-in-flight";
+  | "no-project";
 
 /**
  * The subset a whole-block conversion can refuse with. Named because the block
@@ -142,7 +141,6 @@ export type ToolbarContext = {
   canRedo: boolean;
   /** Uploads land in a project's asset namespace; without one there is none. */
   imageUploadAvailable: boolean;
-  imageUploadBusy: boolean;
 };
 
 const CONTROL_IDS: readonly ToolbarControlId[] = [
@@ -477,8 +475,9 @@ function listRangeReachedBy(
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
   if (context.schemaType !== "document") return "code-document";
-  if (!context.imageUploadAvailable) return "no-project";
-  return context.imageUploadBusy ? "upload-in-flight" : null;
+  // Nothing about an upload already running blocks the next one: each picture
+  // holds its own slot in the document and its own progress with it.
+  return context.imageUploadAvailable ? null : "no-project";
 }
 
 /**

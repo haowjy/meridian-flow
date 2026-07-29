@@ -3,8 +3,9 @@
  *
  * Binds a `DocumentSession` (Yjs `Y.Doc` + awareness + cursor provider) to a
  * TipTap/ProseMirror editor and renders the surrounding chrome (document
- * toolbar, sync-status indicator, image-upload drag/drop/paste + inline-command
- * flow).
+ * toolbar, sync-status indicator, chrome host). Whole concerns live in their own
+ * modules and reach the editor through it: images arrive through
+ * `core/editor/images` and its runtime, links through the link lane.
  * Used by the Context screen to open any document. Filename chrome is the
  * host's job (desktop tab strip / phone top-bar breadcrumb), so this view
  * renders no title header of its own.
@@ -15,15 +16,9 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  type ProjectContextTreeNode,
-  WS_CLOSE,
-  type YjsTrackedSchemaType,
-} from "@meridian/contracts/protocol";
-import type { Editor, EditorOptions, JSONContent } from "@tiptap/core";
-import type { Transaction } from "@tiptap/pm/state";
+import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
-import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import {
   type ReactNode,
   type Ref,
@@ -36,33 +31,11 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import { uploadFigure } from "@/client/api/figures-api";
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import {
-  type AnchorRange,
-  anchorPosition,
-  anchorRange,
-  type EditorAnchor,
-  followAnchor,
-  resolveAnchorIn,
-} from "@/core/editor/anchors";
+import { anchorRange, type EditorAnchor, resolveAnchorIn } from "@/core/editor/anchors";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import {
-  createEditorAssetPathResolver,
-  fileDropIntent,
-  imageAltFromFilename,
-  imageAttrsFromUpload,
-  imageFilenameFromUrl,
-  isImageFile,
-  type PastedImageImport,
-  pastedContentRange,
-  pastedImageLinkRange,
-  resolveAssetRefsForClipboard,
-  resolveImagesFromClipboard,
-} from "@/core/editor/image-workflow";
+import { openImagePicker } from "@/core/editor/images";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
-import { markdownClipboardParser } from "@/core/editor/markdown-paste";
 import {
   type EditorMountIdentity,
   editorMountKey,
@@ -80,6 +53,7 @@ import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
+import { ImageIngressOverlay, ImageIngressRuntime, useImageIngressStatus } from "./surfaces/images";
 import { ProjectLinkRuntime, useWikilinkDocuments } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
@@ -118,14 +92,6 @@ export type EditorViewProps = {
   onReviewSessionUnavailable?: () => void;
 };
 
-type ImageUploadState =
-  | { kind: "idle" }
-  | { kind: "uploading"; filename: string; percent: number | null }
-  | { kind: "success"; filename: string }
-  | { kind: "error"; message: string };
-
-type ImageAttrs = { src: string; alt: string | null; title: null };
-
 let editorSessionOwnerSequence = 0;
 
 /**
@@ -152,18 +118,6 @@ function mountIdentity(props: EditorViewProps): EditorMountIdentity {
 }
 
 /**
- * True while a drag carries files.
- *
- * `dataTransfer.files` is empty until the drop itself, so the approach cannot
- * ask what KIND of file is coming — only that one is. That is enough for what
- * the approach has to do: claim the drop, so the browser does not navigate to
- * the file the moment it lands.
- */
-function draggingFiles(event: DragEvent): boolean {
-  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
-}
-
-/**
  * Put the writer back where they were. Null when the words they were standing
  * in are gone, in which case leaving the caret alone beats guessing.
  */
@@ -171,43 +125,6 @@ function restoreSelection(editor: Editor | null, held: EditorAnchor): void {
   if (!editor || editor.isDestroyed) return;
   const at = resolveAnchorIn(editor.state, held);
   if (at) editor.chain().setTextSelection(at).focus().run();
-}
-
-function insertImageNode(editor: Editor | null, attrs: ImageAttrs, pos?: number): boolean {
-  if (!editor || editor.isDestroyed) return false;
-  const content = { type: "paragraph", content: [{ type: "image", attrs }] } satisfies JSONContent;
-  const chain = editor.chain().focus();
-  return typeof pos === "number"
-    ? chain.insertContentAt(pos, content).run()
-    : chain.insertContent(content).run();
-}
-
-/**
- * The bytes behind an address the clipboard carried, or null when the browser
- * will not hand them over.
- *
- * A cross-origin image served without CORS headers is the ordinary answer, not
- * a failure worth explaining away: most of the web declines. The link the
- * paste landed is what the writer keeps in that case, which is why nothing
- * here throws.
- */
-async function fetchPastedImage(url: string, filename: string): Promise<File | null> {
-  try {
-    const response = await fetch(url, { mode: "cors", credentials: "omit" });
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    if (!blob.type.startsWith("image/")) return null;
-    return new File([blob], filename, { type: blob.type });
-  } catch {
-    return null;
-  }
-}
-
-function imageFileFromClipboard(event: ClipboardEvent): File | null {
-  const item = Array.from(event.clipboardData?.items ?? []).find(
-    (candidate) => candidate.kind === "file" && candidate.type.startsWith("image/"),
-  );
-  return item?.getAsFile() ?? null;
 }
 
 export function EditorView(props: EditorViewProps) {
@@ -338,17 +255,6 @@ function ActiveSessionEditorView({
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const clearUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [imageUploadState, setImageUploadState] = useState<ImageUploadState>({ kind: "idle" });
-  // One resolver per mounted editor: `asset:` refs are only meaningful inside
-  // this project's asset namespace, and the clipboard translation must not see
-  // another project's paths.
-  const assetPathResolver = useMemo(() => createEditorAssetPathResolver(), []);
-  const { tree: manuscriptTree } = useProjectContextTree(projectId ?? "", "manuscript", {
-    enabled: Boolean(projectId),
-  });
-  const [dragActive, setDragActive] = useState(false);
   const [peerMarkTarget, setPeerMarkTarget] = useState<PeerMarkPopoverTarget | null>(null);
   const effectiveEditableRef = useRef(true);
   const pointerSelectionRef = useRef<EditorAnchor | null>(null);
@@ -410,26 +316,12 @@ function ActiveSessionEditorView({
     [inReview, session],
   );
 
-  useEffect(() => {
-    if (!manuscriptTree) return;
-    const remember = (node: ProjectContextTreeNode) => {
-      if (node.kind === "file") {
-        if (!node.editable && node.fileType === "image") {
-          assetPathResolver.remember(node.documentId, node.path.replace(/^\//, ""));
-        }
-        return;
-      }
-      for (const child of node.children) remember(child);
-    };
-    remember(manuscriptTree);
-  }, [assetPathResolver, manuscriptTree]);
-
   // A fence has to withdraw the catalog, not just the surface's editability:
   // slash commands dispatch through TipTap chains, which run on a non-editable
   // editor, so a menu already open when the fence lands would still insert.
   const slashCommandCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable) return null;
-    return documentSlashCatalog(() => imageInputRef.current?.click());
+    return documentSlashCatalog(() => openImagePicker(editorRef.current));
   }, [effectiveEditable, identity.schemaType]);
 
   // Read when the `[[` menu opens, for the same reason as the slash catalog:
@@ -441,197 +333,6 @@ function ActiveSessionEditorView({
     return { label: t`Link a document`, documents: wikilinkDocuments };
   }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
 
-  const clearUploadLater = useCallback(() => {
-    if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
-    clearUploadTimerRef.current = setTimeout(() => {
-      setImageUploadState({ kind: "idle" });
-      clearUploadTimerRef.current = null;
-    }, 3000);
-  }, []);
-
-  /**
-   * A dropped file the editor cannot use, refused in the same strip an upload
-   * reports in (law 5: the reason is in view, and it names the file). Nothing
-   * is inserted and the page stays exactly where the writer left it.
-   */
-  const refuseDroppedFile = useCallback(
-    (filename: string) => {
-      setImageUploadState({
-        kind: "error",
-        message: t`${filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG.`,
-      });
-      clearUploadLater();
-    },
-    [clearUploadLater],
-  );
-
-  const uploadImageFile = useCallback(
-    async (file: File, alt?: string): Promise<ImageAttrs> => {
-      if (!projectId) throw new Error(t`A project is required before images can be uploaded.`);
-      if (!isImageFile(file)) throw new Error(t`Choose an image file.`);
-
-      setImageUploadState({ kind: "uploading", filename: file.name, percent: null });
-      try {
-        const reference = await uploadFigure({
-          projectId,
-          hostDocumentId: documentId,
-          file,
-          alt: alt || imageAltFromFilename(file.name),
-          onProgress: ({ percent }) =>
-            setImageUploadState({ kind: "uploading", filename: file.name, percent }),
-        });
-        assetPathResolver.remember(reference.assetDocumentId, reference.assetPath);
-        setImageUploadState({ kind: "success", filename: file.name });
-        clearUploadLater();
-        return imageAttrsFromUpload(reference);
-      } catch (error) {
-        setImageUploadState({
-          kind: "error",
-          message: error instanceof Error ? error.message : t`Image upload failed.`,
-        });
-        clearUploadLater();
-        throw error;
-      }
-    },
-    [assetPathResolver, clearUploadLater, documentId, projectId],
-  );
-
-  const handleImageFile = useCallback(
-    async (file: File, insertPos?: number): Promise<void> => {
-      const targetEditor = editorRef.current;
-      // An upload takes seconds, and the manuscript does not wait: the writer
-      // keeps typing, a peer keeps writing, an AI write may land. The drop
-      // point is held as an anchor for the whole of it, because a peer's write
-      // replaces the document wholesale and a mapped number would land the
-      // picture at the top of the chapter.
-      let hold =
-        targetEditor && insertPos !== undefined
-          ? anchorPosition(targetEditor.state, insertPos)
-          : null;
-      const followDrop = ({ transaction }: { transaction: Transaction }) => {
-        if (!hold || !targetEditor) return;
-        hold = followAnchor(targetEditor.state, hold, transaction.mapping);
-      };
-      if (targetEditor && hold) targetEditor.on("transaction", followDrop);
-      try {
-        const attrs = await uploadImageFile(file);
-        if (targetEditor) targetEditor.off("transaction", followDrop);
-        // The drop point outlived the words it was dropped into: insert at the
-        // caret rather than at a place that no longer exists.
-        const mappedPos = hold?.from;
-        // The upload outlives the connection that started it: re-read the fence
-        // at insert time so a document fenced mid-upload takes no write.
-        const inserted =
-          effectiveEditableRef.current && !session.getSnapshot().schemaFence
-            ? insertImageNode(targetEditor, attrs, mappedPos)
-            : false;
-        setImageUploadState(
-          inserted
-            ? { kind: "success", filename: file.name }
-            : {
-                kind: "error",
-                message: t`The image uploaded, but the editor could not insert it.`,
-              },
-        );
-      } catch {
-        if (targetEditor) targetEditor.off("transaction", followDrop);
-      }
-    },
-    [session, uploadImageFile],
-  );
-
-  /**
-   * Bring an image the clipboard only pointed at into the project.
-   *
-   * The paste has already landed a link to the address (`image-workflow.ts`),
-   * so the manuscript never holds a `src` the project does not own. This is
-   * the attempt to do better than that link: fetch the bytes, put them through
-   * the same upload every dropped file takes, and swap the link for the
-   * picture. A site that refuses the fetch leaves the link exactly as it is.
-   */
-  const importPastedImage = useCallback(
-    async (pending: PastedImageImport, pasteRange: AnchorRange): Promise<void> => {
-      const targetEditor = editorRef.current;
-      if (!targetEditor || targetEditor.isDestroyed) return;
-      const filename = imageFilenameFromUrl(pending.url);
-
-      // Where the paste landed, held for the length of the import: the writer
-      // keeps typing and a peer's write can replace the whole document while
-      // the bytes are in flight (law 9), and a mapped number would hand the
-      // picture to whatever moved into that seam.
-      let hold: EditorAnchor | null = anchorRange(targetEditor.state, pasteRange);
-      const followPaste = ({ transaction }: { transaction: Transaction }) => {
-        if (hold) hold = followAnchor(targetEditor.state, hold, transaction.mapping);
-      };
-      targetEditor.on("transaction", followPaste);
-      setImageUploadState({ kind: "uploading", filename, percent: null });
-
-      try {
-        const file = await fetchPastedImage(pending.url, filename);
-        if (!file) {
-          setImageUploadState({
-            kind: "error",
-            message: t`${filename} could not be read from that site. It stayed a link.`,
-          });
-          clearUploadLater();
-          return;
-        }
-
-        const attrs = await uploadImageFile(file, pending.alt ?? undefined);
-        const at = hold && resolveAnchorIn(targetEditor.state, hold);
-        const link = at && pastedImageLinkRange(targetEditor.state.doc, at, pending.url);
-        const imageType = targetEditor.schema.nodes.image;
-        // The import outlives the connection that started it: re-read the
-        // fence here so a document fenced mid-import takes no write.
-        const canWrite = effectiveEditableRef.current && !session.getSnapshot().schemaFence;
-
-        if (link && imageType && canWrite) {
-          targetEditor.view.dispatch(
-            targetEditor.state.tr.replaceWith(link.from, link.to, imageType.create(attrs)),
-          );
-          setImageUploadState({ kind: "success", filename });
-        } else {
-          setImageUploadState({
-            kind: "error",
-            message: t`The image imported, but the editor could not insert it.`,
-          });
-        }
-        clearUploadLater();
-      } catch {
-        // The upload put its own reason in the strip, and the link is still
-        // there: nothing to undo.
-      } finally {
-        targetEditor.off("transaction", followPaste);
-      }
-    },
-    [clearUploadLater, session, uploadImageFile],
-  );
-
-  /**
-   * Start the imports a paste asked for, once it has landed.
-   *
-   * The transform runs before the transaction exists, so the links it leaves
-   * have no positions yet. The paste is the very next transaction — ProseMirror
-   * dispatches it the moment the transform returns — and it is the only thing
-   * that knows where its own content went.
-   */
-  const importAfterPaste = useCallback(
-    (imports: readonly PastedImageImport[]) => {
-      const targetEditor = editorRef.current;
-      if (!targetEditor) return;
-      const onPasted = ({ transaction }: { transaction: Transaction }) => {
-        targetEditor.off("transaction", onPasted);
-        const range = pastedContentRange(transaction);
-        if (!range) return;
-        // Started together, so every import anchors the range at the one
-        // moment it is true — the instant the paste landed.
-        for (const pending of imports) void importPastedImage(pending, range);
-      };
-      targetEditor.on("transaction", onPasted);
-    },
-    [importPastedImage],
-  );
-
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Handlers read editability off the view instead of closing over the prop, so
   // the only thing that moves this object is the chrome it describes.
@@ -640,40 +341,6 @@ function ActiveSessionEditorView({
       attributes: {
         class: editorProseClass(showToolbar ? "docked" : "none"),
         "aria-label": ariaLabel ?? t`Collaborative document editor`,
-      },
-      handlePaste(view, event) {
-        if (!view.editable) return false;
-        const file = imageFileFromClipboard(event);
-        if (!file) return false;
-        event.preventDefault();
-        void handleImageFile(file, view.state.selection.from);
-        return true;
-      },
-      handleDrop(view, event) {
-        const intent = fileDropIntent(Array.from(event.dataTransfer?.files ?? []));
-        if (!intent) return false;
-        // Claimed before anything else is decided, including whether the
-        // editor can take it: the browser's own answer to a file nobody
-        // claimed is to navigate to it, and the manuscript would be gone.
-        event.preventDefault();
-        setDragActive(false);
-        if (!view.editable) return true;
-        if (intent.kind === "refuse") {
-          refuseDroppedFile(intent.filename);
-          return true;
-        }
-        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-        void handleImageFile(intent.file, pos);
-        return true;
-      },
-      // Assets travel as stable refs inside the editor and as project-relative
-      // paths on the clipboard, so an id never escapes into another surface.
-      clipboardTextParser: markdownClipboardParser(undefined, assetPathResolver),
-      transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetPathResolver),
-      transformPasted: (slice, view) => {
-        const resolved = resolveImagesFromClipboard(slice, view.state.schema, assetPathResolver);
-        if (resolved.imports.length > 0) importAfterPaste(resolved.imports);
-        return resolved.slice;
       },
       handleDOMEvents: {
         pointerdown(view, event) {
@@ -706,35 +373,9 @@ function ActiveSessionEditorView({
           event.preventDefault();
           return true;
         },
-        dragenter(view, event) {
-          if (view.editable && draggingFiles(event as DragEvent)) setDragActive(true);
-          return false;
-        },
-        dragover(view, event) {
-          if (!draggingFiles(event as DragEvent)) return false;
-          // The drop is claimed here, before the file's name is knowable: a
-          // dragover nobody claims is a drop the browser navigates to.
-          event.preventDefault();
-          if (view.editable) setDragActive(true);
-          return true;
-        },
-        dragleave(_view, event) {
-          if (!(event.currentTarget as HTMLElement | null)?.contains(event.relatedTarget as Node)) {
-            setDragActive(false);
-          }
-          return false;
-        },
       },
     }),
-    [
-      ariaLabel,
-      assetPathResolver,
-      handleImageFile,
-      importAfterPaste,
-      openPeerMark,
-      refuseDroppedFile,
-      showToolbar,
-    ],
+    [ariaLabel, openPeerMark, showToolbar],
   );
 
   const editor = useMountedEditor({
@@ -785,6 +426,10 @@ function ActiveSessionEditorView({
     editorRef.current = editor;
   }, [editor]);
 
+  // A drag carrying files, so the pane can dim while one is in the air. The
+  // ingress owns the state; nothing about a picture's arrival is kept here.
+  const { dropActive } = useImageIngressStatus(editor);
+
   useEffect(() => {
     if (!editor || inReview) return;
     return registerLiveRangeEditor(documentId, editor);
@@ -796,12 +441,6 @@ function ActiveSessionEditorView({
     },
     [],
   );
-
-  useEffect(() => {
-    return () => {
-      if (clearUploadTimerRef.current) clearTimeout(clearUploadTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -831,19 +470,6 @@ function ActiveSessionEditorView({
       {snapshot.schemaRepairs.length > 0 ? (
         <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
       ) : null}
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        aria-hidden
-        tabIndex={-1}
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          event.currentTarget.value = "";
-          if (file) void handleImageFile(file);
-        }}
-      />
       <TrackedEditorCanvas
         editor={editor}
         toolbar={
@@ -852,31 +478,20 @@ function ActiveSessionEditorView({
               editor={editor}
               editable={effectiveEditable}
               schemaType={identity.schemaType}
-              onUploadFigure={() => imageInputRef.current?.click()}
-              uploadBusy={imageUploadState.kind === "uploading"}
+              onUploadFigure={() => openImagePicker(editor)}
               uploadAvailable={Boolean(projectId)}
             />
           ) : undefined
         }
         scrollRef={scrollContainerRef}
-        dragActive={dragActive}
+        dragActive={dropActive}
         onScroll={(event) => {
           event.currentTarget.dataset.stableLayoutScrollTop = String(event.currentTarget.scrollTop);
           event.currentTarget.dataset.stableLayoutScrollLeft = String(
             event.currentTarget.scrollLeft,
           );
         }}
-        dropOverlay={
-          effectiveEditable && dragActive ? (
-            <div className="meridian-editor-drop-overlay" aria-hidden>
-              <UploadCloud className="size-8" />
-              <span>
-                <Trans>Drop image to insert it</Trans>
-              </span>
-            </div>
-          ) : undefined
-        }
-        uploadStatus={<ImageUploadStatus state={imageUploadState} />}
+        overlay={<ImageIngressOverlay editor={editor} editable={effectiveEditable} />}
       />
       {/* The one chrome mount host. Surfaces register in
           `chrome/chrome-surfaces.ts`; nothing new is added to this file. */}
@@ -884,6 +499,9 @@ function ActiveSessionEditorView({
       {/* Where an internal link goes, and what it offers when it goes nowhere.
           It needs the project, which chrome surfaces are not given. */}
       <ProjectLinkRuntime editor={editor} projectId={projectId} documentId={documentId} />
+      {/* Where a picture's bytes go. Same reason it is mounted here: the
+          project's figure endpoint is the app's, not the editor's. */}
+      <ImageIngressRuntime editor={editor} projectId={projectId} documentId={documentId} />
       <PeerMarkPopover
         key={peerMarkTarget?.marker.changeId ?? "closed"}
         target={peerMarkTarget}
@@ -928,16 +546,15 @@ function TrackedEditorCanvas({
   scrollRef,
   dragActive = false,
   onScroll,
-  dropOverlay,
-  uploadStatus,
+  overlay,
 }: {
   editor: Editor | null;
   toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   dragActive?: boolean;
   onScroll?: UIEventHandler<HTMLDivElement>;
-  dropOverlay?: ReactNode;
-  uploadStatus?: ReactNode;
+  /** Anything that floats over the manuscript without moving a line of it. */
+  overlay?: ReactNode;
 }) {
   return (
     <EditorSurfaceFrame
@@ -953,40 +570,7 @@ function TrackedEditorCanvas({
       <div className={cn(editorColumnCanvas, editorColumnFill)}>
         <EditorContent editor={editor} className={editorColumnFill} />
       </div>
-      {dropOverlay}
-      {uploadStatus}
+      {overlay}
     </EditorSurfaceFrame>
-  );
-}
-
-function ImageUploadStatus({ state }: { state: ImageUploadState }) {
-  if (state.kind === "idle") return null;
-
-  return (
-    <div
-      className={cn(
-        "meridian-image-upload-status",
-        state.kind === "error" && "meridian-image-upload-status--error",
-        state.kind === "success" && "meridian-image-upload-status--success",
-      )}
-      role={state.kind === "error" ? "alert" : "status"}
-    >
-      {state.kind === "uploading" ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-      {state.kind === "success" ? <CheckCircle2 className="size-4" aria-hidden /> : null}
-      {state.kind === "error" ? <AlertCircle className="size-4" aria-hidden /> : null}
-      <span>
-        {state.kind === "uploading" ? (
-          state.percent === null ? (
-            <Trans>Uploading {state.filename}…</Trans>
-          ) : (
-            <Trans>
-              Uploading {state.filename} ({state.percent}%)
-            </Trans>
-          )
-        ) : null}
-        {state.kind === "success" ? <Trans>Inserted {state.filename}.</Trans> : null}
-        {state.kind === "error" ? state.message : null}
-      </span>
-    </div>
   );
 }

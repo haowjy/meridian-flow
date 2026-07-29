@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 
-import { assetDocumentIdFromSrc, signedUrlRefreshDelayMs } from "./image-workflow";
+import { assetDocumentIdFromSrc, signedUrlRefreshDelayMs } from "./images";
 
 export type AssetImageRenderState =
   | { kind: "idle"; url: string | null; message?: string }

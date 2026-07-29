@@ -534,34 +534,6 @@
   pointer-events: none;
 }
 
-.meridian-image-upload-status {
-  position: absolute;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 3;
-  display: inline-flex;
-  max-width: min(24rem, calc(100% - 2rem));
-  align-items: center;
-  gap: 0.5rem;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-card);
-  box-shadow: var(--shadow-card);
-  color: var(--color-foreground);
-  font-size: 0.8125rem;
-  padding: 0.625rem 0.75rem;
-}
-
-.meridian-image-upload-status--error {
-  border-color: var(--color-destructive);
-  color: var(--color-destructive);
-}
-
-.meridian-image-upload-status--success {
-  border-color: var(--color-border-focus);
-  color: var(--color-primary);
-}
-
 .meridian-editor .ProseMirror .meridian-figure-node {
   display: grid;
   gap: 0.625rem;
