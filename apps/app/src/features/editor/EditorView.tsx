@@ -31,10 +31,8 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import { anchorRange, type EditorAnchor, resolveAnchorIn } from "@/core/editor/anchors";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { peerMarkElement } from "@/core/editor/extensions/PeerMarkerExtension";
 import { openImagePicker } from "@/core/editor/images";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
@@ -46,11 +44,11 @@ import {
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
-import { EditorChromeHost } from "./chrome";
+import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
-import { PeerMarkPopover, type PeerMarkPress } from "./PeerMarkPopover";
+import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
@@ -83,6 +81,13 @@ export type EditorViewProps = {
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
+  /**
+   * The Work this editor is open in — the active editing context, not a review's
+   * ownership. It scopes what a `[[` menu offers, what the resolver is asked, and
+   * where a followed link is looked for. Runtime scope: changing it never
+   * remounts the editor.
+   */
+  workId?: string | null;
   /** Active draft room for inline review; absent means bind to the live document room. */
   reviewDraftId?: string | null;
   /** Generation-fenced room name for the active branch review room, supplied by the preview DTO. */
@@ -116,16 +121,6 @@ function mountIdentity(props: EditorViewProps): EditorMountIdentity {
   return reviewDraftId && reviewRoomName
     ? { ...shared, surface: "review", roomName: reviewRoomName, draftId: reviewDraftId }
     : { ...shared, surface: "live", detached: props.detached ?? false };
-}
-
-/**
- * Put the writer back where they were. Null when the words they were standing
- * in are gone, in which case leaving the caret alone beats guessing.
- */
-function restoreSelection(editor: Editor | null, held: EditorAnchor): void {
-  if (!editor || editor.isDestroyed) return;
-  const at = resolveAnchorIn(editor.state, held);
-  if (at) editor.chain().setTextSelection(at).focus().run();
 }
 
 export function EditorView(props: EditorViewProps) {
@@ -242,6 +237,7 @@ function ActiveSessionEditorView({
   showToolbar = true,
   active = true,
   ariaLabel,
+  workId = null,
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
@@ -256,12 +252,18 @@ function ActiveSessionEditorView({
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const [peerMarkPress, setPeerMarkPress] = useState<PeerMarkPress | null>(null);
   const effectiveEditableRef = useRef(true);
-  const pointerSelectionRef = useRef<EditorAnchor | null>(null);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
   const effectiveEditable = editable && !snapshot.schemaFence;
   effectiveEditableRef.current = effectiveEditable;
+
+  // Which project and which Work this editor is open in. Everything that has to
+  // reach past the document — the `[[` candidates, the resolver, a followed
+  // link — reads this one value, and none of it is a reason to remount.
+  const scope = useMemo<EditorScope>(
+    () => ({ projectId: projectId ?? null, workId }),
+    [projectId, workId],
+  );
 
   // Marks render before anyone clicks one. Warming their trail detail here is
   // what lets the popover open with its Before/After disclosure already
@@ -285,58 +287,6 @@ function ActiveSessionEditorView({
     ),
   );
 
-  /**
-   * The mark the open popover is about, as the store reports it now. Derived
-   * rather than captured: a mark the writer's own edit cleared is a popover with
-   * nothing left to be about, and a marker object captured at press time would
-   * keep reporting the state it had then.
-   */
-  const peerMarkTarget = useMemo(() => {
-    if (!peerMarkPress) return null;
-    const marker = markers.find(
-      (candidate) => candidate.changeId === peerMarkPress.changeId && !candidate.dismissed,
-    );
-    return marker ? { ...peerMarkPress, marker } : null;
-  }, [markers, peerMarkPress]);
-
-  // A mark that is gone takes its press with it, so nothing here outlives what
-  // it points at.
-  useEffect(() => {
-    if (peerMarkPress && !peerMarkTarget) setPeerMarkPress(null);
-  }, [peerMarkPress, peerMarkTarget]);
-
-  const openPeerMark = useCallback(
-    (eventTarget: EventTarget | null, activation: "pointer" | "keyboard"): boolean => {
-      if (inReview || !(eventTarget instanceof Element)) return false;
-      const element = eventTarget.closest<HTMLElement>("[data-peer-mark]");
-      const changeId = element?.dataset.peerMark;
-      if (!element || !changeId) return false;
-      const marker = session.markerStore
-        .getSnapshot()
-        .find((candidate) => candidate.changeId === changeId && !candidate.dismissed);
-      if (!marker) return false;
-      const activeEditor = editorRef.current;
-      const selection = activeEditor?.state.selection;
-      // The pointer's own reading, taken before the press moved anything, or
-      // wherever the caret is for the keyboard door.
-      const editorSelection =
-        (activation === "pointer" ? pointerSelectionRef.current : null) ??
-        (activeEditor
-          ? anchorRange(activeEditor.state, {
-              from: selection?.from ?? 0,
-              to: selection?.to ?? selection?.from ?? 0,
-            })
-          : { from: 0, to: 0, relative: null });
-      setPeerMarkPress({ changeId, activation, editorSelection });
-      pointerSelectionRef.current = null;
-      if (activation === "pointer") {
-        requestAnimationFrame(() => restoreSelection(editorRef.current, editorSelection));
-      }
-      return true;
-    },
-    [inReview, session],
-  );
-
   // A fence has to withdraw the catalog, not just the surface's editability:
   // slash commands dispatch through TipTap chains, which run on a non-editable
   // editor, so a menu already open when the fence lands would still insert.
@@ -348,55 +298,23 @@ function ActiveSessionEditorView({
   // Read when the `[[` menu opens, for the same reason as the slash catalog:
   // the label resolves against whatever locale is active then, and the document
   // list changes every time the writer creates or renames a file.
-  const wikilinkDocuments = useWikilinkDocuments(projectId);
+  const wikilinkDocuments = useWikilinkDocuments(scope);
   const wikilinkCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
     return { label: t`Link a document`, documents: wikilinkDocuments };
   }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
-  // Handlers read editability off the view instead of closing over the prop, so
-  // the only thing that moves this object is the chrome it describes.
+  // Only the prose node's own attributes live here; a lane that answers a press
+  // does it in its own extension, where the state it reads already is.
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({
       attributes: {
         class: editorProseClass(showToolbar ? "docked" : "none"),
         "aria-label": ariaLabel ?? t`Collaborative document editor`,
       },
-      handleDOMEvents: {
-        pointerdown(view, event) {
-          if (
-            event.target instanceof Element &&
-            event.target.closest<HTMLElement>("[data-peer-mark]")
-          ) {
-            pointerSelectionRef.current = anchorRange(view.state, {
-              from: view.state.selection.from,
-              to: view.state.selection.to,
-            });
-            // A peer mark is an explanatory decoration, not a new caret
-            // destination. Keep the editor focused until the click opens
-            // the pointer-mode popover.
-            event.preventDefault();
-            return true;
-          }
-          return false;
-        },
-        click(_view, event) {
-          return openPeerMark(event.target, "pointer");
-        },
-        keydown(_view, event) {
-          if (
-            (event.key !== "Enter" && event.key !== " ") ||
-            !openPeerMark(event.target, "keyboard")
-          ) {
-            return false;
-          }
-          event.preventDefault();
-          return true;
-        },
-      },
     }),
-    [ariaLabel, openPeerMark, showToolbar],
+    [ariaLabel, showToolbar],
   );
 
   const editor = useMountedEditor({
@@ -474,76 +392,59 @@ function ActiveSessionEditorView({
   }, []);
 
   return (
-    <section
-      className={cn(
-        "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
-        className,
-      )}
-    >
-      {/* Sync is assumed-healthy, so it floats quietly and only appears when
+    <EditorScopeProvider projectId={scope.projectId} workId={scope.workId}>
+      <section
+        className={cn(
+          "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
+          className,
+        )}
+      >
+        {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
-      {session ? (
-        <div className="pointer-events-none absolute right-3 bottom-3 z-10">
-          <SyncStatus session={session} />
-        </div>
-      ) : null}
-      {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
-      {snapshot.schemaRepairs.length > 0 ? (
-        <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
-      ) : null}
-      <TrackedEditorCanvas
-        editor={editor}
-        toolbar={
-          showToolbar ? (
-            <DocumentToolbar
-              editor={editor}
-              editable={effectiveEditable}
-              schemaType={identity.schemaType}
-              onUploadFigure={() => openImagePicker(editor)}
-              uploadAvailable={Boolean(projectId)}
-            />
-          ) : undefined
-        }
-        scrollRef={scrollContainerRef}
-        dragActive={dropActive}
-        onScroll={(event) => {
-          event.currentTarget.dataset.stableLayoutScrollTop = String(event.currentTarget.scrollTop);
-          event.currentTarget.dataset.stableLayoutScrollLeft = String(
-            event.currentTarget.scrollLeft,
-          );
-        }}
-        overlay={<ImageIngressOverlay editor={editor} editable={effectiveEditable} />}
-      />
-      {/* The one chrome mount host. Surfaces register in
-          `chrome/chrome-surfaces.ts`; nothing new is added to this file. */}
-      <EditorChromeHost editor={editor} active={active} />
-      {/* Where an internal link goes, and what it offers when it goes nowhere.
-          It needs the project, which chrome surfaces are not given. */}
-      <ProjectLinkRuntime editor={editor} projectId={projectId} documentId={documentId} />
-      {/* Where a picture's bytes go. Same reason it is mounted here: the
-          project's figure endpoint is the app's, not the editor's. */}
-      <ImageIngressRuntime editor={editor} projectId={projectId} documentId={documentId} />
-      <PeerMarkPopover
-        key={peerMarkPress?.changeId ?? "closed"}
-        editor={editor}
-        target={peerMarkTarget}
-        onOpenChange={(open) => {
-          if (open) return;
-          const closing = peerMarkPress;
-          setPeerMarkPress(null);
-          requestAnimationFrame(() => {
-            if (!closing) return;
-            if (closing.activation === "keyboard") {
-              // Queried, not remembered: the mark the writer tabbed to is drawn
-              // by whichever span exists once the popover has gone.
-              peerMarkElement(editorRef.current, closing.changeId)?.focus();
-              return;
-            }
-            restoreSelection(editorRef.current, closing.editorSelection);
-          });
-        }}
-      />
-    </section>
+        {session ? (
+          <div className="pointer-events-none absolute right-3 bottom-3 z-10">
+            <SyncStatus session={session} />
+          </div>
+        ) : null}
+        {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
+        {snapshot.schemaRepairs.length > 0 ? (
+          <SchemaRepairNotice repairs={snapshot.schemaRepairs} />
+        ) : null}
+        <TrackedEditorCanvas
+          editor={editor}
+          toolbar={
+            showToolbar ? (
+              <DocumentToolbar
+                editor={editor}
+                editable={effectiveEditable}
+                schemaType={identity.schemaType}
+                onUploadFigure={() => openImagePicker(editor)}
+                uploadAvailable={Boolean(projectId)}
+              />
+            ) : undefined
+          }
+          scrollRef={scrollContainerRef}
+          dragActive={dropActive}
+          onScroll={(event) => {
+            event.currentTarget.dataset.stableLayoutScrollTop = String(
+              event.currentTarget.scrollTop,
+            );
+            event.currentTarget.dataset.stableLayoutScrollLeft = String(
+              event.currentTarget.scrollLeft,
+            );
+          }}
+          overlay={<ImageIngressOverlay editor={editor} editable={effectiveEditable} />}
+        />
+        {/* The one chrome mount host. Every surface registers in
+          `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}
+        <EditorChromeHost editor={editor} active={active} />
+        {/* Where an internal link goes, and where a picture's bytes go. Ports, not
+          surfaces: each renders nothing, and what a writer sees from either lane
+          mounts through the host above. */}
+        <ProjectLinkRuntime editor={editor} documentId={documentId} />
+        <ImageIngressRuntime editor={editor} projectId={projectId} documentId={documentId} />
+      </section>
+    </EditorScopeProvider>
   );
 }
 

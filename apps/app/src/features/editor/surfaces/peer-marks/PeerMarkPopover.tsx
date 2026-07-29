@@ -1,45 +1,37 @@
 /**
- * Anchored evidence and navigation surface for one session peer mark.
+ * Anchored evidence and navigation for one session peer mark.
  *
  * **Elements are geometry, holds are identity.** The mark is a decoration, and
- * this plugin rebuilds every decoration on every remote write, so the span the
- * writer clicked is gone the moment a collaborator types. What the popover holds
- * is the mark itself — a `changeId` whose anchor is a relative position — and it
- * asks the page for the current span on every rect it needs. A captured span
- * measures as a rect of zeros, which puts the popover in the corner of the
- * window with its arm pointing at nothing.
+ * the plugin drawing it rebuilds every decoration on every remote write, so the
+ * span the writer clicked is gone the moment a collaborator types. What the
+ * popover holds is the mark itself — a `changeId` whose anchor is a relative
+ * position — and it asks the page for the current span on every rect it needs. A
+ * captured span measures as a rect of zeros, which puts the popover in the
+ * corner of the window with its arm pointing at nothing.
+ *
+ * The Radix root is `EditorPopover`, like every other summoned surface: the
+ * kernel then knows this is the open transient, so Mod+K replaces it instead of
+ * leaving two surfaces claiming the same keystrokes, and Escape has one owner.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { bodyFromTrailHashline, changeTrailDetailKey } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import type { EditorAnchor } from "@/core/editor/anchors";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { peerMarkRect } from "@/core/editor/extensions/PeerMarkerExtension";
+import type { PeerMarkPress } from "@/core/editor/extensions/peer-mark-press";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
 import { changeTrailDetailQuery } from "@/features/change-trail/trail-detail-query";
 import { ChangeExcerpts } from "@/features/chat/ChangeViewRows";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 
-/** What the press said, and nothing the page will rebuild. */
-export type PeerMarkPress = {
-  /** The mark's own identity, which survives the decoration being rebuilt. */
-  changeId: string;
-  activation: "pointer" | "keyboard";
-  /**
-   * Where the writer's caret was when the mark was opened, held rather than
-   * numbered: a popover stays open while the writer reads, and this document's
-   * peers are writing the whole time.
-   */
-  editorSelection: EditorAnchor;
-};
+import { EditorPopover } from "../../chrome";
 
 /** The press, plus the mark as the store reports it right now. */
 export type PeerMarkPopoverTarget = PeerMarkPress & { marker: SessionMarker };
@@ -68,12 +60,7 @@ export function PeerMarkPopover({
     return document.changes.find((candidate) => candidate.changeId === marker?.changeId) ?? null;
   }, [detail.data, marker]);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // Asked on every measurement rather than captured once: floating-ui calls this
-  // again on scroll, on resize, and on every reposition, and the span answering
-  // it is whichever one is drawing the mark at that moment.
-  const virtualAnchor = useRef({ getBoundingClientRect: () => new DOMRect() });
-  virtualAnchor.current.getBoundingClientRect = () =>
-    peerMarkRect(editor, target?.changeId ?? null) ?? new DOMRect();
+  const changeId = target?.changeId ?? null;
 
   // Losing access to the document is the only reason to drop cached evidence
   // while the popover is open; closing it is not, or every open refetches.
@@ -114,22 +101,22 @@ export function PeerMarkPopover({
   }
 
   return (
-    <Popover open onOpenChange={onOpenChange}>
-      <PopoverAnchor virtualRef={virtualAnchor} />
-      <PopoverContent
-        align="start"
-        sideOffset={8}
-        className="w-80 space-y-3 p-3 text-caption"
-        data-peer-mark-popover
-        onOpenAutoFocus={(event) => {
-          if (target.activation === "pointer") event.preventDefault();
-        }}
-        onCloseAutoFocus={(event) => {
-          // The virtual anchor cannot restore focus correctly. EditorView owns
-          // activation-aware restoration after this controlled popover closes.
-          event.preventDefault();
-        }}
-      >
+    <EditorPopover
+      editor={editor}
+      id="peer-mark"
+      open
+      onOpenChange={onOpenChange}
+      // Asked on every measurement rather than captured once: floating-ui calls
+      // this again on scroll, on resize, and on every reposition, and the span
+      // answering it is whichever one is drawing the mark at that moment.
+      anchorRect={() => peerMarkRect(editor, changeId)}
+      align="start"
+      // A pointer press already left the caret in the sentence the writer was
+      // reading; only the keyboard door asks to be taken inside.
+      focusOnOpen={target.activation === "pointer" ? "prose" : "content"}
+      className="w-80 text-caption"
+    >
+      <div className="space-y-3" data-peer-mark-popover>
         <div className="flex min-w-0 items-center gap-2">
           <span
             className="size-2 shrink-0 rounded-full"
@@ -176,7 +163,7 @@ export function PeerMarkPopover({
             </div>
           </>
         ) : null}
-      </PopoverContent>
-    </Popover>
+      </div>
+    </EditorPopover>
   );
 }
