@@ -140,6 +140,8 @@ describe("codec presets", () => {
     ["nested brackets in label", "[a[b]c]([[X]])", "[a\\[b\\]c]([[X]])"],
     ["outer target whitespace", "[label]([[ X ]])", "[label]([[X]])"],
     ["invalid wikilink target", "[label]([[X|Y]])", "[label](\\[\\[X|Y]])"],
+    ["Unicode-whitespace-only link target", "[label]([[ ]])", "[label](\\[\\[ ]])"],
+    ["Unicode-whitespace-only image target", "![alt]([[ ]])", "![alt](\\[\\[ ]])"],
   ])("handles a wikilink resource with %s deterministically", (_case, input, expected) => {
     for (const wikilinkCodec of [
       markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
@@ -185,14 +187,34 @@ describe("codec presets", () => {
   });
 
   it.each([
-    "    [label]([[A B]])",
-    '<span title="[label]([[A B]])">x</span>',
-  ])("keeps labeled-wikilink-looking Markdown literal content opaque: %s", (input) => {
+    ["markdown", markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })],
+    ["mdx", mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components })],
+  ])("keeps labeled-wikilink-looking raw HTML opaque in %s", (_name, wikilinkCodec) => {
+    for (const input of [
+      '<span title="[label]([[A B]])">x</span>',
+      "<!-- [label]([[A B]]) -->",
+      "<script>[label]([[A B]])</script>",
+      "<div>\n[label]([[A B]])\n</div>",
+    ]) {
+      const parsed = wikilinkCodec.parse(input).blocks;
+      expect(docFrom(parsed).rangeHasMark(0, docFrom(parsed).content.size, schema.marks.link)).toBe(
+        false,
+      );
+      expect(parsed.map((block) => block.textContent).join("\n")).toContain("[label]([[A B]])");
+      expectStable(wikilinkCodec, input);
+    }
+  });
+
+  it("keeps labeled-wikilink-looking indented Markdown code opaque", () => {
     const wikilinkCodec = markdownCodec({
       schema,
       assetPathResolver: unresolvedAssetPathResolver,
     });
+    const input = "    [label]([[A B]])";
     const parsed = wikilinkCodec.parse(input).blocks;
+    expect(docFrom(parsed).rangeHasMark(0, docFrom(parsed).content.size, schema.marks.link)).toBe(
+      false,
+    );
     expect(parsed[0]?.textContent).toContain("[label]([[A B]])");
     expectStable(wikilinkCodec, input);
   });

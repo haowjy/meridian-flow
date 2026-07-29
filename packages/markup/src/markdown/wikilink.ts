@@ -14,7 +14,11 @@ import type {
 import { labelEnd } from "micromark-core-commonmark";
 import { factoryTitle } from "micromark-factory-title";
 import { factoryWhitespace } from "micromark-factory-whitespace";
-import { markdownLineEnding, markdownLineEndingOrSpace } from "micromark-util-character";
+import {
+  markdownLineEnding,
+  markdownLineEndingOrSpace,
+  unicodeWhitespace,
+} from "micromark-util-character";
 import type {
   Code,
   Construct,
@@ -79,7 +83,7 @@ const tokenizeWikiLink: Tokenizer = (effects, ok, nok) => {
       return closeSecond;
     }
     targetSize += 1;
-    if (code !== 32) hasNonSpace = true;
+    if (!unicodeWhitespace(code)) hasNonSpace = true;
     effects.consume(code);
     return target;
   }
@@ -156,7 +160,7 @@ const tokenizeWikiLinkResourceEnd: Tokenizer = function (effects, ok, nok) {
       return targetCloseSecond;
     }
     targetSize += 1;
-    if (code !== 32) hasNonSpace = true;
+    if (!unicodeWhitespace(code)) hasNonSpace = true;
     effects.consume(code);
     return target;
   }

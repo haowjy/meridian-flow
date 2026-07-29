@@ -1,9 +1,11 @@
 /** MDX ingress escaping for prose that contains JSX-significant characters. */
 
+import { fromMarkdown } from "mdast-util-from-markdown";
+
 import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
 
 export function escapeProseForMdxIngress(text: string): string {
-  const lines = text.split("\n");
+  const lines = protectRawHtmlLiterals(text).split("\n");
   const out: string[] = [];
   let fence: MarkdownFence | null = null;
   let htmlTableEnd = -1;
@@ -43,6 +45,87 @@ export function escapeProseForMdxIngress(text: string): string {
     out.push(escapeProseSegment(line));
   }
   return out.join("\n");
+}
+
+function protectRawHtmlLiterals(text: string): string {
+  if (!text.includes("<")) return text;
+  const ranges: Array<{ start: number; end: number; value: string }> = [];
+  // CommonMark owns raw-HTML recognition. Reimplementing its block and inline
+  // contexts here would make MDX ingress another partial Markdown parser.
+  visitMarkdownNodes(fromMarkdown(text), (node) => {
+    if (
+      node.type !== "html" ||
+      typeof node.value !== "string" ||
+      isPreservedMarkupSyntax(node.value)
+    ) {
+      return;
+    }
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (typeof start === "number" && typeof end === "number") {
+      ranges.push({ start, end, value: node.value });
+    }
+  });
+
+  let protectedText = text;
+  for (const range of ranges.sort((a, b) => b.start - a.start)) {
+    const source = protectedText.slice(range.start, range.end);
+    const encoded = encodeRawHtmlSource(source, range.value);
+    if (encoded !== null) {
+      protectedText =
+        protectedText.slice(0, range.start) + encoded + protectedText.slice(range.end);
+    }
+  }
+  return protectedText;
+}
+
+function visitMarkdownNodes(node: unknown, visit: (node: MarkdownNode) => void): void {
+  const record = node as MarkdownNode;
+  visit(record);
+  for (const child of record.children ?? []) visitMarkdownNodes(child, visit);
+}
+
+function isPreservedMarkupSyntax(value: string): boolean {
+  const trimmed = value.trimStart();
+  return (
+    /^<table(?:\s|>)/i.test(trimmed) || trimmed === "<br/>" || tryConsumeJsxTag(trimmed, 0) !== null
+  );
+}
+
+function encodeRawHtmlSource(source: string, value: string): string | null {
+  const sourceLines = source.split("\n");
+  const valueLines = value.split("\n");
+  if (sourceLines.length !== valueLines.length) return null;
+
+  const encoded: string[] = [];
+  for (let index = 0; index < sourceLines.length; index++) {
+    const sourceLine = sourceLines[index] ?? "";
+    const valueLine = valueLines[index] ?? "";
+    if (!sourceLine.endsWith(valueLine)) return null;
+    encoded.push(
+      sourceLine.slice(0, sourceLine.length - valueLine.length) +
+        encodeMarkdownPunctuation(valueLine),
+    );
+  }
+  return encoded.join("\n");
+}
+
+function encodeMarkdownPunctuation(value: string): string {
+  // Character references reach mdast as literal punctuation without exposing
+  // that punctuation to MDX or inline Markdown constructs.
+  return value.replace(/[!-/:-@[-`{-~]/g, (character) => {
+    return `&#x${character.charCodeAt(0).toString(16).toUpperCase()};`;
+  });
+}
+
+interface MarkdownNode {
+  type?: string;
+  value?: unknown;
+  children?: unknown[];
+  position?: {
+    start: { offset?: number };
+    end: { offset?: number };
+  };
 }
 
 function isPascalCaseComponentName(name: string): boolean {

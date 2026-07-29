@@ -121,6 +121,10 @@ child serializers, so alignment on nested paragraphs round-trips.
 string, stores it as `runtime.source`, then runs post-parse hooks before PM
 conversion. `rawTextForAst()` slices from `runtime.source`, so fallback text and
 AST positions stay self-consistent even when preprocessors rewrite input.
+MDX ingress asks CommonMark to classify raw-HTML literal ranges, then hides
+their punctuation behind character references before the MDX parse. Valid
+PascalCase components, supported HTML tables, and the hard-break spelling stay
+active markup; syntax-looking text inside other raw HTML stays inert prose.
 
 ## Wikilinks
 
