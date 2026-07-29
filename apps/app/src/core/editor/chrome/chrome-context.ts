@@ -41,6 +41,17 @@ export type ChromeContext = {
   pos: number | null;
   /** Document down to the owner, deepest last; `chain.at(-1) === owner`. */
   chain: readonly ChromeContextKind[];
+  /**
+   * The object the selection is standing INSIDE, if any — a table around a
+   * cell caret. Null when the selection is on the object itself or in plain
+   * prose.
+   *
+   * The Esc chain's first step out of an object's prose (law 3: the writer
+   * inside a table cell steps out to the table before leaving it entirely).
+   * Nothing else about the ancestor walk carries a position, so the chain
+   * cannot recover it later.
+   */
+  objectPos: number | null;
 };
 
 export const DOCUMENT_CHROME_CONTEXT: ChromeContext = {
@@ -48,6 +59,7 @@ export const DOCUMENT_CHROME_CONTEXT: ChromeContext = {
   nodeType: null,
   pos: null,
   chain: ["document"],
+  objectPos: null,
 };
 
 export function resolveChromeContext(state: EditorState): ChromeContext {
@@ -64,12 +76,13 @@ export function resolveChromeContext(state: EditorState): ChromeContext {
       nodeType: object.node.type.name,
       pos: object.pos,
       chain: [...ancestors.chain, "object"],
+      objectPos: ancestors.objectPos,
     };
   }
 
-  const { chain, nodeType, pos } = resolveAncestors(selection.$from);
+  const { chain, nodeType, pos, objectPos } = resolveAncestors(selection.$from);
   const owner = chain[chain.length - 1];
-  return { owner, nodeType, pos, chain };
+  return { owner, nodeType, pos, chain, objectPos };
 }
 
 /**
@@ -83,30 +96,35 @@ export function chromeContextAt(doc: PMNode, pos: number): ChromeContext {
 
   const node = doc.nodeAt(clamped);
   if (node && isEditorObject(node)) {
-    const { chain } = resolveAncestors($pos);
+    const { chain, objectPos } = resolveAncestors($pos);
     return {
       owner: "object",
       nodeType: node.type.name,
       pos: clamped,
       chain: [...chain, "object"],
+      objectPos,
     };
   }
 
-  const { chain, nodeType, pos: ownerPos } = resolveAncestors($pos);
-  return { owner: chain[chain.length - 1], nodeType, pos: ownerPos, chain };
+  const { chain, nodeType, pos: ownerPos, objectPos } = resolveAncestors($pos);
+  return { owner: chain[chain.length - 1], nodeType, pos: ownerPos, chain, objectPos };
 }
 
 type AncestorWalk = {
   chain: ChromeContextKind[];
   nodeType: string | null;
   pos: number | null;
+  objectPos: number | null;
 };
 
 function resolveAncestors($pos: ResolvedPos): AncestorWalk {
-  const walk: AncestorWalk = { chain: ["document"], nodeType: null, pos: null };
+  const walk: AncestorWalk = { chain: ["document"], nodeType: null, pos: null, objectPos: null };
 
   for (let depth = 1; depth <= $pos.depth; depth += 1) {
     const node = $pos.node(depth);
+    // The nearest enclosing object wins, so a table nested in a figure hands
+    // Esc the table rather than the figure two levels out.
+    if (isEditorObject(node)) walk.objectPos = $pos.before(depth);
     const kind = ancestorKind(node);
     if (!kind) continue;
     walk.chain.push(kind);

@@ -3,12 +3,21 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Fragment } from "@tiptap/pm/model";
 import type { Command, EditorState, Transaction } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
-import { addRowAfter, addRowBefore, CellSelection } from "@tiptap/pm/tables";
+import {
+  addRowAfter,
+  addRowBefore,
+  CellSelection,
+  isInTable,
+  selectionCell,
+  TableMap,
+} from "@tiptap/pm/tables";
 
 export type TableSelection = {
   table: ProseMirrorNode;
   tablePos: number;
+  /** Grid row of the cell the caret is in, not its index among row children. */
   row: number;
+  /** Grid column of that cell. Diverges from the child index once spans exist. */
   column: number;
   rowFrom: number;
   rowTo: number;
@@ -16,53 +25,59 @@ export type TableSelection = {
   columnTo: number;
 };
 
-function tablePoint($pos: EditorState["selection"]["$from"]) {
-  let tableDepth = -1;
-  let rowDepth = -1;
-  for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    const role = $pos.node(depth).type.spec.tableRole;
-    if (rowDepth < 0 && role === "row") rowDepth = depth;
-    if (role === "table") {
-      tableDepth = depth;
-      break;
-    }
-  }
-  if (tableDepth < 0 || rowDepth < 0) return null;
-  return {
-    table: $pos.node(tableDepth),
-    tablePos: $pos.before(tableDepth),
-    row: $pos.index(tableDepth),
-    column: $pos.index(rowDepth),
-  };
-}
-
+/**
+ * Where the selection stands in a table, in GRID coordinates.
+ *
+ * Grid rather than child index is the point: a spanned cell occupies several
+ * columns, so `row.child(2)` and "column 2" stop meaning the same thing the
+ * moment a writer merges anything. `TableMap` is what knows the difference, so
+ * every reading here goes through it.
+ */
 export function tableSelection(state: EditorState): TableSelection | null {
-  const point = tablePoint(state.selection.$from);
-  if (!point) return null;
+  if (!isInTable(state)) return null;
 
-  if (state.selection instanceof CellSelection) {
-    const anchor = tablePoint(state.selection.$anchorCell);
-    const head = tablePoint(state.selection.$headCell);
-    if (!anchor || !head || anchor.tablePos !== head.tablePos) return null;
-    return {
-      ...point,
-      rowFrom: Math.min(anchor.row, head.row),
-      rowTo: Math.max(anchor.row, head.row),
-      columnFrom: Math.min(anchor.column, head.column),
-      columnTo: Math.max(anchor.column, head.column),
-    };
-  }
+  const $cell = selectionCell(state);
+  const table = $cell.node(-1);
+  const tableStart = $cell.start(-1);
+  const map = TableMap.get(table);
+  const current = map.findCell($cell.pos - tableStart);
+
+  const { selection } = state;
+  const rect =
+    selection instanceof CellSelection
+      ? map.rectBetween(
+          selection.$anchorCell.pos - tableStart,
+          selection.$headCell.pos - tableStart,
+        )
+      : current;
 
   return {
-    ...point,
-    rowFrom: point.row,
-    rowTo: point.row,
-    columnFrom: point.column,
-    columnTo: point.column,
+    table,
+    tablePos: tableStart - 1,
+    row: current.top,
+    column: current.left,
+    rowFrom: rect.top,
+    rowTo: rect.bottom - 1,
+    columnFrom: rect.left,
+    columnTo: rect.right - 1,
   };
 }
 
-function hasSpans(table: ProseMirrorNode): boolean {
+/**
+ * Whether row zero is a header row.
+ *
+ * The header is a real toggleable thing (§5.4 requirement 3), not a structural
+ * given: plenty of status screens have none. Transforms that must not disturb
+ * it ask this rather than assuming row zero is sacred, or a headerless table's
+ * first row becomes unreachable to insert-above and to moves.
+ */
+export function hasHeaderRow(table: ProseMirrorNode): boolean {
+  const first = table.firstChild?.firstChild;
+  return first?.type.spec.tableRole === "header_cell";
+}
+
+/** Any merged cell in the table. Row and column moves refuse across one. */
+export function tableHasSpans(table: ProseMirrorNode): boolean {
   let found = false;
   table.descendants((node) => {
     if (
@@ -109,11 +124,13 @@ function replaceTable(
 export function moveTableRow(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
-    // Row zero is the structural GFM header and never participates in moves.
+    if (!selection || tableHasSpans(selection.table)) return false;
+    // Where a header row exists it is structural: it never moves, and no body
+    // row moves above it. A headerless table has no such floor.
+    const floor = hasHeaderRow(selection.table) ? 1 : 0;
     if (
-      selection.rowFrom === 0 ||
-      (direction === -1 && selection.rowFrom <= 1) ||
+      selection.rowFrom < floor ||
+      (direction === -1 && selection.rowFrom <= floor) ||
       (direction === 1 && selection.rowTo >= selection.table.childCount - 1)
     ) {
       return false;
@@ -141,7 +158,7 @@ export function moveTableRow(direction: -1 | 1): Command {
 export function moveTableColumn(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
+    if (!selection || tableHasSpans(selection.table)) return false;
     const columnCount = selection.table.firstChild?.childCount ?? 0;
     if (
       (direction === -1 && selection.columnFrom === 0) ||
@@ -176,24 +193,26 @@ export function moveTableColumn(direction: -1 | 1): Command {
   };
 }
 
+/** Text alignment for every cell in the selected columns, spanned cells included. */
 export function alignTableColumn(alignment: "left" | "center" | "right"): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
+    if (!selection) return false;
     if (!dispatch) return true;
 
+    const map = TableMap.get(selection.table);
+    const tableStart = selection.tablePos + 1;
     const tr = state.tr;
-    let rowPos = selection.tablePos + 1;
-    selection.table.forEach((row) => {
-      let cellPos = rowPos + 1;
-      row.forEach((cell, _offset, column) => {
-        if (column >= selection.columnFrom && column <= selection.columnTo) {
-          tr.setNodeMarkup(cellPos, undefined, { ...cell.attrs, alignment });
-        }
-        cellPos += cell.nodeSize;
-      });
-      rowPos += row.nodeSize;
-    });
+    for (const cellPos of map.cellsInRect({
+      left: selection.columnFrom,
+      right: selection.columnTo + 1,
+      top: 0,
+      bottom: map.height,
+    })) {
+      const cell = selection.table.nodeAt(cellPos);
+      if (!cell || cell.attrs.alignment === alignment) continue;
+      tr.setNodeMarkup(tableStart + cellPos, undefined, { ...cell.attrs, alignment });
+    }
     dispatch(tr);
     return true;
   };
@@ -203,28 +222,35 @@ export function alignTableColumn(alignment: "left" | "center" | "right"): Comman
 export function addTableRow(direction: "above" | "below"): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
-    if (!selection || hasSpans(selection.table)) return false;
-    if (direction === "above" && selection.rowFrom === 0) return false;
+    if (!selection) return false;
+    if (direction === "above" && selection.rowFrom < (hasHeaderRow(selection.table) ? 1 : 0)) {
+      return false;
+    }
 
     const command = direction === "above" ? addRowBefore : addRowAfter;
     return command(state, (tr) => {
       const table = tr.doc.nodeAt(selection.tablePos);
       if (!table) return;
       const insertedRow = direction === "above" ? selection.rowFrom : selection.rowTo + 1;
-      const row = table.child(insertedRow);
-      const header = table.firstChild;
-      if (!header) return;
+      const map = TableMap.get(table);
+      const tableStart = selection.tablePos + 1;
 
-      let rowPos = selection.tablePos + 1;
-      for (let index = 0; index < insertedRow; index += 1) rowPos += table.child(index).nodeSize;
-      let cellPos = rowPos + 1;
-      row.forEach((cell, _offset, column) => {
-        const alignment = header.child(column).attrs.alignment;
-        if (alignment !== cell.attrs.alignment) {
-          tr.setNodeMarkup(cellPos, undefined, { ...cell.attrs, alignment });
-        }
-        cellPos += cell.nodeSize;
-      });
+      for (const cellPos of map.cellsInRect({
+        left: 0,
+        right: map.width,
+        top: insertedRow,
+        bottom: insertedRow + 1,
+      })) {
+        // A rowspan from above reaches into the new row without belonging to
+        // it; only cells that BEGIN here are the row this insert created.
+        const rect = map.findCell(cellPos);
+        if (rect.top !== insertedRow) continue;
+        const cell = table.nodeAt(cellPos);
+        if (!cell) continue;
+        const alignment = table.nodeAt(map.map[rect.left])?.attrs.alignment ?? null;
+        if (alignment === cell.attrs.alignment) continue;
+        tr.setNodeMarkup(tableStart + cellPos, undefined, { ...cell.attrs, alignment });
+      }
       dispatch?.(tr);
     });
   };

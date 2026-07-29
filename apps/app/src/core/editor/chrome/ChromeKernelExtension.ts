@@ -20,7 +20,10 @@ import { keydownHandler } from "@tiptap/pm/keymap";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { caretHomeFromObjectTransaction } from "../objects/object-selection";
+import {
+  caretHomeFromObjectTransaction,
+  selectObjectTransaction,
+} from "../objects/object-selection";
 import { chromeContextAt, resolveChromeContext } from "./chrome-context";
 import { type ContextClaimTarget, resolveContextClaim } from "./context-claims";
 import {
@@ -212,6 +215,14 @@ function performEscStep(
 
     case "close-layer":
       return chrome.closeTopLayer();
+
+    case "select-object": {
+      const transaction = selectObjectTransaction(view.state, step.pos);
+      if (!transaction) return false;
+      view.dispatch(transaction);
+      view.focus();
+      return true;
+    }
 
     case "caret-after-block": {
       const transaction = caretHomeFromObjectTransaction(view.state, step.pos);

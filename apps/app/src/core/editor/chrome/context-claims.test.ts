@@ -14,6 +14,7 @@ const objectContext: ChromeContext = {
   nodeType: "figure",
   pos: 8,
   chain: ["document", "object"],
+  objectPos: null,
 };
 
 function target(overrides: Partial<ContextClaimTarget> = {}): ContextClaimTarget {
