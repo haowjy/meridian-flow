@@ -244,6 +244,44 @@ describe("selecting and leaving an object", () => {
     }
   });
 
+  describe("a leaf that ends the document", () => {
+    const diagram: JSONContent = {
+      type: "code_block",
+      attrs: { language: "mermaid" },
+      content: [{ type: "text", text: "graph TD;" }],
+    };
+
+    it("lands in the gap past it, not in the block above", () => {
+      const instance = mount([paragraph("before"), diagram, { type: "horizontal_rule" }]);
+      const pos = positionOf(instance, "code_block");
+
+      const transaction = caretHomeFromObjectTransaction(instance.state, pos);
+      expect(transaction).not.toBeNull();
+      if (transaction) instance.view.dispatch(transaction);
+
+      // No text position exists past a trailing scene break, and the
+      // "object ends the document" fallback used to fire for an object that
+      // does not — sending the caret into the paragraph ABOVE the diagram.
+      // With gapcursor installed the gap after the leaf is a real home.
+      expect(instance.state.selection.from).toBeGreaterThan(pos);
+    });
+
+    it("still prefers real text when some follows the leaf", () => {
+      const instance = mount([
+        paragraph("before"),
+        diagram,
+        { type: "horizontal_rule" },
+        paragraph("tail"),
+      ]);
+      const pos = positionOf(instance, "code_block");
+
+      const transaction = caretHomeFromObjectTransaction(instance.state, pos);
+      if (transaction) instance.view.dispatch(transaction);
+
+      expect(instance.state.selection.$head.parent.textContent).toBe("tail");
+    });
+  });
+
   it("makes a home when the object IS the document, rather than trapping", () => {
     const instance = mount([figure]);
     const pos = positionOf(instance, "figure");

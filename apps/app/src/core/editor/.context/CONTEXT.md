@@ -167,20 +167,25 @@ Yjs document session. It must stay structurally aligned with
   takes over table DOM once `resizable` is on.
 - `table-operations.ts` owns the table transforms prosemirror-tables omits (row
   and column moves, whole-column alignment, layout reset). All of them refuse a
-  table containing spans, because GFM cannot represent one and the codec throws
-  on serialization. Row zero is the structural GFM header and never moves.
+  table containing spans — not for the wire (spans serialize fine since the
+  codec's GFM-to-HTML escalation) but because row/column moves over merged
+  cells would break prosemirror-tables' rectangular invariants. Row zero is
+  the structural GFM header and never moves.
 - The slash trigger lives under `extensions/slash/` and is summarized below.
-- A `code_block` whose `language` is `mermaid` is a plain editable code block:
-  `MeridianCodeBlockLowlight` registers no node view. `MermaidCodeBlock.tsx`
-  keeps the SVG pipeline (`renderMermaid`, token-themed preview) in the tree,
-  unregistered, because rendering a fence hides its `<pre>` and there is no
-  in-page source escape hatch, so the caret lands in a hidden element and drops
-  keystrokes. The rebuild re-registers the node view together with the diagram
-  dialog that owns source access; caret-enters-source is not coming back.
-- `SlashCommandExtension` is a catalog seam with no trigger: the item shape,
-  the fuzzy filter, and a read-at-open catalog getter supplied by the mounting
-  surface. The trigger plugin was deleted with the condemned chrome and the
-  rebuild owns its replacement, so typing `/` currently inserts a literal slash.
+- Enter on a whole-block selection is object physics', not the base keymap's
+  (§4). What it means comes from the block: a registered object with a
+  `surface` intent opens its lane's surface, a table takes the caret into its
+  first cell, and a selected plain fence takes the caret to its own start —
+  its rendering IS its source, so there is nothing else to open. The binding
+  sits at `block` scope precisely because a plain fence is NOT an object;
+  making it one would trade click-to-caret for click-to-select. It always
+  consumes the key, because letting Enter reach the base keymap splits the
+  block and leaves a stray paragraph behind.
+- A lane that owns an object's surface registers it with
+  `registerObjectEngagement`, and receives an `ObjectOpening` saying why it was
+  asked: `"engage"` for something that already exists, `"created"` for one made
+  a moment ago. Law 2's sole exception rides that distinction — a new empty
+  diagram opens ready to work rather than showing a viewer with nothing in it.
 - A `code_block` whose `language` is `mermaid` renders as a diagram and hides
   its own `<pre>`; every other language is the fence itself.
   `MermaidCodeBlock.tsx` is that node view and `mermaid-render.ts` is the async
@@ -285,11 +290,19 @@ Three rules a lane holding one should follow:
   peer writes.
 
 A deleted thing's anchor resolves to the seam it left behind, so "is it still
-there" needs an answer of its own. A range over the thing's whole extent is the
-cheapest one: both of its edges land on that seam, so a collapsed hold means
-gone. `BlockHold` (`surfaces/blocks/block-targets.ts`) is that shape, and it is
-what lets a block menu follow a peer typing into its paragraph while closing
-when a peer deletes it.
+there" needs an answer of its own, and positions cannot give it. `BlockHold`
+([`anchors.ts`](../anchors.ts)) is the worked example every block surface uses:
+the block's two seams for where it is, plus the **Yjs element** behind it for
+which block it is. The element is the same object for as long as the block
+lives — local typing, a peer's typing, an AI write all mutate it in place — and
+a different one for anything that is really a new block.
+
+Both halves earn their place. Without identity, a peer deleting the document's
+only heading leaves the schema to supply an empty paragraph in its place, and
+the seams describe that replacement perfectly: uncollapsed, at depth 0, a
+good-looking block a menu would happily delete. Without the seams, an editor
+with no shared document has no deletion signal at all, because there is no
+element to compare.
 
 ## TipTap v3 defaults we intentionally disable
 

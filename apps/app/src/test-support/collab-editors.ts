@@ -8,6 +8,14 @@
  * step over the whole document. Only a real second binding produces that, so
  * this runs a real second editor and hands its updates over the way a server
  * would.
+ *
+ * It also mounts them the way production does. `useMountedEditor` reconciles
+ * surface options onto the running editor right after construction, and that
+ * `setOptions` call is load-bearing here: it runs `view.updateState`, which is
+ * where y-prosemirror decides the editor has real content and may write to the
+ * shared document. A harness that skips it leaves the binding still guarding
+ * its initial content, and the first edit that reduces a document to the
+ * schema default — deleting its only block — is silently never sent.
  */
 
 import { Editor, type JSONContent } from "@tiptap/core";
@@ -33,6 +41,12 @@ function editorOn(doc: Y.Doc): Editor {
   });
 }
 
+/** The post-mount reconciliation `useMountedEditor` performs, and why. */
+function reconcileMount(editor: Editor): void {
+  editor.setOptions({ editable: editor.isEditable });
+  editor.setEditable(true, false);
+}
+
 function push(from: Y.Doc, to: Y.Doc): void {
   Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
 }
@@ -48,8 +62,10 @@ export function createCollabPair(content: JSONContent): CollabPair {
 
   const local = editorOn(localDoc);
   local.commands.setContent(content);
+  reconcileMount(local);
   push(localDoc, peerDoc);
   const peer = editorOn(peerDoc);
+  reconcileMount(peer);
 
   const sync = () => {
     push(localDoc, peerDoc);

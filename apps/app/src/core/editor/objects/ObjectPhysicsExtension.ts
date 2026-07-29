@@ -17,10 +17,10 @@
  */
 
 import { type Editor, Extension } from "@tiptap/core";
-import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
+import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
 import {
   caretBesideObjectTransaction,
@@ -196,7 +196,13 @@ export const ObjectPhysicsExtension = Extension.create({
             }),
             chrome?.registerKeymap({
               id: "object-engage",
-              scope: "object",
+              // Not `object` scope: §4's Enter row covers a selected plain
+              // fence too, and a plain fence is not an object. The binding
+              // still declines anything that is not a whole block selection,
+              // which hands the key back for ordinary typing.
+              scope: "block",
+              appliesTo: (context) =>
+                context.owner === "object" || context.owner === "source-block",
               bindings: { Enter: (state, dispatch) => engage(editor, state, dispatch) },
             }),
           ];
@@ -263,6 +269,26 @@ export const ObjectPhysicsExtension = Extension.create({
   },
 });
 
+/**
+ * Enter on a selected plain fence puts the caret at its start (§4).
+ *
+ * Its own text is what there is to engage — a code block's rendering IS its
+ * source, so there is no surface to open and nothing to convert. Falling
+ * through to the base keymap instead appended a paragraph after the fence and
+ * left the caret in it.
+ */
+function engageSourceBlock(
+  state: Parameters<KeymapBinding>[0],
+  dispatch: Parameters<KeymapBinding>[1],
+): boolean {
+  const fence = selectedSourceBlock(state);
+  if (!fence) return false;
+
+  const inside = TextSelection.near(state.doc.resolve(fence.pos + 1), 1);
+  dispatch?.(state.tr.setSelection(inside).scrollIntoView());
+  return true;
+}
+
 function reportMissingEngagement(nodeType: string): void {
   if (!import.meta.env?.DEV || warnedMissingEngagement.has(nodeType)) return;
   warnedMissingEngagement.add(nodeType);
@@ -318,7 +344,7 @@ function engage(
   dispatch: Parameters<KeymapBinding>[1],
 ): boolean {
   const selected = selectedObject(state);
-  if (!selected) return false;
+  if (!selected) return engageSourceBlock(state, dispatch);
 
   const spec = objectTypeSpec(selected.node);
   if (!spec) return false;

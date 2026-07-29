@@ -25,7 +25,7 @@ import { type Editor, Extension } from "@tiptap/core";
 import { type EditorState, Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
-import { anchorRange, carryAnchor, type EditorAnchor, resolveAnchorIn } from "../anchors";
+import { type BlockHold, carryAnchor, holdBlock, resolveBlockHold } from "../anchors";
 
 const BLOCK_DRAG_NAME = "meridianBlockDrag";
 
@@ -34,13 +34,12 @@ export const BLOCK_LIFTED_CLASS = "meridian-block-lifted";
 
 type BlockDragState = {
   /**
-   * The block under the pointer, held as its two seams. Both of them land on
-   * the same seam once the block is gone, which is the only way to tell "a
-   * peer deleted what I am holding" from "a peer wrote above it": a remote
-   * write replaces the whole document, so the mapping calls everything
-   * deleted and a single position resolves to the gap the block left.
+   * The block under the pointer, held by Yjs identity rather than by position:
+   * a remote write replaces the whole document, so the mapping calls every
+   * position deleted, and the seam a deleted block leaves behind is where its
+   * replacement now starts.
    */
-  hold: EditorAnchor;
+  hold: BlockHold;
   /** False while the press might still turn out to be a click. */
   lifted: boolean;
 };
@@ -54,10 +53,8 @@ const blockDragPluginKey = new PluginKey<BlockDragState | null>(BLOCK_DRAG_NAME)
  * travels is a click, and a paragraph that faded for it would be a flicker.
  */
 export function beginBlockDrag(editor: Editor, pos: number): void {
-  const node = editor.state.doc.nodeAt(pos);
-  if (!node) return;
-  const hold = anchorRange(editor.state, { from: pos, to: pos + node.nodeSize });
-  dispatchBlockDrag(editor, { hold, lifted: false });
+  const hold = holdBlock(editor.state, pos);
+  if (hold) dispatchBlockDrag(editor, { hold, lifted: false });
 }
 
 /** The press became a drag. The block lifts. */
@@ -82,8 +79,7 @@ export function endBlockDrag(editor: Editor): void {
  */
 export function draggedBlockPos(state: EditorState): number | null {
   const held = blockDragPluginKey.getState(state);
-  const at = held && resolveAnchorIn(state, held.hold);
-  return at && at.to > at.from ? at.from : null;
+  return held ? (resolveBlockHold(state, held.hold)?.from ?? null) : null;
 }
 
 export const BlockDragExtension = Extension.create({
@@ -106,7 +102,8 @@ export const BlockDragExtension = Extension.create({
             const carried = carryAnchor(current.hold, transaction.mapping);
             // A deleted block leaves nothing to hold — which only the mapping
             // of a local edit can say, and only for an editor with no shared
-            // document behind it.
+            // document behind it. Identity answers on read, where the binding
+            // has finished describing the document this transaction produced.
             return carried ? { ...current, hold: carried } : null;
           },
         },

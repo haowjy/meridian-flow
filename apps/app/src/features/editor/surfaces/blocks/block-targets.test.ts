@@ -1,21 +1,17 @@
 // @vitest-environment jsdom
 import { Editor, type JSONContent } from "@tiptap/core";
-import { NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { createCollabPair } from "@/test-support/collab-editors";
 
 import {
-  type BlockHold,
   blockAt,
   blockAtIndex,
   blockForSelection,
   blockSeams,
   deleteBlockTransaction,
   duplicateBlockTransaction,
-  followBlock,
-  holdBlock,
   moveBlockStepTransaction,
   moveBlockToSeamTransaction,
   selectionIsInsideTable,
@@ -298,117 +294,6 @@ describe("Alt+Arrow steps", () => {
     expect(outline(instance)).toEqual(["figure", "paragraph"]);
     expect(instance.state.selection).toBeInstanceOf(NodeSelection);
     expect(blockForSelection(instance.state)?.index).toBe(0);
-  });
-});
-
-describe("holding a block across a change", () => {
-  /** Dispatch and answer where the hold landed, the way the surface does. */
-  function afterDispatch(instance: Editor, hold: BlockHold, tr: Transaction): BlockHold | null {
-    instance.view.dispatch(tr);
-    return followBlock(instance.state, hold, tr.mapping);
-  }
-
-  it("moves with the block when one is inserted above it", () => {
-    const instance = mount([paragraph("one"), paragraph("two")]);
-    const second = blockOf(instance, 1);
-    const hold = holdBlock(instance.state, second.pos);
-    if (!hold) throw new Error("no hold");
-
-    const tr = instance.state.tr.insert(0, instance.state.schema.nodes.paragraph.create());
-    expect(afterDispatch(instance, hold, tr)?.from).toBe(second.pos + 2);
-  });
-
-  // A deleted block's seams both land on the seam it left behind, which is
-  // where the NEXT block starts — an open menu would silently rebind its
-  // Delete to the neighbour.
-  it("lets go when the block itself is deleted", () => {
-    const instance = mount([paragraph("one"), paragraph("two"), paragraph("three")]);
-    const middle = blockOf(instance, 1);
-    const hold = holdBlock(instance.state, middle.pos);
-    if (!hold) throw new Error("no hold");
-
-    const tr = instance.state.tr.delete(middle.pos, middle.pos + middle.node.nodeSize);
-    expect(afterDispatch(instance, hold, tr)).toBeNull();
-  });
-
-  it("lets go when the block is swept up in a wider delete", () => {
-    const instance = mount([paragraph("one"), paragraph("two"), paragraph("three")]);
-    const middle = blockOf(instance, 1);
-    const last = blockOf(instance, 2);
-    const hold = holdBlock(instance.state, middle.pos);
-    if (!hold) throw new Error("no hold");
-
-    const tr = instance.state.tr.delete(middle.pos, last.pos + last.node.nodeSize);
-    expect(afterDispatch(instance, hold, tr)).toBeNull();
-  });
-
-  it("lets go when the block stops being a top-level block", () => {
-    const instance = mount([paragraph("one"), paragraph("two")]);
-    const second = blockOf(instance, 1);
-    const hold = holdBlock(instance.state, second.pos);
-    if (!hold) throw new Error("no hold");
-
-    const range = instance.state.doc.resolve(second.pos + 1).blockRange();
-    if (!range) throw new Error("fixture");
-    const tr = instance.state.tr.wrap(range, [{ type: instance.state.schema.nodes.blockquote }]);
-    // The paragraph is inside the quote now, so the position lands at depth 1
-    // and this surface has nothing left to act on: it lets go rather than
-    // silently retargeting the quote the writer never approached.
-    expect(afterDispatch(instance, hold, tr)).toBeNull();
-    expect(instance.state.doc.nodeAt(second.pos)?.type.name).toBe("blockquote");
-  });
-
-  it("leaves an untouched block alone", () => {
-    const instance = mount([paragraph("one"), paragraph("two")]);
-    const first = blockOf(instance, 0);
-    const last = blockOf(instance, 1);
-    const hold = holdBlock(instance.state, first.pos);
-    if (!hold) throw new Error("no hold");
-
-    const tr = instance.state.tr.delete(last.pos, last.pos + last.node.nodeSize);
-    expect(afterDispatch(instance, hold, tr)?.from).toBe(first.pos);
-  });
-
-  it("keeps the block through a peer's write, which reports every position deleted", () => {
-    const pair = createCollabPair({
-      type: "doc",
-      content: [paragraph("one"), paragraph("two")],
-    });
-    try {
-      const second = blockOf(pair.local, 1);
-      const hold = holdBlock(pair.local.state, second.pos);
-      if (!hold) throw new Error("no hold");
-
-      const landed: Transaction[] = [];
-      const listener = ({ transaction }: { transaction: Transaction }) => {
-        if (transaction.docChanged) landed.push(transaction);
-      };
-      pair.local.on("transaction", listener);
-      pair.peer.commands.insertContentAt(1, "PEER ");
-      pair.sync();
-      pair.local.off("transaction", listener);
-
-      const remote = landed.at(-1);
-      if (!remote) throw new Error("the peer's write never landed");
-      // What the mapping alone would have answered: gone, every time.
-      expect(remote.mapping.mapResult(second.pos).deleted).toBe(true);
-
-      const followed = followBlock(pair.local.state, hold, remote.mapping);
-      expect(followed?.from).toBe(second.pos + 5);
-      expect(pair.local.state.doc.resolve(followed?.from ?? 0).nodeAfter?.textContent).toBe("two");
-    } finally {
-      pair.destroy();
-    }
-  });
-
-  it("keeps the block a writer is typing into", () => {
-    const instance = mount([paragraph("one"), paragraph("two")]);
-    const second = blockOf(instance, 1);
-    const hold = holdBlock(instance.state, second.pos);
-    if (!hold) throw new Error("no hold");
-
-    const tr = instance.state.tr.insertText("!", second.pos + 1);
-    expect(afterDispatch(instance, hold, tr)?.from).toBe(second.pos);
   });
 });
 

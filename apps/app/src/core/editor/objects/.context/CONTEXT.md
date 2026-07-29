@@ -21,6 +21,19 @@ first, and the kernel's
 | `caret-inside` | drops the caret at the first text position within | the kernel |
 | `none` | nothing | nobody — but the key is still consumed |
 
+A selected plain code fence is engaged too, and is NOT in this table: it is
+prose the writer types into, so click still places a caret and the arrow walk
+still steps past it. Enter takes the caret to its start (§4), because a code
+block's rendering is its source and there is nothing else to open. That is why
+the Enter contribution sits at `block` scope with an `appliesTo` covering both
+`object` and `source-block` owners rather than at `object` scope.
+
+`registerObjectEngagement` receives an `ObjectOpening` alongside the target:
+`"engage"` for an object that already exists, `"created"` for one made a moment
+ago. Law 2's sole exception is carried by that word — a new empty diagram opens
+ready to work — and only the lane owning the surface can act on it, so the
+physics reports the reason instead of deciding.
+
 Both doors run the same registration: `handleDoubleClickOn` selects the object
 and then calls the identical `engage`, so a lane wires its surface once (§5.2's
 "click 2 / double-click / Enter opens the dialog"). A double-click in prose is
@@ -111,6 +124,14 @@ paragraph of a list item shares its edge with the list).
 `walk()` in the extension is then two cases: an object is selected, so pass
 beyond it; or the caret is beside one, so step onto it. Anything else returns
 false and the editor's own caret movement stands.
+
+Esc's forward search has three rungs, tried in order: a text position (a
+caret in prose), then a gap cursor past whatever leaves follow, then — only
+when nothing lies ahead at all — behind the object. `GapCursor.findFrom` is
+not what finds the gap: it stops dead at a selectable node, so from just after
+a diagram it sees the scene break next door and reports nothing, which is how a
+trailing leaf sent the caret backward over the object. The gap the writer wants
+is on the FAR side of that leaf.
 
 **Esc does not reuse the arrow walk.** They ask different questions, and
 conflating them once sent the caret backward. `caretBesideObjectTransaction` is

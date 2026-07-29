@@ -65,12 +65,6 @@ function mount(content: JSONContent[], extras: Node[] = []): Editor {
     extensions: [...createStandaloneEditorExtensions(), ...extras],
     content: { type: "doc", content },
   });
-  // An arrow key reaches gapcursor, which asks whether the caret sits at the
-  // edge of its textblock — a question ProseMirror answers by measuring, and
-  // jsdom has no layout to measure. Same gap `elementFromPoint` fills above.
-  // Unstubbed it throws out of band, which vitest reports as an unhandled
-  // error even though every assertion here passes.
-  vi.spyOn(editor.view, "endOfTextblock").mockReturnValue(false);
   return editor;
 }
 
@@ -154,6 +148,24 @@ describe("the kernel on a live editor", () => {
     // content of "the editor gave the key back".
     expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
     expect(instance.state.selection.eq(home)).toBe(true);
+  });
+
+  it("walks home off a selected plain fence", () => {
+    const instance = mount([
+      paragraph("before"),
+      { type: "code_block", attrs: { language: "ts" }, content: [{ type: "text", text: "x" }] },
+      paragraph("after"),
+    ]);
+    let fencePos = 0;
+    instance.state.doc.descendants((node, pos) => {
+      if (node.type.name === "code_block") fencePos = pos;
+    });
+    instance.view.dispatch(
+      instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, fencePos)),
+    );
+
+    expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
+    expect(instance.state.selection.$head.parent.textContent).toBe("after");
   });
 
   it("leaves a right-click to the browser when nobody claims (ruling 11)", () => {

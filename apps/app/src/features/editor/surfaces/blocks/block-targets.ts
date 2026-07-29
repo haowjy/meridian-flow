@@ -20,9 +20,6 @@
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, TextSelection, type Transaction } from "@tiptap/pm/state";
-import type { Mappable } from "@tiptap/pm/transform";
-
-import { anchorRange, type EditorAnchor, followAnchor } from "@/core/editor/anchors";
 import { selectedObject } from "@/core/editor/objects";
 
 export type BlockTarget = {
@@ -100,42 +97,6 @@ export function selectionIsInsideTable(state: EditorState): boolean {
     if (role === "cell" || role === "header_cell") return true;
   }
   return false;
-}
-
-/**
- * A block this surface has hold of, as its two seams.
- *
- * The pair is the whole trick. A single position cannot say whether the block
- * is still there: a deleted block's anchor resolves to the seam it left behind,
- * which is where the NEXT block now starts, and chrome that trusted it would
- * point at a stranger — a menu whose Delete names the neighbour, a handle
- * beside a block the writer never approached. Both seams of a deleted block
- * land on that same seam, so a collapsed hold IS "the block went away", and a
- * block a peer typed into simply grew.
- *
- * `hold.from` is the block's position. Every position this surface keeps
- * across a transaction is one of these.
- */
-export type BlockHold = EditorAnchor;
-
-/** Take hold of the block at `pos`, so chrome can find it after a write. */
-export function holdBlock(state: EditorState, pos: number): BlockHold | null {
-  const target = blockAt(state.doc, pos);
-  return target && anchorRange(state, { from: target.pos, to: target.pos + target.node.nodeSize });
-}
-
-/** Where the held block is now, or null when the block itself went away. */
-export function followBlock(
-  state: EditorState,
-  hold: BlockHold,
-  mapping: Mappable,
-): BlockHold | null {
-  const at = followAnchor(state, hold, mapping);
-  if (!at || at.from >= at.to) return null;
-  // A surviving position must still be a block boundary at document depth: a
-  // peer who wrapped the block in something else left it somewhere this
-  // surface cannot act on.
-  return state.doc.resolve(at.from).depth === 0 ? at : null;
 }
 
 /**

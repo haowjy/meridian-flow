@@ -30,7 +30,7 @@
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 
 import {
   relativePositionForIndex,
@@ -72,7 +72,10 @@ export function anchorPosition(state: EditorState, pos: number): EditorAnchor {
  * against a whole-document replace, so it only decides for an anchor that has
  * nothing else to fall back on.
  */
-export function carryAnchor(anchor: EditorAnchor, mapping: Mappable): EditorAnchor | null {
+export function carryAnchor<Anchor extends EditorAnchor>(
+  anchor: Anchor,
+  mapping: Mappable,
+): Anchor | null {
   // An empty range is a caret, and both of its edges are the same edge: text a
   // peer types there belongs to the document, so the caret stays in front of
   // it. Biasing them apart would invert the range, and a commit against an
@@ -127,6 +130,86 @@ export function followAnchor(
 ): EditorAnchor | null {
   const at = resolveAnchor(state, anchor, mapping);
   return at && anchorRange(state, at);
+}
+
+/**
+ * A top-level block a surface has hold of: where it is, and WHICH block it is.
+ *
+ * Two seam positions cannot answer the second question. A peer who deletes the
+ * document's only heading leaves the schema to supply an empty paragraph in its
+ * place, and the seams then describe that replacement perfectly: they resolve
+ * to its boundaries, uncollapsed, and a menu opened on the heading would go on
+ * offering Delete for a block the writer never saw. Same-type replacement makes
+ * a node-type check no better.
+ *
+ * The Yjs element behind the block IS the identity. It is the same object for
+ * as long as the block lives — a writer typing into it, a peer typing into it,
+ * an AI write landing in it all mutate it in place — and Yjs replaces it for
+ * anything that is really a new block, including a move, which is the honest
+ * answer for a hold: the block a gesture grabbed is not the one that landed.
+ *
+ * The element rather than its item id (`getBlockItemId`, what trail navigation
+ * and search passages carry) because those anchors cross a boundary and have to
+ * be serializable, while a hold lives inside one session — and reading an id
+ * throws for a deleted element, in a code path that runs inside Yjs update
+ * handlers where a throw is swallowed and peer writes quietly stop applying.
+ *
+ * `block` is null on an editor with no shared document, where the collapse of
+ * the two seams is the only deletion signal there is (and a sound one: with no
+ * Yjs there are no whole-document rebuilds to blind the mapping).
+ */
+export type BlockHold = EditorAnchor & { block: Y.XmlElement | null };
+
+/**
+ * Take hold of the top-level block starting at `pos`, or null when `pos` is not
+ * the start of one.
+ */
+export function holdBlock(state: EditorState, pos: number): BlockHold | null {
+  if (pos < 0 || pos > state.doc.content.size) return null;
+  const $pos = state.doc.resolve(pos);
+  const node = $pos.depth === 0 ? $pos.nodeAfter : null;
+  if (!node) return null;
+  return {
+    ...anchorRange(state, { from: pos, to: pos + node.nodeSize }),
+    block: blockElementAt(state, $pos.index(0)),
+  };
+}
+
+/** Where the held block is now, or null when the writer's block is gone. */
+export function resolveBlockHold(state: EditorState, hold: BlockHold): AnchorRange | null {
+  const at = resolveAnchorIn(state, hold);
+  // Both seams on one point is a block that went away, which is all the answer
+  // there is without a shared document behind the hold.
+  if (!at || at.from >= at.to) return null;
+  const $pos = state.doc.resolve(at.from);
+  // A peer who wrapped the block in something else left it somewhere no block
+  // surface can act on.
+  if ($pos.depth !== 0 || !$pos.nodeAfter) return null;
+  return blockElementAt(state, $pos.index(0)) === hold.block ? at : null;
+}
+
+/** The same block after a change, re-pinned. Null once it is not the same block. */
+export function followBlock(
+  state: EditorState,
+  hold: BlockHold,
+  mapping: Mappable,
+): BlockHold | null {
+  const carried = carryAnchor(hold, mapping);
+  const at = carried && resolveBlockHold(state, carried);
+  return at && { ...anchorRange(state, at), block: hold.block };
+}
+
+/**
+ * The Yjs element behind the document's `index`-th top-level block.
+ *
+ * The fragment's children and the ProseMirror document's are the same list in
+ * the same order, which is what makes an index enough to cross between them.
+ */
+function blockElementAt(state: EditorState, index: number): Y.XmlElement | null {
+  const runtime = relativePositionRuntimeFromState(state);
+  if (!runtime || index < 0 || index >= runtime.yFragment.length) return null;
+  const child = runtime.yFragment.get(index);
+  return child instanceof Y.XmlElement ? child : null;
 }
 
 /**

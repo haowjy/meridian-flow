@@ -132,6 +132,34 @@ describe("the document's hold on a dragged block", () => {
     }
   });
 
+  it("lets go when a peer replaces the only block the writer was dragging", () => {
+    // A heading, so that deleting it leaves a block of a DIFFERENT type: the
+    // schema needs one, and the empty paragraph it supplies stands exactly
+    // where the dragged heading was. Its seams look like a living block, and
+    // only the Yjs element behind it says the writer's block is gone. (Delete
+    // a lone paragraph and Yjs keeps the same element, emptied — which is
+    // also right: that block still exists.)
+    const pair = createCollabPair({
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Only" }] },
+      ],
+    });
+    try {
+      beginBlockDrag(pair.local, 0);
+      liftBlockDrag(pair.local);
+      expect(draggedBlockPos(pair.local.state)).toBe(0);
+
+      pair.peer.commands.deleteRange({ from: 0, to: pair.peer.state.doc.content.size });
+      pair.sync();
+
+      expect(pair.local.state.doc.child(0).type.name).toBe("paragraph");
+      expect(draggedBlockPos(pair.local.state)).toBeNull();
+    } finally {
+      pair.destroy();
+    }
+  });
+
   it("adds nothing to the writer's undo history", () => {
     const instance = mount([paragraph("one"), paragraph("two")]);
     const before = instance.state.doc.toJSON();

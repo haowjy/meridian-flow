@@ -18,19 +18,20 @@ document:
 - **The position has to survive the drag.** A peer's edit or an AI write can
   land while the pointer is down, because nothing gates a write (law 9). The
   block the writer grabbed has to be the block that lands, so it is held here,
-  once, rather than in every consumer — as an `EditorAnchor` over the block's
-  two seams (`core/editor/anchors.ts`), because a remote write replaces the
-  whole document and a mapped number would report the grab deleted every time.
+  once, rather than in every consumer — as a `BlockHold`
+  (`core/editor/anchors.ts`), because a remote write replaces the whole
+  document and a mapped number would report the grab deleted every time.
 
 ## Key rules
 
 - **The transactions carry meta only.** No step reaches Yjs, no undo entry
   appears for picking a paragraph up, and `addToHistory` is off. Picking a
   block up is not an edit.
-- **A deleted block releases the hold.** Both seams of the hold land on the
-  same seam once the block is gone, and the state clears rather than pointing
-  at a stranger. The surface watches for that transition and ends its gesture
-  on it: the document letting go is the last word.
+- **A deleted block releases the hold.** The hold names the Yjs element behind
+  the block, so a replacement standing where the block was is not the block,
+  and the state clears rather than pointing at a stranger. The surface watches
+  for that transition and ends its gesture on it: the document letting go is
+  the last word.
 - **The hold resolves on read, not in `apply`.** A plugin's `apply` runs while
   the Yjs binding may still be describing the document the transaction
   replaced; `draggedBlockPos` asks a settled state instead.
