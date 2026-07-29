@@ -48,7 +48,7 @@ export function serializeHtmlTable(table: PMNode, ctx: SerializeContext): string
 export function parseHtmlTable(ast: unknown, ctx: ParseContext): PMNode | null {
   const astType =
     typeof ast === "object" && ast !== null ? (ast as { type?: unknown }).type : undefined;
-  if (astType !== "html" && astType !== "mdxJsxFlowElement" && astType !== "paragraph") return null;
+  if (astType !== "html" && astType !== "mdxJsxFlowElement") return null;
   const source = htmlSource(ast, ctx);
   if (!/^<table(?:\s|>)/i.test(source)) return null;
   const root = parseHtml(source);
@@ -486,6 +486,5 @@ function htmlSource(ast: unknown, ctx: ParseContext): string {
     .split("\n")
     .map((line) => line.replace(/^[\t ]*(?:>[\t ]*)+/, ""))
     .join("\n")
-    .replaceAll("\\<", "<")
     .trim();
 }

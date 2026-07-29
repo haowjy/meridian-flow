@@ -12,6 +12,7 @@ import {
   mdxCodec,
   requiredBlockNamesForSchema,
 } from "./index.js";
+import { normalizeGfmTableHardBreaks } from "./markdown/blocks/table.js";
 import {
   markdownBlockCodecs,
   markdownMarkCodecs,
@@ -655,6 +656,26 @@ describe("mdx codec round-trip corpus", () => {
     expect(block.type.name).toBe("code_block");
     expect(block.textContent).toBe(["| H |", "| - |", "| a\\", "b |"].join("\n"));
     expect(codec.serializeBlock(block)).toBe(input);
+  });
+
+  it("does not normalize table-looking text inside indented code", () => {
+    for (const indent of ["    ", "\t"]) {
+      const input = [`${indent}| H |`, `${indent}| - |`, `${indent}| a\\`, `${indent}b |`].join(
+        "\n",
+      );
+
+      expect(normalizeGfmTableHardBreaks(input)).toBe(input);
+    }
+  });
+
+  it("keeps explicitly escaped HTML tables as prose", () => {
+    const input = '\\<table><tbody><tr><td colspan="2">literal</td></tr></tbody></table>';
+    const block = firstParsedBlock(codec, input);
+
+    expect(block.type.name).toBe("paragraph");
+    expect(block.textContent).toBe(
+      '<table><tbody><tr><td colspan="2">literal</td></tr></tbody></table>',
+    );
   });
 
   it("round-trips HTML-spelled tables through blockquotes", () => {

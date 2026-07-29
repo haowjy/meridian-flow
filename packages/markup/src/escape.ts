@@ -23,7 +23,7 @@ export function escapeProseForMdxIngress(text: string): string {
       continue;
     }
 
-    if (/^\s*<table(?:\s|>)/i.test(line)) {
+    if (/^[\t ]*(?:(?:>[\t ]*)|(?:[-+*][\t ]+)|(?:\d+[.)][\t ]+))*<table(?:\s|>)/i.test(line)) {
       const end = lines.findIndex(
         (candidate, candidateIndex) =>
           candidateIndex >= index && /<\/table>\s*$/i.test(candidate ?? ""),

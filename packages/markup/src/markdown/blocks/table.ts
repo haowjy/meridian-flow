@@ -224,7 +224,7 @@ function replaceHardBreaks(
 
 function pipeRowAt(lines: readonly string[], start: number): { value: string; end: number } | null {
   const first = lines[start];
-  if (first === undefined || !/^[\t ]*\|/.test(first)) return null;
+  if (first === undefined || !/^ {0,3}\|/.test(first)) return null;
 
   let value = first;
   let end = start;
