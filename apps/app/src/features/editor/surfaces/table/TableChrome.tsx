@@ -76,7 +76,20 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const openMenuRef = useRef<Axis | null>(null);
   openMenuRef.current = openMenu;
 
-  const rects = useTableChromeRects(editor, anchorCell, () => intentRef.current?.cancel());
+  /**
+   * The hovered cell has left the manuscript's pane — scrolled out, or taken
+   * away by a peer's write. Everything aimed at it goes with it: an open menu
+   * that outlived its row would keep this surface's anchor pinned to a dead
+   * element, and the grips would never come back.
+   */
+  const releaseAnchor = useCallback(() => {
+    intentRef.current?.cancel();
+    setOpenMenu(null);
+    setAnchorCell(null);
+    setHovering(false);
+  }, []);
+
+  const rects = useTableChromeRects(editor, anchorCell, releaseAnchor);
 
   // A menu held the anchor still while it was open, so the pointer's real
   // position has to be read back on close or the grips linger where it left.
@@ -136,7 +149,10 @@ export function TableChrome({ editor }: { editor: Editor }) {
         const grip = target.element.closest("[data-table-grip]");
         if (!(grip instanceof HTMLElement)) return false;
         const axis: Axis = grip.dataset.tableGrip === "row" ? "row" : "column";
-        selectAxis(axis);
+        // A grip whose cells a peer has taken away claims nothing: opening a
+        // menu over them would offer row verbs against whatever the selection
+        // happens to be.
+        if (!selectAxis(axis)) return false;
         setOpenMenu(axis);
         return true;
       },

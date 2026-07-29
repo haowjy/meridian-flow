@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import { Editor } from "@tiptap/core";
+import type { Transaction } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 
-import { fenceRebaseAfter, fenceSourceTransaction, minimalTextPatch } from "./fence-draft";
+import { createCollabPair } from "@/test-support/collab-editors";
+
+import {
+  type FenceReading,
+  fenceRebaseAfter,
+  fenceRebaseAfterRemote,
+  fenceSourceTransaction,
+  minimalTextPatch,
+} from "./fence-draft";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
@@ -141,6 +150,83 @@ describe("editing a fence from the source pane", () => {
   it("has nothing to do when the text is unchanged", () => {
     const { editor: mounted, pos } = mount();
     expect(fenceSourceTransaction(mounted.state, freshRebase(pos), SOURCE)).toBeNull();
+  });
+});
+
+describe("editing a fence while a peer writes", () => {
+  const CONTENT = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "before" }] },
+      {
+        type: "code_block",
+        attrs: { language: "mermaid" },
+        content: [{ type: "text", text: SOURCE }],
+      },
+    ],
+  };
+
+  /** Where the fence is, and what it says, in the document as it stands. */
+  function readFence(mounted: Editor): FenceReading {
+    let reading: FenceReading | null = null;
+    mounted.state.doc.descendants((node, at) => {
+      if (node.type.name === "code_block") reading = { source: node.textContent, start: at + 1 };
+      return true;
+    });
+    if (!reading) throw new Error("expected a fence");
+    return reading;
+  }
+
+  it("still applies the writer's keystroke when the peer wrote elsewhere", () => {
+    const pair = createCollabPair(CONTENT);
+    try {
+      const rebase = { ...readFence(pair.local), mapping: new Mapping() };
+      const landed: Transaction[] = [];
+      const listener = ({ transaction }: { transaction: Transaction }) => {
+        if (transaction.docChanged) landed.push(transaction);
+      };
+      pair.local.on("transaction", listener);
+      pair.peer.commands.insertContentAt(1, "PEER ");
+      pair.sync();
+      pair.local.off("transaction", listener);
+      const remote = landed.at(-1);
+      if (!remote) throw new Error("the peer's write never landed");
+
+      // What accumulating the remote mapping produces: a base whose offsets
+      // all map to a document boundary, so the writer's keystroke is dropped.
+      expect(
+        fenceSourceTransaction(pair.local.state, fenceRebaseAfter(rebase, remote), `${SOURCE}C`),
+      ).toBeNull();
+
+      const rebased = fenceRebaseAfterRemote(rebase, readFence(pair.local));
+      if (!rebased) throw new Error("expected a usable base");
+      const transaction = fenceSourceTransaction(pair.local.state, rebased, `${SOURCE}C`);
+      expect(transaction).not.toBeNull();
+      if (transaction) pair.local.view.dispatch(transaction);
+      expect(readFence(pair.local).source).toBe(`${SOURCE}C`);
+    } finally {
+      pair.destroy();
+    }
+  });
+
+  it("refuses when the peer wrote inside the fence, rather than diffing their line away", () => {
+    const pair = createCollabPair(CONTENT);
+    try {
+      const rebase = { ...readFence(pair.local), mapping: new Mapping() };
+      pair.peer.commands.insertContentAt(readFence(pair.peer).start, "  X --> Y\n");
+      pair.sync();
+
+      expect(fenceRebaseAfterRemote(rebase, readFence(pair.local))).toBeNull();
+    } finally {
+      pair.destroy();
+    }
+  });
+
+  it("refuses once the fence itself is gone", () => {
+    const { editor: mounted, pos } = mount();
+    const rebase = { source: SOURCE, start: pos + 1, mapping: new Mapping() };
+    expect(fenceRebaseAfterRemote(rebase, null)).toBeNull();
+    expect(mounted.state.doc.nodeAt(pos)?.type.name).toBe("code_block");
   });
 });
 

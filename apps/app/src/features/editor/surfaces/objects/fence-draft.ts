@@ -9,9 +9,17 @@
  * an accident.
  *
  * So the diff runs against what the pane RENDERED — which is exactly what the
- * writer edited — and its offsets are mapped forward through every transaction
- * that has landed since, ProseMirror's own answer to "where is that text now".
- * With nobody else typing the mapping is empty and this is one `insertText`.
+ * writer edited — and its offsets are mapped forward through every LOCAL
+ * transaction that has landed since, ProseMirror's own answer to "where is
+ * that text now". With nobody else typing the mapping is empty and this is one
+ * `insertText`.
+ *
+ * A peer's write is the case the mapping cannot answer: it arrives as a
+ * replacement of the whole document, so every offset maps to a boundary. The
+ * document is re-read instead, and when the fence itself changed underneath
+ * the writer the pane has no usable base at all until the next render supplies
+ * one — refusing there is what keeps the diff from reading the peer's new line
+ * as the writer's deletion.
  *
  * The rebase resets on every render that shows new document text, so the base
  * and the mapping can never disagree about which version they describe.
@@ -21,6 +29,8 @@ import type { Editor } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+
+import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
 
 import { isMermaidFence, type ObjectSurfaceTarget, objectSurfaceAt } from "./object-anchors";
 
@@ -38,6 +48,28 @@ export function fenceRebaseAfter(rebase: FenceRebase, transaction: Transaction):
   const mapping = new Mapping(rebase.mapping.maps.slice());
   mapping.appendMapping(transaction.mapping);
   return { ...rebase, mapping };
+}
+
+/** The fence as the document has it now: what the pane is about to show. */
+export type FenceReading = { source: string; start: number };
+
+/**
+ * The rebase after a peer's write, or null when the pane has no usable base
+ * left and must refuse until the next render gives it one.
+ *
+ * Two outcomes, and the difference is whether the writer's base is still true.
+ * A peer typing elsewhere in the manuscript moved the fence without changing a
+ * character of it, so re-reading where it sits keeps a keystroke in the same
+ * frame working. A peer typing INSIDE the fence left the writer holding text
+ * that is already behind what the pane will show, and every diff against it
+ * would read the peer's new line as a deletion.
+ */
+export function fenceRebaseAfterRemote(
+  rebase: FenceRebase,
+  fence: FenceReading | null,
+): FenceRebase | null {
+  if (!fence || fence.source !== rebase.source) return null;
+  return { ...fence, mapping: new Mapping() };
 }
 
 export type TextPatch = { from: number; to: number; text: string };
@@ -121,7 +153,7 @@ export function useFenceDraft(
 
   const targetRef = useRef(target);
   targetRef.current = target;
-  const rebaseRef = useRef<FenceRebase>({ source, start, mapping: new Mapping() });
+  const rebaseRef = useRef<FenceRebase | null>({ source, start, mapping: new Mapping() });
 
   // Showing new document text means everything up to it is now the base and
   // nothing has happened since. Layout phase, so a keystroke in the same frame
@@ -132,9 +164,11 @@ export function useFenceDraft(
 
   useEffect(() => {
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
-      if (transaction.docChanged) {
-        rebaseRef.current = fenceRebaseAfter(rebaseRef.current, transaction);
-      }
+      const rebase = rebaseRef.current;
+      if (!transaction.docChanged || !rebase) return;
+      rebaseRef.current = isRemoteDocumentRebuild(transaction)
+        ? fenceRebaseAfterRemote(rebase, readFence(editor, targetRef.current?.element))
+        : fenceRebaseAfter(rebase, transaction);
     };
     editor.on("transaction", onTransaction);
     return () => {
@@ -144,7 +178,8 @@ export function useFenceDraft(
 
   const onChange = useCallback(
     (next: string) => {
-      const transaction = fenceSourceTransaction(editor.state, rebaseRef.current, next);
+      const rebase = rebaseRef.current;
+      const transaction = rebase && fenceSourceTransaction(editor.state, rebase, next);
       if (!transaction) return;
       editor.view.dispatch(transaction);
 
@@ -152,14 +187,17 @@ export function useFenceDraft(
       // merge may have produced something else, and the next keystroke has to
       // diff against what the writer is about to see. This also closes the
       // window between the dispatch and the render that would rebase anyway.
-      const element = targetRef.current?.element;
-      const after = element ? objectSurfaceAt(editor.view, element) : null;
-      rebaseRef.current = after
-        ? { source: after.node.textContent, start: after.pos + 1, mapping: new Mapping() }
-        : { source: next, start: 0, mapping: new Mapping() };
+      const after = readFence(editor, targetRef.current?.element);
+      rebaseRef.current = after && { ...after, mapping: new Mapping() };
     },
     [editor],
   );
 
   return { value: source, onChange };
+}
+
+/** The fence under `element`, as the document has it right now. */
+function readFence(editor: Editor, element: HTMLElement | undefined): FenceReading | null {
+  const found = element ? objectSurfaceAt(editor.view, element) : null;
+  return found && { source: found.node.textContent, start: found.pos + 1 };
 }
