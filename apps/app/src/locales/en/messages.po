@@ -609,12 +609,31 @@ msgid "Context"
 msgstr "Context"
 
 #: src/components/app/CopyTextButton.tsx
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
 msgid "Copied"
 msgstr "Copied"
+
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Copy code"
+msgstr "Copy code"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Copy image"
+msgstr "Copy image"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Copy Mermaid source"
+msgstr "Copy Mermaid source"
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
 msgstr "Copy removed text"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Could not copy. Try again."
+msgstr "Could not copy. Try again."
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
@@ -764,6 +783,8 @@ msgstr "Data Analysis"
 msgid "Default alignment"
 msgstr "Default alignment"
 
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
@@ -810,6 +831,7 @@ msgid "Dev-login failed"
 msgstr "Dev-login failed"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Diagram"
 msgstr "Diagram"
 
@@ -863,6 +885,11 @@ msgstr "Documents the AI reads in this chat appear here."
 msgid "Download {name}"
 msgstr "Download {name}"
 
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Download image"
+msgstr "Download image"
+
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Draft"
 msgstr "Draft"
@@ -904,6 +931,11 @@ msgstr "Drop image to insert it"
 #~ msgid "Drop image to upload a figure"
 #~ msgstr "Drop image to upload a figure"
 
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Duplicate"
+msgstr "Duplicate"
+
 #: src/features/editor/EditorCodeBubble.tsx
 #~ msgid "Edit"
 #~ msgstr "Edit"
@@ -915,6 +947,11 @@ msgstr "Drop image to insert it"
 #: src/features/editor/EditorLinkBubble.tsx
 #~ msgid "Edit link"
 #~ msgstr "Edit link"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Edit source"
+msgstr "Edit source"
 
 #: src/features/editor/EditorTableBubble.tsx
 #~ msgid "Edit table"
@@ -1088,6 +1125,10 @@ msgstr "Files"
 msgid "First name"
 msgstr "First name"
 
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Fit"
+msgstr "Fit"
+
 #: src/features/editor/EditorView.tsx
 msgid "flowchart"
 msgstr "flowchart"
@@ -1125,6 +1166,10 @@ msgstr "h2"
 msgid "Heading"
 msgstr "Heading"
 
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Hide source"
+msgstr "Hide source"
+
 #: src/features/chat/placeholders.ts
 msgid "Hold on…"
 msgstr "Hold on…"
@@ -1159,6 +1204,7 @@ msgid "Idle"
 msgstr "Idle"
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Image"
 msgstr "Image"
 
@@ -1415,6 +1461,10 @@ msgstr "Meridian removed a small part of this chapter that this version can't di
 msgid "mermaid"
 msgstr "mermaid"
 
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Mermaid source"
+msgstr "Mermaid source"
+
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Minimum is {0}."
@@ -1433,6 +1483,8 @@ msgid "Monthly usage"
 msgstr "Monthly usage"
 
 #: src/features/editor/chrome/OverlayIconRow.tsx
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "More"
 msgstr "More"
 
@@ -1678,6 +1730,10 @@ msgstr "Open conversation"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
 msgstr "Open existing"
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Open full screen"
+msgstr "Open full screen"
 
 #: src/features/editor/EditorLinkBubble.tsx
 #~ msgid "Open link"
@@ -2119,6 +2175,10 @@ msgstr "Settings"
 #: src/features/account/SettingsDialog.tsx
 msgid "Settings sections"
 msgstr "Settings sections"
+
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Showing the last good render."
+msgstr "Showing the last good render."
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -2638,6 +2698,10 @@ msgstr "Working…"
 msgid "Workspace navigation"
 msgstr "Workspace navigation"
 
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Wrap lines"
+msgstr "Wrap lines"
+
 #: src/features/chat/placeholders.ts
 msgid "Write away"
 msgstr "Write away"
@@ -2683,3 +2747,11 @@ msgstr "Your saved preference is unavailable. Sync is paused until retry succeed
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
 msgstr "Your WorkOS profile, as seen by Meridian."
+
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Zoom in"
+msgstr "Zoom in"
+
+#: src/features/editor/surfaces/objects/ViewerCanvas.tsx
+msgid "Zoom out"
+msgstr "Zoom out"
