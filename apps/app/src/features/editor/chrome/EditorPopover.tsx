@@ -13,9 +13,8 @@ import type { ComponentProps, ReactNode } from "react";
 
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-
+import { useChromeLayer } from "./chrome-layers";
 import { pointerAnchorStyle } from "./pointer-anchor";
-import { useChromeLayer, useReturnFocusToProse } from "./useEditorChrome";
 
 export type EditorPopoverProps = {
   editor: Editor | null;
@@ -43,8 +42,15 @@ export function EditorPopover({
   className,
   children,
 }: EditorPopoverProps) {
-  const returnFocus = useReturnFocusToProse(editor);
-  const layer = useChromeLayer(editor, { id, open, close: () => onOpenChange(false) });
+  // Radix carries its own Escape listener, so the kernel must not also
+  // dismiss this one; `scope` is what lets a layer opened inside it — a
+  // source pane — be recognised as the deeper one.
+  const layer = useChromeLayer(editor, {
+    id,
+    open,
+    close: () => onOpenChange(false),
+    dismissal: "self",
+  });
 
   return (
     // Keyed on the anchor point for the same reason `EditorMenu` is: floating-ui
@@ -72,10 +78,10 @@ export function EditorPopover({
         align={align}
         side={side}
         className={cn("w-auto", className)}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
-        {children}
+        {layer.scope(children)}
       </PopoverContent>
     </Popover>
   );
