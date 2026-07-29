@@ -126,6 +126,7 @@ export function MobileDocumentHost({
           documentId={activeTab.documentId}
           schemaType={activeTab.schemaType}
           editable={false}
+          showToolbar={false}
           ariaLabel={t`Read-only live document`}
           showCollaborationDecorations={false}
         />

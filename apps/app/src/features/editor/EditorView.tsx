@@ -2,8 +2,9 @@
  * EditorView — the collaborative document editor surface.
  *
  * Binds a `DocumentSession` (Yjs `Y.Doc` + awareness + cursor provider) to a
- * TipTap/ProseMirror editor and renders the surrounding chrome (sync-status
- * indicator, image-upload drag/drop/paste + inline-command flow).
+ * TipTap/ProseMirror editor and renders the surrounding chrome (document
+ * toolbar, sync-status indicator, image-upload drag/drop/paste + inline-command
+ * flow).
  * Used by the Context screen to open any document. Filename chrome is the
  * host's job (desktop tab strip / phone top-bar breadcrumb), so this view
  * renders no title header of its own.
@@ -66,6 +67,7 @@ import { PeerMarkPopover, type PeerMarkPopoverTarget } from "./PeerMarkPopover";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
+import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -79,6 +81,8 @@ export type EditorViewProps = {
   className?: string;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
+  /** Read-only hosts (phone) mount the manuscript without the document toolbar. */
+  showToolbar?: boolean;
   /** Accessible label override when the surface is read-only. */
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
@@ -258,6 +262,7 @@ function ActiveSessionEditorView({
   identity,
   className,
   editable = true,
+  showToolbar = true,
   ariaLabel,
   reviewWorkId = null,
   onReviewSessionUnavailable,
@@ -468,7 +473,7 @@ function ActiveSessionEditorView({
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({
       attributes: {
-        class: editorProseClass,
+        class: editorProseClass(showToolbar ? "docked" : "none"),
         "aria-label": ariaLabel ?? t`Collaborative document editor`,
       },
       handlePaste(view, event) {
@@ -543,7 +548,7 @@ function ActiveSessionEditorView({
         },
       },
     }),
-    [ariaLabel, assetPathResolver, handleImageFile, openPeerMark],
+    [ariaLabel, assetPathResolver, handleImageFile, openPeerMark, showToolbar],
   );
 
   const editor = useMountedEditor({
@@ -654,6 +659,17 @@ function ActiveSessionEditorView({
       />
       <TrackedEditorCanvas
         editor={editor}
+        toolbar={
+          showToolbar ? (
+            <DocumentToolbar
+              editor={editor}
+              editable={effectiveEditable}
+              onUploadFigure={() => imageInputRef.current?.click()}
+              uploadBusy={imageUploadState.kind === "uploading"}
+              uploadAvailable={Boolean(projectId)}
+            />
+          ) : undefined
+        }
         scrollRef={scrollContainerRef}
         dragActive={dragActive}
         onScroll={(event) => {
@@ -696,7 +712,7 @@ function ActiveSessionEditorView({
   );
 }
 
-function PendingEditorShell({ className }: EditorViewProps) {
+function PendingEditorShell({ className, showToolbar = true }: EditorViewProps) {
   return (
     <section
       className={cn(
@@ -704,13 +720,19 @@ function PendingEditorShell({ className }: EditorViewProps) {
         className,
       )}
     >
-      <TrackedEditorCanvas editor={null} />
+      {/* The toolbar is persistent chrome: it holds its place while the
+          document opens, greyed and saying so, rather than popping in. */}
+      <TrackedEditorCanvas
+        editor={null}
+        toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
+      />
     </section>
   );
 }
 
 function TrackedEditorCanvas({
   editor,
+  toolbar,
   scrollRef,
   dragActive = false,
   onScroll,
@@ -718,6 +740,7 @@ function TrackedEditorCanvas({
   uploadStatus,
 }: {
   editor: Editor | null;
+  toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
   dragActive?: boolean;
   onScroll?: UIEventHandler<HTMLDivElement>;
@@ -726,6 +749,7 @@ function TrackedEditorCanvas({
 }) {
   return (
     <EditorSurfaceFrame
+      toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}
       scrollClassName={cn(

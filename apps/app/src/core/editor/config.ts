@@ -49,6 +49,7 @@ import {
   SlashCommandExtension,
   type SlashCommandExtensionOptions,
 } from "./extensions/SlashCommandExtension";
+import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { markdownTableClipboardParser } from "./markdown-paste";
 import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -237,6 +238,9 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({ schemaType, assetRenderContext, slashCommands }),
     ...collaboration,
+    // Undo exists only alongside collaboration's UndoManager, so its owned key
+    // bindings mount with it rather than in the standalone set.
+    UndoRedoKeymapExtension,
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];

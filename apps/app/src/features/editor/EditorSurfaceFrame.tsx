@@ -1,11 +1,14 @@
-/** Shared scrolling layout for document editor surfaces. */
+/** Shared docked-toolbar and scrolling layout for document editor surfaces. */
 import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import type { MouseEvent as ReactMouseEvent, ReactNode, Ref, UIEventHandler } from "react";
 
 import { cn } from "@/lib/utils";
+import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
+  /** The persistent document toolbar, docked prose-aligned above the scroll area. */
+  toolbar?: ReactNode;
   children: ReactNode;
   /**
    * When given, the whole scroll area becomes click-to-focus territory: a
@@ -49,6 +52,7 @@ function focusEditorFromGutterPress(editor: Editor, event: ReactMouseEvent<HTMLD
 }
 
 export function EditorSurfaceFrame({
+  toolbar,
   children,
   editor,
   scrollClassName,
@@ -57,6 +61,11 @@ export function EditorSurfaceFrame({
 }: EditorSurfaceFrameProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {toolbar ? (
+        <div className="flex h-9 shrink-0 items-center">
+          <div className={editorColumnChrome}>{toolbar}</div>
+        </div>
+      ) : null}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the mousedown is
           pointer-only caret delegation into the editor (page-margin clicks);
           keyboard users reach the same editor via Tab focus on the prose node. */}
