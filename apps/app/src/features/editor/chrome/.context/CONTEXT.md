@@ -22,6 +22,12 @@ All three take the same first four props: `editor`, `id` (names the layer in
 the Esc chain), `open`, `onOpenChange`. All three bake in the layer
 registration, the Escape deferral, and the focus return.
 
+`useChromeLayer` returns both handlers, and the focus return is layer-aware:
+it hands the caret back to the prose only when no other layer is open. That is
+what makes a hand-off work — a menu item that opens a form, "Edit link" being
+the first — because the closing menu would otherwise pull focus out of the
+form it had just summoned, and Radix reads that as an outside interaction.
+
 | | Anchoring | Focus on open | Modal |
 |---|---|---|---|
 | `EditorMenu` | `at={{x, y}}` for a claimed right-click, or `trigger` for a control | Radix roving focus | no |

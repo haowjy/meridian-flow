@@ -22,14 +22,19 @@ roving focus (decision 2026-07-29). What these add is subordination.
 
 ## Key rules
 
-- **`onCloseAutoFocus` → prose, on every surface, on every close path.** Radix
-  restores focus to the trigger, which is right for a page and wrong for a
-  manuscript: the writer never left the sentence, so the next Space must be a
-  space. `useReturnFocusToProse` is the handler. This is the toolbar module's
-  standing contract, and it applies to anything opened over the editor.
-- **`onEscapeKeyDown` → `useChromeLayer(...).onEscapeKeyDown`.** Without it a
-  single Esc closes a dialog and the pane inside it, spending two steps of the
-  walk home on one key.
+- **Both focus handlers come from `useChromeLayer`.** `onEscapeKeyDown` is the
+  subordination mechanism: without it a single Esc closes a dialog and the pane
+  inside it, spending two steps of the walk home on one key.
+  `onCloseAutoFocus` hands the caret back to the prose, because Radix would
+  restore focus to the trigger — right for a page, wrong for a manuscript where
+  the writer never left the sentence and the next Space must be a space. It
+  makes that hand-back only when this surface was the last one open: a menu
+  item that opens a form leaves a successor behind, and returning the caret
+  then would pull focus out of a surface on the frame it appeared.
+- **A popover ignores focus alone as a dismissal.** Focus is always in motion
+  around an editor form, and Radix would read every move as a reason to close
+  one. Escape and a pointer outside still dismiss it, which is what a writer
+  means.
 - **`modal={false}`** on menus and popovers. A modal surface freezes the page
   behind it, and the page behind it is the writer's chapter: clicking away must
   land the caret where the writer clicked, not merely dismiss.

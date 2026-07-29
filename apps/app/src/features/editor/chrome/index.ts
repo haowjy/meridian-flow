@@ -40,5 +40,4 @@ export {
   useChromeLayer,
   useChromeSuppressed,
   useEditorChrome,
-  useReturnFocusToProse,
 } from "./useEditorChrome";

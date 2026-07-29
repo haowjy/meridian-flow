@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-import { useChromeLayer, useReturnFocusToProse } from "./useEditorChrome";
+import { useChromeLayer } from "./useEditorChrome";
 
 export type EditorDialogProps = {
   editor: Editor | null;
@@ -39,14 +39,13 @@ export function EditorDialog({
   className,
   children,
 }: EditorDialogProps) {
-  const returnFocus = useReturnFocusToProse(editor);
   const layer = useChromeLayer(editor, { id, open, close: () => onOpenChange(false) });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn("max-w-[min(64rem,92vw)]", className)}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
         <DialogTitle className={showTitle ? undefined : "sr-only"}>{title}</DialogTitle>

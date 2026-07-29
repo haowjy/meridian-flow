@@ -58,6 +58,17 @@ export type ChromeLayerBinding = {
    * only when the kernel knows something deeper is open.
    */
   onEscapeKeyDown: (event: { preventDefault: () => void }) => void;
+  /**
+   * Give this to the Radix content's `onCloseAutoFocus`. Radix restores focus
+   * to the trigger, which is right for a page and wrong for a manuscript: the
+   * writer never left the sentence, so the next Space must be a space.
+   *
+   * Unless another surface is still open. A menu item that opens a form leaves
+   * exactly that behind, and returning the caret then would pull focus out of
+   * a surface on the frame it appeared — so a close hands the caret back only
+   * when it was the last thing on screen.
+   */
+  onCloseAutoFocus: (event: Event) => void;
 };
 
 /**
@@ -102,21 +113,15 @@ export function useChromeLayer(
     [chrome],
   );
 
-  return { onEscapeKeyDown };
-}
-
-/**
- * The close handler every editor surface owes (the toolbar's standing
- * contract). Radix restores focus to the trigger, which is right for a page
- * and wrong for a manuscript: the writer never left the sentence, so the next
- * Space must be a space rather than a control re-activating.
- */
-export function useReturnFocusToProse(editor: Editor | null): (event: Event) => void {
-  return useCallback(
+  const onCloseAutoFocus = useCallback(
     (event: Event) => {
       event.preventDefault();
+      const successor = chrome?.layers.some((layer) => layer.id !== layerIdRef.current);
+      if (successor) return;
       if (editor && !editor.isDestroyed) editor.commands.focus();
     },
-    [editor],
+    [chrome, editor],
   );
+
+  return { onEscapeKeyDown, onCloseAutoFocus };
 }

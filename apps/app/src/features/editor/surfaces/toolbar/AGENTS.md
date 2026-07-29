@@ -43,8 +43,9 @@ behavior is never decided in a component.
   A reason code with no message is a control that greys silently. Copy reaches
   the browser through the COMPILED catalogs, so run extract and compile and
   commit both; `pnpm check:i18n` fails the build when they drift.
-- Do not bind Ctrl+K to the link popover: that key belongs to the later link
-  lane, which absorbs this popover.
+- **The Link button opens someone else's surface.** The link form belongs to
+  `surfaces/link/`, hangs at the writer's own words, and answers to Ctrl+K and
+  the right-click menu as well; this row contributes a door, not a popover.
 
 ## Anti-patterns
 
@@ -52,6 +53,7 @@ behavior is never decided in a component.
   one function; call it.
 - Adding a contextual control (language selector, table verbs, alt text) to
   this row.
+- Rebuilding a surface another lane owns because the button is here.
 - Reviving `EditorLinkBubble` or any raise-on-click surface.
 
 → [`../../AGENTS.md`](../../AGENTS.md)

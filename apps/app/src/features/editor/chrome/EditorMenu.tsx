@@ -28,7 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { pointerAnchorStyle } from "./pointer-anchor";
-import { useChromeLayer, useReturnFocusToProse } from "./useEditorChrome";
+import { useChromeLayer } from "./useEditorChrome";
 
 export type EditorMenuProps = {
   editor: Editor | null;
@@ -58,7 +58,6 @@ export function EditorMenu({
   className,
   children,
 }: EditorMenuProps) {
-  const returnFocus = useReturnFocusToProse(editor);
   const layer = useChromeLayer(editor, { id, open, close: () => onOpenChange(false) });
 
   return (
@@ -93,7 +92,7 @@ export function EditorMenu({
         // Approach chrome fades; a summoned menu does not need to be waited
         // for, so it keeps Radix's own entrance and nothing more.
         className={cn("min-w-52", className)}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
       >
         {children}

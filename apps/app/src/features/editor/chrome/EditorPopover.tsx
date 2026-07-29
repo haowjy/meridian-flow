@@ -6,6 +6,7 @@
  *
  * The difference is where focus goes on the way IN. A popover holds a form, so
  * Radix's opening focus is correct and stays: the writer opened it to type.
+ * And on the way out it ignores focus alone: see `onFocusOutside` below.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -15,7 +16,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/compon
 import { cn } from "@/lib/utils";
 
 import { pointerAnchorStyle } from "./pointer-anchor";
-import { useChromeLayer, useReturnFocusToProse } from "./useEditorChrome";
+import { useChromeLayer } from "./useEditorChrome";
 
 export type EditorPopoverProps = {
   editor: Editor | null;
@@ -43,7 +44,6 @@ export function EditorPopover({
   className,
   children,
 }: EditorPopoverProps) {
-  const returnFocus = useReturnFocusToProse(editor);
   const layer = useChromeLayer(editor, { id, open, close: () => onOpenChange(false) });
 
   return (
@@ -72,8 +72,15 @@ export function EditorPopover({
         align={align}
         side={side}
         className={cn("w-auto", className)}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
+        // A popover holds a form, and in this editor focus is always in
+        // motion around one: a menu item that opened this popover drops focus
+        // to the body as it unmounts, and every surface hands the caret back
+        // to the prose on its way out. Radix would read either as a reason to
+        // dismiss, closing a form on the frame it appeared. Escape and a
+        // pointer outside still close it, which is what a writer means.
+        onFocusOutside={(event) => event.preventDefault()}
       >
         {children}
       </PopoverContent>

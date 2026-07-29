@@ -59,27 +59,19 @@ The two command families fence differently, and the difference is the design:
 Alignment has no fence: it writes to every alignable block the selection
 touches, so a select-all centers the chapter rather than greying.
 
-## Link popover
+## The Link button
 
-`resolveLinkDraft` reads the selection when the popover opens, not when it
-commits: focus moves into the form, and the commit must rewrite the range the
-writer was looking at. A bare caret produces `needsText`, which is the only
-thing that decides between the one-field and two-field forms.
-
-The range travels: an open popover outlives the positions it opened with (a
-peer types above the selection, an AI write lands), so `mapLinkDraft` follows
-every transaction and the commit rewrites the words the writer chose.
-
-`commitLinkDraft` returns `applied`, `removed`, `invalid`, or `refused` — the
-command's real result, never an assumption. The form stays open on `invalid`
-so a bad URL never closes over a change that did not happen, and `refused`
-covers a document that turned read-only while the form was open. Rewriting a
-link's text keeps the marks that text already wore.
+The button is a door into the link lane's form (`core/editor/links` plus
+`features/editor/surfaces/link`), which also answers Ctrl+K and the right-click
+menu. `active` still comes from this module's matrix, because the row's
+lit-or-greyed language is one answer for all ten controls; everything the form
+does — draft resolution, range mapping, commit, removal — belongs to the link
+lane, and nothing about it is decided here.
 
 ## Closing a surface returns the caret
 
-Both surfaces this module opens — the link popover and the alignment menu —
-override Radix's `onCloseAutoFocus`, prevent its default, and focus the editor.
+The one surface this module opens — the alignment menu — overrides Radix's
+`onCloseAutoFocus`, prevents its default, and focuses the editor.
 Radix restores focus to the trigger, which is right for a page and wrong for a
 manuscript: the writer never left the sentence, so the next Space must be a
 space rather than a control being re-activated. Any surface added here owes the
