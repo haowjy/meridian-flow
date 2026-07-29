@@ -8,6 +8,9 @@
  */
 export { DocumentToolbar, type DocumentToolbarProps } from "./DocumentToolbar";
 export {
+  type BlockTypeRefusalReason,
+  blockTypeRefusal,
+  codeBlockRefusal,
   documentToolbarControls,
   type ToolbarBlockedReason,
   type ToolbarControlId,
@@ -16,3 +19,4 @@ export {
   toggleHeadingBlock,
   toggleTextMark,
 } from "./toolbar-commands";
+export { blockTypeReasonMessage } from "./toolbar-copy";

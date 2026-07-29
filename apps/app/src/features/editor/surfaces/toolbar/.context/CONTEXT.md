@@ -59,6 +59,12 @@ The two command families fence differently, and the difference is the design:
 Alignment has no fence: it writes to every alignable block the selection
 touches, so a select-all centers the chapter rather than greying.
 
+`blockTypeRefusal` and `codeBlockRefusal` are exported, and `BlockTypeRefusalReason`
+names their answers. Every other surface that rewrites a whole block — the block
+menu's Turn into — calls them rather than re-deriving the rule, so a new protected
+node type is one edit here instead of one per surface. `blockTypeReasonMessage`
+is the matching copy.
+
 ## Link popover
 
 `resolveLinkDraft` reads the selection when the popover opens, not when it
