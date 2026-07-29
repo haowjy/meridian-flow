@@ -231,8 +231,23 @@ Yjs document session. It must stay structurally aligned with
   (`features/editor/surfaces/objects`); caret-enters-source is not coming back.
   The one exception the view owns is a caret INSIDE the fence — a fence typed
   as markdown is filled in by hand, and a caret in a hidden element eats every
-  keystroke it is given. A pointer never produces that caret: object physics
-  selects an opaque object body on the PRESS (see `objects/.context`).
+  keystroke it is given. Its invariant: **a selection inside the fence implies
+  a visible, connected source content DOM, and rendering that implication must
+  not itself change the selection.** The second half is structural. The
+  `NodeViewContent` host is the wrapper's first child and never conditional,
+  and the render layer is one stable sibling after it, mounted for the life of
+  a mermaid fence — so neither a face swap nor a parse settling moves DOM in
+  front of ProseMirror's live selection. DOM vanishing ahead of a live
+  selection is what made the two faces alternate, and
+  `MermaidCodeBlock.test.tsx` asserts the sibling list ahead of the host across
+  both transitions. The face is derived from the current selection on every
+  render (`useSyncExternalStore`, no local face state) and tests nothing about
+  how the caret arrived, so a keystroke, a command, a peer's mapped write and a
+  press all converge after one render. Do not reintroduce a provenance test:
+  the premise that a pointer cannot produce this caret was false. Where an
+  outside press may land is `pointer-boundary.ts`; object physics selecting an
+  opaque body on the PRESS (see `objects/.context`) is one more entry it
+  closes, and neither of them is what makes the node view safe.
 - `useMermaidSvg` keeps the LAST GOOD svg across a failing edit, which is what
   lets the dialog show a live preview beside source that does not parse yet.
   Every consumer gets its own render id: mermaid writes it into the markup, and

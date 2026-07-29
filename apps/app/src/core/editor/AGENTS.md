@@ -70,6 +70,15 @@ change-trail events, not manuscript content.
   new block view adds nothing here, because the answer reads the object
   registration.
 
+- **A node view that hides its own text derives that face from the selection,
+  and never restructures around it.** A selection inside a rendered mermaid
+  fence implies a visible, connected source content DOM; rendering that
+  implication must not change the selection, or the two faces alternate. So the
+  content host stays the wrapper's first child and only its visibility changes,
+  the render layer is a stable sibling behind it, and the face has no memory and
+  no test of how the caret arrived. A caret gets there by keystroke, command,
+  peer write, or pointer, and all four must converge.
+
 - **A key the editor owns is owned on its refusals too.** Undo
   (`UndoRedoKeymapExtension`) and Tab (`TabKeymapExtension`) both consume
   their key whether or not the verb had anything to do, because a binding

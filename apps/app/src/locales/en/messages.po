@@ -953,7 +953,7 @@ msgstr "Duplicate"
 msgid "Edit link"
 msgstr "Edit link"
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Edit source"
@@ -2065,7 +2065,7 @@ msgstr "Rename this document or move it somewhere else in your project."
 msgid "Renamed to {trimmed}"
 msgstr "Renamed to {trimmed}"
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
@@ -2628,7 +2628,7 @@ msgstr "This column is already at the edge."
 msgid "This device"
 msgstr "This device"
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 msgid "This diagram has a syntax problem"
 msgstr "This diagram has a syntax problem"
 
@@ -2636,7 +2636,7 @@ msgstr "This diagram has a syntax problem"
 msgid "This diagram has a syntax problem, so there is nothing to preview yet."
 msgstr "This diagram has a syntax problem, so there is nothing to preview yet."
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 msgid "This diagram stopped parsing. Showing the last version that rendered."
 msgstr "This diagram stopped parsing. Showing the last version that rendered."
 
@@ -2765,7 +2765,7 @@ msgstr "Type your answer…"
 msgid "ul"
 msgstr "ul"
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/mermaid-render-state.ts
 msgid "Unable to render diagram"
 msgstr "Unable to render diagram"
 

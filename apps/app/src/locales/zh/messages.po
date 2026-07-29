@@ -953,7 +953,7 @@ msgstr ""
 msgid "Edit link"
 msgstr ""
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Edit source"
@@ -2065,7 +2065,7 @@ msgstr ""
 msgid "Renamed to {trimmed}"
 msgstr ""
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 msgid "Rendering diagram…"
 msgstr ""
 
@@ -2628,7 +2628,7 @@ msgstr ""
 msgid "This device"
 msgstr ""
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 msgid "This diagram has a syntax problem"
 msgstr ""
 
@@ -2636,7 +2636,7 @@ msgstr ""
 msgid "This diagram has a syntax problem, so there is nothing to preview yet."
 msgstr ""
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/MermaidDiagramBody.tsx
 msgid "This diagram stopped parsing. Showing the last version that rendered."
 msgstr ""
 
@@ -2765,7 +2765,7 @@ msgstr ""
 msgid "ul"
 msgstr ""
 
-#: src/core/editor/MermaidCodeBlock.tsx
+#: src/core/editor/mermaid-render-state.ts
 msgid "Unable to render diagram"
 msgstr ""
 
