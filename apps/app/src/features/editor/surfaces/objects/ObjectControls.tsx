@@ -150,7 +150,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   return (
     <>
       {/* Every verb answers in one place, whichever door opened it. */}
-      <ObjectVerbNotice anchor={target?.element ?? null} notice={notice} />
+      <ObjectVerbNotice editor={editor} anchor={target?.element ?? null} notice={notice} />
 
       {target?.kind === "code" ? (
         <CodeBlockChips

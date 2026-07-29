@@ -15,6 +15,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -120,13 +121,15 @@ export function VerbNoticePill({
  * the manuscript.
  */
 export function ObjectVerbNotice({
+  editor,
   anchor,
   notice,
 }: {
+  editor: Editor;
   anchor: HTMLElement | null;
   notice: VerbNotice | null;
 }) {
-  const rect = useAnchorRect(anchor);
+  const rect = useAnchorRect(editor, anchor);
   if (!notice || !rect || typeof document === "undefined") return null;
 
   return createPortal(

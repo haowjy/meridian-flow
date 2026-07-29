@@ -77,7 +77,11 @@ export function useApproachedObject(
   }, [chrome, editor]);
 
   const selectedElement = selectedObjectElement(editor, context.owner, context.pos);
-  const active = hovered ?? selectedElement;
+  // A remembered element dies when its node view remounts — a diagram
+  // re-rendering, a peer's write rebuilding the block. Chrome is derived, never
+  // remembered, so the dead one is dropped and the selection's element, which
+  // is resolved from the document position on every render, answers instead.
+  const active = (hovered?.isConnected ? hovered : null) ?? selectedElement;
   const held = useFadeHold(active);
   const anchor = pinned ? (active ?? held) : held;
 
