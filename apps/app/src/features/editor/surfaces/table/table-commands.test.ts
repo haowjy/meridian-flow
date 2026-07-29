@@ -12,7 +12,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { hasHeaderRow } from "@/core/editor/table-operations";
 
-import { runTableVerb, selectedColumnAlignment, tableVerbStates } from "./table-commands";
+import {
+  runTableVerb,
+  selectedColumnAlignment,
+  selectTableAxis,
+  tableVerbStates,
+} from "./table-commands";
 
 let editor: Editor | null = null;
 
@@ -78,15 +83,11 @@ function caretIn(current: Editor, text: string) {
   current.commands.setTextSelection(cellPosition(current, text) + 2);
 }
 
-function selectCells(current: Editor, anchor: string, head: string) {
+function selectCells(current: Editor, anchor: string | number, head: string | number) {
+  const at = (cell: string | number) =>
+    typeof cell === "number" ? cell : cellPosition(current, cell);
   current.view.dispatch(
-    current.state.tr.setSelection(
-      CellSelection.create(
-        current.state.doc,
-        cellPosition(current, anchor),
-        cellPosition(current, head),
-      ),
-    ),
+    current.state.tr.setSelection(CellSelection.create(current.state.doc, at(anchor), at(head))),
   );
 }
 
@@ -276,6 +277,81 @@ describe("merge and split", () => {
     // cell into a new row and eating its text; the join is what prevents it.
     expect(rowText(current)).toEqual([["H1", "H2"], ["A1 A2"], ["B1", "B2"]]);
     expect(tableNode(current).childCount).toBe(3);
+  });
+
+  it("refuses to swallow the header row into the body of a column", () => {
+    const current = mount();
+    // What a column grip selects on a headed table. Upstream would merge it
+    // and keep the first cell's type: one `th` spanning the whole column, and
+    // a table that no longer has a header ROW.
+    selectTableAxis(current, cellPositionAt(current, 0, 0), "column");
+    expect(states(current).mergeCells.blockedBy).toBe("header-and-body");
+    expect(runTableVerb(current, "mergeCells")).toBe(false);
+    expect(tableNode(current).childCount).toBe(3);
+
+    // The header row on its own still merges: that is a title row.
+    selectTableAxis(current, cellPositionAt(current, 0, 0), "row");
+    expect(states(current).mergeCells.blockedBy).toBeNull();
+
+    // And a column merges once there is no header row to swallow.
+    runTableVerb(current, "headerRow");
+    selectTableAxis(current, cellPositionAt(current, 0, 0), "column");
+    expect(states(current).mergeCells.blockedBy).toBeNull();
+  });
+
+  it("keeps a hard break and an inline image, which carry no text at all", () => {
+    const current = mount();
+    // A cell whose only content is a hard break reads as empty to
+    // `textContent` and as FILLED to prosemirror-tables. Disagreeing with the
+    // library is how the break ends up ejected into a new paragraph.
+    const breakCell = cellPositionAt(current, 1, 1);
+    current.view.dispatch(
+      current.state.tr.replaceWith(
+        breakCell + 2,
+        breakCell + 2 + 2,
+        current.state.schema.nodes.hard_break.create(),
+      ),
+    );
+    selectCells(current, "A1", cellPositionAt(current, 1, 1));
+    expect(runTableVerb(current, "mergeCells")).toBe(true);
+
+    const merged = tableNode(current).child(1).child(0);
+    expect(merged.attrs.colspan).toBe(2);
+    // "A1" and the joining space coalesce into one text node, then the break.
+    expect(merged.child(0).lastChild?.type.name).toBe("hard_break");
+    expect(merged.child(0).textContent).toBe("A1 ");
+    // Nothing was pushed out of the table on the way.
+    expect(current.state.doc.childCount).toBe(2);
+  });
+
+  it("carries every paragraph of a cell into the join, in reading order", () => {
+    const current = mount();
+    selectCells(current, "A1", "A2");
+    runTableVerb(current, "mergeCells");
+    selectCells(current, "B1", "B2");
+    runTableVerb(current, "mergeCells");
+
+    const table = tableNode(current);
+    expect(table.child(1).child(0).textContent).toBe("A1 A2");
+    expect(table.child(2).child(0).textContent).toBe("B1 B2");
+    expect(current.state.doc.childCount).toBe(2);
+  });
+
+  it("does not claim a merged cell is unmerged when several cells are selected", () => {
+    const current = mount([
+      ["A1", "A2"],
+      ["B1", "B2"],
+    ]);
+    selectCells(current, "A1", "A2");
+    runTableVerb(current, "mergeCells");
+
+    // The section row plus the row under it: upstream refuses because it is
+    // more than one cell, not because nothing here is merged.
+    selectCells(current, cellPositionAt(current, 1, 0), cellPositionAt(current, 2, 1));
+    expect(states(current).splitCell.blockedBy).toBe("many-cells-selected");
+
+    selectCells(current, cellPositionAt(current, 1, 0), cellPositionAt(current, 1, 0));
+    expect(states(current).splitCell.blockedBy).toBeNull();
   });
 
   it("holds row and column moves still while any cell is merged, with the reason", () => {

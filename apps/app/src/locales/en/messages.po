@@ -2197,6 +2197,10 @@ msgstr "Select text to change the block type."
 msgid "Select text to format it."
 msgstr "Select text to format it."
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Select the merged cell on its own to split it."
+msgstr "Select the merged cell on its own to split it."
+
 #: src/features/chat/FormBlock.tsx
 msgid "Select…"
 msgstr "Select…"
@@ -2453,6 +2457,10 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 #: src/features/editor/EditorView.tsx
 #~ msgid "The figure uploaded, but the editor could not insert it."
 #~ msgstr "The figure uploaded, but the editor could not insert it."
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "The header row does not merge into the body."
+msgstr "The header row does not merge into the body."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."

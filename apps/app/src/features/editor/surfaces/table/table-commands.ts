@@ -30,6 +30,7 @@ import {
   addTableRow,
   alignTableColumn,
   hasHeaderRow,
+  mergeCrossesHeader,
   mergeJoinsCellText,
   mergeTableCells,
   moveTableColumn,
@@ -80,7 +81,9 @@ export type TableBlockedReason =
   | "single-column"
   | "one-cell-selected"
   | "cells-not-rectangular"
+  | "header-and-body"
   | "not-merged"
+  | "many-cells-selected"
   | "no-column-widths";
 
 export type TableVerbState = {
@@ -164,6 +167,12 @@ export function selectedTablePlacement(state: EditorState): TablePlacement {
   return align === "center" || align === "right" ? align : "left";
 }
 
+/** Why a merge cannot run, in the order the writer would notice them. */
+function mergeRefusal(state: EditorState, cellCount: number): TableBlockedReason {
+  if (mergeCrossesHeader(state)) return "header-and-body";
+  return cellCount <= 1 ? "one-cell-selected" : "cells-not-rectangular";
+}
+
 /** How many cells the current selection covers. One means a bare caret in a cell. */
 function selectedCellCount(state: EditorState): number {
   const { selection } = state;
@@ -227,10 +236,13 @@ export function tableVerbStates(
     moveColumnRight: columnMove(columnTo >= map.width - 1),
     deleteColumn: map.width <= 1 ? blocked("single-column") : RUNS,
 
-    mergeCells: mergeTableCells(state)
+    mergeCells: mergeTableCells(state) ? RUNS : blocked(mergeRefusal(state, cellCount)),
+    // Upstream refuses a multi-cell selection BEFORE it looks for a span, so
+    // "this cell is not merged" would be a lie about a selection that contains
+    // a merged cell.
+    splitCell: splitCell(state)
       ? RUNS
-      : blocked(cellCount <= 1 ? "one-cell-selected" : "cells-not-rectangular"),
-    splitCell: splitCell(state) ? RUNS : blocked("not-merged"),
+      : blocked(cellCount > 1 ? "many-cells-selected" : "not-merged"),
 
     alignLeft: { active: alignment === "left", blockedBy: null },
     alignCenter: { active: alignment === "center", blockedBy: null },

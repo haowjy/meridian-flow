@@ -329,12 +329,23 @@ export const resetTableColumnWidths: Command = (state, dispatch) => {
 };
 
 /**
- * The cells in the selected rectangle that hold something, in reading order.
+ * prosemirror-tables' own definition of an empty cell: one childless text
+ * block. The join below MUST agree with it, because the library's merge skips
+ * exactly these cells — and a cell the two disagree about is one whose content
+ * the join leaves behind and the merge then appends as a second paragraph,
+ * which the schema fit ejects out of the table entirely.
  *
- * "Empty" is prosemirror-tables' own reckoning — one childless text block —
- * because that is what its merge skips, and the two have to agree about which
- * cells carry text or the join below would move text the merge also appends.
+ * `textContent` is not that test. A cell holding only a hard break or only an
+ * inline image carries no text and is not empty.
  */
+function isEmptyCell(cell: ProseMirrorNode): boolean {
+  const content = cell.content;
+  return (
+    content.childCount === 1 && content.child(0).isTextblock && content.child(0).childCount === 0
+  );
+}
+
+/** The cells in the selected rectangle that hold something, in reading order. */
 function filledCellsInSelection(state: EditorState): { positions: number[]; tableStart: number } {
   const rect = selectedRect(state);
   const seen = new Set<number>();
@@ -346,7 +357,7 @@ function filledCellsInSelection(state: EditorState): { positions: number[]; tabl
       if (seen.has(cellPos)) continue;
       seen.add(cellPos);
       const cell = rect.table.nodeAt(cellPos);
-      if (cell && cell.content.size > 0 && cell.textContent.length > 0) positions.push(cellPos);
+      if (cell && !isEmptyCell(cell)) positions.push(cellPos);
     }
   }
 
@@ -363,6 +374,21 @@ export function mergeJoinsCellText(state: EditorState): boolean {
 }
 
 /**
+ * Would this merge swallow the header row into the body?
+ *
+ * prosemirror-tables merges any rectangle and keeps the FIRST cell's type, so
+ * a whole-column merge on a headed table yields one header cell spanning every
+ * row: the header stops being a row and the table stops having one. Merging
+ * the header row across itself is a different thing and stays allowed — that
+ * is a title row.
+ */
+export function mergeCrossesHeader(state: EditorState): boolean {
+  if (!isInTable(state) || !(state.selection instanceof CellSelection)) return false;
+  const rect = selectedRect(state);
+  return hasHeaderRow(rect.table) && rect.top === 0 && rect.bottom > 1;
+}
+
+/**
  * Merge, under a schema where a cell holds exactly one paragraph.
  *
  * prosemirror-tables appends every filled cell's content into the merged cell,
@@ -375,34 +401,50 @@ export function mergeJoinsCellText(state: EditorState): boolean {
  * join is what goes away, and `mergeCells` stands on its own.
  */
 export const mergeTableCells: Command = (state, dispatch) => {
-  if (!mergeCells(state)) return false;
+  // The greyed menu item is the first fence and this is the second, which is
+  // the load-bearing one: nothing else stops a programmatic merge from taking
+  // the header row with it.
+  if (!mergeCells(state) || mergeCrossesHeader(state)) return false;
   if (!dispatch) return true;
 
   const { positions, tableStart } = filledCellsInSelection(state);
   if (positions.length < 2) return mergeCells(state, dispatch);
 
   const table = selectedRect(state).table;
+  const paragraph = state.schema.nodes.paragraph;
+  if (!paragraph) return mergeCells(state, dispatch);
+
+  // Every inline node of every block of every filled cell, in reading order,
+  // with a space between the runs. Blocks, not just the first: a cell that can
+  // hold several paragraphs must not lose the ones after the first, and the
+  // order the writer sees is the order they land in.
   const space = state.schema.text(" ");
   let joined = Fragment.empty;
   for (const cellPos of positions) {
-    const paragraph = table.nodeAt(cellPos)?.firstChild;
-    if (!paragraph || paragraph.content.size === 0) continue;
-    joined =
-      joined.size === 0
-        ? paragraph.content
-        : joined.append(Fragment.from(space)).append(paragraph.content);
+    table.nodeAt(cellPos)?.content.forEach((block) => {
+      if (block.content.size === 0) return;
+      joined =
+        joined.size === 0
+          ? block.content
+          : joined.append(Fragment.from(space)).append(block.content);
+    });
   }
 
-  // Back to front: rewriting a cell's text moves everything after it, and
-  // nothing before it.
+  // Back to front: rewriting a cell moves everything after it, nothing before.
+  // Each cell's WHOLE content is replaced, so no block survives to be appended
+  // by the merge and fitted back out of the table.
   const tr = state.tr;
   for (const cellPos of [...positions].reverse()) {
-    const paragraph = table.nodeAt(cellPos)?.firstChild;
-    if (!paragraph) continue;
-    const from = tableStart + cellPos + 2;
-    const to = from + paragraph.content.size;
-    if (cellPos === positions[0]) tr.replaceWith(from, to, joined);
-    else tr.delete(from, to);
+    const cell = table.nodeAt(cellPos);
+    if (!cell) continue;
+    const from = tableStart + cellPos + 1;
+    const to = from + cell.content.size;
+    const attrs = cell.firstChild?.attrs ?? null;
+    tr.replaceWith(
+      from,
+      to,
+      cellPos === positions[0] ? paragraph.create(attrs, joined) : paragraph.create(attrs),
+    );
   }
 
   const withText = state.apply(tr);

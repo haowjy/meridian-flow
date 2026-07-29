@@ -2197,6 +2197,10 @@ msgstr ""
 msgid "Select text to format it."
 msgstr ""
 
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "Select the merged cell on its own to split it."
+msgstr ""
+
 #: src/features/chat/FormBlock.tsx
 msgid "Select…"
 msgstr ""
@@ -2453,6 +2457,10 @@ msgstr ""
 #: src/features/editor/EditorView.tsx
 #~ msgid "The figure uploaded, but the editor could not insert it."
 #~ msgstr ""
+
+#: src/features/editor/surfaces/table/table-copy.ts
+msgid "The header row does not merge into the body."
+msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."

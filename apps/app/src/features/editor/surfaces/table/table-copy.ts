@@ -96,8 +96,12 @@ export function tableBlockedMessage(
       return t`Select more than one cell to merge them.`;
     case "cells-not-rectangular":
       return t`Merging works on a rectangle of cells.`;
+    case "header-and-body":
+      return t`The header row does not merge into the body.`;
     case "not-merged":
       return t`This cell is not merged.`;
+    case "many-cells-selected":
+      return t`Select the merged cell on its own to split it.`;
     case "no-column-widths":
       return t`No column has been resized yet.`;
   }
