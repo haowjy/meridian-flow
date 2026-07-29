@@ -13,6 +13,8 @@
 
 import type { EditorView } from "@tiptap/pm/view";
 
+import { isObjectBodyDragSource } from "@/core/editor/objects";
+
 import { type BlockTarget, blockAt } from "./block-targets";
 
 /** Matches mockup 08: a 22×24 grip. */
@@ -133,6 +135,72 @@ export function blockUnderPointer(
   return clientY >= rect.top - BLOCK_HOVER_SLACK_PX && clientY <= rect.bottom + BLOCK_HOVER_SLACK_PX
     ? block
     : null;
+}
+
+/**
+ * Controls a node view puts inside its own body: a figure's alt and caption
+ * fields, an image's retry button. A press on one of those is about the
+ * control, and it is still not a drag the browser may run away with.
+ */
+const OBJECT_BODY_CONTROLS = "input, textarea, select, button, a[href]";
+
+/**
+ * The block a press on an object's body should drag, or null when the press is
+ * not on one (§5.8).
+ *
+ * `posAtCoords` reports `inside`: the innermost node the coordinates landed in,
+ * which for a picture is the picture and for a sentence is its paragraph. That
+ * is the whole test — the registry says which bodies are drag sources, so prose
+ * and table cells decline by being what they are, without a node name here.
+ *
+ * The pointer's own x, not the column-corrected x `blockUnderPointer` uses: a
+ * press in the margin beside a picture is a press on the margin.
+ *
+ * What moves is the object's top-level block, the same unit the margin handle
+ * points at. An uploaded picture is an inline image alone in a paragraph, and
+ * moving that paragraph is what moves the picture.
+ */
+export function objectBodyDragTarget(view: EditorView, event: PointerEvent): BlockTarget | null {
+  if (!(event.target instanceof Element)) return null;
+  if (onEditableText(event.target) || event.target.closest(OBJECT_BODY_CONTROLS)) return null;
+
+  const object = objectBodyAt(view, event.clientX, event.clientY);
+  return object === null ? null : blockAt(view.state.doc, object);
+}
+
+/**
+ * True when the browser's own drag would carry an object off.
+ *
+ * A wider question than where a block drag may begin, and deliberately so: a
+ * press on a figure's caption field belongs to the field, but a native drag
+ * out of it still takes the whole figure through a serialize-and-reparse that
+ * has brought one back as a bare paragraph. Text the writer selected inside a
+ * source fence is the one thing still theirs to drag.
+ */
+export function nativeDragCarriesObject(view: EditorView, event: DragEvent): boolean {
+  if (event.target instanceof Element && onEditableText(event.target)) return false;
+  return objectBodyAt(view, event.clientX, event.clientY) !== null;
+}
+
+/**
+ * True when the element is text the writer can type into, rather than the
+ * inert surface a node view draws in front of its own content.
+ *
+ * This is what keeps a mermaid fence honest. The same node is a diagram when
+ * it renders and its own source when the caret is inside it, and one
+ * registration cannot say which — but the DOM can: ProseMirror owns that
+ * text, and everything standing in for it is `contenteditable="false"`.
+ */
+function onEditableText(element: Element): boolean {
+  return element.closest("[contenteditable]")?.getAttribute("contenteditable") !== "false";
+}
+
+/** The position of the drag-source object under these coordinates, if any. */
+function objectBodyAt(view: EditorView, clientX: number, clientY: number): number | null {
+  const at = view.posAtCoords({ left: clientX, top: clientY });
+  if (!at || at.inside < 0) return null;
+  const node = view.state.doc.nodeAt(at.inside);
+  return node && isObjectBodyDragSource(node) ? at.inside : null;
 }
 
 /**

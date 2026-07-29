@@ -118,6 +118,10 @@ msgstr "{days}天"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
+msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+msgstr ""
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"

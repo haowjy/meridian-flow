@@ -50,6 +50,7 @@ import { getDocumentSessionRegistry } from "@/core/editor/document-session-regis
 import type { SlashCommandItem } from "@/core/editor/extensions/slash";
 import {
   createEditorAssetPathResolver,
+  fileDropIntent,
   imageAltFromFilename,
   imageAttrsFromUpload,
   isImageFile,
@@ -145,9 +146,16 @@ function mountIdentity(props: EditorViewProps): EditorMountIdentity {
     : { ...shared, surface: "live", detached: props.detached ?? false };
 }
 
-function droppedImageFile(event: DragEvent): File | null {
-  const files = Array.from(event.dataTransfer?.files ?? []);
-  return files.find(isImageFile) ?? null;
+/**
+ * True while a drag carries files.
+ *
+ * `dataTransfer.files` is empty until the drop itself, so the approach cannot
+ * ask what KIND of file is coming — only that one is. That is enough for what
+ * the approach has to do: claim the drop, so the browser does not navigate to
+ * the file the moment it lands.
+ */
+function draggingFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
 }
 
 /**
@@ -469,6 +477,22 @@ function ActiveSessionEditorView({
     }, 3000);
   }, []);
 
+  /**
+   * A dropped file the editor cannot use, refused in the same strip an upload
+   * reports in (law 5: the reason is in view, and it names the file). Nothing
+   * is inserted and the page stays exactly where the writer left it.
+   */
+  const refuseDroppedFile = useCallback(
+    (filename: string) => {
+      setImageUploadState({
+        kind: "error",
+        message: t`${filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG.`,
+      });
+      clearUploadLater();
+    },
+    [clearUploadLater],
+  );
+
   const uploadImageFile = useCallback(
     async (file: File): Promise<ImageAttrs> => {
       if (!projectId) throw new Error(t`A project is required before images can be uploaded.`);
@@ -562,13 +586,20 @@ function ActiveSessionEditorView({
         return true;
       },
       handleDrop(view, event) {
-        if (!view.editable) return false;
-        const file = droppedImageFile(event);
-        if (!file) return false;
+        const intent = fileDropIntent(Array.from(event.dataTransfer?.files ?? []));
+        if (!intent) return false;
+        // Claimed before anything else is decided, including whether the
+        // editor can take it: the browser's own answer to a file nobody
+        // claimed is to navigate to it, and the manuscript would be gone.
         event.preventDefault();
         setDragActive(false);
+        if (!view.editable) return true;
+        if (intent.kind === "refuse") {
+          refuseDroppedFile(intent.filename);
+          return true;
+        }
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-        void handleImageFile(file, pos);
+        void handleImageFile(intent.file, pos);
         return true;
       },
       // Assets travel as stable refs inside the editor and as project-relative
@@ -608,13 +639,15 @@ function ActiveSessionEditorView({
           return true;
         },
         dragenter(view, event) {
-          if (view.editable && droppedImageFile(event as DragEvent)) setDragActive(true);
+          if (view.editable && draggingFiles(event as DragEvent)) setDragActive(true);
           return false;
         },
         dragover(view, event) {
-          if (!view.editable || !droppedImageFile(event as DragEvent)) return false;
+          if (!draggingFiles(event as DragEvent)) return false;
+          // The drop is claimed here, before the file's name is knowable: a
+          // dragover nobody claims is a drop the browser navigates to.
           event.preventDefault();
-          setDragActive(true);
+          if (view.editable) setDragActive(true);
           return true;
         },
         dragleave(_view, event) {
@@ -625,7 +658,7 @@ function ActiveSessionEditorView({
         },
       },
     }),
-    [ariaLabel, assetPathResolver, handleImageFile, openPeerMark, showToolbar],
+    [ariaLabel, assetPathResolver, handleImageFile, openPeerMark, refuseDroppedFile, showToolbar],
   );
 
   const editor = useMountedEditor({

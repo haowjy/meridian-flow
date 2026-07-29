@@ -8,9 +8,10 @@ goes home — with nothing about any particular object in it.
 ## Mental model
 
 `EDITOR_OBJECT_TYPES` is the whole per-type story: a node name, an optional
-predicate for types that are only sometimes objects, and what Enter means. A
-lane that ships a new object type adds one row and, if Enter opens a surface,
-registers the handler from its mounted React component.
+predicate for types that are only sometimes objects, what the pointer finds
+inside the object, and what Enter means. A lane that ships a new object type
+adds one row and, if Enter opens a surface, registers the handler from its
+mounted React component.
 
 Object-ness is a **registration, never a structural guess**. ProseMirror cannot
 tell a figure from a blockquote, and a mermaid diagram is a `code_block` whose
@@ -33,6 +34,13 @@ re-deriving it, so there is one answer to "is this an object".
 - **Click reads** (law 1). `handleClickOn` acts only on the node the pointer
   directly hit; without that, a click in a table cell would walk out and select
   the whole table.
+- **`body` decides whether the object can be grabbed** (§5.8). An `opaque`
+  body — a picture, a rule, a rendered diagram — is a drag source: pressing it
+  starts the same block drag the margin handle starts, in
+  [`surfaces/blocks`](../../../features/editor/surfaces/blocks/AGENTS.md). A
+  `text` body declines, because a table's cells already own the pointer that
+  sweeps across them. The registration is the answer; nothing downstream reads
+  a node name to guess it.
 - **Arrows never leap out of a sentence.** A block object is beside the caret
   only at the very edge of its text block; an inline image is beside it
   directly.

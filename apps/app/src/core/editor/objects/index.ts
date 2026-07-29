@@ -27,7 +27,9 @@ export {
 export {
   EDITOR_OBJECT_TYPES,
   isEditorObject,
+  isObjectBodyDragSource,
   isSourceBlock,
+  type ObjectBody,
   type ObjectEngageIntent,
   type ObjectTypeSpec,
   objectTypeSpec,

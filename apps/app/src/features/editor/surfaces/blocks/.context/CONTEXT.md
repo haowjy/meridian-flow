@@ -57,6 +57,43 @@ writer's intent, the rendered geometry under it is the truth, and a seam is
 only ever a reading of the two — which is also why the line stays under the
 pointer when the document shifts, rather than chasing content that moved.
 
+### Two doors into it
+
+The margin handle is one drag source and an object's body is the other, and
+they are the same gesture: `beginGesture` takes the press whichever door it
+came through, so both hold one block, take one kernel drag token, and end in
+one finalizer. Which objects offer their body is
+`EDITOR_OBJECT_TYPES`'s `body` column, read through `isObjectBodyDragSource` —
+`opaque` for a picture, a figure, a rule and a rendered diagram, `text` for a
+table, whose cells own the pointer that sweeps across them.
+
+Three differences between the doors, each forced:
+
+| | Handle | Object body |
+|---|---|---|
+| the press | prevented, so the caret stays where the writer left it | not prevented, or law 1's click never reaches ProseMirror and the object stops selecting |
+| pointer capture | taken, so a touch drag is not a page scroll | none: capture retargets the mouse events ProseMirror reads to decide a click |
+| a press that never travels | opens the menu | left alone, and ProseMirror turns it into the jade ring |
+
+The body door is mouse-only. A finger has no cursor to aim with and a drag
+under it is the page scrolling; touch reaches the same move through the handle
+it taps.
+
+Two answers the browser would give instead are refused. Its own HTML5 drag,
+wherever it would carry an object off — ProseMirror arms it on mousedown, it
+draws no drop line, and it moves a node by serializing and re-parsing it, which
+brought a figure back as a bare paragraph. And a text selection growing out of
+the object, for as long as a body gesture owns the pointer. Prose that merely
+runs THROUGH an object is untouched: that selection starts somewhere else, so
+no gesture begins.
+
+What the pointer landed on decides, not only what the registry says. Text
+ProseMirror owns is never a drag source — a mermaid fence is a diagram when it
+renders and its own source when the caret is in it, and the DOM answers what
+one registration cannot, because everything standing in for that text is
+`contenteditable="false"`. Controls an object embeds (a figure's alt and
+caption fields) belong to the control.
+
 A press becomes a drag only after 4px of travel — the same slop the kernel uses
 for a sweep. Before that it is still a click, and telling the kernel otherwise
 would blank every surface on the page for the length of a menu press.
@@ -89,6 +126,17 @@ every drag on its own first frame.
 | handle x | the prose column's left text edge, less `HANDLE_CLEARANCE` and its own width |
 | handle y | the block's first LINE (its padding plus half the leading), not its box |
 | drop line | the prose column's edges, at the midpoint between two blocks |
+
+### Measured on a frame
+
+Both readings are `getBoundingClientRect` and `getComputedStyle` against a DOM
+ProseMirror has only just rewritten, and this surface re-renders on every
+transaction — the writer's keystrokes, a peer typing, an AI write landing.
+Measuring them in render forced a synchronous layout on each one.
+`useBlockChromePlacement` schedules a frame instead and moves state only when
+the numbers moved, so a transaction that changed nothing on screen costs one
+measurement and no render. The pointer's own moves are measured at once: the
+drop line belongs under the pointer on the frame the writer moved it.
 
 ### The left margin is shared
 

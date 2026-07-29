@@ -4,7 +4,12 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
-import { isEditorObject, isSourceBlock, objectTypeSpec } from "./object-types";
+import {
+  isEditorObject,
+  isObjectBodyDragSource,
+  isSourceBlock,
+  objectTypeSpec,
+} from "./object-types";
 
 let editor: Editor | null = null;
 
@@ -63,6 +68,48 @@ describe("what counts as an object", () => {
       objectTypeSpec(nodeOfType([{ type: "figure", attrs: { src: "a", caption: "" } }], "figure"))
         ?.engage,
     ).toBe("surface");
+  });
+});
+
+describe("which bodies a writer can grab", () => {
+  it("offers a picture and a rule, and leaves a table's cells their own pointer", () => {
+    expect(
+      isObjectBodyDragSource(
+        nodeOfType([{ type: "figure", attrs: { src: "a", caption: "" } }], "figure"),
+      ),
+    ).toBe(true);
+    expect(
+      isObjectBodyDragSource(nodeOfType([{ type: "horizontal_rule" }], "horizontal_rule")),
+    ).toBe(true);
+    expect(
+      isObjectBodyDragSource(
+        nodeOfType(
+          [
+            {
+              type: "table",
+              content: [
+                {
+                  type: "table_row",
+                  content: [
+                    { type: "table_cell", content: [{ type: "paragraph" }] },
+                    { type: "table_cell", content: [{ type: "paragraph" }] },
+                  ],
+                },
+              ],
+            },
+          ],
+          "table",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("says nothing about prose, which has no body to grab", () => {
+    expect(
+      isObjectBodyDragSource(
+        nodeOfType([{ type: "paragraph", content: [{ type: "text", text: "x" }] }], "paragraph"),
+      ),
+    ).toBe(false);
   });
 });
 
