@@ -55,6 +55,41 @@ function mountWithTrigger(text: string, trigger: string, trailing: JSONContent[]
   return { editor, range: { from, to: from + trigger.length } };
 }
 
+/**
+ * Mounts arbitrary structure and finds the `/x` a writer typed inside it, so a
+ * nested case reads as the document it is rather than as position arithmetic.
+ */
+const TRIGGER = "/x";
+
+function mountAround(content: JSONContent[]) {
+  editor = new Editor({
+    extensions: createStandaloneEditorExtensions(),
+    content: { type: "doc", content },
+  });
+  let from: number | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (from !== null) return false;
+    if (!node.isText) return true;
+    const index = node.text?.indexOf(TRIGGER) ?? -1;
+    if (index >= 0) from = pos + index;
+    return true;
+  });
+  if (from === null) throw new Error("fixture has no trigger");
+  return { editor, range: { from, to: from + TRIGGER.length } };
+}
+
+const listItem = (text: string): JSONContent => ({
+  type: "list_item",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }],
+});
+
+const cell = (text: string): JSONContent => ({
+  type: "table_cell",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }],
+});
+
+const row = (...cells: JSONContent[]): JSONContent => ({ type: "table_row", content: cells });
+
 /** The node types the caret's block chain sits in, outermost first. */
 function caretChain(instance: Editor): string[] {
   const { $from } = instance.state.selection;
@@ -155,5 +190,113 @@ describe("slash insertion semantics", () => {
 
     expect(instance.state.doc.textContent).toBe("Keep this. ");
     expect(caretChain(instance)).toEqual(["blockquote", "paragraph"]);
+  });
+});
+
+/**
+ * §5.7 says the new block lands "after the current one", and inside a list or
+ * a table that sentence needs a level. A list item exists only as part of its
+ * list and a cell only as part of its table, so "after" means after the whole
+ * structure: a table wedged inside a bullet, or a command that silently does
+ * nothing because the cell will not take it (law 5), is not what the writer
+ * asked for.
+ */
+describe("slash insertion out of nested structures", () => {
+  it("lands after the whole list, not inside the item", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "bullet_list", content: [listItem(`hello ${TRIGGER}`)] },
+    ]);
+    const applied = applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(applied).toBe(true);
+    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
+    expect(instance.state.doc.firstChild?.childCount).toBe(1);
+    expect(instance.state.doc.firstChild?.textContent).toBe("hello ");
+  });
+
+  it("keeps a multi-item list whole and lands after it", () => {
+    const { editor: instance, range } = mountAround([
+      {
+        type: "bullet_list",
+        content: [listItem("first"), listItem(`second ${TRIGGER}`), listItem("third")],
+      },
+    ]);
+    applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
+    expect(instance.state.doc.firstChild?.childCount).toBe(3);
+    expect(instance.state.doc.firstChild?.textContent).toBe("firstsecond third");
+  });
+
+  it("escapes a nested list all the way out", () => {
+    const { editor: instance, range } = mountAround([
+      {
+        type: "bullet_list",
+        content: [
+          {
+            type: "list_item",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "outer" }] },
+              { type: "bullet_list", content: [listItem(`inner ${TRIGGER}`)] },
+            ],
+          },
+        ],
+      },
+    ]);
+    applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
+    expect(instance.state.doc.firstChild?.textContent).toBe("outerinner ");
+  });
+
+  it("lands after the whole table from any cell", () => {
+    for (const target of ["first", "middle", "last"]) {
+      const cells = ["first", "middle", "last"].map((name) =>
+        cell(name === target ? `${name} ${TRIGGER}` : name),
+      );
+      const { editor: instance, range } = mountAround([
+        { type: "table", content: [row(...cells)] },
+      ]);
+      const applied = applySlashCommand(instance, range, item("table"), catalog());
+
+      expect(applied, `from the ${target} cell`).toBe(true);
+      expect(blockTypes(instance), `from the ${target} cell`).toEqual(["table", "table"]);
+      expect(instance.state.doc.firstChild?.textContent).toBe(
+        `first${target === "first" ? " " : ""}middle${target === "middle" ? " " : ""}last${target === "last" ? " " : ""}`,
+      );
+      instance.destroy();
+    }
+  });
+
+  it("carries a text entry out of a list too", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "bullet_list", content: [listItem(`hello ${TRIGGER}`)] },
+    ]);
+    applySlashCommand(instance, range, item("heading-2"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["bullet_list", "heading"]);
+    expect(caretChain(instance)).toEqual(["heading"]);
+  });
+
+  /**
+   * A quote is not an owning structure: its children ARE free-standing blocks
+   * that happen to be quoted, so the new one belongs inside it. Pinned because
+   * it is the deliberate other side of the rule above.
+   */
+  it("stays inside a quote", () => {
+    const { editor: instance, range } = mountAround([
+      {
+        type: "blockquote",
+        content: [{ type: "paragraph", content: [{ type: "text", text: `she wrote ${TRIGGER}` }] }],
+      },
+    ]);
+    applySlashCommand(instance, range, item("code"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["blockquote"]);
+    expect(instance.state.doc.firstChild?.content.content.map((node) => node.type.name)).toEqual([
+      "paragraph",
+      "code_block",
+    ]);
+    expect(caretChain(instance)).toEqual(["blockquote", "code_block"]);
   });
 });

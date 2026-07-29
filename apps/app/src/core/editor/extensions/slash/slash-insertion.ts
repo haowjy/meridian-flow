@@ -17,10 +17,9 @@
  */
 
 import type { Editor, JSONContent, Range } from "@tiptap/core";
-import type { NodeType, Node as PMNode } from "@tiptap/pm/model";
+import type { NodeType, Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 import { Selection } from "@tiptap/pm/state";
-import { insertPoint } from "@tiptap/pm/transform";
 
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
 
@@ -104,12 +103,38 @@ export type SlashTarget =
   | { mode: "insert-after"; pos: number };
 
 /**
+ * Nodes whose parts are not free-standing blocks. A list item exists only as
+ * part of its list, a cell only as part of its table, so a block asked for
+ * from inside one belongs after the whole structure rather than wedged into
+ * a bullet. A blockquote is deliberately absent: its children ARE ordinary
+ * blocks that happen to be quoted, and a writer quoting a passage who asks for
+ * a code block wants it in the quote.
+ */
+const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
+  "bullet_list",
+  "ordered_list",
+  "list_item",
+  "table",
+  "table_row",
+  "table_header",
+  "table_cell",
+]);
+
+/**
  * Where the chosen node goes, decided from the document AFTER the `/` and its
  * filter text are gone — so "is this block empty" is a plain question about
  * the block rather than arithmetic on the trigger's range.
  *
- * Returns null when the schema will not take the node anywhere near the caret;
- * the caller declines rather than dropping it somewhere surprising.
+ * The outward search is the lane's own rather than prosemirror-transform's
+ * `insertPoint`, which answers a different question. `insertPoint` takes the
+ * first schema-legal parent and stops climbing the moment the position has a
+ * sibling on the relevant side, so from a list item it lands a table INSIDE
+ * the bullet (`list_item` permits `paragraph block*`), and from any cell but
+ * the last it returns null and the visible command silently does nothing
+ * (law 5). Structure is a domain question here, not a schema one.
+ *
+ * Returns null only when nothing from the caret up to the document will hold
+ * the node; the caller declines rather than dropping it somewhere surprising.
  */
 export function slashTarget(doc: PMNode, pos: number, type: NodeType): SlashTarget | null {
   const $pos = doc.resolve(pos);
@@ -123,10 +148,25 @@ export function slashTarget(doc: PMNode, pos: number, type: NodeType): SlashTarg
     $pos.node(depth - 1).canReplaceWith(index, index + 1, type);
   if (convertible) return { mode: "convert", from: $pos.before(depth), to: $pos.after(depth) };
 
-  // Searching outward from just after the block is what puts a table after the
-  // whole list rather than inside a list item that cannot hold one.
-  const pointAfter = insertPoint(doc, $pos.after(depth), type);
-  return pointAfter === null ? null : { mode: "insert-after", pos: pointAfter };
+  // Start outside every owning structure the caret is in — the outermost one,
+  // so a nested list is escaped whole — then take the first level that will
+  // hold the node. `doc` accepts `block+`, so the walk always has a floor.
+  for (let level = escapedDepth($pos); level >= 1; level -= 1) {
+    const parent = $pos.node(level - 1);
+    const insertIndex = $pos.indexAfter(level - 1);
+    if (parent.canReplaceWith(insertIndex, insertIndex, type)) {
+      return { mode: "insert-after", pos: $pos.after(level) };
+    }
+  }
+  return null;
+}
+
+/** The depth whose node the insertion goes after: the outermost owning structure, else the block itself. */
+function escapedDepth($pos: ResolvedPos): number {
+  for (let level = 1; level <= $pos.depth; level += 1) {
+    if (OWNING_STRUCTURES.has($pos.node(level).type.name)) return level;
+  }
+  return $pos.depth;
 }
 
 /** Runs the writer's choice: consume the trigger text, make the node, land the caret. */
