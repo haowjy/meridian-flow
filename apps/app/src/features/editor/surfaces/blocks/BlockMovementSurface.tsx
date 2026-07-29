@@ -32,6 +32,7 @@ import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { GripVertical } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { type BlockHold, followBlock, holdBlock } from "@/core/editor/anchors";
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
 import {
   CHROME_TIMING,
@@ -57,15 +58,12 @@ import {
   seamLinePosition,
 } from "./block-geometry";
 import {
-  type BlockHold,
   type BlockMoveDirection,
   type BlockTarget,
   blockAt,
   blockForSelection,
   deleteBlockTransaction,
   duplicateBlockTransaction,
-  followBlock,
-  holdBlock,
   moveBlockStepTransaction,
   moveBlockToSeamTransaction,
   selectionIsInsideTable,
