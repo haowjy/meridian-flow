@@ -27,9 +27,11 @@ import {
   useChromeLayer,
 } from "@/features/editor/chrome";
 
+import { useFenceDraft } from "./fence-draft";
 import { type ObjectSurfaceTarget, renderedImage } from "./object-anchors";
-import { copyText, downloadPng, fenceSource, setFenceSource } from "./object-commands";
+import { copyText, downloadPng } from "./object-commands";
 import { ViewerCanvas } from "./ViewerCanvas";
+import { useVerbFeedback, VerbNoticePill } from "./verb-feedback";
 
 /** Long enough to read as a pause in typing, short enough to feel live. */
 const PREVIEW_DEBOUNCE_MS = 350;
@@ -83,11 +85,22 @@ export function ObjectLightbox({
  * Right padding leaves the dialog's own close control its corner: two controls
  * sharing one corner is how a writer presses the other one.
  */
-function LightboxHeader({ title, menu }: { title: string; menu?: ReactNode }) {
+function LightboxHeader({
+  title,
+  menu,
+  notice,
+}: {
+  title: string;
+  menu?: ReactNode;
+  notice?: ReactNode;
+}) {
   return (
     <div className="meridian-lightbox-header">
       <span className="font-medium text-ink-muted text-sm">{title}</span>
       <span className="flex-1" />
+      {/* Inside the dialog, because the page's own notices are behind the
+          scrim and a writer who just pressed something is looking here. */}
+      {notice}
       {menu}
     </div>
   );
@@ -105,7 +118,12 @@ function DiagramFace({
   onSourceOpenChange: (open: boolean) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const source = fenceSource(editor, target.pos);
+  const { notice, run } = useVerbFeedback();
+  // The pane's value and its change handler come from one place, because
+  // interpreting a textarea's string as an edit needs to know which version of
+  // the document it was typed against.
+  const draft = useFenceDraft(editor, target);
+  const source = draft.value;
   // The preview follows a pause in typing rather than every keystroke: mermaid
   // reparses the whole diagram per render, and a half-typed arrow is not a
   // diagram yet.
@@ -137,6 +155,7 @@ function DiagramFace({
     <>
       <LightboxHeader
         title={t`Diagram`}
+        notice={<VerbNoticePill notice={notice} />}
         menu={
           <EditorMenu
             editor={editor}
@@ -155,14 +174,16 @@ function DiagramFace({
               {sourceOpen ? t`Hide source` : t`Edit source`}
             </EditorMenuItem>
             <EditorMenuSeparator />
-            <EditorMenuItem onSelect={() => void copyText(source)}>
+            <EditorMenuItem onSelect={() => run(copyText(source), t`Mermaid source copied`)}>
               <Copy aria-hidden />
               {t`Copy Mermaid source`}
             </EditorMenuItem>
             {/* Absent rather than disabled while nothing has rendered: there is
                 no image to hand over yet, and law 5 prefers the gap. */}
             {svg ? (
-              <EditorMenuItem onSelect={() => void downloadPng(svg, "diagram.png")}>
+              <EditorMenuItem
+                onSelect={() => run(downloadPng(svg, "diagram.png"), t`Image downloaded`)}
+              >
                 <Download aria-hidden />
                 {t`Download image`}
               </EditorMenuItem>
@@ -174,9 +195,8 @@ function DiagramFace({
       <div className={sourceOpen ? "meridian-lightbox-split" : "meridian-lightbox-body"}>
         {sourceOpen ? (
           <SourcePane
-            editor={editor}
-            pos={target.pos}
-            source={source}
+            value={source}
+            onChange={draft.onChange}
             // Only report a failure the writer can act on: a message about
             // source they have already changed is noise.
             error={settled === source ? error : null}
@@ -197,14 +217,12 @@ function DiagramFace({
 }
 
 function SourcePane({
-  editor,
-  pos,
-  source,
+  value,
+  onChange,
   error,
 }: {
-  editor: Editor;
-  pos: number;
-  source: string;
+  value: string;
+  onChange: (next: string) => void;
   error: string | null;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -226,8 +244,8 @@ function SourcePane({
         className="meridian-lightbox-source-text"
         spellCheck={false}
         aria-label={t`Mermaid source`}
-        value={source}
-        onChange={(event) => setFenceSource(editor, pos, event.target.value)}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
       />
       {error ? (
         <p className="meridian-lightbox-parse-note" role="status">

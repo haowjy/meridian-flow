@@ -967,3 +967,10 @@
   max-width: 100%;
   height: auto;
 }
+
+/* The answer a verb gives back, over the corner the writer just pressed. */
+.meridian-verb-notice {
+  position: fixed;
+  z-index: 31;
+  transform: translate(-100%, calc(-100% - 0.5rem));
+}

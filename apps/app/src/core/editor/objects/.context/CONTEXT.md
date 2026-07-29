@@ -13,13 +13,18 @@ first, and the kernel's
   engage: "surface" },
 ```
 
-`engage` says what Enter means:
+`engage` says what Enter — and a double-click on the object — means:
 
 | Intent | Enter does | Who performs it |
 |---|---|---|
 | `surface` | opens the object's own surface (the dialog) | the lane, via `registerObjectEngagement` |
 | `caret-inside` | drops the caret at the first text position within | the kernel |
 | `none` | nothing | nobody — but the key is still consumed |
+
+Both doors run the same registration: `handleDoubleClickOn` selects the object
+and then calls the identical `engage`, so a lane wires its surface once (§5.2's
+"click 2 / double-click / Enter opens the dialog"). A double-click in prose is
+left to the browser's word selection.
 
 `ObjectEngagement` returns `void`, and that is the contract rather than an
 omission: Enter is consumed either way, so a handler has nothing to decide. A

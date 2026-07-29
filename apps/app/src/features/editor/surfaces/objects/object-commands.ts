@@ -9,57 +9,23 @@
 import type { Editor } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
 
+/**
+ * An export that could not happen, with the reason kept.
+ *
+ * The browser's own failures arrive as `DOMException` with a name worth
+ * reading; ours need the same treatment, so `verb-feedback` has one thing to
+ * translate rather than a pile of English message strings.
+ */
+export class ExportError extends Error {
+  constructor(readonly kind: "unreadable" | "unsupported") {
+    super(kind);
+    this.name = "ExportError";
+  }
+}
+
 /** The text a code fence holds — a diagram's Mermaid source, or plain code. */
 export function fenceSource(editor: Editor, pos: number): string {
   return editor.state.doc.nodeAt(pos)?.textContent ?? "";
-}
-
-export type TextPatch = { from: number; to: number; text: string };
-
-/**
- * The smallest edit that turns `current` into `next`.
- *
- * A source pane that replaced the whole fence on every keystroke would hand
- * Yjs a delete-and-reinsert of the entire diagram per character: peer carets
- * inside it would be flung to the end, and the change trail would read as a
- * rewrite. Common prefix and suffix is all it takes to make the edit look like
- * what the writer actually did.
- */
-export function minimalTextPatch(current: string, next: string): TextPatch | null {
-  if (current === next) return null;
-
-  let prefix = 0;
-  const shortest = Math.min(current.length, next.length);
-  while (prefix < shortest && current[prefix] === next[prefix]) prefix += 1;
-
-  let suffix = 0;
-  while (
-    suffix < shortest - prefix &&
-    current[current.length - 1 - suffix] === next[next.length - 1 - suffix]
-  ) {
-    suffix += 1;
-  }
-
-  return {
-    from: prefix,
-    to: current.length - suffix,
-    text: next.slice(prefix, next.length - suffix),
-  };
-}
-
-/** Rewrite a fence's text in place, as the smallest edit that gets there. */
-export function setFenceSource(editor: Editor, pos: number, next: string): boolean {
-  const node = editor.state.doc.nodeAt(pos);
-  if (!node) return false;
-
-  const patch = minimalTextPatch(node.textContent, next);
-  if (!patch) return false;
-
-  const start = pos + 1;
-  editor.view.dispatch(
-    editor.state.tr.insertText(patch.text, start + patch.from, start + patch.to),
-  );
-  return true;
 }
 
 export function setFenceLanguage(editor: Editor, pos: number, language: string): boolean {
@@ -123,7 +89,7 @@ export async function svgToPngBlob(svg: string): Promise<Blob> {
     const image = new Image();
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
-      image.onerror = () => reject(new Error("The diagram could not be rasterized"));
+      image.onerror = () => reject(new ExportError("unsupported"));
       image.src = url;
     });
 
@@ -131,13 +97,13 @@ export async function svgToPngBlob(svg: string): Promise<Blob> {
     canvas.width = width * EXPORT_PIXEL_RATIO;
     canvas.height = height * EXPORT_PIXEL_RATIO;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("The diagram could not be rasterized");
+    if (!context) throw new ExportError("unsupported");
     context.scale(EXPORT_PIXEL_RATIO, EXPORT_PIXEL_RATIO);
     context.drawImage(image, 0, 0, width, height);
 
     return await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error("The diagram could not be rasterized"))),
+        (blob) => (blob ? resolve(blob) : reject(new ExportError("unsupported"))),
         "image/png",
       );
     });
@@ -189,9 +155,9 @@ export function renderedDiagramSvg(element: HTMLElement): string | null {
  * instead of assuming success (law 5).
  */
 export async function copyImageFrom(url: string): Promise<void> {
-  if (!url) throw new Error("The image has no source to copy");
+  if (!url) throw new ExportError("unreadable");
   const response = await fetch(url);
-  if (!response.ok) throw new Error("The image could not be read");
+  if (!response.ok) throw new ExportError("unreadable");
   const blob = await response.blob();
 
   // PNG is the only raster type every clipboard implementation accepts; a JPEG
@@ -201,9 +167,9 @@ export async function copyImageFrom(url: string): Promise<void> {
 }
 
 export async function downloadImageFrom(url: string, filename?: string): Promise<void> {
-  if (!url) throw new Error("The image has no source to download");
+  if (!url) throw new ExportError("unreadable");
   const response = await fetch(url);
-  if (!response.ok) throw new Error("The image could not be read");
+  if (!response.ok) throw new ExportError("unreadable");
   const objectUrl = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = objectUrl;
@@ -222,7 +188,7 @@ async function transcodeToPng(blob: Blob): Promise<Blob> {
 
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
-      (png) => (png ? resolve(png) : reject(new Error("The image could not be converted"))),
+      (png) => (png ? resolve(png) : reject(new ExportError("unsupported"))),
       "image/png",
     );
   });

@@ -34,6 +34,10 @@ equation solved for whichever end is known, pure and DOM-free;
 - **View state is disposable** (decision 2026-07-29). Nothing persists; a
   viewer that is destroyed and rebuilt opens fitted. There is no restore path
   to keep honest.
+- **The host and the content belong to the caller.** Every property the viewer
+  writes is snapshotted at mount and written back by `destroy()`, which also
+  releases live pointer captures and makes the instance inert. Borrowing DOM
+  and not giving it back is how a viewer quietly takes over an element.
 - **Drag pans, so drag does not select.** `pointerdown` prevents default,
   which costs text selection inside the content. Accepted deliberately for the
   diagram (its ⋮ copies the source); a caller that needs selectable content

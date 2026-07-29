@@ -90,5 +90,12 @@ as a diagram that creeps every time the writer changes their mind.
 - The `wheel` listener is registered non-passive because it calls
   `preventDefault`; without that the page behind a dialog scrolls under the
   diagram.
-- `destroy()` really does restore the caller's DOM — the only property the
-  viewer ever wrote is `transform` on a wrapper the caller owns.
+- `destroy()` restores the caller's DOM: `transform`, `transformOrigin`, and
+  `willChange` are snapshotted at mount and written back, live pointer captures
+  are released, and `data-panning` is cleared. It is idempotent, and every API
+  call after it is inert — a React effect or a settled promise arriving late
+  must not write to an element the caller has moved on from.
+- `lostpointercapture` is handled as well as `pointerup` and `pointercancel`.
+  The browser releases capture implicitly on the first two, but a capture lost
+  another way — an element detaching mid-drag — would otherwise leave the
+  viewer believing a finger is still down.

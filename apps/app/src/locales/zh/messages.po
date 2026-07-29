@@ -546,6 +546,10 @@ msgstr ""
 msgid "Code blocks take no links."
 msgstr ""
 
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Code copied"
+msgstr ""
+
 #: src/features/editor/EditorCodeBubble.tsx
 #~ msgid "Code language"
 #~ msgstr ""
@@ -609,8 +613,6 @@ msgid "Context"
 msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
-#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
 msgid "Copied"
 msgstr ""
 
@@ -632,8 +634,8 @@ msgid "Copy removed text"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectControls.tsx
-msgid "Could not copy. Try again."
-msgstr ""
+#~ msgid "Could not copy. Try again."
+#~ msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
@@ -1216,8 +1218,17 @@ msgstr ""
 #~ msgid "Image controls"
 #~ msgstr ""
 
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+msgid "Image copied"
+msgstr ""
+
 #: src/core/editor/asset-image-render-state.ts
 msgid "Image could not be displayed."
+msgstr ""
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Image downloaded"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
@@ -1463,6 +1474,11 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Mermaid source"
+msgstr ""
+
+#: src/features/editor/surfaces/objects/ObjectControls.tsx
+#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
+msgid "Mermaid source copied"
 msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
@@ -1812,9 +1828,9 @@ msgstr ""
 msgid "picture"
 msgstr ""
 
-#: src/features/editor/EditorCodeBubble.tsx
-#~ msgid "Plain text"
-#~ msgstr ""
+#: src/features/editor/surfaces/objects/CodeBlockChips.tsx
+msgid "Plain text"
+msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
@@ -2348,8 +2364,16 @@ msgstr ""
 msgid "That chapter is no longer available, so this change can't be reversed."
 msgstr ""
 
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "That did not work."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
+msgstr ""
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "That image could not be read."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -2382,6 +2406,10 @@ msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
+msgstr ""
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
 
 #: src/routes/dev-login.tsx
@@ -2427,6 +2455,14 @@ msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
+msgstr ""
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "This browser will not export this diagram as an image. Copy the Mermaid source instead."
+msgstr ""
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "This browser will not turn that into an image."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx

@@ -10,21 +10,17 @@
  * Diagram and image rows are `OverlayIconRow`s. A code block gets the chip
  * cluster instead (ruling 15): same inside-corner physics, different shape,
  * because its language is a labeled control.
+ *
+ * **Approach is not identity.** Hover decides what the row hangs off; a menu
+ * decides what its items act on. They are usually the same object and must not
+ * be the same state: a right-click claims an object before hover intent has
+ * settled on it, so a menu reading hover state would run Delete on whatever the
+ * pointer passed over last.
  */
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import {
-  AlertTriangle,
-  Check,
-  Code2,
-  Copy,
-  CopyPlus,
-  Download,
-  ImageDown,
-  Maximize2,
-  Trash2,
-} from "lucide-react";
+import { Code2, Copy, CopyPlus, Download, ImageDown, Maximize2, Trash2 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import {
@@ -62,17 +58,19 @@ import {
   renderedDiagramSvg,
 } from "./object-commands";
 import { useApproachedObject } from "./useApproachedObject";
+import { ObjectVerbNotice, useVerbFeedback } from "./verb-feedback";
 
-/** How long the copy chip wears its answer before going back to its verb. */
-const FEEDBACK_RESET_MS = 1500;
+/** Runs a verb and keeps its answer, success or failure. */
+export type RunVerb = (work: Promise<unknown>, done: string) => void;
 
-type CopyFeedback = "copied" | "failed" | null;
+/** A menu opened at a point, and the object it was opened on. */
+type ObjectContextMenu = { at: { x: number; y: number }; element: HTMLElement };
 
 export function ObjectControls({ editor }: { editor: Editor }) {
   const chrome = useEditorChrome(editor);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [contextMenuAt, setContextMenuAt] = useState<{ x: number; y: number } | null>(null);
-  const [feedback, setFeedback] = useState<CopyFeedback>(null);
+  const [contextMenu, setContextMenu] = useState<ObjectContextMenu | null>(null);
+  const { notice, run } = useVerbFeedback();
 
   // The lightbox holds an ELEMENT, not a position: a position goes stale the
   // moment a peer types above it, and the writer is still looking at the same
@@ -80,7 +78,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   const [lightboxElement, setLightboxElement] = useState<HTMLElement | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
 
-  const { target, visible } = useApproachedObject(editor, menuOpen || contextMenuAt !== null);
+  const { target, visible } = useApproachedObject(editor, menuOpen || contextMenu !== null);
 
   const openLightbox = useCallback(
     (pos: number, withSource = false) => {
@@ -93,8 +91,9 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     [editor],
   );
 
-  // Enter on a selected object engages it (§4). Registered per node type, from
-  // the mounted component, because the surface Enter opens is React's.
+  // Enter and a double-click both engage the selected object (§4, §5.2).
+  // Registered per node type, from the mounted component, because the surface
+  // they open is React's.
   useEffect(() => {
     const releases = ["code_block", "image", "figure"].map((nodeType) =>
       registerObjectEngagement(editor, nodeType, ({ node, pos }) => {
@@ -111,10 +110,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   useEffect(
     () =>
       registerObjectKeymap(editor, "code_block", {
-        "Mod-Enter": (state) => {
-          const pos = state.selection.from;
-          return openLightbox(pos, true);
-        },
+        "Mod-Enter": (state) => openLightbox(state.selection.from, true),
       }),
     [editor, openLightbox],
   );
@@ -127,32 +123,38 @@ export function ObjectControls({ editor }: { editor: Editor }) {
       id: "object",
       claim: ({ element, event }) => {
         const found = objectSurfaceAt(editor.view, element);
+        // A code block's controls are its chip cluster, and its right-click is
+        // the browser's, so spellcheck and paste survive inside a fence.
         if (!found || found.kind === "code") return false;
-        setContextMenuAt({ x: event.clientX, y: event.clientY });
+        // Remembered by element, not by hover: a right-click arrives before
+        // hover intent settles, and the menu must act on what was pointed at.
+        setContextMenu({ at: { x: event.clientX, y: event.clientY }, element: found.element });
+        // Selecting it says which object the menu is about, and leaves the page
+        // in the state Esc walks home from.
+        const selected = selectObjectTransaction(editor.state, found.pos);
+        if (selected) editor.view.dispatch(selected);
         return true;
       },
     });
   }, [chrome, editor]);
 
-  const flash = useCallback((next: Exclude<CopyFeedback, null>) => setFeedback(next), []);
-  useEffect(() => {
-    if (!feedback) return;
-    const timer = window.setTimeout(() => setFeedback(null), FEEDBACK_RESET_MS);
-    return () => window.clearTimeout(timer);
-  }, [feedback]);
-
-  const lightboxTarget = lightboxElement
-    ? (objectSurfaceAt(editor.view, lightboxElement) ?? null)
-    : null;
+  const lightboxTarget = lightboxElement ? objectSurfaceAt(editor.view, lightboxElement) : null;
+  // Re-resolved every render, so the menu keeps acting on the object it was
+  // opened on even as the document moves under it.
+  const contextTarget = contextMenu ? objectSurfaceAt(editor.view, contextMenu.element) : null;
 
   return (
     <>
+      {/* Every verb answers in one place, whichever door opened it. */}
+      <ObjectVerbNotice anchor={target?.element ?? null} notice={notice} />
+
       {target?.kind === "code" ? (
         <CodeBlockChips
           editor={editor}
           target={target}
           visible={visible}
           onMenuOpenChange={setMenuOpen}
+          run={run}
         />
       ) : null}
 
@@ -162,7 +164,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
           kind={target.kind}
           anchor={target.element}
           visible={visible}
-          items={rowItems({ editor, target, feedback, flash, openLightbox })}
+          items={rowItems({ editor, target, run, openLightbox })}
           overflow={(chip) => (
             <EditorMenu
               editor={editor}
@@ -172,21 +174,21 @@ export function ObjectControls({ editor }: { editor: Editor }) {
               align="end"
               trigger={chip}
             >
-              {objectMenuItems({ editor, target, openLightbox })}
+              {objectMenuItems({ editor, target, run, openLightbox })}
             </EditorMenu>
           )}
         />
       ) : null}
 
-      {target && target.kind !== "code" ? (
+      {contextTarget ? (
         <EditorMenu
           editor={editor}
           id="object-context-menu"
-          open={contextMenuAt !== null}
-          onOpenChange={(open) => !open && setContextMenuAt(null)}
-          at={contextMenuAt}
+          open
+          onOpenChange={(open) => !open && setContextMenu(null)}
+          at={contextMenu?.at ?? null}
         >
-          {objectMenuItems({ editor, target, openLightbox })}
+          {objectMenuItems({ editor, target: contextTarget, run, openLightbox })}
         </EditorMenu>
       ) : null}
 
@@ -197,9 +199,9 @@ export function ObjectControls({ editor }: { editor: Editor }) {
         onOpenChange={(open) => {
           if (open) return;
           // Law 3 walks home one step at a time, so closing the dialog has to
-          // land on the object rather than past it — the writer's place is
-          // that diagram, and the next Esc is what leaves it. Hover-opening
-          // skipped the selection step (§5.2), so this is where it happens.
+          // land on the object rather than past it — the writer's place is that
+          // diagram, and the next Esc is what leaves it. Hover-opening skipped
+          // the selection step (§5.2), so this is where it happens.
           if (lightboxTarget) {
             const selected = selectObjectTransaction(editor.state, lightboxTarget.pos);
             if (selected) editor.view.dispatch(selected);
@@ -214,6 +216,13 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   );
 }
 
+type VerbContext = {
+  editor: Editor;
+  target: ObjectSurfaceTarget;
+  run: RunVerb;
+  openLightbox: (pos: number, withSource?: boolean) => boolean;
+};
+
 /**
  * The row: fullscreen, one copy, and the ⋮ (ruling 8).
  *
@@ -222,39 +231,20 @@ export function ObjectControls({ editor }: { editor: Editor }) {
  * it works in every browser where image-copy is the clipboard API's fussiest
  * corner. The image forms live in the ⋮.
  */
-function rowItems({
-  editor,
-  target,
-  feedback,
-  flash,
-  openLightbox,
-}: {
-  editor: Editor;
-  target: ObjectSurfaceTarget;
-  feedback: CopyFeedback;
-  flash: (next: Exclude<CopyFeedback, null>) => void;
-  openLightbox: (pos: number, withSource?: boolean) => boolean;
-}): OverlayIconRowItem[] {
-  const answer = (work: Promise<unknown>) => {
-    work.then(
-      () => flash("copied"),
-      () => flash("failed"),
-    );
-  };
-
+function rowItems({ editor, target, run, openLightbox }: VerbContext): OverlayIconRowItem[] {
   const copyItem: OverlayIconRowItem =
     target.kind === "diagram"
       ? {
           id: "copy",
-          label: copyLabel(feedback, t`Copy Mermaid source`),
-          icon: copyIcon(feedback),
-          onSelect: () => answer(copyText(fenceSource(editor, target.pos))),
+          label: t`Copy Mermaid source`,
+          icon: <Copy aria-hidden />,
+          onSelect: () => run(copyText(fenceSource(editor, target.pos)), t`Mermaid source copied`),
         }
       : {
           id: "copy",
-          label: copyLabel(feedback, t`Copy image`),
-          icon: copyIcon(feedback),
-          onSelect: () => answer(copyImageFrom(imageSource(target))),
+          label: t`Copy image`,
+          icon: <Copy aria-hidden />,
+          onSelect: () => run(copyImageFrom(imageSource(target)), t`Image copied`),
         };
 
   return [
@@ -268,33 +258,12 @@ function rowItems({
   ];
 }
 
-function copyIcon(feedback: CopyFeedback): ReactNode {
-  if (feedback === "copied") return <Check aria-hidden />;
-  if (feedback === "failed") return <AlertTriangle aria-hidden />;
-  return <Copy aria-hidden />;
-}
-
-/** Law 5: a control that failed says so where the writer is already looking. */
-function copyLabel(feedback: CopyFeedback, verb: string): string {
-  if (feedback === "copied") return t`Copied`;
-  if (feedback === "failed") return t`Could not copy. Try again.`;
-  return verb;
-}
-
 /**
  * The ⋮, shared by the row's overflow and the right-click menu — one menu with
  * two doors, per the kernel's rule that a surface has one entry point rather
  * than three.
  */
-function objectMenuItems({
-  editor,
-  target,
-  openLightbox,
-}: {
-  editor: Editor;
-  target: ObjectSurfaceTarget;
-  openLightbox: (pos: number, withSource?: boolean) => boolean;
-}): ReactNode {
+function objectMenuItems({ editor, target, run, openLightbox }: VerbContext): ReactNode {
   const svg = target.kind === "diagram" ? renderedDiagramSvg(target.element) : null;
   const source = target.kind === "image" ? imageSource(target) : "";
 
@@ -310,19 +279,19 @@ function objectMenuItems({
       {/* Absent, never dead: a diagram that has not rendered has no image to
           hand over yet (law 5). */}
       {svg ? (
-        <EditorMenuItem onSelect={() => void copySvgImage(svg)}>
+        <EditorMenuItem onSelect={() => run(copySvgImage(svg), t`Image copied`)}>
           <ImageDown aria-hidden />
           {t`Copy image`}
         </EditorMenuItem>
       ) : null}
       {svg ? (
-        <EditorMenuItem onSelect={() => void downloadPng(svg, "diagram.png")}>
+        <EditorMenuItem onSelect={() => run(downloadPng(svg, "diagram.png"), t`Image downloaded`)}>
           <Download aria-hidden />
           {t`Download image`}
         </EditorMenuItem>
       ) : null}
       {source ? (
-        <EditorMenuItem onSelect={() => void downloadImageFrom(source)}>
+        <EditorMenuItem onSelect={() => run(downloadImageFrom(source), t`Image downloaded`)}>
           <Download aria-hidden />
           {t`Download image`}
         </EditorMenuItem>

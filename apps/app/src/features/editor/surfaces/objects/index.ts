@@ -7,7 +7,15 @@
  */
 
 export { CodeBlockChips } from "./CodeBlockChips";
-export { ObjectControls } from "./ObjectControls";
+export {
+  type FenceRebase,
+  fenceRebaseAfter,
+  fenceSourceTransaction,
+  minimalTextPatch,
+  type TextPatch,
+  useFenceDraft,
+} from "./fence-draft";
+export { ObjectControls, type RunVerb } from "./ObjectControls";
 export { ObjectLightbox, type ObjectLightboxProps } from "./ObjectLightbox";
 export {
   isMermaidFence,
@@ -27,13 +35,17 @@ export {
   downloadPng,
   duplicateObject,
   fenceSource,
-  minimalTextPatch,
   renderedDiagramSvg,
   setFenceLanguage,
-  setFenceSource,
   sizedSvgMarkup,
   svgToPngBlob,
-  type TextPatch,
 } from "./object-commands";
 export { useApproachedObject } from "./useApproachedObject";
 export { ViewerCanvas } from "./ViewerCanvas";
+export {
+  ObjectVerbNotice,
+  useVerbFeedback,
+  type VerbNotice,
+  VerbNoticePill,
+  verbFailureMessage,
+} from "./verb-feedback";

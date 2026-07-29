@@ -120,6 +120,14 @@ export function createPanZoomViewer({
   let frame = 0;
   let destroyed = false;
 
+  // The content element is the CALLER's. Everything written to it is written
+  // back on destroy, so a viewer can be mounted over an element that already
+  // had a transform and hand it back unchanged.
+  const borrowed = {
+    transform: content.style.transform,
+    transformOrigin: content.style.transformOrigin,
+    willChange: content.style.willChange,
+  };
   content.style.transformOrigin = "0 0";
   content.style.willChange = "transform";
 
@@ -147,6 +155,9 @@ export function createPanZoomViewer({
   };
 
   const commit = (next: ViewerTransform, { keepsFit = false } = {}) => {
+    // Inert after teardown: a React effect or a settled promise calling in late
+    // must not write to an element the caller has already moved on from.
+    if (destroyed) return;
     if (
       next.scale === transform.scale &&
       next.pan.x === transform.pan.x &&
@@ -218,13 +229,26 @@ export function createPanZoomViewer({
     );
   };
 
+  /** Give a pointer back to the page, guarded: capture may already be gone. */
+  const releaseCapture = (pointerId: number) => {
+    if (host.hasPointerCapture(pointerId)) host.releasePointerCapture(pointerId);
+  };
+
   const endPointer = (event: PointerEvent) => {
     if (!pointers.delete(event.pointerId)) return;
-    if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+    releaseCapture(event.pointerId);
     // Re-baseline: lifting one finger of a pinch must continue the drag from
     // where the remaining finger is, not jump by the centroid's shift.
     span = pointerSpan([...pointers.values()]);
     if (pointers.size === 0) delete host.dataset.panning;
+  };
+
+  /** Drop every live pointer without touching the transform. */
+  const endGesture = () => {
+    for (const pointerId of pointers.keys()) releaseCapture(pointerId);
+    pointers.clear();
+    span = null;
+    delete host.dataset.panning;
   };
 
   const onWheel = (event: WheelEvent) => {
@@ -241,13 +265,14 @@ export function createPanZoomViewer({
 
   // A context menu inside the viewer is the browser's, not a gesture: release
   // the capture so the pointer does not stay stuck mid-pan behind the menu.
-  const onContextMenu = () => {
-    for (const id of pointers.keys()) {
-      if (host.hasPointerCapture(id)) host.releasePointerCapture(id);
-    }
-    pointers.clear();
-    span = null;
-    delete host.dataset.panning;
+  const onContextMenu = endGesture;
+
+  // The browser releases capture implicitly on `pointerup`, but a capture lost
+  // any other way — an element detaching mid-drag — would otherwise leave this
+  // viewer believing a finger is still down.
+  const onLostCapture = (event: PointerEvent) => {
+    if (pointers.delete(event.pointerId)) span = pointerSpan([...pointers.values()]);
+    if (pointers.size === 0) delete host.dataset.panning;
   };
 
   host.addEventListener("pointerdown", onPointerDown);
@@ -257,6 +282,7 @@ export function createPanZoomViewer({
   host.addEventListener("wheel", onWheel, { passive: false });
   host.addEventListener("dblclick", onDoubleClick);
   host.addEventListener("contextmenu", onContextMenu);
+  host.addEventListener("lostpointercapture", onLostCapture);
 
   // A view the writer has moved keeps its transform: a window resize, a source
   // pane opening, or a re-render is not a request to lose your place. Only an
@@ -305,6 +331,7 @@ export function createPanZoomViewer({
       return () => listeners.delete(listener);
     },
     destroy() {
+      if (destroyed) return;
       destroyed = true;
       observer.disconnect();
       host.removeEventListener("pointerdown", onPointerDown);
@@ -314,9 +341,14 @@ export function createPanZoomViewer({
       host.removeEventListener("wheel", onWheel);
       host.removeEventListener("dblclick", onDoubleClick);
       host.removeEventListener("contextmenu", onContextMenu);
+      host.removeEventListener("lostpointercapture", onLostCapture);
       if (frame !== 0) cancelAnimationFrame(frame);
+      frame = 0;
       listeners.clear();
-      pointers.clear();
+      endGesture();
+      content.style.transform = borrowed.transform;
+      content.style.transformOrigin = borrowed.transformOrigin;
+      content.style.willChange = borrowed.willChange;
     },
   };
 }

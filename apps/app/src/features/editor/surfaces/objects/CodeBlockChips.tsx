@@ -16,7 +16,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { Check, ChevronDown, Copy, CopyPlus, MoreVertical, Trash2, WrapText } from "lucide-react";
+import { ChevronDown, Copy, CopyPlus, MoreVertical, Trash2, WrapText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -34,7 +34,7 @@ import {
   useChromeSuppressed,
   useEditorChrome,
 } from "@/features/editor/chrome";
-
+import type { RunVerb } from "./ObjectControls";
 import type { ObjectSurfaceTarget } from "./object-anchors";
 import { copyText, deleteObject, duplicateObject, setFenceLanguage } from "./object-commands";
 
@@ -42,30 +42,45 @@ import { copyText, deleteObject, duplicateObject, setFenceLanguage } from "./obj
 const OVERLAY_INSET_PX = 10;
 
 const PLAIN_LANGUAGE = "plain";
-const COPIED_RESET_MS = 1500;
 
 /**
  * The languages a fiction writer's manuscript actually carries, plus mermaid
  * as the door into a diagram. A full lowlight roster would be a scrolling list
  * of grammars nobody in this product writes.
+ *
+ * Only `plain` is translated: the rest are the names of the languages
+ * themselves, which do not change with the reader.
  */
-const LANGUAGES: ReadonlyArray<{ id: string; label: string }> = [
-  { id: PLAIN_LANGUAGE, label: "Plain text" },
-  { id: "mermaid", label: "Mermaid" },
-  { id: "bash", label: "Bash" },
-  { id: "css", label: "CSS" },
-  { id: "diff", label: "Diff" },
-  { id: "json", label: "JSON" },
-  { id: "markdown", label: "Markdown" },
-  { id: "python", label: "Python" },
-  { id: "sql", label: "SQL" },
-  { id: "typescript", label: "TypeScript" },
-  { id: "yaml", label: "YAML" },
-];
+const LANGUAGE_IDS = [
+  PLAIN_LANGUAGE,
+  "mermaid",
+  "bash",
+  "css",
+  "diff",
+  "json",
+  "markdown",
+  "python",
+  "sql",
+  "typescript",
+  "yaml",
+] as const;
+
+const PROPER_NAMES: Record<string, string> = {
+  mermaid: "Mermaid",
+  bash: "Bash",
+  css: "CSS",
+  diff: "Diff",
+  json: "JSON",
+  markdown: "Markdown",
+  python: "Python",
+  sql: "SQL",
+  typescript: "TypeScript",
+  yaml: "YAML",
+};
 
 function languageLabel(language: unknown): string {
   const id = typeof language === "string" && language ? language : PLAIN_LANGUAGE;
-  return LANGUAGES.find((entry) => entry.id === id)?.label ?? id;
+  return id === PLAIN_LANGUAGE ? t`Plain text` : (PROPER_NAMES[id] ?? id);
 }
 
 export type CodeBlockChipsProps = {
@@ -74,26 +89,27 @@ export type CodeBlockChipsProps = {
   visible: boolean;
   /** Raised while a menu here is open, so the cluster holds its ground. */
   onMenuOpenChange: (open: boolean) => void;
+  /** Copy reaches a clipboard the browser can refuse; the answer comes back. */
+  run: RunVerb;
 };
 
-export function CodeBlockChips({ editor, target, visible, onMenuOpenChange }: CodeBlockChipsProps) {
+export function CodeBlockChips({
+  editor,
+  target,
+  visible,
+  onMenuOpenChange,
+  run,
+}: CodeBlockChipsProps) {
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
   const rect = useAnchorRect(target.element);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const wrapped = useWrappedLines(target.element);
 
   useEffect(() => {
     onMenuOpenChange(languageOpen || overflowOpen);
   }, [languageOpen, overflowOpen, onMenuOpenChange]);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
 
   if (!rect || !chrome || typeof document === "undefined") return null;
 
@@ -101,10 +117,6 @@ export function CodeBlockChips({ editor, target, visible, onMenuOpenChange }: Co
     typeof target.node.attrs.language === "string" && target.node.attrs.language
       ? target.node.attrs.language
       : PLAIN_LANGUAGE;
-
-  const copy = () => {
-    void copyText(target.node.textContent).then(() => setCopied(true));
-  };
 
   return createPortal(
     // biome-ignore lint/a11y/noStaticElementInteractions: the mousedown only keeps the caret where it was; every control inside is a button
@@ -141,9 +153,9 @@ export function CodeBlockChips({ editor, target, visible, onMenuOpenChange }: Co
             setFenceLanguage(editor, target.pos, next === PLAIN_LANGUAGE ? "" : next)
           }
         >
-          {LANGUAGES.map((entry) => (
-            <EditorMenuRadioItem key={entry.id} value={entry.id}>
-              {entry.label}
+          {LANGUAGE_IDS.map((id) => (
+            <EditorMenuRadioItem key={id} value={id}>
+              {languageLabel(id)}
             </EditorMenuRadioItem>
           ))}
         </EditorMenuRadioGroup>
@@ -155,10 +167,10 @@ export function CodeBlockChips({ editor, target, visible, onMenuOpenChange }: Co
         type="button"
         size="sm"
         variant="ghost"
-        aria-label={copied ? t`Copied` : t`Copy code`}
-        onClick={copy}
+        aria-label={t`Copy code`}
+        onClick={() => run(copyText(target.node.textContent), t`Code copied`)}
       >
-        {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+        <Copy aria-hidden />
       </IconButton>
 
       <EditorMenu
