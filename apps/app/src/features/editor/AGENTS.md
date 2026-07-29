@@ -35,4 +35,5 @@ the design, from the primitives.
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`chrome/AGENTS.md`](chrome/AGENTS.md)
 → [`surfaces/toolbar/AGENTS.md`](surfaces/toolbar/AGENTS.md)
+→ [`surfaces/table/AGENTS.md`](surfaces/table/AGENTS.md)
 → [`../../core/editor/AGENTS.md`](../../core/editor/AGENTS.md)
