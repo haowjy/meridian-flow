@@ -59,3 +59,4 @@ export {
   useEditorRevision,
 } from "./useEditorChrome";
 export { useFadeHold } from "./useFadeHold";
+export { type TakeNodeHold, useNodeHold } from "./useNodeHold";

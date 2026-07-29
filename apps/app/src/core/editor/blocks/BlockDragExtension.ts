@@ -25,7 +25,7 @@ import { type Editor, Extension } from "@tiptap/core";
 import { type EditorState, Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
-import { type BlockHold, carryAnchor, holdBlock, resolveBlockHold } from "../anchors";
+import { carryAnchor, holdBlock, type NodeHold, resolveBlockHold } from "../anchors";
 
 const BLOCK_DRAG_NAME = "meridianBlockDrag";
 
@@ -39,7 +39,7 @@ type BlockDragState = {
    * position deleted, and the seam a deleted block leaves behind is where its
    * replacement now starts.
    */
-  hold: BlockHold;
+  hold: NodeHold;
   /** False while the press might still turn out to be a click. */
   lifted: boolean;
 };

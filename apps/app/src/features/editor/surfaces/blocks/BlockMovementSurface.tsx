@@ -40,7 +40,7 @@ import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { GripVertical } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { type BlockHold, followBlock, holdBlock } from "@/core/editor/anchors";
+import { followBlock, holdBlock, type NodeHold } from "@/core/editor/anchors";
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
 // Straight at the primitives rather than through `chrome/index.ts`: that
 // barrel also carries the surface registry this file is listed in, so the
@@ -147,9 +147,9 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   // ONE hold, deliberately: the hover intent used to keep its own copy, and a
   // copy that changes do not carry is a handle that walks back onto a block a
   // peer moved out from under it.
-  const [anchorHold, setAnchorHold] = useState<BlockHold | null>(null);
+  const [anchorHold, setAnchorHold] = useState<NodeHold | null>(null);
   const [hovered, setHovered] = useState(false);
-  const [menuHold, setMenuHold] = useState<BlockHold | null>(null);
+  const [menuHold, setMenuHold] = useState<NodeHold | null>(null);
   const [seamIndex, setSeamIndex] = useState<number | null>(null);
   const [gesturing, setGesturing] = useState(false);
 
@@ -284,7 +284,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
         setSeamIndex(seamIndexAtPointer(editor.view, gesture.pointerY));
       }
 
-      const follow = (hold: BlockHold) => followBlock(editor.state, hold, transaction.mapping);
+      const follow = (hold: NodeHold) => followBlock(editor.state, hold, transaction.mapping);
       setMenuHold((hold) => (hold === null ? hold : follow(hold)));
       // A block a peer deleted takes its handle with it. The kernel re-asks
       // what is under the pointer on the same transaction, so nothing here has
@@ -650,7 +650,7 @@ function dropHeldBlock(editor: Editor, held: number, pointerY: number): void {
  * the toolbar's fence reads, which is what keeps one refusal rule behind both
  * surfaces.
  */
-function openBlockMenuAt(editor: Editor, pos: number, open: (hold: BlockHold) => void): void {
+function openBlockMenuAt(editor: Editor, pos: number, open: (hold: NodeHold) => void): void {
   const target = blockAt(editor.state.doc, pos);
   if (!target) return;
   const selection = isEditorObject(target.node)

@@ -27,6 +27,7 @@
  *   thing" means here.
  */
 
+import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
@@ -133,19 +134,24 @@ export function followAnchor(
 }
 
 /**
- * A top-level block a surface has hold of: where it is, and WHICH block it is.
+ * A node a surface has hold of: where it is, and WHICH node it is.
  *
- * Two seam positions cannot answer the second question. A peer who deletes the
- * document's only heading leaves the schema to supply an empty paragraph in its
- * place, and the seams then describe that replacement perfectly: they resolve
- * to its boundaries, uncollapsed, and a menu opened on the heading would go on
- * offering Delete for a block the writer never saw. Same-type replacement makes
- * a node-type check no better.
+ * The shape every long-lived surface in this editor holds its target as — an
+ * open menu, a lightbox, a grip's cell, the block under a drag. DOM elements
+ * are the other candidate and they are not this: a node view is replaced by
+ * every remote write, so an element is excellent geometry for one frame and
+ * says nothing about which content it was showing.
  *
- * The Yjs element behind the block IS the identity. It is the same object for
- * as long as the block lives — a writer typing into it, a peer typing into it,
- * an AI write landing in it all mutate it in place — and Yjs replaces it for
- * anything that is really a new block, including a move, which is the honest
+ * Two seam positions cannot answer the second question either. A peer who
+ * deletes the document's only heading leaves the schema to supply an empty
+ * paragraph in its place, and the seams then describe that replacement
+ * perfectly: they resolve to its boundaries, uncollapsed, and a menu opened on
+ * the heading would go on offering Delete for a block the writer never saw.
+ *
+ * The Yjs element behind the node IS the identity. It is the same object for as
+ * long as the node lives — a writer typing into it, a peer typing into it, an
+ * AI write landing in it all mutate it in place — and Yjs replaces it for
+ * anything that is really a new node, including a move, which is the honest
  * answer for a hold: the block a gesture grabbed is not the one that landed.
  *
  * The element rather than its item id (`getBlockItemId`, what trail navigation
@@ -154,62 +160,150 @@ export function followAnchor(
  * throws for a deleted element, in a code path that runs inside Yjs update
  * handlers where a throw is swallowed and peer writes quietly stop applying.
  *
- * `block` is null on an editor with no shared document, where the collapse of
- * the two seams is the only deletion signal there is (and a sound one: with no
- * Yjs there are no whole-document rebuilds to blind the mapping).
+ * `identity` is null on an editor with no shared document, where the collapse
+ * of the two seams and the type read back at the position are the only deletion
+ * signals there are (and sound ones: with no Yjs there are no whole-document
+ * rebuilds to blind the mapping).
  */
-export type BlockHold = EditorAnchor & { block: Y.XmlElement | null };
+export type NodeHold = EditorAnchor & {
+  identity: Y.XmlElement | null;
+  /** Read back at every resolution: coordinates outlive what was at them. */
+  nodeType: string;
+};
+
+/** Take hold of the node starting at `pos`, or null when none starts there. */
+export function holdNode(state: EditorState, pos: number): NodeHold | null {
+  if (pos < 0 || pos > state.doc.content.size) return null;
+  const $pos = state.doc.resolve(pos);
+  const node = $pos.nodeAfter;
+  // Text has no element of its own — a run of it is one Yjs item shared with
+  // its neighbours — so a range of text is an `EditorAnchor` plus a mark's
+  // attributes (`LinkAnchor`), never a hold.
+  if (!node || node.isText) return null;
+  return {
+    ...anchorRange(state, { from: pos, to: pos + node.nodeSize }),
+    identity: yElementAt(state, $pos),
+    nodeType: node.type.name,
+  };
+}
+
+/** Where the held node is now, or null once it is not that node any more. */
+export function resolveNodeHold(state: EditorState, hold: NodeHold): AnchorRange | null {
+  const at = resolveAnchorIn(state, hold);
+  // Both seams on one point is a node that went away, which is all the answer
+  // there is without a shared document behind the hold.
+  if (!at || at.from >= at.to) return null;
+  const $pos = state.doc.resolve(at.from);
+  const node = $pos.nodeAfter;
+  if (!node || node.type.name !== hold.nodeType) return null;
+  if (yElementAt(state, $pos) !== hold.identity) return null;
+  // The node's own size, not the far seam: a peer typing INSIDE it moves that
+  // seam, and a verb acts on the node as it now stands.
+  return { from: at.from, to: at.from + node.nodeSize };
+}
+
+/** The same node after a change, re-pinned. Null once it is not the same node. */
+export function followNode(state: EditorState, hold: NodeHold, mapping: Mappable): NodeHold | null {
+  return followHold(state, hold, mapping, resolveNodeHold);
+}
 
 /**
  * Take hold of the top-level block starting at `pos`, or null when `pos` is not
  * the start of one.
  */
-export function holdBlock(state: EditorState, pos: number): BlockHold | null {
+export function holdBlock(state: EditorState, pos: number): NodeHold | null {
   if (pos < 0 || pos > state.doc.content.size) return null;
-  const $pos = state.doc.resolve(pos);
-  const node = $pos.depth === 0 ? $pos.nodeAfter : null;
-  if (!node) return null;
-  return {
-    ...anchorRange(state, { from: pos, to: pos + node.nodeSize }),
-    block: blockElementAt(state, $pos.index(0)),
-  };
+  return state.doc.resolve(pos).depth === 0 ? holdNode(state, pos) : null;
 }
 
 /** Where the held block is now, or null when the writer's block is gone. */
-export function resolveBlockHold(state: EditorState, hold: BlockHold): AnchorRange | null {
-  const at = resolveAnchorIn(state, hold);
-  // Both seams on one point is a block that went away, which is all the answer
-  // there is without a shared document behind the hold.
-  if (!at || at.from >= at.to) return null;
-  const $pos = state.doc.resolve(at.from);
+export function resolveBlockHold(state: EditorState, hold: NodeHold): AnchorRange | null {
+  const at = resolveNodeHold(state, hold);
   // A peer who wrapped the block in something else left it somewhere no block
   // surface can act on.
-  if ($pos.depth !== 0 || !$pos.nodeAfter) return null;
-  return blockElementAt(state, $pos.index(0)) === hold.block ? at : null;
+  return at && state.doc.resolve(at.from).depth === 0 ? at : null;
 }
 
 /** The same block after a change, re-pinned. Null once it is not the same block. */
 export function followBlock(
   state: EditorState,
-  hold: BlockHold,
+  hold: NodeHold,
   mapping: Mappable,
-): BlockHold | null {
-  const carried = carryAnchor(hold, mapping);
-  const at = carried && resolveBlockHold(state, carried);
-  return at && { ...anchorRange(state, at), block: hold.block };
+): NodeHold | null {
+  return followHold(state, hold, mapping, resolveBlockHold);
 }
 
 /**
- * The Yjs element behind the document's `index`-th top-level block.
+ * Two holds on the same node in the same place.
  *
- * The fragment's children and the ProseMirror document's are the same list in
- * the same order, which is what makes an index enough to cross between them.
+ * What lets a surface re-pin its hold on every transaction without handing
+ * React a new object per keystroke: re-pinning a node nothing moved produces an
+ * equal hold, and an equal hold is the one already held.
  */
-function blockElementAt(state: EditorState, index: number): Y.XmlElement | null {
+export function sameHold(one: NodeHold | null, other: NodeHold | null): boolean {
+  if (one === other) return true;
+  if (!one || !other) return false;
+  return (
+    one.from === other.from &&
+    one.to === other.to &&
+    one.identity === other.identity &&
+    one.nodeType === other.nodeType
+  );
+}
+
+function followHold(
+  state: EditorState,
+  hold: NodeHold,
+  mapping: Mappable,
+  resolve: (state: EditorState, hold: NodeHold) => AnchorRange | null,
+): NodeHold | null {
+  const carried = carryAnchor(hold, mapping);
+  const at = carried && resolve(state, carried);
+  return at && { ...anchorRange(state, at), identity: hold.identity, nodeType: hold.nodeType };
+}
+
+/**
+ * The Yjs element behind the node after `$pos`, at any depth.
+ *
+ * A Yjs element's children and its ProseMirror node's are the same list in the
+ * same order, which is what makes indices enough to cross between the two trees
+ * — with one adjustment: a run of adjacent text nodes is ONE `Y.XmlText` child
+ * (`normalizePNodeContent`), so a child's index in the document is not its
+ * index in Yjs.
+ */
+function yElementAt(state: EditorState, $pos: ResolvedPos): Y.XmlElement | null {
   const runtime = relativePositionRuntimeFromState(state);
-  if (!runtime || index < 0 || index >= runtime.yFragment.length) return null;
-  const child = runtime.yFragment.get(index);
-  return child instanceof Y.XmlElement ? child : null;
+  if (!runtime) return null;
+
+  let current: Y.XmlFragment = runtime.yFragment;
+  for (let depth = 0; depth <= $pos.depth; depth += 1) {
+    const parent = $pos.node(depth);
+    const child = parent.child($pos.index(depth));
+    const index = yChildIndex(parent, $pos.index(depth));
+    if (index === null || index >= current.length) return null;
+
+    const yChild = current.get(index);
+    // A name that does not match means the two trees are not walking in step —
+    // a node the binding refused to build, a repair mid-flight. Answering null
+    // lets the holder release rather than aim a verb by a guess.
+    if (!(yChild instanceof Y.XmlElement) || yChild.nodeName !== child.type.name) return null;
+    current = yChild;
+  }
+  return current instanceof Y.XmlElement ? current : null;
+}
+
+/** Where `parent`'s `index`-th child sits among the Yjs element's children. */
+function yChildIndex(parent: PMNode, index: number): number | null {
+  if (index < 0 || index >= parent.childCount || parent.child(index).isText) return null;
+
+  let yIndex = 0;
+  let inTextRun = false;
+  for (let before = 0; before < index; before += 1) {
+    const text = parent.child(before).isText;
+    if (!text || !inTextRun) yIndex += 1;
+    inTextRun = text;
+  }
+  return yIndex;
 }
 
 /**
