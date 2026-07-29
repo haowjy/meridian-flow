@@ -171,4 +171,14 @@ describe("naming an image the writer never named", () => {
     expect(imageFilenameFromUrl("https://example.com/")).toBe("pasted image");
     expect(imageFilenameFromUrl("data:image/png;base64,AAAA")).toBe("pasted image");
   });
+
+  it("refuses a name that is really a token, and keeps what it was", () => {
+    const token = `${"e".repeat(180)}.png`;
+    expect(imageFilenameFromUrl(`https://example.com/object-store/${token}`)).toBe(
+      "pasted image.png",
+    );
+    expect(imageFilenameFromUrl(`https://example.com/object-store/${"e".repeat(180)}`)).toBe(
+      "pasted image",
+    );
+  });
 });

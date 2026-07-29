@@ -240,6 +240,13 @@ export function pastedImageLinkRange(
 const PASTED_IMAGE_NAME = "pasted image";
 
 /**
+ * Past this, the last segment of an address is a token rather than a name —
+ * a signed URL ends in a base64 blob, and handing that to the upload as a
+ * filename is how a real one came back `ENAMETOOLONG`.
+ */
+const PASTED_NAME_LIMIT = 64;
+
+/**
  * A filename for an image the writer never named: the last segment of its
  * address, which is what they would have seen had they saved it.
  */
@@ -250,11 +257,19 @@ export function imageFilenameFromUrl(url: string): string {
     // the bytes themselves, and its "path" is the media type.
     if (address.protocol !== "http:" && address.protocol !== "https:") return PASTED_IMAGE_NAME;
     const last = address.pathname.split("/").filter(Boolean).at(-1);
-    if (last) return decodeURIComponent(last);
+    if (last) return boundedImageName(decodeURIComponent(last));
   } catch {
     // An address the URL parser refuses is still an image the writer pasted.
   }
   return PASTED_IMAGE_NAME;
+}
+
+/** Keeps the extension, which is the only part of a token worth reading. */
+function boundedImageName(name: string): string {
+  if (name.length <= PASTED_NAME_LIMIT) return name;
+  const dot = name.lastIndexOf(".");
+  const extension = dot > 0 && name.length - dot <= 6 ? name.slice(dot) : "";
+  return PASTED_IMAGE_NAME + extension;
 }
 
 export function assetDocumentIdFromSrc(src: string): string | null {
