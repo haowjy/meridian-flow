@@ -152,10 +152,15 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   // so the way out looks like the way in. On touch there is no leaving to
   // handle — the handle belongs to the selected block until another is chosen.
   useEffect(() => {
-    if (hovered || menuPos !== null || coarseRef.current) return;
+    // A gesture keeps its anchor whatever the pointer is doing: the kernel
+    // cancels the hover reveal the moment a drag begins, and letting the
+    // handle unmount there would drop the pointer capture the drag is holding
+    // — the browser would report lost capture and the drag would end on its
+    // own first frame.
+    if (hovered || menuPos !== null || gesturing || coarseRef.current) return;
     const timer = window.setTimeout(() => setAnchorPos(null), CHROME_TIMING.fadeMs);
     return () => window.clearTimeout(timer);
-  }, [hovered, menuPos]);
+  }, [hovered, menuPos, gesturing]);
 
   /**
    * End the gesture, once. `commit` is what the writer asked for: a release
