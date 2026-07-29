@@ -40,11 +40,12 @@ const table: JSONContent = {
   ],
 };
 
-function mount(content: JSONContent[]): Editor {
+function mount(content: JSONContent[], editable = true): Editor {
   const element = document.createElement("div");
   document.body.append(element);
   editor = new Editor({
     element,
+    editable,
     extensions: createStandaloneEditorExtensions(),
     content: { type: "doc", content },
   });
@@ -124,6 +125,18 @@ describe("Tab never leaves the editor", () => {
     instance.commands.setNodeSelection(instance.state.doc.content.size - 1);
 
     expect(pressTab(instance)).toBe(true);
+  });
+
+  // A reader passing through a read-only document must still be able to tab
+  // out of it. ProseMirror is what guarantees it — its edit handlers, keydown
+  // among them, do not run on a view that is not editable — so this holds only
+  // while Tab is owned through the editor's own keymap and not, say, a
+  // document listener.
+  it("hands the key back in a document nobody can type into", () => {
+    const instance = mount([paragraph("The third gate opened.")], false);
+    caretAt(instance, 4);
+
+    expect(pressTab(instance)).toBe(false);
   });
 
   it("keeps Shift-Tab in a paragraph", () => {
