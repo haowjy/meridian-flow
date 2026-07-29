@@ -134,11 +134,13 @@ describe("the selection the formatting menu acts on", () => {
     expect(isProseSelection(target.state)).toBe(true);
   });
 
-  it("leaves the bare caret alone, where spellcheck lives (ruling 11)", () => {
+  it("is not a selection at a bare caret, which the caret rung takes instead", () => {
     const target = editorWith("<p>He had reharsed this</p>");
     target.commands.setTextSelection(6);
 
     expect(isProseSelection(target.state)).toBe(false);
+    // The keyboard twin still declines: Shift+F10 has no pointer, so there is
+    // nowhere to move a caret to and nothing new to say about the one it has.
     expect(formattingMenuOpensFor(target)).toBe(false);
   });
 

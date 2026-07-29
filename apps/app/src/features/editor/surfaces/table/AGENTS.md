@@ -24,7 +24,8 @@ The layers, in dependency order:
   themselves, and the selection helpers the grips and tabs press.
 - [`table-anchors.ts`](table-anchors.ts) — pointer → cell → document position,
   and cell → the viewport rects the chrome is positioned from.
-- [`TableVerbMenu.tsx`](TableVerbMenu.tsx) — the three menus' contents.
+- [`TableVerbMenu.tsx`](TableVerbMenu.tsx) — every menu's contents, and
+  `tableMenuProps` which reads the verb matrix once per open.
 - [`TableChrome.tsx`](TableChrome.tsx) — the mount: hover tracking, the
   portalled grips and tabs, the menus, the selected table's object row.
 
@@ -53,8 +54,12 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - **Four menus, four things to act on**: a row, a column, the table, and a
   rectangle of cells the writer swept. The first three hang off chrome; the
   fourth is a right-click, because no grip can make an arbitrary rectangle and
-  merging two adjacent cells has no other path. A bare caret in a cell is NOT
-  one of them: that right-click stays the browser's, where spellcheck lives.
+  merging two adjacent cells has no other path.
+- **A caret in a cell is the fifth arrangement, and it adds no verb.**
+  `TableCaretMenuItems` is the Row and Column lists the grips already own,
+  mounted inside the formatting menu the ladder's `caret` rung opens (human
+  ruling, 2026-07-29). Export arrangements from here; never let another surface
+  assemble its own list of table verbs.
 - **Refusals are named, and the item says so** (law 5). A blocked verb passes
   its reason to the shared row as `blockedReason` and shows its label alone;
   the row greys it, swallows the select, and answers on hover or focus. This

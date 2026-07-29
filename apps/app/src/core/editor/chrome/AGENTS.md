@@ -30,10 +30,14 @@ or suppress arbiter beside it.
 
 ## Key rules
 
-- **Native right-click is the default, not the fallback.** A `contextmenu`
-  nobody claims is left completely alone: `preventDefault` is never called and
-  the browser's menu opens with spellcheck in it (ruling 11). Claiming must be
-  a positive act by a registered handler.
+- **Every right-click in the editor opens an editor menu, and the context
+  picks which one** (human ruling, 2026-07-29, superseding ruling 11). The
+  ladder ends in a `caret` rung rather than in the browser, so a bare caret in
+  prose, in a table cell, and in a code fence all reach verbs.
+- **Shift+right-click is never claimed.** It is the documented way to the
+  browser's own menu, where spellcheck suggestions, lookup, and OS services
+  live and nowhere else. The check sits above the ladder in
+  `resolveContextClaim`, so no rung can forget it.
 - **The claim decision is synchronous.** `preventDefault` after the event
   returns does nothing. Opening the surface may be deferred a tick; deciding
   may not.
@@ -85,4 +89,5 @@ or suppress arbiter beside it.
   surface lanes build on
 → [`../objects/AGENTS.md`](../objects/AGENTS.md)
 → design of record: `editor-toolbar-split/interaction-model.md` §2 laws 3–7,
-  §5.1 right-click split, §10 rulings 8 and 11
+  §5.1 right-click split, §10 ruling 8. Ruling 11's native-menu fallback is
+  superseded by the 2026-07-29 human ruling recorded above.

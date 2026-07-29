@@ -1,8 +1,8 @@
 # surfaces/formatting — the formatting menu
 
-The menu a writer asks for over a selection: a quick marks row, Turn into ▸,
-Add link, then Cut, Copy, Paste. Right-click and Menu key / Shift+F10 are its
-two doors, and a long press arrives through the first.
+The menu a writer asks for in the prose: a quick marks row, Turn into ▸, Add
+link, then Cut, Copy, Paste. Right-click and Menu key / Shift+F10 are its two
+doors, and a long press arrives through the first.
 
 ## Mental model
 
@@ -15,10 +15,9 @@ component renders it.
 
 Three files, three jobs:
 
-- **`formatting-triggers.ts`** — when the menu opens and where it hangs. Two
-  pure questions (is the selection prose, is the context ours) that both doors
-  ask, because the right-click split matrix is a cross-lane contract worth
-  testing without a pointer.
+- **`formatting-triggers.ts`** — when the menu opens and where it hangs. The
+  pure questions both doors ask, because the right-click split matrix is a
+  cross-lane contract worth testing without a pointer.
 - **`useFormattingMenuDoors.ts`** — the claim and the keymap, wired to one
   `open(point)`.
 - **`formatting-menu-items.ts`** — the truth table: lit, or greyed with a
@@ -26,21 +25,29 @@ Three files, three jobs:
 
 ## Key rules
 
-- **The claim is narrow, and narrow is the design.** A bare caret, a code
-  fence, an object, portalled chrome, and a read-only document all keep the
-  browser's menu. Ruling 11 makes that menu load-bearing: spellcheck lives
-  almost entirely at the bare caret, and every rung this lane takes is one the
-  writer loses.
+- **Two rungs, one menu.** `text-selection` is a sweep the pointer is inside;
+  `caret` is the ladder's floor and takes every other right-click in prose
+  (human ruling, 2026-07-29). A code fence, an object, portalled chrome, and a
+  read-only document still decline, and Shift+right-click never reaches this
+  lane at all — the kernel answers it above the ladder.
+- **The caret rung moves the caret before it opens.** Turn into converts the
+  block the selection is in, so a menu over the third paragraph must not offer
+  to convert the first. `placeCaretForMenu` is that dispatch and it is
+  synchronous, inside the claim.
+- **In a table the menu carries the grips' own lists.** `TableCaretMenuItems`
+  from [`../table`](../table/AGENTS.md), never a third copy of the verbs: a
+  writer who found the row grip and a writer who right-clicked a cell meet the
+  same rows in the same order.
 - **Selection alone raises nothing** (ruling 13). There is no hover trigger, no
   raise-on-select, and adding one is the bubble this rebuild deleted.
 - **No private gesture door.** Touch reaches this menu as a `contextmenu`
   through the kernel's ladder, never through a pointer timer of this lane's
   own: a timer cannot ask whether a link or a diagram under the finger outranks
   this rung, and it opens over a native callout it cannot suppress.
-- **Both doors ask the same questions.** The keyboard twin declines wherever
-  the right-click declines, through `formattingOwnsContext` and the keymap's
-  `appliesTo`. A door that drifts is a split matrix that is only true for the
-  mouse.
+- **The keyboard twin owns the selection door only.** It declines wherever the
+  right-click's `text-selection` rung declines, through `formattingOwnsContext`
+  and the keymap's `appliesTo`. It has no caret rung: Shift+F10 has no pointer,
+  so there is nowhere to move a caret to.
 - **Never bind Escape, never listen for `contextmenu`.** The Esc chain owns the
   first and the kernel's router owns the second.
 - **A greyed item keeps its hover and focus** and shows its label alone; the
