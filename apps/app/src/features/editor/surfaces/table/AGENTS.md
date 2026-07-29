@@ -36,12 +36,15 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 
 ## Key rules
 
-- **The anchor is a cell ELEMENT, and it goes when the cell does.** A held
-  document position is stale the moment a peer writes anywhere above the table,
-  while the element stays itself and answers `posAtDOM` fresh. Losing the cell
-  (scrolled out of the pane, or taken away by a peer) releases everything aimed
-  at it, an open grip menu included: a menu that outlived its row would keep
-  the anchor pinned to a dead element and no later hover could replace it.
+- **Elements are geometry, holds are identity.** The anchor is a `NodeHold` on
+  the cell (`core/editor/anchors.ts`), carried across every transaction by
+  `useNodeHold`; the element drawing that cell is resolved from it for each
+  measurement. Neither half can be the other: a raw position is stale the moment
+  a peer writes above the table, and an element belongs to DOM any rebuild may
+  replace. Losing the CELL — scrolled out of the pane, or taken away by a peer —
+  releases everything aimed at it, an open grip menu included: a menu that
+  outlived its row would offer row verbs against whatever the selection has
+  become. Losing only the element is not losing the cell.
 - **Grid coordinates, never child indices.** A merged cell makes `row.child(2)`
   and "column 2" different things. Every reading goes through `TableMap`, in
   [`core/editor/table-operations.ts`](../../../../core/editor/table-operations.ts).
