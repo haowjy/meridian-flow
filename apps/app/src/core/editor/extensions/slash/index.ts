@@ -10,6 +10,7 @@ export {
   getSlashMenu,
   SlashCommandExtension,
   type SlashMenu,
+  type SlashMenuEntry,
   type SlashMenuMeta,
   type SlashMenuSnapshot,
   slashCommandPluginKey,
@@ -22,3 +23,4 @@ export {
   type SlashCommandId,
   type SlashCommandItem,
 } from "./slash-catalog";
+export type { SlashRefusal } from "./slash-insertion";

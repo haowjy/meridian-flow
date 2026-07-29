@@ -37,8 +37,15 @@ import {
   type SlashCommandGroupId,
   type SlashCommandItem,
 } from "./slash-catalog";
-import { applySlashCommand } from "./slash-insertion";
+import { applySlashCommand, type SlashRefusal, slashRefusals } from "./slash-insertion";
 import { allowsSlashTrigger } from "./slash-trigger";
+
+/**
+ * A catalog entry as the menu shows it: what it says, plus why it cannot apply
+ * where the caret is. `blocked` is null for a row that works, and the surface
+ * greys the rest and renders the reason once (law 5).
+ */
+export type SlashMenuEntry = SlashCommandItem & { blocked: SlashRefusal | null };
 
 /**
  * What the menu needs that a row does not carry: the group headings it shows
@@ -46,8 +53,8 @@ import { allowsSlashTrigger } from "./slash-trigger";
  */
 export type SlashMenuMeta = { groupLabels: Record<SlashCommandGroupId, string> };
 
-export type SlashMenu = SuggestionMenu<SlashCommandItem, SlashMenuMeta>;
-export type SlashMenuSnapshot = SuggestionMenuSnapshot<SlashCommandItem, SlashMenuMeta>;
+export type SlashMenu = SuggestionMenu<SlashMenuEntry, SlashMenuMeta>;
+export type SlashMenuSnapshot = SuggestionMenuSnapshot<SlashMenuEntry, SlashMenuMeta>;
 
 const SLASH_EXTENSION_NAME = "slashCommand";
 
@@ -58,7 +65,7 @@ const slashCatalogFencePluginKey = new PluginKey(`${SLASH_EXTENSION_NAME}Catalog
 type SlashCommandStorage = {
   menu: SlashMenu;
   /** @internal driven by this extension only. */
-  controller: SuggestionMenuController<SlashCommandItem, SlashMenuMeta>;
+  controller: SuggestionMenuController<SlashMenuEntry, SlashMenuMeta>;
 };
 
 declare module "@tiptap/core" {
@@ -84,7 +91,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
   },
 
   addStorage(): SlashCommandStorage {
-    return createSuggestionMenu<SlashCommandItem, SlashMenuMeta>();
+    return createSuggestionMenu<SlashMenuEntry, SlashMenuMeta>();
   },
 
   addProseMirrorPlugins() {
@@ -94,16 +101,20 @@ export const SlashCommandExtension = Extension.create<SlashCommandExtensionOptio
 
     const sessionFrom = (
       props: SuggestionProps<SlashCommandItem, SlashCommandItem>,
-    ): SuggestionMenuSession<SlashCommandItem, SlashMenuMeta> | null => {
+    ): SuggestionMenuSession<SlashMenuEntry, SlashMenuMeta> | null => {
       const catalog = options.catalog();
       if (!catalog) return null;
+      // Asked once per update rather than per row: every entry is judged
+      // against the same document a pick would act on.
+      const refusals = slashRefusals(editor, props.range, props.items);
       return {
-        items: props.items,
+        items: props.items.map((item) => ({ ...item, blocked: refusals.get(item.id) ?? null })),
         query: props.query,
         anchorRect: props.clientRect ?? (() => null),
         label: catalog.menuLabel,
         meta: { groupLabels: catalog.groupLabels },
         choose: (item) => props.command(item),
+        choosable: (item) => item.blocked === null,
         dismiss: () => exitSuggestion(editor.view, slashCommandPluginKey),
       };
     };

@@ -11,16 +11,17 @@ import { useSyncExternalStore } from "react";
 
 import {
   getSlashMenu,
-  type SlashCommandItem,
+  type SlashMenuEntry,
   type SlashMenuMeta,
 } from "@/core/editor/extensions/slash";
 import { closedSuggestionMenu } from "@/core/editor/extensions/suggestion";
 
 import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
+import { blockTypeReasonMessage } from "../toolbar";
 import { SLASH_MENU_ICONS } from "./slash-menu-icons";
 
 const NO_SUBSCRIPTION = () => () => {};
-const closed = () => closedSuggestionMenu<SlashCommandItem, SlashMenuMeta>();
+const closed = () => closedSuggestionMenu<SlashMenuEntry, SlashMenuMeta>();
 
 export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
   const menu = getSlashMenu(editor);
@@ -37,6 +38,11 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
   // since matches sort by score rather than by group).
   const grouped = snapshot.query === "" && groupLabels !== null;
 
+  // One line for the whole menu, not one per row: the reason is about where
+  // the caret is, so eleven copies of it would say the same thing eleven
+  // times. The wording is the toolbar's, so a writer meets one refusal.
+  const refusal = snapshot.items.find((entry) => entry.blocked !== null)?.blocked ?? null;
+
   return (
     <SuggestionMenu
       editor={editor}
@@ -48,8 +54,10 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
       onActivate={(index) => menu.setActiveIndex(index)}
       onChoose={(index) => menu.choose(index)}
       onDismiss={() => menu.dismiss()}
+      note={refusal ? blockTypeReasonMessage(refusal) : undefined}
       rows={snapshot.items.map((item, index) => ({
         key: item.id,
+        blocked: item.blocked !== null,
         before:
           grouped && groupLabels && item.group !== snapshot.items[index - 1]?.group ? (
             <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
@@ -62,7 +70,7 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
   );
 }
 
-function SlashRow({ item }: { item: SlashCommandItem }) {
+function SlashRow({ item }: { item: SlashMenuEntry }) {
   const Icon = SLASH_MENU_ICONS[item.id];
   return (
     <>
