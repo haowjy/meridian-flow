@@ -7,7 +7,8 @@
  * the walk itself can be reasoned about (and tested) without a view.
  */
 
-import type { Node as PMNode } from "@tiptap/pm/model";
+import { GapCursor } from "@tiptap/pm/gapcursor";
+import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import {
   type EditorState,
   NodeSelection,
@@ -149,31 +150,72 @@ export function caretHomeFromObjectTransaction(
   const node = state.doc.nodeAt(pos);
   if (!node) return null;
 
+  const $after = state.doc.resolve(pos + node.nodeSize);
+
   // Forward to the first place the writer can type, stepping OVER a leaf that
   // holds no text rather than selecting it. Esc asked to leave object-land, so
   // landing on another selected object would leave the next keystroke poised
   // to replace it — and searching only for the position immediately beside the
   // object is what made a scene break look like a dead end and sent the caret
   // backward into the block above.
-  const forward = Selection.findFrom(state.doc.resolve(pos + node.nodeSize), 1, true);
-  if (forward) return state.tr.setSelection(forward).scrollIntoView();
+  const forwardText = Selection.findFrom($after, 1, true);
+  if (forwardText) return state.tr.setSelection(forwardText).scrollIntoView();
 
-  // Nothing ahead: in front of the object beats nowhere at all.
+  // A scene break can also be the LAST thing in the document, and then there
+  // is no text ahead at all. The gap past it is still forward, still a caret,
+  // and still somewhere typing works, so it is a home rather than a reason to
+  // walk back over the object the writer just left.
+  const forwardGap = gapPastFollowingNodes(state, $after);
+  if (forwardGap) return state.tr.setSelection(forwardGap).scrollIntoView();
+
+  // Nothing ahead at all: in front of the object beats nowhere.
   const backward = Selection.findFrom(state.doc.resolve(pos), -1, true);
   if (backward) return state.tr.setSelection(backward).scrollIntoView();
 
   const paragraph = state.schema.nodes.paragraph;
   if (!paragraph) return null;
 
-  const after = pos + node.nodeSize;
-  const $after = state.doc.resolve(after);
   const index = $after.index($after.depth);
   if (!$after.parent.canReplaceWith(index, index, paragraph)) return null;
 
-  const transaction = state.tr.insert(after, paragraph.create());
+  const transaction = state.tr.insert($after.pos, paragraph.create());
   return transaction
-    .setSelection(TextSelection.near(transaction.doc.resolve(after), 1))
+    .setSelection(TextSelection.near(transaction.doc.resolve($after.pos), 1))
     .scrollIntoView();
+}
+
+/**
+ * The first gap cursor at or past the siblings following `from`.
+ *
+ * Not `GapCursor.findFrom`, which stops dead at a selectable node: from just
+ * after a diagram it sees the scene break next door, reports no gap, and the
+ * walk falls through to searching backward. The gap the writer wants is on the
+ * FAR side of that leaf. Nothing is found when the object is itself last,
+ * which leaves the trailing-object cases below to answer as they always have.
+ */
+function gapPastFollowingNodes(state: EditorState, from: ResolvedPos): Selection | null {
+  const parent = from.parent;
+  let pos = from.pos;
+
+  for (let index = from.index(from.depth); index < parent.childCount; index += 1) {
+    pos += parent.child(index).nodeSize;
+    const $gap = state.doc.resolve(pos);
+    if (gapCursorFits($gap)) return new GapCursor($gap);
+  }
+
+  return null;
+}
+
+/**
+ * prosemirror-gapcursor ships `GapCursor.valid` but does not declare it, so
+ * the reach into an undeclared static lives here and nowhere else. Asking the
+ * library beats reimplementing its rule: whether a gap cursor belongs at a
+ * position depends on what closes either side of it and on the parent's
+ * `allowGapCursor`, and a copy of that would drift on the next upgrade.
+ */
+function gapCursorFits($pos: ResolvedPos): boolean {
+  const gapCursor = GapCursor as unknown as { valid?: (at: ResolvedPos) => boolean };
+  return gapCursor.valid?.($pos) ?? false;
 }
 
 /** Enter's `caret-inside` engagement: the first text position within. */

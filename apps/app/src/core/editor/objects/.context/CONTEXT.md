@@ -125,6 +125,14 @@ paragraph of a list item shares its edge with the list).
 beyond it; or the caret is beside one, so step onto it. Anything else returns
 false and the editor's own caret movement stands.
 
+Esc's forward search has three rungs, tried in order: a text position (a
+caret in prose), then a gap cursor past whatever leaves follow, then — only
+when nothing lies ahead at all — behind the object. `GapCursor.findFrom` is
+not what finds the gap: it stops dead at a selectable node, so from just after
+a diagram it sees the scene break next door and reports nothing, which is how a
+trailing leaf sent the caret backward over the object. The gap the writer wants
+is on the FAR side of that leaf.
+
 **Esc does not reuse the arrow walk.** They ask different questions, and
 conflating them once sent the caret backward. `caretBesideObjectTransaction` is
 the arrow's: strictly the position immediately beside the object, null when
