@@ -174,10 +174,16 @@ export function openImagePicker(editor: Editor | null): void {
   const input = window.document.createElement("input");
   input.type = "file";
   input.accept = "image/*";
+  input.hidden = true;
   input.addEventListener("change", () => {
     const file = input.files?.[0];
+    input.remove();
     if (file) insertImageFile(editor, file);
   });
+  // In the document while the chooser is open, out of it afterwards. A detached
+  // input's click opens the chooser in Chrome and in nothing else, and a
+  // chooser the browser does not report is a chooser no test can answer.
+  window.document.body.append(input);
   input.click();
 }
 

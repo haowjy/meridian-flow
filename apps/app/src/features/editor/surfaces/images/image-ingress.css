@@ -104,6 +104,15 @@
 
 /* The wrapper's reserved box IS the picture's box: whatever is inside it fills
    it, so the swap from frame to picture moves nothing. */
+/* The frame carries an explicit width (the picture's own), so `max-width: 100%`
+   on it alone would resolve against a shrink-to-fit wrapper that has already
+   grown to that width — a picture wider than the column would hang out of the
+   prose. Bounding TipTap's own inline wrapper first gives the percentage a
+   definite box to answer against: the paragraph's. */
+.meridian-editor .ProseMirror span.react-renderer.node-image {
+  max-width: 100%;
+}
+
 .meridian-editor .ProseMirror .meridian-image-node--framed {
   max-width: 100%;
 }
