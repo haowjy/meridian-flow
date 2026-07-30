@@ -17,7 +17,7 @@ import {
 } from "@/core/editor/chrome";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { claimsFormattingMenu } from "../formatting/formatting-triggers";
-import { claimsTableCellMenu } from "./table-commands";
+import { claimedSweptCells } from "./table-commands";
 
 let editor: Editor | null = null;
 
@@ -142,15 +142,18 @@ describe("who takes a right-click on swept cells", () => {
     );
   });
 
-  it("takes a right-click inside the swept rectangle", () => {
+  it("takes a right-click inside the swept rectangle, and says which cells it took", () => {
     const current = editorWithTable();
     sweep(current, "A1", "A2");
 
-    expect(claimsTableCellMenu(current, rightClickAt(current, insideCell(current, "A1")))).toBe(
-      true,
+    // The cells rather than a yes: the claim is where the menu takes hold of
+    // what it will act on, and the selection it read is gone by the next write.
+    const swept = { anchor: cellPosition(current, "A1"), head: cellPosition(current, "A2") };
+    expect(claimedSweptCells(current, rightClickAt(current, insideCell(current, "A1")))).toEqual(
+      swept,
     );
-    expect(claimsTableCellMenu(current, rightClickAt(current, insideCell(current, "A2")))).toBe(
-      true,
+    expect(claimedSweptCells(current, rightClickAt(current, insideCell(current, "A2")))).toEqual(
+      swept,
     );
   });
 
@@ -160,18 +163,14 @@ describe("who takes a right-click on swept cells", () => {
 
     // The row below is inside the selection's from/to range but outside the
     // rectangle: aiming at it is not aiming at what was selected.
-    expect(claimsTableCellMenu(current, rightClickAt(current, insideCell(current, "B1")))).toBe(
-      false,
-    );
+    expect(claimedSweptCells(current, rightClickAt(current, insideCell(current, "B1")))).toBeNull();
   });
 
   it("declines a bare caret in a cell, which the ladder's floor takes instead", () => {
     const current = editorWithTable();
     current.commands.setTextSelection(insideCell(current, "A1"));
 
-    expect(claimsTableCellMenu(current, rightClickAt(current, insideCell(current, "A1")))).toBe(
-      false,
-    );
+    expect(claimedSweptCells(current, rightClickAt(current, insideCell(current, "A1")))).toBeNull();
   });
 
   it("declines the lane's own portalled chrome and a pointer off the prose", () => {
@@ -182,8 +181,8 @@ describe("who takes a right-click on swept cells", () => {
       ...rightClickAt(current, insideCell(current, "A1")),
       element: chromeElement(current),
     };
-    expect(claimsTableCellMenu(current, onChrome)).toBe(false);
-    expect(claimsTableCellMenu(current, rightClickAt(current, null))).toBe(false);
+    expect(claimedSweptCells(current, onChrome)).toBeNull();
+    expect(claimedSweptCells(current, rightClickAt(current, null))).toBeNull();
   });
 
   it("declines a read-only document, which has no verbs to trade the browser for", () => {
@@ -191,8 +190,6 @@ describe("who takes a right-click on swept cells", () => {
     sweep(current, "A1", "A2");
     current.setEditable(false);
 
-    expect(claimsTableCellMenu(current, rightClickAt(current, insideCell(current, "A1")))).toBe(
-      false,
-    );
+    expect(claimedSweptCells(current, rightClickAt(current, insideCell(current, "A1")))).toBeNull();
   });
 });

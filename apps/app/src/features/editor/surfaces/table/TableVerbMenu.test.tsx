@@ -93,7 +93,7 @@ function open(blocks: Partial<Record<TableVerbId, TableBlockedReason>>) {
         at={{ x: 0, y: 0 }}
       >
         <TableColumnMenuItems
-          editor={current}
+          run={() => {}}
           states={states(blocks)}
           alignment={null}
           placement="left"
