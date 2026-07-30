@@ -183,6 +183,98 @@ describe("the scope a resolved answer belongs to", () => {
   });
 });
 
+/**
+ * An answer is true of the project's documents as they stand, and a rename or a
+ * create changes those without changing the project, the Work, or the URI of the
+ * document holding the link. The catalog the index computed itself from is the
+ * fourth thing an answer belongs to, so a link the writer never touched gets
+ * asked again when it moves.
+ */
+describe("the catalog an answer belongs to", () => {
+  it("asks again after a rename, and answers the renamed reality", async () => {
+    trees.set(treeKey("manuscript"), manuscriptTree("chapter-1.md", "The Second Gate.md"));
+    answerWikilinksFromTheManuscript();
+    mount({ workId: "work-1" });
+
+    await act(async () => {
+      expect(await resolveHref("[[The Second Gate]]")).toMatchObject({
+        state: "resolved",
+        document: { documentId: "document-The Second Gate.md" },
+      });
+    });
+
+    // The writer renames it in the sidebar: the tree query is invalidated and
+    // the index recomputes. Nothing about the link in the document changed.
+    trees.set(treeKey("manuscript"), manuscriptTree("chapter-1.md", "The Third Gate.md"));
+    mount({ workId: "work-1" });
+
+    await act(async () => {
+      expect(await resolveHref("[[The Second Gate]]")).toMatchObject({ state: "unresolved" });
+    });
+    expect(asked()).toHaveLength(2);
+  });
+
+  it("resolves a link the project gained through a door of its own", async () => {
+    trees.set(treeKey("manuscript"), manuscriptTree("chapter-1.md"));
+    answerWikilinksFromTheManuscript();
+    mount({ workId: "work-1" });
+
+    await act(async () => {
+      expect(await resolveHref("[[Warden Ilsever]]")).toMatchObject({ state: "unresolved" });
+    });
+
+    // Created from the context tree, an import, or the follow dialog — the index
+    // is what notices, so no mutation site holds a cache-poking call of its own.
+    trees.set(treeKey("manuscript"), manuscriptTree("chapter-1.md", "Warden Ilsever.md"));
+    mount({ workId: "work-1" });
+
+    await act(async () => {
+      expect(await resolveHref("[[Warden Ilsever]]")).toMatchObject({
+        state: "resolved",
+        document: { documentId: "document-Warden Ilsever.md" },
+      });
+    });
+  });
+
+  it("keeps its answers when the tree arrives again unchanged", async () => {
+    trees.set(treeKey("manuscript"), manuscriptTree("chapter-1.md", "The Second Gate.md"));
+    answerWikilinksFromTheManuscript();
+    mount({ workId: "work-1" });
+    await act(async () => {
+      await resolveHref("[[The Second Gate]]");
+    });
+
+    // A refetch that found nothing new is the same catalog. Dropping every
+    // answer on it would re-ask every link in the chapter on a poll.
+    trees.set(treeKey("manuscript"), manuscriptTree("chapter-1.md", "The Second Gate.md"));
+    mount({ workId: "work-1" });
+    await act(async () => {
+      await resolveHref("[[The Second Gate]]");
+    });
+
+    expect(asked()).toHaveLength(1);
+  });
+});
+
+function resolveHref(href: string) {
+  return getLinkResolution(editor)?.resolve(href);
+}
+
+/**
+ * A server that answers a wikilink out of the same tree the index reads, which
+ * is what makes a rename visible: the project changed and the link did not.
+ */
+function answerWikilinksFromTheManuscript() {
+  resolveDocumentLink.mockImplementation(async (_projectId, body) => {
+    if (body.target.kind !== "wikilink") return { document: null };
+    const { name } = body.target;
+    const match = (trees.get(treeKey("manuscript"))?.children ?? []).find(
+      (node) => node.kind === "file" && node.name.replace(/\.md$/, "") === name,
+    );
+    return { document: match?.kind === "file" ? resolvedLink(match.documentId) : null };
+  });
+}
+
 function mount({
   workId,
   documentId = "document-1",
@@ -233,7 +325,10 @@ type Candidate = { title: string; location: string };
 function candidates(scope: { projectId: string | null; workId: string | null }): Candidate[] {
   let offered: Candidate[] = [];
   const Probe = () => {
-    offered = useLinkableDocuments(scope).map(({ title, location }) => ({ title, location }));
+    offered = useLinkableDocuments(scope).documents.map(({ title, location }) => ({
+      title,
+      location,
+    }));
     return null;
   };
   act(() => root?.render(<Probe />));

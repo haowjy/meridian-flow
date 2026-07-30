@@ -298,7 +298,7 @@ function ActiveSessionEditorView({
   // Read when the `[[` menu opens, for the same reason as the slash catalog:
   // the label resolves against whatever locale is active then, and the document
   // list changes every time the writer creates or renames a file.
-  const wikilinkDocuments = useLinkableDocuments(scope);
+  const { documents: wikilinkDocuments } = useLinkableDocuments(scope);
   const wikilinkCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
     return { label: t`Link a document`, documents: wikilinkDocuments };

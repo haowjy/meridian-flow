@@ -48,6 +48,13 @@ pointer, and calls into it.
   they write them, so an internal target that resolves to nothing is a state
   the UI renders, never a failure it reports. A request that *failed* is a
   third thing: no answer at all, rendered as an ordinary link.
+- **Invalidation is a registration, and a registration is a generation.**
+  Registering the port starts a generation that owns its answers, its one
+  question per href, its queue, and its in-flight counter; a question settles
+  against the generation that asked it, never against whatever is waiting under
+  that href now. The app registers again when the scope or the project's
+  document catalog changes, so there is no `refresh`-shaped verb to call and no
+  reason for a mutation site to reach in here.
 - **No resolution is ever stored.** The state rides a decoration, not a schema
   attribute (law 9), so `[[Chapter 214]]` from an LLM needs no extra
   attributes and no peer receives an answer that was true in someone else's
@@ -63,6 +70,8 @@ pointer, and calls into it.
 ## Anti-patterns
 
 - A second normalizer for writer input, or a second scheme list.
+- A cache-poking call at a mutation site. Whatever changed the project changed
+  the document catalog, and the catalog is what the resolution scope watches.
 - A surface reaching past the store into `editor.storage`.
 - Gating an AI write on link validity. Marks inform; nothing approves.
 
