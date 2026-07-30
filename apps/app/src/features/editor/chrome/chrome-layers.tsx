@@ -13,6 +13,13 @@
  * A surface that can contain another layer therefore has to wrap what it
  * renders in `layer.scope(...)`. The three wrappers in this directory already
  * do; a lane that hand-rolls a portal owes the same call.
+ *
+ * A layer is also where its keys belong. `keys` registers them with the kernel
+ * for as long as the surface is open, at `layer` scope and with the reach that
+ * survives focus sitting inside portalled content — so a dialog's shortcut is in
+ * the kernel's bindings, runs its scope ladder, and collides through the same
+ * validation as every other lane's. A `document` listener in a surface has none
+ * of that.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -26,7 +33,7 @@ import {
   useRef,
 } from "react";
 
-import type { ChromeLayerDismissal } from "@/core/editor/chrome";
+import type { ChromeLayerDismissal, KeymapBinding } from "@/core/editor/chrome";
 
 import { useEditorChrome } from "./useEditorChrome";
 
@@ -83,11 +90,22 @@ export type UseChromeLayerOptions = {
    * through here rather than racing this handler from a lane's own timer.
    */
   returnFocus?: () => void;
+  /**
+   * Keys this surface answers while it is open, in ProseMirror's spelling
+   * (`"Mod-Enter"`). A binding returns true when it took the key.
+   *
+   * They belong to the layer rather than to the content inside it, because the
+   * content is what comes and goes: a dialog's Ctrl+Enter has to open the pane
+   * that is closed, and a pane cannot register the key that summons it. Declare
+   * them inline — the handlers are read live, and only a change to the SET of
+   * keys re-registers.
+   */
+  keys?: Readonly<Record<string, KeymapBinding>>;
 };
 
 export function useChromeLayer(
   editor: Editor | null,
-  { id, open, close, dismissal = "kernel", returnFocus }: UseChromeLayerOptions,
+  { id, open, close, dismissal = "kernel", returnFocus, keys }: UseChromeLayerOptions,
 ): ChromeLayerBinding {
   const chrome = useEditorChrome(editor);
   const parentId = useContext(ChromeLayerContext);
@@ -112,6 +130,28 @@ export function useChromeLayer(
     });
     return () => handle.release();
   }, [chrome, layerId, parentId, dismissal, open]);
+
+  const keysRef = useRef(keys);
+  keysRef.current = keys;
+  // The registration is keyed on the key NAMES, not on the record: a lane
+  // declares `keys` inline, so the object is new every render and re-registering
+  // on it would churn the kernel's revision — and rebuild every merged keymap —
+  // once per keystroke the surface handles. The handlers come from the ref, so
+  // what runs is always the current render's.
+  const keyNames = keys ? Object.keys(keys).sort().join(" ") : "";
+
+  useEffect(() => {
+    if (!chrome || !open || keyNames === "") return;
+    const bindings = Object.fromEntries(
+      keyNames
+        .split(" ")
+        .map((key): [string, KeymapBinding] => [
+          key,
+          (state, dispatch, view) => keysRef.current?.[key]?.(state, dispatch, view) ?? false,
+        ]),
+    );
+    return chrome.registerKeymap({ id: layerId, scope: "layer", reach: "chrome", bindings });
+  }, [chrome, open, layerId, keyNames]);
 
   const onEscapeKeyDown = useCallback(
     (event: { preventDefault: () => void; defaultPrevented?: boolean }) => {
