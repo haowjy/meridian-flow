@@ -624,6 +624,58 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
+  it("publishes a field emptied while presence was suspended", () => {
+    const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
+    session.awareness.setLocalState({ user: { name: "Writer" }, imageUploads: [{ token: "old" }] });
+
+    session.suspendPresence();
+    // The upload landed while the writer was inside inline review. Nothing is on
+    // the wire, and the correction still has to be true when they come out.
+    session.presence.setField("imageUploads", []);
+    expect(session.awareness.getLocalState()).toBeNull();
+    session.resumePresence();
+
+    expect(session.awareness.getLocalState()).toEqual({
+      user: { name: "Writer" },
+      imageUploads: [],
+    });
+    void session.destroy();
+  });
+
+  it("publishes a field first written while presence was suspended", () => {
+    const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
+    session.awareness.setLocalState({ user: { name: "Writer" } });
+
+    session.suspendPresence();
+    session.presence.setField("imageUploads", [{ token: "new" }]);
+    session.resumePresence();
+
+    expect(session.awareness.getLocalState()).toEqual({
+      user: { name: "Writer" },
+      imageUploads: [{ token: "new" }],
+    });
+    void session.destroy();
+  });
+
+  it("resumes only when the last of two suspensions lets go", () => {
+    const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
+    session.awareness.setLocalState({ user: { name: "Writer" } });
+
+    session.suspendPresence();
+    session.suspendPresence();
+    session.presence.setField("imageUploads", [{ token: "nested" }]);
+    session.resumePresence();
+    expect(session.awareness.getLocalState()).toBeNull();
+
+    session.resumePresence();
+
+    expect(session.awareness.getLocalState()).toEqual({
+      user: { name: "Writer" },
+      imageUploads: [{ token: "nested" }],
+    });
+    void session.destroy();
+  });
+
   it("raises one orthogonal schema fence and suspends presence", () => {
     const persistSchemaFence = vi.fn();
     const session = new DocumentSession({

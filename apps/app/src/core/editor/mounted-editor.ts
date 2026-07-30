@@ -127,6 +127,9 @@ export function useMountedEditor({
       document: session.document,
       awareness: session.awareness,
       cursorProvider: session.cursorProvider,
+      // The session owns whether this client is visible (inline review suspends
+      // it), so it owns every local awareness field the editor publishes.
+      presence: session.presence,
       schemaType: identity.schemaType,
       assetRenderContext: { projectId: identity.projectId },
       showCollaborationDecorations: identity.collaborationDecorations,
