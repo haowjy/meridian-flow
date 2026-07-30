@@ -394,8 +394,8 @@ describe("a press on an object body", () => {
   // the press, because `handleClickOn` is a mouseup path and the browser has
   // already answered the press by then. Only a node view that hides its own
   // text produces such a body, so the positive case lives with the one that
-  // does (`MermaidCodeBlock.test.tsx`); what belongs here is everything the
-  // rule must keep its hands off.
+  // does (`../CodeBlockNodeView.test.tsx`, "selects the diagram on the press");
+  // what belongs here is everything the rule must keep its hands off.
 
   it("leaves a plain fence its caret: the press lands in editable text", () => {
     // §5.3: a code block's rendering IS its source, so a click places a caret

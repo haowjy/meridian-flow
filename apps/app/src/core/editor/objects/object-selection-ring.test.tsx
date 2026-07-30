@@ -83,6 +83,14 @@ function ringIsPainted(): boolean {
   return Boolean(pair?.local.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`));
 }
 
+/** The object's own element, whose classes say how it is being painted. */
+function objectElement(nodeType: string): Element {
+  const selector = nodeType === "figure" ? ".meridian-figure-node" : ".meridian-diagram-block";
+  const element = pair?.local.view.dom.querySelector(selector);
+  if (!element) throw new Error(`no ${nodeType} element in the fixture`);
+  return element;
+}
+
 function positionOf(type: string): number {
   let found: number | null = null;
   pair?.local.state.doc.descendants((node, pos) => {
@@ -133,6 +141,19 @@ describe.each(OBJECTS)("%s wearing the ring", (_label, nodeType, object) => {
 
     expect(pair?.local.state.selection).toBeInstanceOf(NodeSelection);
     expect(ringIsPainted()).toBe(true);
+  });
+
+  it("is the only paint the object gains when it becomes selected", async () => {
+    // One owner for selection visuals. A node view that derived its own border
+    // from `NodeViewProps.selected` would paint a second one — and that prop's
+    // lifecycle does not survive the rebuild a peer's write causes, so the two
+    // disagree for a frame while the selection never changed.
+    const before = [...objectElement(nodeType).classList].sort();
+
+    await selectObject(nodeType);
+
+    expect([...objectElement(nodeType).classList].sort()).toEqual(before);
+    expect(pair?.local.view.dom.querySelectorAll(`.${SELECTED_OBJECT_CLASS}`)).toHaveLength(1);
   });
 
   it("still paints it when the writer selects the object again", async () => {

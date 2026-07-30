@@ -19,19 +19,31 @@ resolution.registerResolver(async (target) => {
 surface.registerNavigator(({ target, disposition }) => follow(target, disposition));
 ```
 
-`baseUri` is the URI of the document being edited, read from the manuscript
-tree by id (`useDocumentUri`). Only a `relative` target needs it, and without
-one the port THROWS rather than answering null: an unasked question must not
-render as a missing document.
+`baseUri` is the URI of the document being edited, found by id in the document
+index below. Only a `relative` target needs it, and without one the port THROWS
+rather than answering null: an unasked question must not render as a missing
+document.
 
-`workId` is the active Work. The server resolves a bare `work://notes.md` against
-it (`document-link-resolution.ts`), so dropping it made that spelling
-unresolvable from the editor while the contract carried the field all along. Both
-it and `baseUri` are read through a ref: the port registers once per project, and
-a Work arriving after the first render must not tear it down.
+`workId` is the active Work. The server resolves a bare `work://notes.md`
+against it (`document-link-resolution.ts`), so dropping it made that spelling
+unresolvable from the editor while the contract carried the field all along.
 
 Registering the navigator is also what makes the link menu's Open link verb
 exist. M7 leaves it absent on purpose (law 5); this is what fills the hole.
+
+## Resolution scope: what an answer is true of
+
+An answer is true of a scope, never of a href alone. `{ projectId, workId,
+baseUri }` is the complete semantic input to every question the port asks, and
+all three are `ProjectLinkRuntime`'s own inputs, so the registration effect is
+keyed on exactly those three and reads none of them through a ref.
+
+| Contract | Why |
+|---|---|
+| A scope change re-registers the resolver | `registerResolver` forgets every answer and every failure in one step, so no later request can be served from the previous scope. The alternative was a scope key inside the cache, which is a second invalidation concept for one rule. |
+| Nothing here remounts the editor | Work is runtime scope (`editor-scope.tsx`). Destroying a collaborative editor and its UndoManager to change a resolver would be the expensive way to invalidate a cache. |
+| A base URI arriving IS a scope change | A relative link asked before the tree settles throws and lands in the resolution store's `failed` set, which the automatic `request()` path then skips forever. Re-registering clears it, and the store's publish makes the decoration plugin ask the same links again. |
+| A resolved link paints plain for a frame after a switch | Answers are gone before the new ones land, which is the honest state: in the new Work nobody has asked yet. The base normally settles from cache before the document renders, so this is a deliberate Work switch and not opening a document. |
 
 ## What a follow does
 
@@ -57,11 +69,20 @@ button and a sentence saying why. Nothing about the link changes on creation —
 `[[Warden Ilsever]]` was always the link; the resolver simply starts finding
 it, which is why `resolution.refresh()` is the whole after-effect.
 
-## Where the `[[` menu's documents come from
+## One document index, two questions
 
-`useWikilinkDocuments` reads two cached trees — the manuscript, and the active
-Work's scratch — and offers their editable files, titled by filename without
-extension. That is the resolver's own candidate set: offering a document the
+`useWikilinkDocuments` walks the two cached trees — the manuscript, and the
+active Work's scratch — and returns every editable file with its title, its
+location, its `documents.id`, and its URI in the resolver's spelling. The `[[`
+menu renders those rows; `ProjectLinkRuntime` finds its own row by id to get
+`baseUri`.
+
+One owner for two answers that must never disagree: what a link can reach, and
+what a relative link is relative to. Reading the base from the manuscript alone
+is what made a scratch note a document links could point at but never be written
+in.
+
+That set is also the resolver's own candidate set. Offering a document the
 resolver cannot match hands the writer a link that lands dashed the instant it is
 inserted, and withholding one it CAN match is the menu disagreeing with the link.
 
@@ -74,6 +95,11 @@ renaming one is the writer's fix.
 
 Without a Work, the menu is the manuscript alone: the scratch query is not asked
 rather than asked with a null Work.
+
+The context tree spells a work-scoped document `scratch://<workId>/notes.md`;
+the link contract and the server both spell it `work://<workId>/notes.md`
+(tracked task #32). `resolverUri` swaps that one scheme and changes nothing else,
+so no third spelling enters the system.
 
 ## What a follow says, and who says it
 

@@ -54,6 +54,33 @@ describe("mergeKeymapContributions", () => {
   });
 });
 
+describe("reach", () => {
+  it("hands portalled focus only the contributions that reach that far", () => {
+    const dialog = {
+      ...contribution("diagram-dialog", "layer", true),
+      reach: "chrome" as const,
+    };
+    const slash = contribution("slash-menu", "layer", true);
+
+    const beyondProse = mergeKeymapContributions([slash, dialog], anywhere, "chrome");
+    expect(beyondProse["Alt-ArrowUp"](state)).toBe(true);
+    expect(dialog.run).toHaveBeenCalledOnce();
+    // The slash menu's keys belong to a caret in the prose. Answering them from
+    // wherever focus happens to be would take them from the chat composer.
+    expect(slash.run).not.toHaveBeenCalled();
+  });
+
+  it("still runs a chrome-reach contribution from the prose", () => {
+    const dialog = {
+      ...contribution("diagram-dialog", "layer", true),
+      reach: "chrome" as const,
+    };
+
+    expect(mergeKeymapContributions([dialog], anywhere)["Alt-ArrowUp"](state)).toBe(true);
+    expect(dialog.run).toHaveBeenCalledOnce();
+  });
+});
+
 describe("keymap scopes", () => {
   const inProse: KeymapApplicability = { context: DOCUMENT_CHROME_CONTEXT, layerCount: 0 };
 
@@ -150,6 +177,17 @@ describe("assertKeymapContribution", () => {
         bindings: { Escape: () => true },
       }),
     ).toThrow(/"slash-menu"/);
+  });
+
+  it("refuses chrome reach outside layer scope: a layer's keys end when it does", () => {
+    expect(() =>
+      assertKeymapContribution({
+        id: "object:code_block",
+        scope: "object",
+        reach: "chrome",
+        bindings: { "Mod-Enter": () => true },
+      }),
+    ).toThrow(/only a layer's keys/);
   });
 
   it("passes anything else through", () => {
