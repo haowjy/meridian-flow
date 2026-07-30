@@ -146,7 +146,7 @@ two answers (`object-overlay.ts`):
 | | who owns the element | how it is placed | who uses it |
 |---|---|---|---|
 | `{ inside: … }` | a node view | rendered in the element, CSS corner | diagram, image, figure, code fence |
-| `{ over: … }` | ProseMirror | measured rect, body portal | the selected table's ⋮ |
+| `{ over: … }` | ProseMirror | measured rect, overlay portal | the selected table's ⋮ |
 
 `inside` is the default and the reason is structural: chrome rendered in the
 object cannot go stale, because there is no rect between it and the object.
@@ -154,6 +154,49 @@ object cannot go stale, because there is no rect between it and the object.
 content, so a child inserted into a table's wrapper is a document change it
 will try to parse. A node view ignores DOM changes outside its `contentDOM`
 and has no such problem.
+
+## The overlay: one space for everything measured
+
+Every measured surface — the `over` corner, the table's grips and add tabs, the
+block handle and its drop line, the link hint, the verb notice — portals into
+the manuscript's own scroll pane and is `position: absolute` there, in the
+coordinates `manuscript-overlay.ts` reads. Nothing in the editor is
+`position: fixed` any more, and adding one back is the bug this replaced.
+
+The space is the whole argument. A viewport rect is wrong the instant the pane
+scrolls, so the surface has to be re-measured, and a re-measurement is a frame
+behind the scroll that invalidated it. Probed at one wheel notch a frame: the
+table's row grip was drawn beside a row three below the pointer's on every
+mid-scroll frame, and the block handle was painted at the top of the WINDOW,
+opaque, over the app's breadcrumb. In the pane's coordinates the numbers do not
+change on a scroll at all — the pane carries the chrome with the content — so
+there is nothing to chase and no frame to be behind.
+
+Clipping comes with it, and it replaces every per-lane fit test. The pane's own
+overflow clips what has left it, exactly and on the frame it leaves; a grip
+whose row is halfway off the edge slides under it like the row does. The table
+lane used to test each of its four pieces against a viewport rect and drop the
+ones that did not fit — a frame late, and all-or-nothing.
+
+Three functions, and each answers one thing:
+
+| | |
+|---|---|
+| `manuscriptOverlay(editor)` | the pane: where chrome portals, and whose coordinates it is in |
+| `overlayRect(overlay, element)` | an element's box in those coordinates, null once nothing draws it |
+| `overlayViewport(overlay)` | which part of the pane the writer can see |
+
+`overlayViewport` is never for placement — the pane's clip does that. It answers
+the different question a surface asks about its TARGET: has the writer scrolled
+past the thing this is aimed at, which is what closes a menu rather than what
+moves a grip.
+
+**Input stays in the viewport's space.** A pointer event carries viewport
+coordinates and Radix positions in them, so a hover zone, a hit test, and a
+menu's anchor point are all read and compared there. `handleAnchorPoint` in the
+block surface and `tableHoverZone` in the table's are the two crossings, and
+both are one-directional: a reading taken from the writer never becomes a
+placement, and a placement never becomes a comparison against a pointer.
 
 Geometry, matching mockup 03b: inset 10px from the object's top-right, 6px gap,
 card chip per button (`--color-card` ground, hairline border, `--shadow-card`),

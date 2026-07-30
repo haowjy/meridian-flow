@@ -20,6 +20,10 @@ Five primitives and one host.
   a refusal is drawn. A lane passes `blockedReason` and gets the greying, the
   swallowed select, and the reason on hover or focus; `ReasonTooltip` is the
   shape that reason wears everywhere, the toolbar's controls included.
+- **`manuscript-overlay.ts`** — the pane measured chrome is drawn in, an
+  element's box in that pane's coordinates, and which part of the pane the
+  writer can see. Three functions, and the last is about a surface's TARGET
+  rather than its placement: the pane's own clip does the placing.
 - **`EditorNoticePill`** — what a surface says for a moment and takes back:
   a verb that reached the clipboard, an export the browser refused, a picture
   it would not take. Two tones and nothing else, so a lane brings the message
@@ -53,6 +57,13 @@ deliberately hung off a pointer point. `object-overlay.ts` holds that choice
 for the object corner; every surviving measured surface rides
 `watchManuscriptLayout` for its rect and the kernel's hover anchors for its
 target.
+
+**And every measured surface is measured into the manuscript's own scroll
+pane** (`manuscript-overlay.ts`), never the viewport. It portals into the pane
+and is `position: absolute` there, so the pane carries it through a scroll with
+no measurement at all and clips it at its own edge. That is the whole of "a
+grip is a label on its row, not a thing that travels to it" and of "no chrome
+is ever painted outside the editor".
 
 ## Key rules
 
@@ -91,9 +102,10 @@ target.
   keeps the default.** The kernel's Escape backstop serves the default and
   stands aside for `"self"`, so declaring `"self"` without listening is how a
   writer gets stuck.
-- **Chrome mounts for the active editor only.** The desktop context host keeps
-  several editors warm behind the visible one and hides them with `hidden`,
-  which does nothing to anything portalled.
+- **Chrome mounts for the active editor only** (`EditorChromeHost`'s `active`).
+  The desktop context host keeps several editors warm behind the visible one,
+  and the Radix surfaces a lane opens still portal to the body, where nothing
+  about the hidden editor reaches them.
 - **A popover ignores focus alone as a dismissal.** Focus is always in motion
   around an editor form, and Radix would read every move as a reason to close
   one. Escape and a pointer outside still dismiss it, which is what a writer
@@ -101,14 +113,23 @@ target.
 - **`modal={false}`** on menus and popovers. A modal surface freezes the page
   behind it, and the page behind it is the writer's chapter: clicking away must
   land the caret where the writer clicked, not merely dismiss.
+- **A measured surface is `position: absolute` in the manuscript's pane, never
+  `fixed` in the viewport.** Viewport coordinates are wrong the instant the pane
+  scrolls, so they can only be corrected a frame later — measured at one wheel
+  notch a frame, that put the table's row grip beside a row three below the
+  pointer's and painted the block handle over the app's breadcrumb, opaque, off
+  the top of the editor. In the pane's coordinates a scroll changes nothing, and
+  the pane's overflow clips what has left it on the frame it leaves. A pointer
+  reading and a Radix anchor point stay in the viewport's space; nothing else
+  does.
 - **A measured anchor follows `watchManuscriptLayout`, and nothing else.** An
-  element keeps its identity and its size while travelling: the pane scrolls
-  under a still hand, Alt+Arrow moves its block, a peer types above it, a
-  diagram above it finishes rendering. A surface watching any shorter list
-  paints over whatever slid into its old corner — and an overlay is opaque and
-  takes clicks, so a stale one eats the click the writer aimed at the prose.
-  `useAnchorRect` is the hook; the watcher itself is the kernel's, shared with
-  the approach's re-hit-testing so geometry and target cannot fall out of step.
+  element keeps its identity and its size while travelling: Alt+Arrow moves its
+  block, a peer types above it, a diagram above it finishes rendering. A surface
+  watching any shorter list paints over whatever slid into its old corner — and
+  an overlay is opaque and takes clicks, so a stale one eats the click the
+  writer aimed at the prose. `useAnchorRect` is the hook, and it answers in
+  overlay coordinates; the watcher itself is the kernel's, shared with the
+  approach's re-hit-testing so geometry and target cannot fall out of step.
 - **Geometry following is not target following.** A rect that keeps up says
   nothing about whether the pointer is still on the thing it decorates. Which
   target is hovered is one kernel answer for the whole editor
@@ -133,9 +154,10 @@ target.
 - **A surface the writer is still typing under keeps focus in the prose**
   (`focusOnOpen="prose"`). Nothing inside it may be focusable, and its rows
   cancel their own mousedown.
-- **Chrome that portals out of the editor spreads
+- **Chrome that portals out of the prose spreads
   `editorChromeAttributes(chrome)`**, or right-clicks on it bypass the claim
-  ladder. The mark names the editor, because two documents open side by side
+  ladder — measured chrome included, which lands in the pane rather than the
+  body but is still outside `view.dom` where every hit test looks. The mark names the editor, because two documents open side by side
   are two kernels listening on one page.
 - **A greyed row shows its LABEL alone** (law 5, ruling 2026-07-29). Grey must
   still say why, on demand rather than permanently: a reason printed under
@@ -154,6 +176,9 @@ target.
 
 ## Anti-patterns
 
+- Any `position: fixed` in editor chrome, or a portal to `document.body` for
+  something anchored to the manuscript. Both are the viewport again, and the
+  viewport is what let a grip fly over the app's breadcrumb.
 - A lane rendering its own Radix root, its own anchor, or its own focus return.
 - A lane adding a component to `EditorView.tsx` instead of a row to
   `chrome-surfaces.tsx`. That includes a surface that needs the project: the

@@ -105,6 +105,14 @@ gesture is holding, and whether it has lifted.
   inserting anything into the manuscript either way (law 7): a widget
   decoration between two blocks inherits the manuscript's block spacing and
   pushes the page down by its own height.
+- **What is measured is measured into the manuscript's pane, never the
+  viewport.** The handle and the drop line are absolutely positioned in the
+  scroll pane (`features/editor/chrome/manuscript-overlay.ts`), so the pane
+  carries them through a scroll and clips them at its own edge. Fixed to the
+  viewport, the handle was a frame behind every scroll and nothing clipped it:
+  measured mid-scroll at the top of the WINDOW, opaque, over the app's
+  breadcrumb. A pointer reading and the block menu's anchor point stay in the
+  viewport's space — they are compared against pointer events, not drawn.
 - **The manuscript's DOM is ProseMirror's.** Styling a block by setting an
   attribute on its element does not survive: the DOM observer treats it as
   corruption and re-renders the node without it. The lift is a decoration.

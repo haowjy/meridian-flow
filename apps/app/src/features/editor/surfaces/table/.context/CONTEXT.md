@@ -39,11 +39,13 @@ decided to be left. The radio group shows no choice made; `null` is a value.
 
 ## Geometry
 
-`tableChromePieces` is the whole placement decision: a pure function of four
-rectangles — the table, the hovered column band, the hovered row band, and the
-manuscript's scrollport — returning a box per piece, or null where the piece
-would fall outside the port. Sizes live there too, not in CSS: the module that
-decides whether a grip fits has to know how big it is.
+`tableChromePieces` is the whole placement decision: a pure function of three
+rectangles — the table, the hovered column band, the hovered row band —
+returning a box per piece. All three arrive in the manuscript pane's
+coordinates and so does every answer, which is what makes a grip a label on its
+row rather than a thing that chases it: the pane carries the chrome through a
+scroll and these numbers never change. Sizes live there too, not in CSS: the
+module that decides where a grip goes has to know how big it is.
 
 | Piece | Placement |
 |---|---|
@@ -71,21 +73,30 @@ that still reaches there is a grip centred on a last row shorter than itself.
 Placement and hover are checked against each other in the tests — a piece drawn
 outside the zone would dismiss itself as the writer reached for it.
 
-**Null rather than clamped.** A grip pushed back inside the port would sit
-beside a row it does not serve, and chrome pointing at the wrong row is worse
-than chrome that is not there. The document toolbar needs no special case: it
-lives above the scrollport rather than inside it, so anything that would ride
-up over it has already left the port. A grip keeps its element while out of
-view — Radix needs a trigger to anchor an open menu to — and stops painting
-and hit-testing; the add tabs simply unmount.
+**The pane clips; nothing here does.** The chrome is drawn IN the manuscript's
+scroll pane, so its overflow takes off whatever has left it, exactly and on the
+frame it leaves — a grip whose row is halfway off the top slides under the edge
+with the row. Nothing is clamped either: a grip pushed back inside would sit
+beside a row it does not serve. The document toolbar needs no special case; it
+lives above the pane rather than inside it, so nothing drawn in the pane can
+reach it.
 
-When the hovered cell itself leaves the port — scrolled away, or taken by a
-peer deleting the row — the anchor is released whole: open menu closed,
-anchor dropped, and any open grip menu closed with it. Closing the menu is the
-load-bearing part. An open menu holds the anchor still so a stray hover cannot
-move the grips out from under it, so a menu that outlived its own row would
-pin the surface to a cell nobody is on and no later hover could replace it: the
-table's chrome never came back.
+This replaced a per-piece fit test against a viewport rect, which was wrong
+twice over: it was all-or-nothing where the clip is exact, and it was computed
+from a measurement a frame behind the scroll that invalidated it. Probed at one
+wheel notch a frame, that frame drew the row grip beside a row three below the
+one the pointer was on, and the block handle — which had no fit test at all —
+over the app's breadcrumb.
+
+When the hovered cell itself leaves the visible part of the pane — scrolled
+away, or taken by a peer deleting the row — the anchor is released whole: open
+menu closed, anchor dropped. `overlayViewport` is what answers that, and it is
+the one question the pane's clip cannot: a grip half off the edge is still the
+right grip, while a row nobody can see has nothing left for a menu to aim at.
+Closing the menu is the load-bearing part. An open menu holds the anchor still
+so a stray hover cannot move the grips out from under it, so a menu that
+outlived its own row would pin the surface to a cell nobody is on and no later
+hover could replace it: the table's chrome never came back.
 
 The coordinator is handed a `NodeHold` as this lane's reading
 (`registerHoverAnchor<NodeHold>`), because it keeps that reading until the
@@ -105,15 +116,16 @@ as a number: an open menu freezes the grips on the cell it already holds, and
 where the pointer is remains the kernel's to report at its next reading of the
 page.
 
-Opacity on the container fades all four together. Opacity makes a stacking
-context but **not** a containing block, so the fixed children still resolve
-against the viewport — do not add `transform` or `will-change` to that
-container or every grip will jump to the wrong place.
+Opacity on the container fades all four together. The container is a zero-size
+box pinned to the pane's content origin, and opacity makes a stacking context
+but **not** a containing block, so each piece still resolves against the pane
+and lands on exactly the coordinates it was measured in — do not add
+`transform` or `will-change` to that container or every grip will jump.
 
-Rects are re-measured on capture-phase scroll (the manuscript scrolls in a pane,
-not the window), on resize, on a `ResizeObserver` over the cell and the table,
-and on every editor transaction: a row grows as the writer types into it and
-the grip has to travel with it.
+Rects are re-measured on `watchManuscriptLayout`: a `ResizeObserver` over the
+cell and the table, a resize, and every editor transaction, because a row grows
+as the writer types into it. Scroll is in that list too and no longer changes
+anything — the numbers are scroll-invariant now, which is the point.
 
 ## The four menus, and who takes a right-click
 

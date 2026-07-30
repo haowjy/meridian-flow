@@ -73,8 +73,8 @@ export type EditorViewProps = {
   showToolbar?: boolean;
   /**
    * False for an editor a host keeps mounted behind the visible one. Its
-   * chrome stands down: surfaces portal to the body, so a hidden ancestor
-   * would not hide a menu or an object row.
+   * chrome stands down: a menu, a dialog, and a suggestion list all portal to
+   * the body, where a hidden ancestor cannot reach them.
    */
   active?: boolean;
   /** Accessible label override when the surface is read-only. */

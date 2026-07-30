@@ -24,7 +24,8 @@ The layers, in dependency order:
   verb: applied, or the named reason it cannot run. Also the commands
   themselves, and the selection helpers the grips and tabs press.
 - [`table-anchors.ts`](table-anchors.ts) — pointer → cell → document position,
-  and cell → the viewport rects the chrome is positioned from.
+  and cell → the rects the chrome is positioned from, in the manuscript pane's
+  coordinates.
 - [`TableVerbMenu.tsx`](TableVerbMenu.tsx) — every menu's contents, and
   `tableMenuProps` which reads the verb matrix once per open.
 - [`TableChrome.tsx`](TableChrome.tsx) — the mount: the approach lane, the
@@ -117,11 +118,23 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   sits inside the frame, and the hover zone's bottom band is derived from what
   is left there rather than from a gap. Changing either number means checking
   it against `.ProseMirror > * + *`.
-- **Chrome that has left the manuscript's pane does not draw.** Placement is
-  clipped to the scrollport in `table-anchors.ts`, so a grip cannot ride up
-  over the toolbar when the writer scrolls without moving the pointer.
-- The chrome portals out of the editor, so it carries `data-editor-chrome` or
-  its right-clicks bypass the claim ladder.
+- **A grip is a label on the hovered row, not a thing that travels to it**
+  (human ruling, 2026-07-30). It appears at the row instantly and has no
+  transition on `top` or `left`; hovering another row re-anchors it there.
+- **Placement is in the manuscript pane's coordinates, and the pane is what
+  clips it** (`features/editor/chrome/manuscript-overlay.ts`). The chrome
+  portals into the pane and is absolutely positioned there, so a scroll moves it
+  with its row for free and a grip whose row has left the pane slides under the
+  edge. Measured against the viewport instead, every number changed on every
+  scroll and could only be corrected a frame later: probed at one wheel notch a
+  frame, the row grip was drawn beside a row three below the pointer's on every
+  mid-scroll frame. Nothing here tests a piece against a scrollport any more —
+  a JavaScript fit test is that same frame late, and all-or-nothing where the
+  pane's clip is exact.
+- The chrome portals out of the PROSE, so it carries `data-editor-chrome` or
+  its right-clicks bypass the claim ladder. It portals into the manuscript's
+  scroll pane rather than the body, which is where it is placed and what clips
+  it, but the kernel's hit test still finds it outside `view.dom`.
 
 ## Anti-patterns
 
@@ -132,9 +145,8 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   rectangle as a caret, so both readings are wrong exactly when a collaborator
   is writing.
 - A pointer listener of this lane's own, of any kind. The grips are portalled
-  outside the editor, a listener on the prose cannot see the pointer reach
-  them, and pairing it with a React handler on the portal is a race the grips
-  lose — but the fix is the kernel's one reading of the page, not a better
+  outside the prose, a listener on it cannot see the pointer reach them, and
+  pairing it with a React handler on the portal is a race the grips lose — but the fix is the kernel's one reading of the page, not a better
   listener here.
 - Answering "the pointer is still on my chrome" by doing nothing. Not-leaving
   is not re-entering: the grace the frame's edge already scheduled still fires,
@@ -151,7 +163,9 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - Deciding a cell is empty by its text. A hard break and an inline image are
   content that carries no text.
 - Clamping a piece of chrome back inside the pane. It would then point at a row
-  it does not serve.
+  it does not serve — and there is nothing to clamp against: the pane clips.
+- Any transition on a grip's position, or any re-measurement wired to scroll.
+  Both are the travel the ruling struck down, spelled two different ways.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the primitives

@@ -137,7 +137,7 @@ every drag on its own first frame.
 | handle y | the block's first LINE (its padding plus half the leading), not its box |
 | drop line | the prose column's edges, at the midpoint between two blocks |
 
-### Measured on a frame
+### Measured on a frame, into the pane
 
 Both readings are `getBoundingClientRect` and `getComputedStyle` against a DOM
 ProseMirror has only just rewritten, and this surface re-renders on every
@@ -147,6 +147,23 @@ Measuring them in render forced a synchronous layout on each one.
 the numbers moved, so a transaction that changed nothing on screen costs one
 measurement and no render. The pointer's own moves are measured at once: the
 drop line belongs under the pointer on the frame the writer moved it.
+
+The handle and the line are drawn IN the manuscript's scroll pane and placed in
+its coordinates (`features/editor/chrome/manuscript-overlay.ts`), which is what
+takes scroll off the list of things a measurement has to keep up with. Placed
+against the viewport, the handle was a frame behind every scroll and had
+nothing clipping it: probed at one wheel notch a frame, it painted at viewport
+top 8 and then -329 with `data-state="open"` — fully opaque, over the app's
+breadcrumb and then off the top of the window. In the pane its number does not
+change on a scroll at all, and the pane's overflow takes it off the page when
+its block goes.
+
+Two readings stay in the viewport's space, because a pointer event speaks no
+other language and Radix positions in it: `blockUnderPointer`'s column edges
+(`proseColumnEdgesInViewport`) and `handleAnchorPoint`, which reads the block
+menu's anchor off the handle element rather than off its placement. Both are
+one-directional crossings — nothing read from the writer becomes a placement,
+and no placement is ever compared against a pointer.
 
 ### The left margin is shared
 
@@ -162,7 +179,7 @@ frame 328, so a 40px band):
 
 A grip belongs beside the row it serves; the handle is a document-level
 control, so it takes the outer band. Both are measured from the text edge
-rather than the viewport, so the split holds at every column width: the grip
+rather than from the pane, so the split holds at every column width: the grip
 starts 21px inside the frame (`ROW_GRIP_GAP` + its own width) and
 `HANDLE_CLEARANCE` is 22, one pixel clear. M6's
 [`table/.context/CONTEXT.md`](../../table/.context/CONTEXT.md) states the same

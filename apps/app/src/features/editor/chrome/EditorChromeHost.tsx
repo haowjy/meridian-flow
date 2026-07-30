@@ -10,7 +10,7 @@
  *
  * It mounts for the ACTIVE editor only. The desktop context host keeps several
  * editors warm behind the visible one and hides them with `hidden`, which does
- * nothing to a menu, a dialog, or an object row: they all portal to the body
+ * nothing to a menu, a dialog, or a suggestion list: those portal to the body
  * and would paint over the document the writer is actually reading, anchored
  * to a rect in a pane nobody can see.
  */
