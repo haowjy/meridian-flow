@@ -22,12 +22,14 @@ export {
   gapCursorFits,
   type ObjectAt,
   objectBeside,
+  opaqueObjectAround,
   selectedObject,
   selectObjectTransaction,
 } from "./object-selection";
 export {
   EDITOR_OBJECT_TYPES,
   isEditorObject,
+  isOpaqueObject,
   isSourceBlock,
   type ObjectBody,
   type ObjectEngageIntent,

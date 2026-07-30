@@ -22,22 +22,11 @@
  */
 
 import { GapCursor } from "@tiptap/pm/gapcursor";
-import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import { type Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { gapCursorFits, isSourceBlock, objectBody } from "./objects";
-
-/**
- * Does this node's body stand in for text the page does not show?
- *
- * The object registration's one body column answers it: everything a press can
- * take hold of is opaque, and everything else shows its own text (see
- * `objects/object-types.ts`).
- */
-function isOpaqueBody(node: PMNode): boolean {
-  return objectBody(node) !== "text";
-}
+import { gapCursorFits, isOpaqueObject, isSourceBlock, opaqueObjectAround } from "./objects";
 
 /** A top-level block's vertical extent in viewport coordinates. */
 export type BlockBand = {
@@ -184,7 +173,7 @@ function pressOnBlock(
   if (coordsPos !== null) {
     const at = doc.resolve(Math.min(Math.max(coordsPos, 0), doc.content.size));
     const near = TextSelection.near(at);
-    if (near instanceof TextSelection && !inOpaqueObject(near.$head)) {
+    if (near instanceof TextSelection && !opaqueObjectAround(near.$head)) {
       return { kind: "place", selection: near };
     }
   }
@@ -248,7 +237,7 @@ function placeText(doc: PMNode, pos: number): PointerBoundaryDecision {
  * paragraph.
  */
 function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | null {
-  if (isOpaqueBody(node)) return null;
+  if (isOpaqueObject(node)) return null;
   if (node.isTextblock) {
     if (isSourceBlock(node)) return null;
     return direction === 1 ? pos + 1 : pos + 1 + node.content.size;
@@ -287,12 +276,4 @@ function nearestWriterText(doc: PMNode, boundary: number, direction: 1 | -1): nu
     if (found !== null) return found;
   }
   return null;
-}
-
-/** Is this position inside a body that stands in for text the page never shows? */
-function inOpaqueObject($pos: ResolvedPos): boolean {
-  for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    if (isOpaqueBody($pos.node(depth))) return true;
-  }
-  return false;
 }

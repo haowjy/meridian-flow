@@ -183,6 +183,25 @@ export function objectBody(node: PMNode): ObjectBody {
 }
 
 /**
+ * Does this node's body stand in for text the page does not show?
+ *
+ * The one body column answers it: everything a press can take hold of is
+ * opaque, and everything else shows its own text. The registration knows and
+ * the schema does not — a rendered diagram is a `code_block` whose text the
+ * page has replaced with a picture, and ProseMirror still reads it as a
+ * textblock full of typeable characters.
+ *
+ * Whoever decides where a caret may go asks this. A press asks through
+ * `../pointer-boundary.ts` and an arrow walk asks through
+ * `object-selection.ts`, for the same reason: a caret in DOM the writer cannot
+ * see eats every keystroke it is given, and inside a diagram it also brings
+ * back the source the page was showing a picture instead of.
+ */
+export function isOpaqueObject(node: PMNode): boolean {
+  return objectBody(node) !== "text";
+}
+
+/**
  * Which of its own attributes this node's surface offers as verbs, and none for
  * everything else (§5.6).
  *
