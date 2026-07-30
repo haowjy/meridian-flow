@@ -121,4 +121,9 @@ selection across two sibling lists un-lists both in one choice and keeps the
 writer's words selected. Table cells grey Turn into with "Table cells hold
 plain paragraphs." Add link opens the form in one mutation and it stays, with
 Escape returning the caret and the selection. Cut and Copy reach the system
-clipboard; a withheld read greys Paste with "Press Ctrl+V".
+clipboard. A withheld direction greys where the writer pressed it and the menu
+stays standing: Paste refused answers "Press Ctrl+V" on hover with Cut and Copy
+untouched, a refused write greys Copy and Cut together and leaves Paste offered,
+and once the browser grants the read the row pastes and the menu goes. Both
+menus that mount the block were driven, and the link menu's Paste lands on the
+link.
