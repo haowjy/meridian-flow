@@ -48,7 +48,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { type NodeHold, resolveNodeHold } from "@/core/editor/anchors";
+import { holdNode, type NodeHold, resolveNodeHold } from "@/core/editor/anchors";
 import { editorChromeAttributes, hoverOwner, watchManuscriptLayout } from "@/core/editor/chrome";
 
 import {
@@ -158,23 +158,33 @@ export function TableChrome({ editor }: { editor: Editor }) {
    * (Q6), so the pixels BETWEEN the frame and a grip belong to the reveal too;
    * without them the travel to a grip crosses several pixels of nothing and
    * fades out the control the writer is reaching for.
+   *
+   * The reading this lane hands over is a HOLD, not a position. The coordinator
+   * keeps a lane's reading until the pointer moves again and re-delivers it
+   * whenever the manuscript moves underneath — and a peer's inserted row leaves
+   * a different, empty cell at the number the reading was taken as, so a
+   * re-delivered number moves the grips to the wrong row.
    */
   useEffect(() => {
     if (!chrome || !editable) return;
-    return chrome.registerHoverAnchor<number>({
+    return chrome.registerHoverAnchor<NodeHold>({
       id: "table-chrome",
       probe: ({ element }) => {
         const cell = tableCellUnder(editor.view, element);
         const pos = cell && cellDocPosition(editor.view, cell);
         if (!cell || pos === null) return null;
         const owner = hoverOwner(editor.view, cell);
-        return owner ? { owner, value: pos } : null;
+        const hold = holdNode(editor.state, pos);
+        return owner && hold ? { owner, value: hold } : null;
       },
-      holds: (pos, { x, y }) => {
-        const cell = cellElementAt(editor.view, pos);
+      holds: (hold, { x, y }) => {
+        const at = resolveNodeHold(editor.state, hold);
+        const cell = at === null ? null : cellElementAt(editor.view, at.from);
         return cell !== null && pointerHoldsTableChrome(cell, x, y);
       },
-      onSettle: (pos) => {
+      onSettle: (hold) => {
+        const at = hold === null ? null : resolveNodeHold(editor.state, hold);
+        const pos = at?.from ?? null;
         // Whether the pointer is still on this table is true of the pointer
         // whatever a menu is doing, and it is what fades the grips out the
         // moment a menu that was holding them closes.

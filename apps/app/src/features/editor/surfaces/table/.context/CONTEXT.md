@@ -87,6 +87,15 @@ move the grips out from under it, so a menu that outlived its own row would
 pin the surface to a cell nobody is on and no later hover could replace it: the
 table's chrome never came back.
 
+The coordinator is handed a `NodeHold` as this lane's reading
+(`registerHoverAnchor<NodeHold>`), because it keeps that reading until the
+pointer moves again and re-delivers it after any layout change. A position kept
+there is a position cached across a peer's write: with a grip menu open, a peer
+`addRowBefore` above the writer's row made the re-delivered number name the new
+empty cell, and the grips jumped to the peer's row the moment the menu closed
+(measured in a two-browser CDP session, 2026-07-29). Resolving the hold answers
+with the cell or with nothing.
+
 What "the cell" means here is the hold, not the element. The approach settles on
 a `NodeHold` and `useNodeHold` carries it through every transaction, so a rebuild
 that replaces the `<td>` moves the grips and a rebuild that takes the cell away

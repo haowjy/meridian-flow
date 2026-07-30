@@ -104,6 +104,13 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   hovered block all live in `core/editor/chrome/hover-anchor.ts`. A second
   answer here is how the grips once stayed up for a row the writer had
   scrolled past.
+- **The reading handed to the coordinator is a hold, not a position.** It keeps
+  a lane's last reading until the pointer moves again and re-delivers it
+  whenever the manuscript moves underneath, so a position handed over is a
+  position cached across a peer's write — and a peer's inserted row leaves a
+  different, empty cell at that number. Measured: with a grip menu open on the
+  writer's row, a re-delivered number moved the grips to the peer's new row the
+  moment the menu closed.
 - **Nothing this lane draws may reach the block below the table.** A click
   aimed at prose must never mutate a table (human ruling, 2026-07-29), and the
   seam between two blocks is 14.4px against an 18px tab — so the add-row tab
