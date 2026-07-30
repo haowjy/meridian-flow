@@ -29,19 +29,17 @@ import {
   Redo2,
   Undo2,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { openLinkForm } from "@/core/editor/links";
-import { useEditorRevision } from "@/features/editor/chrome";
+import {
+  EditorMenu,
+  EditorMenuRadioGroup,
+  EditorMenuRadioItem,
+  useEditorRevision,
+} from "@/features/editor/chrome";
 import { cn } from "@/lib/utils";
 import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./ToolbarButton";
 import {
@@ -203,6 +201,7 @@ function AlignmentControl({
   editor: Editor | null;
   state: ToolbarControlState;
 }) {
+  const [open, setOpen] = useState(false);
   const label = toolbarControlLabel("alignment");
   // Without an editor the matrix already says "still opening"; naming it here
   // is what lets the rest of this component assume one.
@@ -211,72 +210,95 @@ function AlignmentControl({
     editor ? state.blockedBy : "editor-loading",
   );
   const value: ToolbarAlignmentValue = editor ? currentAlignmentValue(editor) : "default";
-  const Icon = ALIGNMENT_ICONS[value];
 
-  const trigger = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="xs"
-      aria-label={label}
-      aria-pressed={state.active || undefined}
-      aria-disabled={blockedReason ? true : undefined}
-      // Wider than the icon buttons by exactly the chevron it carries: the
-      // dropdown says so before it is opened.
-      className={cn(
-        "gap-px px-1 has-[>svg]:px-1",
-        toolbarControlClass({ active: state.active, blocked: Boolean(blockedReason) }),
-      )}
-      onClick={blockedReason ? (event) => event.preventDefault() : undefined}
-    >
-      <Icon className="size-3.5" aria-hidden />
-      <ChevronDown className="size-2.5" aria-hidden />
-    </Button>
-  );
-
-  // A greyed control opens nothing, so the menu trigger is not composed around
-  // it at all; the button keeps its geometry and explains itself instead.
+  // A greyed control opens nothing, so no menu is composed around it at all;
+  // the button keeps its geometry and explains itself instead.
   if (!editor || blockedReason) {
     return (
-      <ToolbarControlTooltip label={label} blockedReason={blockedReason}>
-        {trigger}
-      </ToolbarControlTooltip>
+      <AlignmentTrigger
+        label={label}
+        blockedReason={blockedReason}
+        active={state.active}
+        alignment={value}
+      />
     );
   }
 
   return (
-    <DropdownMenu>
-      <ToolbarControlTooltip label={label}>
-        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      </ToolbarControlTooltip>
-      <DropdownMenuContent
-        align="start"
-        onCloseAutoFocus={(event) => {
-          // Radix hands focus back to the trigger on both close paths, where
-          // the writer's next Space reopens the menu instead of typing. The
-          // caret never left the prose; the focus goes with it.
-          event.preventDefault();
-          if (!editor.isDestroyed) editor.commands.focus();
-        }}
+    // Through `EditorMenu` like every other menu in the editor: the kernel sees
+    // the open layer, so Escape spends one step on it and the caret goes back
+    // to the prose rather than to this button.
+    <EditorMenu
+      editor={editor}
+      id="toolbar-alignment"
+      open={open}
+      onOpenChange={setOpen}
+      align="start"
+      trigger={<AlignmentTrigger label={label} active={state.active} alignment={value} />}
+    >
+      <EditorMenuRadioGroup
+        value={value}
+        onValueChange={(next) => setToolbarAlignment(editor, next as ToolbarAlignmentValue)}
       >
-        <DropdownMenuRadioGroup
-          value={value}
-          onValueChange={(next) => setToolbarAlignment(editor, next as ToolbarAlignmentValue)}
-        >
-          <DropdownMenuRadioItem value="default">
-            <AlignLeft aria-hidden />
-            {t`Default alignment`}
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="center">
-            <AlignCenter aria-hidden />
-            {t`Center`}
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="right">
-            <AlignRight aria-hidden />
-            {t`Right`}
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        <EditorMenuRadioItem value="default">
+          <AlignLeft aria-hidden />
+          {t`Default alignment`}
+        </EditorMenuRadioItem>
+        <EditorMenuRadioItem value="center">
+          <AlignCenter aria-hidden />
+          {t`Center`}
+        </EditorMenuRadioItem>
+        <EditorMenuRadioItem value="right">
+          <AlignRight aria-hidden />
+          {t`Right`}
+        </EditorMenuRadioItem>
+      </EditorMenuRadioGroup>
+    </EditorMenu>
+  );
+}
+
+/**
+ * The control itself, live or greyed, and the one thing on this row that is a
+ * menu trigger.
+ *
+ * The rest props are the menu's. `EditorMenu` hands its trigger to Radix as a
+ * slot, so the press, the ARIA state, and the anchor's ref arrive here and go
+ * on through the tooltip to the button — a trigger that swallowed them would
+ * be a control that cannot be opened.
+ */
+function AlignmentTrigger({
+  label,
+  blockedReason,
+  active,
+  alignment,
+  ...rest
+}: ComponentProps<"button"> & {
+  label: string;
+  blockedReason?: string | null;
+  active: boolean;
+  /** Which icon the button wears: the alignment the selection already has. */
+  alignment: ToolbarAlignmentValue;
+}) {
+  const Icon = ALIGNMENT_ICONS[alignment];
+  const blocked = Boolean(blockedReason);
+
+  return (
+    <ToolbarControlTooltip label={label} blockedReason={blockedReason}>
+      <Button
+        {...rest}
+        type="button"
+        variant="ghost"
+        size="xs"
+        aria-label={label}
+        aria-pressed={active || undefined}
+        aria-disabled={blocked || undefined}
+        // Wider than the icon buttons by exactly the chevron it carries: the
+        // dropdown says so before it is opened.
+        className={cn("gap-px px-1 has-[>svg]:px-1", toolbarControlClass({ active, blocked }))}
+      >
+        <Icon className="size-3.5" aria-hidden />
+        <ChevronDown className="size-2.5" aria-hidden />
+      </Button>
+    </ToolbarControlTooltip>
   );
 }
