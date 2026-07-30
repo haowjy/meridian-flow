@@ -120,7 +120,6 @@ export function EditorMenu({
 }
 
 export {
-  DropdownMenuGroup as EditorMenuGroup,
   DropdownMenuLabel as EditorMenuLabel,
   DropdownMenuRadioGroup as EditorMenuRadioGroup,
   DropdownMenuRadioItem as EditorMenuRadioItem,

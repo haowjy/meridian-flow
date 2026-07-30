@@ -48,7 +48,12 @@ Beside them, three things that are not summoned surfaces:
 
 - **Absent, not greyed** (law 5). Open link is missing when nothing can follow
   the target, which is the honest state for an internal link before the app
-  registers a navigator. A verb that cannot work does not appear.
+  registers a navigator. A verb that cannot work does not appear. Copy link
+  address is the exception, and for the reason the clipboard rows below it grey:
+  a withheld clipboard is the browser's answer rather than the link's, it can
+  arrive while the menu is open, and the writer who pressed Copy has to hear
+  that nothing was copied. So that press keeps the menu open until the write
+  settles.
 - **The form has no preconditions.** A selection, a bare caret, a caret inside
   a link, a read-only-turned document mid-edit: each has an answer. It refuses
   nothing silently.
@@ -90,6 +95,9 @@ Beside them, three things that are not summoned surfaces:
 - A second copy of the clipboard block. Cut, Copy, and Paste are one block two
   menus mount (`../formatting/clipboard-menu.tsx`); this menu supplies only the
   subject the verbs act on.
+- A `navigator.clipboard` reading of this lane's own. Capability and what a
+  refusal was belong to `features/editor/clipboard.ts`; the menu chooses the
+  payload (the href) and where the answer goes (the row).
 
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) — the primitives, including
   the `SuggestionMenu` both typed-under menus render through

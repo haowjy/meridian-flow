@@ -21,7 +21,6 @@ export { EditorDialog, type EditorDialogProps } from "./EditorDialog";
 export {
   EditorMenu,
   EditorMenuCheckboxItem,
-  EditorMenuGroup,
   EditorMenuItem,
   EditorMenuLabel,
   type EditorMenuProps,

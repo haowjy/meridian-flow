@@ -136,11 +136,6 @@ export function registerImageIngressHost(
   };
 }
 
-/** Every picture this editor is waiting on, for tests and surfaces that ask. */
-export function pendingImages(editor: Editor | null): readonly PendingImage[] {
-  return Array.from(ingressState(editor).pending.values());
-}
-
 /** What this client is filling, which is what it announces to peers. */
 export function uploadsOwnedHere(editor: Editor | null): readonly AnnouncedUpload[] {
   const owned: AnnouncedUpload[] = [];

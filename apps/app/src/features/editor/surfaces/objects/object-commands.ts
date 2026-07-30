@@ -4,6 +4,12 @@
  * Document operations dispatch through the editor; export operations touch the
  * clipboard and the filesystem. Both are here so the components stay about
  * arrangement and state, and so a verb can be tested without a surface.
+ *
+ * The clipboard itself is not this lane's: capability, the rich/plain fallback,
+ * and what a refusal was all belong to the feature's one adapter
+ * ([`../../clipboard.ts`](../../clipboard.ts)). What is this lane's is the
+ * payload — a fence's source, a diagram rasterized, an asset fetched — and the
+ * dialect its feedback speaks, which is Errors.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -11,6 +17,11 @@ import { Fragment } from "@tiptap/pm/model";
 
 import { DIAGRAM_PREVIEW_SELECTOR } from "@/core/editor/diagrams";
 import type { ObjectSurfaceField } from "@/core/editor/objects";
+import {
+  type ClipboardWrite,
+  writeClipboardImage,
+  writeClipboardText,
+} from "@/features/editor/clipboard";
 
 /**
  * An export that could not happen, with the reason kept.
@@ -87,7 +98,23 @@ export function deleteObject(editor: Editor, pos: number): boolean {
 // ── export ────────────────────────────────────────────────────────────────
 
 export async function copyText(text: string): Promise<void> {
-  await navigator.clipboard.writeText(text);
+  await copiedOrThrown(writeClipboardText(text));
+}
+
+/**
+ * A write as `verb-feedback` hears it.
+ *
+ * That layer reads the browser's own error names — `NotAllowedError` for a
+ * blocked clipboard, `SecurityError` for a tainted canvas — so a refusal is
+ * re-thrown as the error the browser threw rather than as a summary of it. A
+ * browser that never offered the page a clipboard threw nothing to re-throw,
+ * and reaches the writer as the generic failure it always has.
+ */
+async function copiedOrThrown(work: Promise<ClipboardWrite>): Promise<void> {
+  const write = await work;
+  if (write.status === "done") return;
+  if (write.status === "denied") throw write.cause;
+  throw new Error("This browser does not offer the page a clipboard.");
 }
 
 /**
@@ -155,7 +182,7 @@ export async function svgToPngBlob(svg: string): Promise<Blob> {
  */
 export async function copySvgImage(svg: string): Promise<void> {
   const blob = await svgToPngBlob(svg);
-  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+  await copiedOrThrown(writeClipboardImage(blob));
 }
 
 export function downloadPng(svg: string, filename: string): Promise<void> {
@@ -198,7 +225,7 @@ export async function copyImageFrom(url: string): Promise<void> {
   // PNG is the only raster type every clipboard implementation accepts; a JPEG
   // or a WebP has to be transcoded on the way.
   const png = blob.type === "image/png" ? blob : await transcodeToPng(blob);
-  await navigator.clipboard.write([new ClipboardItem({ [png.type]: png })]);
+  await copiedOrThrown(writeClipboardImage(png));
 }
 
 export async function downloadImageFrom(url: string, filename?: string): Promise<void> {

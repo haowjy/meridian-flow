@@ -3,7 +3,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import type { ClipboardAccess } from "./clipboard-commands";
+import type { ClipboardAccess } from "../../clipboard";
 import { clipboardItemStates } from "./clipboard-menu";
 
 let editor: Editor | null = null;

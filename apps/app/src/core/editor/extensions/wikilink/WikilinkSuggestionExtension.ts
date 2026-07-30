@@ -18,7 +18,6 @@
 import {
   filterWikilinkItems,
   type SuggestionMenu,
-  type SuggestionMenuSnapshot,
   type WikilinkCatalog,
   type WikilinkMenuItem,
 } from "@/core/completion";
@@ -28,7 +27,6 @@ import { insertWikilink } from "./wikilink-insertion";
 import { allowsWikilinkTrigger } from "./wikilink-trigger";
 
 export type WikilinkMenu = SuggestionMenu<WikilinkMenuItem>;
-export type WikilinkMenuSnapshot = SuggestionMenuSnapshot<WikilinkMenuItem>;
 
 export type WikilinkExtensionOptions = SuggestionLaneOptions<WikilinkCatalog>;
 
@@ -51,5 +49,4 @@ const wikilinkLane = createSuggestionLane<WikilinkCatalog, WikilinkMenuItem>({
 });
 
 export const WikilinkSuggestionExtension = wikilinkLane.extension;
-export const wikilinkSuggestionPluginKey = wikilinkLane.pluginKey;
 export const getWikilinkMenu = wikilinkLane.getMenu;

@@ -18,10 +18,9 @@ import { ClipboardPaste, Copy, Scissors } from "lucide-react";
 import { type ComponentType, useState } from "react";
 import { EditorMenuItem, EditorMenuShortcut } from "../../chrome";
 
+import { type ClipboardAccess, clipboardAccess } from "../../clipboard";
 import {
-  type ClipboardAccess,
   type ClipboardResult,
-  clipboardAccess,
   copySelection,
   cutSelection,
   pasteIntoSelection,

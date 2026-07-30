@@ -30,8 +30,6 @@ export type LinkTarget =
   /** Everything that leaves the app. Never crosses the resolution port. */
   | { kind: "external"; url: string };
 
-export type LinkTargetKind = LinkTarget["kind"];
-
 /** True for the three spellings of the one internal family (§5.5). */
 export function isInternalLinkTarget(target: LinkTarget): boolean {
   return target.kind !== "external";

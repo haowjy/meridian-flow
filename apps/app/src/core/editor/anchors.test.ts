@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
 import {
-  anchorPosition,
   anchorRange,
   followAnchor,
   followBlock,
@@ -104,7 +103,9 @@ describe("editor anchors under a peer's write", () => {
   it("holds a block seam through a peer's insertion above it", () => {
     pair = createCollabPair(doc);
     const { local } = pair;
-    const anchor = anchorPosition(local.state, 7);
+    // A seam is an empty range: both of its edges are the same edge, which is
+    // what keeps text a peer types there in front of the caret.
+    const anchor = anchorRange(local.state, { from: 7, to: 7 });
 
     const { transaction } = peerWrite(({ peer }) => {
       peer.commands.insertContentAt(0, {

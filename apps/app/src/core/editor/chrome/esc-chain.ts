@@ -117,23 +117,3 @@ export function advanceEscSituation(situation: EscSituation, step: EscStep): Esc
       return situation;
   }
 }
-
-/**
- * Every step from `situation` to home, in order. Bounded by construction:
- * each step strictly shrinks the situation, so the loop cannot run away even
- * if a future step type forgets to.
- */
-export function escWalkHome(situation: EscSituation): EscStep[] {
-  const steps: EscStep[] = [];
-  let current = situation;
-  const bound = situation.layers.length + 4;
-
-  for (let taken = 0; taken <= bound; taken += 1) {
-    const step = escStep(current);
-    if (step.kind === "at-home") return steps;
-    steps.push(step);
-    current = advanceEscSituation(current, step);
-  }
-
-  throw new Error("Esc chain did not reach home: a step failed to shrink the situation");
-}

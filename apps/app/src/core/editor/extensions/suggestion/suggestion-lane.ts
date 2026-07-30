@@ -109,7 +109,6 @@ export type SuggestionLaneSpec<TCatalog, TItem, TEntry extends TItem = TItem, TM
 
 export type SuggestionLane<TCatalog, TEntry, TMeta = null> = {
   extension: Extension<SuggestionLaneOptions<TCatalog>>;
-  pluginKey: PluginKey;
   /**
    * The open menu for this editor, or null on a surface that never mounted the
    * lane (a code file, a read-only viewer). Null is a real state.
@@ -270,5 +269,7 @@ export function createSuggestionLane<TCatalog, TItem, TEntry extends TItem = TIt
     return storage[spec.name]?.menu ?? null;
   };
 
-  return { extension, pluginKey, getMenu };
+  // The plugin key stays inside: a lane's open state is read through its menu,
+  // and a returned key is an invitation to read the plugin's state instead.
+  return { extension, getMenu };
 }

@@ -11,11 +11,11 @@
  * letter could follow it.
  */
 import { Editor, type JSONContent } from "@tiptap/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 
-import { setObjectField } from "./object-commands";
+import { copyText, setObjectField } from "./object-commands";
 
 let editor: Editor | null = null;
 
@@ -93,5 +93,46 @@ describe("writing an object's field", () => {
     setObjectField(instance, pos, "caption", "The terrace at dusk ");
 
     expect(figureAttrs(instance).caption).toBe("The terrace at dusk ");
+  });
+});
+
+/**
+ * The clipboard reaches these verbs through the feature's one adapter, and verb
+ * feedback translates the browser's own error names into the writer's sentence
+ * ("the browser blocked the clipboard" reads differently from "that did not
+ * work"). So a refusal has to arrive as the error the browser threw, not as a
+ * summary of it.
+ */
+describe("a copy the browser refuses", () => {
+  const realClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+
+  afterEach(() => {
+    if (realClipboard) Object.defineProperty(navigator, "clipboard", realClipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+  });
+
+  function stubClipboard(clipboard: Partial<Clipboard>): void {
+    Object.defineProperty(navigator, "clipboard", { value: clipboard, configurable: true });
+  }
+
+  it("hands the browser's own refusal to the feedback that reads its name", async () => {
+    const denial = new DOMException("blocked", "NotAllowedError");
+    stubClipboard({ writeText: vi.fn().mockRejectedValue(denial) });
+
+    await expect(copyText("flowchart LR")).rejects.toBe(denial);
+  });
+
+  it("still fails loudly where the browser offers no clipboard at all", async () => {
+    stubClipboard({});
+
+    await expect(copyText("flowchart LR")).rejects.toThrow();
+  });
+
+  it("resolves quietly when the words are on the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard({ writeText });
+
+    await expect(copyText("flowchart LR")).resolves.toBeUndefined();
+    expect(writeText).toHaveBeenCalledWith("flowchart LR");
   });
 });
