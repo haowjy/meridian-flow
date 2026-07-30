@@ -170,6 +170,16 @@ describe("a picture in flight occupies its final slot", () => {
     ]);
   });
 
+  it("keeps the slot's upload token out of every HTML the editor writes", async () => {
+    const { editor } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+
+    // The token is a live-session fact. On the clipboard it would put a second
+    // node under one upload; in a saved file it would name an owner that is gone.
+    expect(editor.getHTML().toLowerCase()).not.toContain("uploadtoken");
+  });
+
   it("reports progress against that node without touching the document", async () => {
     const { editor, held } = mount();
     insertImageFile(editor, imageFile(), 5);

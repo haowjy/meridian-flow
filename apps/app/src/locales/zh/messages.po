@@ -2915,6 +2915,10 @@ msgstr ""
 msgid "Uploading {0}…"
 msgstr ""
 
+#: src/core/editor/images/ImageNodeView.tsx
+msgid "Uploading elsewhere…"
+msgstr ""
+
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Uploads"
