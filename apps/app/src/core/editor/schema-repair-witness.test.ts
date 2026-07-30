@@ -262,30 +262,7 @@ describe("schema repair witness", () => {
     const events: SchemaRepairEvent[] = [];
     const editor = constructEditor(doc, events);
     const propagatedUpdates: Uint8Array[] = [];
-    const repairMetaKeys: string[][] = [];
-    const sequence: string[] = [];
     doc.on("update", (update) => propagatedUpdates.push(update));
-    doc.on("beforeTransaction", (transaction) => {
-      sequence.push(
-        `before:${transaction.origin === ySyncPluginKey ? "y-sync" : String(transaction.origin)}`,
-      );
-    });
-    doc.on("afterTransaction", (transaction) => {
-      sequence.push(
-        `after:${transaction.origin === ySyncPluginKey ? "y-sync" : String(transaction.origin)}`,
-      );
-    });
-    doc.on("update", (_update, origin) => {
-      sequence.push(`update:${origin === ySyncPluginKey ? "y-sync" : String(origin)}`);
-    });
-    editor.on("transaction", ({ transaction }) => {
-      const meta = transaction.getMeta(ySyncPluginKey);
-      if (meta) {
-        const keys = Object.keys(meta).sort();
-        repairMetaKeys.push(keys);
-        sequence.push(`pm:${keys.join(",")}`);
-      }
-    });
 
     Y.applyUpdate(
       doc,
@@ -301,17 +278,6 @@ describe("schema repair witness", () => {
       removedText: "remote future prose",
     });
     expect(events[0]?.evidenceDegraded).toBeUndefined();
-    expect(repairMetaKeys).toContainEqual(["isChangeOrigin", "isUndoRedoOperation"]);
-    expect(sequence).toEqual([
-      "before:remote-provider-origin",
-      "before:y-sync",
-      "pm:isChangeOrigin,isUndoRedoOperation",
-      "after:remote-provider-origin",
-      "update:remote-provider-origin",
-      "pm:isChangeOrigin,isUndoRedoOperation",
-      "after:y-sync",
-      "update:y-sync",
-    ]);
     expect(editor.getText()).toBe("valid prose");
 
     for (const update of propagatedUpdates) {
@@ -325,58 +291,39 @@ describe("schema repair witness", () => {
     ]);
   });
 
-  it("pins binding meta for repair while ordinary deleteRange typing yields no verdict", async () => {
-    const repairDoc = new Y.Doc();
-    appendElement(repairDoc, "paragraph", "kept prose");
-    appendElement(repairDoc, "sidebar", "future prose");
-    const repairEvents: SchemaRepairEvent[] = [];
-    const repairMetaKeys: string[][] = [];
-    const repairWitness = createSchemaRepairWitness({
-      document: repairDoc,
-      onRepair: (event) => repairEvents.push(event),
+  it("reports a live repair when the witness goes live inside editor construction", async () => {
+    const doc = new Y.Doc();
+    appendElement(doc, "paragraph", "kept prose");
+    appendElement(doc, "sidebar", "future prose");
+    const events: SchemaRepairEvent[] = [];
+    const witness = createSchemaRepairWitness({
+      document: doc,
+      onRepair: (event) => events.push(event),
       now: () => "2026-07-28T12:00:00.000Z",
     });
-    witnesses.push(repairWitness);
-    const repairEditor = new Editor({
+    witnesses.push(witness);
+    const editor = new Editor({
       element: document.createElement("div"),
       ...createEditorConfig({
-        document: repairDoc,
-        presence: createLocalPresence(new Awareness(repairDoc)),
+        document: doc,
+        presence: createLocalPresence(new Awareness(doc)),
         showCollaborationDecorations: false,
       }),
-      // This replays the spike's construction sequence through the live
-      // correlator so the fork-internal binding meta stays a loud contract.
-      onBeforeCreate: ({ editor }) => repairWitness.enterLive(editor),
-      onTransaction: ({ transaction }) => {
-        const meta = transaction.getMeta(ySyncPluginKey);
-        if (meta) repairMetaKeys.push(Object.keys(meta).sort());
-      },
+      // The spike's construction sequence: the witness is already live when
+      // Collaboration binds, so the bind-time removal has to arrive through
+      // the live correlator rather than the open-phase path.
+      onBeforeCreate: ({ editor: live }) => witness.enterLive(live),
     });
-    editors.push(repairEditor);
+    editors.push(editor);
     await finishFlush();
 
-    expect(repairEvents).toHaveLength(1);
-    expect(repairEvents[0]).toMatchObject({
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
       phase: "live",
       deletedNodeTypes: ["sidebar"],
       removedText: "future prose",
     });
-    expect(repairMetaKeys).toContainEqual(["binding", "isChangeOrigin"]);
-
-    const typingDoc = new Y.Doc();
-    appendElement(typingDoc, "paragraph", "delete me");
-    const typingEvents: SchemaRepairEvent[] = [];
-    const typingEditor = constructEditor(typingDoc, typingEvents);
-    const typingMeta: unknown[] = [];
-    typingEditor.on("transaction", ({ transaction }) => {
-      typingMeta.push(transaction.getMeta(ySyncPluginKey));
-    });
-
-    expect(typingEditor.commands.deleteRange({ from: 1, to: 7 })).toBe(true);
-    await finishFlush();
-
-    expect(typingMeta).toEqual([undefined]);
-    expect(typingEvents).toEqual([]);
+    expect(editor.getText()).toContain("kept prose");
   });
 
   it("reports a remote-interleaved y-sync deletion when no user transaction occurs", async () => {
@@ -630,5 +577,47 @@ describe("schema repair witness", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]?.removedText).toBe("destroy candidate");
+  });
+});
+
+/**
+ * The one upstream bit the witness reads off the y-prosemirror fork.
+ *
+ * `bindingDispatched` asks whether a ProseMirror transaction carries y-sync
+ * meta with `binding` or `isChangeOrigin` on it, and that question is the whole
+ * adapter contract: listener order, batching, and the rest of the meta keys are
+ * the fork's business and may change without changing a verdict. This asserts
+ * the bit, so an upstream bump that breaks the correlator names itself here.
+ */
+describe("the y-sync meta the witness correlates on", () => {
+  function carriesBindingMeta(transaction: Transaction): boolean {
+    const meta = transaction.getMeta(ySyncPluginKey) as Record<string, unknown> | undefined;
+    return (
+      meta !== undefined &&
+      (Object.hasOwn(meta, "binding") || Object.hasOwn(meta, "isChangeOrigin"))
+    );
+  }
+
+  it("marks the binding's own transaction and leaves a writer command unmarked", async () => {
+    const doc = new Y.Doc();
+    appendElement(doc, "paragraph", "valid prose");
+    const editor = constructEditor(doc, []);
+    const marked: boolean[] = [];
+    editor.on("transaction", ({ transaction }) => marked.push(carriesBindingMeta(transaction)));
+
+    Y.applyUpdate(
+      doc,
+      foreignElementUpdate(doc, "paragraph", "remote valid prose"),
+      "remote-provider-origin",
+    );
+    await finishFlush();
+
+    expect(marked).toContain(true);
+
+    marked.length = 0;
+    expect(editor.commands.deleteRange({ from: 1, to: 7 })).toBe(true);
+    await finishFlush();
+
+    expect(marked).toEqual([false]);
   });
 });
