@@ -158,7 +158,10 @@ target.
 - A lane adding a component to `EditorView.tsx` instead of a row to
   `chrome-surfaces.tsx`. That includes a surface that needs the project: the
   scope provider exists so the answer is a read, not a second mount.
-- Local `useState` mirroring the resolved context or suppression.
+- Local `useState` mirroring anything the kernel or the editor already stores —
+  the resolved context, suppression, a transaction counter. Every signal here is
+  a store read through `useSyncExternalStore`, which is also what keeps a change
+  that lands between render and subscription from going missing.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`../../../core/editor/chrome/.context/CONTEXT.md`](../../../core/editor/chrome/.context/CONTEXT.md)
