@@ -56,9 +56,8 @@ export function createStandaloneEditor({
   ...schema
 }: StandaloneEditorOptions = {}): StandaloneEditor {
   installJsdomLayoutFallbacks();
-  const pane = document.createElement("div");
-  pane.setAttribute("data-stable-layout-scroll", "");
   const element = document.createElement("div");
+  const pane = createManuscriptPane();
   pane.append(element);
   document.body.append(pane);
   const editor = new Editor({
@@ -73,6 +72,31 @@ export function createStandaloneEditor({
       pane.remove();
     },
   };
+}
+
+/**
+ * The pane element, wearing the contract production's pane wears
+ * (`EditorSurfaceFrame`) rather than only its marker.
+ *
+ * The marker is what `manuscriptOverlay()` looks for, so a fixture carrying
+ * the marker alone makes every lookup succeed while the pane is none of the things
+ * the lookup was asking about: measured chrome is `position: absolute` and
+ * resolves against the nearest POSITIONED ancestor, and what takes a surface
+ * off the page when it leaves the manuscript is this element's overflow. A
+ * fixture without them is a static element some other ancestor is standing in
+ * for, and a suite built on it cannot fail the way the app does.
+ *
+ * Inline rather than a class, because jsdom applies no stylesheet: the app's
+ * `relative` and `main-pane` utilities resolve to exactly these declarations,
+ * and a class name in jsdom resolves to nothing at all.
+ */
+function createManuscriptPane(): HTMLElement {
+  const pane = document.createElement("div");
+  pane.setAttribute("data-stable-layout-scroll", "");
+  pane.style.position = "relative";
+  pane.style.overflowY = "auto";
+  pane.style.overflowX = "hidden";
+  return pane;
 }
 
 /**

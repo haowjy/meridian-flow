@@ -1,0 +1,12 @@
+# Future work — features/editor/chrome
+
+- `overlayRect` under CSS `zoom`. The conversion in `manuscript-overlay.ts`
+  mixes two coordinate spaces that agree today and would stop agreeing the
+  moment a manuscript ancestor carried `zoom`: `getBoundingClientRect()` is
+  zoom-scaled, while `clientLeft`/`clientTop` and `scrollLeft`/`scrollTop` are
+  not. A Chromium probe at `zoom: 1.25` missed the target by 73px across and
+  48.125px down; ordinary LTR scrolling and negative-`scrollLeft` RTL scrolling
+  were exact. No manuscript ancestor is zoomed or transformed today, so this is
+  a trap rather than a bug. If editor zoom ever ships, `overlayRect` needs an
+  explicit scale conversion and a real-browser test to hold it — a jsdom suite
+  stubs both readings and would agree with whatever the code does.

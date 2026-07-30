@@ -11,7 +11,19 @@
  * split is pure geometry now; the sum invariant these recipes encode is:
  *
  *   chrome inset  =  canvas wrapper inset  +  prose inset
- *   px-8/10/16    =  px-2/4/6              +  px-6/6/10
+ *   px-12/14/16   =  px-2/4/6              +  px-10
+ *
+ * That sum is also the GUTTER, and the gutter is load-bearing: the block
+ * handle and the table's row grips are drawn in the manuscript's own scroll
+ * pane, which clips them at its edge, so anything they reach past the text
+ * edge has to fit inside it. `MARGIN_GUTTER_MIN` is what they reach
+ * (`surfaces/blocks/block-geometry.ts`); every breakpoint here clears it, and
+ * `editor-column.test.ts` fails if one stops.
+ *
+ * The ramp is in the wrapper alone — 48/56/64 — and the prose keeps one
+ * padding at every width. A narrow window gives up 16px of line length for a
+ * usable margin, which is the trade, and the reward is that crossing 768px no
+ * longer moves the text edge by 24px per side.
  *
  * Change any inset only by editing this file; never re-encode these classes
  * at a call site.
@@ -20,7 +32,7 @@
 import { cn } from "@/lib/utils";
 
 /** Chrome rows aligned to the prose edge (the document toolbar row). */
-export const editorColumnChrome = "mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16";
+export const editorColumnChrome = "mx-auto w-full max-w-3xl px-12 sm:px-14 md:px-16";
 
 /** The scrolling canvas wrapper around `EditorContent`. */
 export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6";
@@ -68,7 +80,7 @@ export const editorProseScrollPastEnd = "pb-[50vh]";
  */
 export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
-    "prose-tokens min-h-full shrink-0 px-6 md:px-10",
+    "prose-tokens min-h-full shrink-0 px-10",
     editorProseScrollPastEnd,
     toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
   );

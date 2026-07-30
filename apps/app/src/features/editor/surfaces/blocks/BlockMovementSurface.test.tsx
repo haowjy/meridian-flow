@@ -10,14 +10,16 @@
  * when the paragraph the pointer is resting on scrolls away and another takes
  * its place.
  */
-import { Editor, type JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CHROME_TIMING, getEditorChrome } from "@/core/editor/chrome";
-import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
+import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/standalone-editor";
+
+import { manuscriptOverlay } from "../../chrome/manuscript-overlay";
 
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
@@ -34,11 +36,11 @@ const POINTER_Y = FIRST_BLOCK_TOP + BLOCK_PITCH + 10;
 /** `blockHandlePosition`'s fallback lead when the line height is unreadable. */
 const HANDLE_LEAD = 4;
 
+let standalone: StandaloneEditor;
 let editor: Editor;
 let root: Root;
 let container: HTMLElement;
 let pane: HTMLElement;
-let host: HTMLElement;
 let scrollTop = 0;
 
 /** Inert on purpose: only the scroll may be what re-measures here. */
@@ -185,14 +187,10 @@ beforeEach(() => {
 
   // The manuscript always scrolls in a pane (`EditorSurfaceFrame`), and that
   // pane is where measured chrome mounts and whose coordinates it is placed in.
-  pane = document.createElement("div");
-  pane.setAttribute("data-stable-layout-scroll", "");
-  host = document.createElement("div");
-  pane.append(host);
-  document.body.append(pane);
-  editor = new Editor({
-    element: host,
-    extensions: createStandaloneEditorExtensions(),
+  // The shared harness is what builds it, positioned and clipping like the
+  // app's: a second hand-rolled pane here would be a second answer to what a
+  // manuscript pane is.
+  standalone = createStandaloneEditor({
     content: {
       type: "doc",
       content: [
@@ -202,6 +200,10 @@ beforeEach(() => {
       ],
     } satisfies JSONContent,
   });
+  editor = standalone.editor;
+  const overlay = manuscriptOverlay(editor);
+  if (!overlay) throw new Error("the harness mounted no manuscript pane");
+  pane = overlay;
   layOutManuscript();
 
   container = document.createElement("div");
@@ -212,8 +214,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  editor.destroy();
-  pane.remove();
+  standalone.destroy();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });

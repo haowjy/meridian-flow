@@ -476,7 +476,7 @@ function TrackedEditorCanvas({
       toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}
-      scrollClassName="meridian-editor main-pane relative"
+      scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}
     >
       <div className={cn(editorColumnCanvas, editorColumnFill)}>
