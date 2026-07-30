@@ -100,8 +100,14 @@ function mount(text = "The gate opened."): {
   editor: Editor;
   peer: Editor;
   sync: () => void;
+  syncAwareness: () => void;
+  awareness: CollabPair["awareness"];
   held: HeldUpload[];
-  bytes: { calls: string[]; settle: (url: string, file: File | null) => void };
+  bytes: {
+    calls: string[];
+    aborted: string[];
+    settle: (url: string, file: File | null) => void;
+  };
 } {
   pair = createCollabPair({
     type: "doc",
@@ -110,10 +116,12 @@ function mount(text = "The gate opened."): {
   const { port, held } = heldUploadPort();
   const waiting = new Map<string, (file: File | null) => void>();
   const calls: string[] = [];
+  const aborted: string[] = [];
   registerImageIngressHost(pair.local, {
     upload: port,
-    fetchBytes: ({ url }: { url: string }) => {
+    fetchBytes: ({ url, signal }: { url: string; signal: AbortSignal }) => {
       calls.push(url);
+      signal.addEventListener("abort", () => aborted.push(url));
       return new Promise((resolve) => waiting.set(url, resolve));
     },
   });
@@ -121,12 +129,33 @@ function mount(text = "The gate opened."): {
     editor: pair.local,
     peer: pair.peer,
     sync: pair.sync,
+    syncAwareness: pair.syncAwareness,
+    awareness: pair.awareness,
     held,
     bytes: {
       calls,
+      aborted,
       settle: (url, file) => waiting.get(url)?.(file),
     },
   };
+}
+
+/**
+ * What this editor draws over the picture at `pos`, read off the manuscript
+ * itself rather than off plugin state: `data-pending-image` is the decoration
+ * attribute `ImageNodeView` branches on, so this is the peer's rendering.
+ */
+function slotStatus(editor: Editor, pos: number): string | null {
+  const dom = editor.view.nodeDOM(pos);
+  return dom instanceof HTMLElement ? dom.getAttribute("data-pending-image") : null;
+}
+
+/** What this client is announcing on the ephemeral channel: tokens and shapes. */
+function announced(awareness: { getLocalState: () => Record<string, unknown> | null }) {
+  return (awareness.getLocalState()?.imageUploads ?? []) as readonly {
+    token: string;
+    frame: { width: number; height: number } | null;
+  }[];
 }
 
 describe("a picture in flight occupies its final slot", () => {
@@ -142,6 +171,16 @@ describe("a picture in flight occupies its final slot", () => {
     expect(pendingImages(editor)).toMatchObject([
       { kind: "upload", filename: "cover art.png", status: { kind: "uploading", percent: null } },
     ]);
+  });
+
+  it("keeps the slot's upload token out of every HTML the editor writes", async () => {
+    const { editor } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+
+    // The token is a live-session fact. On the clipboard it would put a second
+    // node under one upload; in a saved file it would name an owner that is gone.
+    expect(editor.getHTML().toLowerCase()).not.toContain("uploadtoken");
   });
 
   it("reports progress against that node without touching the document", async () => {
@@ -330,13 +369,133 @@ describe("two pictures arriving together are two lifecycles", () => {
   });
 });
 
-/** Everything about the document except which picture the node points at. */
+describe("a peer sees an upload it does not own as an upload", () => {
+  it("shows the slot as uploading elsewhere while its owner is live", async () => {
+    const { editor, peer, sync, syncAwareness } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    sync();
+    syncAwareness();
+    await settle();
+
+    // Same node, two clients, two honest readings: mine is uploading, theirs is
+    // uploading somewhere else. Neither is "this never finished".
+    expect(imageNodes(peer)).toEqual([{ pos: 5, src: "", alt: "cover art" }]);
+    expect(slotStatus(editor, 5)).toBe("uploading");
+    expect(slotStatus(peer, 5)).toBe("elsewhere");
+  });
+
+  it("stops claiming an owner once the upload lands", async () => {
+    const { editor, peer, sync, syncAwareness, awareness, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    sync();
+    syncAwareness();
+
+    held[0].settle(asset("asset-peer"));
+    await settle();
+    sync();
+    syncAwareness();
+    await settle();
+
+    expect(imageNodes(peer)).toEqual([{ pos: 5, src: "asset:asset-peer", alt: "Cover art" }]);
+    expect(slotStatus(peer, 5)).toBe(null);
+    expect(announced(awareness.local)).toEqual([]);
+  });
+
+  it("leaves an ownerless empty slot recoverable, not in flight", async () => {
+    const { editor, peer, sync } = mount();
+    // No owner ever announced this one: a reload's leftover, or a redo that
+    // brought back an insert whose bytes are gone.
+    editor.commands.insertContentAt(5, { type: "image", attrs: { src: "", alt: "gone" } });
+    await settle();
+    sync();
+    await settle();
+
+    expect(slotStatus(peer, 5)).toBe(null);
+  });
+});
+
+describe("a pending picture can be moved while its bytes travel", () => {
+  it("lands the bytes in the slot the writer moved it to", async () => {
+    const { editor, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+
+    // One transaction, delete plus insert: the move y-prosemirror reconciles as
+    // a new identity, and the shape a drag inside the manuscript produces.
+    const transaction = editor.state.tr;
+    const picture = editor.state.doc.nodeAt(5);
+    if (!picture) throw new Error("the pending picture is not at 5");
+    transaction.delete(5, 6);
+    transaction.insert(transaction.doc.content.size - 1, picture);
+    editor.view.dispatch(transaction);
+    await settle();
+
+    expect(held[0].signal.aborted).toBe(false);
+    expect(pendingImages(editor)).toHaveLength(1);
+    const moved = imageNodes(editor);
+    expect(moved).toHaveLength(1);
+    expect(moved[0].pos).toBeGreaterThan(5);
+
+    held[0].settle(asset("asset-moved"));
+    await settle();
+    expect(imageNodes(editor)).toEqual([
+      { pos: moved[0].pos, src: "asset:asset-moved", alt: "Cover art" },
+    ]);
+  });
+});
+
+describe("closing the editor closes what it was carrying", () => {
+  it("aborts every upload and releases its owner signal on destroy", async () => {
+    const { editor, awareness, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    // The token this client owns, and nothing a peer could not act on: no
+    // filename, no percent, no bytes.
+    expect(announced(awareness.local)).toEqual([
+      { token: pendingImages(editor)[0].id, frame: null },
+    ]);
+
+    editor.destroy();
+
+    expect(held[0].signal.aborted).toBe(true);
+    expect(announced(awareness.local)).toEqual([]);
+  });
+
+  it("aborts a pending import on destroy", async () => {
+    const { editor, bytes } = mount();
+    editor.view.pasteHTML('<p><img src="https://example.test/one.png" alt="One"></p>');
+    await settle();
+    expect(bytes.calls).toEqual(["https://example.test/one.png"]);
+    expect(pendingImages(editor)).toHaveLength(1);
+
+    editor.destroy();
+
+    expect(bytes.aborted).toEqual(["https://example.test/one.png"]);
+  });
+});
+
+/**
+ * Everything about the document except which picture a node points at and
+ * whether an upload is still filling it. Landing writes exactly those, on the
+ * node that was already there; anything else differing means the manuscript
+ * moved.
+ */
 function withoutImageSrc(doc: unknown): unknown {
   if (Array.isArray(doc)) return doc.map(withoutImageSrc);
   if (doc && typeof doc === "object") {
     const entries = Object.entries(doc as Record<string, unknown>).map(([key, value]) =>
       key === "attrs" && (doc as { type?: string }).type === "image"
-        ? [key, { ...(value as Record<string, unknown>), src: "<src>", alt: "<alt>" }]
+        ? [
+            key,
+            {
+              ...(value as Record<string, unknown>),
+              src: "<src>",
+              alt: "<alt>",
+              uploadToken: "<token>",
+            },
+          ]
         : [key, withoutImageSrc(value)],
     );
     return Object.fromEntries(entries);

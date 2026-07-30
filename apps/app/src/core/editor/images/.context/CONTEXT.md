@@ -4,34 +4,47 @@
 
 ```mermaid
 flowchart TD
-  door["picker / drop / pasted file"] --> slot["insert image node, src empty"]
-  slot --> entry["plugin entry: node hold, file, abort"]
+  door["picker / drop / pasted file"] --> entry["plugin entry: token, file, abort"]
+  entry --> owner["awareness: this client owns the token"]
+  entry --> slot["insert image node, src empty, token set"]
   entry --> measure["measure the file locally, frame set"]
   entry --> upload["port: upload with signal + onProgress"]
   upload -->|percent| entry
-  upload -->|uploaded| land["setNodeMarkup src, drop entry"]
+  upload -->|uploaded| land["setNodeMarkup src, clear token, drop entry"]
   upload -->|error| failed["entry failed, node stays, Retry / Remove"]
-  slot -->|deleted or undone| sweep["orphan sweep: abort, drop entry"]
+  slot -->|deleted or undone| sweep["no node carries the token: abort, drop entry"]
+  slot -->|moved| slot
 ```
 
 Each step's rule:
 
-- **Insert first, then take hold.** `image-uploads.ts`'s `insertImageFile` opens the slot and only then calls the
-  port. `image` is an inline atom (§5.6), so it goes inline where the position
-  can hold one and in a paragraph of its own after the block where it cannot.
-  A position that can take neither is the one refusal.
+- **The entry opens first, then the slot.** `insertImageFile` mints the token and
+  writes the entry, which is what publishes the awareness field, and only then
+  inserts the node carrying that token. The order is the invariant: the owner
+  signal is on the wire before the document update a peer would otherwise read as
+  an abandoned slot. If the insert refuses, the entry is dropped again and the
+  field released.
+- **Where the node may go.** `image` is an inline atom (§5.6), so it goes inline
+  where the position can hold one and in a paragraph of its own after the block
+  where it cannot. A position that can take neither is the one refusal.
+- **Replace claims an existing slot.** `openImageReplacePicker` writes the token
+  onto the node the writer is pointing at (`addToHistory: false`, because it is
+  bookkeeping) and runs the ordinary lifecycle. It works on `figure` for the same
+  reason it works on `image`: both carry the attribute.
 - **The frame.** `measure-image.ts` decodes the local file for its intrinsic
   size. The node view puts that size on the wrapper and REMEMBERS it, because
   the picture's own bytes arrive after its `src` does and a frame that collapsed
   in that gap would reflow twice. An unmeasurable file (an SVG with no intrinsic
   size) falls back to the default frame, which is the one case where completion
   can still move a line.
-- **Landing.** One transaction: `setNodeMarkup` on the same node plus the meta
-  that drops the entry, `addToHistory: false`. Undo therefore removes the
-  picture the writer inserted rather than stepping back through the arrival of
-  its bytes and leaving an empty frame. The fence is re-read here because an
-  upload outlives the connection that started it; a fenced document turns the
-  entry to `failed` with Retry instead of writing.
+- **Landing.** One transaction: `setNodeMarkup` on the same node writing `src`,
+  `alt`, and `uploadToken: null`, plus the meta that drops the entry,
+  `addToHistory: false`. Clearing the token is what stops every peer being told
+  the slot is still in flight. Undo therefore removes the picture the writer
+  inserted rather than stepping back through the arrival of its bytes and leaving
+  an empty frame. The fence is re-read here because an upload outlives the
+  connection that started it; a fenced document turns the entry to `failed` with
+  Retry instead of writing.
 - **Settling.** The extension's orphan sweep and paste-import start run in a microtask
   after the view updates, never inside `update` itself: a plugin must not
   dispatch from its own update, and identity can only be read once the Yjs
@@ -82,19 +95,52 @@ its transaction exists:
    address. Each import owns its own entry, so a refusal cannot report for an
    import that is still working.
 
-## Holds
+## Identity
 
-An upload's hold is `holdNode(state, pos)` — the same `NodeHold` the object row,
-the table grip, and a block drag use, so there is one identity mechanism in the
-editor and `resolveNodeHold` does the read-back. An import's is a plain
-`EditorAnchor` plus `pastedImageLinkRange`, because its placeholder is text and
-text has no Yjs element of its own (`anchors.ts` states that rule).
+An upload IS its token. `nextIngressId` mints one per arrival with a per-tab
+random origin, because the string reaches the shared document and two clients
+must never claim each other's slots. `slotForUploadToken` reads it back with one
+`descendants` pass, so a move, a peer's whole-document rebuild, and an undo all
+answer correctly with no state to carry.
+
+Two nodes can briefly carry one token: an in-editor copy-drag duplicates the
+slice attributes. Only the first receives the bytes, and the other ends as the
+ordinary recoverable empty-src slot once the entry is dropped — the honest
+reading of "you duplicated a picture that had not arrived". The clipboard cannot
+produce this at all, because the token is not in any HTML the editor writes.
+
+Deliberately NOT a `NodeHold`. That contract ends a held identity at a Yjs move
+(`../../anchors.ts`), which is right for a gesture aimed at a node and wrong for
+a slot §5.6 promises the writer may drag mid-upload. An import is the exception:
+its placeholder is text, text has no attribute to carry, so it keeps an
+`EditorAnchor` plus `pastedImageLinkRange`.
+
+## Ownership across clients
+
+| Question | Answered by |
+|---|---|
+| Is this slot in flight? | the node's `uploadToken` |
+| Is it mine? | this editor's plugin `pending` map, keyed by that token |
+| Is somebody else's, and what shape? | plugin `elsewhere`, projected from awareness by `image-upload-presence.ts` |
+| Nobody's? | a token with no entry and no owner — the abandoned slot, the one that offers Remove |
+
+The awareness field is `imageUploads`: `{ token, frame }` per in-flight slot. The
+frame is there for the same reason the placeholder exists at all — a peer holding
+an unshaped box would take the reflow the owner was spared. It is published from
+the presence plugin's `view.update`, which runs inside the dispatch that opened
+the entry, and cleared on the plugin's `destroy`. Nothing else goes on that
+channel: a percent there would be a percent on the wire.
 
 ## Invariants worth a test
 
 - The document contains a pending node while the upload is held open.
-- A landing changes only `src` (and `alt` to the upload's answer). Any other
-  document difference means completion is moving the manuscript.
-- Deleting the node aborts the request and writes nothing afterwards.
+- A landing changes only `src`, `alt`, and the token. Any other document
+  difference means completion is moving the manuscript.
+- Deleting the node aborts the request and writes nothing afterwards; MOVING it in
+  one delete-plus-insert transaction does not, and the bytes land where it moved.
+- A peer sees an active upload as in flight, never as abandoned, in a slot already
+  the picture's shape; an ownerless empty-src slot stays recoverable.
+- `editor.destroy()` aborts every upload and import and releases the owner field.
 - Two uploads and two imports hold independent state.
-- An empty-src image round-trips through `@meridian/markup` (its codec test).
+- An empty-src image round-trips through `@meridian/markup`, and a token'd one
+  serializes identically with no token on the wire (its codec test).

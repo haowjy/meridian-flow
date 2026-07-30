@@ -130,6 +130,33 @@
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
+/* The drop hint: the pane's own box, inset, while a drag carries files. Drawn
+   by the ingress chrome surface, which portals it into the scroll pane so this
+   inset answers against the manuscript rather than the shell. */
+.meridian-editor-drop-overlay {
+  position: absolute;
+  inset: 0.75rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.75rem;
+  border: 0.125rem dashed var(--color-border-focus);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-card) 88%, transparent);
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+/* The prose dims behind the hint. Keyed off the hint's own presence rather than
+   a class the shell would have to set: the drag belongs to this lane, and the
+   canvas keeps one className. */
+.meridian-editor:has(> .meridian-editor-drop-overlay) .ProseMirror {
+  background: color-mix(in srgb, var(--color-card) 65%, transparent);
+}
+
 /* The refusal: one pill, over the manuscript, blocking nothing. Top-centre
    like `PassageNotice`, because it is news about the document rather than an
    answer to something the writer pressed. */

@@ -666,6 +666,23 @@ describe("asset path resolution", () => {
     expect(serialized).toBe("![cover art]()\n");
     expect(parsedDoc(codec, serialized).toJSON()).toEqual(docFrom([pending]).toJSON());
   });
+
+  // The token naming which browser is filling that slot is a live-session fact
+  // (`apps/app/src/core/editor/images/pending-images.ts`), so the wire form is
+  // the same `![alt]()` and a re-opened document carries no owner at all.
+  it("never writes an in-flight slot's upload token to the wire", () => {
+    const inFlight = paragraph(
+      schema.node("image", {
+        src: "",
+        alt: "cover art",
+        title: null,
+        uploadToken: "image-upload:7f3a91c0:1",
+      }),
+    );
+    const serialized = codec.serialize([inFlight]);
+    expect(serialized).toBe("![cover art]()\n");
+    expect(parsedDoc(codec, serialized).firstChild?.firstChild?.attrs.uploadToken).toBe(null);
+  });
 });
 
 describe("mdx codec round-trip corpus", () => {

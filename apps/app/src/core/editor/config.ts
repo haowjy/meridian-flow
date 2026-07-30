@@ -53,7 +53,7 @@ import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./exte
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
-import { ImageIngressExtension } from "./images";
+import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
 import { LinkSurfaceExtension } from "./links";
 import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
@@ -293,6 +293,16 @@ export function createEditorExtensions({
     // Undo exists only alongside collaboration's UndoManager, so its owned key
     // bindings mount with it rather than in the standalone set.
     UndoRedoKeymapExtension,
+    // A document with no shared room has no "uploading elsewhere", so the
+    // ephemeral half of image ingress mounts here rather than beside the door.
+    // The provider's awareness, not the bare one: that is the copy on the wire.
+    ...(schemaType === "document"
+      ? [
+          ImageUploadPresenceExtension.configure({
+            awareness: (cursorProvider ?? { awareness }).awareness,
+          }),
+        ]
+      : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];

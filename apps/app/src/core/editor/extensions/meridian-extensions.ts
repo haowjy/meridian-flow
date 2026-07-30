@@ -29,7 +29,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
-import { pendingImageSignature } from "../images/pending-images";
+import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
 
@@ -396,6 +396,7 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
       src: { default: "" },
       alt: { default: null },
       title: { default: null },
+      uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
     };
   },
 
@@ -525,6 +526,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
       alt: { default: null },
       label: { default: null },
       caption: { default: "" },
+      uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
     };
   },
 

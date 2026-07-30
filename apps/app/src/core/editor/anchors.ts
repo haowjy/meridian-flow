@@ -13,8 +13,14 @@
  * Yjs relative positions are what survive it, and they are already how this
  * editor carries the selection, the peer marks, the live ranges, and inline
  * review. This module is that mechanism as one anchor type, so a menu aimed at
- * a block, a form mid-typing, an upload landing where it was dropped, and a
- * link's range are all the same held thing.
+ * a block, a form mid-typing, a pasted link's range, and an import's placeholder
+ * are all the same held thing.
+ *
+ * Not everything belongs here. A `NodeHold` deliberately ENDS at a Yjs move (see
+ * its own contract below), which is right for a gesture aimed at a node and wrong
+ * for anything the writer may drag and expect to keep working. A pending image
+ * upload is that second kind, so it carries a token in the document instead
+ * (`images/pending-images.ts`).
  *
  * Two rules a caller still owns, because no position type can answer them:
  *

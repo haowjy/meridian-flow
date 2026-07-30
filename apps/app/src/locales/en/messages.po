@@ -2915,6 +2915,10 @@ msgstr "Uploading {0} ({percent}%)"
 msgid "Uploading {0}…"
 msgstr "Uploading {0}…"
 
+#: src/core/editor/images/ImageNodeView.tsx
+msgid "Uploading elsewhere…"
+msgstr "Uploading elsewhere…"
+
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Uploads"

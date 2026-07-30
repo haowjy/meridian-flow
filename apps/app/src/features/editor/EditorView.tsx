@@ -52,7 +52,7 @@ import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
-import { ImageIngressOverlay, ImageIngressRuntime, useImageIngressStatus } from "./surfaces/images";
+import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime, useWikilinkDocuments } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
@@ -365,10 +365,6 @@ function ActiveSessionEditorView({
     editorRef.current = editor;
   }, [editor]);
 
-  // A drag carrying files, so the pane can dim while one is in the air. The
-  // ingress owns the state; nothing about a picture's arrival is kept here.
-  const { dropActive } = useImageIngressStatus(editor);
-
   useEffect(() => {
     if (!editor || inReview) return;
     return registerLiveRangeEditor(documentId, editor);
@@ -424,7 +420,6 @@ function ActiveSessionEditorView({
             ) : undefined
           }
           scrollRef={scrollContainerRef}
-          dragActive={dropActive}
           onScroll={(event) => {
             event.currentTarget.dataset.stableLayoutScrollTop = String(
               event.currentTarget.scrollTop,
@@ -433,7 +428,6 @@ function ActiveSessionEditorView({
               event.currentTarget.scrollLeft,
             );
           }}
-          overlay={<ImageIngressOverlay editor={editor} editable={effectiveEditable} />}
         />
         {/* The one chrome mount host. Every surface registers in
           `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}
@@ -470,33 +464,24 @@ function TrackedEditorCanvas({
   editor,
   toolbar,
   scrollRef,
-  dragActive = false,
   onScroll,
-  overlay,
 }: {
   editor: Editor | null;
   toolbar?: ReactNode;
   scrollRef?: Ref<HTMLDivElement>;
-  dragActive?: boolean;
   onScroll?: UIEventHandler<HTMLDivElement>;
-  /** Anything that floats over the manuscript without moving a line of it. */
-  overlay?: ReactNode;
 }) {
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
       editor={editor}
       scrollRef={scrollRef}
-      scrollClassName={cn(
-        "meridian-editor main-pane relative",
-        dragActive && "meridian-editor--drag-active",
-      )}
+      scrollClassName="meridian-editor main-pane relative"
       onScroll={onScroll}
     >
       <div className={cn(editorColumnCanvas, editorColumnFill)}>
         <EditorContent editor={editor} className={editorColumnFill} />
       </div>
-      {overlay}
     </EditorSurfaceFrame>
   );
 }

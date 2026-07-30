@@ -319,7 +319,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(documentBranches.id, branch.branchId));
       expect(restamped?.schemaVersion).toBe(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION));
 
-      const aheadPacked = packCollabSchemaVersion({ major: 0, minor: 2, patch: 7 });
+      // Derived, not pinned: what this asserts is "a row stamped AHEAD of this
+      // build is left alone", and a literal turns every schema bump into a
+      // failure here.
+      const aheadPacked = packCollabSchemaVersion({
+        ...COLLAB_SCHEMA_VERSION,
+        patch: COLLAB_SCHEMA_VERSION.patch + 7,
+      });
       await db
         .update(documentBranches)
         .set({ schemaVersion: aheadPacked })

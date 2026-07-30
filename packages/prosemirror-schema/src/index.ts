@@ -70,7 +70,11 @@ const basicNodeOverrides = {
     attrs: { language: { default: null } },
   },
 
-  // basic's image uses `validate: "string"` on src — we need `default: ""`
+  // basic's image uses `validate: "string"` on src — we need `default: ""`.
+  // `uploadToken` names a slot some browser is filling right now: whoever starts
+  // an upload writes it, a ProseMirror move copies it with the node, the landing
+  // clears it, and no serializer emits it. It is what lets a peer tell "someone
+  // is uploading this" from "this was abandoned" without any percent on the wire.
   image: {
     inline: true,
     group: "inline",
@@ -79,6 +83,7 @@ const basicNodeOverrides = {
       src: { default: "" },
       alt: { default: null },
       title: { default: null },
+      uploadToken: { default: null },
     },
     draggable: true,
   },
@@ -168,6 +173,9 @@ const customNodes = {
       alt: { default: null },
       label: { default: null },
       caption: { default: "" },
+      // Replace aims an upload at an existing figure, so a figure holds the same
+      // in-flight slot identity as an `image`.
+      uploadToken: { default: null },
     },
     atom: true,
     defining: true,

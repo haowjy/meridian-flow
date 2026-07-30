@@ -170,12 +170,16 @@ Yjs document session. It must stay structurally aligned with
 - A picture in flight is a document node. `images/` inserts
   the `image` node with `src: ""` before the upload starts and sets `src` on that
   same node when the bytes land, so nothing is inserted at completion and the
-  manuscript does not reflow. The hold on the slot is a `NodeHold`, the same one
-  every other long-lived surface uses; progress, the file, and the abort live in the plugin's
-  state; losing the slot (a delete, an undone insert) aborts the request. Failure
-  keeps the node with Retry and Remove on it. The empty `src` is the wire-safety
-  decision: it round-trips as `![alt]()`, while an `asset:` ref minted before its
-  asset exists throws in the codec's `pathForAsset`.
+  manuscript does not reflow. The slot's identity is its `uploadToken` attribute,
+  NOT a `NodeHold`: the design lets the writer move a placeholder mid-upload, and
+  a hold ends at a Yjs move by contract. Progress, the file, and the abort live in
+  the plugin's state keyed by that token; which tokens other clients are filling
+  arrives through awareness, so a collaborator draws "uploading elsewhere" and
+  only an unclaimed token is the abandoned slot. Losing the slot (a delete, an
+  undone insert, editor teardown) aborts the request. Failure keeps the node with
+  Retry and Remove on it. The empty `src` is the wire-safety decision: it
+  round-trips as `![alt]()`, while an `asset:` ref minted before its asset exists
+  throws in the codec's `pathForAsset`.
 - Assets cross the clipboard as project-relative paths and live inside the
   editor as stable refs. `images/image-workflow.ts` owns both directions, and the
   asset index behind them lives in the ingress extension's storage because a path

@@ -18,6 +18,12 @@ picker with no project, a site that would not hand over its bytes). Both come
 from the ingress store, and the pill is the same `VerbNoticePill` every other
 transient answer in the editor uses.
 
+It is a chrome surface like any other: one entry in `chrome/chrome-surfaces.tsx`,
+the editor as its only prop. It portals into the scroll pane
+(`[data-stable-layout-scroll]`) because both things it draws are measured against
+the manuscript's box, and it reads editability off the editor rather than taking
+it as a prop — `EditorView` knows nothing about this lane's surfaces.
+
 There is deliberately **no upload status here**. A picture arriving is a node in
 the manuscript, and everything about its progress, failure, and recovery belongs
 to that node ([`core/editor/images`](../../../../core/editor/images/AGENTS.md)).
@@ -26,7 +32,8 @@ to that node ([`core/editor/images`](../../../../core/editor/images/AGENTS.md)).
 
 - **Nothing in this directory holds upload state.** If a change wants a percent,
   a filename, or a completion timer in React, the lifecycle belongs in the
-  extension and this is the wrong file.
+  extension and this is the wrong file. That includes a collaborator's upload:
+  what a peer sees is drawn by the picture's own node view from a decoration.
 - **A refusal is about an event, not content.** Anything that produced a document
   change is labelled on that node instead.
 - **The ports are the only knowledge crossing.** `uploadFigure`, `fetch`, and the
