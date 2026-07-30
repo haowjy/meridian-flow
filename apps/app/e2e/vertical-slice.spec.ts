@@ -14,7 +14,7 @@ test.describe("vertical slice", () => {
   test("opens a real project context editor and streams a thread turn", async ({ page }) => {
     test.skip(!DATABASE_URL, "DATABASE_URL is required");
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, {
+    const fixture = await seedProjectFixture(db, page.request, {
       userId: await findTestUserId(db),
       titlePrefix: "Vertical slice",
     });

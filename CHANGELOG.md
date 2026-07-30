@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: end-to-end document fixtures now create canonical collaboration
+  state through the authenticated context API instead of seeding a derived cache.
 - `apps/server`: every model now receives the Meridian document dialect in its
   baked system prompt. The card teaches GFM, wikilinks, fenced diagrams,
   minimal table spelling, Layout, and asset paths, with a codec round-trip gate

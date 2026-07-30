@@ -27,7 +27,7 @@ test.describe("pending image frame", () => {
   test("a small measured picture lands in the box its upload reserved", async ({ page }) => {
     test.skip(!DATABASE_URL, "DATABASE_URL is required");
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, {
+    const fixture = await seedProjectFixture(db, page.request, {
       userId: await findTestUserId(db),
       titlePrefix: "Image frame",
     });
@@ -67,7 +67,7 @@ test.describe("pending image frame", () => {
   }) => {
     test.skip(!DATABASE_URL, "DATABASE_URL is required");
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, {
+    const fixture = await seedProjectFixture(db, page.request, {
       userId: await findTestUserId(db),
       titlePrefix: "Image frame fallback",
     });

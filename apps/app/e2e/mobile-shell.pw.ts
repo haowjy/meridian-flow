@@ -19,7 +19,7 @@ test.describe("project shell selection", () => {
 
     await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, {
+    const fixture = await seedProjectFixture(db, page.request, {
       userId: await findTestUserId(db),
       titlePrefix: "Mobile shell",
     });
@@ -47,7 +47,7 @@ test.describe("project shell selection", () => {
 
     await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, {
+    const fixture = await seedProjectFixture(db, page.request, {
       userId: await findTestUserId(db),
       titlePrefix: "Desktop shell",
     });

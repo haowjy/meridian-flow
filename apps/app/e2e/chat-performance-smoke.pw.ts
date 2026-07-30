@@ -20,7 +20,7 @@ test("large chat keeps settled history virtualized", async ({ page }) => {
 
   await login(page);
   const db = openE2eDb(DATABASE_URL ?? "");
-  const fixture = await seedProjectFixture(db, {
+  const fixture = await seedProjectFixture(db, page.request, {
     userId: await findTestUserId(db),
     titlePrefix: "Chat performance smoke",
   });
