@@ -15,11 +15,12 @@
  * do; a lane that hand-rolls a portal owes the same call.
  *
  * A layer is also where its keys belong. `keys` registers them with the kernel
- * for as long as the surface is open, at `layer` scope and with the reach that
- * survives focus sitting inside portalled content — so a dialog's shortcut is in
- * the kernel's bindings, runs its scope ladder, and collides through the same
- * validation as every other lane's. A `document` listener in a surface has none
- * of that.
+ * for as long as the surface is open, at `layer` scope, with the reach that
+ * survives focus sitting inside portalled content, and naming the layer that
+ * owns them — so a dialog's shortcut is in the kernel's bindings, runs its
+ * scope ladder, loses to the pane the dialog opened, and collides through the
+ * same validation as every other lane's. A `document` listener in a surface has
+ * none of that.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -31,9 +32,10 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
 } from "react";
 
-import type { ChromeLayerDismissal, KeymapBinding } from "@/core/editor/chrome";
+import type { ChromeLayer, ChromeLayerDismissal, KeymapBinding } from "@/core/editor/chrome";
 
 import { useEditorChrome } from "./useEditorChrome";
 
@@ -120,6 +122,12 @@ export function useChromeLayer(
   const returnFocusRef = useRef(returnFocus);
   returnFocusRef.current = returnFocus;
 
+  // The kernel's own token for this layer, held in state rather than a ref
+  // because the keys registration below is keyed on it: every re-registration
+  // of the layer mints a new one, and keys naming the token of a layer that has
+  // been replaced would be keys nothing can reach.
+  const [layer, setLayer] = useState<ChromeLayer | null>(null);
+
   useEffect(() => {
     if (!chrome || !open) return;
     const handle = chrome.openLayer({
@@ -128,7 +136,11 @@ export function useChromeLayer(
       dismissal,
       close: () => closeRef.current(),
     });
-    return () => handle.release();
+    setLayer(handle.layer);
+    return () => {
+      handle.release();
+      setLayer(null);
+    };
   }, [chrome, layerId, parentId, dismissal, open]);
 
   const keysRef = useRef(keys);
@@ -141,7 +153,7 @@ export function useChromeLayer(
   const keyNames = keys ? Object.keys(keys).sort().join(" ") : "";
 
   useEffect(() => {
-    if (!chrome || !open || keyNames === "") return;
+    if (!chrome || !layer || keyNames === "") return;
     const bindings = Object.fromEntries(
       keyNames
         .split(" ")
@@ -150,8 +162,13 @@ export function useChromeLayer(
           (state, dispatch, view) => keysRef.current?.[key]?.(state, dispatch, view) ?? false,
         ]),
     );
-    return chrome.registerKeymap({ id: layerId, scope: "layer", reach: "chrome", bindings });
-  }, [chrome, open, layerId, keyNames]);
+    // Separate from the layer's own registration, because the two change on
+    // different beats: a lane's key SET can change while the surface stays open
+    // (a lightbox over an image has no source pane to toggle), and reopening
+    // the layer for that would spend a step of the walk home and take every
+    // layer inside it down.
+    return chrome.registerKeymap({ id: layerId, scope: "layer", layer, reach: "chrome", bindings });
+  }, [chrome, layer, layerId, keyNames]);
 
   const onEscapeKeyDown = useCallback(
     (event: { preventDefault: () => void; defaultPrevented?: boolean }) => {

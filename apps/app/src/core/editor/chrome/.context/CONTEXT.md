@@ -41,8 +41,15 @@ const handle = chrome.openLayer({
   dismissal: "kernel",     // default; "self" for anything Radix-backed
   close: () => setOpen(false),
 });
+handle.layer;     // this layer's identity: what its keys name, and what
+                  // `chrome.layers` holds while it is open
 handle.release(); // when the surface has closed itself
 ```
+
+`handle.layer` is a token, compared by identity rather than by its id: the
+kernel mints one per open layer and puts that same object in `chrome.layers`.
+A layer's keys name it (see the keymap section), so keys cannot outlive the
+surface and two nested layers wanting one chord are resolved by depth.
 
 **One transient at a time, enforced here.** A layer opened with no `parentId`
 REPLACES every open top-level layer and their subtrees: law 4 is the kernel's
@@ -114,7 +121,21 @@ its surface is behind.
 |---|---|---|
 | in the prose | ProseMirror's `handleKeyDown` | anything |
 | inside a Radix surface | Radix's own document listener | `dismissal: "self"` plus `onEscapeKeyDown` |
-| anywhere else (a hand-rolled portal, the chat composer, a toolbar button) | the kernel's document backstop | `dismissal: "kernel"` — the default |
+| anywhere else (a hand-rolled portal, a handle holding a drag, the chat composer, a toolbar button) | the kernel's document backstop | `dismissal: "kernel"` — the default |
+
+Both doors run the same `performEscStep`, and `reach` decides which steps are
+the kernel's off the prose:
+
+| Step | In the prose | Off the prose |
+|---|---|---|
+| cancel a gesture | yes | **yes** — a drag runs with the pointer, and the hand that abandons it may have left focus on the control it grabbed (§5.8) |
+| close the topmost layer | yes | only for `dismissal: "kernel"`, so one key never closes two surfaces |
+| select the object / caret past the block | yes | no: the writer is typing somewhere else, and Escape is theirs there |
+
+That is why no surface listens for Escape itself. A block drag used to cancel
+itself from a capturing window listener, which stopped the key before the
+backstop and left the chain neither owning nor observing the step; a surface
+that wants to be interrupted passes `beginDrag` an `onCancel` instead.
 
 The backstop exists because the first two doors both have blind spots: a layer
 whose surface is neither focused prose nor a Radix layer would otherwise
@@ -292,7 +313,7 @@ whole document.
 
 | Scope | Live when |
 |---|---|
-| `layer` | at least one transient surface is open |
+| `layer` | the contribution's own layer is open (or, for keys that name none, any layer is) |
 | `object` | `context.owner === "object"` |
 | `table` | `context.chain` contains `table` |
 | `block`, `document` | always — these two are order, not place |
@@ -304,6 +325,58 @@ the whole table makes it an object, and an object's chain is
 That is the design, not an accident: §5.4 gives Alt+Arrows to the row while the
 caret is inside and to the whole block once the table is selected, so the row
 verbs SHOULD fall silent there and the block verbs pick it up.
+
+### Which layer answers a chord
+
+Layer scope is one rung of the ladder rather than a queue of them. A
+contribution at that scope names the layer it belongs to:
+
+```ts
+const release = chrome.registerKeymap({
+  id: "diagram-source",
+  scope: "layer",
+  layer: handle.layer,   // identity, from `openLayer`
+  reach: "chrome",
+  bindings: { "Mod-Enter": closePane },
+});
+```
+
+For each chord, the deepest OPEN layer that claimed it answers; if it declines,
+the key falls past every other layer to `object`, `table`, `block`, and
+`document`. It never falls inward to the surface a deeper one covers — the
+writer cannot reach that surface while the deeper one is open.
+
+Registration order cannot stand in for depth in either direction. React mounts
+child effects before parent effects, so a dialog opening with its source pane
+already showing registers the pane first; a writer who opens the pane later
+registers it second. Both are the same situation, and only `chrome.layers`
+knows it.
+
+`layer: null` is one deliberate case: a suggestion menu's trigger registers the
+arrow keys the instant the trigger text lands, a beat before React opens the
+popover that becomes their layer, so it has no token to name. Those keys are
+the shallowest rung of the scope — any open layer claiming the same chord
+answers first.
+
+React lanes never pass a token by hand: `useChromeLayer({ keys })` holds the
+one the kernel gave it and re-registers the keys if the layer is ever replaced.
+
+### Collisions, and the chain that is not one
+
+Registration refuses a collision, and a collision is exactly this: the same
+place, the same key, and neither contribution narrowing with `appliesTo`. In
+that shape nothing but array order decides which binding the writer reaches,
+and the loser is unreachable with no symptom to notice. The place is the scope,
+except at layer scope where it is the layer itself, so:
+
+| Two contributions | Registration |
+|---|---|
+| same scope, same key, neither narrowed | refused, naming both lanes |
+| same layer, same key | refused |
+| different scopes | fine — the ladder orders them |
+| different layers | fine — depth orders them |
+| either one narrowed with `appliesTo` | fine — that chain is the design |
+| neither naming a layer | fine — a contribution with no token has no place to collide in |
 
 `appliesTo` narrows further, for a contribution that serves one kind of the
 scope's context:

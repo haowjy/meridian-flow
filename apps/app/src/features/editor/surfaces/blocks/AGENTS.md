@@ -65,6 +65,9 @@ gesture is holding, and whether it has lifted.
   Release, browser cancel, lost capture, window blur, Escape, unmount, and a
   peer deleting the held block are seven doors into one function. A gesture
   that ends without it leaves the kernel suppressing every surface on the page.
+  Escape is the kernel's door, not a listener here: a gesture is the deepest
+  rung of the walk home, so the chain reaches it through the `onCancel` that
+  `beginDrag` was given, wherever the writer's focus had got to.
 - **Every block held across a transaction is a `NodeHold`, carried by
   `followBlock`** (`core/editor/anchors.ts`). Position alone cannot say whether
   the block is still there: a remote write replaces the whole document, so the

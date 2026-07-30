@@ -15,13 +15,19 @@
  * open a quarter second late, long after the writer summoned something else.
  *
  * **An answer belongs to a scope, not to a href.** What `[[Notes]]` or
- * `./cast.md` points at is a function of the project, the active Work, and the
- * URI of the document holding the link; the same three are this component's own
- * inputs. So the resolver is registered per scope and re-registered when the
- * scope changes, and `registerResolver` drops every answer and every failure the
- * previous scope produced before the next question is asked. That keeps Work a
- * runtime scope — nothing here remounts the collaborative editor — while making
- * a stale answer unreachable rather than merely unlikely.
+ * `./cast.md` points at is a function of the project, the active Work, the URI
+ * of the document holding the link, and which documents the project holds; all
+ * four are this component's own inputs, the last as the document index's
+ * revision. So the resolver is registered per scope and re-registered when any
+ * of them changes, and `registerResolver` drops every answer and every failure
+ * the previous scope produced before the next question is asked. That keeps Work
+ * a runtime scope — nothing here remounts the collaborative editor — while
+ * making a stale answer unreachable rather than merely unlikely.
+ *
+ * A rename is the case that makes the catalog part load-bearing: `[[Old Name]]`
+ * is spelled the same before and after, and the answer it already has is now a
+ * door onto the wrong document. One lifecycle owns all four, so no mutation
+ * anywhere in the app needs a line that pokes this cache.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -60,7 +66,7 @@ export function ProjectLinkRuntime({
   const { projectId, workId } = scope;
   const resolution = useMemo(() => getLinkResolution(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
-  const documents = useLinkableDocuments(scope);
+  const { documents, revision } = useLinkableDocuments(scope);
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
 
   // What this document's relative links are relative to, read out of the same
@@ -91,7 +97,9 @@ export function ProjectLinkRuntime({
       });
       return document;
     });
-  }, [baseUri, projectId, resolution, workId]);
+    // `revision` is in here without being read: registering against a different
+    // catalog is how an answer about the old one becomes unreachable.
+  }, [baseUri, projectId, resolution, revision, workId]);
 
   const follow = useCallback(
     async (target: LinkTarget, disposition: LinkFollowDisposition) => {

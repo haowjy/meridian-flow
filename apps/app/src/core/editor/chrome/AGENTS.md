@@ -63,8 +63,13 @@ that block compose on it (an image's controls and its paragraph's grip).
 - **Hover and persistence are different modes.** A selected table's ⋮ and a
   caret inside a fence keep their chrome with no pointer involved; that belongs
   to the lane and never to the approach.
-- **Nothing binds Escape but the chain.** `mergeKeymapContributions` throws on
-  it. A surface that wants a step in the walk registers a layer.
+- **Nothing binds Escape but the chain, and nothing listens for it either.**
+  `assertKeymapContribution` throws on the binding; a surface that wants a step
+  in the walk registers a layer, and a surface that wants to be interrupted
+  passes `beginDrag` an `onCancel`. The chain runs from wherever the key was
+  pressed, so a keydown listener beside it is a step the chain neither owns nor
+  observes — which is what a block drag's own window listener was until it was
+  deleted.
 - **A key pressed outside the prose still goes through the registry.** A
   portalled layer holds focus while it is open and ProseMirror hears none of its
   keys, so a `layer`-scoped contribution may declare `reach: "chrome"` and the
@@ -74,6 +79,19 @@ that block compose on it (an image's controls and its paragraph's grip).
   refused at any other scope — those registrations outlive the surface, and a
   binding live wherever focus went would answer keys typed into the chat
   composer.
+- **A layer's keys name their layer, and the deepest open one answers.** A
+  layer-scoped contribution carries the `ChromeLayer` its `openLayer` handed
+  back, so the merge reads `chrome.layers` rather than the order registrations
+  arrived in: a dialog and the pane it opened are both `layer` scope, and the
+  pane is the surface the writer is standing in. A decline falls past every
+  layer to the outer scopes, never inward to the surface a deeper one covers.
+  Keys registered before their layer exists — a suggestion menu's trigger binds
+  the arrow keys a beat before React opens its popover — say `layer: null` and
+  are the shallowest rung of the scope.
+- **A collision is same place, same key, neither narrowing**, and registration
+  refuses it. Anything else is the deliberate chain: different scopes are
+  ordered by the ladder, different layers by depth, and an `appliesTo` pair by
+  its own contexts, where declining hands the key down.
 - **Undo stays highest.** The kernel mounts at TipTap priority 1050, under
   `UndoRedoKeymapExtension` at 1100 (ruling 17). Do not raise it.
 - **`at-home` is a real answer.** When the editor has nothing left to give
@@ -82,11 +100,16 @@ that block compose on it (an image's controls and its paragraph's grip).
 - **Escape reaches the chain three ways, and a surface has to pick one.** In
   the prose, ProseMirror's `handleKeyDown` runs it. Inside a Radix surface,
   Radix's own listener does, deferring through `onEscapeKeyDown`. Anywhere
-  else — a hand-rolled portal, or any layer at all once focus has moved to the
-  chat composer — the kernel's document backstop does, and only for layers
-  registered `dismissal: "kernel"` (the default). A surface that declares
-  `"self"` without actually listening will survive Escape, and "nobody is ever
-  trapped" stops being true quietly.
+  else — a hand-rolled portal, a margin handle holding a drag, any layer at all
+  once focus has moved to the chat composer — the kernel's document backstop
+  does. A surface that declares `"self"` without actually listening will survive
+  Escape, and "nobody is ever trapped" stops being true quietly.
+- **The backstop runs the same chain, minus the caret.** Off the prose it takes
+  the gesture rung from anywhere (a drag runs with the pointer, and the hand
+  that abandons it may have left focus on the control it grabbed) and a layer
+  only when that layer expects the kernel to dismiss it. The two steps that
+  move the caret are the prose's alone: off it the writer is typing somewhere
+  else, and Escape is theirs there.
 - **Opening a top-level layer closes the one that was open.** Law 4 lives in
   `openLayer`, so no surface needs a close call for a rival it cannot see. Say
   `parentId` for anything opened INSIDE another surface, or it will be read as

@@ -34,16 +34,24 @@ exist. M7 leaves it absent on purpose (law 5); this is what fills the hole.
 ## Resolution scope: what an answer is true of
 
 An answer is true of a scope, never of a href alone. `{ projectId, workId,
-baseUri }` is the complete semantic input to every question the port asks, and
-all three are `ProjectLinkRuntime`'s own inputs, so the registration effect is
-keyed on exactly those three and reads none of them through a ref.
+baseUri, revision }` is the complete semantic input to every question the port
+asks — the project, the active Work, the URI of the document holding the link,
+and which documents the project holds. All four are `ProjectLinkRuntime`'s own
+inputs, so the registration effect is keyed on exactly those four and reads none
+of them through a ref.
 
 | Contract | Why |
 |---|---|
 | A scope change re-registers the resolver | `registerResolver` forgets every answer and every failure in one step, so no later request can be served from the previous scope. The alternative was a scope key inside the cache, which is a second invalidation concept for one rule. |
+| A catalog change is a scope change | `[[Old Name]]` is spelled the same after a rename, and the answer it already has is a door onto the wrong document. `revision` is the index's identity for the documents it walked, so create, rename, delete, and move all re-ask; nothing else in the app holds a line that invalidates this cache. |
 | Nothing here remounts the editor | Work is runtime scope (`editor-scope.tsx`). Destroying a collaborative editor and its UndoManager to change a resolver would be the expensive way to invalidate a cache. |
 | A base URI arriving IS a scope change | A relative link asked before the tree settles throws and lands in the resolution store's `failed` set, which the automatic `request()` path then skips forever. Re-registering clears it, and the store's publish makes the decoration plugin ask the same links again. |
 | A resolved link paints plain for a frame after a switch | Answers are gone before the new ones land, which is the honest state: in the new Work nobody has asked yet. The base normally settles from cache before the document renders, so this is a deliberate Work switch and not opening a document. |
+
+The cost of the catalog contract is that one rename re-asks every internal link
+in the open document. That is the price of never showing a door onto a document
+that moved, and it is bounded by the same four-at-a-time queue and the batch
+endpoint in [`FUTURE`](FUTURE).
 
 ## What a follow does
 
@@ -66,16 +74,27 @@ Creating from the offer writes `/<name>.md` into the manuscript, because a
 wikilink resolves by title and `documents.name` is the filename without its
 extension. A name that is not a legal filename gets the dialog without the
 button and a sentence saying why. Nothing about the link changes on creation —
-`[[Warden Ilsever]]` was always the link; the resolver simply starts finding
-it, which is why `resolution.refresh()` is the whole after-effect.
+`[[Warden Ilsever]]` was always the link; the resolver simply starts finding it,
+and the dialog holds no cache call of its own to make that happen. The created
+document is a document the project did not have, which is a new catalog, which
+is a new resolution generation. Creating from the context tree gets the same
+result through the same door.
 
-## One document index, two questions
+## One document index, three questions
 
 `useLinkableDocuments` walks the two cached trees — the manuscript, and the
-active Work's scratch — and returns every editable file with its title, its
-location, its `documents.id`, and its URI in the resolver's spelling. The `[[`
-menu renders those rows; `ProjectLinkRuntime` finds its own row by id to get
-`baseUri`.
+active Work's scratch — and returns `{ documents, revision }`: every editable
+file with its title, its location, its `documents.id`, and its URI in the
+resolver's spelling, plus the identity of that whole set. The `[[` menu renders
+the rows; `ProjectLinkRuntime` finds its own row by id to get `baseUri`, and
+registers the port against the revision.
+
+`revision` is content, not an object identity and not a counter: the row's id,
+URI, and title joined per document. A refetch that found the same documents is
+the same revision and costs nothing, while anything that changes where a link
+could go is a different one. An identity-based revision would drop every answer
+on a poll that changed nothing; a counter would restart on remount and claim a
+change that never happened.
 
 One owner for two answers that must never disagree: what a link can reach, and
 what a relative link is relative to. Reading the base from the manuscript alone

@@ -214,6 +214,12 @@ export function createSuggestionLane<TCatalog, TItem, TEntry extends TItem = TIt
                   getEditorChrome(editor)?.registerKeymap({
                     id: spec.keymapId,
                     scope: "layer",
+                    // No token to name: this runs a beat before React opens the
+                    // popover that becomes this menu's layer, which is the
+                    // point of registering here. The keys are then the
+                    // shallowest rung of layer scope, and an open layer that
+                    // claims the same chord answers it instead.
+                    layer: null,
                     bindings: {
                       ArrowDown: () => menu.move(1),
                       ArrowUp: () => menu.move(-1),
