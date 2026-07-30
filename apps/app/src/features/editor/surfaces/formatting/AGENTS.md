@@ -55,7 +55,9 @@ Three files, three jobs:
   take Radix's `disabled` (law 5). Pass `blockedReason`; wire nothing else.
 - **A refusal that came from the browser still reaches the writer.** The
   clipboard can be withheld in either direction; the control greys with the
-  shortcut rather than failing twice in silence. Whether it was withheld, and
+  shortcut rather than failing twice in silence, and it greys where the writer
+  pressed it — a clipboard row keeps the menu open until its verb settles, so a
+  refusal has a row left to be drawn on. Whether it was withheld, and
   which refusal it was, comes from the feature's one clipboard boundary
   (`features/editor/clipboard.ts`). What this lane owns is the document half:
   what a selection serializes to, when a cut may delete, and where a paste
@@ -85,5 +87,6 @@ Three files, three jobs:
 Cut, Copy, and Paste live in [`clipboard-menu.tsx`](clipboard-menu.tsx) and are
 mounted by this menu and by the link menu (§5.5, mockup 06 state C). The state,
 the wording, the shortcut, and the greying are one answer; a menu supplies only
-`prepare`, which says where the verbs act. Adding a fourth clipboard row, or a
+`prepare`, which says where the verbs act, and `closeMenu`, which says how that
+menu goes away once a verb has run. Adding a fourth clipboard row, or a
 second reason for a refused one, is an edit here and nowhere else.

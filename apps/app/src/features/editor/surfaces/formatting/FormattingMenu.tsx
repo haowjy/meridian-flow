@@ -129,7 +129,7 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
             </>
           ) : null}
           <EditorMenuSeparator />
-          <ClipboardMenuItems editor={editor} />
+          <ClipboardMenuItems editor={editor} closeMenu={() => setAnchor(null)} />
         </>
       ) : null}
     </EditorMenu>

@@ -86,15 +86,22 @@ list, the next closes the menu, and the third is at-home.
 
 A keystroke arrives as a clipboard event and ProseMirror handles it. A menu
 item arrives with focus in a portal and no event, so `clipboard-commands.ts`
-reaches the clipboard through `navigator.clipboard` and the document through
+reaches the clipboard through the feature's one boundary
+(`features/editor/clipboard.ts`) and the document through
 `view.serializeForClipboard`. Copy writes `text/html` (carrying ProseMirror's
 slice depths, so a paste back keeps its blocks) and `text/plain`.
 
 Both directions can be withheld, and each reports which: a capability check
 answers before the writer presses, and a `denied` or `unavailable` result greys
-that direction from then on with its shortcut in the reason. The check alone
-cannot cover it — a browser that exposes `clipboard.read` and then refuses the
-call looks available until it is asked.
+that direction with its shortcut in the reason for as long as the menu is open.
+The check alone cannot cover it — a browser that exposes `clipboard.read` and
+then refuses the call looks available until it is asked.
+
+Which is why a clipboard row takes the select rather than letting Radix close on
+it: the verb is asynchronous, the menu is the only thing on screen that can
+carry its answer, and a refusal drawn after the close would land on a row that
+had already gone. The row closes the menu when the verb ran and greys in place
+when it did not, and `closeMenu` is how the mounting menu says how it closes.
 
 A cut copies before it deletes and stops if the copy was refused, or it would
 take the writer's words with nothing to paste back. A payload reaches the

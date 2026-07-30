@@ -94,7 +94,7 @@ Beside them, three things that are not summoned surfaces:
   keeps the three from disagreeing.
 - A second copy of the clipboard block. Cut, Copy, and Paste are one block two
   menus mount (`../formatting/clipboard-menu.tsx`); this menu supplies only the
-  subject the verbs act on.
+  subject the verbs act on and the way it closes once one has run.
 - A `navigator.clipboard` reading of this lane's own. Capability and what a
   refusal was belong to `features/editor/clipboard.ts`; the menu chooses the
   payload (the href) and where the answer goes (the row).
