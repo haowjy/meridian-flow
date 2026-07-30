@@ -184,6 +184,9 @@ return layer.scope(<div>{children}</div>);
 // 3. leave `dismissal` at its default unless the surface has its own Escape
 //    listener; the kernel's backstop is what keeps it from surviving Escape
 //    when focus has moved out of the editor.
+// 4. pass `keys` for anything the surface answers while it is open. The hook
+//    registers them against this layer's identity, so a chord the surface and
+//    the one it opened both claim goes to the deeper of the two.
 ```
 
 ## Reading the kernel
