@@ -13,7 +13,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { getEditorChrome } from "@/core/editor/chrome";
+import { CHROME_TIMING, getEditorChrome } from "@/core/editor/chrome";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
@@ -117,17 +117,31 @@ function scrollPane(distance: number): void {
   });
 }
 
+/** One animation frame on the fake clock, which is what the scheduler uses. */
+const FRAME_MS = 16;
+
 /**
- * Wait in short steps rather than one long one: each `act` flushes the render
- * and the effects the previous step queued, which is what a browser does
- * between timer callbacks.
+ * Run the clock inside `act`, so what a timer or a frame changed is committed
+ * before the next step. Every wait in this file is one of the editor's own
+ * clocks — the kernel's hover delay and the frame the shared layout watcher
+ * coalesces onto — rather than wall time, so a longer debounce cannot make a
+ * behaviourally unchanged surface fail here.
  */
-async function settle(ms = 160): Promise<void> {
-  for (let waited = 0; waited < ms; waited += 20) {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-  }
+function advance(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
+/** Two frames: the measurement is one, the render it caused is the next. */
+function flushMeasurement(): void {
+  advance(FRAME_MS * 2);
+}
+
+/** The hover delay the kernel makes a cold pointer earn, then the measurement. */
+function settleApproach(): void {
+  advance(CHROME_TIMING.handleIntentMs);
+  flushMeasurement();
 }
 
 function handleTop(): number | null {
@@ -139,6 +153,18 @@ beforeEach(() => {
   (
     globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
+  // Frames on the same clock as the timers: the approach waits on a timeout and
+  // the placement waits on a frame, so one clock drives the whole surface.
+  vi.useFakeTimers({
+    toFake: [
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+    ],
+  });
   vi.stubGlobal("ResizeObserver", SilentResizeObserver);
   scrollTop = 0;
 
@@ -169,30 +195,31 @@ afterEach(() => {
   editor.destroy();
   host.remove();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
-it("keeps the handle on its block when the manuscript scrolls under a still pointer", async () => {
+it("keeps the handle on its block when the manuscript scrolls under a still pointer", () => {
   act(() => root.render(<BlockMovementSurface editor={editor} />));
   restPointer();
-  await settle();
+  settleApproach();
   expect(handleTop()).toBe(FIRST_BLOCK_TOP + BLOCK_PITCH + HANDLE_LEAD);
 
   // Twenty pixels: the same block is still under the pointer, further up.
   scrollPane(20);
-  await settle(40);
+  flushMeasurement();
 
   expect(handleTop()).toBe(FIRST_BLOCK_TOP + BLOCK_PITCH - 20 + HANDLE_LEAD);
 });
 
-it("re-targets when another block slides under the still pointer", async () => {
+it("re-targets when another block slides under the still pointer", () => {
   act(() => root.render(<BlockMovementSurface editor={editor} />));
   restPointer();
-  await settle();
+  settleApproach();
 
   // Eighty pixels: the third block is now where the second one was, and the
   // handle belongs to what the pointer is on rather than to what it was on.
   scrollPane(80);
-  await settle(40);
+  flushMeasurement();
 
   expect(handleTop()).toBe(FIRST_BLOCK_TOP + 2 * BLOCK_PITCH - 80 + HANDLE_LEAD);
 });
@@ -207,10 +234,10 @@ it("re-targets when another block slides under the still pointer", async () => {
  * pass a test that only looked at the drop line, while the registered chain
  * neither owned nor observed the step.
  */
-it("hands an off-prose Escape to the kernel, which cancels the drag through its own door", async () => {
+it("hands an off-prose Escape to the kernel, which cancels the drag through its own door", () => {
   act(() => root.render(<BlockMovementSurface editor={editor} />));
   restPointer();
-  await settle();
+  settleApproach();
 
   const chrome = getEditorChrome(editor);
   if (!chrome) throw new Error("kernel did not mount");

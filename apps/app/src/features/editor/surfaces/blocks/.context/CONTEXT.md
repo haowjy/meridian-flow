@@ -60,9 +60,11 @@ pointer when the document shifts, rather than chasing content that moved.
 ### Two doors into it
 
 The margin handle is one drag source and a block object's body is the other,
-and they are the same gesture: `beginGesture` takes the press whichever door it
-came through, so both hold one block, take one kernel drag token, and end in
-one finalizer. Which objects offer their body is `EDITOR_OBJECT_TYPES`'s `body`
+and they are the same gesture: `block-gesture.ts` takes the press whichever door
+it came through, so both hold one block, take one kernel drag token, and end in
+one finalizer. The handle's press arrives as `pressHandle` because the handle is
+chrome this lane renders; the body's own listener lives inside the controller,
+on the prose. Which objects offer their body is `EDITOR_OBJECT_TYPES`'s `body`
 column, read through `objectBody` — `block-drag` for a figure, a rule and a
 rendered diagram, `text` for a table, whose cells take a caret and own the
 pointer that sweeps across them.

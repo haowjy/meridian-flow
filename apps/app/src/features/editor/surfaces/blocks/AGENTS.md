@@ -13,13 +13,23 @@ item, so "never drop inside a protected node" is a property of the geometry
 instead of a check somebody has to remember. The handle in the margin points at
 the same unit, so what the writer aims at and what lands are one thing.
 
-Three layers, and nothing crosses:
+Layers, and nothing crosses:
 
 - `block-targets.ts` — positions and transactions, pure over `EditorState`.
 - `block-geometry.ts` — what the browser drew: the margin, the seam under the
   pointer, where the line goes.
-- `BlockMovementSurface.tsx` — the gesture. It decides nothing about the
+- `block-gesture.ts` — the drag: both pointer doors, the slop that tells a
+  press from a click, and the one finalizer. It decides nothing about the
   document and nothing about timing.
+- `block-placement.ts` — where the handle and the drop line are drawn, on a
+  frame.
+- `block-keymap.ts` — Alt+↑/↓ and its place in the kernel's scope ladder.
+- `BlockMovementSurface.tsx` — the approach, the hold the menu stands on, and
+  the composition of the rest.
+
+Each module past the first two changes for its own reason: geometry invalidation,
+pointer lifecycle, key precedence, and what the writer sees are four different
+questions, and they used to collide in one 700-line file.
 
 The document's own memory of a drag lives in
 [`core/editor/blocks/`](../../../../core/editor/blocks/index.ts): which block a
@@ -30,12 +40,12 @@ gesture is holding, and whether it has lifted.
 - **A drag has two starting places and one gesture.** The margin handle is
   one; the body of an object the registry marks `body: "block-drag"` is the other,
   because a writer's first instinct is to grab the thing itself. Both go
-  through `beginGesture`, so there is one hold, one kernel token, one finalizer
+  through one controller, so there is one hold, one kernel token, one finalizer
   — and one difference: a press that never travels opens the menu on the handle
   and is left to ProseMirror on a body, where it becomes the jade ring.
-- **An object that lands inline is not this gesture.** A picture (`drag:
-  "inline"`) travels by ProseMirror's own drag, which carries it as an inline
-  slice and puts it between two words with the dropcursor showing where (human
+- **An object that lands inline is not this gesture.** A picture
+  (`body: "inline-drag"`) travels by ProseMirror's own drag, which carries it as
+  an inline slice and puts it between two words with the dropcursor showing where (human
   ruling, 2026-07-29). This surface never sees that press. The margin handle
   above its paragraph is still how the whole LINE moves to a block seam, and
   the two gestures answer two different questions.
@@ -127,9 +137,12 @@ gesture is holding, and whether it has lifted.
   Nested reordering is a different design (see `.context/FUTURE`).
 - Ending a gesture anywhere but the finalizer, or storing a drop target rather
   than deriving it.
+- Splitting the handle's gesture from the object body's. They are one press with
+  two doors, and two controllers would be two state machines that must agree.
 - Asking which node types can be dragged by their body, or which of them may
-  land between two words. Both are the `drag` column in `EDITOR_OBJECT_TYPES`;
-  a node name here would drift from it the first time a lane ships an object.
+  land between two words. Both are the `body` column in `EDITOR_OBJECT_TYPES`
+  (`"text" | "block-drag" | "inline-drag"`, one column on purpose); a node name
+  here would drift from it the first time a lane ships an object.
 - Teaching this drag inline drop targets. ProseMirror's own drag already has
   them, and the dropcursor already draws the caret; a second inline landing
   path would be two answers to one question.
