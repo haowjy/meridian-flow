@@ -370,7 +370,17 @@ describe("the kernel on a live editor", () => {
     expect(laterLane).toHaveBeenCalledOnce();
   });
 
-  it("holds a scoped binding back until its context is the one under the caret", () => {
+  /**
+   * The one mounted keymap smoke: a chord a lane registered at runtime reaches
+   * that lane through ProseMirror, and the live context is what decides whether
+   * its scope is standing where the caret is.
+   *
+   * Precedence, layer depth, reach, and scope applicability are the ladder's own
+   * decisions and belong to `keymap.test.ts` as data. What cannot be proved
+   * there is this: the kernel installs the merge, feeds it the context it
+   * resolved, and reports the answer back to the browser.
+   */
+  it("routes a registered chord to its lane wherever that lane's scope is live", () => {
     const instance = mount([
       paragraph("plain prose"),
       {
@@ -396,9 +406,7 @@ describe("the kernel on a live editor", () => {
       bindings: { "Alt-ArrowUp": moveRow },
     });
 
-    // The caret is in a paragraph. A row move has nothing to move, and the
-    // scope is what says so — otherwise every lane has to rediscover its own
-    // guard and one missed check shadows an outer verb document-wide.
+    // The caret is in a paragraph, where a row move has nothing to move.
     instance.commands.setTextSelection(3);
     expect(press(instance, { key: "ArrowUp", altKey: true })).toBe(false);
     expect(moveRow).not.toHaveBeenCalled();
@@ -411,56 +419,13 @@ describe("the kernel on a live editor", () => {
     expect(press(instance, { key: "ArrowUp", altKey: true })).toBe(true);
     expect(moveRow).toHaveBeenCalledOnce();
   });
-
-  it("holds a layer-scoped binding back until a surface is open", () => {
-    const instance = mount([paragraph("before")]);
-    const chrome = getEditorChrome(instance);
-    if (!chrome) throw new Error("kernel did not mount");
-
-    // The slash menu's own case: its trigger registers the arrow keys before
-    // React opens the popover that becomes their layer, so they name none.
-    const menuArrow = vi.fn(() => true);
-    chrome.registerKeymap({
-      id: "slash-menu",
-      scope: "layer",
-      layer: null,
-      bindings: { ArrowDown: menuArrow },
-    });
-
-    press(instance, { key: "ArrowDown" });
-    expect(menuArrow).not.toHaveBeenCalled();
-
-    chrome.openLayer({ id: "slash", close: () => {} });
-    press(instance, { key: "ArrowDown" });
-    expect(menuArrow).toHaveBeenCalledOnce();
-  });
-
-  it("routes a registered key and leaves an unregistered one to the editor", () => {
-    const instance = mount([paragraph("before")]);
-    const chrome = getEditorChrome(instance);
-    if (!chrome) throw new Error("kernel did not mount");
-
-    const moveBlock = vi.fn(() => true);
-    chrome.registerKeymap({
-      id: "block-movement",
-      scope: "document",
-      bindings: { "Alt-ArrowUp": moveBlock },
-    });
-
-    const event = new KeyboardEvent("keydown", {
-      key: "ArrowUp",
-      altKey: true,
-      bubbles: true,
-      cancelable: true,
-    });
-    instance.view.dom.dispatchEvent(event);
-
-    expect(moveBlock).toHaveBeenCalledOnce();
-    expect(event.defaultPrevented).toBe(true);
-  });
 });
 
-describe("who owns the key", () => {
+/**
+ * The kernel's document listener, which is the only route left when a portalled
+ * layer holds focus and ProseMirror hears nothing.
+ */
+describe("a key pressed outside the prose", () => {
   /** An element outside the prose, which is where portalled chrome puts focus. */
   function pressOutsideTheProse(init: KeyboardEventInit): KeyboardEvent {
     const outside = document.createElement("button");
@@ -470,64 +435,6 @@ describe("who owns the key", () => {
     outside.remove();
     return event;
   }
-
-  it("gives a chord to the deepest open layer, not the first one that registered", () => {
-    const instance = mount([paragraph("before")]);
-    const chrome = getEditorChrome(instance);
-    if (!chrome) throw new Error("kernel did not mount");
-
-    // The order a writer produces: the dialog opens and registers its chord,
-    // and the pane it opens INSIDE itself comes second. Arrival order says the
-    // dialog; depth says the pane, and depth is the design (law 4).
-    const openPane = vi.fn(() => true);
-    const closePane = vi.fn(() => true);
-    const dialog = chrome.openLayer({ id: "diagram-dialog", close: () => {} });
-    chrome.registerKeymap({
-      id: "diagram-dialog",
-      scope: "layer",
-      layer: dialog.layer,
-      bindings: { "Mod-Enter": openPane },
-    });
-    const pane = chrome.openLayer({
-      id: "diagram-source",
-      parentId: dialog.id,
-      close: () => {},
-    });
-    chrome.registerKeymap({
-      id: "diagram-source",
-      scope: "layer",
-      layer: pane.layer,
-      bindings: { "Mod-Enter": closePane },
-    });
-
-    expect(press(instance, { key: "Enter", ctrlKey: true })).toBe(true);
-    expect(closePane).toHaveBeenCalledOnce();
-    expect(openPane).not.toHaveBeenCalled();
-  });
-
-  it("stops offering a layer's keys the moment that layer closes", () => {
-    const instance = mount([paragraph("before")]);
-    const chrome = getEditorChrome(instance);
-    if (!chrome) throw new Error("kernel did not mount");
-
-    const paneKey = vi.fn(() => true);
-    const dialog = chrome.openLayer({ id: "diagram-dialog", close: () => {} });
-    const pane = chrome.openLayer({ id: "diagram-source", parentId: dialog.id, close: () => {} });
-    chrome.registerKeymap({
-      id: "diagram-source",
-      scope: "layer",
-      layer: pane.layer,
-      bindings: { "Mod-Enter": paneKey },
-    });
-
-    // The pane released; the dialog around it is still open, so layer scope is
-    // still live. The pane's keys are not. (The chord itself stays handled —
-    // Ctrl+Enter is TipTap's hard break once no surface wants it — so what the
-    // assertion reads is the binding, not the key.)
-    pane.release();
-    press(instance, { key: "Enter", ctrlKey: true });
-    expect(paneKey).not.toHaveBeenCalled();
-  });
 
   it("cancels an in-flight gesture on an Escape pressed outside the prose", () => {
     const instance = mount([paragraph("before")]);
