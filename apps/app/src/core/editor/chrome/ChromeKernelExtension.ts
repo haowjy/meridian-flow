@@ -124,7 +124,7 @@ export const ChromeKernelExtension = Extension.create({
       // throw between the two would otherwise leave a stale map cached against
       // a revision that never built it, and every later registration would be
       // dropped in silence.
-      const applicability = () => ({ context: chrome.context, layerCount: chrome.layers.length });
+      const applicability = () => ({ context: chrome.context, layers: chrome.layers });
       const merged = {
         prose: mergeKeymapContributions(chrome.keymapContributions(), applicability),
         chrome: mergeKeymapContributions(chrome.keymapContributions(), applicability, "chrome"),
