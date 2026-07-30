@@ -414,6 +414,13 @@ chrome.registerHoverAnchor<HTMLElement>({
 - **`holds` covers the pixels between.** A table's grips live outside the
   frame, and the gap the writer crosses to reach one is on no cell and on no
   chrome.
+- **A lane with `holds` must hand over identity, not position.** The
+  coordinator caches the lane's last value and re-delivers it through `holds`
+  whenever the manuscript moves, so a raw document position in that value goes
+  stale exactly like any other raw position (a peer's insert leaves a different
+  cell at the same number). Register `NodeHold` or another document-native
+  identity. Lanes without `holds` only ever receive a fresh probe, so a
+  transient reading is safe there.
 - **The reading of the page is the extension's**, supplied through
   `hoverAnchors.observe(...)`: one `document.elementFromPoint`, one check that
   the point belongs to this editor, one check for this editor's chrome mark.
