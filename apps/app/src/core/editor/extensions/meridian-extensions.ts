@@ -30,7 +30,6 @@ import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
-import { imageLinePlacementPlugin, imageStandsInLine } from "../images/image-line-placement";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
@@ -402,28 +401,22 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
     };
   },
 
-  /**
-   * Two facts about a picture that are read off the document rather than stored
-   * on it, and one gesture the browser would otherwise answer for itself.
-   */
+  /** One gesture the browser would otherwise answer for itself. */
   addProseMirrorPlugins() {
-    return [imageLinePlacementPlugin(), imageDragPreviewPlugin()];
+    return [imageDragPreviewPlugin()];
   },
 
   addNodeView() {
     // A picture in flight never changes its node — its slot is final from the
     // first moment — so the default "re-render when the node changes" would
     // never repaint the progress. The decoration is what changes, and this is
-    // the node view asking to hear about it. A picture gaining or losing the
-    // words beside it is the same kind of change: the node stands still and its
-    // decoration moves (`image-line-placement.ts`).
+    // the node view asking to hear about it.
     return ReactNodeViewRenderer(ImageNodeView, {
       update: ({ oldNode, newNode, oldDecorations, newDecorations, updateProps }) => {
         if (oldNode.type !== newNode.type) return false;
         if (
           oldNode !== newNode ||
-          pendingImageSignature(oldDecorations) !== pendingImageSignature(newDecorations) ||
-          imageStandsInLine(oldDecorations) !== imageStandsInLine(newDecorations)
+          pendingImageSignature(oldDecorations) !== pendingImageSignature(newDecorations)
         ) {
           updateProps();
         }
