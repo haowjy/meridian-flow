@@ -20,6 +20,15 @@ Undo is the exception that looks like a peer: on a shared document it is the
 Yjs UndoManager, so a suite asserting undo mounts the pair for the document
 rather than for the collaborator.
 
+Every tier mounts the editor in a manuscript pane, positioned and clipping like
+the app's (`EditorSurfaceFrame`), because measured chrome resolves against the
+nearest positioned ancestor and is taken off the page by that element's
+overflow. Never hand-roll a second one: a bare `data-stable-layout-scroll`
+marker satisfies every lookup while being none of the things the lookup was
+asking about, and a suite standing on it cannot fail the way the app does.
+Neither can it see clipping — jsdom lays nothing out, so what is only PART
+visible is a browser question and belongs in a probe.
+
 ## Green tests are quiet
 
 A warning on a passing run trains readers to ignore stderr. If a fixture makes
