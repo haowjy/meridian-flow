@@ -13,6 +13,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { getEditorChrome } from "@/core/editor/chrome";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
@@ -194,4 +195,62 @@ it("re-targets when another block slides under the still pointer", async () => {
   await settle(40);
 
   expect(handleTop()).toBe(FIRST_BLOCK_TOP + 2 * BLOCK_PITCH - 80 + HANDLE_LEAD);
+});
+
+/**
+ * Escape during a drag is the kernel's step, not this surface's.
+ *
+ * The visible result is the same either way — the walk home cancels a gesture
+ * before anything else — so the assertion is on the ROUTE: `beginDrag(onCancel)`
+ * is the door Esc reaches a surface-owned drag through, and the chain is what
+ * knocks on it. A surface that cancelled itself from a window listener would
+ * pass a test that only looked at the drop line, while the registered chain
+ * neither owned nor observed the step.
+ */
+it("hands an off-prose Escape to the kernel, which cancels the drag through its own door", async () => {
+  act(() => root.render(<BlockMovementSurface editor={editor} />));
+  restPointer();
+  await settle();
+
+  const chrome = getEditorChrome(editor);
+  if (!chrome) throw new Error("kernel did not mount");
+
+  const cancelledByKernel = vi.fn();
+  const beginDrag = chrome.beginDrag.bind(chrome);
+  vi.spyOn(chrome, "beginDrag").mockImplementation((onCancel) =>
+    beginDrag(() => {
+      cancelledByKernel();
+      onCancel?.();
+    }),
+  );
+
+  const handle = document.querySelector<HTMLElement>("[data-block-handle]");
+  if (!handle) throw new Error("the handle never appeared");
+  act(() => {
+    handle.dispatchEvent(
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 20,
+        clientY: POINTER_Y,
+      }),
+    );
+  });
+  // Past the slop, so the press is a drag the kernel knows about.
+  act(() => {
+    window.dispatchEvent(
+      new MouseEvent("pointermove", { bubbles: true, clientX: 20, clientY: POINTER_Y + 30 }),
+    );
+  });
+  expect(chrome.gesture).toBe("drag");
+
+  // The press began on the handle, which is portalled out of the prose, so the
+  // key lands on chrome rather than on ProseMirror.
+  act(() => {
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+
+  expect(cancelledByKernel).toHaveBeenCalledOnce();
+  expect(chrome.gesture).toBe("idle");
+  expect(document.querySelector(".meridian-block-drop-line")).toBeNull();
 });

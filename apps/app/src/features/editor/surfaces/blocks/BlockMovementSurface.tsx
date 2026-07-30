@@ -27,7 +27,10 @@
  *   that one.** Release, browser cancel, lost capture, a blurred window,
  *   Escape, and a peer deleting the block under the pointer are six ways to
  *   stop; five are interruptions, and any of them leaving the kernel
- *   suppressed would freeze every surface on the page until reload.
+ *   suppressed would freeze every surface on the page until reload. Escape
+ *   arrives through the kernel rather than a listener here: a gesture is the
+ *   deepest rung of the walk home (law 3), so the chain cancels it through the
+ *   handler `beginDrag` was given, wherever the writer's focus had got to.
  *
  * The kernel owns the timing and the standing-down. Hover comes from
  * `chrome.registerHoverAnchor`; a drag is declared with `chrome.beginDrag`, whose
@@ -423,25 +426,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     [chrome, editor, finishGesture],
   );
 
-  /**
-   * Escape belongs to the kernel's chain whenever the editor can hear it: the
-   * chain cancels the gesture through the handler `beginDrag` was given, which
-   * lands back in the finalizer, and law 3 gets its one key, one step. This
-   * listener covers only what the chain cannot see — a press that began on
-   * portalled chrome may have left focus outside the prose — and it stops the
-   * key there so nothing else takes a second step on it.
-   */
-  const onKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !gestureRef.current) return;
-      if (editor.view.hasFocus()) return;
-      event.preventDefault();
-      event.stopPropagation();
-      finishGesture(false);
-    },
-    [editor, finishGesture],
-  );
-
   useEffect(() => {
     if (!gesturing) return;
     const release = () => finishGesture(true);
@@ -457,16 +441,14 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     window.addEventListener("pointercancel", abandon);
     window.addEventListener("lostpointercapture", abandon);
     window.addEventListener("blur", abandon);
-    window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", release);
       window.removeEventListener("pointercancel", abandon);
       window.removeEventListener("lostpointercapture", abandon);
       window.removeEventListener("blur", abandon);
-      window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [gesturing, onPointerMove, onKeyDown, finishGesture]);
+  }, [gesturing, onPointerMove, finishGesture]);
 
   // Nothing outlives an unmount: a surface torn down mid-drag would leave the
   // kernel suppressing chrome for a pointer nobody is following.

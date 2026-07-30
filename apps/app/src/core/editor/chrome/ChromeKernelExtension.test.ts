@@ -349,6 +349,7 @@ describe("the kernel on a live editor", () => {
       chrome.registerKeymap({
         id: "greedy-lane",
         scope: "layer",
+        layer: null,
         bindings: { Escape: () => true, "Alt-ArrowUp": () => true },
       }),
     ).toThrow(/Esc chain owns it/);
@@ -416,10 +417,13 @@ describe("the kernel on a live editor", () => {
     const chrome = getEditorChrome(instance);
     if (!chrome) throw new Error("kernel did not mount");
 
+    // The slash menu's own case: its trigger registers the arrow keys before
+    // React opens the popover that becomes their layer, so they name none.
     const menuArrow = vi.fn(() => true);
     chrome.registerKeymap({
       id: "slash-menu",
       scope: "layer",
+      layer: null,
       bindings: { ArrowDown: menuArrow },
     });
 
@@ -453,5 +457,116 @@ describe("the kernel on a live editor", () => {
 
     expect(moveBlock).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+describe("who owns the key", () => {
+  /** An element outside the prose, which is where portalled chrome puts focus. */
+  function pressOutsideTheProse(init: KeyboardEventInit): KeyboardEvent {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    outside.dispatchEvent(event);
+    outside.remove();
+    return event;
+  }
+
+  it("gives a chord to the deepest open layer, not the first one that registered", () => {
+    const instance = mount([paragraph("before")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    // The order a writer produces: the dialog opens and registers its chord,
+    // and the pane it opens INSIDE itself comes second. Arrival order says the
+    // dialog; depth says the pane, and depth is the design (law 4).
+    const openPane = vi.fn(() => true);
+    const closePane = vi.fn(() => true);
+    const dialog = chrome.openLayer({ id: "diagram-dialog", close: () => {} });
+    chrome.registerKeymap({
+      id: "diagram-dialog",
+      scope: "layer",
+      layer: dialog.layer,
+      bindings: { "Mod-Enter": openPane },
+    });
+    const pane = chrome.openLayer({
+      id: "diagram-source",
+      parentId: dialog.id,
+      close: () => {},
+    });
+    chrome.registerKeymap({
+      id: "diagram-source",
+      scope: "layer",
+      layer: pane.layer,
+      bindings: { "Mod-Enter": closePane },
+    });
+
+    expect(press(instance, { key: "Enter", ctrlKey: true })).toBe(true);
+    expect(closePane).toHaveBeenCalledOnce();
+    expect(openPane).not.toHaveBeenCalled();
+  });
+
+  it("stops offering a layer's keys the moment that layer closes", () => {
+    const instance = mount([paragraph("before")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const paneKey = vi.fn(() => true);
+    const dialog = chrome.openLayer({ id: "diagram-dialog", close: () => {} });
+    const pane = chrome.openLayer({ id: "diagram-source", parentId: dialog.id, close: () => {} });
+    chrome.registerKeymap({
+      id: "diagram-source",
+      scope: "layer",
+      layer: pane.layer,
+      bindings: { "Mod-Enter": paneKey },
+    });
+
+    // The pane released; the dialog around it is still open, so layer scope is
+    // still live. The pane's keys are not. (The chord itself stays handled —
+    // Ctrl+Enter is TipTap's hard break once no surface wants it — so what the
+    // assertion reads is the binding, not the key.)
+    pane.release();
+    press(instance, { key: "Enter", ctrlKey: true });
+    expect(paneKey).not.toHaveBeenCalled();
+  });
+
+  it("cancels an in-flight gesture on an Escape pressed outside the prose", () => {
+    const instance = mount([paragraph("before")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const cancelDrag = vi.fn();
+    chrome.beginDrag(cancelDrag);
+    expect(chrome.gesture).toBe("drag");
+
+    // A drag started from the margin handle leaves focus on portalled chrome,
+    // where ProseMirror hears nothing: the kernel's document route is the only
+    // one left, and the gesture is the deepest rung of the walk home (§5.8).
+    const event = pressOutsideTheProse({ key: "Escape" });
+
+    expect(cancelDrag).toHaveBeenCalledOnce();
+    expect(chrome.gesture).toBe("idle");
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves the selection alone for an Escape pressed outside the prose", () => {
+    const instance = mount([paragraph("before"), figure]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    let figurePos = 0;
+    instance.state.doc.descendants((node, pos) => {
+      if (node.type.name === "figure") figurePos = pos;
+    });
+    instance.view.dispatch(
+      instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, figurePos)),
+    );
+
+    // Nothing is open and no gesture is running, so the next step home moves
+    // the caret — and the writer's hands are in the chat composer. Escape is
+    // theirs there, not the manuscript's.
+    const event = pressOutsideTheProse({ key: "Escape" });
+
+    expect(chrome.context.owner).toBe("object");
+    expect(event.defaultPrevented).toBe(false);
   });
 });

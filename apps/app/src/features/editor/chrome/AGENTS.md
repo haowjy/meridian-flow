@@ -76,6 +76,8 @@ target.
   kernel's bindings, under its scope ladder, and in front of the validation that
   catches a second claimant. `keys` belongs to the layer, not to the content
   inside it: a dialog's Ctrl+Enter has to be able to open a pane that is closed.
+  The hook registers them against the layer's own identity, which is what makes
+  a chord the dialog and its pane both claim go to the pane.
 - **Wrap what a surface renders in `layer.scope(...)`.** That is how a layer
   opened inside another knows its parent, and depth is what orders the walk —
   React mounts child effects first, so arrival order says the opposite. A

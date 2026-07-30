@@ -57,13 +57,22 @@ export type ChromeLayerOptions = {
 };
 
 export type ChromeLayerHandle = {
+  /**
+   * This layer's identity, as `chrome.layers` holds it. A surface hands it to
+   * `registerKeymap` so its keys name the layer that owns them, and the merge
+   * compares it against the open list — keys that cannot outlive their surface,
+   * and a chord two nested layers both want going to the deeper one.
+   */
+  readonly layer: ChromeLayer;
+  /** Names it in a trace, and is what a layer opened inside it passes as `parentId`. */
   readonly id: string;
   /** Leave the chain without dismissing: the surface already closed itself. */
   release: () => void;
 };
 
 type ChromeLayerRecord = {
-  id: string;
+  /** The token this record hands out, stable for as long as the layer is open. */
+  layer: ChromeLayer;
   parentId: string | null;
   dismissal: ChromeLayerDismissal;
   /** Asked to close and hasn't released yet: out of the walk, still on screen. */
@@ -264,8 +273,9 @@ export function createEditorChrome(
       // would leave a ghost step in the walk home.
       const key = layerRecords.has(id) ? `${id}#${layerSequence}` : id;
       layerSequence += 1;
+      const layer: ChromeLayer = { id: key };
       layerRecords.set(key, {
-        id: key,
+        layer,
         parentId,
         dismissal,
         closing: false,
@@ -275,6 +285,7 @@ export function createEditorChrome(
       reorderLayers();
 
       return {
+        layer,
         id: key,
         release() {
           if (!layerRecords.delete(key)) return;
@@ -305,8 +316,11 @@ export function createEditorChrome(
 
     registerKeymap(contribution) {
       // Before the push, so a refused contribution leaves the registry exactly
-      // as it was and the next lane's registration still lands.
-      assertKeymapContribution(contribution);
+      // as it was and the next lane's registration still lands. The registry
+      // goes in with it: a collision is a question about what is already
+      // registered, and this is the last moment the stack still names the lane
+      // that wrote the binding.
+      assertKeymapContribution(contribution, keymaps);
       keymaps.push(contribution);
       keymapRevision += 1;
       notify();
@@ -355,19 +369,21 @@ export function createEditorChrome(
     const active = [...layerRecords.values()].filter((record) => !record.closing);
     const depths = new Map<string, number>();
     const depthOf = (record: ChromeLayerRecord): number => {
-      const cached = depths.get(record.id);
+      const cached = depths.get(record.layer.id);
       if (cached !== undefined) return cached;
       const parent = record.parentId ? layerRecords.get(record.parentId) : undefined;
       // Guard the cycle a mis-registered parent could make, and treat a parent
       // that already closed as no parent at all.
-      depths.set(record.id, 0);
+      depths.set(record.layer.id, 0);
       const depth = parent && !parent.closing ? depthOf(parent) + 1 : 0;
-      depths.set(record.id, depth);
+      depths.set(record.layer.id, depth);
       return depth;
     };
 
     active.sort((a, b) => depthOf(a) - depthOf(b) || a.sequence - b.sequence);
-    layers = active.map((record) => ({ id: record.id }));
+    // The records' own tokens, not copies of them: a surface's keys name the
+    // token it was handed, and the merge finds it here by identity.
+    layers = active.map((record) => record.layer);
     notify();
   }
 
@@ -382,12 +398,12 @@ export function createEditorChrome(
     );
     if (roots.length === 0) return;
 
-    const replaced = new Set(roots.map((record) => record.id));
+    const replaced = new Set(roots.map((record) => record.layer.id));
     for (const record of layerRecords.values()) {
-      if (record.parentId !== null && replaced.has(record.parentId)) replaced.add(record.id);
+      if (record.parentId !== null && replaced.has(record.parentId)) replaced.add(record.layer.id);
     }
     for (const record of layerRecords.values()) {
-      if (replaced.has(record.id)) record.closing = true;
+      if (replaced.has(record.layer.id)) record.closing = true;
     }
     reorderLayers();
 

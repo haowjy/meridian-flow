@@ -28,9 +28,18 @@ import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 /** A pointer gesture in flight. Esc cancels it before anything else (§5.8). */
 export type GesturePhase = "idle" | "drag" | "sweep";
 
-/** What the kernel knows about one open transient surface. */
+/**
+ * What the kernel knows about one open transient surface, and the identity
+ * every other seam names it by.
+ *
+ * `openLayer` mints one per open layer and hands it back; `chrome.layers`
+ * holds those same objects, so a token is compared by identity rather than by
+ * its id. That is what lets a layer's keys say which layer they belong to: the
+ * merge asks whether this exact surface is still open, and a token missing
+ * from the list is a surface already out of the walk home.
+ */
 export type ChromeLayer = {
-  id: string;
+  readonly id: string;
 };
 
 export type EscSituation = {
