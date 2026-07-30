@@ -69,9 +69,10 @@ export function LinkMenu({
 }) {
   const close = () => surface.closeMenu();
   const followable = canFollowLink(menu.target, surface.navigator);
-  // A browser that refused once will refuse again, so the row greys with its
-  // reason from then on — the same answer the clipboard block below gives, and
-  // the reason a writer already learned there.
+  // A refusal is remembered for as long as this menu is open: the row greys
+  // where the writer pressed it, in the same words the clipboard block below
+  // uses. The next open asks the browser again, because capability can come
+  // back — a permission granted, a tab that has focus this time.
   const [clipboard, setClipboard] = useState<ClipboardAvailability>(() => clipboardAccess().write);
 
   return (
