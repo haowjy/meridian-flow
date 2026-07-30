@@ -43,6 +43,12 @@ export type StandaloneEditor = {
  * An editor whose DOM is in the page, because most of what these tests do is
  * press something: a detached manuscript answers no pointer event, hit-tests
  * nothing, and is invisible to a surface that queries the document.
+ *
+ * Inside a scroll pane, because in the app it always is (`EditorSurfaceFrame`),
+ * and every piece of measured chrome is drawn in that pane and placed in its
+ * coordinates (`features/editor/chrome/manuscript-overlay.ts`). An editor
+ * without one is an editor whose chrome has nowhere to mount, which is not a
+ * situation a writer can reach.
  */
 export function createStandaloneEditor({
   content,
@@ -50,8 +56,11 @@ export function createStandaloneEditor({
   ...schema
 }: StandaloneEditorOptions = {}): StandaloneEditor {
   installJsdomLayoutFallbacks();
+  const pane = document.createElement("div");
+  pane.setAttribute("data-stable-layout-scroll", "");
   const element = document.createElement("div");
-  document.body.append(element);
+  pane.append(element);
+  document.body.append(pane);
   const editor = new Editor({
     element,
     extensions: [...createStandaloneEditorExtensions(schema), ...extensions],
@@ -61,7 +70,7 @@ export function createStandaloneEditor({
     editor,
     destroy: () => {
       editor.destroy();
-      element.remove();
+      pane.remove();
     },
   };
 }

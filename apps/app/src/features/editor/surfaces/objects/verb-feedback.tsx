@@ -19,7 +19,12 @@ import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { type EditorNotice, EditorNoticePill, useAnchorRect } from "@/features/editor/chrome";
+import {
+  type EditorNotice,
+  EditorNoticePill,
+  manuscriptOverlay,
+  useAnchorRect,
+} from "@/features/editor/chrome";
 
 import { ExportError } from "./object-commands";
 
@@ -85,9 +90,10 @@ export function useVerbFeedback(): {
  * The answer, over the object it is about.
  *
  * Above the controls rather than beside them, because the writer's eyes are
- * already at that corner: they just pressed something there. Portalled and
- * fixed like the controls themselves, so nothing it says can move a line of
- * the manuscript.
+ * already at that corner: they just pressed something there. Portalled into the
+ * manuscript's pane and measured in its coordinates, like the controls
+ * themselves, so nothing it says can move a line of the manuscript and nothing
+ * it says can be read outside the editor.
  */
 export function ObjectVerbNotice({
   editor,
@@ -99,7 +105,8 @@ export function ObjectVerbNotice({
   notice: EditorNotice | null;
 }) {
   const rect = useAnchorRect(editor, anchor);
-  if (!notice || !rect || typeof document === "undefined") return null;
+  const overlay = manuscriptOverlay(editor);
+  if (!notice || !rect || !overlay || typeof document === "undefined") return null;
 
   return createPortal(
     <div
@@ -108,7 +115,7 @@ export function ObjectVerbNotice({
     >
       <EditorNoticePill notice={notice} />
     </div>,
-    document.body,
+    overlay,
   );
 }
 

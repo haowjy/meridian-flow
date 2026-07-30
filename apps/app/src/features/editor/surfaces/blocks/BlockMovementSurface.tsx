@@ -39,6 +39,7 @@ import { followBlock, holdBlock, type NodeHold } from "@/core/editor/anchors";
 import { CHROME_TIMING, editorChromeAttributes, hoverOwner } from "@/core/editor/chrome";
 import { isEditorObject, selectObjectTransaction } from "@/core/editor/objects";
 
+import { manuscriptOverlay } from "../../chrome/manuscript-overlay";
 import {
   useChromeCoarsePointer,
   useChromeSuppressed,
@@ -225,8 +226,13 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   );
 
   const { handle, line } = useBlockChromePlacement(editor, targetPos, gesture.seamIndex);
+  const overlay = manuscriptOverlay(editor);
+  // The menu hangs off the handle in the POINTER's space, which is the one
+  // Radix positions in. The handle's own placement is in the pane's, so the
+  // element is what carries the answer across the two.
+  const [handleElement, setHandleElement] = useState<HTMLButtonElement | null>(null);
 
-  if (!editable || !chrome || typeof document === "undefined") return null;
+  if (!editable || !chrome || !overlay || typeof document === "undefined") return null;
 
   const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
   const dragging = gesture.seamIndex !== null;
@@ -240,6 +246,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       {handle
         ? createPortal(
             <button
+              ref={setHandleElement}
               type="button"
               className="meridian-block-handle"
               data-block-handle
@@ -266,7 +273,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
             >
               <GripVertical aria-hidden />
             </button>,
-            document.body,
+            overlay,
           )
         : null}
 
@@ -278,15 +285,15 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
               aria-hidden
               style={{ top: line.top, left: line.left, width: line.width }}
             />,
-            document.body,
+            overlay,
           )
         : null}
 
-      {target && menuHold !== null && handle ? (
+      {target && menuHold !== null && handleElement ? (
         <BlockMenu
           editor={editor}
           target={target}
-          at={{ x: handle.left, y: handle.top }}
+          at={handleAnchorPoint(handleElement)}
           open
           onOpenChange={(open) => {
             if (!open) setMenuHold(null);
@@ -302,6 +309,19 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       ) : null}
     </>
   );
+}
+
+/**
+ * The handle's top-left in the pointer's own space, which is where Radix hangs
+ * a menu from.
+ *
+ * Read off the element rather than passed down from the placement, because the
+ * two are in different coordinate spaces on purpose: the handle is drawn in the
+ * manuscript pane's, and the pane is what carries it through a scroll.
+ */
+function handleAnchorPoint(handle: HTMLElement): { x: number; y: number } {
+  const box = handle.getBoundingClientRect();
+  return { x: box.left, y: box.top };
 }
 
 /**

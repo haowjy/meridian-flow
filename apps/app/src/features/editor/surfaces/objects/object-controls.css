@@ -253,9 +253,10 @@
   height: auto;
 }
 
-/* The answer a verb gives back, over the corner the writer just pressed. */
+/* The answer a verb gives back, over the corner the writer just pressed.
+   Absolute against the manuscript's pane, like the controls it answers for. */
 .meridian-verb-notice {
-  position: fixed;
+  position: absolute;
   z-index: 31;
   transform: translate(-100%, calc(-100% - 0.5rem));
 }

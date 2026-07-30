@@ -2,16 +2,20 @@
  * The block movement surface (§5.8, mockup 08): the margin handle, the drop
  * line, and the lifted block.
  *
- * The handle and the line are measured onto the page rather than inserted
- * into it (law 7), so the manuscript reserves nothing for them.
+ * The handle and the line are measured onto the manuscript's own scroll pane
+ * rather than inserted into the prose (law 7), so the manuscript reserves
+ * nothing for them.
  */
 
-/* The handle lives in the margin and is measured onto the page, so it can
-   never take a pixel from the manuscript (law 7). Fading rather than
-   unmounting on the way out: a grip that blinks off the frame the pointer
+/* The handle lives in the margin and is measured onto the pane, so it can
+   never take a pixel from the manuscript (law 7). Absolute against the pane,
+   not fixed against the viewport: the pane scrolls it with its block and clips
+   it at its own edge, where fixed left it a frame behind every scroll and — at
+   the top of a fast one — painted over the app's breadcrumb. Fading rather
+   than unmounting on the way out: a grip that blinks off the frame the pointer
    left reads as a glitch. */
 .meridian-block-handle {
-  position: fixed;
+  position: absolute;
   /* The browser must not read a drag off the grip as a page scroll: this
      gesture is the writer moving a block, start to finish. */
   touch-action: none;
@@ -75,7 +79,7 @@
 /* The jade seam the block would land on, with a dot on the column edge so a
    line drawn between two paragraphs still reads as a destination. */
 .meridian-block-drop-line {
-  position: fixed;
+  position: absolute;
   z-index: 30;
   height: 2.5px;
   border-radius: 2px;

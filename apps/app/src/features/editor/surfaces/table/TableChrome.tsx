@@ -3,9 +3,17 @@
  *
  * At rest a table is just a table (§5.4). Hovering it fades in a grip above the
  * hovered column, a grip left of the hovered row, and quiet add tabs on the
- * right and bottom edges; leaving fades them out. All four are portalled to the
- * body and positioned from measured rects, so the manuscript never reserves a
- * pixel for them and no line of text moves when they appear.
+ * right and bottom edges; leaving fades them out. All four are portalled into
+ * the manuscript's own scroll pane and positioned from measured rects, so the
+ * manuscript never reserves a pixel for them and no line of text moves when
+ * they appear.
+ *
+ * **A grip is a label on the hovered row, not a thing that travels between
+ * rows** (human ruling, 2026-07-30). It appears at the row instantly, it rides
+ * the pane's scroll natively because it is measured in the pane's own
+ * coordinates (`chrome/manuscript-overlay.ts`), and the pane clips it — so
+ * there is no state in which it is drawn beside a row it does not serve, and
+ * none in which it is drawn outside the editor.
  *
  * A grip press does one thing: select the row or the column. Everything the
  * menus then offer reads that selection, so a menu item, its keyboard twin,
@@ -53,6 +61,7 @@ import { editorChromeAttributes, hoverOwner, watchManuscriptLayout } from "@/cor
 
 import {
   EditorMenu,
+  manuscriptOverlay,
   OverlayIconRow,
   useChromeContext,
   useChromeSuppressed,
@@ -123,6 +132,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
   // render: a rebuild replaces the element while the cell itself stays, and
   // grips measured from the old one would hang beside a row nobody is on.
   const anchorPos = anchorCell ? (resolveNodeHold(editor.state, anchorCell)?.from ?? null) : null;
+  const overlay = manuscriptOverlay(editor);
   const rects = useTableChromeRects(
     editor,
     anchorPos === null ? null : cellElementAt(editor.view, anchorPos),
@@ -283,7 +293,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
   return (
     <>
-      {rects && anchorCell && anchorPos !== null && editable && chrome
+      {rects && overlay && anchorCell && anchorPos !== null && editable && chrome
         ? createPortal(
             <div
               className="meridian-table-chrome"
@@ -356,7 +366,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
                 piece={rects.addRow}
               />
             </div>,
-            document.body,
+            overlay,
           )
         : null}
 
@@ -432,21 +442,17 @@ function GripButton({
 }: ComponentProps<"button"> & {
   axis: Axis;
   label: string;
-  /** Null once this grip would fall outside the manuscript's pane. */
-  piece: TableChromePiece | null;
+  piece: TableChromePiece;
   /** Selects the row or column before the menu opens; the press means both. */
   onArm: () => void;
   children: ReactNode;
 }) {
-  // Radix still needs a trigger element to anchor an open menu to, so a grip
-  // that has scrolled out of the pane keeps its box and stops painting.
   return (
     <button
       {...rest}
       type="button"
       className="meridian-table-grip"
       data-table-grip={axis}
-      data-out-of-view={piece ? undefined : ""}
       aria-label={label}
       title={label}
       style={pieceStyle(piece)}
@@ -468,11 +474,9 @@ function AddTab({
 }: {
   axis: Axis;
   label: string;
-  piece: TableChromePiece | null;
+  piece: TableChromePiece;
   onSelect: () => void;
 }) {
-  if (!piece) return null;
-
   return (
     <button
       type="button"
@@ -490,8 +494,7 @@ function AddTab({
 }
 
 /** Geometry is inline: it is measurement, not theme. */
-function pieceStyle(piece: TableChromePiece | null): CSSProperties {
-  if (!piece) return { display: "none" };
+function pieceStyle(piece: TableChromePiece): CSSProperties {
   return { left: piece.left, top: piece.top, width: piece.width, height: piece.height };
 }
 
@@ -588,11 +591,13 @@ function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: bo
 }
 
 /**
- * The hovered cell's geometry, followed while the chrome is up.
+ * The hovered cell's geometry, in the overlay's coordinates, followed while the
+ * chrome is up.
  *
- * Scroll is watched in capture phase because the manuscript scrolls in a pane
- * rather than the window; the editor's own updates matter too, since a row
- * grows as the writer types into it and the grip has to travel with it.
+ * These numbers do not change when the pane scrolls — that is the point of the
+ * space they are in — so what is being followed is the manuscript reflowing
+ * underneath: a row that grows as the writer types into it, a peer's write
+ * above the table, a column drag resizing the frame live.
  */
 function useTableChromeRects(
   editor: Editor,
@@ -610,7 +615,8 @@ function useTableChromeRects(
     }
 
     const measure = () => {
-      const next = measureTableChrome(cell);
+      const overlay = manuscriptOverlay(editor);
+      const next = overlay && cell.isConnected ? measureTableChrome(overlay, cell) : null;
       // The cell scrolled out of the manuscript's pane: the approach is over
       // even though the pointer never moved, so the hover has to be told.
       if (!next) lostRef.current();

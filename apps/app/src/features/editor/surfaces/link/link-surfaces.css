@@ -3,14 +3,16 @@
  * unresolved target, and the mark an external link wears.
  *
  * The hint is approach chrome — it fades both ways and never takes the
- * pointer — and is portalled to the body, hence the `meridian-` prefix.
+ * pointer — and is portalled into the manuscript's scroll pane, hence the
+ * `meridian-` prefix.
  */
 
 /* Approach chrome, so it fades both ways and never takes the pointer: the
-   writer is aiming at the link under it, not at the hint. Portalled to the
-   body, hence the `meridian-` prefix rather than a nesting under the editor. */
+   writer is aiming at the link under it, not at the hint. Absolute against the
+   manuscript's pane, which carries it through a scroll and clips it at its own
+   edge, hence the `meridian-` prefix rather than a nesting under the prose. */
 .meridian-link-hint {
-  position: fixed;
+  position: absolute;
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -23,8 +25,9 @@
   font-size: 0.72rem;
   line-height: 1.4;
   /* A destination is as long as the writer's URL. It stays one line and ends
-     in an ellipsis rather than wrapping into a paragraph over the manuscript. */
-  max-width: calc(100vw - 1rem);
+     in an ellipsis rather than wrapping into a paragraph over the manuscript.
+     Against the pane it is drawn in, not the window it is nowhere near. */
+  max-width: calc(100% - 1rem);
   pointer-events: none;
   transition: opacity 120ms ease-out;
 }

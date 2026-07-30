@@ -4,16 +4,26 @@
  *
  * The document half of block movement is positions (`block-targets.ts`); this
  * is the half that has to look at what the browser actually drew. Both the
- * handle and the drop line are fixed-position overlays measured from the
- * rendered boxes, never elements inside the prose — law 7 forbids chrome that
- * moves a line of the manuscript, and a widget decoration between two blocks
- * would inherit the manuscript's own block spacing and push the page down by
- * exactly its height.
+ * handle and the drop line are overlays measured from the rendered boxes, never
+ * elements inside the prose — law 7 forbids chrome that moves a line of the
+ * manuscript, and a widget decoration between two blocks would inherit the
+ * manuscript's own block spacing and push the page down by exactly its height.
+ *
+ * **Everything drawn is in the manuscript overlay's coordinates**
+ * (`features/editor/chrome/manuscript-overlay.ts`); everything READ from a
+ * pointer stays in the viewport's, because a pointer event speaks no other
+ * language. Placed against the viewport instead, the handle was a frame behind
+ * every scroll and had nothing clipping it: measured mid-scroll at the top of
+ * the WINDOW, fully opaque, over the app's breadcrumb.
  */
 
 import type { EditorView } from "@tiptap/pm/view";
 
 import { type ObjectBody, objectBody } from "@/core/editor/objects";
+// Straight at the primitive rather than through `chrome/index.ts`: that barrel
+// also carries the surface registry this lane is listed in, so the barrel route
+// is a module cycle.
+import { type OverlayBox, overlayRect } from "@/features/editor/chrome/manuscript-overlay";
 
 import { type BlockTarget, blockAt, objectIsWholeBlock } from "./block-targets";
 
@@ -51,7 +61,7 @@ const END_SEAM_OFFSET = 6;
  */
 const BLOCK_HOVER_SLACK_PX = 8;
 
-export type ColumnEdges = { left: number; right: number };
+type ColumnEdges = { left: number; right: number };
 
 /** The rendered element of a top-level block, or null when it has none yet. */
 export function blockElement(view: EditorView, pos: number): HTMLElement | null {
@@ -69,8 +79,9 @@ export function blockElement(view: EditorView, pos: number): HTMLElement | null 
  * padding under the last line so a writer can keep typing mid-screen, so its
  * box says nothing useful about where the manuscript ends.
  */
-export function proseColumnEdges(view: EditorView): ColumnEdges {
-  const rect = view.dom.getBoundingClientRect();
+function proseColumnEdges(view: EditorView, overlay: HTMLElement): ColumnEdges | null {
+  const rect = overlayRect(overlay, view.dom);
+  if (!rect) return null;
   const style = window.getComputedStyle(view.dom);
   return {
     left: rect.left + pixels(style.paddingLeft),
@@ -79,7 +90,7 @@ export function proseColumnEdges(view: EditorView): ColumnEdges {
 }
 
 /**
- * Where the handle for `block` sits, in viewport coordinates.
+ * Where the handle for `block` sits, in the overlay's coordinates.
  *
  * Vertically it aligns with the block's first LINE rather than its box, so it
  * reads as belonging to the sentence beside it: a heading's line is taller
@@ -87,19 +98,22 @@ export function proseColumnEdges(view: EditorView): ColumnEdges {
  */
 export function blockHandlePosition(
   view: EditorView,
+  overlay: HTMLElement,
   block: BlockTarget,
 ): { top: number; left: number } | null {
   const element = blockElement(view, block.pos);
   if (!element) return null;
 
-  const rect = element.getBoundingClientRect();
+  const rect = overlayRect(overlay, element);
+  const column = proseColumnEdges(view, overlay);
+  if (!rect || !column) return null;
+
   const style = window.getComputedStyle(element);
   const lineHeight = Number.parseFloat(style.lineHeight);
   const lead = Number.isFinite(lineHeight)
     ? Math.max(0, (lineHeight - BLOCK_HANDLE_HEIGHT) / 2)
     : 4;
 
-  const column = proseColumnEdges(view);
   return {
     top: rect.top + pixels(style.paddingTop) + lead,
     left: column.left - HANDLE_CLEARANCE - BLOCK_HANDLE_WIDTH,
@@ -121,7 +135,7 @@ export function blockUnderPointer(
   clientX: number,
   clientY: number,
 ): BlockTarget | null {
-  const column = proseColumnEdges(view);
+  const column = proseColumnEdgesInViewport(view);
   const at = view.posAtCoords({
     left: Math.min(Math.max(clientX, column.left + 1), column.right - 1),
     top: clientY,
@@ -243,17 +257,19 @@ export function seamIndexAtPointer(view: EditorView, clientY: number): number {
   return doc.childCount;
 }
 
-/** Where the jade line is drawn for `seamIndex`, in viewport coordinates. */
+/** Where the jade line is drawn for `seamIndex`, in the overlay's coordinates. */
 export function seamLinePosition(
   view: EditorView,
+  overlay: HTMLElement,
   seamIndex: number,
 ): { top: number; left: number; width: number } | null {
   const { doc } = view.state;
-  const column = proseColumnEdges(view);
+  const column = proseColumnEdges(view, overlay);
+  if (!column) return null;
   const geometry = { left: column.left, width: Math.max(0, column.right - column.left) };
 
-  const above = seamIndex > 0 ? blockRectAtIndex(view, seamIndex - 1) : null;
-  const below = seamIndex < doc.childCount ? blockRectAtIndex(view, seamIndex) : null;
+  const above = seamIndex > 0 ? blockRectAtIndex(view, overlay, seamIndex - 1) : null;
+  const below = seamIndex < doc.childCount ? blockRectAtIndex(view, overlay, seamIndex) : null;
 
   if (above && below) return { ...geometry, top: (above.bottom + below.top) / 2 };
   if (below) return { ...geometry, top: below.top - END_SEAM_OFFSET };
@@ -261,12 +277,33 @@ export function seamLinePosition(
   return null;
 }
 
-function blockRectAtIndex(view: EditorView, index: number): DOMRect | null {
+function blockRectAtIndex(
+  view: EditorView,
+  overlay: HTMLElement,
+  index: number,
+): OverlayBox | null {
   const { doc } = view.state;
   if (index < 0 || index >= doc.childCount) return null;
   let pos = 0;
   for (let before = 0; before < index; before += 1) pos += doc.child(before).nodeSize;
-  return blockElement(view, pos)?.getBoundingClientRect() ?? null;
+  const element = blockElement(view, pos);
+  return element ? overlayRect(overlay, element) : null;
+}
+
+/**
+ * The same two edges the pointer is compared against, in the pointer's space.
+ *
+ * A pointer event carries viewport coordinates and nothing else, so the one
+ * reading this module takes FROM the writer stays there. Everything it hands
+ * back to be drawn is in the overlay's coordinates instead.
+ */
+function proseColumnEdgesInViewport(view: EditorView): ColumnEdges {
+  const rect = view.dom.getBoundingClientRect();
+  const style = window.getComputedStyle(view.dom);
+  return {
+    left: rect.left + pixels(style.paddingLeft),
+    right: rect.right - pixels(style.paddingRight),
+  };
 }
 
 function pixels(value: string): number {

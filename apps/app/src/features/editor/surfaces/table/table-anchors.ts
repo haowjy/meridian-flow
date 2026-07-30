@@ -4,13 +4,22 @@
  *
  * The kernel resolves document positions; making DOM out of them is the lane's
  * job, and for a table that is the whole trick. Grips live OUTSIDE the frame
- * (Q6), so they are measured from the hovered cell and the table's own box and
- * positioned by the viewport, portalled clear of the manuscript. Nothing here
- * renders inside the table, and nothing here can shift a line of text.
+ * (Q6), so they are measured from the hovered cell and the table's own box,
+ * portalled clear of the manuscript. Nothing here renders inside the table, and
+ * nothing here can shift a line of text.
  *
- * Placement is a pure function of four rectangles, so where a piece goes and
- * whether it fits are decided in one testable place. `table-chrome.css` keeps the
- * look; every number that decides a position is here.
+ * **Placement is in the manuscript overlay's coordinates**
+ * (`features/editor/chrome/manuscript-overlay.ts`), which is what makes a grip
+ * a label on its row rather than a thing that chases it. Measured against the
+ * viewport, every number here changed on every scroll and could only be
+ * corrected a frame later, so a fast scroll drew the grip beside a row three
+ * away from the pointer's. In the overlay these numbers do not change when the
+ * pane scrolls at all: the pane carries the chrome with the row and clips
+ * whatever has left it.
+ *
+ * Placement is a pure function of three rectangles, so where every piece goes
+ * is decided in one testable place. `table-chrome.css` keeps the look; every
+ * number that decides a position is here.
  *
  * **Elements are geometry, holds are identity.** A cell element is what the
  * grips are measured from and never what says which cell they serve: the chrome
@@ -21,6 +30,8 @@
 
 import { cellAround } from "@tiptap/pm/tables";
 import type { EditorView } from "@tiptap/pm/view";
+
+import { overlayRect, overlayViewport } from "../../chrome/manuscript-overlay";
 
 /** Painted sizes, matching mockup 05. */
 const GRIP_LONG = 30;
@@ -50,6 +61,11 @@ const ADD_TAB_GAP = 9;
  */
 const ADD_TAB_INSET = 6;
 
+/**
+ * A rectangle, in whichever space its caller is working in. Placement is in
+ * overlay coordinates; the hover zone is in the pointer's own viewport ones,
+ * because a pointer event is the only thing it is ever compared against.
+ */
 export type Box = { left: number; top: number; right: number; bottom: number };
 
 /**
@@ -71,22 +87,23 @@ const CHROME_BAND = {
   bottom: GRIP_LONG / 2,
 } as const;
 
-/** One piece of chrome, in viewport coordinates. */
+/** One piece of chrome, in the manuscript overlay's coordinates. */
 export type TableChromePiece = { left: number; top: number; width: number; height: number };
 
 /**
- * The four pieces, each null when it would fall outside the scrollport.
+ * The four pieces.
  *
- * Null rather than clamped: a grip pushed back inside the port would sit
- * beside a row it does not serve, and chrome pointing at the wrong row is
- * worse than chrome that is not there. A piece that cannot reach its row does
- * not draw.
+ * None of them is ever clamped or dropped for being out of the pane: they are
+ * drawn IN the pane, which clips them itself, exactly and on the frame the
+ * scroll lands. A piece pushed back inside would sit beside a row it does not
+ * serve, and one dropped by a JavaScript test of a viewport rect is one that
+ * flickers a frame after the scroll that moved it.
  */
 export type TableChromeRects = {
-  columnGrip: TableChromePiece | null;
-  rowGrip: TableChromePiece | null;
-  addColumn: TableChromePiece | null;
-  addRow: TableChromePiece | null;
+  columnGrip: TableChromePiece;
+  rowGrip: TableChromePiece;
+  addColumn: TableChromePiece;
+  addRow: TableChromePiece;
 };
 
 /** The cell the pointer is over, or null anywhere else in the manuscript. */
@@ -118,72 +135,51 @@ export function cellElementAt(view: EditorView, pos: number): HTMLElement | null
   return dom instanceof HTMLElement ? dom : null;
 }
 
-function fits(piece: TableChromePiece, port: Box): TableChromePiece | null {
-  return piece.left >= port.left &&
-    piece.top >= port.top &&
-    piece.left + piece.width <= port.right &&
-    piece.top + piece.height <= port.bottom
-    ? piece
-    : null;
-}
-
 /**
- * Where each piece of chrome goes, given the table, the hovered column band,
- * the hovered row band, and the scrollport that clips them all.
+ * Where each piece of chrome goes, given the table's box and the hovered
+ * column and row bands — all three in the manuscript overlay's coordinates,
+ * and so is every answer.
  *
- * The scrollport is the manuscript's own pane, and the document toolbar sits
- * ABOVE it rather than inside it. Clipping to the port is therefore the whole
- * of "never cover the toolbar": a grip that would ride up over it is a grip
- * that has left the port.
+ * There is no scrollport argument because there is nothing to clip against:
+ * the pane these are drawn in is the scrollport, and the document toolbar sits
+ * ABOVE that pane rather than inside it. "Never cover the toolbar" is a
+ * property of where the chrome lives now, not a test anything has to remember
+ * to run.
  */
 export function tableChromePieces({
   table,
   column,
   row,
-  port,
 }: {
   table: Box;
   column: { left: number; width: number };
   row: { top: number; height: number };
-  port: Box;
 }): TableChromeRects {
   return {
-    columnGrip: fits(
-      {
-        left: column.left + column.width / 2 - GRIP_LONG / 2,
-        top: table.top - COLUMN_GRIP_GAP - GRIP_SHORT,
-        width: GRIP_LONG,
-        height: GRIP_SHORT,
-      },
-      port,
-    ),
-    rowGrip: fits(
-      {
-        left: table.left - ROW_GRIP_GAP - GRIP_SHORT,
-        top: row.top + row.height / 2 - GRIP_LONG / 2,
-        width: GRIP_SHORT,
-        height: GRIP_LONG,
-      },
-      port,
-    ),
-    addColumn: fits(
-      {
-        left: table.right + ADD_TAB_GAP,
-        top: (table.top + table.bottom) / 2 - ADD_TAB / 2,
-        width: ADD_TAB,
-        height: ADD_TAB,
-      },
-      port,
-    ),
-    addRow: fits(
-      {
-        left: (table.left + table.right) / 2 - ADD_TAB / 2,
-        top: table.bottom - ADD_TAB - ADD_TAB_INSET,
-        width: ADD_TAB,
-        height: ADD_TAB,
-      },
-      port,
-    ),
+    columnGrip: {
+      left: column.left + column.width / 2 - GRIP_LONG / 2,
+      top: table.top - COLUMN_GRIP_GAP - GRIP_SHORT,
+      width: GRIP_LONG,
+      height: GRIP_SHORT,
+    },
+    rowGrip: {
+      left: table.left - ROW_GRIP_GAP - GRIP_SHORT,
+      top: row.top + row.height / 2 - GRIP_LONG / 2,
+      width: GRIP_SHORT,
+      height: GRIP_LONG,
+    },
+    addColumn: {
+      left: table.right + ADD_TAB_GAP,
+      top: (table.top + table.bottom) / 2 - ADD_TAB / 2,
+      width: ADD_TAB,
+      height: ADD_TAB,
+    },
+    addRow: {
+      left: (table.left + table.right) / 2 - ADD_TAB / 2,
+      top: table.bottom - ADD_TAB - ADD_TAB_INSET,
+      width: ADD_TAB,
+      height: ADD_TAB,
+    },
   };
 }
 
@@ -239,30 +235,32 @@ function overlaps(a: Box, b: Box): boolean {
 }
 
 /**
- * Measure the chrome for a hovered cell, or null once the cell itself has left
- * the manuscript's pane — at which point the approach is over, whether or not
- * the pointer moved.
+ * Measure the chrome for a hovered cell, in `overlay`'s coordinates, or null
+ * once the cell itself has left the manuscript's pane — at which point the
+ * approach is over, whether or not the pointer moved.
+ *
+ * The visible-window test is about the TARGET, never about placement: a grip
+ * whose row is halfway off the bottom of the pane is drawn and clipped like
+ * the row it labels, but a row the writer has scrolled entirely past has
+ * nothing left for a menu to be open on.
  */
-export function measureTableChrome(cell: HTMLElement): TableChromeRects | null {
+export function measureTableChrome(
+  overlay: HTMLElement,
+  cell: HTMLElement,
+): TableChromeRects | null {
   const table = cell.closest("table");
-  if (!table || !cell.isConnected) return null;
+  if (!table) return null;
 
-  const tableBox = boxOf(table);
+  const tableBox = overlayRect(overlay, table);
+  const cellBox = overlayRect(overlay, cell);
+  if (!tableBox || !cellBox) return null;
   if (tableBox.right === tableBox.left && tableBox.bottom === tableBox.top) return null;
-
-  const scroller = cell.closest("[data-stable-layout-scroll]");
-  const port: Box = scroller
-    ? boxOf(scroller)
-    : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
-
-  const cellBox = boxOf(cell);
-  if (!overlaps(cellBox, port)) return null;
+  if (!overlaps(cellBox, overlayViewport(overlay))) return null;
 
   return tableChromePieces({
     table: tableBox,
     column: { left: cellBox.left, width: cellBox.right - cellBox.left },
     row: { top: cellBox.top, height: cellBox.bottom - cellBox.top },
-    port,
   });
 }
 
@@ -277,8 +275,6 @@ export function sameTableChromeRects(
   return CHROME_PIECES.every((name) => {
     const one = a[name];
     const other = b[name];
-    if (one === other) return true;
-    if (!one || !other) return false;
     return (
       one.left === other.left &&
       one.top === other.top &&

@@ -1,17 +1,18 @@
 /**
  * Table chrome (M6, §5.4 and Q6): grips, add tabs, and the resize affordance.
  *
- * Grips and tabs live OUTSIDE the frame and are portalled to the body, so the
- * table reserves nothing for them; geometry they share with `table-anchors.ts`
- * is measured there and arrives as inline style.
+ * Grips and tabs live OUTSIDE the frame and are portalled into the manuscript's
+ * scroll pane, so the table reserves nothing for them; geometry they share with
+ * `table-anchors.ts` is measured there, in the pane's own coordinates, and
+ * arrives as inline style.
  */
 
-/* Grips and add tabs live OUTSIDE the frame and are portalled to the body, so
-   the table reserves nothing for them. Fixed children of an opacity parent
-   still resolve against the viewport (opacity makes a stacking context, not a
-   containing block), which is what lets one fade drive all four. */
+/* The fade, and nothing else: a zero-size box pinned to the pane's content
+   origin, so a child placed against it lands on exactly the coordinates
+   `table-anchors.ts` measured. One fade drives all four pieces, and the pane
+   below carries them through a scroll and clips them at its own edge. */
 .meridian-table-chrome {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   z-index: 30;
@@ -36,9 +37,15 @@
     pointer-events 120ms step-end allow-discrete;
 }
 
+/* Absolute against the manuscript's pane: the pane scrolls each piece with the
+   row or edge it labels, at no cost and with no frame of lag, and clips it at
+   its own boundary rather than letting it ride up over the app's chrome. There
+   is deliberately no transition on `top` or `left` — hovering another row
+   re-anchors the grip there, it does not send it travelling (human ruling,
+   2026-07-30). */
 .meridian-table-grip,
 .meridian-table-add-tab {
-  position: fixed;
+  position: absolute;
   display: grid;
   place-items: center;
   background: var(--color-card);
@@ -50,13 +57,6 @@
   transition:
     color 120ms ease-out,
     border-color 120ms ease-out;
-}
-
-/* A grip whose row has scrolled out of the pane keeps its element for Radix
-   to anchor an open menu to, and stops being paint or a hit target. */
-.meridian-table-grip[data-out-of-view] {
-  opacity: 0;
-  pointer-events: none;
 }
 
 .meridian-table-grip:hover,

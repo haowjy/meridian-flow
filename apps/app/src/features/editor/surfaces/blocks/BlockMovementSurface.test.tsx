@@ -3,10 +3,12 @@
  * The margin handle answers for the block under the pointer, and for no other.
  *
  * Scroll is the case a hover surface forgets: the writer's hand is still, the
- * document has not changed, and the block travels anyway. Two things have to
- * follow it — the measurement, so the handle never stands where its block used
- * to be, and the TARGET, so a handle beside a paragraph that scrolled away
- * either moves to the paragraph now there or leaves.
+ * document has not changed, and the block travels anyway. The handle is drawn
+ * in the pane's own coordinates, so the pane carries it past the toolbar and
+ * back with no measurement at all — a scroll must therefore leave its placement
+ * NUMBER alone, and the only thing that may move it is the TARGET changing,
+ * when the paragraph the pointer is resting on scrolls away and another takes
+ * its place.
  */
 import { Editor, type JSONContent } from "@tiptap/core";
 import { act } from "react";
@@ -35,6 +37,7 @@ const HANDLE_LEAD = 4;
 let editor: Editor;
 let root: Root;
 let container: HTMLElement;
+let pane: HTMLElement;
 let host: HTMLElement;
 let scrollTop = 0;
 
@@ -79,6 +82,18 @@ function blockElementAt(index: number): Element {
 function layOutManuscript(): void {
   const { dom } = editor.view;
   dom.getBoundingClientRect = () => rectOf(0, 2000);
+  // The pane the chrome is drawn in, pinned to the top of the window: its
+  // content origin is therefore `-scrollTop`, which is exactly what makes a
+  // block's place in it the same number however far the writer has scrolled.
+  pane.getBoundingClientRect = () => rectOf(0, 800);
+  Object.defineProperties(pane, {
+    clientLeft: { value: 0, configurable: true },
+    clientTop: { value: 0, configurable: true },
+    clientWidth: { value: 800, configurable: true },
+    clientHeight: { value: 800, configurable: true },
+    scrollLeft: { value: 0, configurable: true },
+    scrollTop: { get: () => scrollTop, configurable: true },
+  });
   for (const [index, child] of [...dom.children].entries()) {
     child.getBoundingClientRect = () =>
       rectOf(FIRST_BLOCK_TOP + index * BLOCK_PITCH - scrollTop, BLOCK_HEIGHT);
@@ -168,8 +183,13 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", SilentResizeObserver);
   scrollTop = 0;
 
+  // The manuscript always scrolls in a pane (`EditorSurfaceFrame`), and that
+  // pane is where measured chrome mounts and whose coordinates it is placed in.
+  pane = document.createElement("div");
+  pane.setAttribute("data-stable-layout-scroll", "");
   host = document.createElement("div");
-  document.body.append(host);
+  pane.append(host);
+  document.body.append(pane);
   editor = new Editor({
     element: host,
     extensions: createStandaloneEditorExtensions(),
@@ -193,7 +213,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   editor.destroy();
-  host.remove();
+  pane.remove();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -204,11 +224,14 @@ it("keeps the handle on its block when the manuscript scrolls under a still poin
   settleApproach();
   expect(handleTop()).toBe(FIRST_BLOCK_TOP + BLOCK_PITCH + HANDLE_LEAD);
 
-  // Twenty pixels: the same block is still under the pointer, further up.
+  // Twenty pixels: the same block is still under the pointer, further up. Its
+  // place IN THE PANE has not moved, and neither has the handle's — the pane
+  // scrolls both. A number that changed here would be a measurement chasing a
+  // scroll, and the chase is always a frame behind the thing it is chasing.
   scrollPane(20);
   flushMeasurement();
 
-  expect(handleTop()).toBe(FIRST_BLOCK_TOP + BLOCK_PITCH - 20 + HANDLE_LEAD);
+  expect(handleTop()).toBe(FIRST_BLOCK_TOP + BLOCK_PITCH + HANDLE_LEAD);
 });
 
 it("re-targets when another block slides under the still pointer", () => {
@@ -218,10 +241,12 @@ it("re-targets when another block slides under the still pointer", () => {
 
   // Eighty pixels: the third block is now where the second one was, and the
   // handle belongs to what the pointer is on rather than to what it was on.
+  // This is the one thing that may move the handle, and it moves it a whole
+  // block rather than by the distance scrolled.
   scrollPane(80);
   flushMeasurement();
 
-  expect(handleTop()).toBe(FIRST_BLOCK_TOP + 2 * BLOCK_PITCH - 80 + HANDLE_LEAD);
+  expect(handleTop()).toBe(FIRST_BLOCK_TOP + 2 * BLOCK_PITCH + HANDLE_LEAD);
 });
 
 /**

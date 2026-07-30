@@ -3,10 +3,11 @@
  * chip cluster, whatever comes next (ruling 8, mockup 03b).
  *
  * Two placements, one look. `inside` is rendered in the object's own node-view
- * element and needs no measurement at all; `over` is portalled to the body for
- * the elements ProseMirror owns, and its top-left arrives as an inline style.
- * Nothing here nests under `.meridian-editor` — the `meridian-` prefix is what
- * scopes it, since one of the two placements is outside the editor entirely.
+ * element and needs no measurement at all; `over` is portalled into the
+ * manuscript's scroll pane for the elements ProseMirror owns, and its top-left
+ * arrives as an inline style in that pane's coordinates. Nothing here nests
+ * under `.meridian-editor` — the `meridian-` prefix is what scopes it, since
+ * an overlay is never a descendant of the prose it decorates.
  */
 
 .meridian-object-overlay {
@@ -26,10 +27,12 @@
   right: 10px;
 }
 
-/* Measured onto the page instead, and pulled back over its own width so the
-   right edge lands on the inline `left`. */
+/* Measured onto the manuscript's scroll pane instead, and pulled back over its
+   own width so the right edge lands on the inline `left`. Absolute against the
+   pane, not fixed against the viewport: the pane then scrolls it with the
+   object and clips it at its own edge. */
 .meridian-object-overlay[data-placement="over"] {
-  position: fixed;
+  position: absolute;
   transform: translateX(-100%);
 }
 

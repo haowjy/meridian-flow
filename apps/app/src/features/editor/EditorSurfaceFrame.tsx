@@ -68,8 +68,12 @@ export function EditorSurfaceFrame({
         // the prose node must fill the scroll area for click-below-text focus.
         // cursor-text: the whole scroll area is caret territory when an editor
         // is attached — the cursor must promise what the press delivers.
+        // relative: this pane is the coordinate space every piece of measured
+        // chrome is placed in, and the box that clips it
+        // (`chrome/manuscript-overlay.ts`), which needs the pane to be the
+        // containing block of everything portalled into it.
         className={cn(
-          "flex min-h-0 flex-1 flex-col overflow-y-auto",
+          "relative flex min-h-0 flex-1 flex-col overflow-y-auto",
           editor && "cursor-text",
           scrollClassName,
         )}

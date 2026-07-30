@@ -1,28 +1,28 @@
+// @vitest-environment jsdom
 /**
- * Placement is the whole of "chrome belongs to what it serves": a grip that
- * has scrolled out of the manuscript's pane must not stay hit-testable over
- * the toolbar above it, and must not be dragged back inside to point at a row
- * it no longer sits beside.
+ * Placement is the whole of "chrome belongs to what it serves". Two properties
+ * carry it, and both are about the SPACE the numbers are in:
+ *
+ * - Scrolling the pane does not move a grip. It is measured in the pane's own
+ *   coordinates, so the browser carries it with its row and there is nothing to
+ *   chase — where the previous, viewport-space reading could only be corrected
+ *   a frame after the scroll that invalidated it, which drew the grip beside a
+ *   row several away from the pointer's for every frame of a fast scroll.
+ * - Every piece lands inside the surface the hover is held by, or the writer
+ *   travelling to a grip dismisses it a few pixels before they arrive.
  */
 import { describe, expect, it } from "vitest";
 
 import {
   type Box,
+  measureTableChrome,
   type TableChromePiece,
   tableChromePieces,
   tableHoverZone,
 } from "./table-anchors";
 
-/** The manuscript's pane, with the document toolbar above it (probe values). */
-const port: Box = { left: 300, top: 102, right: 900, bottom: 230 };
-
 function pieces(table: Box, row = { top: table.top, height: 40 }) {
-  return tableChromePieces({
-    table,
-    column: { left: table.left, width: 120 },
-    row,
-    port,
-  });
+  return tableChromePieces({ table, column: { left: table.left, width: 120 }, row });
 }
 
 describe("where the table's chrome goes", () => {
@@ -49,14 +49,7 @@ describe("where the table's chrome goes", () => {
     // pressed "add a row" instead. Inside the frame is the only placement that
     // holds at every reading size.
     const table: Box = { left: 328, top: 800, right: 856, bottom: 1065 };
-    const wide: Box = { left: 0, top: 0, right: 1200, bottom: 1400 };
-    const { addRow } = tableChromePieces({
-      table,
-      column: { left: table.left, width: 120 },
-      row: { top: 1000, height: 40 },
-      port: wide,
-    });
-    if (!addRow) throw new Error("a table this size has room for its tab");
+    const { addRow } = pieces(table, { top: 1000, height: 40 });
 
     expect(addRow).toEqual({ left: 583, top: 1041, width: 18, height: 18 });
     expect(addRow.top + addRow.height).toBeLessThanOrEqual(table.bottom);
@@ -75,48 +68,86 @@ describe("where the table's chrome goes", () => {
       height: 18,
     });
   });
+});
 
-  it("drops a grip that scrolling pushed above the pane, toolbar and all", () => {
-    // The reviewer's reproduction: scrolled until the table's top is at y=24,
-    // which put the row grip at y=68 to 98 — directly over a toolbar at 72 to 96.
-    const scrolled: Box = { left: 328, top: 24, right: 856, bottom: 200 };
-    const { columnGrip, rowGrip } = pieces(scrolled, { top: 68, height: 30 });
+describe("a grip is a label on its row, not a thing that chases it", () => {
+  it("reads the same numbers however far the pane has scrolled", () => {
+    const still = measureTableChrome(...paneWithTable({ scrollTop: 0 }));
+    const scrolled = measureTableChrome(...paneWithTable({ scrollTop: 250 }));
 
-    expect(columnGrip).toBeNull();
-    expect(rowGrip).toBeNull();
+    expect(still).not.toBeNull();
+    expect(scrolled).toEqual(still);
   });
 
-  it("keeps the pieces that still fit while dropping the ones that do not", () => {
-    // A tall table whose top has scrolled out but whose hovered row has not.
-    const partly: Box = { left: 328, top: 40, right: 856, bottom: 600 };
-    const { columnGrip, rowGrip, addColumn, addRow } = pieces(partly, { top: 150, height: 40 });
-
-    expect(columnGrip).toBeNull();
-    expect(rowGrip).not.toBeNull();
-    // Both tabs hang off table edges that are outside the pane.
-    expect(addColumn).toBeNull();
-    expect(addRow).toBeNull();
-  });
-
-  it("drops a grip that would sit past the pane's own edges", () => {
-    const nearLeftEdge: Box = { left: 305, top: 140, right: 500, bottom: 200 };
-    expect(pieces(nearLeftEdge, { top: 150, height: 40 }).rowGrip).toBeNull();
-
-    const nearRightEdge: Box = { left: 400, top: 140, right: 895, bottom: 200 };
-    expect(pieces(nearRightEdge, { top: 150, height: 40 }).addColumn).toBeNull();
+  it("lets go of a row the writer has scrolled entirely past", () => {
+    // Not about placement — the pane clips what has left it, on the frame it
+    // leaves. This is the target going away: a menu open on a row nobody can
+    // see any more would aim its verbs at whatever the selection has become.
+    expect(measureTableChrome(...paneWithTable({ scrollTop: 4000 }))).toBeNull();
   });
 });
 
-/** Every piece of a wide-open table's chrome, with nothing clipped away. */
-function everyPiece(table: Box, row: { top: number; height: number }): TableChromePiece[] {
-  const open: Box = { left: -1e4, top: -1e4, right: 1e4, bottom: 1e4 };
-  const pieces = tableChromePieces({
-    table,
-    column: { left: table.left, width: 120 },
-    row,
-    port: open,
+/** The manuscript's pane, with a table in it, at a given scroll offset. */
+function paneWithTable({ scrollTop }: { scrollTop: number }): [HTMLElement, HTMLElement] {
+  // Probe values from the running editor: the pane runs 264 to 920 across and
+  // 102 to 577 down, and the table sits 170px into an unscrolled document.
+  const pane = stubbedBox(document.createElement("div"), viewportBox(264, 102, 920, 577), {
+    clientWidth: 656,
+    clientHeight: 475,
+    scrollTop,
   });
-  return Object.values(pieces).filter((piece): piece is TableChromePiece => piece !== null);
+  const table = stubbedBox(
+    document.createElement("table"),
+    viewportBox(328, 272 - scrollTop, 856, 850 - scrollTop),
+  );
+  const cell = stubbedBox(
+    document.createElement("td"),
+    viewportBox(328, 394 - scrollTop, 504, 435 - scrollTop),
+  );
+
+  const row = document.createElement("tr");
+  row.append(cell);
+  table.append(row);
+  pane.append(table);
+  document.body.append(pane);
+  return [pane, cell];
+}
+
+function viewportBox(left: number, top: number, right: number, bottom: number): DOMRect {
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    toJSON: () => ({}),
+  };
+}
+
+/** jsdom lays nothing out, so every box a measurement reads is stated here. */
+function stubbedBox<T extends HTMLElement>(
+  element: T,
+  box: DOMRect,
+  scroll: { clientWidth?: number; clientHeight?: number; scrollTop?: number } = {},
+): T {
+  element.getBoundingClientRect = () => box;
+  Object.defineProperties(element, {
+    clientLeft: { value: 0 },
+    clientTop: { value: 0 },
+    clientWidth: { value: scroll.clientWidth ?? 0 },
+    clientHeight: { value: scroll.clientHeight ?? 0 },
+    scrollLeft: { value: 0 },
+    scrollTop: { value: scroll.scrollTop ?? 0 },
+  });
+  return element;
+}
+
+/** Every piece of a table's chrome, for the hover surface to be checked against. */
+function everyPiece(table: Box, row: { top: number; height: number }): TableChromePiece[] {
+  return Object.values(pieces(table, row));
 }
 
 function inside(zone: Box, piece: TableChromePiece): boolean {

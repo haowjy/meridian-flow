@@ -35,6 +35,12 @@ export {
 export { type EditorNotice, EditorNoticePill } from "./EditorNotice";
 export { EditorPopover, type EditorPopoverProps } from "./EditorPopover";
 export {
+  manuscriptOverlay,
+  type OverlayBox,
+  overlayRect,
+  overlayViewport,
+} from "./manuscript-overlay";
+export {
   OverlayIconRow,
   type OverlayIconRowItem,
   type OverlayIconRowProps,

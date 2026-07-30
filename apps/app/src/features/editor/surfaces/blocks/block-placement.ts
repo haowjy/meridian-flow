@@ -10,6 +10,10 @@
  * so a transaction that changed nothing on screen costs one measurement and no
  * render at all.
  *
+ * A scroll is no longer one of the things that moves these numbers: they are in
+ * the manuscript overlay's coordinates, and the pane carries the handle and the
+ * line through a scroll itself (`features/editor/chrome/manuscript-overlay.ts`).
+ *
  * WHICH signals mean "measure again" is not this lane's question. A block
  * travels for reasons a `ResizeObserver` on one element never sees — three
  * paragraphs inserted above, the pane scrolling under a hand that never moved,
@@ -28,6 +32,7 @@ import { draggedBlockPos } from "@/core/editor/blocks";
 // also carries the surface registry this lane is listed in, so the barrel route
 // is a module cycle.
 import { watchManuscriptLayout } from "@/core/editor/chrome";
+import { manuscriptOverlay } from "@/features/editor/chrome/manuscript-overlay";
 
 import { blockHandlePosition, seamLinePosition } from "./block-geometry";
 import { blockAt } from "./block-targets";
@@ -49,16 +54,17 @@ export function useBlockChromePlacement(
   useLayoutEffect(() => {
     const measure = () => {
       if (editor.isDestroyed) return;
-      const target = targetPos === null ? null : blockAt(editor.state.doc, targetPos);
+      const overlay = manuscriptOverlay(editor);
+      const target = targetPos === null || !overlay ? null : blockAt(editor.state.doc, targetPos);
       const next: BlockChromePlacement = {
-        handle: target ? blockHandlePosition(editor.view, target) : null,
+        handle: target && overlay ? blockHandlePosition(editor.view, overlay, target) : null,
         // No line on the two seams the block already sits between. Dropping
         // there moves nothing, and a jade line promising a landing is the
         // silent rejection law 5 forbids — said in paint rather than in a click.
         line:
-          seamIndex === null || restingSeam(editor, seamIndex)
+          seamIndex === null || !overlay || restingSeam(editor, seamIndex)
             ? null
-            : seamLinePosition(editor.view, seamIndex),
+            : seamLinePosition(editor.view, overlay, seamIndex),
       };
       setPlacement((previous) => (samePlacement(previous, next) ? previous : next));
     };

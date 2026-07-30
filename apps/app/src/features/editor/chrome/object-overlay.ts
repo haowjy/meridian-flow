@@ -16,12 +16,17 @@
  * — a table. ProseMirror reads its own elements back as document content, so a
  * child inserted into one is a document change it will try to parse. Those
  * controls stay measured and portalled, riding `watchManuscriptLayout` for
- * their geometry and the kernel's hover anchors for their target.
+ * their geometry and the kernel's hover anchors for their target. They are
+ * measured into the manuscript overlay rather than the viewport
+ * (`manuscript-overlay.ts`), so the one thing they still cannot do is leave
+ * the editor: measured against the viewport, a table scrolled halfway out of
+ * the pane put its own menu chip over the app's breadcrumb.
  */
 
 import type { Editor } from "@tiptap/core";
 import type { CSSProperties } from "react";
 
+import { manuscriptOverlay } from "./manuscript-overlay";
 import { useAnchorRect } from "./useAnchorRect";
 import "./object-overlay.css";
 
@@ -57,6 +62,7 @@ export function useObjectOverlayCorner(
 ): ObjectOverlayPlacement | null {
   const measured = corner && "over" in corner ? corner.over : null;
   const rect = useAnchorRect(editor, measured);
+  const overlay = manuscriptOverlay(editor);
 
   if (!corner || typeof document === "undefined") return null;
 
@@ -65,9 +71,9 @@ export function useObjectOverlayCorner(
     return { container: corner.inside, placement: "inside", style: undefined };
   }
 
-  if (!rect) return null;
+  if (!rect || !overlay) return null;
   return {
-    container: document.body,
+    container: overlay,
     placement: "over",
     // Anchored to the right edge so an overlay that gains a verb keeps its
     // outermost control where the pointer already learned to find it. The
