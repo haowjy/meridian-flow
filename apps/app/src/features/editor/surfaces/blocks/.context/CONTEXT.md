@@ -189,6 +189,18 @@ The handle may move FURTHER from the text (a wider clearance is always legal)
 and never closer, because closer is back into the grip band. It cost the
 12px-clear-of-text reading from mockup 08, which is the trade the ruling makes.
 
+### The gutter has to hold the band
+
+Once the handle moved into the pane, the pane's own clip started deciding how
+much of it exists. The reach is `MARGIN_GUTTER_MIN` — the 44px band plus 4px of
+slack against the clip edge — and the gutter is the sum of the canvas wrapper's
+inset and the prose node's padding
+([`features/editor/editor-column.ts`](../../../editor-column.ts)). It was 32px
+at the base breakpoint and 40px at `sm`, so 10px and 18px of a 22px grip
+survived, on the phone editor and in any desktop window under 640px. The
+gutters are 48/56/64 now, and `editor-column.test.ts` fails if either number
+moves out from under the other.
+
 `proseColumnEdges` is horizontal only, deliberately. The prose node reserves
 half a viewport of padding under the last line so a writer can keep typing
 mid-screen, so its box says nothing about where the manuscript ends. Hover is

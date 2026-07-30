@@ -44,12 +44,32 @@ export const BLOCK_HANDLE_HEIGHT = 24;
  * 22 is what makes the split true: a row grip starts `ROW_GRIP_GAP` + its own
  * 15px width inside the frame, so 21, and the handle's right edge lands one
  * pixel clear of it. Measured against the text edge rather than the viewport
- * so it holds at every column width — the prose padding halves on a narrow
- * pane, and an absolute 306 would only be right on a wide one. Growing it
- * moves the handle further from the text, which is allowed; shrinking it walks
- * back into the grip band, which is the bug.
+ * so it holds at every column width. Growing it moves the handle further from
+ * the text, which is allowed; shrinking it walks back into the grip band,
+ * which is the bug.
  */
 const HANDLE_CLEARANCE = 22;
+
+/**
+ * How much gutter the prose column has to leave left of its text edge.
+ *
+ * The handle is drawn IN the manuscript's pane and the pane clips what leaves
+ * it, so the gutter stopped being a matter of taste the moment the portal
+ * moved: a gutter narrower than the handle reaches is a control the writer can
+ * see part of and grab part of. A 32px base-breakpoint gutter left 10px of a
+ * 22px grip — on the phone editor, and in any desktop window under 640px.
+ *
+ * 44 of this is the band itself (`HANDLE_CLEARANCE` plus the grip's own
+ * width). The remaining 4 is deliberate slack rather than rounding: a rounded
+ * control with a hover background, flush against a clip edge, reads as cut off
+ * rather than as a control, and the reserve is what keeps the next change to
+ * either number from landing back on an exact fit.
+ *
+ * `editor-column.ts` owns the gutter and `editor-column.test.ts` holds the two
+ * together — Tailwind class strings are literal, so nothing here can read
+ * them.
+ */
+export const MARGIN_GUTTER_MIN = HANDLE_CLEARANCE + BLOCK_HANDLE_WIDTH + 4;
 
 /** How far the drop line floats off the outer edges of the document. */
 const END_SEAM_OFFSET = 6;

@@ -161,6 +161,13 @@ through the chrome host like every other one. See
 scroll class/ref/handler. The frame owns every shared vertical, scroll, and
 prose-trim rule; hosts own their content and horizontal coordinate strategy.
 
+The frame's scroller is also the manuscript overlay: `position: relative` plus
+an overflow clip, which makes it the containing block for every measured
+surface and the box that takes one off the page when it leaves
+([`chrome/manuscript-overlay.ts`](../chrome/manuscript-overlay.ts)). That clip
+turns the column's gutter into a hard constraint rather than a look —
+`editor-column.ts` states the floor and `editor-column.test.ts` holds it.
+
 Passing the optional `editor` makes the whole scroll area click-to-focus
 territory: gutter presses place the caret at the nearest text position —
 always through `TextSelection.near`, never a raw `posAtCoords` position,
