@@ -13,9 +13,17 @@
  * for.
  */
 import type { Editor } from "@tiptap/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { holdNode } from "@/core/editor/anchors";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
+
+// A refused door says why (law 5), and the reason is a macro the test transform
+// does not compile. The lane's copy is not what these cases are about.
+vi.mock("@lingui/core/macro", () => ({
+  t: (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + String(values[index - 1] ?? "") + part),
+}));
 
 // jsdom ships no `ClipboardEvent`, and ProseMirror's own `pasteHTML` builds one
 // when it is not handed an event. The browser has it; the harness does not.
@@ -26,7 +34,12 @@ if (typeof globalThis.ClipboardEvent === "undefined") {
 
 import type { ImageUploadPort, UploadedImage } from "./image-ingress-ports";
 import { pendingImages, registerImageIngressHost } from "./image-ingress-runtime";
-import { insertImageFile, removePendingImage, retryPendingImage } from "./image-uploads";
+import {
+  insertImageFile,
+  openImageReplacePicker,
+  removePendingImage,
+  retryPendingImage,
+} from "./image-uploads";
 import type { PendingImage } from "./pending-images";
 
 type HeldUpload = {
@@ -102,6 +115,7 @@ function mount(text = "The gate opened."): {
   sync: () => void;
   syncAwareness: () => void;
   awareness: CollabPair["awareness"];
+  presence: CollabPair["presence"];
   held: HeldUpload[];
   bytes: {
     calls: string[];
@@ -131,6 +145,7 @@ function mount(text = "The gate opened."): {
     sync: pair.sync,
     syncAwareness: pair.syncAwareness,
     awareness: pair.awareness,
+    presence: pair.presence,
     held,
     bytes: {
       calls,
@@ -473,6 +488,151 @@ describe("closing the editor closes what it was carrying", () => {
     editor.destroy();
 
     expect(bytes.aborted).toEqual(["https://example.test/one.png"]);
+  });
+});
+
+/**
+ * The chooser, held open the way the operating system holds it.
+ *
+ * `pickImageFile` creates an `<input type=file>` and clicks it, so the click is
+ * where the writer leaves the editor: the test records the input, lets the
+ * document move underneath, and hands a file back whenever it likes.
+ */
+function openChooser(open: () => void): (file: File) => void {
+  const opened: HTMLInputElement[] = [];
+  const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
+    this: HTMLInputElement,
+  ) {
+    opened.push(this);
+  });
+  open();
+  click.mockRestore();
+  const input = opened[0];
+  if (!input) throw new Error("no file chooser opened");
+  return (file) => {
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    input.dispatchEvent(new Event("change"));
+  };
+}
+
+/** A block a peer writes in above, carrying a picture of its own. */
+function peerPictureBlock(editor: Editor) {
+  return editor.state.schema.nodes.paragraph.create(null, [
+    editor.state.schema.text("abcd"),
+    editor.state.schema.nodes.image.create({ src: "asset:peer", alt: "peer" }),
+  ]);
+}
+
+describe("Replace aims at the picture the writer pointed at", () => {
+  it("lands on the original picture after a peer writes a picture in above", async () => {
+    const { editor, peer, sync, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    held[0].settle(asset("old"));
+    await settle();
+    sync();
+
+    const chooseFile = openChooser(() =>
+      openImageReplacePicker(editor, holdNode(editor.state, imageNodes(editor)[0].pos)),
+    );
+
+    // The peer's block arrives while the chooser is still open, and its own
+    // picture now starts at the number the original one had.
+    peer.view.dispatch(peer.state.tr.insert(0, peerPictureBlock(peer)));
+    sync();
+    await settle();
+
+    chooseFile(imageFile("replacement.png"));
+    await settle();
+    expect(held).toHaveLength(2);
+    held[1].settle(asset("new"));
+    await settle();
+
+    expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:peer", "asset:new"]);
+  });
+
+  it("opens nothing when the picture is gone by the time the file comes back", async () => {
+    const { editor, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    held[0].settle(asset("old"));
+    await settle();
+
+    const at = imageNodes(editor)[0].pos;
+    const chooseFile = openChooser(() =>
+      openImageReplacePicker(editor, holdNode(editor.state, at)),
+    );
+    editor.view.dispatch(editor.state.tr.delete(at, at + 1));
+    await settle();
+
+    chooseFile(imageFile("replacement.png"));
+    await settle();
+
+    // No second request, so no asset the project has no use for, and nothing in
+    // flight for a slot that does not exist.
+    expect(held).toHaveLength(1);
+    expect(pendingImages(editor)).toEqual([]);
+    expect(imageNodes(editor)).toEqual([]);
+  });
+
+  it("takes the whole replacement back in one undo", async () => {
+    const { editor, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    held[0].settle(asset("old"));
+    await settle();
+    // An earlier edit of the writer's, which one undo must not reach past.
+    editor.commands.insertContentAt(1, "Then ");
+    await settle();
+
+    const chooseFile = openChooser(() =>
+      openImageReplacePicker(editor, holdNode(editor.state, imageNodes(editor)[0].pos)),
+    );
+    chooseFile(imageFile("replacement.png"));
+    await settle();
+    held[1].settle(asset("new"));
+    await settle();
+    expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:new"]);
+
+    expect(editor.commands.undo()).toBe(true);
+    await settle();
+
+    expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:old"]);
+    expect(editor.state.doc.textContent).toBe("Then The gate opened.");
+  });
+
+  it("still undoes an inserted picture away, bytes and all", async () => {
+    const { editor, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    held[0].settle(asset("only"));
+    await settle();
+
+    expect(editor.commands.undo()).toBe(true);
+    await settle();
+
+    expect(imageNodes(editor)).toEqual([]);
+    expect(editor.state.doc.textContent).toBe("The gate opened.");
+  });
+});
+
+describe("an announcement made while the writer is hidden is still true after", () => {
+  it("releases the slot it filled during a suspension, rather than resurrecting it", async () => {
+    const { editor, presence, awareness, held } = mount();
+    insertImageFile(editor, imageFile(), 5);
+    await settle();
+    const token = pendingImages(editor)[0].id;
+    expect(announced(awareness.local)).toEqual([{ token, frame: null }]);
+
+    // Inline review opens over the document, and the bytes land behind it.
+    presence.suspend();
+    held[0].settle(asset("landed"));
+    await settle();
+    expect(awareness.local.getLocalState()).toBeNull();
+
+    presence.resume();
+
+    expect(announced(awareness.local)).toEqual([]);
   });
 });
 

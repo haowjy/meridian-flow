@@ -16,9 +16,10 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import type { Node as PMNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 
+import { type NodeHold, resolveNodeHold } from "../anchors";
+import { objectSurfaceKind } from "../objects";
 import type { ImageIngressHost, UploadedImage } from "./image-ingress-ports";
 import {
   type ImageIngressMessage,
@@ -91,17 +92,24 @@ export function openImagePicker(editor: Editor | null): void {
  *
  * The node stays exactly where it is and keeps everything the writer wrote about
  * it — its alt text, and a figure's caption and label. The ordinary upload
- * lifecycle then runs over that slot: same entry, same progress, same failure,
- * and a landing that writes one attribute. So nothing is inserted, nothing is
- * removed, the manuscript does not move, and undo takes the replacement back in
- * one step.
+ * lifecycle then runs over that slot: same entry, same progress, same failure.
+ * So nothing is inserted, nothing is removed, the manuscript does not move, and
+ * one undo puts the old picture back (`landUpload`).
+ *
+ * **The target is held, never a number.** The operating system's chooser can
+ * stay open for as long as the writer takes, and every raw position in the
+ * document means something else after one peer write or one AI write — the same
+ * hazard `anchors.ts` exists for, at its worst. So the caller hands over the
+ * identity of the picture the writer pointed at, and it is resolved after the
+ * file comes back; a picture that is gone by then cancels rather than aiming an
+ * upload at whatever slid into its numbers.
  */
-export function openImageReplacePicker(editor: Editor | null, pos: number): void {
-  if (!editor || !ingressHost(editor)) return;
-  pickImageFile((file) => replaceImageFile(editor, pos, file));
+export function openImageReplacePicker(editor: Editor | null, target: NodeHold | null): void {
+  if (!editor || !target || !ingressHost(editor)) return;
+  pickImageFile((file) => replaceImageFile(editor, target, file));
 }
 
-function replaceImageFile(editor: Editor | null, pos: number, file: File): void {
+function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): void {
   const storage = imageIngressStorage(editor);
   const host = ingressHost(editor);
   if (!editor || !storage || !host) return;
@@ -111,17 +119,29 @@ function replaceImageFile(editor: Editor | null, pos: number, file: File): void 
     );
     return;
   }
-  const node = editor.state.doc.nodeAt(pos);
-  if (!node) return;
+  const at = resolveNodeHold(editor.state, target);
+  const node = at && editor.state.doc.nodeAt(at.from);
+  // Read back rather than trusted: the hold answers where its node is, and the
+  // registration answers whether that node is still something a picture can go
+  // into (a figure counts, and so does the inline picture). Nothing is opened
+  // for a slot that went away while the chooser was up — no entry, no request,
+  // and no asset the project has no use for.
+  if (!at || !node || objectSurfaceKind(node) !== "image") {
+    storage.status.refuse(t`That picture is no longer in the document.`);
+    return;
+  }
   // The writer's own alt text outlives the picture it described only if they
   // wrote one; a slot that never had one takes the new file's name, as an insert
   // does.
   const existing = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
-  const upload = beginUpload(editor, { file, alt: existing || imageAltFromFilename(file.name) });
-  if (!claimSlot(editor, pos, upload.id)) {
-    cancelUpload(editor, upload);
-    return;
-  }
+  const upload = beginUpload(editor, {
+    file,
+    alt: existing || imageAltFromFilename(file.name),
+    landing: "replace",
+  });
+  // Bookkeeping rather than an edit, so it stays out of the writer's undo stack:
+  // what they will undo is the picture, and that is the landing's business.
+  writeSlot(editor, at.from, { [UPLOAD_TOKEN_ATTR]: upload.id }, { history: false });
   void runUpload(editor, host, upload.id, upload.signal);
 }
 
@@ -144,7 +164,7 @@ export function insertImageFile(editor: Editor | null, file: File, pos?: number)
   const host = ingressHost(editor);
   if (!host) return;
   const alt = imageAltFromFilename(file.name);
-  const upload = beginUpload(editor, { file, alt });
+  const upload = beginUpload(editor, { file, alt, landing: "insert" });
   const at = insertPendingImageNode(editor, alt, upload.id, pos);
   if (at === null) {
     cancelUpload(editor, upload);
@@ -235,21 +255,30 @@ function insertPendingImageNode(
 }
 
 /**
- * Write an upload's token onto a slot that already exists (Replace).
+ * Write these attributes onto the slot at `pos`, over the ones it has now.
  *
- * Bookkeeping rather than an edit, so it stays out of the writer's undo stack:
- * what they will undo is the picture, and that is the landing's business.
+ * Every write this file makes to an existing slot is one of these, and the two
+ * facts that differ between them are its arguments: whether the writer will undo
+ * it, and whether it also closes the upload's entry. Reading the node back here
+ * rather than taking it from the caller is what keeps the merge honest — a
+ * figure's caption, a peer's alt-text edit, whatever the slot gained since.
  */
-function claimSlot(editor: Editor, pos: number, token: string): boolean {
+function writeSlot(
+  editor: Editor,
+  pos: number,
+  attrs: Record<string, unknown>,
+  options: { history: boolean; closes?: string },
+): void {
   const node = editor.state.doc.nodeAt(pos);
-  if (!node) return false;
-  const transaction = editor.state.tr.setNodeMarkup(pos, undefined, {
-    ...node.attrs,
-    [UPLOAD_TOKEN_ATTR]: token,
-  });
-  transaction.setMeta("addToHistory", false);
+  if (!node) return;
+  const transaction = editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs });
+  if (!options.history) transaction.setMeta("addToHistory", false);
+  if (options.closes) {
+    transaction.setMeta(imageIngressPluginKey, {
+      drop: options.closes,
+    } satisfies ImageIngressMessage);
+  }
   editor.view.dispatch(transaction);
-  return true;
 }
 
 type OpenUpload = { id: string; signal: AbortSignal };
@@ -262,7 +291,10 @@ type OpenUpload = { id: string; signal: AbortSignal };
  * measured from here too, so the slot is the picture's real shape before a
  * single byte has arrived.
  */
-function beginUpload(editor: Editor, input: { file: File; alt: string }): OpenUpload {
+function beginUpload(
+  editor: Editor,
+  input: { file: File; alt: string; landing: PendingImageUpload["landing"] },
+): OpenUpload {
   const controller = new AbortController();
   const id = nextIngressId("image-upload");
   const entry: PendingImageUpload = {
@@ -272,6 +304,7 @@ function beginUpload(editor: Editor, input: { file: File; alt: string }): OpenUp
     alt: input.alt,
     file: input.file,
     frame: null,
+    landing: input.landing,
     status: { kind: "uploading", percent: null },
     abort: () => controller.abort(),
   };
@@ -329,11 +362,17 @@ async function runUpload(
 /**
  * The bytes arrived: the picture's own node becomes the picture.
  *
- * One transaction, one node: `src`, `alt`, and the token cleared, because the
- * slot is no longer in flight and no peer should be told it is. Nothing is
- * inserted and nothing is removed, which is why the manuscript does not move —
- * and the fence is re-read here because an upload outlives the connection that
- * started it.
+ * The slot never moves and nothing is inserted or removed, which is why the
+ * manuscript does not move — and the fence is re-read here because an upload
+ * outlives the connection that started it.
+ *
+ * **What the writer undoes depends on how the slot was opened**, which is why the
+ * entry carries it. An INSERT put the node there in a historical transaction, so
+ * its bytes arriving is bookkeeping: undo takes the picture away rather than
+ * stepping back through its own arrival and leaving an empty frame. A REPLACE was
+ * aimed at a picture the writer already had, so the arrival IS the edit — this
+ * picture became that picture — and it lands as one history event whose undo puts
+ * the old one back.
  */
 function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
   const storage = imageIngressStorage(editor);
@@ -354,16 +393,27 @@ function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
     return;
   }
   storage.assetIndex.remember(uploaded.assetDocumentId, uploaded.assetPath);
-  const node = editor.state.doc.nodeAt(at.from) as PMNode;
-  const transaction = editor.state.tr.setNodeMarkup(at.from, undefined, {
-    ...node.attrs,
-    src: uploaded.src,
-    alt: uploaded.alt ?? entry.alt,
-    [UPLOAD_TOKEN_ATTR]: null,
-  });
-  // Undo removes the picture the writer inserted; it does not step back through
-  // the arrival of its own bytes and leave an empty frame behind.
-  transaction.setMeta("addToHistory", false);
-  transaction.setMeta(imageIngressPluginKey, { drop: id } satisfies ImageIngressMessage);
-  editor.view.dispatch(transaction);
+  const picture = { src: uploaded.src, alt: uploaded.alt ?? entry.alt };
+
+  if (entry.landing === "insert") {
+    writeSlot(
+      editor,
+      at.from,
+      { ...picture, [UPLOAD_TOKEN_ATTR]: null },
+      { history: false, closes: id },
+    );
+    return;
+  }
+
+  // Two writes, and their order is the promise. The token leaves first and
+  // outside history — an undo that brought it back would hand the writer a slot
+  // whose upload is over — and that non-historical transaction also closes the
+  // Yjs UndoManager's capture window (y-tiptap calls `stopCapturing` for one), so
+  // the replacement below cannot merge with whatever the writer typed a moment
+  // before their bytes arrived.
+  writeSlot(editor, at.from, { [UPLOAD_TOKEN_ATTR]: null }, { history: false, closes: id });
+  // The whole of the writer's edit, in one step they can take back: the same
+  // node, the new picture, and nothing else touched. The position still holds
+  // because an attribute write moves nothing.
+  writeSlot(editor, at.from, picture, { history: true });
 }
