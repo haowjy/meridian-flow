@@ -151,6 +151,7 @@ export function LinkMenu({
           had already swept a passage around it, in which case they chose. */}
       <ClipboardMenuItems
         editor={editor}
+        closeMenu={close}
         prepare={() => {
           if (selectionCoversLink(editor.state, linkMenuRange(menu))) return;
           editor.commands.setTextSelection(linkMenuRange(menu));
