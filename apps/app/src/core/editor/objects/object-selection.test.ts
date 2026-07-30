@@ -11,6 +11,7 @@ import {
   objectBeside,
   selectedObject,
   selectObjectTransaction,
+  typeBesideObjectTransaction,
 } from "./object-selection";
 
 let editor: Editor | null = null;
@@ -321,5 +322,121 @@ describe("selecting and leaving an object", () => {
     expect(transaction).not.toBeNull();
     if (transaction) instance.view.dispatch(transaction);
     expect(instance.state.selection.$head.parent.textContent).toBe("before");
+  });
+});
+
+/**
+ * The walk crosses a rendered diagram as ONE thing (human ruling, 2026-07-30:
+ * "it should just select the svg, never reveal").
+ *
+ * Every case here starts ON an object, which is the half of the walk that used
+ * to ask ProseMirror rather than the registration: a `code_block` is a
+ * textblock, so the step beside a scene break landed in the mermaid source and
+ * the fence traded its picture for its syntax.
+ */
+describe("stepping beside an object that stands next to another", () => {
+  const diagram = (source: string): JSONContent => ({
+    type: "code_block",
+    attrs: { language: "mermaid" },
+    content: [{ type: "text", text: source }],
+  });
+  const rule: JSONContent = { type: "horizontal_rule" };
+  const grid: JSONContent = {
+    type: "table",
+    content: [
+      {
+        type: "table_row",
+        content: [
+          { type: "table_header", content: [paragraph("Rank")] },
+          { type: "table_header", content: [paragraph("Skill")] },
+        ],
+      },
+    ],
+  };
+
+  function walk(instance: Editor, from: string, direction: 1 | -1) {
+    const transaction = caretBesideObjectTransaction(
+      instance.state,
+      positionOf(instance, from),
+      direction,
+    );
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+  }
+
+  it("selects the diagram above rather than opening its source", () => {
+    const instance = mount([paragraph("before"), diagram("graph TD;"), rule, paragraph("after")]);
+    walk(instance, "horizontal_rule", -1);
+
+    expect(selectedObject(instance.state)?.pos).toBe(positionOf(instance, "code_block"));
+    expect(instance.state.selection).toBeInstanceOf(NodeSelection);
+  });
+
+  it("selects the diagram below the same way", () => {
+    const instance = mount([paragraph("before"), rule, diagram("graph TD;"), paragraph("after")]);
+    walk(instance, "horizontal_rule", 1);
+
+    expect(selectedObject(instance.state)?.pos).toBe(positionOf(instance, "code_block"));
+  });
+
+  it("steps from one diagram onto the next", () => {
+    const instance = mount([paragraph("before"), diagram("graph TD;"), diagram("graph LR;")]);
+    const first = positionOf(instance, "code_block");
+    walk(instance, "code_block", 1);
+
+    expect(selectedObject(instance.state)?.pos).toBeGreaterThan(first);
+    expect(instance.state.selection.$head.parent.type.name).not.toBe("code_block");
+  });
+
+  it("selects a table whole, as the walk out of prose already does", () => {
+    const instance = mount([paragraph("before"), grid, rule, paragraph("after")]);
+    walk(instance, "horizontal_rule", -1);
+
+    // A table is selected as a CellSelection over every cell, which is the
+    // only spelling this schema has for "the table is selected".
+    expect(selectedObject(instance.state)?.node.type.name).toBe("table");
+  });
+
+  it("still hands a plain fence its caret: its text is what the page shows", () => {
+    const instance = mount([
+      paragraph("before"),
+      { type: "code_block", attrs: { language: "ts" }, content: [{ type: "text", text: "x = 1" }] },
+      rule,
+    ]);
+    walk(instance, "horizontal_rule", -1);
+
+    expect(instance.state.selection.empty).toBe(true);
+    expect(instance.state.selection.$head.parent.textContent).toBe("x = 1");
+  });
+
+  it("sends Esc past a diagram rather than into its source", () => {
+    const instance = mount([paragraph("before"), rule, diagram("graph TD;"), paragraph("after")]);
+    const transaction = caretHomeFromObjectTransaction(
+      instance.state,
+      positionOf(instance, "horizontal_rule"),
+    );
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+
+    expect(instance.state.selection.$head.parent.textContent).toBe("after");
+  });
+
+  it("types beside the object rather than into the diagram's source", () => {
+    const instance = mount([paragraph("before"), rule, diagram("graph TD;"), paragraph("after")]);
+    const transaction = typeBesideObjectTransaction(
+      instance.state,
+      positionOf(instance, "horizontal_rule"),
+      "q",
+    );
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+
+    // The letter belongs where the writer was looking: a paragraph made
+    // between the scene break and the picture, not inside the picture.
+    expect(instance.state.selection.$head.parent.type.name).toBe("paragraph");
+    expect(instance.state.selection.$head.parent.textContent).toBe("q");
+    expect(instance.state.doc.nodeAt(positionOf(instance, "code_block"))?.textContent).toBe(
+      "graph TD;",
+    );
   });
 });

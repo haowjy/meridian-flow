@@ -286,6 +286,26 @@ describe("arrow walking", () => {
     expect(instance.state.selection.$head.parent.textContent).toBe("after");
   });
 
+  it("crosses a diagram as one object, in both directions", () => {
+    const instance = mount([paragraph("before"), mermaid, { type: "horizontal_rule" }]);
+    const diagram = positionOf(instance, "code_block");
+    select(instance, positionOf(instance, "horizontal_rule"));
+
+    // The writer's report (2026-07-30): arrowing off the scene break below a
+    // rendered diagram used to put the caret in the mermaid source, and a
+    // fence with a caret in it shows its syntax rather than its picture.
+    expect(press(instance, { key: "ArrowUp" })).toBe(true);
+    expect(selectedObject(instance.state)?.pos).toBe(diagram);
+    expect(instance.state.selection).toBeInstanceOf(NodeSelection);
+
+    // One more press passes it, in the direction the writer was going.
+    expect(press(instance, { key: "ArrowUp" })).toBe(true);
+    expect(instance.state.selection.$head.parent.textContent).toBe("before");
+
+    expect(press(instance, { key: "ArrowDown" })).toBe(true);
+    expect(selectedObject(instance.state)?.pos).toBe(diagram);
+  });
+
   it("leaves ordinary caret movement to the editor", () => {
     const instance = mount([paragraph("before"), paragraph("after")]);
     instance.commands.setTextSelection(3);

@@ -97,6 +97,19 @@ of one node type register apart.
   only at the very edge of its text block; an inline image is beside it
   directly. The same split runs through the drag: a block object travels
   between blocks, an inline one travels between characters.
+- **A caret walk steps ONTO an object, never into it** (human ruling,
+  2026-07-30). Both halves of the walk read the registration: the press that
+  starts in prose (`objectBeside`) and the press that starts on an object
+  (`caretBesideObjectTransaction`), which is where the rule was missing —
+  `Selection.near` knows the schema and nothing else, a rendered diagram is a
+  `code_block`, and arrowing off the scene break below one landed in the
+  mermaid source and turned the picture back into syntax. Crossing an object is
+  therefore two presses from either side and in either axis, and the two verbs
+  that need somewhere to TYPE (Esc, a printable character) step over an opaque
+  interior rather than onto it. `opaqueObjectAround` is that reading, shared
+  with [`../pointer-boundary.ts`](../pointer-boundary.ts): a body standing in
+  for text the page does not show is not caret territory, for the keyboard and
+  the pointer alike.
 - **A dead end is an answer.** `caretBesideObjectTransaction` returns null
   rather than silently walking the other way — pressing Right on the last block
   in the document must not move the caret left. Esc uses
@@ -119,6 +132,10 @@ of one node type register apart.
 - Scoping a key by what it is about rather than where it must work. The arrow
   walk is `block` scope, not `object`: walking ONTO an object starts from the
   prose beside it, where no object is selected yet.
+- Asking ProseMirror where a caret goes near an object. `Selection.near` and
+  `Selection.findFrom` answer from the schema, which cannot tell a rendered
+  diagram from a paragraph of code. Read the landing back through the
+  registration.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md)

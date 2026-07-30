@@ -18,7 +18,7 @@ import {
 } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 
-import { isEditorObject } from "./object-types";
+import { isEditorObject, isOpaqueObject } from "./object-types";
 
 export type ObjectAt = { node: PMNode; pos: number };
 
@@ -94,6 +94,49 @@ export function objectBeside(state: EditorState, direction: 1 | -1): ObjectAt | 
   return null;
 }
 
+/**
+ * The object whose INTERIOR `$at` falls in, or null when the position stands in
+ * prose. Shallowest first, so a diagram inside a table cell answers with the
+ * table: the walk crosses the outer object as one thing.
+ *
+ * `outsideOf` is the object the reading is standing on already — the one an
+ * arrow press is leaving. Without it a walk between two blocks of the same
+ * table would answer "the table", and the writer moving from one cell to the
+ * next would find the whole grid selected.
+ */
+function objectAround($at: ResolvedPos, outsideOf?: number): ObjectAt | null {
+  return objectAncestor($at, (object) => !encloses(object, outsideOf));
+}
+
+/**
+ * The same reading, restricted to bodies that stand in for text the page does
+ * not show (`isOpaqueObject`).
+ *
+ * This is the one every caret landing has to consult, whatever put it there: a
+ * position inside a rendered diagram is a position in source the writer is not
+ * looking at, and landing there both swallows the next keystroke and flips the
+ * diagram back into its syntax. A table's cell is the opposite case and stays a
+ * fine place to land — it shows its own text.
+ */
+export function opaqueObjectAround($at: ResolvedPos): ObjectAt | null {
+  return objectAncestor($at, (object) => isOpaqueObject(object.node));
+}
+
+/** The shallowest object ancestor of `$at` that `accept` takes. */
+function objectAncestor($at: ResolvedPos, accept: (object: ObjectAt) => boolean): ObjectAt | null {
+  for (let depth = 1; depth <= $at.depth; depth += 1) {
+    const node = $at.node(depth);
+    if (!isEditorObject(node)) continue;
+    const object = { node, pos: $at.before(depth) };
+    if (accept(object)) return object;
+  }
+  return null;
+}
+
+function encloses(object: ObjectAt, pos: number | undefined): boolean {
+  return pos !== undefined && pos >= object.pos && pos < object.pos + object.node.nodeSize;
+}
+
 /** Select the object at `pos`. Null when the schema refuses a node selection. */
 export function selectObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);
@@ -112,6 +155,17 @@ export function selectObjectTransaction(state: EditorState, pos: number): Transa
  * the object (a scene break) is a legitimate landing that arrow-walk should
  * step onto, and reading "not a TextSelection" as "dead end" is what once sent
  * Esc backward past the object it was leaving.
+ *
+ * **The step beside an object may land on the next object, never inside it.**
+ * `Selection.near` reads the schema and nothing else: it steps onto a leaf,
+ * and it descends into anything ProseMirror calls a textblock — which a
+ * rendered diagram is, so a writer arrowing off the rule below one landed in
+ * the mermaid source and the fence flipped from the picture to its syntax
+ * (human ruling, 2026-07-30: arrows select the diagram and never reveal it).
+ * The registration is what says otherwise, so the landing is read back through
+ * it, and this half of the walk now answers as `objectBeside` already did for
+ * the half that starts in prose: every object is stepped ONTO, and the press
+ * after that is what passes it.
  */
 export function caretBesideObjectTransaction(
   state: EditorState,
@@ -124,6 +178,13 @@ export function caretBesideObjectTransaction(
   const edge = direction === 1 ? pos + node.nodeSize : pos;
   const selection = Selection.near(state.doc.resolve(edge), direction);
   if (direction === 1 ? selection.from < edge : selection.to > edge) return null;
+
+  const walkedInto = objectAround(selection.$head, pos);
+  // A registration the schema refuses a node selection on keeps the plain
+  // landing: no row is unselectable today, and an arrow that moves nowhere
+  // traps the writer, which is the worse of the two failures (law 3).
+  const onto = walkedInto ? selectObjectTransaction(state, walkedInto.pos) : null;
+  if (onto) return onto;
 
   return state.tr.setSelection(selection).scrollIntoView();
 }
@@ -157,8 +218,9 @@ export function caretHomeFromObjectTransaction(
   // landing on another selected object would leave the next keystroke poised
   // to replace it — and searching only for the position immediately beside the
   // object is what made a scene break look like a dead end and sent the caret
-  // backward into the block above.
-  const forwardText = Selection.findFrom($after, 1, true);
+  // backward into the block above. A rendered diagram is one more thing with
+  // no text to offer, whatever the schema says about its `code_block`.
+  const forwardText = forwardWriterText(state, $after);
   if (forwardText) return state.tr.setSelection(forwardText).scrollIntoView();
 
   // A scene break can also be the LAST thing in the document, and then there
@@ -207,6 +269,12 @@ function paragraphAfterTransaction(state: EditorState, $after: ResolvedPos): Tra
  *
  * Unlike Esc's walk home this never lands in FRONT of the object. The writer
  * is typing forward, so a paragraph after it beats a caret before it.
+ *
+ * A diagram standing next in line is why the paragraph is made rather than
+ * looked for past it: the nearest text position after the object was the
+ * mermaid source, so the letter went into a picture's syntax instead of the
+ * manuscript. The letter belongs where the writer is looking, which is the
+ * space right after the thing they had selected.
  */
 export function typeBesideObjectTransaction(
   state: EditorState,
@@ -218,8 +286,9 @@ export function typeBesideObjectTransaction(
 
   const $after = state.doc.resolve(pos + node.nodeSize);
   const forward = Selection.findFrom($after, 1, true);
-  const transaction = forward
-    ? state.tr.setSelection(forward)
+  const visible = forward && !opaqueObjectAround(forward.$head) ? forward : null;
+  const transaction = visible
+    ? state.tr.setSelection(visible)
     : paragraphAfterTransaction(state, $after);
   return transaction?.insertText(text).scrollIntoView() ?? null;
 }
@@ -236,6 +305,31 @@ export function deleteObjectTransaction(state: EditorState, pos: number): Transa
   const node = state.doc.nodeAt(pos);
   if (!node) return null;
   return state.tr.delete(pos, pos + node.nodeSize).scrollIntoView();
+}
+
+/**
+ * The first text position forward of `$from` the writer can actually see.
+ *
+ * `Selection.findFrom` with `textOnly` finds a position ProseMirror is willing
+ * to put a caret in, which includes the inside of every opaque object with text
+ * in it — a rendered diagram's source. So each candidate is read back through
+ * the registration, and one that fell inside a diagram resumes the search on
+ * the far side of it. The skip is the whole object, not the next position
+ * along, or the search would walk the source a line at a time.
+ */
+function forwardWriterText(state: EditorState, $from: ResolvedPos): Selection | null {
+  let $at = $from;
+  for (;;) {
+    const found = Selection.findFrom($at, 1, true);
+    if (!found) return null;
+
+    const hidden = opaqueObjectAround(found.$head);
+    if (!hidden) return found;
+
+    const past = hidden.pos + hidden.node.nodeSize;
+    if (past <= $at.pos) return null;
+    $at = state.doc.resolve(past);
+  }
 }
 
 /**
