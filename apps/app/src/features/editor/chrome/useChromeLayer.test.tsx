@@ -8,36 +8,19 @@
  * reverse of visual depth — the case the design's own new-empty-diagram path
  * hits every time (the dialog opens with its source pane already open).
  */
-import { Editor, type JSONContent } from "@tiptap/core";
+import type { JSONContent } from "@tiptap/core";
 import { act, type ReactNode, useState } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getEditorChrome } from "@/core/editor/chrome";
-import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { installJsdomLayout } from "@/test-support/jsdom-layout";
+import { createReactEditorFixture, type ReactEditorFixture } from "@/test-support/react-editor";
 
 import { useChromeLayer } from "./chrome-layers";
 
-installJsdomLayout();
-
-let editor: Editor | null = null;
-let root: Root | null = null;
-let container: HTMLElement | null = null;
+let page: ReactEditorFixture;
 
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-
-  const element = document.createElement("div");
-  document.body.append(element);
-  editor = new Editor({
-    element,
-    extensions: createStandaloneEditorExtensions(),
+  page = createReactEditorFixture({
     content: {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: "before" }] }],
@@ -46,16 +29,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  act(() => root?.unmount());
-  container?.remove();
-  editor?.destroy();
-  editor = null;
-  root = null;
-  container = null;
+  page.destroy();
 });
 
 function Layer({ id, close, children }: { id: string; close: () => void; children?: ReactNode }) {
-  const layer = useChromeLayer(editor, { id, open: true, close });
+  const layer = useChromeLayer(page.editor, { id, open: true, close });
   return <div data-layer={id}>{layer.scope(children)}</div>;
 }
 
@@ -64,15 +42,13 @@ describe("nested layers", () => {
     const closeDialog = vi.fn();
     const closeSource = vi.fn();
 
-    act(() => {
-      root?.render(
-        <Layer id="diagram-dialog" close={closeDialog}>
-          <Layer id="diagram-source" close={closeSource} />
-        </Layer>,
-      );
-    });
+    page.render(
+      <Layer id="diagram-dialog" close={closeDialog}>
+        <Layer id="diagram-source" close={closeSource} />
+      </Layer>,
+    );
 
-    const chrome = getEditorChrome(editor);
+    const chrome = getEditorChrome(page.editor);
     if (!chrome) throw new Error("kernel did not mount");
 
     expect(chrome.closeTopLayer()).toBe(true);
@@ -92,20 +68,20 @@ describe("nested layers", () => {
       );
     }
 
-    act(() => root?.render(<Dialog />));
-    const chrome = getEditorChrome(editor);
+    page.render(<Dialog />);
+    const chrome = getEditorChrome(page.editor);
     if (!chrome) throw new Error("kernel did not mount");
 
     act(() => {
       chrome.closeTopLayer();
     });
-    expect(container?.querySelector("[data-layer='diagram-source']")).toBeNull();
-    expect(container?.querySelector("[data-layer='diagram-dialog']")).not.toBeNull();
+    expect(page.container.querySelector("[data-layer='diagram-source']")).toBeNull();
+    expect(page.container.querySelector("[data-layer='diagram-dialog']")).not.toBeNull();
 
     act(() => {
       chrome.closeTopLayer();
     });
-    expect(container?.querySelector("[data-layer='diagram-dialog']")).toBeNull();
+    expect(page.container.querySelector("[data-layer='diagram-dialog']")).toBeNull();
     expect(chrome.layers).toHaveLength(0);
   });
 
@@ -114,7 +90,7 @@ describe("nested layers", () => {
     const closeSource = vi.fn();
 
     function Nested() {
-      const dialog = useChromeLayer(editor, {
+      const dialog = useChromeLayer(page.editor, {
         id: "diagram-dialog",
         open: true,
         close: closeDialog,
@@ -132,12 +108,14 @@ describe("nested layers", () => {
       );
     }
 
-    act(() => root?.render(<Nested />));
+    page.render(<Nested />);
 
     // Radix asks the dialog whether this Escape is its to take. It is not: the
     // source pane inside it is deeper, and answering yes would spend two steps
     // of the walk home on one key.
-    const trigger = container?.querySelector<HTMLButtonElement>("[data-testid='dialog-escape']");
+    const trigger = page.container.querySelector<HTMLButtonElement>(
+      "[data-testid='dialog-escape']",
+    );
     act(() => trigger?.click());
 
     expect(closeSource).toHaveBeenCalledOnce();
@@ -163,7 +141,7 @@ describe("a layer's keys", () => {
 
   it("shows up in the kernel's bindings while the surface is open", () => {
     function Dialog() {
-      useChromeLayer(editor, {
+      useChromeLayer(page.editor, {
         id: "object-lightbox",
         open: true,
         close: () => {},
@@ -171,9 +149,9 @@ describe("a layer's keys", () => {
       });
       return null;
     }
-    act(() => root?.render(<Dialog />));
+    page.render(<Dialog />);
 
-    const chrome = getEditorChrome(editor);
+    const chrome = getEditorChrome(page.editor);
     if (!chrome) throw new Error("kernel did not mount");
 
     // Beside the editor's own lanes: object physics and the rest register too,
@@ -185,7 +163,7 @@ describe("a layer's keys", () => {
     expect(dialogKeys()[0]?.scope).toBe("layer");
     expect(Object.keys(dialogKeys()[0]?.bindings ?? {})).toEqual(["Mod-Enter"]);
 
-    act(() => root?.render(null));
+    page.render(null);
     expect(dialogKeys()).toHaveLength(0);
   });
 
@@ -193,7 +171,7 @@ describe("a layer's keys", () => {
     const toggle = vi.fn(() => true);
 
     function Dialog() {
-      useChromeLayer(editor, {
+      useChromeLayer(page.editor, {
         id: "object-lightbox",
         open: true,
         close: () => {},
@@ -201,13 +179,13 @@ describe("a layer's keys", () => {
       });
       return null;
     }
-    act(() => root?.render(<Dialog />));
+    page.render(<Dialog />);
 
     act(() => pressOutsideTheProse("Enter"));
     expect(toggle).toHaveBeenCalledOnce();
 
     // Closed means gone: the registration lives exactly as long as the surface.
-    act(() => root?.render(null));
+    page.render(null);
     act(() => pressOutsideTheProse("Enter"));
     expect(toggle).toHaveBeenCalledOnce();
   });
@@ -217,7 +195,7 @@ describe("a layer's keys", () => {
 
     function Dialog() {
       const [count, setCount] = useState(0);
-      useChromeLayer(editor, {
+      useChromeLayer(page.editor, {
         id: "object-lightbox",
         open: true,
         close: () => {},
@@ -231,7 +209,7 @@ describe("a layer's keys", () => {
       });
       return null;
     }
-    act(() => root?.render(<Dialog />));
+    page.render(<Dialog />);
 
     act(() => pressOutsideTheProse("Enter"));
     act(() => pressOutsideTheProse("Enter"));
@@ -247,8 +225,7 @@ describe("handing the caret back", () => {
    * own focus call rather than the browser's focus state.
    */
   function watchProseFocus() {
-    if (!editor) throw new Error("no editor");
-    return vi.spyOn(editor.view, "focus");
+    return vi.spyOn(page.editor.view, "focus");
   }
 
   /** TipTap defers `focus()` a frame, so the assertion has to wait for it. */
@@ -262,10 +239,10 @@ describe("handing the caret back", () => {
     let binding: { onCloseAutoFocus: (event: Event) => void } | null = null;
 
     function Only() {
-      binding = useChromeLayer(editor, { id: "menu", open: true, close: () => {} });
+      binding = useChromeLayer(page.editor, { id: "menu", open: true, close: () => {} });
       return null;
     }
-    act(() => root?.render(<Only />));
+    page.render(<Only />);
 
     // Cancelable, or `preventDefault` is a no-op and the assertion below
     // would be measuring the fixture rather than the handler.
@@ -284,11 +261,11 @@ describe("handing the caret back", () => {
     let menu: { onCloseAutoFocus: (event: Event) => void } | null = null;
 
     function MenuThenForm() {
-      menu = useChromeLayer(editor, { id: "menu", open: true, close: () => {} });
-      useChromeLayer(editor, { id: "link-form", open: true, close: () => {} });
+      menu = useChromeLayer(page.editor, { id: "menu", open: true, close: () => {} });
+      useChromeLayer(page.editor, { id: "link-form", open: true, close: () => {} });
       return null;
     }
-    act(() => root?.render(<MenuThenForm />));
+    page.render(<MenuThenForm />);
 
     // "Edit link" closes the menu and opens the form in the same commit.
     // Handing the caret back here pulls focus out of the form on the frame it
@@ -305,17 +282,17 @@ describe("one transient surface at a time", () => {
     const closeSlash = vi.fn();
 
     function SlashThenForm({ formOpen }: { formOpen: boolean }) {
-      useChromeLayer(editor, { id: "slash-menu", open: true, close: closeSlash });
-      useChromeLayer(editor, { id: "link-form", open: formOpen, close: () => {} });
+      useChromeLayer(page.editor, { id: "slash-menu", open: true, close: closeSlash });
+      useChromeLayer(page.editor, { id: "link-form", open: formOpen, close: () => {} });
       return null;
     }
 
-    act(() => root?.render(<SlashThenForm formOpen={false} />));
+    page.render(<SlashThenForm formOpen={false} />);
     expect(closeSlash).not.toHaveBeenCalled();
 
     // Ctrl+K while the slash menu is up. Both staying open leaves two inputs
     // reading the same keystrokes.
-    act(() => root?.render(<SlashThenForm formOpen={true} />));
+    page.render(<SlashThenForm formOpen={true} />);
     expect(closeSlash).toHaveBeenCalledOnce();
   });
 
@@ -323,13 +300,13 @@ describe("one transient surface at a time", () => {
     const closeMenu = vi.fn();
 
     function MenuWithSubmenu() {
-      const menu = useChromeLayer(editor, { id: "block-menu", open: true, close: closeMenu });
+      const menu = useChromeLayer(page.editor, { id: "block-menu", open: true, close: closeMenu });
       return menu.scope(<Layer id="turn-into" close={() => {}} />);
     }
 
-    act(() => root?.render(<MenuWithSubmenu />));
+    page.render(<MenuWithSubmenu />);
 
-    const chrome = getEditorChrome(editor);
+    const chrome = getEditorChrome(page.editor);
     expect(closeMenu).not.toHaveBeenCalled();
     expect(chrome?.layers).toHaveLength(2);
   });
@@ -338,9 +315,9 @@ describe("one transient surface at a time", () => {
 describe("a layer whose close does not land", () => {
   it("stops consuming Escape instead of trapping the writer", () => {
     // A surface whose dismissal fails, or whose owner unmounted mid-animation.
-    act(() => root?.render(<Layer id="stuck" close={() => {}} />));
+    page.render(<Layer id="stuck" close={() => {}} />);
 
-    const chrome = getEditorChrome(editor);
+    const chrome = getEditorChrome(page.editor);
     if (!chrome) throw new Error("kernel did not mount");
 
     expect(chrome.closeTopLayer()).toBe(true);

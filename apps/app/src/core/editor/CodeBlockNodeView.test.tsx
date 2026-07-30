@@ -32,6 +32,7 @@ afterEach(() => {
   editor?.destroy();
   editor = null;
   document.body.replaceChildren();
+  vi.useRealTimers();
 });
 
 function mountDocument(language: string, source: string): Editor {
@@ -54,6 +55,11 @@ function mountDocument(language: string, source: string): Editor {
   editor = mounted;
   root = createRoot(element);
   root.render(<EditorContent editor={mounted} />);
+  // From here the fence's pause before re-parsing is the test's to spend (see
+  // `settle`). The clock goes fake only after the editor is up, because TipTap
+  // finishes mounting on a timeout of its own and nothing should have to drive
+  // that to get a document on the page.
+  vi.useFakeTimers();
   return mounted;
 }
 
@@ -74,9 +80,32 @@ function mouseDown(element: Element): boolean {
   return event.defaultPrevented;
 }
 
-/** Long enough for React to flush an update it should never have made. */
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 30));
+/**
+ * Every timer the fence owns, run out, and every render one started, landed.
+ *
+ * Not a guess at how long a face change takes: it is more time than the render
+ * debounce could ever use, which is what makes "the face never changed" a
+ * claim rather than a race. React's scheduler posts its work through a
+ * MessageChannel that a fake clock does not control, so a real turn of the
+ * macrotask queue follows the advance.
+ */
+async function settle(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(BEYOND_EVERY_FENCE_TIMER_MS);
+  await macrotask();
+}
+
+/** Comfortably past the fence's 250 ms pause before re-parsing. */
+const BEYOND_EVERY_FENCE_TIMER_MS = 1_000;
+
+function macrotask(): Promise<void> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
 }
 
 /**
@@ -134,11 +163,6 @@ function recordFaces(): { faces: string[]; stop: () => void } {
   });
   observer.observe(pre, { attributes: true, attributeFilter: ["class"] });
   return { faces, stop: () => observer.disconnect() };
-}
-
-/** Longer than one render debounce, so a face that waits on the parser shows. */
-function settleThroughRenderDebounce(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 400));
 }
 
 /** Is the model selection strictly inside the fence at the top of the fixture? */
@@ -282,9 +306,10 @@ describe("a diagram that stops parsing", () => {
     if (!node) throw new Error("expected a fence");
     mounted.view.dispatch(mounted.state.tr.insertText(" and then", pos + node.nodeSize - 1));
 
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain("Parse error on line 2");
-    });
+    // The re-parse is a debounce away, and the clock is the test's: this is the
+    // pause spent, not waited out.
+    await settle();
+    expect(document.body.textContent).toContain("Parse error on line 2");
     // Both, not either: the render stays AND the failure is visible.
     expect(document.querySelector("[data-diagram-preview] svg")).not.toBeNull();
     expect(fenceClass()).toContain("hidden");
@@ -317,7 +342,7 @@ describe("a caret inside a rendered diagram", () => {
     await vi.waitFor(() => {
       expect(fenceClass()).not.toContain("hidden");
     });
-    await settleThroughRenderDebounce();
+    await settle();
 
     expect(selectionInsideFence(mounted)).toBe(true);
     expect(fenceClass()).not.toContain("hidden");
@@ -336,7 +361,7 @@ describe("a caret inside a rendered diagram", () => {
     await vi.waitFor(() => {
       expect(fenceClass()).toContain("hidden");
     });
-    await settleThroughRenderDebounce();
+    await settle();
     recorded.stop();
 
     expect(recorded.faces).toEqual(["source", "render"]);

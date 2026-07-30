@@ -75,9 +75,20 @@ function pushAwareness(from: Awareness, to: Awareness): void {
 }
 
 /**
- * Both editors bound to the same content. The local one is filled first and
- * its state handed over before the peer mounts: two bindings both initializing
- * an empty document would each contribute a paragraph.
+ * Both editors bound to the same content.
+ *
+ * The COLLABORATOR mounts first, while both documents are still empty, so it is
+ * the one binding that initializes the shared type — two bindings initializing
+ * an empty document would each contribute a paragraph. The editor under test
+ * then joins a room that already exists, which is what production does, and
+ * the content arriving as a whole-document replace is the very thing these
+ * tests are about.
+ *
+ * Joining an existing room is also the only order that leaves the collaborator
+ * a selection it can honor. A binding mounting onto non-empty content carries
+ * its own selection across the rebuild, and its default is position 1 — inside
+ * an empty paragraph, but between blocks in a document whose first block is an
+ * atom (a figure). ProseMirror warned about exactly that on the way past.
  */
 export function createCollabPair(
   content: JSONContent,
@@ -90,12 +101,12 @@ export function createCollabPair(
   const peerAwareness = new Awareness(peerDoc);
   const localPresence = createLocalPresence(localAwareness);
 
-  const local = editorOn(localDoc, localPresence, options.markerStore);
-  local.commands.setContent(content);
-  reconcileMount(local);
-  push(localDoc, peerDoc);
   const peer = editorOn(peerDoc, createLocalPresence(peerAwareness));
   reconcileMount(peer);
+  push(peerDoc, localDoc);
+  const local = editorOn(localDoc, localPresence, options.markerStore);
+  reconcileMount(local);
+  local.commands.setContent(content);
 
   const sync = () => {
     push(localDoc, peerDoc);

@@ -10,11 +10,9 @@
  * needs no hover timing to open.
  */
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
-import { installJsdomLayout } from "@/test-support/jsdom-layout";
+import { createReactEditorFixture, type ReactEditorFixture } from "@/test-support/react-editor";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -28,8 +26,6 @@ vi.mock("@/core/editor/mermaid-render", () => ({
 }));
 
 const { ObjectControls } = await import("./ObjectControls");
-
-installJsdomLayout();
 
 const FIGURE = {
   type: "figure",
@@ -55,39 +51,25 @@ const DIAGRAM = {
   content: [{ type: "text", text: "flowchart LR\nA --> B" }],
 };
 
-let pair: CollabPair | null = null;
-let root: Root | null = null;
-let container: HTMLElement | null = null;
+let page: ReactEditorFixture;
 
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
-  pair = createCollabPair({
-    type: "doc",
-    content: [FIGURE, IMAGE_PARAGRAPH, DIAGRAM, { type: "paragraph" }],
+  page = createReactEditorFixture({
+    content: {
+      type: "doc",
+      content: [FIGURE, IMAGE_PARAGRAPH, DIAGRAM, { type: "paragraph" }],
+    },
   });
-  document.body.append(pair.local.view.dom);
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
 });
 
 afterEach(() => {
-  act(() => root?.unmount());
-  root = null;
-  container?.remove();
-  container = null;
-  pair?.destroy();
-  pair = null;
-  document.body.replaceChildren();
+  page.destroy();
 });
 
 /** The verbs a right-click on `selector` opens, in the order they are offered. */
 function verbsAt(selector: string): string[] {
-  if (!pair) throw new Error("no pair");
-  const editor = pair.local;
-  act(() => root?.render(<ObjectControls editor={editor} />));
+  const editor = page.editor;
+  page.render(<ObjectControls editor={editor} />);
 
   const element = editor.view.dom.querySelector(selector);
   if (!element) throw new Error(`no ${selector} in the page`);

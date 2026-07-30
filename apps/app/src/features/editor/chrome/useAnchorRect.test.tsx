@@ -6,101 +6,96 @@
  * anchor, a scroll listener — all report a change to the anchor itself, and a
  * block that travels because something above it changed reports none of them:
  * same element, same size, new place. That is the case this suite holds, which
- * is why the ResizeObserver here is deliberately inert. A rect that survives it
- * came from the editor's transaction and nothing else.
+ * is why nothing here ever fires a ResizeObserver (the shared jsdom fallback's
+ * is inert, which is an unlaid-out document's honest answer). A rect that
+ * changes came from the editor's transaction and nothing else.
+ *
+ * The measurement is one animation frame behind that transaction, so the frame
+ * is driven by hand: a real one is a race the assertion would sometimes win.
  */
-import { Editor, type JSONContent } from "@tiptap/core";
+import type { JSONContent } from "@tiptap/core";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { installJsdomLayout } from "@/test-support/jsdom-layout";
+import { createReactEditorFixture, type ReactEditorFixture } from "@/test-support/react-editor";
 
 import { type AnchorRect, useAnchorRect } from "./useAnchorRect";
 
-installJsdomLayout();
+type FrameClock = { flush: () => Promise<void> };
 
-let editor: Editor;
-let root: Root;
-let container: HTMLElement;
+let page: ReactEditorFixture;
+let frames: FrameClock;
 let anchor: HTMLElement;
 let anchorTop = 0;
 let reported: AnchorRect | null = null;
 
-/** Inert on purpose: only the transaction may be what re-measures here. */
-class SilentResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+/** The frame the layout watcher coalesces into, ended when the test says so. */
+function createFrameClock(): FrameClock {
+  const pending = new Map<number, FrameRequestCallback>();
+  let nextHandle = 1;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    const handle = nextHandle++;
+    pending.set(handle, callback);
+    return handle;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+    pending.delete(handle);
+  });
+  return {
+    flush: async () => {
+      const due = [...pending.values()];
+      pending.clear();
+      await act(async () => {
+        for (const callback of due) callback(0);
+      });
+    },
+  };
 }
 
 function Probe() {
-  reported = useAnchorRect(editor, anchor);
+  reported = useAnchorRect(page.editor, anchor);
   return null;
 }
 
-/** Two frames: one for the rAF the watcher coalesces into, one for the render. */
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 40));
-  });
-}
-
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
-  vi.stubGlobal("ResizeObserver", SilentResizeObserver);
-
   anchorTop = 100;
   anchor = document.createElement("div");
   anchor.getBoundingClientRect = () =>
     ({ top: anchorTop, right: 800, bottom: anchorTop + 200, left: 300 }) as DOMRect;
   document.body.append(anchor);
 
-  const host = document.createElement("div");
-  document.body.append(host);
-  editor = new Editor({
-    element: host,
-    extensions: createStandaloneEditorExtensions(),
+  page = createReactEditorFixture({
     content: {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: "before" }] }],
     } satisfies JSONContent,
   });
-
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+  frames = createFrameClock();
 });
 
 afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
-  anchor.remove();
-  editor.destroy();
+  page.destroy();
   reported = null;
   vi.unstubAllGlobals();
 });
 
 it("re-measures when a transaction moves the anchor's block", async () => {
-  act(() => root.render(<Probe />));
+  page.render(<Probe />);
   expect(reported).toEqual({ top: 100, right: 800, bottom: 300, left: 300 });
 
   // A paragraph typed above pushes the anchored block down. Nothing about the
   // element changed: not its identity, not its size, not the scroll position.
   anchorTop = 340;
   act(() => {
-    editor.commands.insertContentAt(0, "<p>a new line above</p>");
+    page.editor.commands.insertContentAt(0, "<p>a new line above</p>");
   });
-  await settle();
+  await frames.flush();
 
   expect(reported).toEqual({ top: 340, right: 800, bottom: 540, left: 300 });
 });
 
 it("reports no rect once the anchor has left the document", async () => {
-  act(() => root.render(<Probe />));
+  page.render(<Probe />);
   expect(reported).not.toBeNull();
 
   // What a remounting node view leaves behind. A detached element measures as a
@@ -108,9 +103,9 @@ it("reports no rect once the anchor has left the document", async () => {
   // and clickable over whatever the writer keeps in that corner.
   anchor.remove();
   act(() => {
-    editor.commands.insertContentAt(0, "<p>a new line above</p>");
+    page.editor.commands.insertContentAt(0, "<p>a new line above</p>");
   });
-  await settle();
+  await frames.flush();
 
   expect(reported).toBeNull();
 });

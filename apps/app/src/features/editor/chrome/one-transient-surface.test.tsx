@@ -14,18 +14,16 @@
  * was never "nothing rendered", it was two surfaces live at once.
  */
 import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
-import { Editor } from "@tiptap/core";
+import type { Editor } from "@tiptap/core";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
 import { getEditorChrome } from "@/core/editor/chrome";
-import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { PeerMarkerExtension, peerMarks } from "@/core/editor/extensions/PeerMarkerExtension";
 import { getLinkSurface } from "@/core/editor/links";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
-import { installJsdomLayout } from "@/test-support/jsdom-layout";
+import { createReactEditorFixture, type ReactEditorFixture } from "@/test-support/react-editor";
 
 import { FollowOutcomeDialog, LinkSurfaces } from "../surfaces/link";
 import { PeerMarkSurface } from "../surfaces/peer-marks";
@@ -52,31 +50,13 @@ vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => async () => true,
 }));
 
-installJsdomLayout();
-
-let editor: Editor | null = null;
-let markerStore: SessionMarkerStore | null = null;
-let root: Root | null = null;
-let container: HTMLElement | null = null;
+let page: ReactEditorFixture;
 
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-
-  const element = document.createElement("div");
-  document.body.append(element);
-  markerStore = new SessionMarkerStore("writer-1");
+  const markerStore = new SessionMarkerStore("writer-1");
   markerStore.replaceGroup(peerChange());
-  editor = new Editor({
-    element,
-    extensions: [
-      ...createStandaloneEditorExtensions(),
-      PeerMarkerExtension.configure({ markerStore }),
-    ],
+  page = createReactEditorFixture({
+    extensions: [PeerMarkerExtension.configure({ markerStore })],
     content: {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: "a sentence" }] }],
@@ -85,28 +65,21 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  act(() => root?.unmount());
-  container?.remove();
-  editor?.destroy();
-  editor = null;
-  markerStore = null;
-  root = null;
-  container = null;
+  page.destroy();
 });
 
 describe("one transient surface", () => {
   it("closes the peer popover when Mod+K opens the link form", () => {
+    const editor = page.editor;
     const lane = peerMarks(editor);
-    if (!lane || !editor) throw new Error("peer marks did not mount");
+    if (!lane) throw new Error("peer marks did not mount");
 
-    act(() => {
-      root?.render(
-        <>
-          <PeerMarkSurface editor={editor as Editor} />
-          <LinkSurfaces editor={editor as Editor} />
-        </>,
-      );
-    });
+    page.render(
+      <>
+        <PeerMarkSurface editor={editor} />
+        <LinkSurfaces editor={editor} />
+      </>,
+    );
     act(() => {
       lane.press.open({
         changeId: "change-1",
@@ -116,7 +89,7 @@ describe("one transient surface", () => {
     });
     expect(layerIds()).toEqual(["peer-mark"]);
 
-    act(() => pressModK(editor as Editor));
+    act(() => pressModK(editor));
 
     // The form is open, the popover is not, and the kernel holds one layer: the
     // failure this guards left both surfaces live and Escape with two owners.
@@ -126,19 +99,17 @@ describe("one transient surface", () => {
   });
 
   it("closes a summoned surface when a follow reports what it found", () => {
-    if (!editor) throw new Error("editor did not mount");
+    const editor = page.editor;
     const surface = getLinkSurface(editor);
     if (!surface) throw new Error("link lane did not mount");
 
-    act(() => {
-      root?.render(
-        <>
-          <LinkSurfaces editor={editor as Editor} />
-          <FollowOutcomeDialog editor={editor as Editor} />
-        </>,
-      );
-    });
-    act(() => pressModK(editor as Editor));
+    page.render(
+      <>
+        <LinkSurfaces editor={editor} />
+        <FollowOutcomeDialog editor={editor} />
+      </>,
+    );
+    act(() => pressModK(editor));
     expect(layerIds()).toEqual(["link-form"]);
 
     // A quarter second after the click, which is long enough for the writer to
@@ -154,7 +125,7 @@ describe("one transient surface", () => {
 
 /** Layer ids without the per-instance suffix `useChromeLayer` adds. */
 function layerIds(): string[] {
-  const chrome = getEditorChrome(editor);
+  const chrome = getEditorChrome(page.editor);
   if (!chrome) throw new Error("kernel did not mount");
   return chrome.layers.map((layer) => layer.id.replace(/#.*$/, ""));
 }

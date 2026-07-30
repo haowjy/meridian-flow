@@ -8,25 +8,12 @@
  * a refused row is label-only and answers on focus, an enabled row keeps the
  * hint it already had.
  */
-import { Editor } from "@tiptap/core";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createStandaloneEditorExtensions } from "@/core/editor/config";
+import { createReactEditorFixture, type ReactEditorFixture } from "@/test-support/react-editor";
 
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
-
-// Radix measures the tooltip's arrow on mount, and jsdom has no layout to
-// observe. An observer that never fires is the honest stand-in; the global
-// setup leaves it out because a suite that feature-detects it should still see
-// the absence.
-class NoLayoutResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= NoLayoutResizeObserver;
 
 const { EditorMenu } = await import("../../chrome/EditorMenu");
 const { TABLE_VERB_IDS } = await import("./table-commands");
@@ -50,58 +37,34 @@ function row(label: string): HTMLElement {
   return found;
 }
 
-let editor: Editor | null = null;
-let root: Root | null = null;
-let container: HTMLElement | null = null;
+let page: ReactEditorFixture;
 
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-
-  const element = document.createElement("div");
-  document.body.append(element);
-  editor = new Editor({
-    element,
-    extensions: createStandaloneEditorExtensions(),
-    content: { type: "doc", content: [{ type: "paragraph" }] },
-  });
+  page = createReactEditorFixture({ content: { type: "doc", content: [{ type: "paragraph" }] } });
 });
 
 afterEach(() => {
-  act(() => root?.unmount());
-  container?.remove();
-  editor?.destroy();
-  editor = null;
-  root = null;
-  container = null;
+  page.destroy();
 });
 
 function open(blocks: Partial<Record<TableVerbId, TableBlockedReason>>) {
-  if (!editor) throw new Error("no editor");
-  const current = editor;
-  act(() => {
-    root?.render(
-      <EditorMenu
-        editor={current}
-        id="table-column-menu"
-        open
-        onOpenChange={() => {}}
-        at={{ x: 0, y: 0 }}
-      >
-        <TableColumnMenuItems
-          run={() => {}}
-          states={states(blocks)}
-          alignment={null}
-          placement="left"
-          mergeJoinsText={false}
-        />
-      </EditorMenu>,
-    );
-  });
+  page.render(
+    <EditorMenu
+      editor={page.editor}
+      id="table-column-menu"
+      open
+      onOpenChange={() => {}}
+      at={{ x: 0, y: 0 }}
+    >
+      <TableColumnMenuItems
+        run={() => {}}
+        states={states(blocks)}
+        alignment={null}
+        placement="left"
+        mergeJoinsText={false}
+      />
+    </EditorMenu>,
+  );
 }
 
 describe("a refused table verb", () => {
