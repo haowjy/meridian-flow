@@ -120,6 +120,13 @@ export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Pr
     await tx`DELETE FROM turn_document_touches WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM turns WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM threads WHERE id = ${fixture.threadId}`;
+    // Opening a document in the editor opens its work draft, and that branch
+    // holds its work with ON DELETE RESTRICT: the fixture has to let go of the
+    // draft before it can let go of the work.
+    await tx`
+      DELETE FROM document_branches
+      WHERE work_id IN (SELECT id FROM works WHERE project_id = ${fixture.projectId})
+    `;
     await tx`DELETE FROM works WHERE project_id = ${fixture.projectId}`;
     await tx`DELETE FROM projects WHERE id = ${fixture.projectId}`;
   });
