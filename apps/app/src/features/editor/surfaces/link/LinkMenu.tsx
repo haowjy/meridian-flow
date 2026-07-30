@@ -1,10 +1,11 @@
 /**
  * The link's context menu — the primary link surface (§5.5, ruled).
  *
- * The editor claims the right-click on a link and nowhere else in prose, so
- * spellcheck keeps the native menu everywhere it matters. The claim already
- * happened in the kernel's ladder by the time this renders; what it owns is
- * the verbs.
+ * Every right-click in the editor opens an editor menu and the deepest context
+ * wins, so a link takes the claim from the selection or the caret it sits in
+ * (`core/editor/chrome/context-claims.ts` is the table; Shift+right-click is
+ * the writer's way back to the browser's own menu). The claim already happened
+ * in the kernel's ladder by the time this renders; what it owns is the verbs.
  *
  * Every verb here acts on the range the pointer hit, never on the selection.
  * A writer right-clicks a link three paragraphs from the caret constantly, and
@@ -20,11 +21,17 @@
  * absent beats disabled). That is the honest state for an internal link while
  * no navigator is registered, and for an href the classifier does not
  * recognize.
+ *
+ * Copy link address is the one verb here that greys instead of vanishing, and
+ * for the reason the Cut/Copy/Paste rows below grey: a withheld clipboard is
+ * the browser's answer rather than the link's, it can arrive while the menu is
+ * open, and a writer who pressed Copy has to hear that nothing was copied.
  */
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Copy, ExternalLink, Pencil, Unlink } from "lucide-react";
+import { useState } from "react";
 
 import {
   canFollowLink,
@@ -43,6 +50,11 @@ import {
   EditorMenuShortcut,
   shortcutLabel,
 } from "@/features/editor/chrome";
+import {
+  type ClipboardAvailability,
+  clipboardAccess,
+  writeClipboardText,
+} from "@/features/editor/clipboard";
 
 import { ClipboardMenuItems } from "../formatting";
 
@@ -57,7 +69,10 @@ export function LinkMenu({
 }) {
   const close = () => surface.closeMenu();
   const followable = canFollowLink(menu.target, surface.navigator);
-  const copyable = typeof navigator !== "undefined" && Boolean(navigator.clipboard?.writeText);
+  // A browser that refused once will refuse again, so the row greys with its
+  // reason from then on — the same answer the clipboard block below gives, and
+  // the reason a writer already learned there.
+  const [clipboard, setClipboard] = useState<ClipboardAvailability>(() => clipboardAccess().write);
 
   return (
     <EditorMenu
@@ -85,17 +100,27 @@ export function LinkMenu({
           <EditorMenuShortcut>{shortcutLabel("Alt+Enter")}</EditorMenuShortcut>
         </EditorMenuItem>
       ) : null}
-      {copyable ? (
-        <EditorMenuItem
-          onSelect={() => {
-            void navigator.clipboard.writeText(menu.href);
-            close();
-          }}
-        >
-          <Copy aria-hidden />
-          {t`Copy link address`}
-        </EditorMenuItem>
-      ) : null}
+      <EditorMenuItem
+        blockedReason={
+          clipboard === "available"
+            ? null
+            : t`This browser will not let the page write to the clipboard.`
+        }
+        onSelect={(event) => {
+          // The menu is the only thing on screen that can carry the answer, so
+          // it stays open until the write settles and closes only on a copy
+          // that happened. Closing on the press would report success by
+          // disappearing, which is law 5's silent rejection with a smile.
+          event.preventDefault();
+          void writeClipboardText(menu.href).then((write) => {
+            if (write.status === "done") close();
+            else setClipboard("unavailable");
+          });
+        }}
+      >
+        <Copy aria-hidden />
+        {t`Copy link address`}
+      </EditorMenuItem>
       <EditorMenuItem
         onSelect={() => {
           // Selecting the link first is what makes the form's own resolution

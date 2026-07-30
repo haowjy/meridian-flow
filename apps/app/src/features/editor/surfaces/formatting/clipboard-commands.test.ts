@@ -1,9 +1,18 @@
 // @vitest-environment jsdom
+/**
+ * The document half of the menu's clipboard: what a selection means, and what a
+ * browser refusal does to the document.
+ *
+ * Capability and the shape of a refusal belong to the one clipboard boundary and
+ * are tested there ([`../../clipboard.test.ts`](../../clipboard.test.ts)); what
+ * these cases own is the part no adapter can answer — a cut may not delete words
+ * the clipboard never took, and a paste may not quietly retouch what it pastes.
+ */
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { clipboardAccess, cutSelection, pasteIntoSelection } from "./clipboard-commands";
+import { cutSelection, pasteIntoSelection } from "./clipboard-commands";
 
 let editor: Editor | null = null;
 const realClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -39,25 +48,12 @@ function plainTextItem(text: string): ClipboardItem {
   } as unknown as ClipboardItem;
 }
 
-describe("what the clipboard reports back", () => {
-  it("says a browser exposes neither direction rather than failing later", () => {
-    stubClipboard({});
-
-    expect(clipboardAccess()).toEqual({ read: "unavailable", write: "unavailable" });
-  });
-
-  it("reports a read the browser does not offer", async () => {
+describe("what a refused clipboard does to the document", () => {
+  it("passes a withheld direction through in the vocabulary a row greys from", async () => {
     stubClipboard({ writeText: vi.fn() });
     const target = editorWith("<p>Kael pressed</p>");
 
     await expect(pasteIntoSelection(target)).resolves.toBe("unavailable");
-  });
-
-  it("reports a read the browser refuses", async () => {
-    stubClipboard({ read: vi.fn().mockRejectedValue(new Error("denied")) });
-    const target = editorWith("<p>Kael pressed</p>");
-
-    await expect(pasteIntoSelection(target)).resolves.toBe("denied");
   });
 
   it("keeps the writer's words when a cut cannot reach the clipboard", async () => {
@@ -79,12 +75,5 @@ describe("what the clipboard hands to the document", () => {
 
     await expect(pasteIntoSelection(target)).resolves.toBe("done");
     expect(target.state.doc.textContent).toBe(indented);
-  });
-
-  it("reports a clipboard holding nothing it can take", async () => {
-    stubClipboard({ read: vi.fn().mockResolvedValue([plainTextItem("   ")]) });
-    const target = editorWith("<p>Kael pressed</p>");
-
-    await expect(pasteIntoSelection(target)).resolves.toBe("empty");
   });
 });

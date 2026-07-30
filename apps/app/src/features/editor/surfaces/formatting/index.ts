@@ -8,10 +8,7 @@
  */
 
 export {
-  type ClipboardAccess,
-  type ClipboardAvailability,
   type ClipboardResult,
-  clipboardAccess,
   copySelection,
   cutSelection,
   pasteIntoSelection,
