@@ -72,8 +72,7 @@ export function createStandaloneEditor({
  */
 export type NodeMatch = string | { type?: string; startsWith?: string };
 
-/** The first node `match` describes, and where it is. Null when there is none. */
-export function findNode(editor: Editor, match: NodeMatch): { pos: number; node: PMNode } | null {
+function findNode(editor: Editor, match: NodeMatch): { pos: number; node: PMNode } | null {
   const { type, startsWith } = typeof match === "string" ? { type: match } : match;
   let found: { pos: number; node: PMNode } | null = null;
   editor.state.doc.descendants((node, pos) => {
@@ -87,8 +86,11 @@ export function findNode(editor: Editor, match: NodeMatch): { pos: number; node:
 }
 
 /**
- * The same query, for the ordinary case where the node's absence means the
- * fixture is broken rather than the behavior wrong.
+ * The first node `match` describes, and where it is.
+ *
+ * Throws rather than returning null: a fixture that lost its node is a broken
+ * test, and a query that answered null would fail the assertion below it with
+ * the wrong story.
  */
 export function requireNode(editor: Editor, match: NodeMatch): { pos: number; node: PMNode } {
   const found = findNode(editor, match);
