@@ -235,7 +235,6 @@ export function createHocuspocusDocumentTransport({
   }
 
   return {
-    awareness,
     get synced() {
       return provider.synced;
     },

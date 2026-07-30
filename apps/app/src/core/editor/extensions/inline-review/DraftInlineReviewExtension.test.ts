@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { createEditorConfig } from "../../config";
+import { createLocalPresence } from "../../local-presence";
 import { buildInlineReviewModel } from "./model";
 
 let editor: Editor;
@@ -42,7 +43,7 @@ describe("DraftInlineReviewExtension", () => {
       element: root,
       ...createEditorConfig({
         document,
-        awareness: new Awareness(document),
+        presence: createLocalPresence(new Awareness(document)),
         enableDraftInlineReview: true,
       }),
     });

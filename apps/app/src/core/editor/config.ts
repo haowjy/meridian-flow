@@ -15,7 +15,6 @@ import Placeholder from "@tiptap/extension-placeholder";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
-import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { AgentNameStore } from "./agent-name-store";
 import { BlockDragExtension } from "./blocks";
@@ -55,7 +54,7 @@ import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
 import { LinkSurfaceExtension } from "./links";
-import { createLocalPresence, type LocalPresenceFields } from "./local-presence";
+import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
 import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -66,10 +65,6 @@ export type EditorUser = {
   color: string;
 };
 
-export type AwarenessProvider = {
-  awareness: Awareness;
-};
-
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
@@ -77,16 +72,17 @@ export type AssetRenderContext = {
 
 export type CreateEditorExtensionsOptions = {
   document: Y.Doc;
-  awareness: Awareness;
   schemaType?: YjsTrackedSchemaType;
-  cursorProvider?: AwarenessProvider;
   /**
-   * The owner of this client's local awareness fields, normally the
-   * `DocumentSession`'s (`local-presence.ts`). Hand it in wherever something
-   * suspends presence — inline review does — or every field written while the
-   * writer is hidden is lost.
+   * This client's presence, held by whatever decides when it is on the wire —
+   * normally the `DocumentSession`'s (`local-presence.ts`).
+   *
+   * The editor's only reach into awareness, deliberately. The caret's provider,
+   * the peer list a cursor color is picked against, and the image-upload
+   * announcement all come from here, so nothing assembled below can publish a
+   * local field the session cannot suspend.
    */
-  presence?: LocalPresenceFields;
+  presence: LocalPresenceFields;
   user?: EditorUser;
   assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
@@ -155,10 +151,10 @@ const DEFAULT_USER: EditorUser = {
 };
 
 /** Pick the first palette color not already claimed by another connected client. */
-function pickCursorColor(awareness: Awareness): string {
+function pickCursorColor(peers: PeerAwareness): string {
   const taken = new Set<string>();
-  for (const [clientID, state] of awareness.getStates()) {
-    if (clientID !== awareness.clientID && state.user?.color) {
+  for (const [clientID, state] of peers.getStates()) {
+    if (clientID !== peers.clientID && state.user?.color) {
       taken.add(state.user.color as string);
     }
   }
@@ -216,18 +212,16 @@ const CodeDocument = Node.create({
 
 function createCollaborationExtensions({
   document,
-  awareness,
-  cursorProvider,
+  presence,
   user,
   showCollaborationDecorations = true,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "document" | "awareness" | "cursorProvider" | "user" | "showCollaborationDecorations"
+  "document" | "presence" | "user" | "showCollaborationDecorations"
 >): Extensions {
-  const provider = cursorProvider ?? { awareness };
   const resolvedUser: EditorUser = {
     name: (user ?? DEFAULT_USER).name,
-    color: pickCursorColor(provider.awareness),
+    color: pickCursorColor(presence.peers),
   };
 
   const collaboration = [
@@ -243,8 +237,12 @@ function createCollaborationExtensions({
 
   return [
     ...collaboration,
+    // The presence owner's provider, never the bare Awareness: the caret and
+    // y-prosemirror's cursor plugin write and clear `user`/`cursor` through it,
+    // and a raw write made while the writer is hidden behind inline review is
+    // dropped, then overwritten by the snapshot the review restores.
     CollaborationCaret.configure({
-      provider,
+      provider: presence.caretProvider,
       user: resolvedUser,
       render: (cursorUser) => {
         const cursor = window.document.createElement("span");
@@ -270,9 +268,7 @@ function createCollaborationExtensions({
 
 export function createEditorExtensions({
   document,
-  awareness,
   schemaType = "document",
-  cursorProvider,
   presence,
   user = DEFAULT_USER,
   assetRenderContext,
@@ -285,8 +281,7 @@ export function createEditorExtensions({
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
-    awareness,
-    cursorProvider,
+    presence,
     user,
     showCollaborationDecorations,
   });
@@ -304,17 +299,7 @@ export function createEditorExtensions({
     UndoRedoKeymapExtension,
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of image ingress mounts here rather than beside the door.
-    // It publishes through this client's presence owner, over the provider's
-    // awareness rather than the bare one: that is the copy on the wire. An
-    // editor built without an owner (a spike, a bare test harness) gets one that
-    // nothing suspends, which is the truth for an editor no surface hides.
-    ...(schemaType === "document"
-      ? [
-          ImageUploadPresenceExtension.configure({
-            presence: presence ?? createLocalPresence((cursorProvider ?? { awareness }).awareness),
-          }),
-        ]
-      : []),
+    ...(schemaType === "document" ? [ImageUploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
@@ -385,9 +370,7 @@ export function createStandaloneEditorExtensions({
 
 export function createEditorConfig({
   document,
-  awareness,
   schemaType,
-  cursorProvider,
   presence,
   user,
   assetRenderContext,
@@ -416,9 +399,7 @@ export function createEditorConfig({
     extensions: [
       ...createEditorExtensions({
         document,
-        awareness,
         schemaType: resolvedSchemaType,
-        cursorProvider,
         presence,
         user,
         assetRenderContext,

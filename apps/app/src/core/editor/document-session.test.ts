@@ -13,7 +13,6 @@
 import { type ChangeEventWsMessage, WS_CLOSE } from "@meridian/contracts/protocol";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Awareness } from "y-protocols/awareness";
 import { memoryStorage } from "@/test-support/memory-storage";
 import {
   DocumentSession,
@@ -38,12 +37,12 @@ type FakeTransport = DocumentSessionTransportProvider & {
 function makeFakeTransport(
   initial: DocumentSessionConnectionState = { kind: "connecting", attempt: 1 },
 ): {
-  factory: (opts: { awareness: Awareness }) => FakeTransport;
+  factory: () => FakeTransport;
   current: () => FakeTransport;
 } {
   let instance: FakeTransport | null = null;
   return {
-    factory: ({ awareness }) => {
+    factory: () => {
       let resolveSynced!: () => void;
       const whenSynced = new Promise<void>((resolve) => {
         resolveSynced = resolve;
@@ -57,7 +56,6 @@ function makeFakeTransport(
       let latest = initial;
       let synced = false;
       const transport: FakeTransport = {
-        awareness,
         get synced() {
           return synced;
         },
@@ -613,20 +611,22 @@ describe("DocumentSession status derivation", () => {
 
   it("can suspend and restore local awareness presence without destroying the session", () => {
     const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
-    const state = { user: { name: "Writer", color: "#fff" } };
-    session.awareness.setLocalState(state);
+    session.presence.setField("user", { name: "Writer", color: "#fff" });
 
     session.suspendPresence();
     expect(session.awareness.getLocalState()).toBeNull();
 
     session.resumePresence();
-    expect(session.awareness.getLocalState()).toEqual(state);
+    expect(session.awareness.getLocalState()).toEqual({
+      user: { name: "Writer", color: "#fff" },
+    });
     void session.destroy();
   });
 
   it("publishes a field emptied while presence was suspended", () => {
     const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
-    session.awareness.setLocalState({ user: { name: "Writer" }, imageUploads: [{ token: "old" }] });
+    session.presence.setField("user", { name: "Writer" });
+    session.presence.setField("imageUploads", [{ token: "old" }]);
 
     session.suspendPresence();
     // The upload landed while the writer was inside inline review. Nothing is on
@@ -644,7 +644,7 @@ describe("DocumentSession status derivation", () => {
 
   it("publishes a field first written while presence was suspended", () => {
     const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
-    session.awareness.setLocalState({ user: { name: "Writer" } });
+    session.presence.setField("user", { name: "Writer" });
 
     session.suspendPresence();
     session.presence.setField("imageUploads", [{ token: "new" }]);
@@ -659,7 +659,7 @@ describe("DocumentSession status derivation", () => {
 
   it("resumes only when the last of two suspensions lets go", () => {
     const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
-    session.awareness.setLocalState({ user: { name: "Writer" } });
+    session.presence.setField("user", { name: "Writer" });
 
     session.suspendPresence();
     session.suspendPresence();
@@ -683,7 +683,7 @@ describe("DocumentSession status derivation", () => {
       enableIndexedDb: false,
       persistSchemaFence,
     });
-    session.awareness.setLocalState({ user: { name: "Writer" } });
+    session.presence.setField("user", { name: "Writer" });
     const { snapshots } = track(session);
 
     session.raiseSchemaFence({ reason: "client-superseded" });

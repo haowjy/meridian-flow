@@ -21,9 +21,43 @@
  * the two can differ, and for exactly that span this holds the desired map:
  * writes land in it, the transport publishes null, and resume publishes the map
  * as it now stands rather than as it was when the writer opened the review.
+ *
+ * Upstream collaboration plugins know nothing about any of that: TipTap's
+ * CollaborationCaret and y-prosemirror's cursor plugin write `user` and
+ * `cursor` onto whatever Awareness their provider hands them. So they are
+ * handed `caretProvider` instead of the real one. It wears Awareness' shape and
+ * routes every local write and read back through this owner, which is why a
+ * caret the destroyed editor cleared behind a review stays cleared when the
+ * review ends.
  */
 
 import type { Awareness } from "y-protocols/awareness";
+
+/**
+ * Peers as a publisher may see them: who else is here, what they say, and when
+ * that changes.
+ *
+ * Deliberately narrower than `Awareness`. A local field write belongs to
+ * `setField`, and handing out this type is what keeps that a rule of the port
+ * rather than a comment the next publisher has to read.
+ */
+export type PeerAwareness = Readonly<Pick<Awareness, "clientID" | "getStates" | "on" | "off">>;
+
+/**
+ * The Awareness shape upstream collaboration plugins reach through
+ * `provider.awareness`: CollaborationCaret's `user` write and peer list, and
+ * y-prosemirror's `cursor` write, its read of the local cursor it compares
+ * against, and its clear on blur and on view destroy. Every one of those is
+ * this client's own presence, so all of them route through the owner.
+ *
+ * No `setLocalState`: nothing upstream calls it, and a whole-state write would
+ * let one publisher erase a field it does not own.
+ */
+export type CaretAwareness = PeerAwareness &
+  Readonly<Pick<Awareness, "states" | "getLocalState" | "setLocalStateField">>;
+
+/** What `CollaborationCaret.configure({ provider })` takes. */
+export type CaretProvider = { readonly awareness: CaretAwareness };
 
 /**
  * What a publisher holds: the channel it reads peers from, and its own field to
@@ -32,10 +66,12 @@ import type { Awareness } from "y-protocols/awareness";
  * hidden writer back on the wire.
  */
 export type LocalPresenceFields = {
-  /** Read peers from this; never write a local field to it directly. */
-  readonly awareness: Awareness;
+  /** Read peers from here. It cannot write a local field; `setField` does that. */
+  readonly peers: PeerAwareness;
   /** Publish one field of this client's presence. Accepted while suspended. */
   setField: (field: string, value: unknown) => void;
+  /** The same single write path, in the shape upstream plugins demand. */
+  readonly caretProvider: CaretProvider;
 };
 
 /** The whole of one client's presence, as its owner holds it. */
@@ -53,15 +89,41 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
   /** The desired fields while suspended, and null whenever Awareness holds them. */
   let desired: Record<string, unknown> | null = null;
 
-  return {
-    awareness,
+  /**
+   * This client's fields as it means them, on the wire or not. y-prosemirror
+   * compares its own caret against this before writing and before clearing, so
+   * a suspension that answered null would leave it believing it had never
+   * published a caret at all.
+   */
+  const getLocalState = (): Record<string, unknown> | null =>
+    suspensions === 0 ? awareness.getLocalState() : desired;
 
-    setField(field, value) {
-      if (suspensions === 0) {
-        awareness.setLocalStateField(field, value);
-        return;
-      }
-      desired = { ...(desired ?? {}), [field]: value };
+  const setField = (field: string, value: unknown): void => {
+    if (suspensions === 0) {
+      awareness.setLocalStateField(field, value);
+      return;
+    }
+    desired = { ...(desired ?? {}), [field]: value };
+  };
+
+  return {
+    peers: awareness,
+    setField,
+
+    caretProvider: {
+      awareness: {
+        clientID: awareness.clientID,
+        // A getter rather than the Map itself: `states` is Awareness' own
+        // property, and a copy taken here would stop tracking who is present.
+        get states() {
+          return awareness.states;
+        },
+        getStates: () => awareness.getStates(),
+        getLocalState,
+        setLocalStateField: setField,
+        on: (name, handler) => awareness.on(name, handler),
+        off: (name, handler) => awareness.off(name, handler),
+      },
     },
 
     suspend() {

@@ -1,7 +1,7 @@
 /**
  * EditorView — the collaborative document editor surface.
  *
- * Binds a `DocumentSession` (Yjs `Y.Doc` + awareness + cursor provider) to a
+ * Binds a `DocumentSession` (Yjs `Y.Doc` + this client's presence) to a
  * TipTap/ProseMirror editor and renders the surrounding chrome (document
  * toolbar, sync-status indicator, chrome host). Whole concerns live in their own
  * modules and reach the editor through it: images arrive through

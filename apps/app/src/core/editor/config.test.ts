@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { createEditorConfig, createStandaloneEditorExtensions } from "./config";
+import { createLocalPresence } from "./local-presence";
 
 function keyboardShortcutsOf(extensions: ReturnType<typeof createStandaloneEditorExtensions>) {
   return extensions.flatMap((extension) => {
@@ -23,7 +24,7 @@ describe("createEditorConfig", () => {
 
     const config = createEditorConfig({
       document,
-      awareness: new Awareness(document),
+      presence: createLocalPresence(new Awareness(document)),
       editable: true,
       enableDraftInlineReview: true,
     });
@@ -35,7 +36,10 @@ describe("createEditorConfig", () => {
 describe("undo ownership", () => {
   it("binds the collaborative history keys above every inherited keymap", () => {
     const document = new Y.Doc();
-    const config = createEditorConfig({ document, awareness: new Awareness(document) });
+    const config = createEditorConfig({
+      document,
+      presence: createLocalPresence(new Awareness(document)),
+    });
     const shortcuts = keyboardShortcutsOf(config.extensions ?? []);
     const owned = shortcuts.find((entry) => entry.name === "meridianUndoRedoKeymap");
 
@@ -90,7 +94,7 @@ describe("editor paste configuration", () => {
     const document = new Y.Doc();
     const config = createEditorConfig({
       document,
-      awareness: new Awareness(document),
+      presence: createLocalPresence(new Awareness(document)),
       editorProps: {
         transformPastedHTML: () => '<p onclick="alert(1)">safe</p><script>bad()</script>',
       },

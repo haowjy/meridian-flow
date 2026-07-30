@@ -29,8 +29,7 @@
 
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
-import type { Awareness } from "y-protocols/awareness";
-import type { LocalPresenceFields } from "../local-presence";
+import type { LocalPresenceFields, PeerAwareness } from "../local-presence";
 import { ingressState, sendIngressMessage, uploadsOwnedHere } from "./image-ingress-runtime";
 import type { PendingImageFrame, UploadOwnersElsewhere } from "./pending-images";
 
@@ -69,10 +68,10 @@ function readFrame(value: unknown): PendingImageFrame | null {
 }
 
 /** Every slot some OTHER client says it is filling right now. */
-function ownersElsewhere(awareness: Awareness): UploadOwnersElsewhere {
+function ownersElsewhere(peers: PeerAwareness): UploadOwnersElsewhere {
   const owners = new Map<string, PendingImageFrame | null>();
-  for (const [clientId, state] of awareness.getStates()) {
-    if (clientId === awareness.clientID) continue;
+  for (const [clientId, state] of peers.getStates()) {
+    if (clientId === peers.clientID) continue;
     const announced = (state as { imageUploads?: unknown } | null)?.imageUploads;
     if (!Array.isArray(announced)) continue;
     for (const entry of announced) {
@@ -123,7 +122,7 @@ export const ImageUploadPresenceExtension = Extension.create<ImageUploadPresence
     const { editor } = this;
     const { presence } = this.options;
     if (!presence) return [];
-    const { awareness } = presence;
+    const { peers } = presence;
 
     return [
       new Plugin({
@@ -153,18 +152,18 @@ export const ImageUploadPresenceExtension = Extension.create<ImageUploadPresence
 
           const receive = () => {
             if (editor.isDestroyed) return;
-            const owners = ownersElsewhere(awareness);
+            const owners = ownersElsewhere(peers);
             if (sameOwners(ingressState(editor).elsewhere, owners)) return;
             sendIngressMessage(editor, { elsewhere: owners });
           };
 
-          awareness.on("change", receive);
+          peers.on("change", receive);
           receive();
 
           return {
             update: publish,
             destroy: () => {
-              awareness.off("change", receive);
+              peers.off("change", receive);
               // The release, through the port for the same reason: a tab closed
               // from inside inline review must not come back as an owner when
               // the next surface resumes presence.
