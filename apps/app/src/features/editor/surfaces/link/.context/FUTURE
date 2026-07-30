@@ -10,12 +10,10 @@
   share, and a second keyboard surface inside the form is where M7's focus
   contract is easiest to break.
 
-- The `[[` menu offers manuscript documents only. The resolver's candidate set
-  also includes a work's scratch documents, which still resolve when typed but
-  are never offered, because the editor host has no work in hand. Give
-  `EditorView` the active work and `useLinkableDocuments` can add them.
-
 - One request per distinct internal target per open document, four at a time.
   A chapter with dozens of links pays dozens of round trips on open, and each
   is a query over the project's documents. A batch endpoint would collapse
-  them; the client cache already keeps it to once per target.
+  them; the client cache already keeps it to once per target, per catalog. That
+  last part is the new weight: a rename anywhere in the project starts a new
+  resolution generation, so the chapter pays those round trips again. A batch
+  endpoint is what makes the honest invalidation cheap.

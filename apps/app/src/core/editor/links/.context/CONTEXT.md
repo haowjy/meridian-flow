@@ -123,13 +123,47 @@ classifier's own spelling — so `[[ The Second Gate ]]` and `[[The Second Gate]
 ask once between them. Three states are answers (`pending`, `resolved`,
 `unresolved`) and a fourth outcome is not: a request that THROWS caches nothing
 and renders nothing, because a link the editor could not ask about must never
-be drawn as a link that does not exist. `refresh()` drops every answer, which
-is what the app calls when the project's documents change.
+be drawn as a link that does not exist.
 
 Null from the port covers both "nothing matched" and "several did": ambiguity
 resolves to nothing rather than to a guess, and the writer sees the same
 dashed link either way. The `[[` menu is where ambiguity is named, before the
 link is written.
+
+### A registration is a generation
+
+`registerResolver` is the whole invalidation mechanism; there is no second verb
+that drops answers. Registering starts a generation, and that generation owns
+everything true of it:
+
+| It owns | Which means |
+|---|---|
+| its answers and its failures | they go with the generation, so nothing can read the previous one's |
+| the one question out per href | a request carries the waiter it settles, and a completion never looks one up by href |
+| its queue and its in-flight counter | four at a time means four of THIS generation's questions |
+
+Two properties follow, and each is a writer-visible failure the moment it does
+not hold:
+
+- An answer arriving from an abandoned generation settles its own waiter with
+  null and touches nothing live. It cannot settle the promise a question asked
+  AFTER the change is waiting on. A store that looked its waiter up by href
+  instead answered the new question null while the cache held the right
+  document, so the follow said nothing carries that name.
+- An abandoned generation's promises decrement their own counter, so they never
+  admit work into the live one and the live counter never goes negative. A
+  shared counter reset at invalidation admitted twice the limit and then drifted
+  below zero, which is no limit at all.
+
+A promise cannot be recalled, so retiring a generation drops its queue and
+answers every waiter null right away; whatever the port still returns lands on
+an object nothing can reach.
+
+The app registers again whenever the scope or the project's document catalog
+changes (see
+[`features/editor/surfaces/link/.context/CONTEXT.md`](../../../../features/editor/surfaces/link/.context/CONTEXT.md)),
+so a change landing while questions are in flight is the ordinary case here,
+not an exotic one.
 
 ## Rendering a state nobody stored
 
