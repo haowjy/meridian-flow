@@ -14,14 +14,18 @@
  * would be a transient surface the kernel never heard about — and this one can
  * open a quarter second late, long after the writer summoned something else.
  *
- * Both scope answers come from the editor's scope: the resolver is asked with the
- * active Work, so a `work://` shorthand has a Work to be relative to, and a
- * document that opens is looked for in that Work's scratch as well as in the
- * manuscript.
+ * **An answer belongs to a scope, not to a href.** What `[[Notes]]` or
+ * `./cast.md` points at is a function of the project, the active Work, and the
+ * URI of the document holding the link; the same three are this component's own
+ * inputs. So the resolver is registered per scope and re-registered when the
+ * scope changes, and `registerResolver` drops every answer and every failure the
+ * previous scope produced before the next question is asked. That keeps Work a
+ * runtime scope — nothing here remounts the collaborative editor — while making
+ * a stale answer unreachable rather than merely unlikely.
  */
 
 import type { Editor } from "@tiptap/core";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import {
@@ -36,7 +40,7 @@ import {
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
-import { useDocumentUri } from "./useDocumentUri";
+import { useWikilinkDocuments } from "./useWikilinkDocuments";
 
 /**
  * How long a follow waits before admitting it is still asking. Under this, the
@@ -52,38 +56,42 @@ export function ProjectLinkRuntime({
   editor: Editor | null;
   documentId: string;
 }) {
-  const { projectId, workId } = useEditorScope();
+  const scope = useEditorScope();
+  const { projectId, workId } = scope;
   const resolution = useMemo(() => getLinkResolution(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
-  const baseUri = useDocumentUri(projectId, documentId);
+  const documents = useWikilinkDocuments(scope);
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
 
-  // Read through a ref: the port is registered once per project and must not be
-  // torn down and rebuilt every time the document's URI query settles or the
-  // writer's Work arrives.
-  const latest = useRef({ baseUri, workId });
-  latest.current = { baseUri, workId };
+  // What this document's relative links are relative to, read out of the same
+  // index the `[[` menu offers rows from: a scratch note the menu names is a
+  // note that can hold `./cast.md` too. Null until the tree carrying it
+  // arrives, which is a link with no answer yet rather than a missing document.
+  const baseUri = useMemo(
+    () => documents.find((document) => document.documentId === documentId)?.uri ?? null,
+    [documents, documentId],
+  );
 
   useEffect(() => {
     if (!resolution || !projectId) return;
     return resolution.registerResolver(async (target) => {
-      const { baseUri: base, workId: work } = latest.current;
-      const request = documentLinkTarget(target, base ?? "");
+      const request = documentLinkTarget(target, baseUri ?? "");
       // A relative path is meaningless without the URI of the document holding
       // it. Throwing rather than answering "nothing found" is deliberate: the
       // question could not be asked, and an unasked question must not render as
-      // a missing document.
+      // a missing document. The base arriving is a scope change, so this same
+      // link is asked again instead of staying failed.
       if (!request) throw new Error("link target is not a document link");
-      if (request.kind === "relative" && !base) {
+      if (request.kind === "relative" && !baseUri) {
         throw new Error("relative link has no base document URI yet");
       }
       const { document } = await resolveDocumentLink(projectId, {
-        workId: work,
+        workId,
         target: request,
       });
       return document;
     });
-  }, [resolution, projectId]);
+  }, [baseUri, projectId, resolution, workId]);
 
   const follow = useCallback(
     async (target: LinkTarget, disposition: LinkFollowDisposition) => {
@@ -93,7 +101,7 @@ export function ProjectLinkRuntime({
       const open = (documentId: string) =>
         openDocument({
           documentId,
-          workId: latest.current.workId,
+          workId,
           disposition: disposition === "new-tab" ? "background" : "current",
         });
 
@@ -124,7 +132,7 @@ export function ProjectLinkRuntime({
         target,
       });
     },
-    [openDocument, resolution, surface],
+    [openDocument, resolution, surface, workId],
   );
 
   useEffect(() => {
