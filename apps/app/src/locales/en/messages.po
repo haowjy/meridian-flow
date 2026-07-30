@@ -2542,6 +2542,10 @@ msgstr "That part of the chapter is no longer available."
 msgid "That passage changed after this search."
 msgstr "That passage changed after this search."
 
+#: src/core/editor/images/image-uploads.ts
+msgid "That picture is no longer in the document."
+msgstr "That picture is no longer in the document."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That skill isn't available in this chat."
 msgstr "That skill isn't available in this chat."
