@@ -41,14 +41,30 @@
   Tab that indents fences, sinks lists, walks cells, and never ejects
   focus. `[[` autocompletes documents from the manuscript and the active
   Work's scratch.
-- `apps/app`: images live like text. Drag one to an inline position
-  between words or move a whole figure by its handle; an in-flight upload
-  is a real document node — collaborators see "uploading elsewhere" at
-  the announced size instead of a false "abandoned", moving it mid-upload
-  keeps the upload, deleting aborts it, nothing reflows when bytes land,
-  and Replace undoes in one step. All image verbs (alt, caption, label,
-  replace, download) live in one object menu; the old always-visible
-  figure form is gone.
+- `apps/app`: images live like text. A picture in a sentence is an
+  oversized word — it sits on the text baseline, the line grows to hold
+  it, and the words after it wrap below, the way Docs and Word read
+  "in line". Drag one to an inline position between words (the drag
+  ghost stays small instead of covering the viewport) or move a whole
+  figure by its handle; an in-flight upload is a real document node —
+  collaborators see "uploading elsewhere" at the announced size instead
+  of a false "abandoned", moving it mid-upload keeps the upload,
+  deleting aborts it, nothing reflows when bytes land (the reserved box
+  is exactly the measured picture, even a tiny icon), and Replace
+  undoes in one step. All image verbs (alt, caption, label, replace,
+  download) live in one object menu; the old always-visible figure
+  form is gone.
+- `apps/app`: arrow keys treat rendered diagrams and tables as one
+  object — walking the caret past one selects it whole and never opens
+  its source; opening stays an explicit Enter or click. Typing beside a
+  selected object starts a paragraph where the writer is looking
+  instead of editing into hidden diagram code.
+- `apps/app`: hover chrome (table grips, add tabs, the margin handle,
+  drop lines, link hints) is anchored to the content it labels. It
+  appears at the hovered row instantly with no travel animation, rides
+  scrolling without lagging behind, and can no longer be caught
+  floating over the app's own header. The margin handle is fully
+  visible and clickable at every window width, including phones.
 - `apps/app`: links resolve within their Work. Switching Work invalidates
   cached answers, renaming a document updates what its links resolve to
   without a reload, and a scratch document can be the base of a relative
