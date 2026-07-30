@@ -29,12 +29,12 @@ Each step's rule:
 - **Where the node may go.** `image` is an inline atom (§5.6), so it goes inline
   where the position can hold one and in a paragraph of its own after the block
   where it cannot. A position that can take neither is the one refusal. A drop
-  goes exactly where the dropcursor showed, and that is what decides how big the
-  picture is: between two words it stands IN the line and is capped on its long
-  edge, at a block seam it becomes a paragraph of its own and keeps the column
-  ([`../image-line-placement.ts`](../image-line-placement.ts)). Insert and drop
-  are deliberately not unified — the caret is the insert's answer, the dropcursor
-  is the drop's.
+  goes exactly where the dropcursor showed: between two words it lands in that
+  sentence, at a block seam it becomes a paragraph of its own. Where it lands
+  changes nothing about how big it is drawn — a picture is one object at one
+  size, bounded by the prose column, sitting on the text baseline either way.
+  Insert and drop are deliberately not unified — the caret is the insert's
+  answer, the dropcursor is the drop's.
 - **Replace claims an existing slot, and takes hold of it first.**
   `openImageReplacePicker` accepts a `NodeHold` — the identity the object surface
   already carries — never a position: the operating system's chooser stays open
@@ -46,7 +46,8 @@ Each step's rule:
   lifecycle runs. It works on `figure` for the same reason it works on `image`:
   both carry the attribute, and both are registered image surfaces.
 - **The frame.** `measure-image.ts` decodes the local file for its intrinsic
-  size. The node view puts that size on the wrapper and REMEMBERS it, because
+  size, and that size is what the slot reserves wherever it stands. The node
+  view puts it on the wrapper and REMEMBERS it, because
   the picture's own bytes arrive after its `src` does and a frame that collapsed
   in that gap would reflow twice. An unmeasurable file (an SVG with no intrinsic
   size) falls back to the default frame, which is the one case where completion
