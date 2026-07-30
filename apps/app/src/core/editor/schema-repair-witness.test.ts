@@ -9,6 +9,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorConfig } from "./config";
+import { createLocalPresence } from "./local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import {
   createSchemaRepairWitness,
@@ -81,7 +82,7 @@ function constructEditor(
       element: document.createElement("div"),
       ...createEditorConfig({
         document: doc,
-        awareness: new Awareness(doc),
+        presence: createLocalPresence(new Awareness(doc)),
         showCollaborationDecorations: false,
       }),
     });
@@ -305,7 +306,7 @@ describe("schema repair witness", () => {
       element: document.createElement("div"),
       ...createEditorConfig({
         document: doc,
-        awareness: new Awareness(doc),
+        presence: createLocalPresence(new Awareness(doc)),
         showCollaborationDecorations: false,
       }),
       // The spike's construction sequence: the witness is already live when

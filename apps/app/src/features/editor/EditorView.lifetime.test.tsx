@@ -21,6 +21,7 @@ import type {
   DocumentSessionSnapshot,
   SchemaFence,
 } from "@/core/editor/document-session";
+import { createLocalPresence } from "@/core/editor/local-presence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -62,7 +63,7 @@ function sessionFor(roomKey: string): DocumentSession {
     roomKey,
     document: doc,
     awareness,
-    cursorProvider: { awareness },
+    presence: createLocalPresence(awareness),
     markerStore: new SessionMarkerStore("writer"),
     whenLocalPersistenceSynced: () =>
       sessionHorizons.get(roomKey)?.localPersistence ?? Promise.resolve(),

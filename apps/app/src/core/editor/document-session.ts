@@ -140,7 +140,6 @@ export type DocumentSessionConnectionState =
  * value and `offline` could never fire.
  */
 export type DocumentSessionTransportProvider = {
-  awareness?: Awareness;
   synced?: boolean;
   whenSynced?: Promise<void>;
   /**
@@ -347,10 +346,6 @@ export class DocumentSession {
     });
   }
 
-  get cursorProvider(): { awareness: Awareness } {
-    return { awareness: this.transportProvider?.awareness ?? this.awareness };
-  }
-
   getSnapshot(): DocumentSessionSnapshot {
     return {
       documentId: this.documentId,
@@ -478,12 +473,14 @@ export class DocumentSession {
 
   /**
    * Where every local awareness field is written, by every publisher in the
-   * editor (`local-presence.ts`).
+   * editor — including TipTap's caret and y-prosemirror's cursor plugin, which
+   * reach it through `caretProvider` (`local-presence.ts`).
    *
    * The session owns whether this client is on the wire, so it has to own the
    * fields too: a publisher writing to `Awareness` directly loses its write
    * whenever presence is suspended, and suspension would then restore a value
-   * the publisher had already corrected.
+   * the publisher had already corrected. This is the editor's whole reach into
+   * awareness; `this.awareness` is the transport's.
    */
   get presence(): LocalPresenceFields {
     return this.localPresence;

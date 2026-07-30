@@ -83,7 +83,7 @@ export function SpikeEditorSurface({
     {
       ...createEditorConfig({
         document: session.document,
-        awareness: session.awareness,
+        presence: session.presence,
         user: { name: "Spike user", color: "#2e7d6b" },
         editorProps: {
           attributes: {

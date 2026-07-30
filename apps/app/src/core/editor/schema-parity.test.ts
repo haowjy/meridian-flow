@@ -10,6 +10,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorExtensions } from "./config";
+import { createLocalPresence } from "./local-presence";
 
 function projectAttrs(attrs: Record<string, AttributeSpec> | undefined) {
   return Object.fromEntries(
@@ -74,7 +75,7 @@ describe("TipTap editor schema parity", () => {
       const editorSchema = getSchema(
         createEditorExtensions({
           document,
-          awareness,
+          presence: createLocalPresence(awareness),
           showCollaborationDecorations: false,
         }),
       );

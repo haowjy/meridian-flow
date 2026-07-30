@@ -5,6 +5,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { relativePositionForEditorIndex } from "@/test-support/editor-relative-position";
 import { createEditorConfig } from "../config";
+import { createLocalPresence } from "../local-presence";
 
 let editor: Editor;
 
@@ -17,7 +18,7 @@ beforeEach(() => {
   const doc = new Y.Doc({ gc: false });
   editor = new Editor({
     element: document.createElement("div"),
-    ...createEditorConfig({ document: doc, awareness: new Awareness(doc) }),
+    ...createEditorConfig({ document: doc, presence: createLocalPresence(new Awareness(doc)) }),
   });
   editor.commands.setContent({
     type: "doc",

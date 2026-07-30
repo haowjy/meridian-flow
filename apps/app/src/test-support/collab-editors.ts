@@ -54,7 +54,7 @@ export type CollabPair = {
 function editorOn(doc: Y.Doc, presence: LocalPresence, markerStore?: SessionMarkerStore): Editor {
   return new Editor({
     element: document.createElement("div"),
-    ...createEditorConfig({ document: doc, awareness: presence.awareness, presence, markerStore }),
+    ...createEditorConfig({ document: doc, presence, markerStore }),
   });
 }
 

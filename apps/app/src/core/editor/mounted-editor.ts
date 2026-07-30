@@ -125,10 +125,9 @@ export function useMountedEditor({
   const [construction] = useState(() => {
     const editorConfig = createEditorConfig({
       document: session.document,
-      awareness: session.awareness,
-      cursorProvider: session.cursorProvider,
       // The session owns whether this client is visible (inline review suspends
-      // it), so it owns every local awareness field the editor publishes.
+      // it), so it owns every local awareness field the editor publishes — the
+      // caret's included.
       presence: session.presence,
       schemaType: identity.schemaType,
       assetRenderContext: { projectId: identity.projectId },
