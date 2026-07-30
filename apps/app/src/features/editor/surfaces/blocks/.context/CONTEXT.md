@@ -62,17 +62,18 @@ pointer when the document shifts, rather than chasing content that moved.
 The margin handle is one drag source and a block object's body is the other,
 and they are the same gesture: `beginGesture` takes the press whichever door it
 came through, so both hold one block, take one kernel drag token, and end in
-one finalizer. Which objects offer their body is `EDITOR_OBJECT_TYPES`'s `drag`
-column, read through `objectDrag` — `block` for a figure, a rule and a rendered
-diagram, `none` for a table, whose cells own the pointer that sweeps across
-them.
+one finalizer. Which objects offer their body is `EDITOR_OBJECT_TYPES`'s `body`
+column, read through `objectBody` — `block-drag` for a figure, a rule and a
+rendered diagram, `text` for a table, whose cells take a caret and own the
+pointer that sweeps across them.
 
-`inline` is a third answer and it belongs to nothing here: a picture travels by
-ProseMirror's own drag, which lands it wherever a caret can go and draws the
-dropcursor there (human ruling, 2026-07-29). This surface declines the press
-and refuses none of the browser's answers, so the block gesture and the inline
-one never overlap. The picture's paragraph still has a margin handle, which is
-where "move this whole line to a seam" lives.
+`inline-drag` is the third value and it belongs to nothing here: a picture
+travels by ProseMirror's own drag, which lands it wherever a caret can go and
+draws the dropcursor there (human ruling, 2026-07-29). This surface asks for
+`block-drag` by name, so it declines an inline object's press and refuses none
+of the browser's answers, and the block gesture and the inline one never
+overlap. The picture's paragraph still has a margin handle, which is where
+"move this whole line to a seam" lives.
 
 Three differences between the doors, each forced:
 
