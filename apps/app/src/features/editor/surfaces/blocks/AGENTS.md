@@ -28,7 +28,7 @@ gesture is holding, and whether it has lifted.
 ## Key rules
 
 - **A drag has two starting places and one gesture.** The margin handle is
-  one; the body of an object the registry marks `drag: "block"` is the other,
+  one; the body of an object the registry marks `body: "block-drag"` is the other,
   because a writer's first instinct is to grab the thing itself. Both go
   through `beginGesture`, so there is one hold, one kernel token, one finalizer
   — and one difference: a press that never travels opens the menu on the handle

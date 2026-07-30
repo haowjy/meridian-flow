@@ -59,7 +59,7 @@ export function ImageNodeView(props: NodeViewProps) {
   if (announcedFrame) frameRef.current = announcedFrame;
   const frame = frameRef.current;
 
-  // The whole picture is its own grip (`drag: "inline"` in EDITOR_OBJECT_TYPES):
+  // The whole picture is its own grip (`body: "inline-drag"` in EDITOR_OBJECT_TYPES):
   // a writer grabs the picture, not a handle beside it. `data-drag-handle` is
   // how a TipTap node view says so — without it the node view refuses the
   // browser's dragstart, and the picture could only ever move as a block.
