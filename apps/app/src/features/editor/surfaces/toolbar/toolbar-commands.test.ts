@@ -500,6 +500,9 @@ describe("toolbar toggles reverse", () => {
     expect(controlsFor(target).bold.active).toBe(false);
   });
 
+  // Which blocks an alignment reaches is `block-alignment.test.ts`'s table.
+  // What the toolbar owns is the adapter fact: the command delegates, and the
+  // control state the writer sees follows the document.
   it("returns block alignment to the default", () => {
     const target = editorWith("<p>a scene break</p>");
     target.commands.setTextSelection(3);
@@ -511,16 +514,6 @@ describe("toolbar toggles reverse", () => {
     setToolbarAlignment(target, "default");
     expect(target.state.doc.firstChild?.attrs.align).toBeNull();
     expect(controlsFor(target).alignment.active).toBe(false);
-  });
-
-  it("aligns every block the selection covers", () => {
-    const target = editorWith("<h1>Chapter 214</h1><p>Kael pressed</p><p>The panel</p>");
-    target.commands.selectAll();
-
-    expect(setToolbarAlignment(target, "center")).toBe(true);
-    for (let index = 0; index < target.state.doc.childCount; index += 1) {
-      expect(target.state.doc.child(index).attrs.align, `block ${index}`).toBe("center");
-    }
   });
 });
 
