@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
 /**
- * The auto-pair truth table.
+ * The auto-pair truth table, derived from the registry it is about.
  *
- * Every case here types real characters through the same `handleTextInput`
- * path a browser drives and presses real keys through the keymap, because the
- * whole feature is about what a keystroke becomes. The cases that matter most
- * are the refusals: a pair that fires where the writer did not want it, or a
- * closing keystroke that vanishes, costs far more than the convenience is
- * worth.
+ * Every case here types real characters through the same `handleTextInput` path
+ * a browser drives and presses real keys through the keymap, because the whole
+ * feature is about what a keystroke becomes. The cases that matter most are the
+ * refusals: a pair that fires where the writer did not want it, or a closing
+ * keystroke that vanishes, costs far more than the convenience is worth.
+ *
+ * The mechanism rows come from `EDITOR_AUTO_PAIRS` itself — every row in every
+ * context it declares, and every context it leaves out — so a new pair is one
+ * production edit and arrives with opener, step-over, Backspace, and
+ * wrong-context coverage already. What is written out by hand below is what the
+ * registry cannot say: the boundary rules around the caret, nesting, and the
+ * gestures that degrade to plain insertion.
  */
 import { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
@@ -15,7 +21,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
 import { autoClosedRunLength } from "./AutoPairExtension";
-import { EDITOR_AUTO_PAIRS } from "./auto-pairs";
+import { type AutoPairContext, EDITOR_AUTO_PAIRS } from "./auto-pairs";
 
 const live: Editor[] = [];
 
@@ -92,18 +98,88 @@ function fenceEditor(): Editor {
   return editor;
 }
 
-describe("an opener writes its closer", () => {
-  it.each([
-    ["[", "[|]"],
-    ["(", "(|)"],
-    ['"', '"|"'],
-  ])("types %j and leaves the caret inside", (opener, expected) => {
-    const editor = openEditor();
-    type(editor, opener);
+/**
+ * A caret inside an inline code span, with room on both sides of it.
+ *
+ * The span holds a single space so the derived rows measure the CONTEXT and
+ * nothing else: a letter behind the caret would refuse every same-character
+ * pair on its own (`6"` is inches), and a letter in front would refuse them all.
+ */
+function codeSpanEditor(): Editor {
+  const editor = openEditor();
+  editor.commands.setContent({
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", marks: [{ type: "code" }], text: " " }] },
+    ],
+  });
+  editor.commands.focus("end");
+  return editor;
+}
 
-    expect(shape(editor)).toBe(expected);
+/** Every context a pair can be declared in, and how a writer stands in it. */
+const CONTEXT_FIXTURES: readonly { context: AutoPairContext; caretIn: () => Editor }[] = [
+  { context: "prose", caretIn: () => openEditor() },
+  { context: "code-fence", caretIn: fenceEditor },
+  { context: "inline-code", caretIn: codeSpanEditor },
+];
+
+type PairRow = {
+  context: AutoPairContext;
+  open: string;
+  close: string;
+  caretIn: () => Editor;
+};
+
+function rowsWhere(declared: boolean): readonly PairRow[] {
+  return CONTEXT_FIXTURES.flatMap(({ context, caretIn }) =>
+    EDITOR_AUTO_PAIRS.filter((pair) => pair.contexts.includes(context) === declared).map(
+      ({ open, close }) => ({ context, open, close, caretIn }),
+    ),
+  );
+}
+
+const DECLARED_ROWS = rowsWhere(true);
+const OMITTED_ROWS = rowsWhere(false);
+
+describe("every registered pair, in every context it declares", () => {
+  it.each(DECLARED_ROWS)("$open writes its closer in $context", ({ open, close, caretIn }) => {
+    const editor = caretIn();
+    const room = shape(editor);
+    type(editor, open);
+
+    expect(shape(editor)).toBe(room.replace("|", `${open}|${close}`));
   });
 
+  it.each(DECLARED_ROWS)("$close steps over the closer written in $context", (row) => {
+    const editor = row.caretIn();
+    const room = shape(editor);
+    type(editor, row.open + row.close);
+
+    expect(shape(editor)).toBe(room.replace("|", `${row.open}${row.close}|`));
+  });
+
+  it.each(DECLARED_ROWS)("Backspace takes both halves of $open in $context", (row) => {
+    const editor = row.caretIn();
+    const room = shape(editor);
+    type(editor, row.open);
+
+    expect(press(editor, "Backspace")).toBe(true);
+    expect(shape(editor)).toBe(room);
+  });
+});
+
+describe("a context a pair leaves out is a decision", () => {
+  it.each(OMITTED_ROWS)("$open stays a plain character in $context", ({ open, caretIn }) => {
+    const editor = caretIn();
+    const room = shape(editor);
+    type(editor, open);
+
+    expect(shape(editor)).toBe(room.replace("|", `${open}|`));
+  });
+});
+
+describe("what sits around the caret decides", () => {
   it("stands aside in front of a word the writer is wrapping", () => {
     const editor = openEditor("<p>Hello</p>");
     caretAt(editor, 0);
@@ -128,7 +204,7 @@ describe("an opener writes its closer", () => {
     expect(shape(editor)).toBe('said "|and');
   });
 
-  it("leaves an apostrophe alone in prose", () => {
+  it("leaves an apostrophe alone in prose, where it is a letter", () => {
     const editor = openEditor();
     type(editor, "don't stop");
 
@@ -143,27 +219,6 @@ describe("an opener writes its closer", () => {
     expect(editor.state.doc.firstChild?.child(0).marks.map((mark) => mark.type.name)).toEqual([
       "code",
     ]);
-  });
-
-  it("leaves a brace alone in prose", () => {
-    const editor = openEditor();
-    type(editor, "{");
-
-    expect(shape(editor)).toBe("{|");
-  });
-});
-
-describe("a fence takes the standard set", () => {
-  it.each([
-    ["{", "{|}"],
-    ["`", "`|`"],
-    ["'", "'|'"],
-    ["[", "[|]"],
-  ])("pairs %j inside a code fence", (opener, expected) => {
-    const editor = fenceEditor();
-    type(editor, opener);
-
-    expect(shape(editor)).toBe(expected);
   });
 
   it("leaves a run of the same delimiter alone", () => {
@@ -181,32 +236,7 @@ describe("a fence takes the standard set", () => {
   });
 });
 
-describe("an inline code span is source, but its own delimiter is not", () => {
-  it("pairs a bracket inside the span", () => {
-    const editor = openEditor("<p><code>ab</code></p>");
-    caretAt(editor, 2);
-    type(editor, "[");
-
-    expect(shape(editor)).toBe("ab[|]");
-  });
-
-  it("leaves the backtick that ends the span alone", () => {
-    const editor = openEditor("<p><code>ab</code></p>");
-    caretAt(editor, 2);
-    type(editor, "`");
-
-    expect(shape(editor)).toBe("ab`|");
-  });
-});
-
 describe("typing the closer steps over the one that was written", () => {
-  it("lands past the bracket rather than doubling it", () => {
-    const editor = openEditor();
-    type(editor, "[]");
-
-    expect(shape(editor)).toBe("[]|");
-  });
-
   it("composes a second opener into a nested pair", () => {
     const editor = openEditor();
     type(editor, "[[");
@@ -292,14 +322,6 @@ describe("a keystroke reported as a block replacement", () => {
 });
 
 describe("Backspace between the halves takes both", () => {
-  it("empties the paragraph the pair was written into", () => {
-    const editor = openEditor();
-    type(editor, "[");
-
-    expect(press(editor, "Backspace")).toBe(true);
-    expect(shape(editor)).toBe("|");
-  });
-
   it("unwraps one level of a nested pair", () => {
     const editor = openEditor();
     type(editor, "[[");
@@ -345,10 +367,10 @@ describe("the gesture is one transaction", () => {
 });
 
 describe("the registry", () => {
-  it("leaves the markdown autoformat's own delimiters unpaired", () => {
-    expect(EDITOR_AUTO_PAIRS.map((pair) => pair.open)).not.toContain("*");
-    expect(EDITOR_AUTO_PAIRS.map((pair) => pair.open)).not.toContain("_");
-    expect(EDITOR_AUTO_PAIRS.map((pair) => pair.open)).not.toContain("~");
+  // Their completion path is the markdown autoformat, which needs the closing
+  // run typed rather than written ahead of it.
+  it.each(["*", "_", "~"])("leaves the autoformat's own %s unpaired", (delimiter) => {
+    expect(EDITOR_AUTO_PAIRS.map((pair) => pair.open)).not.toContain(delimiter);
   });
 
   it("counts the closers a range replacement has to swallow", () => {
