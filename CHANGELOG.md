@@ -17,17 +17,44 @@
   paths all return one canonical document or an ordinary unresolved result;
   ambiguous names are never guessed.
 - `apps/app`, `packages/markup`, `packages/prosemirror-schema`: chapters now
-  carry tables, Mermaid fences, and block alignment. A mermaid fence stays an
-  editable code block for now; its SVG renderer ships unregistered until the
-  diagram surface that owns source access lands. Tables render and round-trip
-  through the clipboard, and center or right alignment on a paragraph, heading,
-  or table travels as a `Layout` wrapper in MDX, so a document nobody has
-  aligned still serializes as byte-identical plain markdown. The writer-facing controls for
-  this structure are being redesigned and land separately.
-- `apps/app`: the manuscript has no formatting toolbar for now. Keyboard
-  shortcuts still apply marks, and the editing chrome returns as a ground-up
-  redesign rather than the ported one, which silently ignored most of what a
-  writer clicked.
+  carry tables, diagrams, and block alignment, with full writer-facing
+  controls. A ```mermaid fence renders as a diagram with a pan/zoom
+  lightbox and a source pane that keeps the last good render on parse
+  errors; diagram image copy and download work (they never did — the
+  renderer's HTML labels tainted the export canvas). Tables get
+  outside-frame grips, add tabs, hover column resize, row/column menus,
+  header toggle, and merge/split; spans are legal on the wire. Center or
+  right alignment travels as a `Layout` wrapper in MDX, so a document
+  nobody has aligned still serializes as byte-identical plain markdown.
+- `apps/app`: the editor's complete interaction model landed — a document
+  toolbar whose greying always says why, context-resolved right-click
+  everywhere (Shift+right-click is the native escape), a slash menu, block
+  movement (margin handle, drag with legal-seam drop lines, Alt+arrows),
+  and Esc that always walks one step home. Every control works or says
+  why it can't; a denied clipboard verb greys in place with its reason
+  instead of closing silently.
+- `apps/app`: typing mechanics — full markdown autoformat (headings,
+  marks, quotes, lists, fences with GFM info strings; Backspace reverts
+  any transform), auto-paired `[ ] ( ) " "` with step-over and unpair,
+  Tab that indents fences, sinks lists, walks cells, and never ejects
+  focus. `[[` autocompletes documents from the manuscript and the active
+  Work's scratch.
+- `apps/app`: images live like text. Drag one to an inline position
+  between words or move a whole figure by its handle; an in-flight upload
+  is a real document node — collaborators see "uploading elsewhere" at
+  the announced size instead of a false "abandoned", moving it mid-upload
+  keeps the upload, deleting aborts it, nothing reflows when bytes land,
+  and Replace undoes in one step. All image verbs (alt, caption, label,
+  replace, download) live in one object menu; the old always-visible
+  figure form is gone.
+- `apps/app`: links resolve within their Work. Switching Work invalidates
+  cached answers, renaming a document updates what its links resolve to
+  without a reload, and a scratch document can be the base of a relative
+  link.
+- `apps/app`: every menu, grip, and popover survives a collaborator's
+  write mid-gesture — surfaces remember document-native identity, never
+  screen positions, so a peer adding a table row can no longer aim your
+  open menu at the wrong cell. AI writes merge like any peer's, no gates.
 - `apps/app`: editable link clicks place a cursor rather than navigating away,
   and pasted HTML is rebuilt through an element and attribute allowlist.
 - `apps/app`, `apps/server`, `packages/contracts`, `packages/markup`: uploaded
@@ -37,9 +64,10 @@
   time. `FigureAssetReference` now carries `assetDocumentId` and a
   project-relative `assetPath`; figure upload no longer attaches file metadata to
   the host document.
-- `packages/prosemirror-schema`: collaboration schema surface is now `0.2.0`.
-  Block alignment adds an `align` attr to paragraphs, headings, and tables, so
-  clients below `0.2` no longer bind documents that carry one.
+- `packages/prosemirror-schema`: collaboration schema surface is now `0.3.0`.
+  Block alignment added an `align` attr to paragraphs, headings, and tables
+  (`0.2`); pending uploads add a transient `uploadToken` attr to images and
+  figures (`0.3`). Clients on an older bundle are fenced and reload.
 - `apps/app`: chapters now wait briefly for complete local and server state
   before binding, then report schema-normalized prose in a dismissible copyable
   notice without blocking editing; repairs that arrive during live
