@@ -16,6 +16,13 @@
  * Titles are filenames without their extension, which is what `documents.name`
  * holds and what the server matches on.
  *
+ * The index also says WHICH catalog it is. A resolved answer is true of the
+ * documents the project held when it was asked, so a rename, a create, or a
+ * delete makes every cached answer a claim about a project that no longer
+ * exists — without the project, the Work, or the base URI having moved. The
+ * revision is what tells the resolution scope that, so no mutation site has to
+ * remember to poke a cache it does not own.
+ *
  * Cached client-side and free: these are the same queries the context tree
  * already pays for, so opening the menu costs no request.
  */
@@ -42,10 +49,18 @@ export type LinkableDocument = WikilinkDocument & {
   uri: string;
 };
 
-export function useLinkableDocuments({
-  projectId,
-  workId,
-}: EditorScope): readonly LinkableDocument[] {
+export type LinkableDocumentIndex = {
+  readonly documents: readonly LinkableDocument[];
+  /**
+   * Which catalog these rows are. Content, not an object identity and not a
+   * counter: a refetch that found the same documents is the same revision and
+   * invalidates nothing, while any change to what a link could reach is a
+   * different one.
+   */
+  readonly revision: string;
+};
+
+export function useLinkableDocuments({ projectId, workId }: EditorScope): LinkableDocumentIndex {
   const { tree: manuscript } = useProjectContextTree(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
   });
@@ -54,15 +69,26 @@ export function useLinkableDocuments({
     workId,
   });
 
-  return useMemo(
-    () => [
+  return useMemo(() => {
+    const documents = [
       // The manuscript first, so a title both trees carry keeps the chapter's
       // row above the note's: ranking ties hold the order they arrive in.
       ...(manuscript ? linkableDocuments(manuscript, []) : []),
       ...(scratch ? linkableDocuments(scratch, [schemeLabel("scratch")]) : []),
-    ],
-    [manuscript, scratch],
-  );
+    ];
+    return { documents, revision: catalogRevision(documents) };
+  }, [manuscript, scratch]);
+}
+
+/**
+ * Everything an answer depends on, in one string: which documents exist, what
+ * each is called, and where each one is. Two catalogs with the same revision
+ * cannot disagree about where any link goes, which is the property the
+ * resolution scope needs — a link is re-asked when this changes and left alone
+ * when it does not.
+ */
+function catalogRevision(documents: readonly LinkableDocument[]): string {
+  return documents.map((entry) => `${entry.documentId} ${entry.uri} ${entry.title}`).join("\n");
 }
 
 /**

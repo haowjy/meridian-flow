@@ -13,9 +13,18 @@
  * thing entirely and caches nothing, because a link the editor could not ask
  * about must never be drawn as a link that does not exist.
  *
- * The port is the app's: only it knows the project, the work, and the URI of
- * the document holding the link. Until one registers, every read is null and
- * the manuscript renders exactly as it did before this module existed.
+ * The port is the app's: only it knows the project, the work, the URI of the
+ * document holding the link, and which documents the project holds. Until one
+ * registers, every read is null and the manuscript renders exactly as it did
+ * before this module existed.
+ *
+ * **A registration is a generation, and a generation owns everything true of
+ * it** — its answers, the questions it has out, and the counter admitting them.
+ * The app re-registers whenever any of those inputs change, so a scope change
+ * landing mid-flight is ordinary rather than exotic; a promise already out
+ * cannot be recalled, so the generation it was asked in is what it settles
+ * against. That is the whole invalidation mechanism: there is no second verb
+ * that drops answers, and no caller has to know one.
  */
 
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
@@ -59,9 +68,13 @@ export type LinkResolution = {
    * previous failure is retried rather than remembered.
    */
   resolve: (href: string) => Promise<LinkResolutionEntry | null>;
+  /**
+   * Registers the port and starts a generation with it. Every answer and every
+   * failure the previous one produced is gone at that moment, which is what
+   * makes this the app's only invalidation: register again and the last
+   * generation's answers are unreachable.
+   */
   registerResolver: (resolve: InternalLinkResolver) => () => void;
-  /** Forget every answer: the project's documents changed underneath them. */
-  refresh: () => void;
   destroy: () => void;
 };
 
@@ -72,26 +85,42 @@ const UNRESOLVED: LinkResolutionEntry = Object.freeze({ state: "unresolved", doc
  * How many questions are in flight at once. A chapter can carry dozens of
  * links and every answer is a query over the project's documents, so they go
  * in a few at a time; the cache makes it one question per distinct target for
- * as long as the document stays open.
+ * as long as the generation lasts.
  */
 const MAX_IN_FLIGHT = 4;
 
-type Waiter = {
-  promise: Promise<LinkResolutionEntry | null>;
-  settle: (entry: LinkResolutionEntry | null) => void;
+/**
+ * One question, and everything needed to settle it: which generation asked it,
+ * and the single waiter that gets the answer. Owning the waiter is the point —
+ * looking one up by href at completion time is how an answer from a project
+ * nobody is looking at any more ends up settling somebody else's promise.
+ */
+type Request = {
+  readonly key: string;
+  readonly target: LinkTarget;
+  readonly generation: Generation;
+  readonly promise: Promise<LinkResolutionEntry | null>;
+  readonly settle: (entry: LinkResolutionEntry | null) => void;
+};
+
+/** Everything true of one registration of the port. */
+type Generation = {
+  readonly resolver: InternalLinkResolver;
+  /** Answers, keyed by the classifier's spelling of the href. */
+  readonly answers: Map<string, LinkResolutionEntry>;
+  /** Keys whose request failed. Not answers — questions that never got asked. */
+  readonly failed: Set<string>;
+  /** The one question out for a key, queued or in flight. */
+  readonly asking: Map<string, Request>;
+  readonly queue: Request[];
+  /** How many of THIS generation's questions the port is holding. */
+  running: number;
 };
 
 export function createLinkResolution(): LinkResolution {
   const listeners = new Set<() => void>();
-  const answers = new Map<string, LinkResolutionEntry>();
-  const waiting = new Map<string, Waiter>();
-  const queue: { key: string; target: LinkTarget }[] = [];
-  /** Keys whose request failed. Not answers — questions that never got asked. */
-  const failed = new Set<string>();
-  let resolver: InternalLinkResolver | null = null;
-  let running = 0;
-  /** Bumped by every refresh, so an answer in flight from before is dropped. */
-  let generation = 0;
+  /** The only generation anyone can read. Null until a port registers. */
+  let current: Generation | null = null;
 
   const publish = () => {
     for (const listener of listeners) listener();
@@ -104,70 +133,75 @@ export function createLinkResolution(): LinkResolution {
     return { key: linkTargetHref(target), target };
   };
 
-  const settle = (key: string, entry: LinkResolutionEntry | null, at: number) => {
-    const waiter = waiting.get(key);
-    waiting.delete(key);
-    const current = at === generation;
-    if (current) {
-      if (entry) answers.set(key, entry);
-      else {
-        answers.delete(key);
-        failed.add(key);
-      }
+  const settle = (request: Request, entry: LinkResolutionEntry | null) => {
+    const { generation, key } = request;
+    // This request's own entry and no other: after a re-registration the map
+    // under this href can hold the next generation's question about it.
+    if (generation.asking.get(key) === request) generation.asking.delete(key);
+    if (entry) generation.answers.set(key, entry);
+    else {
+      generation.answers.delete(key);
+      generation.failed.add(key);
     }
     // An answer about a project state nobody is looking at any more tells the
     // caller nothing, so it comes back null rather than stale.
-    waiter?.settle(current ? entry : null);
-    if (current) publish();
+    const live = generation === current;
+    request.settle(live ? entry : null);
+    if (live) publish();
   };
 
-  const pump = () => {
-    while (running < MAX_IN_FLIGHT && queue.length > 0) {
-      const next = queue.shift();
-      if (!next) return;
-      const at = generation;
-      const port = resolver;
-      if (!port) {
-        settle(next.key, null, at);
-        continue;
-      }
+  const pump = (generation: Generation) => {
+    while (generation.running < MAX_IN_FLIGHT && generation.queue.length > 0) {
+      const request = generation.queue.shift();
+      if (!request) return;
 
-      running += 1;
-      void port(next.target)
+      generation.running += 1;
+      void generation
+        .resolver(request.target)
         .then((document) =>
-          settle(next.key, document ? { state: "resolved", document } : UNRESOLVED, at),
+          settle(request, document ? { state: "resolved", document } : UNRESOLVED),
         )
-        .catch(() => settle(next.key, null, at))
+        .catch(() => settle(request, null))
         .finally(() => {
-          running -= 1;
-          pump();
+          // The counter belongs to the generation that admitted the request. A
+          // question coming back from an abandoned one must not admit work into
+          // the live one, which is what a shared counter did.
+          generation.running -= 1;
+          pump(generation);
         });
     }
   };
 
-  const enqueue = (key: string, target: LinkTarget): Promise<LinkResolutionEntry | null> => {
-    const already = waiting.get(key);
+  const ask = (
+    generation: Generation,
+    key: string,
+    target: LinkTarget,
+  ): Promise<LinkResolutionEntry | null> => {
+    const already = generation.asking.get(key);
     if (already) return already.promise;
 
-    let settleWaiter: Waiter["settle"] = () => {};
+    let settleWaiter: Request["settle"] = () => {};
     const promise = new Promise<LinkResolutionEntry | null>((done) => {
       settleWaiter = done;
     });
-    waiting.set(key, { promise, settle: settleWaiter });
-    answers.set(key, PENDING);
-    queue.push({ key, target });
-    pump();
+    const request: Request = { key, target, generation, promise, settle: settleWaiter };
+    generation.asking.set(key, request);
+    generation.answers.set(key, PENDING);
+    generation.queue.push(request);
+    pump(generation);
     return promise;
   };
 
-  const forget = () => {
-    generation += 1;
-    for (const waiter of waiting.values()) waiter.settle(null);
-    waiting.clear();
-    answers.clear();
-    failed.clear();
-    queue.length = 0;
-    running = 0;
+  /**
+   * Nothing this generation was asked can be answered any more. Queued
+   * questions are dropped, and the ones already out are abandoned: whoever was
+   * waiting hears null now rather than a fact about a project state that moved.
+   * Its answers go with the generation itself, which nothing can reach again.
+   */
+  const retire = (generation: Generation) => {
+    generation.queue.length = 0;
+    for (const request of generation.asking.values()) request.settle(null);
+    generation.asking.clear();
   };
 
   return {
@@ -177,22 +211,24 @@ export function createLinkResolution(): LinkResolution {
     },
 
     get available() {
-      return resolver !== null;
+      return current !== null;
     },
 
     read(href) {
-      if (!resolver) return null;
+      if (!current) return null;
       const internal = internalHref(href);
-      return internal ? (answers.get(internal.key) ?? null) : null;
+      return internal ? (current.answers.get(internal.key) ?? null) : null;
     },
 
     request(hrefs) {
-      if (!resolver) return;
+      const generation = current;
+      if (!generation) return;
       let asked = false;
       for (const href of hrefs) {
         const internal = internalHref(href);
-        if (!internal || answers.has(internal.key) || failed.has(internal.key)) continue;
-        enqueue(internal.key, internal.target);
+        if (!internal) continue;
+        if (generation.answers.has(internal.key) || generation.failed.has(internal.key)) continue;
+        ask(generation, internal.key, internal.target);
         asked = true;
       }
       // Pending is a state a renderer may show, so say it once rather than per
@@ -201,37 +237,45 @@ export function createLinkResolution(): LinkResolution {
     },
 
     async resolve(href) {
-      if (!resolver) return null;
+      const generation = current;
+      if (!generation) return null;
       const internal = internalHref(href);
       if (!internal) return null;
-      const known = answers.get(internal.key);
+      const known = generation.answers.get(internal.key);
       if (known && known.state !== "pending") return known;
       // A click is the writer asking again, so a failure is worth retrying.
-      failed.delete(internal.key);
-      return enqueue(internal.key, internal.target);
+      generation.failed.delete(internal.key);
+      return ask(generation, internal.key, internal.target);
     },
 
     registerResolver(resolve) {
-      resolver = resolve;
-      forget();
+      const previous = current;
+      current = {
+        resolver: resolve,
+        answers: new Map(),
+        failed: new Set(),
+        asking: new Map(),
+        queue: [],
+        running: 0,
+      };
+      if (previous) retire(previous);
       publish();
+
+      const generation = current;
       return () => {
-        if (resolver !== resolve) return;
-        resolver = null;
-        forget();
+        // Identity, not the function: the same port registered against a new
+        // catalog is a new generation, and the old unregister must not take it.
+        if (current !== generation) return;
+        current = null;
+        retire(generation);
         publish();
       };
     },
 
-    refresh() {
-      forget();
-      publish();
-    },
-
     destroy() {
-      forget();
+      if (current) retire(current);
+      current = null;
       listeners.clear();
-      resolver = null;
     },
   };
 }

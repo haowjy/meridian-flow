@@ -24,7 +24,7 @@ import { useState } from "react";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { getLinkResolution, type LinkFollowOutcome, linkTargetHref } from "@/core/editor/links";
+import { type LinkFollowOutcome, linkTargetHref } from "@/core/editor/links";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { EditorDialog } from "../../chrome";
@@ -148,9 +148,9 @@ function FollowOutcome({
               }
               onClose();
               // Every dashed link to this name in every open document is about
-              // to be wrong; the answers they were drawn from are the ones to
-              // drop.
-              getLinkResolution(editor)?.refresh();
+              // to be right, and nothing here has to say so: the project holds a
+              // document it did not, which is a new document catalog, and the
+              // resolution scope is registered against catalogs.
               await openDocument({ documentId: result.documentId, workId });
             }}
           >

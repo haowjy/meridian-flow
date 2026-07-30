@@ -37,6 +37,13 @@ const SECOND_GATE: ResolvedDocumentLink = {
   workId: null,
 };
 
+/** The same name answered in a scope nobody is looking at any more. */
+const SECOND_GATE_ELSEWHERE: ResolvedDocumentLink = {
+  ...SECOND_GATE,
+  documentId: "doc-elsewhere",
+  uri: "work://elsewhere/the-second-gate.md",
+};
+
 function editorWith(content: string): Editor {
   editor = new Editor({ extensions: createStandaloneEditorExtensions(), content });
   return editor;
@@ -115,12 +122,16 @@ describe("what an internal link is drawn as", () => {
     const target = editorWith('<p><a href="[[Warden Ilsever]]">Warden Ilsever</a></p>');
     let exists = false;
     const resolution = getLinkResolution(target);
-    resolution?.registerResolver(async () => (exists ? SECOND_GATE : null));
+    const ask = async () => (exists ? SECOND_GATE : null);
+    resolution?.registerResolver(ask);
     await settle();
     expect(stateOf(target)).toBe("unresolved");
 
     exists = true;
-    resolution?.refresh();
+    // What the app does when the project's documents change: the catalog is a
+    // different one, so the port is registered against it and every answer the
+    // last catalog produced is gone. There is no second invalidation verb.
+    resolution?.registerResolver(ask);
     await settle();
 
     expect(stateOf(target)).toBe("resolved");
@@ -137,6 +148,126 @@ describe("what an internal link is drawn as", () => {
     });
   });
 });
+
+/**
+ * A registration is a generation, and a generation owns everything true of it:
+ * its answers, the questions it has out, and the counter admitting them.
+ *
+ * The hazard these cover is a scope change landing while questions are in
+ * flight, which is ordinary now that `{projectId, workId, baseUri}` and the
+ * document catalog all re-register the port. Promises cannot be recalled, so
+ * the old generation's answers arrive either way — they must land on nothing.
+ */
+describe("what a generation owns", () => {
+  const HREF = "[[The Second Gate]]";
+
+  it("answers a question asked after the change with the new generation's answer", async () => {
+    const target = editorWith("<p>no links here</p>");
+    const resolution = getLinkResolution(target);
+    if (!resolution) throw new Error("the editor has no link resolution");
+
+    const abandoned = deferred<ResolvedDocumentLink | null>();
+    resolution.registerResolver(() => abandoned.promise);
+    const askedBefore = resolution.resolve(HREF);
+
+    const asking = deferred<ResolvedDocumentLink | null>();
+    resolution.registerResolver(() => asking.promise);
+    const askedAfter = resolution.resolve(HREF);
+
+    // The abandoned generation answers first, which is the whole hazard: one
+    // waiter per href meant its completion settled whatever was waiting there.
+    abandoned.settle(SECOND_GATE_ELSEWHERE);
+    await settle();
+    expect(resolution.read(HREF)).toEqual({ state: "pending", document: null });
+
+    asking.settle(SECOND_GATE);
+
+    await expect(askedBefore).resolves.toBeNull();
+    await expect(askedAfter).resolves.toEqual({ state: "resolved", document: SECOND_GATE });
+    expect(resolution.read(HREF)).toEqual({ state: "resolved", document: SECOND_GATE });
+  });
+
+  it("holds the in-flight limit across the change and after it", async () => {
+    const target = editorWith("<p>no links here</p>");
+    const resolution = getLinkResolution(target);
+    if (!resolution) throw new Error("the editor has no link resolution");
+    const hrefs = Array.from({ length: 8 }, (_, index) => `[[Gate ${index + 1}]]`);
+
+    const abandoned = heldQuestions();
+    resolution.registerResolver(abandoned.answer);
+    resolution.request(hrefs);
+    expect(abandoned.inFlight).toBe(4);
+
+    const asking = heldQuestions();
+    resolution.registerResolver(asking.answer);
+    resolution.request(hrefs);
+    expect(asking.inFlight).toBe(4);
+
+    // The abandoned generation's four come back now. Their counter was theirs.
+    await abandoned.releaseAll();
+    expect(asking.peak).toBe(4);
+
+    await asking.releaseAll();
+    expect(asking.asked).toBe(8);
+    expect(asking.peak).toBe(4);
+
+    // A leaked counter shows up here: it admits more than four next time, or
+    // has gone negative and admits everything.
+    const later = heldQuestions();
+    resolution.registerResolver(later.answer);
+    resolution.request(hrefs.map((href) => `${href.slice(0, -2)} again]]`));
+    expect(later.peak).toBe(4);
+  });
+});
+
+/** A question with no answer until the test gives it one. */
+function deferred<T>(): { promise: Promise<T>; settle: (value: T) => void } {
+  let settle: (value: T) => void = () => {};
+  const promise = new Promise<T>((done) => {
+    settle = done;
+  });
+  return { promise, settle };
+}
+
+/**
+ * A resolver that answers nothing until released, counting how many questions
+ * it was holding at once — which is what the in-flight limit means.
+ */
+function heldQuestions() {
+  const held: (() => void)[] = [];
+  let inFlight = 0;
+  let peak = 0;
+  let asked = 0;
+
+  return {
+    answer: () =>
+      new Promise<ResolvedDocumentLink | null>((done) => {
+        asked += 1;
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        held.push(() => {
+          inFlight -= 1;
+          done(null);
+        });
+      }),
+    get inFlight() {
+      return inFlight;
+    },
+    get peak() {
+      return peak;
+    },
+    get asked() {
+      return asked;
+    },
+    /** Releasing one admits the next, so this drains what draining creates. */
+    async releaseAll() {
+      while (held.length > 0) {
+        held.shift()?.();
+        await settle();
+      }
+    },
+  };
+}
 
 /**
  * The decorations are rebuilt only when something reached a link, so the
