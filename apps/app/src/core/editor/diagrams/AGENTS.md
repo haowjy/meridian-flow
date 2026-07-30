@@ -2,8 +2,8 @@
 
 A fenced diagram is a `code_block` the page renders instead of showing (§5.2:
 the page never shows a diagram's syntax). This directory owns the catalog that
-says which languages those are, the render state every one of them shares, and
-the faces they wear. It owns no node view and no verb: the fence's node view is
+says which languages those are, the render state every one of them shares, the
+boundary their markup crosses, and the faces they wear. It owns no node view and no verb: the fence's node view is
 [`../CodeBlockNodeView.tsx`](../CodeBlockNodeView.tsx), and the writer's verbs
 belong to `features/editor/surfaces/objects`.
 
@@ -27,14 +27,21 @@ Everything downstream is generated or provider-neutral:
 - **Nothing outside the catalog names a diagram language.** A predicate on
   `language === "mermaid"` anywhere else is the parallel hierarchy this module
   replaced. Ask `diagramProviderFor(node)` or read the object registration.
-- **A renderer returns SVG markup or throws a message the writer can read.**
+- **A renderer returns raw SVG markup or throws a message the writer can read.**
   The message is shown verbatim on the stale and unrendered faces, so it has to
   name the problem, not the stack.
 - **A renderer draws in the manuscript's ink.** Read the design tokens at render
   time (`mermaid-theme.ts` is the worked example) rather than copying colors,
   or a theme switch leaves the diagram behind. `useDiagramRender` redraws on the
   palette; the markup is the renderer's to repaint.
-- **Sanitize before returning.** The markup is inserted as HTML.
+- **Markup reaches the page as a `SanitizedSvg`, never as a string.**
+  `useDiagramRender` sanitizes every provider's output on the way into state
+  (`sanitized-svg.ts`), and the faces take the branded type, so a provider's raw
+  string does not compile where markup is inserted. A renderer is therefore not
+  trusted for sanitization and must not be relied on for it — mermaid's strict
+  mode is a second lock, not this one. The allow-list is SVG: a label drawn as
+  HTML inside `<foreignObject>` is dropped, which is why the mermaid config asks
+  for SVG text labels (and why a raster export keeps its labels at all).
 - **The render layer is keyed by provider** wherever it is mounted. Render state
   belongs to one provider, and a language change would otherwise hand the new
   one the old one's state. A language change is a document change, so remounting

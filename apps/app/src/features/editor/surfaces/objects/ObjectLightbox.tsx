@@ -229,7 +229,8 @@ function DiagramFace({
           {svg ? (
             <div
               className="meridian-diagram"
-              // Mermaid's strict security mode sanitizes authored labels before producing the SVG.
+              // A `SanitizedSvg` from the shared render boundary, like the
+              // page's own face: this file names no renderer and trusts none.
               dangerouslySetInnerHTML={{ __html: svg }}
             />
           ) : null}
