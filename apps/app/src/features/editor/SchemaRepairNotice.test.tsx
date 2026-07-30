@@ -69,4 +69,52 @@ describe("SchemaRepairNotice", () => {
 
     await act(async () => root.unmount());
   });
+
+  it("says so when the browser refuses the copy, and keeps the words in reach", async () => {
+    (
+      globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new DOMException("blocked", "NotAllowedError")),
+      },
+    });
+    const container = document.createElement("div");
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SchemaRepairNotice
+          repairs={[
+            {
+              phase: "open",
+              detectedAt: "2026-07-28T12:00:00.000Z",
+              deletedNodeTypes: ["sidebar"],
+              deletedClockCount: 12,
+              removedText: "the passage the schema could not hold",
+            },
+          ]}
+        />,
+      );
+    });
+
+    expect(container.querySelector("[data-schema-repair-copy-blocked]")).toBeNull();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("[data-copy-schema-repair]")?.click();
+    });
+
+    // A button that says nothing after a blocked write has told the writer
+    // their rescued passage is safe when it is still only on this screen.
+    expect(container.querySelector("[data-schema-repair-copy-blocked]")?.textContent).toContain(
+      "would not let the page write to the clipboard",
+    );
+    // And the words themselves are still there to select by hand.
+    expect(container.querySelector("[data-schema-repair-removed-text]")?.textContent).toBe(
+      "the passage the schema could not hold",
+    );
+
+    await act(async () => root.unmount());
+  });
 });

@@ -2643,6 +2643,10 @@ msgstr "This browser will not export this diagram as an image. Copy the diagram 
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
 msgstr "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
 
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+msgid "This browser will not let the page write to the clipboard."
+msgstr "This browser will not let the page write to the clipboard."
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
 msgstr "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
@@ -2650,6 +2654,10 @@ msgstr "This browser will not let the page write to the clipboard. Press {shortc
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "This browser will not turn that into an image."
 msgstr "This browser will not turn that into an image."
+
+#: src/features/editor/SchemaRepairNotice.tsx
+msgid "This browser would not let the page write to the clipboard. The removed text is still above, so it can be selected and copied by hand."
+msgstr "This browser would not let the page write to the clipboard. The removed text is still above, so it can be selected and copied by hand."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This cell is not merged."

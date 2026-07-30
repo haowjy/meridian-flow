@@ -2643,12 +2643,20 @@ msgstr ""
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
 msgstr ""
 
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+msgid "This browser will not let the page write to the clipboard."
+msgstr ""
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "This browser will not let the page write to the clipboard. Press {shortcut} to copy."
 msgstr ""
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "This browser will not turn that into an image."
+msgstr ""
+
+#: src/features/editor/SchemaRepairNotice.tsx
+msgid "This browser would not let the page write to the clipboard. The removed text is still above, so it can be selected and copied by hand."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
