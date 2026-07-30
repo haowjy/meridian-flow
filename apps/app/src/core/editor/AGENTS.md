@@ -54,13 +54,17 @@ change-trail events, not manuscript content.
   happened). See [`images/AGENTS.md`](images/AGENTS.md).
 - Do not persist, branch-project, or locally author peer marks. Resolve
   awareness cursor colors to concrete RGB before publication.
-- **This client's own awareness fields have one owner.** The session holds them
-  through `local-presence.ts` and hands publishers a port; nothing writes
-  `awareness.setLocalStateField` by hand. Suspension is why: inline review and a
-  schema fence take the writer off the wire, a raw field write is a silent no-op
-  for exactly that span, and the port is what keeps a write made behind a review
-  true when it ends. A new ephemeral field is one more `setField` caller, never a
-  second suspension mechanism.
+- **This client's own awareness fields have one owner and one write path.** The
+  session holds them through `local-presence.ts`; publishers get `setField` and a
+  read-only view of peers, and the upstream collaboration plugins get
+  `caretProvider`, an Awareness-shaped object whose writes route back through the
+  same port. `createEditorExtensions` takes that port and no `Awareness` at all,
+  so nothing the editor assembles can reach the raw one. Suspension is why:
+  inline review and a schema fence take the writer off the wire, a raw field write
+  is a silent no-op for exactly that span, and resume would then republish the
+  snapshot over a correction the publisher already made — a caret the destroyed
+  editor cleared came back as a ghost. A new ephemeral field is one more
+  `setField` caller, never a second suspension mechanism.
 - Markdown autoformat is mostly inherited: TipTap's own input rules already
   resolve the parity schema and already refuse to run inside code. Check
   whether a trigger is already firing before writing a rule for it, because a

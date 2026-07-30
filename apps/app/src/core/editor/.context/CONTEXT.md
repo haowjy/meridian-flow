@@ -128,16 +128,26 @@ Yjs document session. It must stay structurally aligned with
   not valid y-prosemirror awareness colors.
 - Local awareness fields belong to `DocumentSession` through `local-presence.ts`,
   and reach publishers as a `LocalPresenceFields` port
-  (`createEditorExtensions({ presence })`). While presence is live, `Awareness`
-  IS the desired state and `setField` writes straight through. A suspension
-  (inline review's `suspendPresence`, a schema fence) is the only span where the
-  two differ: the port holds the desired field map for its duration, takes every
-  write into it, publishes null as the transport state, and publishes the map as
-  it then stands on resume — never the snapshot taken when the suspension began.
-  Suspensions nest, and only the outermost one snapshots or republishes. An
-  editor built with no port of its own gets one nothing suspends, which is the
-  truth for a spike or a bare harness; a surface that hides the writer must pass
-  the session's.
+  (`createEditorExtensions({ presence })`, which takes no `Awareness`: the port is
+  the editor's whole reach into it, and `DocumentSession.awareness` belongs to the
+  transport). While presence is live, `Awareness` IS the desired state and
+  `setField` writes straight through. A suspension (inline review's
+  `suspendPresence`, a schema fence) is the only span where the two differ: the
+  port holds the desired field map for its duration, takes every write into it,
+  publishes null as the transport state, and publishes the map as it then stands
+  on resume — never the snapshot taken when the suspension began. Suspensions
+  nest, and only the outermost one snapshots or republishes.
+- The port hands out three shapes, and which one a consumer holds is the rule:
+  `setField` writes one field; `peers` is a read-only `PeerAwareness`
+  (`clientID`, `getStates`, `on`, `off`) for reading other clients, so a
+  publisher has no mutable `Awareness` to reach for; and `caretProvider` is the
+  `{ awareness }` that TipTap's CollaborationCaret and y-prosemirror's cursor
+  plugin demand — an Awareness-shaped facade whose `setLocalStateField` is
+  `setField` and whose `getLocalState` answers the desired map, so the cursor
+  plugin's comparison and its clears on blur and view destroy stay true through a
+  suspension. `suspend`/`resume`/`release` belong to the session alone. The
+  negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
+  anywhere in `apps/app/src` outside `local-presence.ts`.
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
   exist before server transport. Ordinary acquisition of an existing detached
   room leaves it detached; post-create reconciliation explicitly attaches
