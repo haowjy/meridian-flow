@@ -10,12 +10,12 @@
  * is my diagram still there, and where is it drawn now.
  */
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { engageObject } from "@/core/editor/objects";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
-import { installJsdomLayout } from "@/test-support/jsdom-layout";
+import { createReactEditorFixture, type ReactEditorFixture } from "@/test-support/react-editor";
+import { requireNode } from "@/test-support/standalone-editor";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
@@ -29,8 +29,6 @@ vi.mock("@/core/editor/mermaid-render", () => ({
 
 const { ObjectControls } = await import("./ObjectControls");
 
-installJsdomLayout();
-
 /** The diagram the writer opens. The other one belongs to the collaborator. */
 const WRITER_DIAGRAM = "flowchart LR\nA --> B";
 const PEER_DIAGRAM = "flowchart TD\nC --> D";
@@ -39,50 +37,29 @@ function fence(text: string) {
   return { type: "code_block", attrs: { language: "mermaid" }, content: [{ type: "text", text }] };
 }
 
-let pair: CollabPair | null = null;
-let root: Root | null = null;
-let container: HTMLElement | null = null;
+let pair: CollabPair;
+let page: ReactEditorFixture;
 
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
   pair = createCollabPair({
     type: "doc",
     content: [fence(PEER_DIAGRAM), fence(WRITER_DIAGRAM)],
   });
-  document.body.append(pair.local.view.dom);
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+  page = createReactEditorFixture({ editor: pair.local });
 });
 
 afterEach(() => {
-  act(() => root?.unmount());
-  root = null;
-  container?.remove();
-  container = null;
-  pair?.destroy();
-  pair = null;
-  document.body.replaceChildren();
+  page.destroy();
+  pair.destroy();
 });
 
 function collab(): CollabPair {
-  if (!pair) throw new Error("no pair");
   return pair;
 }
 
 /** Where a fence whose source starts with `text` is, in whichever editor. */
 function fencePos(instance: CollabPair["local"], text: string): number {
-  let found: number | null = null;
-  instance.state.doc.descendants((node, pos) => {
-    if (found === null && node.type.name === "code_block" && node.textContent.startsWith(text)) {
-      found = pos;
-    }
-    return found === null;
-  });
-  if (found === null) throw new Error(`no fence for ${text}`);
-  return found;
+  return requireNode(instance, { type: "code_block", startsWith: text }).pos;
 }
 
 /**
@@ -92,11 +69,9 @@ function fencePos(instance: CollabPair["local"], text: string): number {
  */
 function openLightbox(): void {
   const { local } = collab();
-  const pos = fencePos(local, WRITER_DIAGRAM);
-  const node = local.state.doc.nodeAt(pos);
-  if (!node) throw new Error("no diagram node");
+  const target = requireNode(local, { type: "code_block", startsWith: WRITER_DIAGRAM });
   act(() => {
-    engageObject(local, { pos, node }, "created");
+    engageObject(local, target, "created");
   });
 }
 
@@ -122,7 +97,7 @@ function peerWrite(write: (peer: CollabPair["peer"]) => void): void {
 describe("a surface open on an object, while a peer writes", () => {
   it("keeps the lightbox open and on the same diagram", () => {
     const { local } = collab();
-    act(() => root?.render(<ObjectControls editor={local} />));
+    page.render(<ObjectControls editor={local} />);
     openLightbox();
     expect(shownSource()).toBe(WRITER_DIAGRAM);
 
@@ -136,7 +111,7 @@ describe("a surface open on an object, while a peer writes", () => {
 
   it("follows its diagram when a peer's write moves it down the document", () => {
     const { local } = collab();
-    act(() => root?.render(<ObjectControls editor={local} />));
+    page.render(<ObjectControls editor={local} />);
     openLightbox();
     const before = fencePos(local, WRITER_DIAGRAM);
 
@@ -154,7 +129,7 @@ describe("a surface open on an object, while a peer writes", () => {
 
   it("closes the lightbox, and lets go of it, when the peer deletes the diagram", () => {
     const { local } = collab();
-    act(() => root?.render(<ObjectControls editor={local} />));
+    page.render(<ObjectControls editor={local} />);
     openLightbox();
     expect(shownSource()).toBe(WRITER_DIAGRAM);
 
@@ -171,11 +146,9 @@ describe("a surface open on an object, while a peer writes", () => {
     // Nothing is retained for a diagram that is gone: opening the collaborator's
     // diagram shows THEIR source, and the source hatch the deleted dialog had
     // open does not come back with it.
-    const theirs = fencePos(local, PEER_DIAGRAM);
-    const node = local.state.doc.nodeAt(theirs);
-    if (!node) throw new Error("no diagram node");
+    const theirs = requireNode(local, { type: "code_block", startsWith: PEER_DIAGRAM });
     act(() => {
-      engageObject(local, { pos: theirs, node }, "engage");
+      engageObject(local, theirs, "engage");
     });
     expect(lightbox()).not.toBeNull();
     expect(shownSource()).toBeNull();
