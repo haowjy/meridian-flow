@@ -1,12 +1,17 @@
 /**
- * The documents the `[[` menu offers, from the trees the app already has.
+ * Every document a link in this scope can reach, from the trees the app already
+ * has.
  *
- * The candidate set is the resolver's, not the tree panel's: a wikilink resolves
- * against project documents by title, so a row for anything else would be a row
- * that inserts a link nobody can follow. The resolver matches the manuscript AND
- * the Work's scratch, so both are offered — a note the writer keeps beside the
- * chapter is a document a link can reach, and leaving it out of the menu while
- * the resolver still finds it is the menu disagreeing with the link.
+ * One index answers both halves of a link question, because they are the same
+ * question asked twice. "What can `[[…]]` name?" is the manuscript plus the
+ * active Work's scratch, titled by filename. "What is `./cast.md` relative to?"
+ * is the URI of the document holding it, which has to come out of that same set
+ * or a note the menu happily offers becomes a document that cannot host a
+ * relative link of its own.
+ *
+ * The candidate set is the resolver's, not the tree panel's: a row for anything
+ * the resolver cannot match is a row that inserts a link nobody can follow, and
+ * withholding one it CAN match is the menu disagreeing with the link.
  *
  * Titles are filenames without their extension, which is what `documents.name`
  * holds and what the server matches on.
@@ -27,10 +32,20 @@ import { schemeLabel } from "@/features/project/context/context-schemes";
 
 import type { EditorScope } from "../../editor-scope";
 
+export type LinkableDocument = WikilinkDocument & {
+  /** The persisted `documents.id`, which is what a follow opens. */
+  documentId: string;
+  /**
+   * The document's URI in the resolver's spelling, which is what a relative
+   * link in it resolves against.
+   */
+  uri: string;
+};
+
 export function useWikilinkDocuments({
   projectId,
   workId,
-}: EditorScope): readonly WikilinkDocument[] {
+}: EditorScope): readonly LinkableDocument[] {
   const { tree: manuscript } = useProjectContextTree(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
   });
@@ -60,8 +75,8 @@ export function useWikilinkDocuments({
 function linkableDocuments(
   tree: ProjectContextTreeDirectory,
   root: readonly string[],
-): WikilinkDocument[] {
-  const documents: WikilinkDocument[] = [];
+): LinkableDocument[] {
+  const documents: LinkableDocument[] = [];
 
   const visit = (node: ProjectContextTreeNode, folders: readonly string[]) => {
     if (node.kind === "dir") {
@@ -71,11 +86,26 @@ function linkableDocuments(
     }
     // An image or a PDF has no title a wikilink can name.
     if (!node.editable) return;
-    documents.push({ title: documentTitle(node.name), location: folders.join("/") });
+    documents.push({
+      documentId: node.documentId,
+      title: documentTitle(node.name),
+      location: folders.join("/"),
+      uri: resolverUri(node.uri),
+    });
   };
 
   visit(tree, root);
   return documents;
+}
+
+/**
+ * The context tree spells a work-scoped document `scratch://`; the link contract
+ * and the server that answers it both spell the same document `work://` (tracked
+ * task #32). That one scheme swap is the whole translation, and doing it here is
+ * what lets a scratch note be a base URI rather than only a destination.
+ */
+function resolverUri(uri: string): string {
+  return uri.startsWith("scratch://") ? `work://${uri.slice("scratch://".length)}` : uri;
 }
 
 function documentTitle(filename: string): string {
