@@ -31,8 +31,9 @@ Beside them, three things that are not summoned surfaces:
   the context trees the app already caches (`useLinkableDocuments`), so opening
   it costs no request: the manuscript and the active Work's scratch, which is the
   resolver's candidate set and therefore the only honest offer. That same index
-  carries each document's id and URI, which is where a relative link's base
-  comes from.
+  carries each document's id and URI, which is where a relative link's base comes
+  from, and its own revision, which is what tells a cached answer that the
+  project moved underneath it.
 - **`FollowOutcomeDialog`** — what a follow says when the document is not there.
   A chrome surface rather than the runtime's own dialog, and that is the whole
   point: it can open a quarter second after the click, so the kernel has to know
@@ -65,11 +66,17 @@ Beside them, three things that are not summoned surfaces:
   waits, and a follow only interrupts after 250ms — long enough that a link
   already resolved for rendering just opens.
 - **An answer belongs to a scope, not to a href.** `{ projectId, workId,
-  baseUri }` is the whole semantic input to a resolution, so the resolver is
-  registered per scope and re-registered when one changes; registering forgets
-  every answer and every failure the last scope produced. A Work switch never
-  remounts the editor, and a base URI arriving is a scope change, which is what
-  re-asks the relative links that had nothing to be relative to yet.
+  baseUri, revision }` is the whole semantic input to a resolution — the last
+  being which documents the project holds — so the resolver is registered per
+  scope and re-registered when any of them changes; registering forgets every
+  answer and every failure the last scope produced. A Work switch never remounts
+  the editor, a base URI arriving is a scope change (which re-asks the relative
+  links that had nothing to be relative to yet), and a rename is one too: the
+  link is spelled the same and its answer is now the wrong document.
+- **No component invalidates the link cache.** A create or a rename anywhere in
+  the app is a new document catalog, and the catalog is what the resolution
+  scope is keyed on. A mutation button that also pokes the resolution store is
+  a second owner of the same rule.
 - **A failed request is not an unresolved link.** It renders as an ordinary
   link and says so on follow, with Try again. Drawing it dashed would tell the
   writer their document is missing when the truth is that nobody asked.
