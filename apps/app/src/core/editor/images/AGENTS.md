@@ -46,27 +46,28 @@ every door refuses out loud rather than opening onto nothing.
 | `pending-images.ts` | What the document knows about a picture in flight, and how it is drawn |
 | `image-workflow.ts` | Pure answers: what a drop means, what a paste carries, asset paths |
 | `ImageNodeView.tsx` | An inline picture at every point in its life |
-| `image-line-placement.ts` | Whether a picture stands in a line of prose or holds the column |
 | `image-drag-preview.ts` | The ghost a picture drags with |
 | `measure-image.ts` | The picture's own size, read from the local file |
 
 ## Key rules
 
-- **Inline means in the line, and it is derived, never stored.** A picture that
-  shares its text block with anything else is capped on its long edge and
-  centred on the words, so the line goes on either side of it; a picture with its
-  block to itself keeps the prose column
-  ([`image-line-placement.ts`](image-line-placement.ts), human ruling,
-  2026-07-30: "inline should literally mean inline"). The document always said
-  the right thing — the drop has always landed the node between two text nodes of
-  one paragraph, and the wire has always carried `text ![alt](p) text` — and a
-  column-wide picture filled the line box anyway, which is what the writer saw.
-  The reading is a decoration off the document, so a peer draws the same
-  paragraph and typing a word beside a picture moves it between the two by
-  itself; an attribute would put it in Yjs, on the wire, and in every peer's undo
-  history. The node view is told through the decoration's spec as well as the
-  class, because a frame reserved for an upload carries an explicit width and has
-  to be scaled rather than clamped.
+- **A picture is a big glyph, and inline means what Docs and Word mean.** Its
+  bottom sits on the text baseline, so the words before it and after it stand at
+  its foot, the line box grows as tall as the picture, and what follows wraps
+  onto the line below (human ruling, 2026-07-30, against a capped picture with
+  the words floating at its mid-height). There is ONE reading of a picture: the
+  same object at the same size mid-sentence or alone in its paragraph, with the
+  prose column as its only bound. A big picture in a sentence makes a tall line,
+  and that is the right answer rather than a bug to cap. The document always
+  said this much — a drop has always landed the node between two text nodes of
+  one paragraph and the wire has always carried `text ![alt](p) text` — so
+  nothing about the picture's size is derived, stored, or announced; it is the
+  CSS in [`../../../features/editor/editor.css`](../../../features/editor/editor.css)
+  and nothing else. That CSS holds one fact worth knowing before touching it:
+  baseline alignment goes on TipTap's own inline wrapper, the box the line box
+  is built out of, and everything inside that wrapper is block-level so its
+  baseline falls back to the bottom margin edge instead of a line box that would
+  hang the font's descender under the picture.
 - **A picture names its own drag preview, from `window`.** Left alone, a big
   picture drags a ghost the size of the whole picture and the writer cannot see
   what they are aiming at (human ruling, 2026-07-30: keep the drag, lose the
@@ -155,6 +156,10 @@ every door refuses out loud rather than opening onto nothing.
   it is recoverable; with a live owner it is somebody's upload.
 - Turning a refused paste-import into a document write. The link the paste
   landed is already the honest answer.
+- A second reading of how big a picture is, for a picture that shares its line
+  with words. That was the condemned shape: a decoration plugin, a class, a
+  15rem cap, and a scaled upload frame, all so a picture mid-sentence could be a
+  different object than the same picture alone.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) — the lifecycle in detail, the
   ports, and the paste-import seam

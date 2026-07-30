@@ -183,38 +183,34 @@
   border-radius: var(--radius-md);
 }
 
+/* A picture is a big glyph. Its bottom sits on the text baseline, so the words
+   before it and after it stand at its foot, the line box grows as tall as the
+   picture, and what follows wraps onto the line below — the "in line" of Docs
+   and Word (human ruling, 2026-07-30). It is the same object at the same size
+   mid-sentence or alone in its paragraph, and the prose column is its only
+   bound.
+
+   Baseline alignment is asked of TipTap's own inline wrapper, because that is
+   the box the line box is built out of. An inline-block takes its baseline from
+   its last in-flow line box, which would hang the font's descender under the
+   picture and float it off the baseline. So the wrapper inside it is a block
+   and everything inside THAT is block-level: with no line box to read, CSS
+   falls back to the bottom margin edge, and that edge is the picture's foot. */
+.meridian-editor .ProseMirror span.react-renderer.node-image {
+  vertical-align: baseline;
+}
+
 .meridian-editor .ProseMirror .meridian-image-node {
-  display: inline-block;
+  display: block;
   max-width: 100%;
-  vertical-align: bottom;
 }
 
-/* A picture standing in a line of prose, rather than one holding the column to
-   itself (`core/editor/images/image-line-placement.ts` decides which, from the
-   document). Centred on the words instead of sitting on the line's floor, with
-   a little air on each side, because the line goes on either side of it.
-
-   The class is a decoration's, so it lands on the node view's outer element —
-   the inline box the line box is actually built out of. Written with
-   `.react-renderer` so it outranks that element's resting `vertical-align`
-   wherever either rule ends up in the file. */
-.meridian-editor .ProseMirror .react-renderer.meridian-image-in-line {
-  margin-inline: 0.25rem;
-  vertical-align: middle;
-}
-
-/* The cap, for a picture the browser sizes from its own bytes: both edges, so
-   a portrait picture is as contained as a landscape one, and the aspect ratio
-   survives because that is what min/max sizing does to a replaced element. A
-   frame reserved for an upload in flight is scaled by the node view instead
-   (`ImageNodeView`), which is where the same 15rem lives as a number. */
-.meridian-editor .ProseMirror .meridian-image-node--in-line img {
-  max-width: 15rem;
-  max-height: 15rem;
+.meridian-editor .ProseMirror .meridian-image-node > img {
+  display: block;
 }
 
 .meridian-image-node__placeholder {
-  display: inline-flex;
+  display: flex;
   min-width: 8rem;
   min-height: 6rem;
   align-items: center;

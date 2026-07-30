@@ -10,7 +10,7 @@
    worth reading. */
 .meridian-image-pending {
   position: relative;
-  display: inline-flex;
+  display: flex;
   min-width: 8rem;
   min-height: 4.5rem;
   box-sizing: border-box;
@@ -25,7 +25,6 @@
   padding: 0.625rem 0.75rem;
   color: var(--color-ink-muted);
   font-size: 0.8125rem;
-  vertical-align: bottom;
 }
 
 .meridian-image-pending__label {
