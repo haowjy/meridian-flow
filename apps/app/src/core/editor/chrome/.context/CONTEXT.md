@@ -9,7 +9,7 @@ first. Everything below is a contract a lane can rely on without asking.
 |---|---|---|---|
 | 1 | Extension registration | [`core/editor/config.ts`](../../config.ts) → `EDITOR_CHROME_EXTENSIONS` | one line, at the placeholder comment for its lane |
 | 2 | Chrome mount host | [`features/editor/chrome/chrome-surfaces.tsx`](../../../../features/editor/chrome/chrome-surfaces.tsx) → `EDITOR_CHROME_SURFACES` | one entry, `{ id, render }` |
-| 3 | Keymap contributions | `chrome.registerKeymap(...)` at a named scope | a runtime registration, no new extension priority |
+| 3 | Keymap contributions | `chrome.registerKeymap(...)` at a named scope, or `useChromeLayer({ keys })` for a surface's own | a runtime registration, no new extension priority |
 | 4 | Stylesheet | a `.css` file beside the lane's own component, imported by it | its own file; `features/editor/editor.css` is the document's, not a lane's |
 
 Nobody edits `EditorView.tsx`. Nobody edits another lane's stylesheet. A
@@ -320,6 +320,23 @@ const release = chrome.registerKeymap({
 Pick the scope by where the key must WORK, not by what it is about. Object
 physics splits for exactly this reason: walking ONTO an object starts from
 prose beside it, so the arrows are `block` scope and only Enter is `object`.
+
+### Where the key is pressed
+
+A contribution also says how far from the manuscript it can be heard:
+
+| `reach` | Heard when | Who runs it |
+|---|---|---|
+| `prose` (default) | the caret is in the manuscript | the editor's `handleKeyDown` |
+| `chrome` | also while focus sits outside the editor's DOM | the kernel's document keydown route |
+
+`chrome` reach exists for one shape of surface: a layer Radix portals out of the
+editor, which holds focus for as long as it is open. React lanes reach it
+through `useChromeLayer({ keys })` rather than by naming it —
+`EditorDialog` forwards a `keys` prop for the same reason. The registration is
+refused at any scope but `layer`, because only a layer's registration ends when
+its surface does; anything longer-lived, heard from anywhere, would take keys
+from the chat composer.
 
 Register from a ProseMirror plugin's `view()` or a React effect, not TipTap's
 `onCreate` — TipTap emits `create` a macrotask late, long enough for a first

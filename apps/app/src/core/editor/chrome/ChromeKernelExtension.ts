@@ -32,7 +32,7 @@ import {
   type EditorChromeController,
 } from "./editor-chrome";
 import { escStep } from "./esc-chain";
-import { type KeymapBinding, mergeKeymapContributions } from "./keymap";
+import { type KeymapBinding, type KeymapReach, mergeKeymapContributions } from "./keymap";
 import { watchManuscriptLayout } from "./manuscript-layout";
 
 const CHROME_EXTENSION_NAME = "meridianChrome";
@@ -110,21 +110,28 @@ export const ChromeKernelExtension = Extension.create({
 
     // Rebuilt only when a surface registers or unregisters, so an ordinary
     // keystroke costs one map lookup rather than a merge of every lane's keys.
-    let cachedBindings: Record<string, KeymapBinding> = {};
+    // Two maps, because where the key was pressed decides which contributions
+    // may answer it: the prose hears every lane, focus inside a portalled layer
+    // hears only the layers that said they reach that far.
+    let cachedBindings: Record<KeymapReach, Record<string, KeymapBinding>> = {
+      prose: {},
+      chrome: {},
+    };
     let cachedRevision = -1;
-    const bindingsFor = () => {
-      if (cachedRevision === chrome.keymapRevision) return cachedBindings;
+    const bindingsFor = (reach: KeymapReach) => {
+      if (cachedRevision === chrome.keymapRevision) return cachedBindings[reach];
       // The revision advances only once the merge has produced something. A
       // throw between the two would otherwise leave a stale map cached against
       // a revision that never built it, and every later registration would be
       // dropped in silence.
-      const merged = mergeKeymapContributions(chrome.keymapContributions(), () => ({
-        context: chrome.context,
-        layerCount: chrome.layers.length,
-      }));
+      const applicability = () => ({ context: chrome.context, layerCount: chrome.layers.length });
+      const merged = {
+        prose: mergeKeymapContributions(chrome.keymapContributions(), applicability),
+        chrome: mergeKeymapContributions(chrome.keymapContributions(), applicability, "chrome"),
+      };
       cachedBindings = merged;
       cachedRevision = chrome.keymapRevision;
-      return merged;
+      return merged[reach];
     };
 
     let sweepOrigin: { x: number; y: number } | null = null;
@@ -220,6 +227,22 @@ export const ChromeKernelExtension = Extension.create({
           // for it, and "nobody is ever trapped" would quietly stop being true.
           // This is that backstop, and it defers to any layer that says it
           // dismisses itself so one key never closes two surfaces.
+          // The same gap for every other key a layer owns. A dialog's content
+          // is portalled out of the editor and holds focus while it is open, so
+          // ProseMirror's `handleKeyDown` never sees the writer's Ctrl+Enter —
+          // and a surface that answered it with a listener of its own would be
+          // invisible to the kernel's bindings, its scope ladder, and the
+          // collision the validator is there to catch. Only contributions that
+          // declared `reach: "chrome"` run here; the target guard leaves the
+          // prose's own keys to ProseMirror, which is the path they belong to.
+          const layerKeys = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || chrome.layers.length === 0) return;
+            if (event.target instanceof Node && view.dom.contains(event.target)) return;
+            if (!keydownHandler(bindingsFor("chrome"))(view, event)) return;
+            event.preventDefault();
+          };
+          document.addEventListener("keydown", layerKeys, true);
+
           const backstopEscape = (event: KeyboardEvent) => {
             if (event.key !== "Escape" || event.defaultPrevented) return;
             if (event.target instanceof Node && view.dom.contains(event.target)) return;
@@ -248,6 +271,7 @@ export const ChromeKernelExtension = Extension.create({
               window.removeEventListener("mouseup", endSweep);
               window.removeEventListener("blur", endSweep);
               document.removeEventListener("contextmenu", routeMenu, true);
+              document.removeEventListener("keydown", layerKeys, true);
               document.removeEventListener("keydown", backstopEscape, true);
             },
           };
@@ -256,7 +280,7 @@ export const ChromeKernelExtension = Extension.create({
         props: {
           handleKeyDown(view, event) {
             if (event.key === "Escape") return performEscStep(view, chrome, controller);
-            return keydownHandler(bindingsFor())(view, event);
+            return keydownHandler(bindingsFor("prose"))(view, event);
           },
 
           handleDOMEvents: {

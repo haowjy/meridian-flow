@@ -69,6 +69,13 @@ target.
 - **`onEscapeKeyDown` → `useChromeLayer(...).onEscapeKeyDown`.** Without it a
   single Esc closes a dialog and the pane inside it, spending two steps of the
   walk home on one key.
+- **A surface's own shortcuts go in `useChromeLayer({ keys })`,** never in a
+  `document` listener. Focus is inside portalled content while a dialog is open,
+  where ProseMirror hears nothing, so the kernel's document route is what serves
+  the chord — and going through the layer is what puts the binding in the
+  kernel's bindings, under its scope ladder, and in front of the validation that
+  catches a second claimant. `keys` belongs to the layer, not to the content
+  inside it: a dialog's Ctrl+Enter has to be able to open a pane that is closed.
 - **Wrap what a surface renders in `layer.scope(...)`.** That is how a layer
   opened inside another knows its parent, and depth is what orders the walk —
   React mounts child effects first, so arrival order says the opposite. A

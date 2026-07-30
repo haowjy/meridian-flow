@@ -78,7 +78,8 @@ export function DiagramBody({
       <div
         className="meridian-diagram"
         data-diagram-preview=""
-        // A provider sanitizes authored labels before producing the SVG.
+        // `render.svg` is a `SanitizedSvg`, which is the only markup this face
+        // can be given: no provider's raw string satisfies the type.
         dangerouslySetInnerHTML={{ __html: render.svg ?? "" }}
       />
     </>

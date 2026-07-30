@@ -22,8 +22,13 @@
  *   reads as a screenshot from another application. Read the design tokens at
  *   render time (`mermaid-theme.ts` is the worked example) rather than copying
  *   colors, so a theme switch redraws.
- * - **Sanitized output.** The markup is inserted as HTML; authored labels must
- *   not survive as markup.
+ *
+ * A renderer does NOT owe sanitized output, and must not be trusted for it: the
+ * shared render boundary sanitizes every provider's markup on its way into
+ * state and hands the faces a `SanitizedSvg` (`sanitized-svg.ts`,
+ * `diagram-render-state.ts`). What a renderer owes is markup a picture can be
+ * made of — the boundary's allow-list is SVG, so anything smuggled in as HTML
+ * is dropped rather than drawn.
  */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -44,7 +49,14 @@ export type DiagramProvider = {
    * and the labels are document content the writer overwrites immediately.
    */
   starterSource: string;
-  /** Source in, SVG markup out. `id` is written into the markup, so it is unique per consumer. */
+  /**
+   * Source in, raw SVG markup out. `id` is written into the markup, so it is
+   * unique per consumer.
+   *
+   * Raw is the honest word: this string never reaches a consumer. `Promise<string>`
+   * is a shape any renderer can satisfy, which is exactly why the trust boundary
+   * cannot live here — `useDiagramRender` sanitizes what comes back.
+   */
   render: (id: string, source: string) => Promise<string>;
 };
 

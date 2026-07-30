@@ -7,6 +7,11 @@
  * diagram language, so a provider brings only its `render` (see
  * `diagram-providers.ts`) and inherits the rest.
  *
+ * Sanitization is one of the things it inherits, and it is why this hook is the
+ * only route to a diagram's markup: what settles here is a `SanitizedSvg`, the
+ * type both faces insert and the only type `sanitizeSvg` produces
+ * (`sanitized-svg.ts`). A provider's raw string never reaches a consumer.
+ *
  * Render status changes when a parse settles; which face a node view wears
  * changes when the selection moves. They are separate clocks, and keeping them
  * apart is what makes the node view's one invariant checkable — see
@@ -18,6 +23,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import { DEFAULT_UI_THEME, resolveUiTheme, subscribeUiTheme } from "@/lib/ui-theme";
 
 import type { DiagramProvider } from "./diagram-providers";
+import { type SanitizedSvg, sanitizeSvg } from "./sanitized-svg";
 
 /**
  * How long source rests before it is parsed again.
@@ -36,7 +42,7 @@ export type DiagramRender = {
    * `error` is set: a broken edit keeps the previous diagram on screen rather
    * than blanking the canvas mid-keystroke.
    */
-  svg: string | null;
+  svg: SanitizedSvg | null;
   /** The provider's message for `rendered`, which usually names the line. */
   error: string | null;
   /**
@@ -73,8 +79,12 @@ export function useDiagramRender(provider: DiagramProvider, source: string): Dia
       const id = `meridian-${language}-${reactId.replaceAll(":", "")}-${current}`;
 
       void render(id, source)
-        .then((svg) => {
-          if (generation.current === current) setResult({ svg, error: null, rendered: source });
+        // The provider's output is raw markup until here. One sanitize per
+        // landed render, on the way into state, so nothing downstream can be
+        // handed the string the renderer actually returned.
+        .then((markup) => {
+          if (generation.current !== current) return;
+          setResult({ svg: sanitizeSvg(markup), error: null, rendered: source });
         })
         .catch((error: unknown) => {
           if (generation.current !== current) return;
