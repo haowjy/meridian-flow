@@ -10,7 +10,9 @@ flowchart TD
   entry --> measure["measure the file locally, frame set"]
   entry --> upload["port: upload with signal + onProgress"]
   upload -->|percent| entry
-  upload -->|uploaded| land["setNodeMarkup src, clear token, drop entry"]
+  upload -->|"uploaded (insert)"| land["clear token and write src, out of history"]
+  upload -->|"uploaded (replace)"| release["clear token out of history"]
+  release --> commit["write src and alt as one history event"]
   upload -->|error| failed["entry failed, node stays, Retry / Remove"]
   slot -->|deleted or undone| sweep["no node carries the token: abort, drop entry"]
   slot -->|moved| slot
@@ -27,22 +29,39 @@ Each step's rule:
 - **Where the node may go.** `image` is an inline atom (§5.6), so it goes inline
   where the position can hold one and in a paragraph of its own after the block
   where it cannot. A position that can take neither is the one refusal.
-- **Replace claims an existing slot.** `openImageReplacePicker` writes the token
-  onto the node the writer is pointing at (`addToHistory: false`, because it is
-  bookkeeping) and runs the ordinary lifecycle. It works on `figure` for the same
-  reason it works on `image`: both carry the attribute.
+- **Replace claims an existing slot, and takes hold of it first.**
+  `openImageReplacePicker` accepts a `NodeHold` — the identity the object surface
+  already carries — never a position: the operating system's chooser stays open
+  across peer writes and AI writes, and a raw number means something else by the
+  time a file comes back. After the file arrives the hold is resolved, the node is
+  read back through `objectSurfaceKind(node) === "image"`, and a picture that went
+  away refuses out loud rather than opening an entry or an upload. Then the token
+  goes on (`addToHistory: false`, because it is bookkeeping) and the ordinary
+  lifecycle runs. It works on `figure` for the same reason it works on `image`:
+  both carry the attribute, and both are registered image surfaces.
 - **The frame.** `measure-image.ts` decodes the local file for its intrinsic
   size. The node view puts that size on the wrapper and REMEMBERS it, because
   the picture's own bytes arrive after its `src` does and a frame that collapsed
   in that gap would reflow twice. An unmeasurable file (an SVG with no intrinsic
   size) falls back to the default frame, which is the one case where completion
   can still move a line.
-- **Landing.** One transaction: `setNodeMarkup` on the same node writing `src`,
-  `alt`, and `uploadToken: null`, plus the meta that drops the entry,
-  `addToHistory: false`. Clearing the token is what stops every peer being told
-  the slot is still in flight. Undo therefore removes the picture the writer
-  inserted rather than stepping back through the arrival of its bytes and leaving
-  an empty frame. The fence is re-read here because an upload outlives the
+- **Landing, and what the writer undoes.** The entry carries `landing`, which is
+  how the slot was opened, because that decides the history:
+  - `insert` — one transaction: `setNodeMarkup` on the same node writing `src`,
+    `alt`, and `uploadToken: null`, plus the meta that drops the entry,
+    `addToHistory: false`. The insert was the history event, so undo removes the
+    picture rather than stepping back through the arrival of its bytes and leaving
+    an empty frame.
+  - `replace` — two, in this order: the token cleared outside history (an undo
+    that brought it back would hand the writer a slot whose upload is over), then
+    `src`/`alt` in an ordinary historical transaction. That is the whole of the
+    writer's edit — this picture became that picture — and one undo takes it back.
+    The non-historical write first is also what stops the replacement merging into
+    the previous stack item: y-tiptap calls `stopCapturing()` for a transaction
+    marked `addToHistory: false`.
+
+  Clearing the token, either way, is what stops every peer being told the slot is
+  still in flight. The fence is re-read here because an upload outlives the
   connection that started it; a fenced document turns the entry to `failed` with
   Retry instead of writing.
 - **Settling.** The extension's orphan sweep and paste-import start run in a microtask
@@ -131,11 +150,26 @@ the presence plugin's `view.update`, which runs inside the dispatch that opened
 the entry, and cleared on the plugin's `destroy`. Nothing else goes on that
 channel: a percent there would be a percent on the wire.
 
+The write goes through the session's presence port
+(`../../local-presence.ts`), never `Awareness.setLocalStateField`. A raw field
+write is a silent no-op while local state is null, which is exactly how a
+suspended presence looks (inline review, a schema fence), so an announcement made
+or released behind a review would be recorded here and never sent — and the
+publisher's own equality cache would then refuse to say it again. The port takes
+the write either way and publishes the current field map when presence resumes.
+
 ## Invariants worth a test
 
 - The document contains a pending node while the upload is held open.
 - A landing changes only `src`, `alt`, and the token. Any other document
   difference means completion is moving the manuscript.
+- One undo after a Replace restores the previous picture and reaches no further
+  back; one undo after an insert removes the picture. Both belong in a real
+  two-editor suite: the collaborative UndoManager is the only history there is.
+- A Replace whose picture a peer replaced, moved past, or deleted while the
+  chooser was open lands on the ORIGINAL picture, or on nothing at all.
+- A field written while presence is suspended is on the wire after resume, and a
+  released token does not come back as an owner.
 - Deleting the node aborts the request and writes nothing afterwards; MOVING it in
   one delete-plus-insert transaction does not, and the bytes land where it moved.
 - A peer sees an active upload as in flight, never as abandoned, in a slot already
