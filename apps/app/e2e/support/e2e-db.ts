@@ -203,6 +203,12 @@ export async function resetUserProjects(db: Db, userId: string): Promise<void> {
         SELECT id FROM threads WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
       )
     `;
+    await tx`
+      DELETE FROM document_branches
+      WHERE work_id IN (
+        SELECT id FROM works WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
+      )
+    `;
     await tx`DELETE FROM projects WHERE user_id = ${userId}::uuid`;
   });
 }
