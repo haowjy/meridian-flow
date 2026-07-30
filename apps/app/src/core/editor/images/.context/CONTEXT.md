@@ -115,12 +115,14 @@ its placeholder is text, text has no attribute to carry, so it keeps an
 |---|---|
 | Is this slot in flight? | the node's `uploadToken` |
 | Is it mine? | this editor's plugin `pending` map, keyed by that token |
-| Is somebody else's? | plugin `elsewhere`, projected from awareness by `image-upload-presence.ts` |
+| Is somebody else's, and what shape? | plugin `elsewhere`, projected from awareness by `image-upload-presence.ts` |
 | Nobody's? | a token with no entry and no owner — the abandoned slot, the one that offers Remove |
 
-The awareness field is `imageUploads`, an array of tokens. It is published from
+The awareness field is `imageUploads`: `{ token, frame }` per in-flight slot. The
+frame is there for the same reason the placeholder exists at all — a peer holding
+an unshaped box would take the reflow the owner was spared. It is published from
 the presence plugin's `view.update`, which runs inside the dispatch that opened
-the entry; it is cleared on the plugin's `destroy`. Nothing else goes on that
+the entry, and cleared on the plugin's `destroy`. Nothing else goes on that
 channel: a percent there would be a percent on the wire.
 
 ## Invariants worth a test
@@ -130,8 +132,8 @@ channel: a percent there would be a percent on the wire.
   difference means completion is moving the manuscript.
 - Deleting the node aborts the request and writes nothing afterwards; MOVING it in
   one delete-plus-insert transaction does not, and the bytes land where it moved.
-- A peer sees an active upload as in flight, never as abandoned, and an ownerless
-  empty-src slot as recoverable.
+- A peer sees an active upload as in flight, never as abandoned, in a slot already
+  the picture's shape; an ownerless empty-src slot stays recoverable.
 - `editor.destroy()` aborts every upload and import and releases the owner field.
 - Two uploads and two imports hold independent state.
 - An empty-src image round-trips through `@meridian/markup`, and a token'd one

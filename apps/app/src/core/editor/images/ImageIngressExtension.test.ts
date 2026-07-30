@@ -150,9 +150,12 @@ function slotStatus(editor: Editor, pos: number): string | null {
   return dom instanceof HTMLElement ? dom.getAttribute("data-pending-image") : null;
 }
 
-/** Every upload token this client is announcing on the ephemeral channel. */
-function announcedTokens(awareness: { getLocalState: () => Record<string, unknown> | null }) {
-  return (awareness.getLocalState()?.imageUploads ?? []) as readonly string[];
+/** What this client is announcing on the ephemeral channel: tokens and shapes. */
+function announced(awareness: { getLocalState: () => Record<string, unknown> | null }) {
+  return (awareness.getLocalState()?.imageUploads ?? []) as readonly {
+    token: string;
+    frame: { width: number; height: number } | null;
+  }[];
 }
 
 describe("a picture in flight occupies its final slot", () => {
@@ -397,7 +400,7 @@ describe("a peer sees an upload it does not own as an upload", () => {
 
     expect(imageNodes(peer)).toEqual([{ pos: 5, src: "asset:asset-peer", alt: "Cover art" }]);
     expect(slotStatus(peer, 5)).toBe(null);
-    expect(announcedTokens(awareness.local)).toEqual([]);
+    expect(announced(awareness.local)).toEqual([]);
   });
 
   it("leaves an ownerless empty slot recoverable, not in flight", async () => {
@@ -448,12 +451,16 @@ describe("closing the editor closes what it was carrying", () => {
     const { editor, awareness, held } = mount();
     insertImageFile(editor, imageFile(), 5);
     await settle();
-    expect(announcedTokens(awareness.local)).toHaveLength(1);
+    // The token this client owns, and nothing a peer could not act on: no
+    // filename, no percent, no bytes.
+    expect(announced(awareness.local)).toEqual([
+      { token: pendingImages(editor)[0].id, frame: null },
+    ]);
 
     editor.destroy();
 
     expect(held[0].signal.aborted).toBe(true);
-    expect(announcedTokens(awareness.local)).toEqual([]);
+    expect(announced(awareness.local)).toEqual([]);
   });
 
   it("aborts a pending import on destroy", async () => {

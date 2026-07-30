@@ -51,9 +51,12 @@ export function ImageNodeView(props: NodeViewProps) {
   const mine = pending?.owner === "mine" ? pending.entry : null;
 
   // The measured shape outlives the entry that carried it: the entry is dropped
-  // the moment `src` is written, and the picture is not on screen yet.
+  // the moment `src` is written, and the picture is not on screen yet. A
+  // collaborator's upload announces the same shape, so the slot they are watching
+  // is the picture's box before it is the picture.
   const frameRef = useRef<PendingImageFrame | null>(null);
-  if (mine?.frame) frameRef.current = mine.frame;
+  const announcedFrame = pending?.owner === "mine" ? pending.entry.frame : (pending?.frame ?? null);
+  if (announcedFrame) frameRef.current = announcedFrame;
   const frame = frameRef.current;
 
   // The whole picture is its own grip (`drag: "inline"` in EDITOR_OBJECT_TYPES):
@@ -185,10 +188,9 @@ function PendingImage({
  * Retry (these are not our bytes), no Remove (the picture is on its way, and
  * removing the slot would cancel a collaborator's upload by accident).
  *
- * The frame is unmeasured here, because measuring is done from the local file.
- * A collaborator's picture therefore takes its default frame and settles into
- * its real one when the `src` arrives, which is the one reflow this lane cannot
- * avoid for a peer.
+ * The shape is the uploading client's measurement, announced beside its token,
+ * so this slot is already the picture's box (the wrapper wears it, as it does
+ * for an upload of the writer's own) and the landing moves no line here either.
  */
 function UploadingElsewhere() {
   return (

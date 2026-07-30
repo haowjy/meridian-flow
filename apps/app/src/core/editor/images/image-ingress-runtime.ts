@@ -17,6 +17,7 @@ import type { Mappable } from "@tiptap/pm/transform";
 import { type AnchorRange, carryAnchor } from "../anchors";
 import type { ImageIngressHost } from "./image-ingress-ports";
 import type { ImageIngressStore } from "./image-ingress-store";
+import type { AnnouncedUpload } from "./image-upload-presence";
 import type { MutableAssetPathResolver, PastedImageImport } from "./image-workflow";
 import {
   NO_PENDING_IMAGES,
@@ -140,11 +141,11 @@ export function pendingImages(editor: Editor | null): readonly PendingImage[] {
   return Array.from(ingressState(editor).pending.values());
 }
 
-/** The upload tokens this client owns, which is what it announces to peers. */
-export function uploadTokensOwnedHere(editor: Editor | null): readonly string[] {
-  const owned: string[] = [];
+/** What this client is filling, which is what it announces to peers. */
+export function uploadsOwnedHere(editor: Editor | null): readonly AnnouncedUpload[] {
+  const owned: AnnouncedUpload[] = [];
   for (const entry of ingressState(editor).pending.values()) {
-    if (entry.kind === "upload") owned.push(entry.id);
+    if (entry.kind === "upload") owned.push({ token: entry.id, frame: entry.frame });
   }
   return owned;
 }

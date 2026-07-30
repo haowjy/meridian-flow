@@ -26,7 +26,7 @@ Four homes, and nothing lives in two of them:
 | The slot, its `alt`, its final `src` | the document | It is content, and peers must see it |
 | That this slot is being filled (`uploadToken`) | the document, as a node attribute | A move must copy it and a peer must read it; nothing else can do both |
 | Which upload is MINE, progress, failure, the bytes, the abort | the ingress plugin's state (`image-ingress-runtime.ts`) | Keyed by the same token; a percent must never reach the wire |
-| Which tokens are being filled ELSEWHERE | awareness (`image-upload-presence.ts`), projected into plugin state | It stops being true when a tab closes, and a document fact would outlive its own truth |
+| Which slots are being filled ELSEWHERE, and their shape | awareness (`image-upload-presence.ts`), projected into plugin state | It stops being true when a tab closes, and a document fact would outlive its own truth |
 | A drag in the air, a refusal | `image-ingress-store.ts` | Neither produced a document change, and law 5 still wants the reason in view |
 
 The app's half is `features/editor/surfaces/images/` — it registers the two
@@ -104,8 +104,9 @@ every door refuses out loud rather than opening onto nothing.
   storage, because a project-relative path only means something inside one
   project's namespace.
 - A percent, a filename, or a byte count on the ephemeral channel. Awareness
-  carries tokens: the fact that an upload is live, and nothing a peer could not
-  act on anyway.
+  carries a token and the picture's measured shape: the fact that an upload is
+  live, and the box a peer must reserve so completion moves nothing for them
+  either. Nothing a peer could not act on.
 - Reading an empty `src` as failure. Without a token, or without an owner for it,
   it is recoverable; with a live owner it is somebody's upload.
 - Turning a refused paste-import into a document write. The link the paste

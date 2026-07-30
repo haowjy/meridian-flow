@@ -117,10 +117,13 @@ export type PendingImageState = ReadonlyMap<string, PendingImage>;
 
 export const NO_PENDING_IMAGES: PendingImageState = new Map();
 
-/** Tokens another client is uploading right now, as awareness reports them. */
-export type UploadOwnersElsewhere = ReadonlySet<string>;
+/**
+ * What another client is filling right now, as awareness reports it: its token,
+ * and the shape that slot should hold until the bytes land.
+ */
+export type UploadOwnersElsewhere = ReadonlyMap<string, PendingImageFrame | null>;
 
-export const NO_UPLOAD_OWNERS: UploadOwnersElsewhere = new Set();
+export const NO_UPLOAD_OWNERS: UploadOwnersElsewhere = new Map();
 
 /** A pending node's source: the one `src` that names nothing. */
 export const PENDING_IMAGE_SRC = "";
@@ -219,12 +222,12 @@ function uploadTokensIn(doc: PMNode): ReadonlySet<string> {
  *
  * `"mine"` carries the entry, because this browser is the one that knows the
  * filename, the percent, the failure, and what Retry would mean. `"elsewhere"`
- * carries nothing else: the percent and the bytes never left the browser that
- * has them, and that is the point.
+ * carries only the shape to reserve: the percent and the bytes never left the
+ * browser that has them, and that is the point.
  */
 export type PendingUploadOwner =
   | { owner: "mine"; entry: PendingImageUpload }
-  | { owner: "elsewhere" };
+  | { owner: "elsewhere"; frame: PendingImageFrame | null };
 
 /**
  * What the manuscript shows for every picture in flight, mine and theirs.
@@ -260,7 +263,7 @@ export function pendingImageDecorations(
         mine?.kind === "upload"
           ? { owner: "mine", entry: mine }
           : elsewhere.has(token)
-            ? { owner: "elsewhere" }
+            ? { owner: "elsewhere", frame: elsewhere.get(token) ?? null }
             : null;
       if (owner) decorations.push(uploadDecoration(pos, pos + node.nodeSize, owner));
       return true;
@@ -279,7 +282,7 @@ export function pendingImageDecorations(
 function uploadDecoration(from: number, to: number, pending: PendingUploadOwner): Decoration {
   const status = pending.owner === "mine" ? pending.entry.status : null;
   const percent = status?.kind === "uploading" ? status.percent : null;
-  const frame = pending.owner === "mine" ? pending.entry.frame : null;
+  const frame = pending.owner === "mine" ? pending.entry.frame : pending.frame;
   return Decoration.node(
     from,
     to,
@@ -323,9 +326,12 @@ export function pendingUploadFromDecorations(
 export function pendingImageSignature(decorations: readonly { spec?: unknown }[]): string {
   const pending = pendingUploadFromDecorations(decorations);
   if (!pending) return "";
-  if (pending.owner === "elsewhere") return "elsewhere";
+  if (pending.owner === "elsewhere") return `elsewhere|${frameSignature(pending.frame)}`;
   const { entry } = pending;
   const progress = entry.status.kind === "uploading" ? (entry.status.percent ?? "") : "";
-  const frame = entry.frame ? `${entry.frame.width}x${entry.frame.height}` : "";
-  return `${entry.id}|${entry.status.kind}|${progress}|${frame}`;
+  return `${entry.id}|${entry.status.kind}|${progress}|${frameSignature(entry.frame)}`;
+}
+
+function frameSignature(frame: PendingImageFrame | null): string {
+  return frame ? `${frame.width}x${frame.height}` : "";
 }

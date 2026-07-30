@@ -8,12 +8,16 @@
  * collaborator carets ride, ephemeral by construction and never in anyone's
  * history.
  *
- * So this extension is a transport adapter and nothing more. Outward: the tokens
- * this client owns, published as one awareness field. Inward: the union of every
- * other client's tokens, written into the ingress plugin state, where the
- * decoration that says "uploading elsewhere" is built from it
- * (`pending-images.ts`). No bytes and no percent cross: a peer learns THAT a
- * picture is arriving, never how far along it is.
+ * So this extension is a transport adapter and nothing more. Outward: what this
+ * client is filling, as one awareness field. Inward: every other client's, into
+ * the ingress plugin state, where the decoration that says "uploading elsewhere"
+ * is built from it (`pending-images.ts`).
+ *
+ * Two facts per upload, and no more. The token, because that is the join. The
+ * picture's measured shape, because §5.6's promise is that the manuscript does
+ * not move when bytes land, and a peer holding an unshaped box would take the
+ * reflow the owner was spared. Not the percent and not the bytes: those never
+ * leave the browser that has them, and a peer could do nothing with either.
  *
  * It mounts with collaboration rather than beside the ingress door, because a
  * document with no shared room has no elsewhere. Absent, every slot is either
@@ -24,12 +28,20 @@ import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { Awareness } from "y-protocols/awareness";
 
-import { ingressState, sendIngressMessage, uploadTokensOwnedHere } from "./image-ingress-runtime";
+import { ingressState, sendIngressMessage, uploadsOwnedHere } from "./image-ingress-runtime";
+import type { PendingImageFrame, UploadOwnersElsewhere } from "./pending-images";
 
 export const IMAGE_UPLOAD_PRESENCE_NAME = "meridianImageUploadPresence";
 
-/** The awareness field carrying one client's in-flight upload tokens. */
+/** The awareness field carrying what one client is filling right now. */
 export const IMAGE_UPLOAD_PRESENCE_FIELD = "imageUploads";
+
+/** One in-flight slot as it travels: the join, and the shape to reserve. */
+export type AnnouncedUpload = {
+  token: string;
+  /** Null until the browser has decoded enough of the local file to say. */
+  frame: PendingImageFrame | null;
+};
 
 export type ImageUploadPresenceOptions = {
   /** Null on an editor with no shared room, which mounts no presence at all. */
@@ -38,25 +50,54 @@ export type ImageUploadPresenceOptions = {
 
 const presencePluginKey = new PluginKey(IMAGE_UPLOAD_PRESENCE_NAME);
 
-/** Every token some OTHER client says it is uploading right now. */
-function ownersElsewhere(awareness: Awareness): ReadonlySet<string> {
-  const tokens = new Set<string>();
+function readFrame(value: unknown): PendingImageFrame | null {
+  const frame = value as { width?: unknown; height?: unknown } | null | undefined;
+  return typeof frame?.width === "number" && typeof frame.height === "number"
+    ? { width: frame.width, height: frame.height }
+    : null;
+}
+
+/** Every slot some OTHER client says it is filling right now. */
+function ownersElsewhere(awareness: Awareness): UploadOwnersElsewhere {
+  const owners = new Map<string, PendingImageFrame | null>();
   for (const [clientId, state] of awareness.getStates()) {
     if (clientId === awareness.clientID) continue;
-    const owned = (state as { imageUploads?: unknown } | null)?.imageUploads;
-    if (!Array.isArray(owned)) continue;
-    for (const token of owned) if (typeof token === "string") tokens.add(token);
+    const announced = (state as { imageUploads?: unknown } | null)?.imageUploads;
+    if (!Array.isArray(announced)) continue;
+    for (const entry of announced) {
+      const token = (entry as { token?: unknown } | null)?.token;
+      if (typeof token === "string" && token.length > 0) {
+        owners.set(token, readFrame((entry as { frame?: unknown }).frame));
+      }
+    }
   }
-  return tokens;
+  return owners;
 }
 
-function sameTokens(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((token, index) => token === right[index]);
+function sameFrame(left: PendingImageFrame | null, right: PendingImageFrame | null): boolean {
+  if (!left || !right) return left === right;
+  return left.width === right.width && left.height === right.height;
 }
 
-function sameOwners(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+function sameAnnouncement(
+  left: readonly AnnouncedUpload[],
+  right: readonly AnnouncedUpload[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (upload, index) =>
+        upload.token === right[index]?.token &&
+        sameFrame(upload.frame, right[index]?.frame ?? null),
+    )
+  );
+}
+
+function sameOwners(left: UploadOwnersElsewhere, right: UploadOwnersElsewhere): boolean {
   if (left.size !== right.size) return false;
-  for (const token of left) if (!right.has(token)) return false;
+  for (const [token, frame] of left) {
+    if (!right.has(token) || !sameFrame(frame, right.get(token) ?? null)) return false;
+  }
   return true;
 }
 
@@ -83,12 +124,12 @@ export const ImageUploadPresenceExtension = Extension.create<ImageUploadPresence
          * token's slot: a peer never sees a slot in flight with no owner.
          */
         view: () => {
-          let published: readonly string[] = [];
+          let published: readonly AnnouncedUpload[] = [];
 
           const publish = () => {
             if (editor.isDestroyed) return;
-            const owned = uploadTokensOwnedHere(editor);
-            if (sameTokens(published, owned)) return;
+            const owned = uploadsOwnedHere(editor);
+            if (sameAnnouncement(published, owned)) return;
             published = owned;
             awareness.setLocalStateField(IMAGE_UPLOAD_PRESENCE_FIELD, owned);
           };
