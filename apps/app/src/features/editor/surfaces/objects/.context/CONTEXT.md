@@ -175,8 +175,10 @@ about which version they describe.
 ## What a verb says back
 
 `useVerbFeedback` runs a promise and keeps its answer; `ObjectVerbNotice`
-renders it over the object's corner, `VerbNoticePill` inside the dialog where
-the page's own notices are behind the scrim. Every door goes through it —
+renders it over the object's corner, and chrome's `EditorNoticePill` says it
+inside the dialog, where the page's own notices are behind the scrim. The pill
+itself belongs to `chrome/`: every surface in the editor answers in that one
+shape, and this lane owns only where an object's answer hangs. Every door goes through it —
 a chip, a row ⋮, the lightbox ⋮ — so no path can quietly drop a rejection, and
 the two failures browsers actually produce here keep their meaning:
 
@@ -246,10 +248,18 @@ behind a modal scrim (`aria-hidden` / `inert`).
 
 ## Right-click
 
-Claimed at the `object` rung, and only for diagrams, images, and figures: a code block's
-right-click stays the browser's, so spellcheck and paste survive inside a
-fence. The claim remembers the ELEMENT it claimed, not the hovered one, and
-selects the object so the menu says what it is about.
+Two rungs of the ladder land in this lane. `object` takes diagrams, images, and
+figures: the claim remembers the ELEMENT it claimed, not the hovered one, and
+selects the object so the menu says what it is about. A plain fence is not an
+object — clicking it places a caret — so its own verbs open at the ladder's
+floor, the `caret` rung (human ruling, 2026-07-29).
+
+Nothing inside the editor falls through to the browser's menu, and the escape
+is a gesture rather than an absence: **Shift+right-click is never claimed**, and
+that is where spellcheck, lookup, and OS services live. The whole table, with
+its precedence and its reasoning, is
+[`core/editor/chrome/context-claims.ts`](../../../../../core/editor/chrome/context-claims.ts);
+this page only says which rungs are this lane's.
 
 (The kernel's capture-phase router landed with the editor-core merge; before
 it, TipTap's `NodeView.stopEvent` swallowed `contextmenu` and this claim never

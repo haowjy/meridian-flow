@@ -28,7 +28,7 @@ import {
   type ImageIngressStatus,
   imageIngressStatus as ingressStatusStore,
 } from "@/core/editor/images";
-import { VerbNoticePill } from "@/features/editor/surfaces/objects";
+import { EditorNoticePill } from "@/features/editor/chrome";
 
 import "./image-ingress.css";
 
@@ -62,7 +62,7 @@ export function ImageIngressOverlay({ editor }: { editor: Editor }) {
       ) : null}
       {status.notice ? (
         <div className="meridian-image-refusal">
-          <VerbNoticePill notice={{ tone: "failed", message: status.notice.message }} />
+          <EditorNoticePill notice={{ tone: "failed", message: status.notice.message }} />
         </div>
       ) : null}
     </>,

@@ -15,8 +15,9 @@ root of its own would be a surface the kernel could not subordinate.
 `ImageIngressOverlay` renders what is not content: the pane's drop hint while a
 drag carries files, and one pill for a refusal (a file that is not an image, a
 picker with no project, a site that would not hand over its bytes). Both come
-from the ingress store, and the pill is the same `VerbNoticePill` every other
-transient answer in the editor uses.
+from the ingress store, and the pill is the same `EditorNoticePill` every other
+transient answer in the editor uses, read from `chrome/` like any other
+primitive.
 
 It is a chrome surface like any other: one entry in `chrome/chrome-surfaces.tsx`,
 the editor as its only prop. It portals into the scroll pane

@@ -8,7 +8,7 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import {
   type ChromeContext,
@@ -79,21 +79,67 @@ export function useChromeCoarsePointer(editor: Editor | null): boolean {
  * The revision is for an effect that has to re-read the document rather than
  * only re-render with it: an effect depending on a value the document supplies
  * cannot see a change the document made underneath that value.
+ */
+export function useEditorRevision(editor: Editor | null): number {
+  const store = useMemo(() => editorRevisionStore(editor), [editor]);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, ZERO_REVISION);
+}
+
+type EditorRevisionStore = {
+  subscribe: (listener: () => void) => () => void;
+  getSnapshot: () => number;
+};
+
+const NO_REVISIONS: EditorRevisionStore = {
+  subscribe: () => () => {},
+  getSnapshot: () => 0,
+};
+
+const ZERO_REVISION = () => 0;
+
+/**
+ * One revision store per editor, counting from the first read of it.
+ *
+ * The count has to live outside React. A hook that kept it in `useState` and
+ * subscribed in an effect could not see a transaction that landed in between —
+ * layout effects run before passive ones, so a surface that writes while it
+ * measures moves the document in exactly that window — and the consumer would
+ * then render the state before it with nothing to tell it otherwise.
+ *
+ * Keyed on the editor and held weakly: two surfaces reading the same editor
+ * share one counter and one listener, and the store goes when the editor does.
+ * The listener is attached for the editor's life rather than per subscriber,
+ * because the missed transaction is the whole point — a store that only counted
+ * while React was listening would have the same blind spot. `destroy` takes it
+ * off with every other listener the editor holds.
  *
  * One subscription, not two: a selection change IS a transaction, so listening
  * for both rendered every caret move twice.
  */
-export function useEditorRevision(editor: Editor | null): number {
-  const [revision, setRevision] = useState(0);
+const EDITOR_REVISIONS = new WeakMap<Editor, EditorRevisionStore>();
 
-  useEffect(() => {
-    if (!editor) return;
-    const bump = () => setRevision((revision) => revision + 1);
-    editor.on("transaction", bump);
-    return () => {
-      editor.off("transaction", bump);
-    };
-  }, [editor]);
+function editorRevisionStore(editor: Editor | null): EditorRevisionStore {
+  if (!editor || editor.isDestroyed) return NO_REVISIONS;
 
-  return revision;
+  const existing = EDITOR_REVISIONS.get(editor);
+  if (existing) return existing;
+
+  let revision = 0;
+  const listeners = new Set<() => void>();
+  editor.on("transaction", () => {
+    revision += 1;
+    for (const listener of listeners) listener();
+  });
+
+  const store: EditorRevisionStore = {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getSnapshot: () => revision,
+  };
+  EDITOR_REVISIONS.set(editor, store);
+  return store;
 }

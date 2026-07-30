@@ -221,9 +221,15 @@ that has left the document reports no rect at all, which takes the surface off
 the page rather than leaving an opaque, clickable overlay measured from a dead
 element.
 
-`useChromeContext` and `useChromeSuppressed` are `useSyncExternalStore`
-readings of one store, so two surfaces can never disagree about what owns
-chrome. Both answer safely on an editor with no kernel.
+Every one of these hooks is a `useSyncExternalStore` reading of a store, which
+is the whole dialect of this adapter: two surfaces can never disagree about what
+owns chrome, and no consumer can miss a change that landed between its render
+and its subscription. Context and suppression read the kernel's own store; the
+revision reads a small per-editor counter, held weakly and counting from the
+first read of it, so a transaction dispatched by a sibling's layout effect is
+already in the snapshot React checks after subscribing. A local `useState` copy
+of any of them is the drift this file exists to prevent. All of them answer
+safely on an editor with no kernel.
 
 ## Where a lane still owns the work
 

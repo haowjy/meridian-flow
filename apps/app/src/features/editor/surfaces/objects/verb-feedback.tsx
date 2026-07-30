@@ -19,15 +19,12 @@ import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { useAnchorRect } from "@/features/editor/chrome";
-import { cn } from "@/lib/utils";
+import { type EditorNotice, EditorNoticePill, useAnchorRect } from "@/features/editor/chrome";
 
 import { ExportError } from "./object-commands";
 
 /** Long enough to read one line while looking at what you just acted on. */
 const NOTICE_LIFETIME_MS = 2600;
-
-export type VerbNotice = { tone: "done" | "failed"; message: string };
 
 /** Runs a verb and keeps its answer, success or failure. */
 export type RunVerb = (work: Promise<unknown>, done: string) => void;
@@ -60,11 +57,11 @@ export function verbFailureMessage(error: unknown): string {
 }
 
 export function useVerbFeedback(): {
-  notice: VerbNotice | null;
+  notice: EditorNotice | null;
   /** Run a verb and keep its answer. Never rejects; the notice is the answer. */
   run: RunVerb;
 } {
-  const [notice, setNotice] = useState<VerbNotice | null>(null);
+  const [notice, setNotice] = useState<EditorNotice | null>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -85,37 +82,6 @@ export function useVerbFeedback(): {
 }
 
 /**
- * The notice itself: a pill in the same language as the editor's other
- * transient statuses (`PassageNotice`). It blocks nothing and never moves the
- * manuscript.
- */
-export function VerbNoticePill({
-  notice,
-  className,
-}: {
-  notice: VerbNotice | null;
-  className?: string;
-}) {
-  if (!notice) return null;
-
-  return (
-    <p
-      role="status"
-      data-verb-notice={notice.tone}
-      className={cn(
-        "pointer-events-none animate-in whitespace-nowrap rounded-full border px-3 py-1 text-caption shadow-card fade-in-0",
-        notice.tone === "failed"
-          ? "border-destructive-border bg-destructive-tint text-destructive"
-          : "border-border bg-card text-ink-muted",
-        className,
-      )}
-    >
-      {notice.message}
-    </p>
-  );
-}
-
-/**
  * The answer, over the object it is about.
  *
  * Above the controls rather than beside them, because the writer's eyes are
@@ -130,7 +96,7 @@ export function ObjectVerbNotice({
 }: {
   editor: Editor;
   anchor: HTMLElement | null;
-  notice: VerbNotice | null;
+  notice: EditorNotice | null;
 }) {
   const rect = useAnchorRect(editor, anchor);
   if (!notice || !rect || typeof document === "undefined") return null;
@@ -140,7 +106,7 @@ export function ObjectVerbNotice({
       className="meridian-verb-notice"
       style={{ top: rect.top + NOTICE_OFFSET_PX, left: rect.right - NOTICE_OFFSET_PX }}
     >
-      <VerbNoticePill notice={notice} />
+      <EditorNoticePill notice={notice} />
     </div>,
     document.body,
   );

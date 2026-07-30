@@ -13,12 +13,14 @@ cannot run here, why — and owns the commands behind the controls.
 `DocumentToolbar.tsx` renders that answer and dispatches. A control's
 behavior is never decided in a component.
 
-**That layer is shared.** The formatting menu carries the same marks, the same
-block conversions, and the same link form, so it reads `textMarkState`,
-`blockTypeStates`, `turnIntoBlockType`, `blockedReasonMessage`, and
-`LinkForm`/`useLinkDraft` from here rather than growing a second answer to
-"will this be refused". A surface that needs a verb this module does not
-expose extends it; it never forks the fence.
+**That layer is shared.** The formatting menu carries the same marks and the
+same block conversions, so it reads `textMarkState`, `blockTypeStates`,
+`turnIntoBlockType`, and `blockedReasonMessage` from here rather than growing a
+second answer to "will this be refused". A surface that needs a verb this
+module does not expose extends it; it never forks the fence. The link form is
+not part of that layer: it belongs to `surfaces/link/`, and both this row and
+the formatting menu open it by calling `openLinkForm` from
+`core/editor/links`.
 
 ## Key rules
 
@@ -64,6 +66,11 @@ expose extends it; it never forks the fence.
 - **The Link button opens someone else's surface.** The link form belongs to
   `surfaces/link/`, hangs at the writer's own words, and answers to Ctrl+K and
   the right-click menu as well; this row contributes a door, not a popover.
+- **The one control that opens a menu opens `EditorMenu`.** Block alignment is
+  a radio group inside the chrome wrapper, with the button as its `trigger`, so
+  the kernel holds the open layer, one Escape spends one step on it, and the
+  close hands the caret back to the prose. A raw Radix root here is a surface
+  the Esc chain cannot see.
 
 ## Anti-patterns
 
@@ -76,6 +83,8 @@ expose extends it; it never forks the fence.
 - Adding a contextual control (language selector, table verbs, alt text) to
   this row.
 - Rebuilding a surface another lane owns because the button is here.
+- Opening a menu, popover, or dialog from a control on this row without the
+  matching `chrome/` wrapper.
 - Reviving `EditorLinkBubble` or any raise-on-click surface.
 
 → contracts, the full reason matrix, and the two readings behind it:

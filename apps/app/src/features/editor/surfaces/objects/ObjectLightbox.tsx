@@ -28,6 +28,7 @@ import {
   EditorMenu,
   EditorMenuItem,
   EditorMenuSeparator,
+  EditorNoticePill,
   useChromeLayer,
 } from "@/features/editor/chrome";
 
@@ -36,7 +37,7 @@ import { type ObjectSurfaceTarget, renderedImage } from "./object-anchors";
 import { copyText, downloadPng } from "./object-commands";
 import { DIAGRAM_EXPORT_FILENAME } from "./object-menu-items";
 import { ViewerCanvas } from "./ViewerCanvas";
-import { useVerbFeedback, VerbNoticePill } from "./verb-feedback";
+import { useVerbFeedback } from "./verb-feedback";
 
 /** Past the dialog's and the menu's focus restoration, under a blink. */
 const SOURCE_FOCUS_DELAY_MS = 120;
@@ -180,7 +181,7 @@ function DiagramFace({
     <>
       <LightboxHeader
         title={t`Diagram`}
-        notice={<VerbNoticePill notice={notice} />}
+        notice={<EditorNoticePill notice={notice} />}
         menu={
           <EditorMenu
             editor={editor}
