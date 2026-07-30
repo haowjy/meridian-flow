@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { holdNode } from "@/core/editor/anchors";
 import { diagramProviderFor } from "@/core/editor/diagrams";
 import { openImageReplacePicker } from "@/core/editor/images";
 import { type ObjectSurfaceField, objectSurfaceFields } from "@/core/editor/objects";
@@ -147,9 +148,16 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
       {/* Offered whether or not a project is behind the editor, and refusing out
           loud when there is not: the ingress lane already says "Images need a
           project before they can be uploaded", which is the answer law 5 wants,
-          and a ⋮ whose shape changes with the document teaches nothing. */}
+          and a ⋮ whose shape changes with the document teaches nothing.
+
+          The picture is HELD as the chooser opens, not named by its number: the
+          writer may be in front of an operating-system dialog for a minute while
+          peers and AI writes move the document, and the upload has to land on the
+          picture they pointed at (`core/editor/images/image-uploads.ts`). */}
       {fields.length > 0 ? (
-        <EditorMenuItem onSelect={() => openImageReplacePicker(editor, target.pos)}>
+        <EditorMenuItem
+          onSelect={() => openImageReplacePicker(editor, holdNode(editor.state, target.pos))}
+        >
           <ImageUp aria-hidden />
           {t`Replace image`}
         </EditorMenuItem>

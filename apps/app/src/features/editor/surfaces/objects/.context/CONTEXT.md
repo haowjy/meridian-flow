@@ -65,7 +65,10 @@ holding a `NodeHold` like every other surface here. Three rules:
 
 Replace runs `openImageReplacePicker` from `core/editor/images`: the same upload
 lifecycle as an insert, aimed at the node that is already there, so the writer's
-alt text, caption, and label survive and the manuscript does not move.
+alt text, caption, and label survive and the manuscript does not move. The menu
+hands it a `holdNode` of the target rather than the target's position — the file
+chooser is open across peer writes and AI writes, and the ingress lane resolves
+that hold only once a file comes back.
 
 ## The approach reading
 

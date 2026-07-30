@@ -23,6 +23,7 @@ import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protoc
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
+import { createLocalPresence, type LocalPresence } from "@/core/editor/local-presence";
 import type { SessionMarkerStore } from "@/core/editor/session-marker-store";
 
 export type CollabPair = {
@@ -41,13 +42,19 @@ export type CollabPair = {
    */
   syncAwareness: () => void;
   awareness: { local: Awareness; peer: Awareness };
+  /**
+   * The editor under test's presence owner, as a `DocumentSession` would hold
+   * it: `suspend()` is what a surface like inline review does to the writer's
+   * presence while it is open.
+   */
+  presence: LocalPresence;
   destroy: () => void;
 };
 
-function editorOn(doc: Y.Doc, awareness: Awareness, markerStore?: SessionMarkerStore): Editor {
+function editorOn(doc: Y.Doc, presence: LocalPresence, markerStore?: SessionMarkerStore): Editor {
   return new Editor({
     element: document.createElement("div"),
-    ...createEditorConfig({ document: doc, awareness, markerStore }),
+    ...createEditorConfig({ document: doc, awareness: presence.awareness, presence, markerStore }),
   });
 }
 
@@ -81,12 +88,13 @@ export function createCollabPair(
   const peerDoc = new Y.Doc({ gc: false });
   const localAwareness = new Awareness(localDoc);
   const peerAwareness = new Awareness(peerDoc);
+  const localPresence = createLocalPresence(localAwareness);
 
-  const local = editorOn(localDoc, localAwareness, options.markerStore);
+  const local = editorOn(localDoc, localPresence, options.markerStore);
   local.commands.setContent(content);
   reconcileMount(local);
   push(localDoc, peerDoc);
-  const peer = editorOn(peerDoc, peerAwareness);
+  const peer = editorOn(peerDoc, createLocalPresence(peerAwareness));
   reconcileMount(peer);
 
   const sync = () => {
@@ -104,6 +112,7 @@ export function createCollabPair(
       pushAwareness(peerAwareness, localAwareness);
     },
     awareness: { local: localAwareness, peer: peerAwareness },
+    presence: localPresence,
     destroy: () => {
       peer.destroy();
       local.destroy();

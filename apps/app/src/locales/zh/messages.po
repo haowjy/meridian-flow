@@ -2542,6 +2542,10 @@ msgstr ""
 msgid "That passage changed after this search."
 msgstr ""
 
+#: src/core/editor/images/image-uploads.ts
+msgid "That picture is no longer in the document."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That skill isn't available in this chat."
 msgstr ""

@@ -44,6 +44,11 @@ import type * as Y from "yjs";
 
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
 
+import {
+  createLocalPresence,
+  type LocalPresence,
+  type LocalPresenceFields,
+} from "./local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import {
   attemptClientSchemaReload,
@@ -215,8 +220,7 @@ export class DocumentSession {
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
-  private presenceSuspendDepth = 0;
-  private suspendedLocalAwarenessState: Record<string, unknown> | null = null;
+  private readonly localPresence: LocalPresence;
   private readonly localPersistenceSyncedPromise: Promise<void>;
   private readonly transportAttachedPromise: Promise<void>;
   private resolveTransportAttached!: () => void;
@@ -240,6 +244,7 @@ export class DocumentSession {
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
+    this.localPresence = createLocalPresence(this.awareness);
     if (enableIndexedDb) {
       deleteStaleVersionedIndexedDb(roomKey);
       this.persistence = new IndexeddbPersistence(persistenceKey, this.document);
@@ -471,23 +476,29 @@ export class DocumentSession {
     });
   }
 
-  suspendPresence(): void {
-    if (this.destroyed) return;
-    if (this.presenceSuspendDepth++ > 0) return;
-    this.suspendedLocalAwarenessState = this.awareness.getLocalState() as Record<
-      string,
-      unknown
-    > | null;
-    this.awareness.setLocalState(null);
+  /**
+   * Where every local awareness field is written, by every publisher in the
+   * editor (`local-presence.ts`).
+   *
+   * The session owns whether this client is on the wire, so it has to own the
+   * fields too: a publisher writing to `Awareness` directly loses its write
+   * whenever presence is suspended, and suspension would then restore a value
+   * the publisher had already corrected.
+   */
+  get presence(): LocalPresenceFields {
+    return this.localPresence;
   }
 
+  /** Take this client off the wire. Field writes made meanwhile still count. */
+  suspendPresence(): void {
+    if (this.destroyed) return;
+    this.localPresence.suspend();
+  }
+
+  /** Put this client back, with the fields as they now stand. */
   resumePresence(): void {
-    if (this.destroyed || this.presenceSuspendDepth === 0) return;
-    this.presenceSuspendDepth -= 1;
-    if (this.presenceSuspendDepth > 0) return;
-    const state = this.suspendedLocalAwarenessState;
-    this.suspendedLocalAwarenessState = null;
-    if (state) this.awareness.setLocalState(state);
+    if (this.destroyed) return;
+    this.localPresence.resume();
   }
 
   /**
@@ -504,8 +515,7 @@ export class DocumentSession {
     this.emit();
     this.markerStore.clear();
 
-    this.presenceSuspendDepth = 0;
-    this.suspendedLocalAwarenessState = null;
+    this.localPresence.release();
     removeAwarenessStates(this.awareness, [this.document.clientID], "document-session-destroy");
 
     this.unsubscribeTransportStatus?.();

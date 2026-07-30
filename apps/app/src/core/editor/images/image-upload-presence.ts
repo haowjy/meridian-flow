@@ -9,9 +9,12 @@
  * history.
  *
  * So this extension is a transport adapter and nothing more. Outward: what this
- * client is filling, as one awareness field. Inward: every other client's, into
- * the ingress plugin state, where the decoration that says "uploading elsewhere"
- * is built from it (`pending-images.ts`).
+ * client is filling, as one field written through the session's presence port
+ * (`core/editor/local-presence.ts`) — never onto `Awareness` by hand, because
+ * whether this client is visible at all belongs to the session and a raw write
+ * during suspension is a silent no-op. Inward: every other client's, into the
+ * ingress plugin state, where the decoration that says "uploading elsewhere" is
+ * built from it (`pending-images.ts`).
  *
  * Two facts per upload, and no more. The token, because that is the join. The
  * picture's measured shape, because §5.6's promise is that the manuscript does
@@ -27,7 +30,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { Awareness } from "y-protocols/awareness";
-
+import type { LocalPresenceFields } from "../local-presence";
 import { ingressState, sendIngressMessage, uploadsOwnedHere } from "./image-ingress-runtime";
 import type { PendingImageFrame, UploadOwnersElsewhere } from "./pending-images";
 
@@ -44,8 +47,16 @@ export type AnnouncedUpload = {
 };
 
 export type ImageUploadPresenceOptions = {
-  /** Null on an editor with no shared room, which mounts no presence at all. */
-  awareness: Awareness | null;
+  /**
+   * This client's presence, whose owner decides when it is on the wire
+   * (`core/editor/local-presence.ts`). Null on an editor with no shared room,
+   * which mounts no presence at all.
+   *
+   * The port rather than the `Awareness` itself: an announcement written while
+   * the writer is inside inline review must still be true when they come out,
+   * and a raw field write is silently dropped for exactly that span.
+   */
+  presence: LocalPresenceFields | null;
 };
 
 const presencePluginKey = new PluginKey(IMAGE_UPLOAD_PRESENCE_NAME);
@@ -105,13 +116,14 @@ export const ImageUploadPresenceExtension = Extension.create<ImageUploadPresence
   name: IMAGE_UPLOAD_PRESENCE_NAME,
 
   addOptions() {
-    return { awareness: null };
+    return { presence: null };
   },
 
   addProseMirrorPlugins() {
     const { editor } = this;
-    const { awareness } = this.options;
-    if (!awareness) return [];
+    const { presence } = this.options;
+    if (!presence) return [];
+    const { awareness } = presence;
 
     return [
       new Plugin({
@@ -122,6 +134,11 @@ export const ImageUploadPresenceExtension = Extension.create<ImageUploadPresence
          * inside the dispatch that opened the entry. That is what puts the
          * announcement on the wire before the document update carrying the
          * token's slot: a peer never sees a slot in flight with no owner.
+         *
+         * `published` is what this client has SAID, and the port is what makes
+         * that record true: it accepts a write whether or not presence is on
+         * the wire right now, so the cache can never hold an announcement that
+         * never left.
          */
         view: () => {
           let published: readonly AnnouncedUpload[] = [];
@@ -131,7 +148,7 @@ export const ImageUploadPresenceExtension = Extension.create<ImageUploadPresence
             const owned = uploadsOwnedHere(editor);
             if (sameAnnouncement(published, owned)) return;
             published = owned;
-            awareness.setLocalStateField(IMAGE_UPLOAD_PRESENCE_FIELD, owned);
+            presence.setField(IMAGE_UPLOAD_PRESENCE_FIELD, owned);
           };
 
           const receive = () => {
@@ -148,11 +165,10 @@ export const ImageUploadPresenceExtension = Extension.create<ImageUploadPresence
             update: publish,
             destroy: () => {
               awareness.off("change", receive);
-              // The release. A destroyed awareness has already dropped its whole
-              // local state, and writing to it would resurrect one.
-              if (published.length > 0 && awareness.getLocalState() !== null) {
-                awareness.setLocalStateField(IMAGE_UPLOAD_PRESENCE_FIELD, []);
-              }
+              // The release, through the port for the same reason: a tab closed
+              // from inside inline review must not come back as an owner when
+              // the next surface resumes presence.
+              if (published.length > 0) presence.setField(IMAGE_UPLOAD_PRESENCE_FIELD, []);
             },
           };
         },

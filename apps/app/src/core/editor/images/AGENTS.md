@@ -27,6 +27,7 @@ Four homes, and nothing lives in two of them:
 | That this slot is being filled (`uploadToken`) | the document, as a node attribute | A move must copy it and a peer must read it; nothing else can do both |
 | Which upload is MINE, progress, failure, the bytes, the abort | the ingress plugin's state (`image-ingress-runtime.ts`) | Keyed by the same token; a percent must never reach the wire |
 | Which slots are being filled ELSEWHERE, and their shape | awareness (`image-upload-presence.ts`), projected into plugin state | It stops being true when a tab closes, and a document fact would outlive its own truth |
+| Whether this client is on the wire at all | the session's presence port (`../local-presence.ts`) | Inline review and a schema fence hide the writer, and a publisher cannot know it is hidden |
 | A drag in the air, a refusal | `image-ingress-store.ts` | Neither produced a document change, and law 5 still wants the reason in view |
 
 The app's half is `features/editor/surfaces/images/` — it registers the two
@@ -87,12 +88,24 @@ every door refuses out loud rather than opening onto nothing.
 - **One entry per upload.** Two pictures arriving together are two lifecycles.
   Nothing about one upload gates another, which is why the toolbar's image
   control has no busy state.
-- **Replace is an upload aimed at a slot that already exists.** The object
-  surface's Replace verb (§5.6) starts the ordinary lifecycle on the node the
-  writer is pointing at, so nothing is inserted or removed, the alt text and a
-  figure's caption and label survive, and undo takes the whole replacement back
-  in one step. It works for the `figure` node for the same reason: the landing
-  writes `src` on whatever node the hold resolves to.
+- **Replace is an upload aimed at a slot that already exists, and it holds that
+  slot.** The object surface's Replace verb (§5.6) hands
+  `openImageReplacePicker` a `NodeHold` and never a position: the writer is in
+  front of an operating-system dialog while peers and AI writes move the
+  document, and a number aimed at a picture then aims at prose or at somebody
+  else's picture. The hold is resolved after the file comes back and the node is
+  read back as a registered image surface; a picture that is gone cancels out
+  loud, with no entry opened and no asset uploaded. Then the ordinary lifecycle
+  runs on that node, so nothing is inserted or removed and the alt text and a
+  figure's caption and label survive. It works for the `figure` node for the same
+  reason: the landing writes `src` on whatever node the hold resolves to.
+- **What one undo takes back depends on how the slot was opened.** The entry
+  carries it (`landing`). An INSERT's landing stays out of history, because the
+  insert already IS the writer's event and undo should take the picture away
+  rather than empty its frame. A REPLACE's landing is the event — old picture to
+  new — so it commits `src`/`alt` in one historical transaction after clearing
+  the token outside history. Never make every landing nonhistorical again: that
+  is the shape that promised one-step undo and delivered none.
 
 ## Anti-patterns
 
@@ -103,6 +116,9 @@ every door refuses out loud rather than opening onto nothing.
 - A second asset index. One per mounted editor lives in this extension's
   storage, because a project-relative path only means something inside one
   project's namespace.
+- A local awareness field written straight onto `Awareness`. The write is a
+  silent no-op whenever presence is suspended, and this lane learned that the
+  hard way: the port is the only door (`../local-presence.ts`).
 - A percent, a filename, or a byte count on the ephemeral channel. Awareness
   carries a token and the picture's measured shape: the fact that an upload is
   live, and the box a peer must reserve so completion moves nothing for them

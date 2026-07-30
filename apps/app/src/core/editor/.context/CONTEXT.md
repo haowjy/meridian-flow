@@ -126,6 +126,18 @@ Yjs document session. It must stay structurally aligned with
   colors must be resolved before publication and serialized as concrete
   six-digit RGB hex. CSS variables and OKLCH strings are valid token sources,
   not valid y-prosemirror awareness colors.
+- Local awareness fields belong to `DocumentSession` through `local-presence.ts`,
+  and reach publishers as a `LocalPresenceFields` port
+  (`createEditorExtensions({ presence })`). While presence is live, `Awareness`
+  IS the desired state and `setField` writes straight through. A suspension
+  (inline review's `suspendPresence`, a schema fence) is the only span where the
+  two differ: the port holds the desired field map for its duration, takes every
+  write into it, publishes null as the transport state, and publishes the map as
+  it then stands on resume — never the snapshot taken when the suspension began.
+  Suspensions nest, and only the outermost one snapshots or republishes. An
+  editor built with no port of its own gets one nothing suspends, which is the
+  truth for a spike or a bare harness; a surface that hides the writer must pass
+  the session's.
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
   exist before server transport. Ordinary acquisition of an existing detached
   room leaves it detached; post-create reconciliation explicitly attaches
@@ -179,7 +191,11 @@ Yjs document session. It must stay structurally aligned with
   undone insert, editor teardown) aborts the request. Failure keeps the node with
   Retry and Remove on it. The empty `src` is the wire-safety decision: it
   round-trips as `![alt]()`, while an `asset:` ref minted before its asset exists
-  throws in the codec's `pathForAsset`.
+  throws in the codec's `pathForAsset`. Replace is the same lifecycle aimed at a
+  slot the writer already has: it takes a `NodeHold` across the file chooser
+  because a raw position means nothing after a peer's write, and its landing is
+  one history event (old picture to new) where an insert's landing is
+  deliberately outside history.
 - Assets cross the clipboard as project-relative paths and live inside the
   editor as stable refs. `images/image-workflow.ts` owns both directions, and the
   asset index behind them lives in the ingress extension's storage because a path

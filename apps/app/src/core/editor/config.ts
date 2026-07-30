@@ -55,6 +55,7 @@ import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
 import { LinkSurfaceExtension } from "./links";
+import { createLocalPresence, type LocalPresenceFields } from "./local-presence";
 import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -79,6 +80,13 @@ export type CreateEditorExtensionsOptions = {
   awareness: Awareness;
   schemaType?: YjsTrackedSchemaType;
   cursorProvider?: AwarenessProvider;
+  /**
+   * The owner of this client's local awareness fields, normally the
+   * `DocumentSession`'s (`local-presence.ts`). Hand it in wherever something
+   * suspends presence — inline review does — or every field written while the
+   * writer is hidden is lost.
+   */
+  presence?: LocalPresenceFields;
   user?: EditorUser;
   assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
@@ -265,6 +273,7 @@ export function createEditorExtensions({
   awareness,
   schemaType = "document",
   cursorProvider,
+  presence,
   user = DEFAULT_USER,
   assetRenderContext,
   showCollaborationDecorations,
@@ -295,11 +304,14 @@ export function createEditorExtensions({
     UndoRedoKeymapExtension,
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of image ingress mounts here rather than beside the door.
-    // The provider's awareness, not the bare one: that is the copy on the wire.
+    // It publishes through this client's presence owner, over the provider's
+    // awareness rather than the bare one: that is the copy on the wire. An
+    // editor built without an owner (a spike, a bare test harness) gets one that
+    // nothing suspends, which is the truth for an editor no surface hides.
     ...(schemaType === "document"
       ? [
           ImageUploadPresenceExtension.configure({
-            awareness: (cursorProvider ?? { awareness }).awareness,
+            presence: presence ?? createLocalPresence((cursorProvider ?? { awareness }).awareness),
           }),
         ]
       : []),
@@ -376,6 +388,7 @@ export function createEditorConfig({
   awareness,
   schemaType,
   cursorProvider,
+  presence,
   user,
   assetRenderContext,
   showCollaborationDecorations,
@@ -406,6 +419,7 @@ export function createEditorConfig({
         awareness,
         schemaType: resolvedSchemaType,
         cursorProvider,
+        presence,
         user,
         assetRenderContext,
         showCollaborationDecorations,

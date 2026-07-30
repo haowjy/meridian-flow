@@ -88,6 +88,21 @@ export type PendingImageUpload = {
   file: File;
   /** Null until the browser has decoded enough to say, or refuses to. */
   frame: PendingImageFrame | null;
+  /**
+   * How this upload got its slot, and therefore what the writer undoes when the
+   * bytes land (`image-uploads.ts`).
+   *
+   * - **`insert`** opened the slot itself, in a historical transaction. Its
+   *   landing is bookkeeping: undo takes the whole picture away rather than
+   *   stepping back through its arrival and leaving an empty frame behind.
+   * - **`replace`** was aimed at a picture the writer already had, so the
+   *   landing IS the edit — one history event from the old `src`/`alt` to the
+   *   new, and one undo brings the old picture back.
+   *
+   * One transport, two semantics: nothing else about the two lifecycles differs,
+   * and a landing that could not tell them apart had to get one of them wrong.
+   */
+  landing: "insert" | "replace";
   status: PendingUploadStatus;
   abort: () => void;
 };

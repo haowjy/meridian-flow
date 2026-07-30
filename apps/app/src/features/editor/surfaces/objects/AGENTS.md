@@ -79,6 +79,8 @@ its rung is the ladder's floor rather than the object rung.
   they can be uploaded", and a ⋮ whose shape changes with the document teaches
   nothing. It reuses the ordinary upload lifecycle on the slot that is already
   there, so nothing is inserted or removed and undo takes it back in one step.
+  The picture is HELD as the picker opens (`holdNode`), because the writer is in
+  front of an operating-system dialog while the document keeps moving.
 - **Absent beats disabled** on every menu here. A diagram that has not rendered
   has no image to hand over, so those items are not there — not greyed.
 - **Every verb answers, and keeps its reason.** Copy and download reach a
