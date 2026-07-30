@@ -211,8 +211,6 @@
 
 .meridian-image-node__placeholder {
   display: flex;
-  min-width: 8rem;
-  min-height: 6rem;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
@@ -221,6 +219,14 @@
   background: var(--color-muted);
   padding: 0.75rem;
   color: var(--color-muted-foreground);
+}
+
+/* The readable box a slot with no measured frame brings, as the pending
+   placeholder brings its own (`surfaces/images/image-ingress.css`). A measured
+   frame is already the picture's box and a minimum would overflow it. */
+.meridian-image-node:not(.meridian-image-node--framed) > .meridian-image-node__placeholder {
+  min-width: 8rem;
+  min-height: 6rem;
 }
 
 .meridian-editor .ProseMirror figure {

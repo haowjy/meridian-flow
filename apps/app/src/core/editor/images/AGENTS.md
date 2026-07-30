@@ -68,6 +68,14 @@ every door refuses out loud rather than opening onto nothing.
   is built out of, and everything inside that wrapper is block-level so its
   baseline falls back to the bottom margin edge instead of a line box that would
   hang the font's descender under the picture.
+- **A measured frame is the measured box, at any size.** The slot an upload
+  reserves is the file's own width and ratio, so a 32px icon reserves 32px and
+  the landing moves nothing. The placeholder's readable minimums are the
+  UNMEASURED fallback and never a floor under a measured frame — that was the
+  shipped bug: a 32px icon reserving 128x72 and collapsing when the bytes
+  arrived. A frame too small for the placeholder to speak in drops its name
+  rather than growing, and a slot that is asking something instead of waiting
+  (failed, abandoned, an address that would not resolve) gives the frame back.
 - **A picture names its own drag preview, from `window`.** Left alone, a big
   picture drags a ghost the size of the whole picture and the writer cannot see
   what they are aiming at (human ruling, 2026-07-30: keep the drag, lose the

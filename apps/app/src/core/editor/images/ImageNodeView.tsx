@@ -57,7 +57,16 @@ export function ImageNodeView(props: NodeViewProps) {
   const frameRef = useRef<PendingImageFrame | null>(null);
   const announcedFrame = pending?.owner === "mine" ? pending.entry.frame : (pending?.frame ?? null);
   if (announcedFrame) frameRef.current = announcedFrame;
-  const frame = frameRef.current;
+
+  // The frame is held for a picture still on its way, and let go by a slot that
+  // is asking something instead: an upload that failed, one nobody can finish,
+  // a picture whose address would not resolve. Those say what happened and offer
+  // a verb, and neither fits inside a measured 32px square (law 5 wants both
+  // read and pressed). Nothing lands out of them either, so there is no line
+  // left to keep still.
+  const asking =
+    mine?.status.kind === "failed" || (!pending && !state.url && state.kind !== "loading");
+  const frame = asking ? null : frameRef.current;
 
   // The whole picture is its own grip (`body: "inline-drag"` in EDITOR_OBJECT_TYPES):
   // a writer grabs the picture, not a handle beside it. `data-drag-handle` is

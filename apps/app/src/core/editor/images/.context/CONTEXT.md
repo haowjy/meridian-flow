@@ -49,9 +49,20 @@ Each step's rule:
   size, and that size is what the slot reserves wherever it stands. The node
   view puts it on the wrapper and REMEMBERS it, because
   the picture's own bytes arrive after its `src` does and a frame that collapsed
-  in that gap would reflow twice. An unmeasurable file (an SVG with no intrinsic
-  size) falls back to the default frame, which is the one case where completion
-  can still move a line.
+  in that gap would reflow twice. A measured frame is that size EXACTLY, down to
+  a 32px icon: the placeholder's readable minimums (8rem by 4.5rem, and 8rem by
+  6rem for the loading placeholder) belong to a slot with no measured frame, and
+  under one they would reserve a box the picture cannot fill. Below the size a
+  placeholder can speak in, its name drops out — a container query on the frame,
+  which asks the RENDERED box, because a picture wider than the prose column has
+  already been narrowed by `max-width`. An unmeasurable file (an SVG with no
+  intrinsic size) falls back to the default frame, which is the one case where
+  completion can still move a line.
+- **What lets the frame go.** A slot that is asking something rather than
+  waiting — an upload that failed, one nobody can finish, a picture whose address
+  would not resolve — drops the measured frame and takes the fallback box. Its
+  message and its verbs do not fit inside a 32px square, nothing is going to land
+  there to move the line back, and law 5 wants the refusal read and pressed.
 - **Landing, and what the writer undoes.** The entry carries `landing`, which is
   how the slot was opened, because that decides the history:
   - `insert` — one transaction: `setNodeMarkup` on the same node writing `src`,

@@ -11,8 +11,6 @@
 .meridian-image-pending {
   position: relative;
   display: flex;
-  min-width: 8rem;
-  min-height: 4.5rem;
   box-sizing: border-box;
   flex-direction: column;
   align-items: flex-start;
@@ -25,6 +23,16 @@
   padding: 0.625rem 0.75rem;
   color: var(--color-ink-muted);
   font-size: 0.8125rem;
+}
+
+/* The fallback box, and only for a slot with no measured frame. A file the
+   browser declined to measure (`measure-image.ts`) reserved nothing, so the
+   placeholder brings a readable box of its own. A measured frame already IS the
+   picture's box, and a minimum here would make a small picture reserve more than
+   it will ever occupy and then collapse when the bytes land. */
+.meridian-image-node:not(.meridian-image-node--framed) > .meridian-image-pending {
+  min-width: 8rem;
+  min-height: 4.5rem;
 }
 
 .meridian-image-pending__label {
@@ -117,9 +125,29 @@
 }
 
 .meridian-editor .ProseMirror .meridian-image-node--framed > img,
-.meridian-editor .ProseMirror .meridian-image-node--framed > .meridian-image-pending {
+.meridian-editor .ProseMirror .meridian-image-node--framed > .meridian-image-pending,
+.meridian-editor .ProseMirror .meridian-image-node--framed > .meridian-image-node__placeholder {
   width: 100%;
   height: 100%;
+  overflow: hidden;
+}
+
+/* Measured pictures come as small as a 32px icon, and the frame holds that size
+   exactly — so the placeholder has to answer to a box with no room to speak in.
+   The frame is the container the box is asked about, because the rendered frame
+   is the honest question: a picture wider than the prose column has already been
+   narrowed by `max-width`, and its measured numbers no longer describe it. */
+.meridian-editor .ProseMirror .meridian-image-node--framed {
+  container: meridian-image-frame / size;
+}
+
+/* Too small for a padded line of text. The name goes and the dimmed slot keeps
+   its progress line, which is all a 32px picture has room to say; the frame
+   still says the name to a screen reader. */
+@container meridian-image-frame ((width < 4.5rem) or (height < 3rem)) {
+  .meridian-image-pending__label {
+    display: none;
+  }
 }
 
 /* A link whose picture is being fetched. It stays a link, because that is the
