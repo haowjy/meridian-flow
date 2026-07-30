@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "../asset-image-render-state";
+import { imageStandsInLine, inLineScale } from "./image-line-placement";
 import { removePendingImage, retryPendingImage } from "./image-uploads";
 import {
   type PendingImageFrame,
@@ -49,6 +50,10 @@ export function ImageNodeView(props: NodeViewProps) {
   const [state, actions] = useAssetImageRenderState({ projectId, src });
   const pending = pendingUploadFromDecorations(props.decorations);
   const mine = pending?.owner === "mine" ? pending.entry : null;
+  // Whether this picture shares its paragraph with words, derived from the
+  // document by `image-line-placement.ts`. It decides how big the picture is
+  // allowed to be, and nothing else about it.
+  const inLine = imageStandsInLine(props.decorations);
 
   // The measured shape outlives the entry that carried it: the entry is dropped
   // the moment `src` is written, and the picture is not on screen yet. A
@@ -66,10 +71,14 @@ export function ImageNodeView(props: NodeViewProps) {
   return (
     <NodeViewWrapper
       as="span"
-      className={cn("meridian-image-node", frame && "meridian-image-node--framed")}
+      className={cn(
+        "meridian-image-node",
+        frame && "meridian-image-node--framed",
+        inLine && "meridian-image-node--in-line",
+      )}
       data-type="image"
       data-drag-handle
-      style={frame ? frameStyle(frame) : undefined}
+      style={frame ? frameStyle(frame, inLine) : undefined}
     >
       {mine ? (
         <PendingImage entry={mine} editor={props.editor} getPos={props.getPos} />
@@ -261,10 +270,17 @@ function AbandonedImage({
  * The picture's own proportions, held by the wrapper so the `<img>` inside can
  * change without the box changing. `max-width` still belongs to the CSS: a
  * picture wider than the prose column is the column's business.
+ *
+ * A picture standing in a line of prose is scaled here instead of clamped in
+ * CSS, because a clamp reads one edge and this has to hold both: an explicit
+ * width beside an `aspect-ratio` makes `max-height` squash the picture rather
+ * than shrink it. Scaling the reserved frame is also what keeps the promise the
+ * frame exists for — a mid-sentence upload lands into the box it already had.
  */
-function frameStyle(frame: PendingImageFrame): CSSProperties {
+function frameStyle(frame: PendingImageFrame, inLine: boolean): CSSProperties {
+  const scale = inLine ? inLineScale(frame.width, frame.height) : 1;
   return {
-    width: `${frame.width}px`,
+    width: `${Math.round(frame.width * scale)}px`,
     aspectRatio: `${frame.width} / ${frame.height}`,
   };
 }

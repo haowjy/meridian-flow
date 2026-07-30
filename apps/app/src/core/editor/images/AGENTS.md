@@ -46,10 +46,38 @@ every door refuses out loud rather than opening onto nothing.
 | `pending-images.ts` | What the document knows about a picture in flight, and how it is drawn |
 | `image-workflow.ts` | Pure answers: what a drop means, what a paste carries, asset paths |
 | `ImageNodeView.tsx` | An inline picture at every point in its life |
+| `image-line-placement.ts` | Whether a picture stands in a line of prose or holds the column |
+| `image-drag-preview.ts` | The ghost a picture drags with |
 | `measure-image.ts` | The picture's own size, read from the local file |
 
 ## Key rules
 
+- **Inline means in the line, and it is derived, never stored.** A picture that
+  shares its text block with anything else is capped on its long edge and
+  centred on the words, so the line goes on either side of it; a picture with its
+  block to itself keeps the prose column
+  ([`image-line-placement.ts`](image-line-placement.ts), human ruling,
+  2026-07-30: "inline should literally mean inline"). The document always said
+  the right thing — the drop has always landed the node between two text nodes of
+  one paragraph, and the wire has always carried `text ![alt](p) text` — and a
+  column-wide picture filled the line box anyway, which is what the writer saw.
+  The reading is a decoration off the document, so a peer draws the same
+  paragraph and typing a word beside a picture moves it between the two by
+  itself; an attribute would put it in Yjs, on the wire, and in every peer's undo
+  history. The node view is told through the decoration's spec as well as the
+  class, because a frame reserved for an upload carries an explicit width and has
+  to be scaled rather than clamped.
+- **A picture names its own drag preview, from `window`.** Left alone, a big
+  picture drags a ghost the size of the whole picture and the writer cannot see
+  what they are aiming at (human ruling, 2026-07-30: keep the drag, lose the
+  ghost). `image-drag-preview.ts` names one capped at 240px on its long edge —
+  and it listens on `window`, not on the editor's DOM, because TipTap's node view
+  sets a drag image of its own from a React handler and React dispatches that at
+  its root container. Above the root is the only place later in the same event,
+  and the last `setDragImage` is the one the browser paints. Where the drag starts
+  is not fixed either: from the node view's outer element for an unselected
+  picture, from the `<img>` inside it for a selected one, so the target is read
+  both ways up.
 - **A pending node's `src` is `""`.** It is the schema's own default and the one
   source that names nothing, so a document synced or saved mid-upload
   round-trips as `![alt]()` (pinned in `packages/markup`'s codec test). Never
