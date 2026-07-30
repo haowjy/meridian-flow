@@ -67,7 +67,12 @@ of one node type register apart.
   `inline-drag` leaves the press to ProseMirror's own drag, which carries the
   node as an inline slice and lands it anywhere a caret can go — between two
   words, with the dropcursor drawing the caret there (human ruling, 2026-07-29: a
-  picture drags in between text). A figure has no inline place to land and stays
+  picture drags in between text). Landing there is only half of it: a picture as
+  wide as the prose column fills the line box it landed in, so what stands in a
+  line has to be sized for one
+  ([`../images/AGENTS.md`](../images/AGENTS.md), human ruling, 2026-07-30). The
+  same file owns the drag's own preview, because the browser's default for a
+  picture is the picture. A figure has no inline place to land and stays
   `block-drag`; only a node the schema calls inline can say `inline-drag`, and
   its node view has to carry `data-drag-handle` or TipTap refuses the browser's
   dragstart. Splitting this back into two columns takes a real object that wants

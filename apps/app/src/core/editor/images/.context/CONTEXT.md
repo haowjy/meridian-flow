@@ -28,7 +28,13 @@ Each step's rule:
   field released.
 - **Where the node may go.** `image` is an inline atom (§5.6), so it goes inline
   where the position can hold one and in a paragraph of its own after the block
-  where it cannot. A position that can take neither is the one refusal.
+  where it cannot. A position that can take neither is the one refusal. A drop
+  goes exactly where the dropcursor showed, and that is what decides how big the
+  picture is: between two words it stands IN the line and is capped on its long
+  edge, at a block seam it becomes a paragraph of its own and keeps the column
+  ([`../image-line-placement.ts`](../image-line-placement.ts)). Insert and drop
+  are deliberately not unified — the caret is the insert's answer, the dropcursor
+  is the drop's.
 - **Replace claims an existing slot, and takes hold of it first.**
   `openImageReplacePicker` accepts a `NodeHold` — the identity the object surface
   already carries — never a position: the operating system's chooser stays open
