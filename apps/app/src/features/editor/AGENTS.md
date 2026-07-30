@@ -43,6 +43,12 @@ the design, from the primitives.
   like any other: an outcome dialog, a drop hint. A runtime that rendered its own
   Radix root would be a transient surface the kernel never heard about, which is
   exactly the bypass the host exists to prevent.
+- **The clipboard is one boundary.** [`clipboard.ts`](clipboard.ts) owns
+  capability, the rich/plain fallback, and what a refusal was; a surface chooses
+  only the payload and where the answer goes. A second `navigator.clipboard`
+  call in a surface is a fifth opinion about what a blocked write means, and
+  the four that existed disagreed — one hid the row, one threw, one greyed, one
+  closed as though the copy had happened.
 - **What the app knows reaches a surface as scope, not as props.**
   `EditorScopeProvider` carries `{ projectId, workId }` around the host, and
   `useEditorScope()` is how a lane asks. It is runtime scope: a Work changing

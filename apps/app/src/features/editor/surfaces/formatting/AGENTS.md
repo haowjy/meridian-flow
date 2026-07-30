@@ -55,7 +55,11 @@ Three files, three jobs:
   take Radix's `disabled` (law 5). Pass `blockedReason`; wire nothing else.
 - **A refusal that came from the browser still reaches the writer.** The
   clipboard can be withheld in either direction; the control greys with the
-  shortcut rather than failing twice in silence.
+  shortcut rather than failing twice in silence. Whether it was withheld, and
+  which refusal it was, comes from the feature's one clipboard boundary
+  (`features/editor/clipboard.ts`). What this lane owns is the document half:
+  what a selection serializes to, when a cut may delete, and where a paste
+  lands.
 - New copy goes in `formatting-copy.ts`, and the reasons come from
   `blockedReasonMessage` — one wording per reason across the whole toolkit.
   Run lingui extract and compile; `pnpm check:i18n` fails on drift.
