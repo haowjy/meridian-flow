@@ -1,27 +1,32 @@
 // @vitest-environment jsdom
 /**
- * The jade ring survives a peer's write.
+ * The jade ring: one owner, and it survives a peer's write.
  *
  * Law 1's whole visible contract is that a click on an object reads back as a
- * selection. Two things have to be real for this to mean anything:
+ * selection. A mounted REACT node view is what makes either claim here mean
+ * anything, because `EditorContent` is what makes TipTap use one at all —
+ * without it the editor falls back to `renderHTML`, ProseMirror owns the DOM
+ * outright, and neither failure can happen.
  *
- * - a REMOTE write, because y-prosemirror rebuilds the ProseMirror document
- *   from the Yjs type rather than applying the peer's steps, and that rebuild
- *   is what replaces the node views underneath a selection that never changed;
- * - a mounted REACT node view, because `EditorContent` is what makes TipTap use
- *   one at all. Without it the editor falls back to `renderHTML`, ProseMirror
- *   owns the DOM outright, and the bug cannot happen.
+ * The two claims need different documents underneath:
  *
- * Miss either and this file passes while the writer's ring is gone.
+ * - survival needs a REMOTE write, because y-prosemirror rebuilds the
+ *   ProseMirror document from the Yjs type rather than applying the peer's
+ *   steps, and that rebuild is what replaces the node views underneath a
+ *   selection that never changed;
+ * - one owner of the paint needs nothing but a selection, so it says so with
+ *   one editor: a node view deriving its own border from `NodeViewProps`
+ *   paints a second ring the moment the writer clicks.
  */
-import type { JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { EditorContent } from "@tiptap/react";
 import { act, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
+import { createReactEditorFixture, type ReactEditorFixture } from "@/test-support/react-editor";
+import { requireNode } from "@/test-support/standalone-editor";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -32,28 +37,6 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 
 const { SELECTED_OBJECT_CLASS } = await import("./ObjectPhysicsExtension");
-
-let pair: CollabPair | null = null;
-let root: Root | null = null;
-let host: HTMLElement | null = null;
-
-beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-});
-
-afterEach(() => {
-  act(() => root?.unmount());
-  host?.remove();
-  pair?.destroy();
-  pair = null;
-  root = null;
-  host = null;
-});
 
 const paragraph = (text: string): JSONContent => ({
   type: "paragraph",
@@ -73,100 +56,115 @@ const OBJECTS: [label: string, nodeType: string, object: JSONContent][] = [
   ],
 ];
 
+const documentWith = (object: JSONContent): JSONContent => ({
+  type: "doc",
+  content: [paragraph("before"), object, paragraph("after")],
+});
+
 /** TipTap syncs a node view's selected state a frame late. */
 const settle = () =>
   act(async () => {
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
   });
 
-function ringIsPainted(): boolean {
-  return Boolean(pair?.local.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`));
+/** Render the manuscript through React, or this file proves nothing. */
+async function showNodeViews(page: ReactEditorFixture): Promise<void> {
+  await page.render(<EditorContent editor={page.editor} />);
+  // Guard the guard.
+  expect(page.editor.view.dom.querySelector(".react-renderer")).not.toBeNull();
+}
+
+function ringIsPainted(editor: Editor): boolean {
+  return Boolean(editor.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`));
 }
 
 /** The object's own element, whose classes say how it is being painted. */
-function objectElement(nodeType: string): Element {
+function objectElement(editor: Editor, nodeType: string): Element {
   const selector = nodeType === "figure" ? ".meridian-figure-node" : ".meridian-diagram-block";
-  const element = pair?.local.view.dom.querySelector(selector);
+  const element = editor.view.dom.querySelector(selector);
   if (!element) throw new Error(`no ${nodeType} element in the fixture`);
   return element;
 }
 
-function positionOf(type: string): number {
-  let found: number | null = null;
-  pair?.local.state.doc.descendants((node, pos) => {
-    if (found === null && node.type.name === type) found = pos;
-    return found === null;
-  });
-  if (found === null) throw new Error(`no ${type} in the fixture`);
-  return found;
-}
-
-async function selectObject(type: string): Promise<void> {
-  const pos = positionOf(type);
+async function selectObject(editor: Editor, type: string): Promise<void> {
+  const { pos } = requireNode(editor, type);
   await act(async () => {
-    const editor = pair?.local;
-    if (!editor) return;
     editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)));
   });
   await settle();
 }
 
-async function peerTypesElsewhere(): Promise<void> {
-  await act(async () => {
-    pair?.peer.commands.setTextSelection(1);
-    pair?.peer.commands.insertContent("peer ");
-    pair?.sync();
-  });
-  await settle();
-}
+describe.each(OBJECTS)("%s wearing the ring, while a peer writes", (_label, nodeType, object) => {
+  let pair: CollabPair;
+  let page: ReactEditorFixture;
 
-describe.each(OBJECTS)("%s wearing the ring", (_label, nodeType, object) => {
   beforeEach(async () => {
-    pair = createCollabPair({
-      type: "doc",
-      content: [paragraph("before"), object, paragraph("after")],
-    });
-    await act(async () => {
-      root?.render(<EditorContent editor={pair?.local ?? null} />);
-    });
-    // Guard the guard: without a React node view this file proves nothing.
-    expect(pair.local.view.dom.querySelector(".react-renderer")).not.toBeNull();
+    pair = createCollabPair(documentWith(object));
+    page = createReactEditorFixture({ editor: pair.local });
+    await showNodeViews(page);
   });
+
+  afterEach(() => {
+    page.destroy();
+    pair.destroy();
+  });
+
+  async function peerTypesElsewhere(): Promise<void> {
+    await act(async () => {
+      pair.peer.commands.setTextSelection(1);
+      pair.peer.commands.insertContent("peer ");
+      pair.sync();
+    });
+    await settle();
+  }
 
   it("keeps it through a peer's write elsewhere in the document", async () => {
-    await selectObject(nodeType);
-    expect(ringIsPainted()).toBe(true);
+    await selectObject(pair.local, nodeType);
+    expect(ringIsPainted(pair.local)).toBe(true);
 
     await peerTypesElsewhere();
 
-    expect(pair?.local.state.selection).toBeInstanceOf(NodeSelection);
-    expect(ringIsPainted()).toBe(true);
+    expect(pair.local.state.selection).toBeInstanceOf(NodeSelection);
+    expect(ringIsPainted(pair.local)).toBe(true);
   });
 
-  it("is the only paint the object gains when it becomes selected", async () => {
+  it("still paints it when the writer selects the object again", async () => {
+    await selectObject(pair.local, nodeType);
+    await peerTypesElsewhere();
+
+    await act(async () => {
+      pair.local.commands.setTextSelection(1);
+    });
+    await settle();
+    expect(ringIsPainted(pair.local)).toBe(false);
+
+    await selectObject(pair.local, nodeType);
+    expect(ringIsPainted(pair.local)).toBe(true);
+  });
+});
+
+describe.each(OBJECTS)("%s the writer has just selected", (_label, nodeType, object) => {
+  let page: ReactEditorFixture;
+
+  beforeEach(async () => {
+    page = createReactEditorFixture({ content: documentWith(object) });
+    await showNodeViews(page);
+  });
+
+  afterEach(() => {
+    page.destroy();
+  });
+
+  it("gains the ring and no other paint", async () => {
     // One owner for selection visuals. A node view that derived its own border
     // from `NodeViewProps.selected` would paint a second one — and that prop's
     // lifecycle does not survive the rebuild a peer's write causes, so the two
     // disagree for a frame while the selection never changed.
-    const before = [...objectElement(nodeType).classList].sort();
+    const before = [...objectElement(page.editor, nodeType).classList].sort();
 
-    await selectObject(nodeType);
+    await selectObject(page.editor, nodeType);
 
-    expect([...objectElement(nodeType).classList].sort()).toEqual(before);
-    expect(pair?.local.view.dom.querySelectorAll(`.${SELECTED_OBJECT_CLASS}`)).toHaveLength(1);
-  });
-
-  it("still paints it when the writer selects the object again", async () => {
-    await selectObject(nodeType);
-    await peerTypesElsewhere();
-
-    await act(async () => {
-      pair?.local.commands.setTextSelection(1);
-    });
-    await settle();
-    expect(ringIsPainted()).toBe(false);
-
-    await selectObject(nodeType);
-    expect(ringIsPainted()).toBe(true);
+    expect([...objectElement(page.editor, nodeType).classList].sort()).toEqual(before);
+    expect(page.editor.view.dom.querySelectorAll(`.${SELECTED_OBJECT_CLASS}`)).toHaveLength(1);
   });
 });

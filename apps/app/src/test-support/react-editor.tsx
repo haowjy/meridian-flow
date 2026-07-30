@@ -45,8 +45,10 @@ function mountEditor(options: ReactEditorFixtureOptions): { editor: Editor; dest
   const { editor, ...editorOptions } = options;
   if (!editor) return createStandaloneEditor(editorOptions);
   // A collab pair builds its editors detached, so a borrowed one still has to
-  // reach the page before anything can press it.
-  document.body.append(editor.view.dom);
+  // reach the page before anything can press it. Its own host rather than the
+  // body: `EditorContent` adopts every sibling of the manuscript when it takes
+  // it over, and the body's other children are not the manuscript.
+  document.body.append(editor.view.dom.parentElement ?? editor.view.dom);
   return { editor, destroy: () => {} };
 }
 

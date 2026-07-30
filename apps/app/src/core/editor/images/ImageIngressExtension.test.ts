@@ -7,16 +7,19 @@
  * held open deliberately: what the writer can see and do mid-upload is the
  * whole subject, so nothing may depend on it having finished.
  *
- * A real Yjs pair rather than a bare editor, because a pending slot has to
- * survive a peer's write: y-prosemirror rebuilds the whole document and reports
- * every position deleted, which is exactly the hazard the anchored hold exists
- * for.
+ * Most of that is one writer alone, so `mount` is one editor. `mountPair`
+ * brings a real collaborator, and a case reaches for it only when its own claim
+ * names one: y-prosemirror rebuilds the whole document and reports every
+ * position deleted, which is the hazard the anchored hold exists for, and undo
+ * on a shared document is the Yjs UndoManager rather than ProseMirror's own
+ * history.
  */
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { holdNode } from "@/core/editor/anchors";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
+import { createStandaloneEditor } from "@/test-support/standalone-editor";
 
 // A refused door says why (law 5), and the reason is a macro the test transform
 // does not compile. The lane's copy is not what these cases are about.
@@ -102,36 +105,62 @@ function imageNodes(editor: Editor): { pos: number; src: string; alt: string | n
   return found;
 }
 
-let pair: CollabPair | null = null;
-
-afterEach(() => {
-  pair?.destroy();
-  pair = null;
-});
-
-function mount(text = "The gate opened."): {
+type Ingress = {
   editor: Editor;
-  peer: Editor;
-  sync: () => void;
-  syncAwareness: () => void;
-  awareness: CollabPair["awareness"];
-  presence: CollabPair["presence"];
   held: HeldUpload[];
   bytes: {
     calls: string[];
     aborted: string[];
     settle: (url: string, file: File | null) => void;
   };
+};
+
+const documentSaying = (text: string) => ({
+  type: "doc",
+  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+});
+
+let close: (() => void) | null = null;
+
+afterEach(() => {
+  close?.();
+  close = null;
+});
+
+/** One writer, with both of the lane's ports held open. */
+function mount(text = "The gate opened."): Ingress {
+  const standalone = createStandaloneEditor({ content: documentSaying(text) });
+  close = standalone.destroy;
+  return withHeldPorts(standalone.editor);
+}
+
+/** The same document, with a collaborator bound to it. */
+function mountPair(text = "The gate opened."): Ingress & {
+  peer: Editor;
+  sync: () => void;
+  syncAwareness: () => void;
+  awareness: CollabPair["awareness"];
+  presence: CollabPair["presence"];
 } {
-  pair = createCollabPair({
-    type: "doc",
-    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-  });
+  const pair = createCollabPair(documentSaying(text));
+  close = pair.destroy;
+  return {
+    ...withHeldPorts(pair.local),
+    peer: pair.peer,
+    sync: pair.sync,
+    syncAwareness: pair.syncAwareness,
+    awareness: pair.awareness,
+    presence: pair.presence,
+  };
+}
+
+/** Both doors bytes travel through, answered by the test rather than a server. */
+function withHeldPorts(editor: Editor): Ingress {
   const { port, held } = heldUploadPort();
   const waiting = new Map<string, (file: File | null) => void>();
   const calls: string[] = [];
   const aborted: string[] = [];
-  registerImageIngressHost(pair.local, {
+  registerImageIngressHost(editor, {
     upload: port,
     fetchBytes: ({ url, signal }: { url: string; signal: AbortSignal }) => {
       calls.push(url);
@@ -140,12 +169,7 @@ function mount(text = "The gate opened."): {
     },
   });
   return {
-    editor: pair.local,
-    peer: pair.peer,
-    sync: pair.sync,
-    syncAwareness: pair.syncAwareness,
-    awareness: pair.awareness,
-    presence: pair.presence,
+    editor,
     held,
     bytes: {
       calls,
@@ -248,7 +272,7 @@ describe("a picture in flight occupies its final slot", () => {
   });
 
   it("survives a peer's write, which replaces the whole document", async () => {
-    const { editor, peer, sync, held } = mount();
+    const { editor, peer, sync, held } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     sync();
@@ -386,7 +410,7 @@ describe("two pictures arriving together are two lifecycles", () => {
 
 describe("a peer sees an upload it does not own as an upload", () => {
   it("shows the slot as uploading elsewhere while its owner is live", async () => {
-    const { editor, peer, sync, syncAwareness } = mount();
+    const { editor, peer, sync, syncAwareness } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     sync();
@@ -401,7 +425,7 @@ describe("a peer sees an upload it does not own as an upload", () => {
   });
 
   it("stops claiming an owner once the upload lands", async () => {
-    const { editor, peer, sync, syncAwareness, awareness, held } = mount();
+    const { editor, peer, sync, syncAwareness, awareness, held } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     sync();
@@ -419,7 +443,7 @@ describe("a peer sees an upload it does not own as an upload", () => {
   });
 
   it("leaves an ownerless empty slot recoverable, not in flight", async () => {
-    const { editor, peer, sync } = mount();
+    const { editor, peer, sync } = mountPair();
     // No owner ever announced this one: a reload's leftover, or a redo that
     // brought back an insert whose bytes are gone.
     editor.commands.insertContentAt(5, { type: "image", attrs: { src: "", alt: "gone" } });
@@ -463,7 +487,7 @@ describe("a pending picture can be moved while its bytes travel", () => {
 
 describe("closing the editor closes what it was carrying", () => {
   it("aborts every upload and releases its owner signal on destroy", async () => {
-    const { editor, awareness, held } = mount();
+    const { editor, awareness, held } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     // The token this client owns, and nothing a peer could not act on: no
@@ -525,7 +549,7 @@ function peerPictureBlock(editor: Editor) {
 
 describe("Replace aims at the picture the writer pointed at", () => {
   it("lands on the original picture after a peer writes a picture in above", async () => {
-    const { editor, peer, sync, held } = mount();
+    const { editor, peer, sync, held } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     held[0].settle(asset("old"));
@@ -576,7 +600,9 @@ describe("Replace aims at the picture the writer pointed at", () => {
   });
 
   it("takes the whole replacement back in one undo", async () => {
-    const { editor, held } = mount();
+    // Undo on a shared document is the Yjs UndoManager, so the shared document
+    // is what these two cases are for — not a peer.
+    const { editor, held } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     held[0].settle(asset("old"));
@@ -602,7 +628,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
   });
 
   it("still undoes an inserted picture away, bytes and all", async () => {
-    const { editor, held } = mount();
+    const { editor, held } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     held[0].settle(asset("only"));
@@ -618,7 +644,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
 
 describe("an announcement made while the writer is hidden is still true after", () => {
   it("releases the slot it filled during a suspension, rather than resurrecting it", async () => {
-    const { editor, presence, awareness, held } = mount();
+    const { editor, presence, awareness, held } = mountPair();
     insertImageFile(editor, imageFile(), 5);
     await settle();
     const token = pendingImages(editor)[0].id;
