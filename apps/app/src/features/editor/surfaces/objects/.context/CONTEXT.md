@@ -248,10 +248,18 @@ behind a modal scrim (`aria-hidden` / `inert`).
 
 ## Right-click
 
-Claimed at the `object` rung, and only for diagrams, images, and figures: a code block's
-right-click stays the browser's, so spellcheck and paste survive inside a
-fence. The claim remembers the ELEMENT it claimed, not the hovered one, and
-selects the object so the menu says what it is about.
+Two rungs of the ladder land in this lane. `object` takes diagrams, images, and
+figures: the claim remembers the ELEMENT it claimed, not the hovered one, and
+selects the object so the menu says what it is about. A plain fence is not an
+object — clicking it places a caret — so its own verbs open at the ladder's
+floor, the `caret` rung (human ruling, 2026-07-29).
+
+Nothing inside the editor falls through to the browser's menu, and the escape
+is a gesture rather than an absence: **Shift+right-click is never claimed**, and
+that is where spellcheck, lookup, and OS services live. The whole table, with
+its precedence and its reasoning, is
+[`core/editor/chrome/context-claims.ts`](../../../../../core/editor/chrome/context-claims.ts);
+this page only says which rungs are this lane's.
 
 (The kernel's capture-phase router landed with the editor-core merge; before
 it, TipTap's `NodeView.stopEvent` swallowed `contextmenu` and this claim never
