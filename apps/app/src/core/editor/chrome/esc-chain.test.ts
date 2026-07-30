@@ -5,10 +5,34 @@ import { DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 import {
   advanceEscSituation,
   type EscSituation,
+  type EscStep,
   escStep,
-  escWalkHome,
   type GesturePhase,
 } from "./esc-chain";
+
+/**
+ * Every step from `situation` to home, in order — the walk the two decisions
+ * (`escStep`) and their effects (`advanceEscSituation`) imply, driven here
+ * rather than in production because the walk is the proof and nothing in the
+ * editor takes more than one step at a time.
+ *
+ * Bounded on purpose: each step is supposed to strictly shrink the situation,
+ * so a loop that runs past the bound is the failure this suite is looking for.
+ */
+function escWalkHome(situation: EscSituation): EscStep[] {
+  const steps: EscStep[] = [];
+  let current = situation;
+  const bound = situation.layers.length + 4;
+
+  for (let taken = 0; taken <= bound; taken += 1) {
+    const step = escStep(current);
+    if (step.kind === "at-home") return steps;
+    steps.push(step);
+    current = advanceEscSituation(current, step);
+  }
+
+  throw new Error("Esc chain did not reach home: a step failed to shrink the situation");
+}
 
 const objectContext: ChromeContext = {
   owner: "object",

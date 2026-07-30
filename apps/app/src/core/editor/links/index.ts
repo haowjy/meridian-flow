@@ -50,7 +50,6 @@ export {
   type InternalLinkResolver,
   type LinkResolution,
   type LinkResolutionEntry,
-  type LinkResolutionState,
 } from "./link-resolution";
 export {
   createLinkSurface,
@@ -70,7 +69,6 @@ export {
   documentLinkTarget,
   isInternalLinkTarget,
   type LinkTarget,
-  type LinkTargetKind,
   linkTargetHref,
   normalizeLinkHref,
 } from "./link-target";

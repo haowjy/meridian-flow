@@ -33,7 +33,7 @@ if (typeof globalThis.ClipboardEvent === "undefined") {
 }
 
 import type { ImageUploadPort, UploadedImage } from "./image-ingress-ports";
-import { pendingImages, registerImageIngressHost } from "./image-ingress-runtime";
+import { ingressState, registerImageIngressHost } from "./image-ingress-runtime";
 import {
   insertImageFile,
   openImageReplacePicker,
@@ -41,6 +41,18 @@ import {
   retryPendingImage,
 } from "./image-uploads";
 import type { PendingImage } from "./pending-images";
+
+/**
+ * Every picture this editor is waiting on.
+ *
+ * The record itself is the subject of this suite, so it is read directly — and
+ * from here rather than from a production export, because no surface asks the
+ * question this way: the app renders ingress from the document's decorations
+ * and from `imageIngressStatus`.
+ */
+function pendingImages(editor: Editor | null): readonly PendingImage[] {
+  return Array.from(ingressState(editor).pending.values());
+}
 
 type HeldUpload = {
   file: File;

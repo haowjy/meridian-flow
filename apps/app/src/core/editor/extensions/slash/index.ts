@@ -14,8 +14,6 @@ export {
   type SlashMenu,
   type SlashMenuEntry,
   type SlashMenuMeta,
-  type SlashMenuSnapshot,
-  slashCommandPluginKey,
 } from "./SlashCommandExtension";
 export {
   filterSlashCommandItems,

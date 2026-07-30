@@ -13,9 +13,7 @@ export {
   getWikilinkMenu,
   type WikilinkExtensionOptions,
   type WikilinkMenu,
-  type WikilinkMenuSnapshot,
   WikilinkSuggestionExtension,
-  wikilinkSuggestionPluginKey,
 } from "./WikilinkSuggestionExtension";
 export { insertWikilink } from "./wikilink-insertion";
 export { allowsWikilinkTrigger } from "./wikilink-trigger";

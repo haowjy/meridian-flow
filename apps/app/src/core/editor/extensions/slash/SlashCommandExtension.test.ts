@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getEditorChrome } from "../../chrome";
 import { createStandaloneEditorExtensions } from "../../config";
-import { getSlashMenu, slashCommandPluginKey } from "./SlashCommandExtension";
+import { getSlashMenu } from "./SlashCommandExtension";
 import type { SlashCommandCatalog } from "./slash-catalog";
 
 let editor: Editor | null = null;
@@ -54,8 +54,12 @@ function mount() {
   };
 }
 
-const triggerActive = (instance: Editor) =>
-  slashCommandPluginKey.getState(instance.state)?.active === true;
+/**
+ * Whether the trigger is live, read the way the surface reads it: the menu store
+ * is closed the moment the suggestion plugin exits, so its own snapshot is the
+ * public answer and the plugin state behind it is nobody else's business.
+ */
+const triggerActive = (instance: Editor) => getSlashMenu(instance)?.snapshot().open === true;
 
 const keymapRegistered = (instance: Editor) =>
   (getEditorChrome(instance)?.keymapContributions() ?? []).some(
@@ -79,7 +83,6 @@ describe("slash trigger against a live editor", () => {
 
     const menu = getSlashMenu(instance);
     expect(triggerActive(instance)).toBe(true);
-    expect(menu?.snapshot().open).toBe(true);
     expect(menu?.snapshot().items.map(({ id }) => id)).toEqual(["heading-1", "table"]);
     expect(keymapRegistered(instance)).toBe(true);
   });
@@ -89,8 +92,6 @@ describe("slash trigger against a live editor", () => {
     await type(instance, "/");
     withdraw();
 
-    const menu = getSlashMenu(instance);
-    expect(menu?.snapshot().open).toBe(false);
     expect(triggerActive(instance)).toBe(false);
     expect(keymapRegistered(instance)).toBe(false);
   });

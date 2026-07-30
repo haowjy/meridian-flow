@@ -66,11 +66,6 @@ export function anchorRange(state: EditorState, range: AnchorRange): EditorAncho
   return { from: range.from, to: range.to, relative: start && end ? { start, end } : null };
 }
 
-/** Pin a single position — a seam between blocks, a caret, a drop point. */
-export function anchorPosition(state: EditorState, pos: number): EditorAnchor {
-  return anchorRange(state, { from: pos, to: pos });
-}
-
 /**
  * Carry the anchor's fallback numbers across one mapping.
  *

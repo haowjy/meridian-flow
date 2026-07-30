@@ -36,8 +36,6 @@ import {
   linkTargetHref,
 } from "./link-target";
 
-export type LinkResolutionState = "pending" | "resolved" | "unresolved";
-
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
   | { state: "resolved"; document: ResolvedDocumentLink }

@@ -13,7 +13,7 @@
  * and the reasoning lives there.
  */
 
-import type { SuggestionMenu, SuggestionMenuSnapshot } from "@/core/completion";
+import type { SuggestionMenu } from "@/core/completion";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
 import {
   filterSlashCommandItems,
@@ -38,7 +38,6 @@ export type SlashMenuEntry = SlashCommandItem & { blocked: SlashRefusal | null }
 export type SlashMenuMeta = { groupLabels: Record<SlashCommandGroupId, string> };
 
 export type SlashMenu = SuggestionMenu<SlashMenuEntry, SlashMenuMeta>;
-export type SlashMenuSnapshot = SuggestionMenuSnapshot<SlashMenuEntry, SlashMenuMeta>;
 
 export type SlashCommandExtensionOptions = SuggestionLaneOptions<SlashCommandCatalog>;
 
@@ -66,5 +65,4 @@ const slashLane = createSuggestionLane<
 });
 
 export const SlashCommandExtension = slashLane.extension;
-export const slashCommandPluginKey = slashLane.pluginKey;
 export const getSlashMenu = slashLane.getMenu;
