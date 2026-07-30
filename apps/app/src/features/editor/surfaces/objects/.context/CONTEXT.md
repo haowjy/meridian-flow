@@ -175,8 +175,10 @@ about which version they describe.
 ## What a verb says back
 
 `useVerbFeedback` runs a promise and keeps its answer; `ObjectVerbNotice`
-renders it over the object's corner, `VerbNoticePill` inside the dialog where
-the page's own notices are behind the scrim. Every door goes through it —
+renders it over the object's corner, and chrome's `EditorNoticePill` says it
+inside the dialog, where the page's own notices are behind the scrim. The pill
+itself belongs to `chrome/`: every surface in the editor answers in that one
+shape, and this lane owns only where an object's answer hangs. Every door goes through it —
 a chip, a row ⋮, the lightbox ⋮ — so no path can quietly drop a rejection, and
 the two failures browsers actually produce here keep their meaning:
 

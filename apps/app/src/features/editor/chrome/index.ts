@@ -33,6 +33,7 @@ export {
   EditorMenuSubContent,
   EditorMenuSubTrigger,
 } from "./EditorMenu";
+export { type EditorNotice, EditorNoticePill } from "./EditorNotice";
 export { EditorPopover, type EditorPopoverProps } from "./EditorPopover";
 export {
   OverlayIconRow,

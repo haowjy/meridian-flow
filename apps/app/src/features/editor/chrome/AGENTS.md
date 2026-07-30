@@ -6,7 +6,7 @@ and lives in [`core/editor/chrome/`](../../../core/editor/chrome/AGENTS.md).
 
 ## Mental model
 
-Four primitives and one host.
+Five primitives and one host.
 
 - **`OverlayIconRow`** — an object's verbs, overlaid just inside its top-right
   bounds (ruling 8; mockup 03b is the decision record). The corner itself is
@@ -20,6 +20,11 @@ Four primitives and one host.
   a refusal is drawn. A lane passes `blockedReason` and gets the greying, the
   swallowed select, and the reason on hover or focus; `ReasonTooltip` is the
   shape that reason wears everywhere, the toolbar's controls included.
+- **`EditorNoticePill`** — what a surface says for a moment and takes back:
+  a verb that reached the clipboard, an export the browser refused, a picture
+  it would not take. Two tones and nothing else, so a lane brings the message
+  and decides where it hangs; the object corner, the scroll pane, and a dialog
+  all wear the same pill.
 - **`SuggestionMenu`** — the list a writer types underneath, for `/` and for
   `[[`. It owns the eight-row cap, the internal scroll that follows the arrow
   keys, the hairline fades, and the announcement the caret's own element has to
