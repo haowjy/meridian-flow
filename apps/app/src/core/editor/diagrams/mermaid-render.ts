@@ -17,6 +17,13 @@ const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
   securityLevel: "strict",
   suppressErrorRendering: true,
+  // Labels as SVG text rather than HTML in a `<foreignObject>`, which mermaid
+  // does by default. Two reasons, one boundary each: the rendering boundary's
+  // allow-list is SVG (`sanitized-svg.ts`), so HTML labels would be dropped on
+  // the way to the page; and the export boundary rasterizes the markup through
+  // an `<img>` (`surfaces/objects/object-commands.ts`), which paints no
+  // `foreignObject` at all — a downloaded diagram used to lose its labels.
+  htmlLabels: false,
   // Mermaid may fetch authored external images before SVG sanitization (#7645).
   // Documents are author-controlled; resource CSP belongs to future app-wide policy.
 } as const;

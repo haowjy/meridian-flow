@@ -87,13 +87,23 @@ move the grips out from under it, so a menu that outlived its own row would
 pin the surface to a cell nobody is on and no later hover could replace it: the
 table's chrome never came back.
 
+The coordinator is handed a `NodeHold` as this lane's reading
+(`registerHoverAnchor<NodeHold>`), because it keeps that reading until the
+pointer moves again and re-delivers it after any layout change. A position kept
+there is a position cached across a peer's write: with a grip menu open, a peer
+`addRowBefore` above the writer's row made the re-delivered number name the new
+empty cell, and the grips jumped to the peer's row the moment the menu closed
+(measured in a two-browser CDP session, 2026-07-29). Resolving the hold answers
+with the cell or with nothing.
+
 What "the cell" means here is the hold, not the element. The approach settles on
 a `NodeHold` and `useNodeHold` carries it through every transaction, so a rebuild
 that replaces the `<td>` moves the grips and a rebuild that takes the cell away
 releases them. `cellElementAt` is the crossing back to geometry and
-`cellDocPosition` the crossing in from the pointer; the pointer's last reading is
-a number and `isTableCellPos` is what it has to survive, because a verb run from
-the open menu moves every cell after the one the reading described.
+`cellDocPosition` the crossing in from the pointer. Nothing between them is kept
+as a number: an open menu freezes the grips on the cell it already holds, and
+where the pointer is remains the kernel's to report at its next reading of the
+page.
 
 Opacity on the container fades all four together. Opacity makes a stacking
 context but **not** a containing block, so the fixed children still resolve
@@ -127,10 +137,45 @@ rectangle therefore reached no menu at all. Last is the right place for it: a
 link inside a selected cell is still a link, and a grip drawn over one is
 still a grip.
 
-`claimsTableCellMenu` decides it, pure and testable. It asks whether the
-pointer is inside one of the cells the selection COVERS, not whether it falls
-in the selection's `from`..`to` range: a rectangle two columns wide in a
-four-column table spans cells it does not contain.
+`claimedSweptCells` decides it, pure and testable, and answers with the two
+cells rather than with a yes: the claim is the last moment the rectangle is on
+screen. It asks whether the pointer is inside one of the cells the selection
+COVERS, not whether it falls in the selection's `from`..`to` range: a rectangle
+two columns wide in a four-column table spans cells it does not contain.
+
+## What a menu acts on
+
+`TableMenuTarget` is the one answer, in three shapes:
+
+| Shape | Held | Materialized as |
+|---|---|---|
+| `axis` | the cell a grip serves, and `row` or `column` | `CellSelection.rowSelection` / `colSelection` on that cell |
+| `cells` | a swept rectangle's anchor and head cells | `CellSelection.create` between them |
+| `selection` | nothing | the writer's own selection, as it stands |
+
+`tableTargetState` materializes a target into the state the verb matrix is read
+from — applied, never dispatched, because asking what a verb would do must not
+move the writer's selection. `runTableVerbOn` dispatches that same selection and
+then runs the verb. Both answer null once a held cell is gone, and null closes
+the menu.
+
+Neither the selection nor a position can be the target, and both were measured:
+
+- A peer typing one character above the table restores the writer's place as a
+  caret, so a swept rectangle stops being selected and `mergeCells` answers
+  `one-cell-selected` while its menu is still open.
+- A peer's `addRowBefore` leaves a different, EMPTY cell at the number the
+  pointer last read, so a position that still starts a cell says nothing about
+  which cell. Re-holding there moved the grips to the peer's new row and pointed
+  "delete row" at it.
+
+Both cases are in [`table-cell-hold.test.ts`](../table-cell-hold.test.ts),
+against two real bindings, because only a second y-prosemirror binding produces
+the whole-document rebuild that causes them.
+
+`selection` holds nothing because those menus are mounted BY the arrangement
+they act on — the caret's lists inside the formatting menu, the selected table's
+⋮ — and they end by being unmounted rather than by outliving it.
 
 ## The left margin is shared, and the bands must not stack
 

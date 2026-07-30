@@ -65,6 +65,15 @@ that block compose on it (an image's controls and its paragraph's grip).
   to the lane and never to the approach.
 - **Nothing binds Escape but the chain.** `mergeKeymapContributions` throws on
   it. A surface that wants a step in the walk registers a layer.
+- **A key pressed outside the prose still goes through the registry.** A
+  portalled layer holds focus while it is open and ProseMirror hears none of its
+  keys, so a `layer`-scoped contribution may declare `reach: "chrome"` and the
+  kernel's document route runs it. No surface adds a keydown listener of its own:
+  one that did would be invisible to the scope ladder, to the kernel's bindings,
+  and to the collision the registration validator exists to catch. Reach is
+  refused at any other scope — those registrations outlive the surface, and a
+  binding live wherever focus went would answer keys typed into the chat
+  composer.
 - **Undo stays highest.** The kernel mounts at TipTap priority 1050, under
   `UndoRedoKeymapExtension` at 1100 (ruling 17). Do not raise it.
 - **`at-home` is a real answer.** When the editor has nothing left to give

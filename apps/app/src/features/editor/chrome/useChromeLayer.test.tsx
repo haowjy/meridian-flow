@@ -145,6 +145,101 @@ describe("nested layers", () => {
   });
 });
 
+describe("a layer's keys", () => {
+  /**
+   * Focus inside a dialog is focus outside the editor's DOM: Radix portals the
+   * content to the body, and ProseMirror's `handleKeyDown` never runs for it.
+   * The fixture presses the chord on an element outside the prose for exactly
+   * that reason — it is the only place the shortcut is actually pressed.
+   */
+  function pressOutsideTheProse(key: string) {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.dispatchEvent(
+      new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }),
+    );
+    outside.remove();
+  }
+
+  it("shows up in the kernel's bindings while the surface is open", () => {
+    function Dialog() {
+      useChromeLayer(editor, {
+        id: "object-lightbox",
+        open: true,
+        close: () => {},
+        keys: { "Mod-Enter": () => true },
+      });
+      return null;
+    }
+    act(() => root?.render(<Dialog />));
+
+    const chrome = getEditorChrome(editor);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    // Beside the editor's own lanes: object physics and the rest register too,
+    // and the point is that a dialog's chord is one of the same kind of thing.
+    const dialogKeys = () =>
+      chrome.keymapContributions().filter((entry) => entry.id.startsWith("object-lightbox"));
+
+    expect(dialogKeys()).toHaveLength(1);
+    expect(dialogKeys()[0]?.scope).toBe("layer");
+    expect(Object.keys(dialogKeys()[0]?.bindings ?? {})).toEqual(["Mod-Enter"]);
+
+    act(() => root?.render(null));
+    expect(dialogKeys()).toHaveLength(0);
+  });
+
+  it("answers the chord while focus sits in portalled content", () => {
+    const toggle = vi.fn(() => true);
+
+    function Dialog() {
+      useChromeLayer(editor, {
+        id: "object-lightbox",
+        open: true,
+        close: () => {},
+        keys: { "Mod-Enter": toggle },
+      });
+      return null;
+    }
+    act(() => root?.render(<Dialog />));
+
+    act(() => pressOutsideTheProse("Enter"));
+    expect(toggle).toHaveBeenCalledOnce();
+
+    // Closed means gone: the registration lives exactly as long as the surface.
+    act(() => root?.render(null));
+    act(() => pressOutsideTheProse("Enter"));
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
+  it("reads the handler live, so an inline declaration is not a stale closure", () => {
+    const seen: number[] = [];
+
+    function Dialog() {
+      const [count, setCount] = useState(0);
+      useChromeLayer(editor, {
+        id: "object-lightbox",
+        open: true,
+        close: () => {},
+        keys: {
+          "Mod-Enter": () => {
+            seen.push(count);
+            setCount(count + 1);
+            return true;
+          },
+        },
+      });
+      return null;
+    }
+    act(() => root?.render(<Dialog />));
+
+    act(() => pressOutsideTheProse("Enter"));
+    act(() => pressOutsideTheProse("Enter"));
+
+    expect(seen).toEqual([0, 1]);
+  });
+});
+
 describe("handing the caret back", () => {
   /**
    * jsdom will not put `document.activeElement` on a contenteditable div, so

@@ -14,7 +14,8 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import type { Command, EditorState } from "@tiptap/pm/state";
+import type { ResolvedPos } from "@tiptap/pm/model";
+import type { Command, EditorState, Selection } from "@tiptap/pm/state";
 import {
   addColumnAfter,
   addColumnBefore,
@@ -26,6 +27,7 @@ import {
   TableMap,
 } from "@tiptap/pm/tables";
 
+import { type NodeHold, resolveNodeHold } from "@/core/editor/anchors";
 import {
   type ContextClaimTarget,
   getEditorChrome,
@@ -271,13 +273,100 @@ export function runTableVerb(editor: Editor, id: TableVerbId): boolean {
 }
 
 /**
+ * What a table menu acts on, held rather than read back from the selection.
+ *
+ * A menu outlives the arrangement that opened it, and that arrangement is the
+ * one thing a remote write cannot carry: y-prosemirror restores the writer's
+ * place as a caret, so the rectangle a writer swept has stopped being selected
+ * by the time they reach "Merge cells". A target names its cells in terms only
+ * their disappearance can change (`core/editor/anchors.ts`), and the selection
+ * is materialized from it every time the menu is read or run.
+ *
+ * `selection` is the shape for the arrangements the writer is standing in — a
+ * caret in a cell, a selected table. Nothing is held because there is nothing
+ * to hold: that arrangement mounts the menu and unmounting it is how it ends.
+ */
+export type TableMenuTarget =
+  /** A grip's row or column, named by the cell the grip serves. */
+  | { kind: "axis"; cell: NodeHold; axis: "row" | "column" }
+  /** A rectangle the writer swept, named by the two cells that describe it. */
+  | { kind: "cells"; anchor: NodeHold; head: NodeHold }
+  | { kind: "selection" };
+
+/** Where a held cell stands now, or null once it is not that cell any more. */
+function resolveHeldCell(state: EditorState, hold: NodeHold): ResolvedPos | null {
+  const at = resolveNodeHold(state, hold);
+  return at ? resolveCellBefore(state, at.from) : null;
+}
+
+/**
+ * The selection the target describes in this state, or null once it is gone.
+ *
+ * Null is a whole answer: absent beats wrong, so a target that can no longer be
+ * described closes its menu instead of aiming it at whatever the selection has
+ * become.
+ */
+function targetSelection(state: EditorState, target: TableMenuTarget): Selection | null {
+  if (target.kind === "selection") return state.selection;
+
+  if (target.kind === "axis") {
+    const $cell = resolveHeldCell(state, target.cell);
+    if (!$cell) return null;
+    return target.axis === "row"
+      ? CellSelection.rowSelection($cell)
+      : CellSelection.colSelection($cell);
+  }
+
+  const $anchor = resolveHeldCell(state, target.anchor);
+  const $head = resolveHeldCell(state, target.head);
+  // A rectangle is two cells of ONE table. Yjs replaces the element behind a
+  // cell that really moved, so a pair that both resolve has not crossed into
+  // another table — this is what says so rather than assuming it.
+  if (!$anchor || !$head || $anchor.start(-1) !== $head.start(-1)) return null;
+  return CellSelection.create(state.doc, $anchor.pos, $head.pos);
+}
+
+/**
+ * The state a menu reads its verbs from: its own target, materialized. Null
+ * once the target is gone, which is a menu with nothing left to offer.
+ *
+ * Applied rather than dispatched: what a verb WOULD do is a question, and
+ * asking it must not move the writer's own selection.
+ */
+export function tableTargetState(editor: Editor, target: TableMenuTarget): EditorState | null {
+  if (editor.isDestroyed) return null;
+  const { state } = editor;
+  if (target.kind === "selection") return state;
+  const selection = targetSelection(state, target);
+  return selection ? state.apply(state.tr.setSelection(selection)) : null;
+}
+
+/**
+ * Run a verb on a menu's target: materialize the target, then run.
+ *
+ * Every verb still reads the selection — that is the whole model — and this is
+ * what makes the selection it reads the one the writer opened the menu on,
+ * however many peers have written since. False when the target is gone: the
+ * menu closes on the same answer.
+ */
+export function runTableVerbOn(editor: Editor, target: TableMenuTarget, id: TableVerbId): boolean {
+  if (editor.isDestroyed) return false;
+  if (target.kind !== "selection") {
+    const selection = targetSelection(editor.state, target);
+    if (!selection) return false;
+    editor.view.dispatch(editor.state.tr.setSelection(selection));
+  }
+  return runTableVerb(editor, id);
+}
+
+/**
  * The pointer sits inside one of the cells the selection covers.
  *
  * Not the selection's `from`..`to` range: a rectangle two columns wide in a
  * four-column table spans cells it does not contain, and aiming at one of
  * those is not aiming at what was swept.
  */
-export function pointerInsideCellSelection(state: EditorState, docPos: number | null): boolean {
+function pointerInsideCellSelection(state: EditorState, docPos: number | null): boolean {
   const { selection } = state;
   if (docPos === null || !(selection instanceof CellSelection)) return false;
 
@@ -289,8 +378,8 @@ export function pointerInsideCellSelection(state: EditorState, docPos: number | 
 }
 
 /**
- * The claim decision for one right-click on swept cells, synchronous by
- * contract.
+ * The two cells a right-click on a swept rectangle opens a menu for, or null
+ * when this right-click is not that. Synchronous by contract.
  *
  * A rectangle of cells is the one table selection no grip can make, and the
  * only path to merging two arbitrary cells. Nothing above this rung wants it:
@@ -299,14 +388,24 @@ export function pointerInsideCellSelection(state: EditorState, docPos: number | 
  *
  * A bare caret in a cell is NOT this: it falls to the ladder's `caret` rung,
  * where the formatting menu opens carrying the table's own lists.
+ *
+ * The cells rather than a boolean, because the claim is the last moment the
+ * rectangle is on screen: the menu it opens has to hold what it acts on before
+ * the next remote write turns the selection back into a caret.
  */
-export function claimsTableCellMenu(editor: Editor, target: ContextClaimTarget): boolean {
-  if (editor.isDestroyed || !editor.isEditable) return false;
-  if (!pointerInsideCellSelection(editor.state, target.docPos)) return false;
+export function claimedSweptCells(
+  editor: Editor,
+  target: ContextClaimTarget,
+): { anchor: number; head: number } | null {
+  if (editor.isDestroyed || !editor.isEditable) return null;
+  const { selection } = editor.state;
+  if (!(selection instanceof CellSelection)) return null;
+  if (!pointerInsideCellSelection(editor.state, target.docPos)) return null;
   // A grip or an overlay row standing over the table is chrome, and its own
   // rung took the event further up the ladder.
   const chrome = getEditorChrome(editor);
-  return !(chrome && isEditorChromeElement(chrome, target.element));
+  if (chrome && isEditorChromeElement(chrome, target.element)) return null;
+  return { anchor: selection.$anchorCell.pos, head: selection.$headCell.pos };
 }
 
 /** A resolved position standing immediately before a table cell, or null. */

@@ -12,6 +12,12 @@
  * permanent form under every figure is manuscript height the chapter pays for at
  * rest, and a second owner for attributes the object surface already writes.
  *
+ * **No selection paint either.** The jade ring is one decoration for every
+ * object (`objects/ObjectPhysicsExtension.ts`), and it exists because
+ * `NodeViewProps.selected` does not survive the node-view rebuild a peer's write
+ * causes — a border derived from it drops or arrives a frame late while the
+ * selection never changed.
+ *
  * The inline `image` node view lives in `images/`, and both are served by that
  * one surface.
  */
@@ -21,7 +27,6 @@ import { NodeViewWrapper } from "@tiptap/react";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "./asset-image-render-state";
 
@@ -45,7 +50,6 @@ export function FigureNodeView(props: NodeViewProps) {
   const { projectId } = (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
   const [renderState, renderActions] = useAssetImageRenderState({ projectId, src });
 
-  const selectedClass = props.selected ? "border-border-focus shadow-card" : "border-border-subtle";
   const renderUrl = renderState.url;
 
   return (
@@ -53,7 +57,7 @@ export function FigureNodeView(props: NodeViewProps) {
       as="figure"
       data-type="figure"
       data-label={label ?? undefined}
-      className={cn("meridian-figure-node", selectedClass)}
+      className="meridian-figure-node"
       draggable={false}
     >
       <div className="meridian-figure-node__media">

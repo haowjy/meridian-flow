@@ -30,7 +30,9 @@ Beside them, three things that are not summoned surfaces:
   `SuggestionMenu` the slash menu also renders through. Its documents come from
   the context trees the app already caches (`useWikilinkDocuments`), so opening
   it costs no request: the manuscript and the active Work's scratch, which is the
-  resolver's candidate set and therefore the only honest offer.
+  resolver's candidate set and therefore the only honest offer. That same index
+  carries each document's id and URI, which is where a relative link's base
+  comes from.
 - **`FollowOutcomeDialog`** — what a follow says when the document is not there.
   A chrome surface rather than the runtime's own dialog, and that is the whole
   point: it can open a quarter second after the click, so the kernel has to know
@@ -38,7 +40,8 @@ Beside them, three things that are not summoned surfaces:
 - **`ProjectLinkRuntime`** — the app's half of the link system, mounted by
   `EditorView` and rendering nothing. It registers the resolution port every
   internal link is drawn from and the navigator a follow is handed to, and it
-  reports what a follow found into the store the dialog reads.
+  reports what a follow found into the store the dialog reads. It also owns the
+  resolution scope, which is the one thing here that is not a surface concern.
 
 ## Key rules
 
@@ -61,6 +64,12 @@ Beside them, three things that are not summoned surfaces:
 - **A pending answer claims nothing.** The hint shows the destination and
   waits, and a follow only interrupts after 250ms — long enough that a link
   already resolved for rendering just opens.
+- **An answer belongs to a scope, not to a href.** `{ projectId, workId,
+  baseUri }` is the whole semantic input to a resolution, so the resolver is
+  registered per scope and re-registered when one changes; registering forgets
+  every answer and every failure the last scope produced. A Work switch never
+  remounts the editor, and a base URI arriving is a scope change, which is what
+  re-asks the relative links that had nothing to be relative to yet.
 - **A failed request is not an unresolved link.** It renders as an ordinary
   link and says so on follow, with Try again. Drawing it dashed would tell the
   writer their document is missing when the truth is that nobody asked.

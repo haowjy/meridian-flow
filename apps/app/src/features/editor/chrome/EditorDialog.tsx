@@ -11,8 +11,8 @@
 
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
-
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import type { KeymapBinding } from "@/core/editor/chrome";
 import { cn } from "@/lib/utils";
 
 import { useChromeLayer } from "./chrome-layers";
@@ -26,6 +26,13 @@ export type EditorDialogProps = {
   title: ReactNode;
   showTitle?: boolean;
   className?: string;
+  /**
+   * Keys the dialog answers while it is open, through the layer's own keyboard
+   * path. Focus is inside portalled content here, where ProseMirror hears
+   * nothing, so this is the route a dialog's shortcut takes instead of a
+   * listener on the document.
+   */
+  keys?: Readonly<Record<string, KeymapBinding>>;
   children: ReactNode;
 };
 
@@ -37,6 +44,7 @@ export function EditorDialog({
   title,
   showTitle = false,
   className,
+  keys,
   children,
 }: EditorDialogProps) {
   // Radix carries its own Escape listener, so the kernel must not also
@@ -47,6 +55,7 @@ export function EditorDialog({
     open,
     close: () => onOpenChange(false),
     dismissal: "self",
+    keys,
   });
 
   return (
