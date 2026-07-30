@@ -222,11 +222,13 @@ export const ChromeKernelExtension = Extension.create({
 
           // Escape reaches the chain through ProseMirror while the writer is in
           // the prose, and through Radix while they are inside a Radix surface.
-          // A layer that is neither — a hand-rolled portal, or any layer at all
-          // once focus has moved to the chat composer — has nothing listening
-          // for it, and "nobody is ever trapped" would quietly stop being true.
-          // This is that backstop, and it defers to any layer that says it
-          // dismisses itself so one key never closes two surfaces.
+          // Everything else — a hand-rolled portal, a margin handle holding a
+          // drag, any layer at all once focus has moved to the chat composer —
+          // has nothing listening for it, and "nobody is ever trapped" would
+          // quietly stop being true. This is that backstop, and it runs the
+          // same chain the prose route runs, so a step is a step wherever the
+          // key was pressed: the gesture rung is reached from a drag's own
+          // handle, and a layer that dismisses itself is still left alone.
           // The same gap for every other key a layer owns. A dialog's content
           // is portalled out of the editor and holds focus while it is open, so
           // ProseMirror's `handleKeyDown` never sees the writer's Ctrl+Enter —
@@ -246,8 +248,7 @@ export const ChromeKernelExtension = Extension.create({
           const backstopEscape = (event: KeyboardEvent) => {
             if (event.key !== "Escape" || event.defaultPrevented) return;
             if (event.target instanceof Node && view.dom.contains(event.target)) return;
-            if (chrome.topLayerDismissal !== "kernel") return;
-            if (!chrome.closeTopLayer()) return;
+            if (!performEscStep(view, chrome, controller, "chrome")) return;
             event.preventDefault();
           };
           document.addEventListener("keydown", backstopEscape, true);
@@ -279,7 +280,7 @@ export const ChromeKernelExtension = Extension.create({
 
         props: {
           handleKeyDown(view, event) {
-            if (event.key === "Escape") return performEscStep(view, chrome, controller);
+            if (event.key === "Escape") return performEscStep(view, chrome, controller, "prose");
             return keydownHandler(bindingsFor("prose"))(view, event);
           },
 
@@ -357,12 +358,27 @@ function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEv
   return true;
 }
 
+/**
+ * One step of the walk home, from wherever the key was pressed.
+ *
+ * `reach` is the same distinction the keymap seam draws, and it decides which
+ * steps are the kernel's to take. A gesture is the deepest rung either way: a
+ * drag runs with the pointer, and the hand that presses Escape to abandon it
+ * may have left focus on the margin handle it grabbed. The two steps that move
+ * the CARET are the prose's alone — off the prose the writer is typing
+ * somewhere else, and walking the manuscript home under them would spend a key
+ * they meant for the surface they are actually in.
+ */
 function performEscStep(
   view: EditorView,
   chrome: EditorChrome,
   controller: EditorChromeController,
+  reach: KeymapReach,
 ): boolean {
   const step = escStep({ gesture: chrome.gesture, layers: chrome.layers, context: chrome.context });
+  if (reach === "chrome" && (step.kind === "select-object" || step.kind === "caret-after-block")) {
+    return false;
+  }
 
   switch (step.kind) {
     case "cancel-gesture":
@@ -370,6 +386,9 @@ function performEscStep(
       return true;
 
     case "close-layer":
+      // A Radix layer hears Escape through its own listener, and closing it
+      // here as well would spend one key on two surfaces.
+      if (reach === "chrome" && chrome.topLayerDismissal !== "kernel") return false;
       return chrome.closeTopLayer();
 
     case "select-object": {

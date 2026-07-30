@@ -455,3 +455,56 @@ describe("the kernel on a live editor", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 });
+
+describe("who owns the key", () => {
+  /** An element outside the prose, which is where portalled chrome puts focus. */
+  function pressOutsideTheProse(init: KeyboardEventInit): KeyboardEvent {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    outside.dispatchEvent(event);
+    outside.remove();
+    return event;
+  }
+
+  it("cancels an in-flight gesture on an Escape pressed outside the prose", () => {
+    const instance = mount([paragraph("before")]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    const cancelDrag = vi.fn();
+    chrome.beginDrag(cancelDrag);
+    expect(chrome.gesture).toBe("drag");
+
+    // A drag started from the margin handle leaves focus on portalled chrome,
+    // where ProseMirror hears nothing: the kernel's document route is the only
+    // one left, and the gesture is the deepest rung of the walk home (§5.8).
+    const event = pressOutsideTheProse({ key: "Escape" });
+
+    expect(cancelDrag).toHaveBeenCalledOnce();
+    expect(chrome.gesture).toBe("idle");
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves the selection alone for an Escape pressed outside the prose", () => {
+    const instance = mount([paragraph("before"), figure]);
+    const chrome = getEditorChrome(instance);
+    if (!chrome) throw new Error("kernel did not mount");
+
+    let figurePos = 0;
+    instance.state.doc.descendants((node, pos) => {
+      if (node.type.name === "figure") figurePos = pos;
+    });
+    instance.view.dispatch(
+      instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, figurePos)),
+    );
+
+    // Nothing is open and no gesture is running, so the next step home moves
+    // the caret — and the writer's hands are in the chat composer. Escape is
+    // theirs there, not the manuscript's.
+    const event = pressOutsideTheProse({ key: "Escape" });
+
+    expect(chrome.context.owner).toBe("object");
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
