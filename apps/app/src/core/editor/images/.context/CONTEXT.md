@@ -103,6 +103,12 @@ must never claim each other's slots. `slotForUploadToken` reads it back with one
 `descendants` pass, so a move, a peer's whole-document rebuild, and an undo all
 answer correctly with no state to carry.
 
+Two nodes can briefly carry one token: an in-editor copy-drag duplicates the
+slice attributes. Only the first receives the bytes, and the other ends as the
+ordinary recoverable empty-src slot once the entry is dropped — the honest
+reading of "you duplicated a picture that had not arrived". The clipboard cannot
+produce this at all, because the token is not in any HTML the editor writes.
+
 Deliberately NOT a `NodeHold`. That contract ends a held identity at a Yjs move
 (`../../anchors.ts`), which is right for a gesture aimed at a node and wrong for
 a slot §5.6 promises the writer may drag mid-upload. An import is the exception:
