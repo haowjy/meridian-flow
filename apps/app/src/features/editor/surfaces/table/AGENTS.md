@@ -15,7 +15,8 @@ the whole design. Clicking a row grip selects the row, so "delete row" is
 `deleteRow` over whatever is selected — the same command a swept cell
 selection and the Alt+Arrow twin run. No verb takes a row index, so no verb
 can act on a row the writer is not looking at, and the three doors into a verb
-cannot drift apart.
+cannot drift apart. A menu outlives the press that opened it, so it holds what
+it was opened on and rebuilds that selection as its verb runs.
 
 The layers, in dependency order:
 
@@ -45,6 +46,15 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   releases everything aimed at it, an open grip menu included: a menu that
   outlived its row would offer row verbs against whatever the selection has
   become. Losing only the element is not losing the cell.
+- **One menu, one target, and the target is held.** A grip menu acts on the
+  cell its grips serve; a swept rectangle acts on the two cells that describe it
+  (`TableMenuTarget` in [`table-commands.ts`](table-commands.ts)). The verbs
+  still read the selection, and `runTableVerbOn` is what makes that selection
+  the writer's target: it materializes the held cells as the verb runs, and
+  answers no when one of them is gone, which closes the menu rather than aiming
+  it at whatever the selection has become. A menu the writer's own arrangement
+  mounts — the caret's lists, the selected table's ⋮ — holds nothing, because it
+  is unmounted by losing that arrangement rather than left pointing at it.
 - **Grid coordinates, never child indices.** A merged cell makes `row.child(2)`
   and "column 2" different things. Every reading goes through `TableMap`, in
   [`core/editor/table-operations.ts`](../../../../core/editor/table-operations.ts).
@@ -109,6 +119,11 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 ## Anti-patterns
 
 - A verb that takes a row or column index. Select, then run.
+- Remembering what a menu acts on as a document position, an element, or the
+  pointer's last screen point. A peer's inserted row leaves a DIFFERENT, empty
+  cell at the number the pointer last read, and a remote write leaves a swept
+  rectangle as a caret, so both readings are wrong exactly when a collaborator
+  is writing.
 - A pointer listener of this lane's own, of any kind. The grips are portalled
   outside the editor, a listener on the prose cannot see the pointer reach
   them, and pairing it with a React handler on the portal is a race the grips

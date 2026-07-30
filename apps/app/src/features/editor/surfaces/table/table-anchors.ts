@@ -110,19 +110,6 @@ export function cellDocPosition(view: EditorView, cell: HTMLElement): number | n
 }
 
 /**
- * `pos` is still a cell's own position.
- *
- * What the pointer's last reading has to be checked against: a verb run from an
- * open menu — insert a row above, delete a column — moves every cell after it,
- * and the reading was taken before that.
- */
-export function isTableCellPos(view: EditorView, pos: number): boolean {
-  const node = pos >= 0 && pos < view.state.doc.content.size ? view.state.doc.nodeAt(pos) : null;
-  const role = node?.type.spec.tableRole;
-  return role === "cell" || role === "header_cell";
-}
-
-/**
  * The element drawing the cell at `pos` right now, or null when nothing is
  * drawing it — the cell is gone, or the rebuild has not reached the page yet.
  */

@@ -21,6 +21,15 @@
  * measurement. So a peer's write that rebuilds the table moves the grips instead
  * of closing the menu open on them, and the anchor is released only when the
  * cell itself is gone or has left the manuscript's pane.
+ *
+ * **Every menu here has exactly one target, and it is held.** A grip menu's
+ * target is the cell the grips serve; a swept rectangle's is the pair of cells
+ * that describe it. Both are `NodeHold`s, both are resolved into a selection at
+ * the moment a verb runs (`TableMenuTarget`), and both close rather than re-aim
+ * when what they held is gone. Nothing about the document is remembered as a
+ * number or a screen point: the Yjs binding restores the writer's place as a
+ * caret on every remote write, so a menu that read the selection it was opened
+ * with would offer a rectangle's verbs to a caret.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -33,12 +42,13 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 
-import { resolveNodeHold } from "@/core/editor/anchors";
+import { type NodeHold, resolveNodeHold } from "@/core/editor/anchors";
 import { editorChromeAttributes, hoverOwner, watchManuscriptLayout } from "@/core/editor/chrome";
 
 import {
@@ -59,7 +69,6 @@ import {
 import {
   cellDocPosition,
   cellElementAt,
-  isTableCellPos,
   measureTableChrome,
   pointerHoldsTableChrome,
   sameTableChromeRects,
@@ -69,9 +78,10 @@ import {
 } from "./table-anchors";
 import {
   appendTableAxis,
-  claimsTableCellMenu,
+  claimedSweptCells,
   selectTableAxis,
   TABLE_VERB_COMMANDS,
+  type TableMenuTarget,
 } from "./table-commands";
 import { tableChromeCopy } from "./table-copy";
 import "./table-chrome.css";
@@ -89,12 +99,11 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const [hovering, setHovering] = useState(false);
   const [openMenu, setOpenMenu] = useState<Axis | null>(null);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
+  // Where a swept rectangle's menu hangs. Geometry only: which cells it acts on
+  // is the pair of holds beside it, and a screen point cannot say that.
   const [cellMenuAt, setCellMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const [sweptCells, holdSweptCells] = useSweptCells(editor);
 
-  // What the approach last settled on, whether or not this surface was free to
-  // move its anchor there. A menu holds the grips still while it is open, and
-  // the pointer's real place has to be readable again on close.
-  const settledCell = useRef<number | null>(null);
   const openMenuRef = useRef<Axis | null>(null);
   openMenuRef.current = openMenu;
 
@@ -130,16 +139,13 @@ export function TableChrome({ editor }: { editor: Editor }) {
     }
   }, [anchorCell]);
 
-  // A menu held the anchor still while it was open, so the pointer's real
-  // position has to be read back on close or the grips linger where it left.
-  const syncHover = useCallback(() => {
-    // Verified rather than trusted: a verb the menu just ran may have moved
-    // every cell after the one the pointer was last read over.
-    const settled = settledCell.current;
-    const pos = settled !== null && isTableCellPos(editor.view, settled) ? settled : null;
-    holdAnchorCell(pos);
-    setHovering(pos !== null);
-  }, [editor, holdAnchorCell]);
+  // Either swept cell taken away is a rectangle nobody can name any more, so
+  // the menu aimed at it goes with it rather than re-aiming at what is left.
+  useEffect(() => {
+    if (sweptCells !== null) return;
+    setCellMenuAt(null);
+    holdSweptCells(null);
+  }, [sweptCells, holdSweptCells]);
 
   /**
    * The approach. This lane answers one question — which cell is at this point
@@ -169,12 +175,17 @@ export function TableChrome({ editor }: { editor: Editor }) {
         return cell !== null && pointerHoldsTableChrome(cell, x, y);
       },
       onSettle: (pos) => {
-        settledCell.current = pos;
-        // An open menu owns the anchor: letting a stray hover move the grips
-        // out from under the menu would leave it pointing at another row.
+        // Whether the pointer is still on this table is true of the pointer
+        // whatever a menu is doing, and it is what fades the grips out the
+        // moment a menu that was holding them closes.
+        setHovering(pos !== null);
+        // An open menu owns the anchor: letting a stray hover move the grips out
+        // from under the menu would leave it pointing at another row. The
+        // pointer's place is NOT copied aside for the close — the menu's hold is
+        // its target, and the kernel's next reading of the page is the only
+        // honest word on where the pointer is.
         if (openMenuRef.current) return;
         if (pos !== null) holdAnchorCell(pos);
-        setHovering(pos !== null);
       },
     });
   }, [chrome, editor, editable, holdAnchorCell]);
@@ -187,12 +198,13 @@ export function TableChrome({ editor }: { editor: Editor }) {
   /**
    * An open grip menu re-arms its axis whenever the held cell moves.
    *
-   * Every verb on that menu reads the selection, and a rectangle of cells is the
-   * one selection a remote write cannot carry: the Yjs binding restores the
-   * writer's place as a caret, so the row the writer opened the menu on stops
-   * being selected the moment a collaborator types anywhere. Re-arming is safe
-   * because an open menu already owns the anchor, and it runs only when the cell
-   * moved — never against a selection the writer made themselves.
+   * This is the row's HIGHLIGHT, not the menu's aim: prosemirror-tables paints
+   * the selected cells, and the Yjs binding restores the writer's place as a
+   * caret, so a peer's write leaves the row the writer opened the menu on
+   * looking unselected. The verbs themselves take the menu's target and
+   * materialize it as they run, so they never depend on this landing.
+   * Re-arming is safe because an open menu already owns the anchor, and it runs
+   * only when the cell moved — never against a selection the writer made.
    */
   useEffect(() => {
     if (openMenu === null || anchorPos === null) return;
@@ -232,12 +244,17 @@ export function TableChrome({ editor }: { editor: Editor }) {
       id: "cell-selection",
       claim: (target) => {
         if (chrome.suppressed) return false;
-        if (!claimsTableCellMenu(editor, target)) return false;
+        // The claim is the last moment the rectangle is on screen: the next
+        // remote write turns it back into a caret, so the menu takes hold of
+        // the two cells here and never reads the selection again.
+        const cells = claimedSweptCells(editor, target);
+        if (!cells) return false;
+        holdSweptCells(cells);
         setCellMenuAt({ x: target.event.clientX, y: target.event.clientY });
         return true;
       },
     });
-  }, [chrome, editor]);
+  }, [chrome, editor, holdSweptCells]);
 
   useTableKeymap(chrome, editable);
 
@@ -256,7 +273,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
   return (
     <>
-      {rects && anchorPos !== null && editable && chrome
+      {rects && anchorCell && anchorPos !== null && editable && chrome
         ? createPortal(
             <div
               className="meridian-table-chrome"
@@ -270,10 +287,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
                 editor={editor}
                 id="table-column-menu"
                 open={openMenu === "column"}
-                onOpenChange={(open) => {
-                  setOpenMenu(open ? "column" : null);
-                  if (!open) syncHover();
-                }}
+                onOpenChange={(open) => setOpenMenu(open ? "column" : null)}
                 side="bottom"
                 align="center"
                 trigger={
@@ -287,17 +301,18 @@ export function TableChrome({ editor }: { editor: Editor }) {
                   </GripButton>
                 }
               >
-                <GripMenuContent editor={editor} axis="column" />
+                <TableMenuContent
+                  editor={editor}
+                  shape="column"
+                  target={{ kind: "axis", cell: anchorCell, axis: "column" }}
+                />
               </EditorMenu>
 
               <EditorMenu
                 editor={editor}
                 id="table-row-menu"
                 open={openMenu === "row"}
-                onOpenChange={(open) => {
-                  setOpenMenu(open ? "row" : null);
-                  if (!open) syncHover();
-                }}
+                onOpenChange={(open) => setOpenMenu(open ? "row" : null)}
                 side="left"
                 align="start"
                 trigger={
@@ -311,7 +326,11 @@ export function TableChrome({ editor }: { editor: Editor }) {
                   </GripButton>
                 }
               >
-                <GripMenuContent editor={editor} axis="row" />
+                <TableMenuContent
+                  editor={editor}
+                  shape="row"
+                  target={{ kind: "axis", cell: anchorCell, axis: "row" }}
+                />
               </EditorMenu>
 
               <AddTab
@@ -331,17 +350,26 @@ export function TableChrome({ editor }: { editor: Editor }) {
           )
         : null}
 
-      {/* What a swept rectangle of cells opens, hung off the pointer. */}
+      {/* What a swept rectangle of cells opens, hung off the pointer. The point
+          is where it hangs; the two holds are what it acts on. */}
       <EditorMenu
         editor={editor}
         id="table-cell-menu"
-        open={cellMenuAt !== null}
+        open={cellMenuAt !== null && sweptCells !== null}
         onOpenChange={(open) => {
-          if (!open) setCellMenuAt(null);
+          if (open) return;
+          setCellMenuAt(null);
+          holdSweptCells(null);
         }}
         at={cellMenuAt}
       >
-        <GripMenuContent editor={editor} axis="cells" />
+        {sweptCells ? (
+          <TableMenuContent
+            editor={editor}
+            shape="cells"
+            target={{ kind: "cells", ...sweptCells }}
+          />
+        ) : null}
       </EditorMenu>
 
       {/* The table's object controls: one ⋮, and only while the table is
@@ -367,7 +395,10 @@ export function TableChrome({ editor }: { editor: Editor }) {
             align="end"
             trigger={chip}
           >
-            <GripMenuContent editor={editor} axis="table" />
+            {/* The table's own verbs act on the selected table, and the
+                selection is what keeps this menu mounted at all: it unmounts
+                with the selection rather than outliving it. */}
+            <TableMenuContent editor={editor} shape="table" target={{ kind: "selection" }} />
           </EditorMenu>
         )}
       />
@@ -457,15 +488,60 @@ function pieceStyle(piece: TableChromePiece | null): CSSProperties {
 /**
  * Menu contents, mounted only while the menu is open (Radix keeps its content
  * unmounted otherwise), which is what makes `tableMenuProps` free to read the
- * whole verb matrix.
+ * whole verb matrix — and to read it against the menu's own target rather than
+ * against the selection, which a peer's write has already turned into a caret.
  */
-function GripMenuContent({ editor, axis }: { editor: Editor; axis: TableMenuShape }) {
-  const props = tableMenuProps(editor);
+function TableMenuContent({
+  editor,
+  shape,
+  target,
+}: {
+  editor: Editor;
+  shape: TableMenuShape;
+  target: TableMenuTarget;
+}) {
+  const props = tableMenuProps(editor, target);
+  // The target went away between the click that opened this and this render.
+  // The surface closes the menu on the same fact; an empty list for that frame
+  // is the honest picture, and offering the selection's verbs is not.
+  if (!props) return null;
 
-  if (axis === "row") return <TableRowMenuItems {...props} />;
-  if (axis === "column") return <TableColumnMenuItems {...props} />;
-  if (axis === "cells") return <TableCellMenuItems {...props} />;
+  if (shape === "row") return <TableRowMenuItems {...props} />;
+  if (shape === "column") return <TableColumnMenuItems {...props} />;
+  if (shape === "cells") return <TableCellMenuItems {...props} />;
   return <TableMenuItems {...props} />;
+}
+
+/** The cell positions a claim reports, or null to let the rectangle go. */
+type SweptCellPositions = { anchor: number; head: number } | null;
+
+/**
+ * The two cells a swept rectangle is described by, held.
+ *
+ * Two holds rather than one because a rectangle is not a node: the pair is
+ * exactly what a `CellSelection` is made of, and either cell taken away is a
+ * rectangle that can no longer be named. Composed from the same plumbing every
+ * other surface aims with, so a rectangle survives a peer's write for the same
+ * reason a grip's cell does.
+ */
+function useSweptCells(
+  editor: Editor,
+): [{ anchor: NodeHold; head: NodeHold } | null, (cells: SweptCellPositions) => void] {
+  const [anchor, holdAnchor] = useNodeHold(editor);
+  const [head, holdHead] = useNodeHold(editor);
+
+  const take = useCallback(
+    (cells: SweptCellPositions) => {
+      holdAnchor(cells?.anchor ?? null);
+      holdHead(cells?.head ?? null);
+    },
+    [holdAnchor, holdHead],
+  );
+
+  // Memoized because surfaces depend on the pair's identity in effects: a fresh
+  // object every render would read as "the rectangle changed" every render.
+  const cells = useMemo(() => (anchor && head ? { anchor, head } : null), [anchor, head]);
+  return [cells, take];
 }
 
 /**
