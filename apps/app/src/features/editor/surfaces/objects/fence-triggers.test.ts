@@ -9,7 +9,6 @@ import {
   DOCUMENT_CHROME_CONTEXT,
   editorChromeAttributes,
   getEditorChrome,
-  resolveContextClaim,
 } from "@/core/editor/chrome";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 
@@ -100,18 +99,5 @@ describe("the caret in a code fence", () => {
     target.setEditable(false);
 
     expect(fenceUnderPointer(target, rightClick({ context }))).toBeNull();
-  });
-
-  it("registers at the caret rung, under every more specific one", () => {
-    const target = fenceEditor();
-    const context = chromeContextAt(target.state.doc, 3);
-    const fence = {
-      id: "caret" as const,
-      claim: (claimTarget: ContextClaimTarget) => fenceUnderPointer(target, claimTarget) !== null,
-    };
-    const object = { id: "object" as const, claim: () => true };
-
-    expect(resolveContextClaim([fence], rightClick({ context }))).toBe("caret");
-    expect(resolveContextClaim([fence, object], rightClick({ context }))).toBe("object");
   });
 });

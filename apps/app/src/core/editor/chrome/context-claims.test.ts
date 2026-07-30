@@ -74,18 +74,10 @@ describe("the right-click claim table", () => {
     for (const handler of untouched) expect(handler.claim).not.toHaveBeenCalled();
   });
 
-  it("puts the caret rung under every more specific one", () => {
+  it("claims an object, a swept selection, and a grip over the bare caret", () => {
     expect(resolveContextClaim(all, target({ context: objectContext }))).toBe("object");
     expect(resolveContextClaim(all, target({ insideTextSelection: true }))).toBe("text-selection");
     expect(resolveContextClaim(all, target({ element: element({ grip: "true" }) }))).toBe("grip");
-  });
-
-  it("claims a non-empty prose selection the pointer is inside", () => {
-    expect(resolveContextClaim(all, target({ insideTextSelection: true }))).toBe("text-selection");
-  });
-
-  it("claims an object", () => {
-    expect(resolveContextClaim(all, target({ context: objectContext }))).toBe("object");
   });
 
   it("claims a table grip over the object it belongs to", () => {

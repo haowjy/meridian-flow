@@ -10,7 +10,6 @@ import {
   editorChromeAttributes,
   getEditorChrome,
   resolveChromeContext,
-  resolveContextClaim,
 } from "@/core/editor/chrome";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import {
@@ -233,18 +232,6 @@ describe("the right-click claim", () => {
 
     expect(claimsFormattingMenu(target, rightClick())).toBe(false);
   });
-
-  it("registers at the text-selection rung, under a link and over an object", () => {
-    const target = selectedEditor();
-    const formatting = {
-      id: "text-selection" as const,
-      claim: (claimTarget: ContextClaimTarget) => claimsFormattingMenu(target, claimTarget),
-    };
-    const link = { id: "link" as const, claim: () => true };
-
-    expect(resolveContextClaim([formatting], rightClick())).toBe("text-selection");
-    expect(resolveContextClaim([formatting, link], rightClick())).toBe("link");
-  });
 });
 
 describe("the bare caret's claim", () => {
@@ -305,17 +292,5 @@ describe("the bare caret's claim", () => {
     expect(placeCaretForMenu(target, 16)).toBe(true);
     expect(target.state.selection.empty).toBe(true);
     expect(target.state.selection.$from.parent.type.name).toBe("heading");
-  });
-
-  it("registers at the caret rung, under every more specific one", () => {
-    const target = editorWith("<p>He had rehearsed this</p>");
-    const caret = {
-      id: "caret" as const,
-      claim: (claimTarget: ContextClaimTarget) => claimsCaretFormattingMenu(target, claimTarget),
-    };
-    const object = { id: "object" as const, claim: () => true };
-
-    expect(resolveContextClaim([caret], caretClick())).toBe("caret");
-    expect(resolveContextClaim([caret, object], caretClick())).toBe("object");
   });
 });

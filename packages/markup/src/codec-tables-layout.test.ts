@@ -462,32 +462,6 @@ describe("tables and Layout round-trip corpus", () => {
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
   });
 
-  it("keeps pipe-cell hard breaks canonical through blockquotes and lists", () => {
-    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
-    const bodyRow = table.child(1);
-    const bodyCell = bodyRow.child(0);
-    const breakCell = bodyCell.type.create(bodyCell.attrs, [
-      paragraph(t("a"), schema.node("hard_break"), t("b")),
-    ]);
-    const breakTable = table.type.create(table.attrs, [
-      table.child(0),
-      bodyRow.type.create(bodyRow.attrs, [breakCell]),
-    ]);
-    const originals = [
-      schema.node("blockquote", null, [breakTable]),
-      schema.node("bullet_list", { tight: true }, [
-        schema.node("list_item", null, [paragraph(t("Details")), breakTable]),
-      ]),
-    ];
-
-    for (const original of originals) {
-      const serialized = codec.serializeBlock(original);
-      expect(serialized).toContain("\\\n");
-      expect(serialized).not.toContain("<br");
-      expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(original.toJSON());
-    }
-  });
-
   it("keeps HTML table pipes inert while canonicalizing nested hard breaks", () => {
     const html = [
       "<table>",
@@ -509,83 +483,87 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  it("keeps pipe-cell hard breaks canonical in nested list tables", () => {
-    const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
-    const bodyRow = table.child(1);
-    const bodyCell = bodyRow.child(0);
-    const breakCell = bodyCell.type.create(bodyCell.attrs, [
-      paragraph(t("a", [m("strong")]), schema.node("hard_break"), t("b", [m("strong")])),
-    ]);
-    const breakTable = table.type.create(table.attrs, [
-      table.child(0),
-      bodyRow.type.create(bodyRow.attrs, [breakCell]),
-    ]);
-    const original = schema.node("bullet_list", { tight: true }, [
-      schema.node("list_item", null, [
-        paragraph(t("outer")),
-        schema.node("bullet_list", { tight: true }, [
-          schema.node("list_item", null, [paragraph(t("inner")), breakTable]),
-        ]),
-      ]),
-    ]);
+  /**
+   * A pipe table whose cells carry hard breaks, and the containers a writer can
+   * nest one inside.
+   *
+   * One corpus rather than a fixture per container: the rule is the same
+   * wherever the table sits — `\` at the end of the line, never `<br>`, and a
+   * round trip that lands on the same document — so a container is a row and a
+   * cell shape is a row, and both codecs run every combination.
+   */
+  type BrokenCellMarks = readonly (readonly ReturnType<typeof m>[])[];
 
-    for (const activeCodec of [
-      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-      codec,
-    ]) {
-      const serialized = activeCodec.serializeBlock(original);
-      expect(serialized).toContain("\\\n");
-      expect(serialized).not.toContain("<br");
-      expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(original.toJSON());
-    }
-  });
+  /** Marks on the broken cell text; one entry breaks the body row alone. */
+  const BROKEN_CELL_SHAPES: readonly { shape: string; rowMarks: BrokenCellMarks }[] = [
+    { shape: "plain cell text", rowMarks: [[]] },
+    { shape: "marked cell text", rowMarks: [[m("strong")]] },
+    { shape: "differently marked text in both rows", rowMarks: [[m("strong")], [m("em")]] },
+  ];
 
-  it("keeps pipe-cell hard breaks canonical in list-nested blockquotes", () => {
+  function tableWithBrokenCells(rowMarks: BrokenCellMarks): PMNode {
     const table = firstParsedBlock(codec, "| H |\n| - |\n| a |");
+    const firstBroken = table.childCount - rowMarks.length;
     const rows = [0, 1].map((rowIndex) => {
       const row = table.child(rowIndex);
+      if (rowIndex < firstBroken) return row;
       const cell = row.child(0);
-      const mark = rowIndex === 0 ? m("strong") : m("em");
       return row.type.create(row.attrs, [
         cell.type.create(cell.attrs, [
           paragraph(
-            t(rowIndex === 0 ? "head" : "body", [mark]),
+            t(rowIndex === 0 ? "head" : "body", rowMarks[rowIndex - firstBroken]),
             schema.node("hard_break"),
             t("down"),
           ),
         ]),
       ]);
     });
-    const breakTable = table.type.create(table.attrs, rows);
-    const nestedQuote = schema.node("blockquote", null, [breakTable]);
-    const originals = [
-      schema.node("bullet_list", { tight: true }, [
-        schema.node("list_item", null, [
-          paragraph(t("outer")),
-          schema.node("bullet_list", { tight: true }, [
-            schema.node("list_item", null, [paragraph(t("inner")), nestedQuote]),
-          ]),
-        ]),
-      ]),
-      schema.node("ordered_list", { order: 1, tight: true }, [
-        schema.node("list_item", null, [
-          paragraph(t("outer")),
-          schema.node("bullet_list", { tight: true }, [
-            schema.node("list_item", null, [paragraph(t("inner")), nestedQuote]),
-          ]),
-        ]),
-      ]),
-    ];
+    return table.type.create(table.attrs, rows);
+  }
 
-    for (const activeCodec of [
-      markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-      codec,
-    ]) {
-      for (const original of originals) {
+  const quote = (block: PMNode): PMNode => schema.node("blockquote", null, [block]);
+
+  const bulletItem = (...content: PMNode[]): PMNode =>
+    schema.node("bullet_list", { tight: true }, [schema.node("list_item", null, content)]);
+
+  const twoListsDeep = (block: PMNode): PMNode =>
+    bulletItem(paragraph(t("outer")), bulletItem(paragraph(t("inner")), block));
+
+  it.each([
+    { container: "a blockquote", wrap: quote },
+    {
+      container: "a list item",
+      wrap: (table: PMNode) => bulletItem(paragraph(t("Details")), table),
+    },
+    { container: "a list nested in a list", wrap: twoListsDeep },
+    {
+      container: "a blockquote two lists deep",
+      wrap: (table: PMNode) => twoListsDeep(quote(table)),
+    },
+    {
+      container: "a blockquote under an ordered list",
+      wrap: (table: PMNode) =>
+        schema.node("ordered_list", { order: 1, tight: true }, [
+          schema.node("list_item", null, [
+            paragraph(t("outer")),
+            bulletItem(paragraph(t("inner")), quote(table)),
+          ]),
+        ]),
+    },
+  ])("keeps pipe-cell hard breaks canonical inside $container", ({ wrap }) => {
+    for (const { shape, rowMarks } of BROKEN_CELL_SHAPES) {
+      const original = wrap(tableWithBrokenCells(rowMarks));
+
+      for (const activeCodec of [
+        markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+        codec,
+      ]) {
         const serialized = activeCodec.serializeBlock(original);
-        expect(serialized).toContain("\\\n");
-        expect(serialized).not.toContain("<br");
-        expect(firstParsedBlock(activeCodec, serialized).toJSON()).toEqual(original.toJSON());
+        expect(serialized, shape).toContain("\\\n");
+        expect(serialized, shape).not.toContain("<br");
+        expect(firstParsedBlock(activeCodec, serialized).toJSON(), shape).toEqual(
+          original.toJSON(),
+        );
       }
     }
   });
