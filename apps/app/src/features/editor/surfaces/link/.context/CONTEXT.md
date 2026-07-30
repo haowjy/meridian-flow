@@ -71,7 +71,7 @@ it, which is why `resolution.refresh()` is the whole after-effect.
 
 ## One document index, two questions
 
-`useWikilinkDocuments` walks the two cached trees — the manuscript, and the
+`useLinkableDocuments` walks the two cached trees — the manuscript, and the
 active Work's scratch — and returns every editable file with its title, its
 location, its `documents.id`, and its URI in the resolver's spelling. The `[[`
 menu renders those rows; `ProjectLinkRuntime` finds its own row by id to get

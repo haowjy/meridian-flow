@@ -13,7 +13,7 @@
 - The `[[` menu offers manuscript documents only. The resolver's candidate set
   also includes a work's scratch documents, which still resolve when typed but
   are never offered, because the editor host has no work in hand. Give
-  `EditorView` the active work and `useWikilinkDocuments` can add them.
+  `EditorView` the active work and `useLinkableDocuments` can add them.
 
 - One request per distinct internal target per open document, four at a time.
   A chapter with dozens of links pays dozens of round trips on open, and each

@@ -143,7 +143,7 @@ questions the document itself cannot:
 
 | Consumer | What the Work decides |
 |---|---|
-| `useWikilinkDocuments` | the `[[` menu offers that Work's scratch beside the manuscript |
+| `useLinkableDocuments` | the `[[` menu offers that Work's scratch beside the manuscript |
 | `ResolveDocumentLinkRequest.workId` | a `work://` shorthand has a Work to be relative to |
 | `useOpenProjectDocument` | a followed link is looked for in that Work's scratch |
 

@@ -42,7 +42,7 @@ export type LinkableDocument = WikilinkDocument & {
   uri: string;
 };
 
-export function useWikilinkDocuments({
+export function useLinkableDocuments({
   projectId,
   workId,
 }: EditorScope): readonly LinkableDocument[] {

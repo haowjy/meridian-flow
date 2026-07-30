@@ -40,7 +40,7 @@ import {
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
-import { useWikilinkDocuments } from "./useWikilinkDocuments";
+import { useLinkableDocuments } from "./useLinkableDocuments";
 
 /**
  * How long a follow waits before admitting it is still asking. Under this, the
@@ -60,7 +60,7 @@ export function ProjectLinkRuntime({
   const { projectId, workId } = scope;
   const resolution = useMemo(() => getLinkResolution(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
-  const documents = useWikilinkDocuments(scope);
+  const documents = useLinkableDocuments(scope);
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
 
   // What this document's relative links are relative to, read out of the same
