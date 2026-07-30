@@ -198,6 +198,22 @@ paragraph of a list item shares its edge with the list).
 beyond it; or the caret is beside one, so step onto it. Anything else returns
 false and the editor's own caret movement stands.
 
+Both cases end at an object or at prose, never inside an object.
+`caretBesideObjectTransaction` takes `Selection.near`'s landing and reads it
+back through the registration (`objectAround`): a landing that fell inside an
+object selects that object instead, so the press after this one is what passes
+it. Without that step the walk asked ProseMirror, which answers from the schema
+— every textblock is a place to put a caret, a rendered diagram is a
+`code_block`, and the caret landed in the mermaid source with the fence showing
+its syntax to keep those keystrokes reachable (human ruling, 2026-07-30: arrows
+select the diagram and never reveal it). A table is walked onto whole for the
+same reason the walk out of prose selects it; a plain fence still takes the
+caret, because its text is what the page is showing.
+
+The object the walk is LEAVING is excluded from that reading, or a step between
+two blocks of one table would answer "the table" and select the grid the writer
+is editing inside.
+
 Esc's forward search has three rungs, tried in order: a text position (a
 caret in prose), then a gap cursor past whatever leaves follow, then — only
 when nothing lies ahead at all — behind the object. `GapCursor.findFrom` is
@@ -205,6 +221,15 @@ not what finds the gap: it stops dead at a selectable node, so from just after
 a diagram it sees the scene break next door and reports nothing, which is how a
 trailing leaf sent the caret backward over the object. The gap the writer wants
 is on the FAR side of that leaf.
+
+Two verbs need somewhere to type rather than something to stand on, and they
+share the opposite reading. `opaqueObjectAround` finds the object whose body
+stands in for text the page does not show, and both Esc's forward search and a
+printable character step OVER it: Esc keeps looking past the diagram, and a
+letter beside an object gets a paragraph made for it rather than the next text
+position, which was the diagram's source. `../../pointer-boundary.ts` asks the
+same reading for a press, which is what makes "an opaque body is not caret
+territory" one rule with one owner instead of one per input device.
 
 **Esc does not reuse the arrow walk.** They ask different questions, and
 conflating them once sent the caret backward. `caretBesideObjectTransaction` is

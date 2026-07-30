@@ -109,7 +109,10 @@ change-trail events, not manuscript content.
   rules hold for every block kind alike: an outside press never lands in an
   opaque object's interior, and a press in a SEAM prefers prose to source. A
   new block view adds nothing here, because the answer reads the object
-  registration.
+  registration. The keyboard obeys the first rule too, through the same
+  reading: an arrow walk lands ON an opaque object and Esc steps over it
+  ([`objects/AGENTS.md`](objects/AGENTS.md)), so no input device can put a
+  caret in a body the page is not showing.
 
 - **A node view that hides its own text derives that face from the selection,
   and never restructures around it.** A selection inside a rendered diagram
