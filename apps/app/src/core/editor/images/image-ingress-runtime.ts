@@ -20,9 +20,11 @@ import type { ImageIngressStore } from "./image-ingress-store";
 import type { MutableAssetPathResolver, PastedImageImport } from "./image-workflow";
 import {
   NO_PENDING_IMAGES,
+  NO_UPLOAD_OWNERS,
   type PendingImage,
   type PendingImageState,
   type PendingImageUpload,
+  type UploadOwnersElsewhere,
 } from "./pending-images";
 
 export const IMAGE_INGRESS_NAME = "meridianImageIngress";
@@ -54,26 +56,46 @@ export type LandingImports = { imports: readonly PastedImageImport[]; range: Anc
 export type ImageIngressPluginState = {
   pending: PendingImageState;
   landing: LandingImports | null;
+  /**
+   * Upload tokens another client is filling right now
+   * (`image-upload-presence.ts` puts them here).
+   *
+   * Beside `pending` rather than merged into it: these have no bytes, no
+   * percent, and nothing this browser could retry — only the fact that an
+   * owner is live, which is what stops a peer calling an active upload
+   * abandoned.
+   */
+  elsewhere: UploadOwnersElsewhere;
 };
 
 export type ImageIngressMessage =
   | { set: PendingImage }
   | { drop: string }
-  | { landing: LandingImports | null };
+  | { landing: LandingImports | null }
+  | { elsewhere: UploadOwnersElsewhere };
 
 export const imageIngressPluginKey = new PluginKey<ImageIngressPluginState>(IMAGE_INGRESS_NAME);
 
 export const EMPTY_INGRESS_STATE: ImageIngressPluginState = {
   pending: NO_PENDING_IMAGES,
   landing: null,
+  elsewhere: NO_UPLOAD_OWNERS,
 };
 
 let ingressSequence = 0;
+/**
+ * This tab's share of every id, so no two clients can mint the same one.
+ *
+ * An upload's id is written into the shared document as its slot's
+ * `uploadToken` (`pending-images.ts`), so a counter alone would have two writers
+ * claiming each other's slots after both opened the document.
+ */
+const ingressOrigin = Math.random().toString(36).slice(2, 10);
 
-/** A new id for one arrival. Ids never repeat inside a session. */
+/** A new id for one arrival. Ids never repeat, here or on any other client. */
 export function nextIngressId(prefix: string): string {
   ingressSequence += 1;
-  return `${prefix}:${ingressSequence}`;
+  return `${prefix}:${ingressOrigin}:${ingressSequence}`;
 }
 
 export function imageIngressStorage(editor: Editor | null | undefined): ImageIngressStorage | null {
@@ -113,15 +135,18 @@ export function registerImageIngressHost(
   };
 }
 
-/** Whether a picture can be uploaded at all: law 5's input for the controls. */
-export function canUploadImages(editor: Editor | null): boolean {
-  const storage = imageIngressStorage(editor);
-  return Boolean(storage?.host) && Boolean(editor?.isEditable);
-}
-
 /** Every picture this editor is waiting on, for tests and surfaces that ask. */
 export function pendingImages(editor: Editor | null): readonly PendingImage[] {
   return Array.from(ingressState(editor).pending.values());
+}
+
+/** The upload tokens this client owns, which is what it announces to peers. */
+export function uploadTokensOwnedHere(editor: Editor | null): readonly string[] {
+  const owned: string[] = [];
+  for (const entry of ingressState(editor).pending.values()) {
+    if (entry.kind === "upload") owned.push(entry.id);
+  }
+  return owned;
 }
 
 export function uploadEntry(editor: Editor, id: string): PendingImageUpload | null {
@@ -175,6 +200,7 @@ export function applyIngressMessage(
   message: ImageIngressMessage,
 ): ImageIngressPluginState {
   if ("landing" in message) return { ...current, landing: message.landing };
+  if ("elsewhere" in message) return { ...current, elsewhere: message.elsewhere };
   const pending = new Map(current.pending);
   if ("drop" in message) pending.delete(message.drop);
   else pending.set(message.set.id, message.set);

@@ -1,12 +1,18 @@
 /**
  * ImageNodeView — what an inline picture looks like at every point in its life.
  *
- * One node view for four states, because they are one node: a picture on its
+ * One node view for five states, because they are one node: a picture on its
  * way (dimmed frame, its own proportions, a thin progress line), a picture that
  * did not make it (the same frame, what failed, Retry and Remove), a picture
- * whose upload never finished at all (a reload or a redo found the slot but not
- * the bytes), and a picture (the ordinary case, a signed read URL resolved from
- * the stable `asset:` ref).
+ * somebody ELSE is uploading right now (the same frame, no percent and no verbs,
+ * because neither the bytes nor the retry are ours), a picture whose upload
+ * never finished at all (a reload or a redo found the slot but not the bytes),
+ * and a picture (the ordinary case, a signed read URL resolved from the stable
+ * `asset:` ref).
+ *
+ * Which of the two empty-slot states applies is never guessed: the slot's
+ * `uploadToken` plus a live owner signal says an upload is in flight, and only
+ * a token nobody claims is the abandoned one (`pending-images.ts`).
  *
  * The frame is the reason completion moves nothing. Its size comes from the file
  * the writer handed over, measured locally before the upload started, and it is
@@ -33,7 +39,7 @@ import { removePendingImage, retryPendingImage } from "./image-uploads";
 import {
   type PendingImageFrame,
   type PendingImageUpload,
-  pendingImageFromDecorations,
+  pendingUploadFromDecorations,
 } from "./pending-images";
 
 export function ImageNodeView(props: NodeViewProps) {
@@ -41,12 +47,13 @@ export function ImageNodeView(props: NodeViewProps) {
   const alt = typeof props.node.attrs.alt === "string" ? props.node.attrs.alt : "";
   const { projectId } = (props.extension.options ?? {}) as { projectId?: string };
   const [state, actions] = useAssetImageRenderState({ projectId, src });
-  const pending = pendingImageFromDecorations(props.decorations);
+  const pending = pendingUploadFromDecorations(props.decorations);
+  const mine = pending?.owner === "mine" ? pending.entry : null;
 
   // The measured shape outlives the entry that carried it: the entry is dropped
   // the moment `src` is written, and the picture is not on screen yet.
   const frameRef = useRef<PendingImageFrame | null>(null);
-  if (pending?.frame) frameRef.current = pending.frame;
+  if (mine?.frame) frameRef.current = mine.frame;
   const frame = frameRef.current;
 
   // The whole picture is its own grip (`drag: "inline"` in EDITOR_OBJECT_TYPES):
@@ -61,8 +68,10 @@ export function ImageNodeView(props: NodeViewProps) {
       data-drag-handle
       style={frame ? frameStyle(frame) : undefined}
     >
-      {pending ? (
-        <PendingImage entry={pending} editor={props.editor} getPos={props.getPos} />
+      {mine ? (
+        <PendingImage entry={mine} editor={props.editor} getPos={props.getPos} />
+      ) : pending ? (
+        <UploadingElsewhere />
       ) : src === "" ? (
         <AbandonedImage editor={props.editor} getPos={props.getPos} />
       ) : state.url ? (
@@ -169,12 +178,44 @@ function PendingImage({
 }
 
 /**
- * A slot whose picture never arrived: the upload was still running when the tab
- * closed, or a redo brought the insert back after its abort.
+ * Somebody else's upload, in the slot they put it in.
  *
- * It cannot be retried, because the bytes were this browser's and are gone. So
- * it says that plainly and offers the one thing left to do, rather than a Retry
- * that would do nothing (law 5).
+ * The same quiet frame as an upload of the writer's own, minus everything only
+ * the uploading browser can know: no percent (it never leaves that browser), no
+ * Retry (these are not our bytes), no Remove (the picture is on its way, and
+ * removing the slot would cancel a collaborator's upload by accident).
+ *
+ * The frame is unmeasured here, because measuring is done from the local file.
+ * A collaborator's picture therefore takes its default frame and settles into
+ * its real one when the `src` arrives, which is the one reflow this lane cannot
+ * avoid for a peer.
+ */
+function UploadingElsewhere() {
+  return (
+    <span
+      className="meridian-image-pending meridian-image-pending--indeterminate"
+      role="img"
+      aria-label={t`Uploading elsewhere…`}
+    >
+      <span className="meridian-image-pending__label">
+        <span className="meridian-image-pending__name">
+          <Trans>Uploading elsewhere…</Trans>
+        </span>
+      </span>
+      <span className="meridian-image-pending__progress" aria-hidden />
+    </span>
+  );
+}
+
+/**
+ * A slot nobody is filling: the upload was still running when its tab closed, or
+ * a redo brought the insert back after its abort.
+ *
+ * It cannot be retried, because the bytes were one browser's and are gone. So it
+ * says that plainly and offers the one thing left to do, rather than a Retry
+ * that would do nothing (law 5). A slot whose owner is still live is never
+ * drawn this way — that is what the upload token and the owner signal are for
+ * (`pending-images.ts`).
  */
 function AbandonedImage({
   editor,

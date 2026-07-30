@@ -6,6 +6,12 @@
  * the upload follows, and everything after is that node's business. Landing
  * writes one attribute onto the same node, so nothing is inserted at completion
  * and no line of prose moves.
+ *
+ * One ordering rule is not cosmetic. An upload's entry — and therefore the owner
+ * signal peers read (`image-upload-presence.ts`) — is opened BEFORE the token's
+ * slot reaches the document. Awareness leaves on the announcement's own
+ * dispatch and the document update leaves on the insert's, so no collaborator
+ * can see a slot in flight before it knows someone is filling it.
  */
 
 import { t } from "@lingui/core/macro";
@@ -13,7 +19,6 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 
-import { holdNode } from "../anchors";
 import type { ImageIngressHost, UploadedImage } from "./image-ingress-ports";
 import {
   type ImageIngressMessage,
@@ -32,6 +37,7 @@ import {
   type PendingImageUpload,
   pendingImageAt,
   resolvePendingImage,
+  UPLOAD_TOKEN_ATTR,
 } from "./pending-images";
 
 /**
@@ -95,7 +101,7 @@ export function openImageReplacePicker(editor: Editor | null, pos: number): void
   pickImageFile((file) => replaceImageFile(editor, pos, file));
 }
 
-export function replaceImageFile(editor: Editor | null, pos: number, file: File): void {
+function replaceImageFile(editor: Editor | null, pos: number, file: File): void {
   const storage = imageIngressStorage(editor);
   const host = ingressHost(editor);
   if (!editor || !storage || !host) return;
@@ -111,7 +117,12 @@ export function replaceImageFile(editor: Editor | null, pos: number, file: File)
   // wrote one; a slot that never had one takes the new file's name, as an insert
   // does.
   const existing = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
-  startUpload(editor, host, { file, alt: existing || imageAltFromFilename(file.name), at: pos });
+  const upload = beginUpload(editor, { file, alt: existing || imageAltFromFilename(file.name) });
+  if (!claimSlot(editor, pos, upload.id)) {
+    cancelUpload(editor, upload);
+    return;
+  }
+  void runUpload(editor, host, upload.id, upload.signal);
 }
 
 /**
@@ -133,12 +144,14 @@ export function insertImageFile(editor: Editor | null, file: File, pos?: number)
   const host = ingressHost(editor);
   if (!host) return;
   const alt = imageAltFromFilename(file.name);
-  const at = insertPendingImageNode(editor, alt, pos);
+  const upload = beginUpload(editor, { file, alt });
+  const at = insertPendingImageNode(editor, alt, upload.id, pos);
   if (at === null) {
+    cancelUpload(editor, upload);
     storage.status.refuse(t`A picture cannot go there.`);
     return;
   }
-  startUpload(editor, host, { file, alt, at });
+  void runUpload(editor, host, upload.id, upload.signal);
 }
 
 /** Send a failed picture again, from the same slot with the same bytes. */
@@ -176,15 +189,28 @@ export function removePendingImage(editor: Editor | null, pos: number): void {
  * anywhere that cannot hold an inline picture (the seam between blocks, a code
  * fence) it arrives in a paragraph of its own after that block. Null is the
  * refusal, for a position that can take neither.
+ *
+ * The slot carries its upload's token from the first moment, in the same
+ * transaction, so the insert and its identity are one undoable step.
  */
-function insertPendingImageNode(editor: Editor, alt: string, pos?: number): number | null {
+function insertPendingImageNode(
+  editor: Editor,
+  alt: string,
+  token: string,
+  pos?: number,
+): number | null {
   const { state } = editor;
   const imageType = state.schema.nodes.image;
   const paragraphType = state.schema.nodes.paragraph;
   if (!imageType || !paragraphType) return null;
 
   const target = Math.max(0, Math.min(pos ?? state.selection.from, state.doc.content.size));
-  const image = imageType.create({ src: PENDING_IMAGE_SRC, alt, title: null });
+  const image = imageType.create({
+    src: PENDING_IMAGE_SRC,
+    alt,
+    title: null,
+    [UPLOAD_TOKEN_ATTR]: token,
+  });
   const $target = state.doc.resolve(target);
   const transaction = state.tr;
   let imagePos: number;
@@ -208,21 +234,40 @@ function insertPendingImageNode(editor: Editor, alt: string, pos?: number): numb
   return imagePos;
 }
 
-export function startUpload(
-  editor: Editor,
-  host: ImageIngressHost,
-  input: { file: File; alt: string; at: number },
-): void {
-  const hold = holdNode(editor.state, input.at);
-  // Only a document with no picture at `input.at` answers null, which the
-  // insertion this follows has just ruled out.
-  if (!hold) return;
+/**
+ * Write an upload's token onto a slot that already exists (Replace).
+ *
+ * Bookkeeping rather than an edit, so it stays out of the writer's undo stack:
+ * what they will undo is the picture, and that is the landing's business.
+ */
+function claimSlot(editor: Editor, pos: number, token: string): boolean {
+  const node = editor.state.doc.nodeAt(pos);
+  if (!node) return false;
+  const transaction = editor.state.tr.setNodeMarkup(pos, undefined, {
+    ...node.attrs,
+    [UPLOAD_TOKEN_ATTR]: token,
+  });
+  transaction.setMeta("addToHistory", false);
+  editor.view.dispatch(transaction);
+  return true;
+}
+
+type OpenUpload = { id: string; signal: AbortSignal };
+
+/**
+ * Open one upload's lifecycle: its token, its entry, and the owner signal every
+ * peer reads through it.
+ *
+ * Deliberately before the token's slot exists in the document. The frame is
+ * measured from here too, so the slot is the picture's real shape before a
+ * single byte has arrived.
+ */
+function beginUpload(editor: Editor, input: { file: File; alt: string }): OpenUpload {
   const controller = new AbortController();
   const id = nextIngressId("image-upload");
   const entry: PendingImageUpload = {
     kind: "upload",
     id,
-    hold,
     filename: input.file.name,
     alt: input.alt,
     file: input.file,
@@ -232,14 +277,18 @@ export function startUpload(
   };
   sendIngressMessage(editor, { set: entry });
 
-  // The frame's shape comes from the file itself, so the slot is the picture's
-  // real slot before a single byte has arrived.
   void measureImageFile(input.file).then((frame) => {
     if (!frame) return;
     patchUpload(editor, id, (current) => ({ ...current, frame }));
   });
 
-  void runUpload(editor, host, id, controller.signal);
+  return { id, signal: controller.signal };
+}
+
+/** The slot never opened, so neither did the upload. */
+function cancelUpload(editor: Editor, upload: OpenUpload): void {
+  uploadEntry(editor, upload.id)?.abort();
+  sendIngressMessage(editor, { drop: upload.id });
 }
 
 async function runUpload(
@@ -280,9 +329,11 @@ async function runUpload(
 /**
  * The bytes arrived: the picture's own node becomes the picture.
  *
- * One transaction, one attribute. Nothing is inserted and nothing is removed,
- * which is why the manuscript does not move — and the fence is re-read here
- * because an upload outlives the connection that started it.
+ * One transaction, one node: `src`, `alt`, and the token cleared, because the
+ * slot is no longer in flight and no peer should be told it is. Nothing is
+ * inserted and nothing is removed, which is why the manuscript does not move —
+ * and the fence is re-read here because an upload outlives the connection that
+ * started it.
  */
 function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
   const storage = imageIngressStorage(editor);
@@ -308,6 +359,7 @@ function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
     ...node.attrs,
     src: uploaded.src,
     alt: uploaded.alt ?? entry.alt,
+    [UPLOAD_TOKEN_ATTR]: null,
   });
   // Undo removes the picture the writer inserted; it does not step back through
   // the arrival of its own bytes and leave an empty frame behind.

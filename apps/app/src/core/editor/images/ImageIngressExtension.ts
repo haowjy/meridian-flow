@@ -89,7 +89,17 @@ export const ImageIngressExtension = Extension.create({
     };
   },
 
+  /**
+   * The editor is going, so everything it was carrying goes with it.
+   *
+   * An upload with no editor has nowhere to land: it would finish, write nothing,
+   * and leave a project asset no document mentions. The presence plugin releases
+   * this client's owner signal on the same teardown
+   * (`image-upload-presence.ts`), so peers stop being told a dead tab is still
+   * uploading.
+   */
   onDestroy() {
+    for (const entry of ingressState(this.editor).pending.values()) entry.abort();
     this.storage.status.destroy();
     this.storage.host = null;
   },
@@ -114,6 +124,9 @@ export const ImageIngressExtension = Extension.create({
             const carried: ImageIngressPluginState = {
               pending: carryPendingImages(current.pending, transaction.mapping),
               landing: carryLanding(current.landing, transaction.mapping),
+              // Nothing to carry: an owner elsewhere names a token, and the token
+              // travels on the node.
+              elsewhere: current.elsewhere,
             };
             return message ? applyIngressMessage(carried, message) : carried;
           },
@@ -140,8 +153,10 @@ export const ImageIngressExtension = Extension.create({
 
         props: {
           decorations(state): DecorationSet | null {
-            const pending = imageIngressPluginKey.getState(state)?.pending;
-            return pending ? pendingImageDecorations(pending, state) : null;
+            const ingress = imageIngressPluginKey.getState(state);
+            return ingress
+              ? pendingImageDecorations(ingress.pending, ingress.elsewhere, state)
+              : null;
           },
 
           handlePaste(view, event) {

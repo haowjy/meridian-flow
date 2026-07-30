@@ -19,7 +19,7 @@
  */
 
 import { Editor, type JSONContent } from "@tiptap/core";
-import { Awareness } from "y-protocols/awareness";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
@@ -30,15 +30,24 @@ export type CollabPair = {
   local: Editor;
   /** The collaborator. Write through this, then `sync()`. */
   peer: Editor;
-  /** Exchange updates both ways, as a connected server would. */
+  /** Exchange document updates both ways, as a connected server would. */
   sync: () => void;
+  /**
+   * Exchange AWARENESS both ways, for a lane whose subject is ephemeral.
+   *
+   * Separate from `sync()` on purpose: awareness carries collaborator carets
+   * too, so a suite that exchanges it opts into the peer's cursor decorations
+   * appearing in the document under test.
+   */
+  syncAwareness: () => void;
+  awareness: { local: Awareness; peer: Awareness };
   destroy: () => void;
 };
 
-function editorOn(doc: Y.Doc, markerStore?: SessionMarkerStore): Editor {
+function editorOn(doc: Y.Doc, awareness: Awareness, markerStore?: SessionMarkerStore): Editor {
   return new Editor({
     element: document.createElement("div"),
-    ...createEditorConfig({ document: doc, awareness: new Awareness(doc), markerStore }),
+    ...createEditorConfig({ document: doc, awareness, markerStore }),
   });
 }
 
@@ -50,6 +59,12 @@ function reconcileMount(editor: Editor): void {
 
 function push(from: Y.Doc, to: Y.Doc): void {
   Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
+}
+
+function pushAwareness(from: Awareness, to: Awareness): void {
+  const clients = Array.from(from.getStates().keys());
+  if (clients.length === 0) return;
+  applyAwarenessUpdate(to, encodeAwarenessUpdate(from, clients), "collab-pair");
 }
 
 /**
@@ -64,12 +79,14 @@ export function createCollabPair(
 ): CollabPair {
   const localDoc = new Y.Doc({ gc: false });
   const peerDoc = new Y.Doc({ gc: false });
+  const localAwareness = new Awareness(localDoc);
+  const peerAwareness = new Awareness(peerDoc);
 
-  const local = editorOn(localDoc, options.markerStore);
+  const local = editorOn(localDoc, localAwareness, options.markerStore);
   local.commands.setContent(content);
   reconcileMount(local);
   push(localDoc, peerDoc);
-  const peer = editorOn(peerDoc);
+  const peer = editorOn(peerDoc, peerAwareness);
   reconcileMount(peer);
 
   const sync = () => {
@@ -82,9 +99,16 @@ export function createCollabPair(
     local,
     peer,
     sync,
+    syncAwareness: () => {
+      pushAwareness(localAwareness, peerAwareness);
+      pushAwareness(peerAwareness, localAwareness);
+    },
+    awareness: { local: localAwareness, peer: peerAwareness },
     destroy: () => {
       peer.destroy();
       local.destroy();
+      peerAwareness.destroy();
+      localAwareness.destroy();
     },
   };
 }

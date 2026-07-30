@@ -513,27 +513,6 @@
   }
 }
 
-.meridian-editor--drag-active .ProseMirror {
-  background: color-mix(in srgb, var(--color-card) 65%, transparent);
-}
-
-.meridian-editor-drop-overlay {
-  position: absolute;
-  inset: 0.75rem;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 0.75rem;
-  border: 0.125rem dashed var(--color-border-focus);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-card) 88%, transparent);
-  color: var(--color-primary);
-  font-size: 0.875rem;
-  font-weight: 650;
-  pointer-events: none;
-}
-
 .meridian-editor .ProseMirror .meridian-figure-node {
   display: grid;
   gap: 0.625rem;

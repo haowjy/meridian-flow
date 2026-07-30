@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "../surfaces/blocks";
 import { FormattingMenu } from "../surfaces/formatting";
+import { ImageIngressOverlay } from "../surfaces/images";
 import { FollowOutcomeDialog, LinkSurfaces, WikilinkMenu } from "../surfaces/link";
 import { ObjectControls } from "../surfaces/objects";
 import { PeerMarkSurface } from "../surfaces/peer-marks";
@@ -54,4 +55,10 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
     render: ({ editor }) => <FollowOutcomeDialog editor={editor} />,
   },
   { id: "peer-mark", render: ({ editor }) => <PeerMarkSurface editor={editor} /> }, // a peer's change
+  {
+    // A drag in the air and a refused file. What a picture does once it is IN the
+    // document is its own node's business, not this surface's.
+    id: "image-ingress",
+    render: ({ editor }) => <ImageIngressOverlay editor={editor} />,
+  },
 ];
