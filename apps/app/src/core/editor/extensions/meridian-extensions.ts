@@ -26,6 +26,7 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "@/core/links";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { cellInteriorPressPlugin } from "../cell-interior-press";
 import { FigureNodeView } from "../FigureNodeView";
@@ -34,7 +35,6 @@ import { imageDragPreviewPlugin } from "../images/image-drag-preview";
 import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
-import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
 import { objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
 

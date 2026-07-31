@@ -44,7 +44,8 @@ keystroke that lands as itself costs far less than one that disappears.
 - **A range replacement that ends at the caret has to swallow the closers
   written for it.** `autoClosedRunLength` is that seam, and the `[[` menu is
   its one caller: a link inserted over the trigger's own range would otherwise
-  strand `]]` behind it.
+  strand `]]` behind it. `@` deliberately does not call it — it opens no pair,
+  so a closer past its caret belongs to an opener the writer typed.
 
 ## Anti-patterns
 

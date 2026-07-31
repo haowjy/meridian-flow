@@ -24,7 +24,8 @@ import { useState } from "react";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { type LinkFollowOutcome, linkTargetHref } from "@/core/editor/links";
+import type { LinkFollowOutcome } from "@/core/editor/links";
+import { linkTargetHref } from "@/core/links";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { EditorDialog } from "../../chrome";

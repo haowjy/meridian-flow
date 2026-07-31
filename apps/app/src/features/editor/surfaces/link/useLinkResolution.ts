@@ -9,7 +9,8 @@
 import type { Editor } from "@tiptap/core";
 import { useMemo, useSyncExternalStore } from "react";
 
-import { getLinkResolution, type LinkResolutionEntry } from "@/core/editor/links";
+import { getLinkResolution } from "@/core/editor/links";
+import type { LinkResolutionEntry } from "@/core/links";
 
 const NO_SUBSCRIPTION = () => () => {};
 const NOTHING = () => null;

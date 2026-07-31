@@ -329,7 +329,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return this.createBinaryDocument(input);
   }
 
-  async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
+  async createBinaryDocumentIfAbsent(
+    input: CreateBinaryDocumentInput,
+  ): Promise<ContextDocument | null> {
     const [row] = await this.db
       .insert(documents)
       .values({
@@ -344,10 +346,17 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         sizeBytes: input.sizeBytes,
         markdownProjection: "",
       })
+      .onConflictDoNothing()
       .returning();
-    if (!row) throw new Error("Failed to create binary document");
+    if (!row) return null;
     await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
+  }
+
+  async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
+    const created = await this.createBinaryDocumentIfAbsent(input);
+    if (!created) throw new Error("Failed to create binary document: path already exists");
+    return created;
   }
 
   async listFolders(parentId: string | null): Promise<ContextFolder[]> {

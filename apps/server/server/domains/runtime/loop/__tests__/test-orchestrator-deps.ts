@@ -22,6 +22,7 @@ import {
 } from "../../../threads/index.js";
 import type { Gateway } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
+import { unresolvedImageAssetPort } from "../../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolRegistry, type ToolExecutor } from "../../tools/index.js";
 import { createNoopInterruptArtifactFlushPort } from "../interrupt-session.js";
@@ -95,6 +96,7 @@ export function createTestOrchestratorDeps(
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     notices: createTestNoticePort(),
     activeDocuments,
+    imageAssets: unresolvedImageAssetPort,
     responseWrites: {
       async commitResponse() {
         return { status: "committed", receipts: [], concurrentEdits: [] };

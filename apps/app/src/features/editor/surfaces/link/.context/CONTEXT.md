@@ -80,17 +80,22 @@ document is a document the project did not have, which is a new catalog, which
 is a new resolution generation. Creating from the context tree gets the same
 result through the same door.
 
-## One document index, three questions
+## One reference index, three questions
 
-`useLinkableDocuments` walks the two cached trees — the manuscript, and the
-active Work's scratch — and returns `{ documents, revision }`: every editable
-file with its title, its location, its `documents.id`, and its URI in the
-resolver's spelling, plus the identity of that whole set. The `[[` menu renders
-the rows; `ProjectLinkRuntime` finds its own row by id to get `baseUri`, and
+`useReferenceCandidates` walks the two cached trees — the manuscript, and the
+active Work's scratch — and returns `{ candidates, revision }`. An editable file
+becomes a `document` candidate carrying its title, its location, its
+`documents.id`, and its URI in the resolver's spelling; an image or a PDF becomes
+an `asset` candidate carrying its filename, its path, and the same id. The `[[`
+menu asks `filterReferenceItems` with `scope: ["document"]` and renders the rows;
+`ProjectLinkRuntime` finds its own document candidate by id to get `baseUri`, and
 registers the port against the revision.
 
 `revision` is content, not an object identity and not a counter: the row's id,
-URI, and title joined per document. A refetch that found the same documents is
+URI, and title joined per document. Assets are outside it on purpose — they
+resolve to nothing by name, so an upload changes what `@` can offer without
+changing where a single link goes, and counting one would drop every resolved
+link in the document for it. A refetch that found the same documents is
 the same revision and costs nothing, while anything that changes where a link
 could go is a different one. An identity-based revision would drop every answer
 on a poll that changed nothing; a counter would restart on remount and claim a

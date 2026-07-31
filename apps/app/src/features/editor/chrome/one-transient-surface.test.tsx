@@ -49,6 +49,11 @@ vi.mock("@/core/editor/document-session-registry", () => ({
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => async () => true,
 }));
+// The link form's href field feeds from the project's context trees; this
+// suite is about chrome layers, and renders with no project around it.
+vi.mock("@/features/project/context/useReferenceCandidates", () => ({
+  useReferenceCandidates: () => ({ candidates: [], revision: "" }),
+}));
 
 let page: ReactEditorFixture;
 

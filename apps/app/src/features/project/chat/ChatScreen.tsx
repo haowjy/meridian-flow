@@ -10,6 +10,7 @@ import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
+import { ProjectTranscriptReferences } from "./ProjectTranscriptReferences";
 import { SubagentBanner } from "./SubagentBanner";
 import { SubagentTaskCard } from "./SubagentTaskCard";
 
@@ -82,6 +83,7 @@ function ChatScreenLoaded({
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    model: snapshotModel,
     isError,
     settled: historySettled,
     refetch,
@@ -116,16 +118,19 @@ function ChatScreenLoaded({
           activeWorkId={activeWork?.id ?? null}
           onSelectContextPath={onSelectContextPath}
         >
-          <ChatView
-            threadId={threadId}
-            projectId={projectId}
-            activeThread={thread}
-            activeWork={activeWork}
-            snapshotLiveState={snapshotLiveState}
-            snapshotNextSeq={snapshotNextSeq}
-            historySettled={historySettled}
-            key={`${projectId}:${threadId}`}
-          />
+          <ProjectTranscriptReferences projectId={projectId} activeWorkId={activeWork?.id ?? null}>
+            <ChatView
+              threadId={threadId}
+              projectId={projectId}
+              activeThread={thread}
+              activeWork={activeWork}
+              snapshotLiveState={snapshotLiveState}
+              snapshotNextSeq={snapshotNextSeq}
+              snapshotModel={snapshotModel}
+              historySettled={historySettled}
+              key={`${projectId}:${threadId}`}
+            />
+          </ProjectTranscriptReferences>
         </ProjectChatContextNavigationProvider>
       </div>
     </div>

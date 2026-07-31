@@ -1,17 +1,19 @@
 # core/completion — the headless half of a menu the writer types underneath
 
-The open-menu store every trigger publishes through, and the catalog that ranks
-the documents a `[[…]]` may name. Two hosts drive it: the editor's lane
-mechanism
+The open-menu store every trigger publishes through. Two hosts drive it: the
+editor's lane mechanism
 ([`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts))
-and, next, the chat composer's textarea. Neither one is visible from here.
+and the chat composer's own suggestion extension
+([`../../features/chat/composer-input/`](../../features/chat/composer-input/AGENTS.md)).
+Neither one is visible from here, and neither is what a row means — that is
+[`../references/`](../references/AGENTS.md).
 
 ## Mental model
 
 **Nothing here knows what is rendering it.** No ProseMirror, no DOM, no React,
 no writer-facing string. `anchorRect` is the single piece of geometry a menu
 carries and the host supplies it as a callback, so the same store serves a
-ProseMirror rect and a caret-mirror measurement without learning which it got.
+ProseMirror rect and a degraded frame-edge fallback without learning which it got.
 The placement argument, drawn from the real dependency graph, is the module
 header in [`index.ts`](index.ts).
 
@@ -23,16 +25,9 @@ menu is open only while it has rows, the highlight sits on the first row the hos
 will accept, and a row the host refuses is stepped over rather than handed a key
 that does nothing.
 
-**The catalog offers what the resolver can find.** Rows rank titles and aliases
-because that is what `POST …/links/resolve` matches on, and names normalize the
-way the server normalizes them. A host that offers a document the resolver has no
-candidate for hands the writer a link that lands dashed the instant it is
-inserted; the host's job is to offer the manuscript and the work's scratch, which
-is the resolver's own candidate set.
-
-**Ambiguity is shown, not resolved.** Two documents with one title resolve to
-nothing, so a row whose name is shared says so and is still offered. Renaming one
-of them is the writer's fix, and the menu never guesses which they meant.
+**The rows are opaque.** `TItem` is whatever the host ranked; the store never
+reads a field on one. That is what lets the slash menu's blocks and the
+reference catalog's documents and assets share one machine.
 
 ## Key rules
 
@@ -44,19 +39,19 @@ of them is the writer's fix, and the menu never guesses which they meant.
 - **A withdrawn session closes rather than freezes.** Hosts can lose their
   catalog mid-menu (a schema fence, a read-only surface), and `close()` is the
   one door for it.
-- **The create row is a row, not a footer**, because the keyboard has to reach
-  it, and it steps aside for an exact match: naming a document that already
-  exists is how a writer makes their own link ambiguous.
 
 ## Anti-patterns
 
 - Growing the snapshot with something only one surface renders. That is `TMeta`,
   or it is the host's own state.
-- A second title-matching rule anywhere. Two ranking implementations is two
-  menus that disagree about one query, and one of them disagrees with the
-  resolver.
+- Reading a row's shape. The moment this file knows what a document is, the
+  slash menu is importing the reference catalog to open a block list.
 
+→ [`../references/AGENTS.md`](../references/AGENTS.md) — what a reference row is
+  and how it ranks
 → [`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts) —
   the TipTap adapter that drives this from a lane spec
 → [`../editor/extensions/wikilink/AGENTS.md`](../editor/extensions/wikilink/AGENTS.md) —
   what `[[` does with a chosen row
+→ [`../editor/extensions/at-reference/AGENTS.md`](../editor/extensions/at-reference/AGENTS.md) —
+  what `@` does with one, which is the same thing for a document

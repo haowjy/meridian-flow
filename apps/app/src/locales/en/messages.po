@@ -63,7 +63,8 @@ msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
 #. placeholder {0}: item.matchedAlias
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "(also {0})"
 msgstr "(also {0})"
 
@@ -92,6 +93,11 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
 
+#. placeholder {0}: heldUploadNames[0]
+#: src/features/chat/Composer.tsx
+msgid "{0} didn't upload. Retry it or remove it, then send again."
+msgstr "{0} didn't upload. Retry it or remove it, then send again."
+
 #. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -117,11 +123,25 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
+#. placeholder {0}: (bytes / 1024).toFixed(1)
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{0} KB"
+msgstr "{0} KB"
+
+#. placeholder {0}: (bytes / (1024 * 1024)).toFixed(1)
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{0} MB"
+msgstr "{0} MB"
+
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{0} source copied"
 msgstr "{0} source copied"
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{bytes} B"
+msgstr "{bytes} B"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
@@ -341,6 +361,10 @@ msgstr "Ask about your data, methods, or the next step in your work—plain lang
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Attachments"
+msgstr "Attachments"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Auto-apply"
@@ -773,7 +797,7 @@ msgid "Couldn't write"
 msgstr "Couldn't write"
 
 #. placeholder {0}: item.name
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "Create “{0}”"
 msgstr "Create “{0}”"
 
@@ -900,6 +924,11 @@ msgstr "Divider"
 msgid "Dock view"
 msgstr "Dock view"
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
+msgid "document"
+msgstr "document"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Document"
 msgstr "Document"
@@ -907,6 +936,11 @@ msgstr "Document"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Document name and location"
 msgstr "Document name and location"
+
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+#: src/features/editor/EditorView.tsx
+msgid "Documents"
+msgstr "Documents"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
@@ -1102,6 +1136,10 @@ msgstr "fig:terrace"
 msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+msgid "file"
+msgstr "file"
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr "File name"
@@ -1110,6 +1148,7 @@ msgstr "File name"
 msgid "File suggestions"
 msgstr "File suggestions"
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
 msgstr "Files"
@@ -1379,7 +1418,7 @@ msgstr "Link a document"
 msgid "Link text"
 msgstr "Link text"
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "links now, page later"
 msgstr "links now, page later"
 
@@ -1876,9 +1915,15 @@ msgstr "Paste a link or type [[a document name]]"
 msgid "photo"
 msgstr "photo"
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
 msgstr "picture"
+
+#: src/features/editor/EditorView.tsx
+msgid "Pictures"
+msgstr "Pictures"
 
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Plain text"
@@ -2008,6 +2053,15 @@ msgstr "Redo is no longer available because the manuscript changed."
 msgid "Redoing…"
 msgstr "Redoing…"
 
+#: src/features/chat/Composer.tsx
+#: src/features/editor/surfaces/link/useHrefReferences.ts
+msgid "Reference a document"
+msgstr "Reference a document"
+
+#: src/features/editor/EditorView.tsx
+msgid "Reference a document or picture"
+msgstr "Reference a document or picture"
+
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
 msgstr "Refresh"
@@ -2019,6 +2073,11 @@ msgstr "remaining"
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Remove"
 msgstr "Remove"
+
+#. placeholder {0}: token.label
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Remove {0}"
+msgstr "Remove {0}"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -2111,6 +2170,11 @@ msgstr "Retry"
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr "Retry sign-in"
+
+#. placeholder {0}: token.label
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Retry uploading {0}"
+msgstr "Retry uploading {0}"
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
@@ -2277,6 +2341,10 @@ msgstr "Some changes couldn't be completed."
 #: src/features/chat/tool-renderers.tsx
 msgid "Some changes to {name} couldn't be completed."
 msgstr "Some changes to {name} couldn't be completed."
+
+#: src/features/chat/Composer.tsx
+msgid "Some files didn't upload. Retry them or remove them, then send again."
+msgstr "Some files didn't upload. Retry them or remove them, then send again."
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
@@ -2688,6 +2756,10 @@ msgstr "This folder no longer exists."
 msgid "This image never finished uploading."
 msgstr "This image never finished uploading."
 
+#: src/features/chat/Composer.tsx
+msgid "This model can't view pictures, so picture references are sent as text."
+msgstr "This model can't view pictures, so picture references are sent as text."
+
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
@@ -2755,7 +2827,8 @@ msgstr "Try again, or return to the live document."
 msgid "Turn into"
 msgstr "Turn into"
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "two documents share this name"
 msgstr "two documents share this name"
 
@@ -2817,6 +2890,10 @@ msgstr "Updated"
 msgid "upload"
 msgstr "upload"
 
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Upload failed"
+msgstr "Upload failed"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr "Upload figure"
@@ -2824,6 +2901,10 @@ msgstr "Upload figure"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Upload or paste"
 msgstr "Upload or paste"
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Uploading"
+msgstr "Uploading"
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/ImageNodeView.tsx

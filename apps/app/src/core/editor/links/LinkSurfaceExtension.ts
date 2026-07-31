@@ -26,6 +26,8 @@ import {
 } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
+import { classifyLinkTarget, createLinkResolution, type LinkResolution } from "@/core/links";
+
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { getEditorChrome, hoverOwner } from "../chrome";
 import {
@@ -37,7 +39,6 @@ import {
   relocateLink,
 } from "./link-commands";
 import { followLink, linkClickIntent, MIDDLE_BUTTON } from "./link-navigation";
-import { createLinkResolution, type LinkResolution } from "./link-resolution";
 import { linkResolutionPlugin } from "./link-resolution-decorations";
 import {
   createLinkSurface,
@@ -45,7 +46,6 @@ import {
   type LinkPoint,
   type LinkSurface,
 } from "./link-surface";
-import { classifyLinkTarget } from "./link-target";
 
 const LINK_SURFACE_NAME = "meridianLinkSurface";
 

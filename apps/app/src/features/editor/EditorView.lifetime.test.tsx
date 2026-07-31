@@ -125,6 +125,13 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+// This suite isolates EditorView from the query layer (the hook mocks below);
+// the ingress runtime's upload port asks for the query client, so that one
+// hook is stubbed the same way rather than mounting a provider per render.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useQueryClient: () => ({ invalidateQueries: () => Promise.resolve() }),
+}));
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: threadList.current, isError: false, isFetching: false }),
 }));

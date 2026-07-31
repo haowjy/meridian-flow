@@ -23,10 +23,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { getLinkResolution } from "@/core/editor/links";
-
+import { useReferenceCandidates } from "@/features/project/context/useReferenceCandidates";
 import { EditorScopeProvider } from "../../editor-scope";
 import { ProjectLinkRuntime } from "./ProjectLinkRuntime";
-import { useLinkableDocuments } from "./useLinkableDocuments";
 
 const resolveDocumentLink = vi.fn(
   async (
@@ -312,6 +311,7 @@ function resolvedLink(documentId: string) {
   return {
     documentId,
     title: "Notes",
+    fileType: "markdown",
     scheme: "work" as const,
     path: "notes.md",
     uri: "work://notes.md",
@@ -325,10 +325,11 @@ type Candidate = { title: string; location: string };
 function candidates(scope: { projectId: string | null; workId: string | null }): Candidate[] {
   let offered: Candidate[] = [];
   const Probe = () => {
-    offered = useLinkableDocuments(scope).documents.map(({ title, location }) => ({
-      title,
-      location,
-    }));
+    offered = useReferenceCandidates(scope).candidates.flatMap((candidate) =>
+      candidate.kind === "document"
+        ? [{ title: candidate.title, location: candidate.location }]
+        : [],
+    );
     return null;
   };
   act(() => root?.render(<Probe />));

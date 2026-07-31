@@ -43,6 +43,7 @@ import {
 } from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useReferenceCandidates } from "@/features/project/context/useReferenceCandidates";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -53,7 +54,8 @@ import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
-import { ProjectLinkRuntime, useLinkableDocuments } from "./surfaces/link";
+
+import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
@@ -297,14 +299,28 @@ function ActiveSessionEditorView({
     return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
-  // Read when the `[[` menu opens, for the same reason as the slash catalog:
-  // the label resolves against whatever locale is active then, and the document
+  // Read when a reference menu opens, for the same reason as the slash catalog:
+  // the copy resolves against whatever locale is active then, and the document
   // list changes every time the writer creates or renames a file.
-  const { documents: wikilinkDocuments } = useLinkableDocuments(scope);
+  const { candidates } = useReferenceCandidates(scope);
+  const referencesOffered =
+    identity.schemaType === "document" && effectiveEditable && Boolean(projectId);
   const wikilinkCatalog = useCallback(() => {
-    if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
-    return { label: t`Link a document`, documents: wikilinkDocuments };
-  }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
+    if (!referencesOffered) return null;
+    return { label: t`Link a document`, candidates };
+  }, [candidates, referencesOffered]);
+
+  // The same candidates through the other door, named for what `@` does with
+  // them: a picture is not something a writer links to, it is something they
+  // put here.
+  const atReferenceCatalog = useCallback(() => {
+    if (!referencesOffered) return null;
+    return {
+      label: t`Reference a document or picture`,
+      candidates,
+      groupLabels: { document: t`Documents`, asset: t`Pictures` },
+    };
+  }, [candidates, referencesOffered]);
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press
@@ -326,6 +342,7 @@ function ActiveSessionEditorView({
     placeholder: t`Start writing…`,
     slashCommandCatalog,
     wikilinkCatalog,
+    atReferenceCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
   });

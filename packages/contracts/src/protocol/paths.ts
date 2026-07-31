@@ -180,6 +180,19 @@ export function apiThreadUploadsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/uploads`;
 }
 
+export function apiThreadUploadPath(threadId: string, documentId: string): string {
+  return `${apiThreadUploadsPath(threadId)}/${documentId}`;
+}
+
+/** Multipart import of one attached file (POST); list/delete live under `/uploads`. */
+export function apiThreadUploadImportPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/upload`;
+}
+
+export function apiDocumentDownloadPath(documentId: string): string {
+  return `/api/documents/${documentId}/download`;
+}
+
 export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: number }): string {
   const search = new URLSearchParams();
   if (opts?.limit != null) {

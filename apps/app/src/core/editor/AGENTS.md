@@ -82,13 +82,17 @@ change-trail events, not manuscript content.
 
 - **A menu the writer types underneath is a spec, not a plugin.**
   `extensions/suggestion/` holds one mechanism that wires `@tiptap/suggestion`,
-  the kernel keymap, and the catalog fence for every lane; `/` and `[[` each
-  declare a spec (char, envelope predicate, matches, row projection, choice) and
-  nothing else, so a third trigger is a spec rather than a third copy of the
-  lifecycle. The presentation-neutral half — the open-menu store and the document
-  catalog's ranking — sits in [`../completion/`](../completion/AGENTS.md) rather
-  than here, because the chat composer completes references into a textarea and
-  must not import the editor to do it. See
+  the kernel keymap, and the catalog fence for every lane; `/`, `[[`, and `@`
+  each declare a spec (char, envelope predicate, matches, row projection,
+  choice) and nothing else, so a fourth trigger is a spec rather than a fourth
+  copy of the lifecycle. Where a trigger may open at all is one more shared
+  thing (`trigger-envelope.ts`): what prose is, what a word boundary is, and
+  where a reference may be spelled, so a new block type is one edit rather than
+  three that drift. The presentation-neutral halves sit outside the editor — the
+  open-menu store in [`../completion/`](../completion/AGENTS.md), what a
+  reference may name and how it ranks in
+  [`../references/`](../references/AGENTS.md) — because the chat composer
+  completes references into a textarea and must not import the editor to do it. See
   [`extensions/suggestion/suggestion-lane.ts`](extensions/suggestion/suggestion-lane.ts).
 
 - Control-surface policy is the chrome kernel's, not an extension's private
@@ -190,7 +194,9 @@ and navigation contracts.
 → [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers the editor writes
 → [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
 → [`extensions/wikilink/AGENTS.md`](extensions/wikilink/AGENTS.md) — the `[[` trigger
-→ [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store and reference catalog
+→ [`extensions/at-reference/AGENTS.md`](extensions/at-reference/AGENTS.md) — the `@` trigger
+→ [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store
+→ [`../references/AGENTS.md`](../references/AGENTS.md) — what a reference may name, and how it ranks
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
 → [`diagrams/AGENTS.md`](diagrams/AGENTS.md) — which fences draw, and who draws them
 → [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag

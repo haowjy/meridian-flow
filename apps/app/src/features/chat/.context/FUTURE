@@ -1,5 +1,17 @@
 # FUTURE — nice-to-have follow-ups (chat)
 
+- Sent-turn image thumbnails: `UserTurn` renders a persisted image block's
+  reference as the resolved text button only; a thumbnail strip (via the
+  existing document-download resolution seam) would show the writer the
+  pixels that rode. Deliberate v1 scope cut in the @ references phase
+  (2026-07-31). Same seam applies to the optimistic turn factory
+  (`build-optimistic-user-turn.ts`), which constructs text-only today.
+
+- Composer attachment chip click-to-preview: the attachments design memo's
+  display contract sketches opening a preview from the chip
+  (`composer-input/ComposerAttachmentChips.tsx`); v1 chips are inert beyond
+  the × control. (@ references phase, 2026-07-31.)
+
 - ThreadSwitcherPopover recomputes filtering/grouping (`filterThreadsByTitle`,
   work-item regrouping) on every render even while the popover is closed.
   Harmless at today's thread counts; if long-task violations appear during

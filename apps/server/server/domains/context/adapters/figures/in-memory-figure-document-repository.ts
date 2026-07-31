@@ -1,6 +1,7 @@
 import type {
   DocumentFileRecord,
   FigureDocumentRepository,
+  ManuscriptAssetFileRecord,
   ProjectDocumentFileRecord,
 } from "../../ports/figure-document-repository.js";
 
@@ -9,16 +10,17 @@ export interface InMemoryFigureDocumentRepositoryOptions {
   documentIds?: Array<{ projectId: string; documentId: string }>;
 }
 const keyFor = (projectId: string, documentId: string) => `${projectId}\0${documentId}`;
-const toRecord = (input: ProjectDocumentFileRecord): DocumentFileRecord => ({
+const toRecord = (input: ProjectDocumentFileRecord): ManuscriptAssetFileRecord => ({
   assetDocumentId: input.assetDocumentId,
   storageUrl: input.storageUrl,
   mimeType: input.mimeType,
   fileType: input.fileType,
   sizeBytes: input.sizeBytes,
+  assetPath: input.assetPath,
 });
 
 export class InMemoryFigureDocumentRepository implements FigureDocumentRepository {
-  private readonly records = new Map<string, DocumentFileRecord>();
+  private readonly records = new Map<string, ManuscriptAssetFileRecord>();
   private readonly documentKeys = new Set<string>();
   constructor(options: InMemoryFigureDocumentRepositoryOptions = {}) {
     for (const record of options.records ?? []) {
@@ -35,6 +37,13 @@ export class InMemoryFigureDocumentRepository implements FigureDocumentRepositor
     projectId: string,
     assetDocumentId: string,
   ): Promise<DocumentFileRecord | null> {
+    const record = this.records.get(keyFor(projectId, assetDocumentId));
+    return record ? { ...record } : null;
+  }
+  async findManuscriptAssetForProject(
+    projectId: string,
+    assetDocumentId: string,
+  ): Promise<ManuscriptAssetFileRecord | null> {
     const record = this.records.get(keyFor(projectId, assetDocumentId));
     return record ? { ...record } : null;
   }

@@ -12,6 +12,7 @@ import {
 } from "../context-uri.js";
 import type { UserId, WorkId } from "../ids.js";
 import type { Project, ProjectStatsResponse } from "../projects/index.js";
+import type { ModelCapability } from "../runtime/model-capabilities.js";
 import type {
   Block,
   BlockType,
@@ -25,6 +26,7 @@ import type {
   TurnRole,
   TurnStatus,
   TurnUsage,
+  UserMessageBlock,
 } from "../threads/index.js";
 import type { AiWriteMode, Work } from "../works/index.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
@@ -398,6 +400,8 @@ export type UpdateWorkWriteModeResponse =
 
 export type SendMessageRequest = {
   text: string;
+  /** Ordered canonical message content. When omitted, `text` becomes one text block. */
+  blocks?: UserMessageBlock[];
   /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
   connectionToken?: string;
 };
@@ -428,6 +432,11 @@ export type ThreadSnapshotResponse = {
   turns: Turn[];
   liveState: ThreadLiveState;
   attention: ThreadAttention;
+  /** Gateway model resolved from the thread's agent binding and server default. */
+  model: {
+    id: string | null;
+    capabilities: ModelCapability[];
+  };
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;
 };

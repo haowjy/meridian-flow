@@ -14,39 +14,30 @@
  * would be a transient surface the kernel never heard about — and this one can
  * open a quarter second late, long after the writer summoned something else.
  *
- * **An answer belongs to a scope, not to a href.** What `[[Notes]]` or
- * `./cast.md` points at is a function of the project, the active Work, the URI
- * of the document holding the link, and which documents the project holds; all
- * four are this component's own inputs, the last as the document index's
- * revision. So the resolver is registered per scope and re-registered when any
- * of them changes, and `registerResolver` drops every answer and every failure
- * the previous scope produced before the next question is asked. That keeps Work
- * a runtime scope — nothing here remounts the collaborative editor — while
- * making a stale answer unreachable rather than merely unlikely.
- *
- * A rename is the case that makes the catalog part load-bearing: `[[Old Name]]`
- * is spelled the same before and after, and the answer it already has is now a
- * door onto the wrong document. One lifecycle owns all four, so no mutation
- * anywhere in the app needs a line that pokes this cache.
+ * **An answer belongs to a scope, not to a href**, and the scope's port is
+ * [`useProjectLinkResolver`](../../../project/context/project-link-resolver.ts),
+ * shared with the chat transcript. What this component adds is the editor half:
+ * registering that port against THIS editor's store, keyed on the document
+ * holding the links, and turning a follow into an open tab. Re-registering is
+ * the whole invalidation mechanism, so a rename needs no line that pokes a
+ * cache and Work stays a runtime scope — nothing here remounts the
+ * collaborative editor.
  */
 
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo } from "react";
 
-import { resolveDocumentLink } from "@/client/api/document-links-api";
 import {
-  documentLinkTarget,
   getLinkResolution,
   getLinkSurface,
   type InternalLinkNavigator,
   type LinkFollowDisposition,
-  type LinkTarget,
-  linkTargetHref,
 } from "@/core/editor/links";
+import { type LinkTarget, linkTargetHref } from "@/core/links";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useProjectLinkResolver } from "@/features/project/context/project-link-resolver";
 
 import { useEditorScope } from "../../editor-scope";
-import { useLinkableDocuments } from "./useLinkableDocuments";
 
 /**
  * How long a follow waits before admitting it is still asking. Under this, the
@@ -66,40 +57,15 @@ export function ProjectLinkRuntime({
   const { projectId, workId } = scope;
   const resolution = useMemo(() => getLinkResolution(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
-  const { documents, revision } = useLinkableDocuments(scope);
+  const { resolve, revision } = useProjectLinkResolver(scope, documentId);
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
 
-  // What this document's relative links are relative to, read out of the same
-  // index the `[[` menu offers rows from: a scratch note the menu names is a
-  // note that can hold `./cast.md` too. Null until the tree carrying it
-  // arrives, which is a link with no answer yet rather than a missing document.
-  const baseUri = useMemo(
-    () => documents.find((document) => document.documentId === documentId)?.uri ?? null,
-    [documents, documentId],
-  );
-
   useEffect(() => {
-    if (!resolution || !projectId) return;
-    return resolution.registerResolver(async (target) => {
-      const request = documentLinkTarget(target, baseUri ?? "");
-      // A relative path is meaningless without the URI of the document holding
-      // it. Throwing rather than answering "nothing found" is deliberate: the
-      // question could not be asked, and an unasked question must not render as
-      // a missing document. The base arriving is a scope change, so this same
-      // link is asked again instead of staying failed.
-      if (!request) throw new Error("link target is not a document link");
-      if (request.kind === "relative" && !baseUri) {
-        throw new Error("relative link has no base document URI yet");
-      }
-      const { document } = await resolveDocumentLink(projectId, {
-        workId,
-        target: request,
-      });
-      return document;
-    });
+    if (!resolution || !resolve) return;
+    return resolution.registerResolver(resolve);
     // `revision` is in here without being read: registering against a different
     // catalog is how an answer about the old one becomes unreachable.
-  }, [baseUri, projectId, resolution, revision, workId]);
+  }, [resolution, resolve, revision]);
 
   const follow = useCallback(
     async (target: LinkTarget, disposition: LinkFollowDisposition) => {

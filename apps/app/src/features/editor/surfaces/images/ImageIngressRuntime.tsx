@@ -12,10 +12,12 @@
  */
 
 import type { ProjectContextTreeNode } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
+import { isProjectContextTreeKey } from "@/client/query/project-query-keys";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import {
   editorAssetIndex,
@@ -38,9 +40,23 @@ export function ImageIngressRuntime({
     enabled: Boolean(projectId),
   });
 
+  const queryClient = useQueryClient();
   const upload = useMemo<ImageUploadPort | null>(
-    () => (projectId ? figureUploadPort(projectId, documentId) : null),
-    [documentId, projectId],
+    () =>
+      projectId
+        ? figureUploadPort(projectId, documentId, () => {
+            // A finished upload is a new asset in the project's catalog, and the
+            // catalog is a cached query: without this, the sidebar tree and the
+            // `@` menu keep offering yesterday's assets until a reload. This
+            // invalidates the tree query alone, never the link resolution store
+            // (`surfaces/link/AGENTS.md`): assets stay out of the catalog
+            // revision, so no resolved link is re-asked for a picture arriving.
+            void queryClient.invalidateQueries({
+              predicate: (query) => isProjectContextTreeKey(query.queryKey, projectId),
+            });
+          })
+        : null,
+    [documentId, projectId, queryClient],
   );
 
   useEffect(() => {
@@ -69,7 +85,11 @@ export function ImageIngressRuntime({
 }
 
 /** One project's figure endpoint, as the port the ingress calls. */
-function figureUploadPort(projectId: string, hostDocumentId: string): ImageUploadPort {
+function figureUploadPort(
+  projectId: string,
+  hostDocumentId: string,
+  onUploaded: () => void,
+): ImageUploadPort {
   return async ({ file, alt, signal, onProgress }) => {
     const reference = await uploadFigure({
       projectId,
@@ -79,6 +99,7 @@ function figureUploadPort(projectId: string, hostDocumentId: string): ImageUploa
       signal,
       onProgress: ({ percent }) => onProgress(percent),
     });
+    onUploaded();
     const attrs = imageAttrsFromUpload(reference);
     return {
       src: attrs.src,

@@ -15,6 +15,8 @@ export default defineEventHandler(async (event) => {
       packageRepository: app.packageRepository,
       toolRegistry: app.toolRegistry,
       toolExecutor: app.toolExecutor,
+      gateway: app.gateway,
+      imageAssets: app.imageAssets,
     },
     { threadId, userId: user.userId },
   );

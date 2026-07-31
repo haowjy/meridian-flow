@@ -4,8 +4,8 @@
  * Two triggers have these physics today: `/` offering blocks (§5.7) and `[[`
  * offering documents (§5.5). In both the query IS the text after the trigger,
  * the caret never leaves what the writer is typing, and something upstream owns
- * when the menu exists and what matched — `@tiptap/suggestion` in the editor,
- * caret measurement in a composer. This store is the whole seam between that
+ * when the menu exists and what matched — `@tiptap/suggestion`, in the editor
+ * and the composer alike. This store is the whole seam between that
  * upstream and React, which is why the keyboard lives here rather than in the
  * component: the arrow keys are registered from the trigger's own lifetime, so
  * they are bound before React has rendered a single row and the first ArrowDown

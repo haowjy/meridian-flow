@@ -332,6 +332,10 @@ export function createInstrumentedGateway(
     getDefaultModel() {
       return gateway.getDefaultModel();
     },
+
+    listModels() {
+      return gateway.listModels?.() ?? [];
+    },
   };
 
   const settleCancelledResult = gateway.settleCancelledResult;

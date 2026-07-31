@@ -47,20 +47,35 @@ with a single unified `ContextPort` that resolves durable project schemes
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
   one chapter cannot disturb another that references the same asset.
-- **Asset-path resolver adapter** (`adapters/asset-path-resolver.ts`) — preloads
-  persisted `manuscript://assets/` identities for codec composition and is
-  updated immediately when figure upload creates a binary asset. A path shared
-  by more than one asset resolves to nothing: the id direction is unique, the
-  path direction is not.
+  Runtime manuscript-image references bind the stable document ID to its
+  project manuscript source and authoritative full `manuscript://` path—not to
+  an `assets/` folder convention. Project ownership alone is not enough,
+  because thread uploads are also project documents.
+- **Asset-path resolver adapter** (`adapters/asset-path-resolver.ts`) — maps
+  asset document IDs to manuscript paths for codec composition and is updated
+  immediately when figure upload creates a binary asset. A path shared by more
+  than one asset resolves to nothing: the id direction is unique, the path
+  direction is not.
+
+  > [!FLAG] **Needs human review**
+  > Cold-start loading still preloads only the top-level `assets` folder. Runtime
+  > image authorization correctly uses a document's full authoritative manuscript
+  > path, so the resolver must not be treated as the image-identity authority.
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
   resolution boundary for wikilink titles/aliases, `manuscript://` and
   `work://` locations, and paths relative to the containing document. The
   Drizzle adapter reads authoritative document/folder state for every
-  resolution; the in-memory adapter obeys the same contract.
+  resolution and returns the document row's persisted filetype with a match;
+  consumers never reclassify a resolved document from its path or extension.
+  The in-memory adapter obeys the same contract.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
   vocabulary, routing, and work-scope membership gating for work-scoped schemes.
+- **Thread attachment import** (`uploads/`) — resolves the thread's primary Work
+  and creates the attachment through the same `uploads://` ContextPort the agent
+  lists. `thread_documents` remains the provenance/rail index; it is not a
+  second storage location.
 
 ## Contracts
 
@@ -70,7 +85,7 @@ with a single unified `ContextPort` that resolves durable project schemes
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. |
-| `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
+| `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document, including its persisted `fileType`, or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
 
 ## URI and router invariants
 
@@ -81,6 +96,14 @@ with a single unified `ContextPort` that resolves durable project schemes
 - Work-scoped schemes (`scratch://`, `uploads://`) carry a `<workId>` authority.
   Omitted authority resolves to the thread's primary Work. `manuscript://`,
   `kb://`, `user://` carry no work authority.
+- Thread imports allocate at the `uploads://` root. The writer's filename wins
+  when free; collisions advance deterministically to `name-2.ext`,
+  `name-3.ext`, and so on. The rail continues to project `thread_documents`
+  attachments without changing its public item shape.
+- Thread upload deletion accepts the attached document ID, resolves its current
+  authoritative `uploads://<workId>/path`, and calls `ContextPort.delete`.
+  Context soft-delete and manifest cleanup therefore remain the single deletion
+  mechanism even after a file has been renamed or moved.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Wikilink title/alias matching is case-insensitive and trims outer whitespace.
   Scheme and relative paths are exact (an omitted final extension may match);
@@ -181,6 +204,8 @@ with a single unified `ContextPort` that resolves durable project schemes
 - **`scratch://.results`** — promotion cruft, removed. Results → `scratch://<workId>/results/…`.
 - **`LegacyThreadContextPort`** / `manuscriptContextPort` / `REQUIRED_MANUSCRIPT_URI` — deleted.
 - **Corpus-import domain ceremony** — folded into `kb://imports/…` ingest.
+- **Project-internal `thread_uploads` source and backing store** — deleted.
+  Thread attachments use the primary Work's ordinary `uploads` source.
 
 ## Negative space
 

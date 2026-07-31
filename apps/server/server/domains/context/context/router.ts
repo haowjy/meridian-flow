@@ -14,6 +14,7 @@ import type {
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentResult,
+  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextMoveOptions,
@@ -142,6 +143,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return deps.allowedAuthorities?.has(workId) ?? false;
   }
 
+  function outputAuthority(scheme: ContextScheme, authority: string | null): string | null {
+    return authority ?? deps.adapterAuthorities?.get(scheme) ?? null;
+  }
+
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);
     if (!parsed.ok) return parsed;
@@ -188,7 +193,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const result = await callAdapter(canonical, () => adapter.stat(path));
       if (!result.ok) return result;
       if (result.value === null) return Err({ code: "not_found", uri: canonical });
-      return Ok(toFileRef(scheme, authority, result.value, !adapter.capabilities.writable));
+      return Ok(
+        toFileRef(
+          scheme,
+          outputAuthority(scheme, authority),
+          result.value,
+          !adapter.capabilities.writable,
+        ),
+      );
     },
 
     async read(uri: string): Promise<Result<ContextReadResult, ContextError>> {
@@ -376,7 +388,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return treeMover.commitWriterLocation(source.value, destination.value);
     },
 
-    async delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
+    async delete(uri: string, options?: ContextDeleteOptions): Promise<Result<void, ContextError>> {
       const r = await resolve(uri);
       if (!r.ok) return r;
       if (!r.value.adapter.capabilities.writable) {
@@ -413,7 +425,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!result.ok) return result;
 
       const readonly = !adapter.capabilities.writable;
-      return Ok(result.value.map((entry) => toFileEntry(scheme, authority, entry, readonly)));
+      const responseAuthority = outputAuthority(scheme, authority);
+      return Ok(
+        result.value.map((entry) => toFileEntry(scheme, responseAuthority, entry, readonly)),
+      );
     },
 
     async search(query: string, uri?: string): Promise<Result<SearchResult[], ContextError>> {
@@ -425,7 +440,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
         const result = await callAdapter(canonical, () => adapter.search(query, path));
         if (!result.ok) return result;
-        return Ok(result.value.map((hit) => toSearchResult(scheme, authority, hit)));
+        const responseAuthority = outputAuthority(scheme, authority);
+        return Ok(result.value.map((hit) => toSearchResult(scheme, responseAuthority, hit)));
       }
 
       const hits: SearchResult[] = [];
@@ -433,7 +449,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         if (!adapter.capabilities.searchable) continue;
         const result = await callAdapter(`${scheme}://`, () => adapter.search(query));
         if (!result.ok) continue;
-        for (const hit of result.value) hits.push(toSearchResult(scheme, null, hit));
+        const authority = deps.adapterAuthorities?.get(scheme) ?? null;
+        for (const hit of result.value) hits.push(toSearchResult(scheme, authority, hit));
       }
       hits.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       return Ok(hits);

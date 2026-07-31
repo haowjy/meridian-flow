@@ -16,7 +16,14 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import type { PackageRepository, ResolvedSkill } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
-import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
+import {
+  type FunctionTool,
+  type Gateway,
+  type GenerateRequest,
+  resolveModelState,
+  type Tool,
+} from "../gateway/index.js";
+import type { ImageAssetPort } from "../ports/image-asset.js";
 import {
   applyBakedInvokeAdvertisement,
   resolveAgentThreadTurnContext,
@@ -24,6 +31,7 @@ import {
 import { modelInvocableSkillSlugs } from "../tools/skill-tools.js";
 import { isThreadPromptFrozen, rebakeComposedSystemPrompt } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
+import { projectImageBlocksForModel } from "./image-context.js";
 
 const MAX_REBIND_BAKE_ATTEMPTS = 3;
 
@@ -33,6 +41,8 @@ export interface AssembleNextTurnContextInput {
   blocks: Block[];
   packageRepository: PackageRepository;
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
+  gateway: Pick<Gateway, "getDefaultModel" | "listModels">;
+  imageAssets: ImageAssetPort;
   baseTools?: Tool[];
   /** When true, first-attempt bake is persisted; preview callers pass false. */
   persistBake?: boolean;
@@ -124,16 +134,23 @@ export async function assembleNextTurnContext(
       }
     }
 
+    const gatewayParams = agentContext.gatewayParams;
+    const model = resolveModelState(input.gateway, gatewayParams.model);
+    const blocks = await projectImageBlocksForModel({
+      thread,
+      blocks: input.blocks,
+      supportsImageInput: model.capabilities.includes("image_input"),
+      imageAssets: input.imageAssets,
+    });
     const { messages, tools: contextTools } = buildContext({
       thread,
       turns: input.turns,
-      blocks: input.blocks,
+      blocks,
       tools,
       unfrozenBasePrompt,
       skillsSystemPromptSection,
     });
 
-    const gatewayParams = agentContext.gatewayParams;
     return {
       thread,
       agentSlug: thread.currentAgent,

@@ -21,7 +21,10 @@ function UserTurnComponent({ turn }: UserTurnProps) {
       aria-label={t`Your message`}
     >
       <div className="user-message-bubble">
-        <Markdown>{text}</Markdown>
+        {/* `breaks`: the composer serializes Shift+Enter as `\n`, so a sent
+            turn shows the line break the writer typed instead of commonmark's
+            soft-break space. */}
+        <Markdown breaks>{text}</Markdown>
       </div>
     </article>
   );

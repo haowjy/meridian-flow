@@ -1,0 +1,68 @@
+/**
+ * A reference in rendered markdown, in the three states it can be in.
+ *
+ * It reads as a link because it is one — the same primitive the manuscript
+ * draws — but it is a `<button>` rather than an `<a>`: the destination is a
+ * document id the resolver hands back, not a URL a browser could visit. So the
+ * button gives up every button-ish property and inherits the sentence it sits
+ * in.
+ */
+
+.meridian-reference {
+  display: inline;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  text-align: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in oklab, var(--color-primary) 30%, transparent);
+  text-underline-offset: 3px;
+  /* Wraps mid-URI, because a `manuscript://…` reference is longer than a line
+     and a message that scrolls sideways is worse than one that wraps. */
+  overflow-wrap: anywhere;
+  transition:
+    color 120ms ease-out,
+    text-decoration-color 120ms ease-out;
+}
+
+button.meridian-reference {
+  cursor: pointer;
+}
+
+button.meridian-reference:hover {
+  text-decoration-color: var(--color-primary);
+}
+
+/* An internal reference with nothing behind it yet. NOT an error state: serial
+   writers name chapters and characters before they write them, so this is quiet
+   ink and a dashed underline — the same treatment the manuscript gives an
+   unresolved wikilink (`features/editor/surfaces/link/link-surfaces.css`).
+
+   It is also the one state that is not a control: the transcript never offers
+   to create a page from a message, so there is nothing here to press. */
+.meridian-reference[data-link-state="unresolved"] {
+  color: var(--color-ink-subtle);
+  text-decoration-style: dashed;
+  text-decoration-color: color-mix(in oklab, var(--color-ink-subtle) 55%, transparent);
+}
+
+/* A resolved picture reference: the composer token's face (icon + filename,
+   reference ink, no box) instead of underlined prose, because the raw spelling
+   behind it is a URI and an address is not a name. Unlike the token it is
+   still a door, so hover brings the underline back as the pressable tell.
+   (This sheet loads unlayered and outranks Tailwind's layered utilities, so
+   the display and underline overrides have to live here.) */
+button.meridian-reference[data-link-file="image"] {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: baseline;
+  gap: 0.25em;
+  vertical-align: baseline;
+  text-decoration-line: none;
+}
+
+button.meridian-reference[data-link-file="image"]:hover {
+  text-decoration-line: underline;
+  text-decoration-color: var(--color-primary);
+}

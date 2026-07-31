@@ -20,6 +20,7 @@ export type DocumentLinkTarget =
 export interface ResolvedDocumentLink {
   documentId: string;
   title: string;
+  fileType: string;
   scheme: "manuscript" | "work";
   path: string;
   uri: string;

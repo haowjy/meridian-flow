@@ -1,10 +1,11 @@
 import type { Database } from "@meridian/database";
-import { contextSources, documents, works } from "@meridian/database/schema";
+import { contextSources, documents, folders, works } from "@meridian/database/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { mapFigureFileType } from "../../figures/figure-file-types.js";
 import type {
   DocumentFileRecord,
   FigureDocumentRepository,
+  ManuscriptAssetFileRecord,
 } from "../../ports/figure-document-repository.js";
 
 type DocumentRow = typeof documents.$inferSelect;
@@ -37,6 +38,60 @@ export class DrizzleFigureDocumentRepository implements FigureDocumentRepository
   ): Promise<DocumentFileRecord | null> {
     const row = await this.findDocumentForProject(projectId, assetDocumentId);
     return row ? mapDocumentFile(row) : null;
+  }
+
+  async findManuscriptAssetForProject(
+    projectId: string,
+    assetDocumentId: string,
+  ): Promise<ManuscriptAssetFileRecord | null> {
+    const [row] = await this.db
+      .select({
+        id: documents.id,
+        contextSourceId: documents.contextSourceId,
+        folderId: documents.folderId,
+        storageUrl: documents.storageUrl,
+        mimeType: documents.mimeType,
+        fileType: documents.fileType,
+        sizeBytes: documents.sizeBytes,
+        name: documents.name,
+        extension: documents.extension,
+      })
+      .from(documents)
+      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .where(
+        and(
+          eq(documents.id, assetDocumentId),
+          eq(contextSources.projectId, projectId),
+          eq(contextSources.slug, "manuscript"),
+          isNull(documents.deletedAt),
+          isNull(contextSources.deletedAt),
+        ),
+      )
+      .limit(1);
+    const file = row ? mapDocumentFile(row) : null;
+    if (!row || !file) return null;
+    const path = [`${row.name}${row.extension ? `.${row.extension}` : ""}`];
+    let folderId = row.folderId;
+    while (folderId) {
+      const [folder] = await this.db
+        .select({ id: folders.id, name: folders.name, parentId: folders.parentId })
+        .from(folders)
+        .where(
+          and(
+            eq(folders.id, folderId),
+            eq(folders.contextSourceId, row.contextSourceId),
+            isNull(folders.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!folder) return null;
+      path.unshift(folder.name);
+      folderId = folder.parentId;
+    }
+    return {
+      ...file,
+      assetPath: path.join("/"),
+    };
   }
 
   private async findDocumentForProject(projectId: string, documentId: string) {

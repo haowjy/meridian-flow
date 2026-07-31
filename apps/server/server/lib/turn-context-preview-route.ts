@@ -5,9 +5,11 @@
 
 import type { TurnContextPreview } from "@meridian/contracts/threads";
 import type { PackageRepository } from "../domains/packages/index.js";
+import type { Gateway } from "../domains/runtime/gateway/index.js";
 import { loadThreadConversationContext } from "../domains/runtime/loop/fork-thread-context.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
+import type { ImageAssetPort } from "../domains/runtime/ports/image-asset.js";
 import type { ToolExecutor, ToolRegistry } from "../domains/runtime/tools/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
@@ -20,6 +22,8 @@ export interface TurnContextPreviewRouteDeps {
   packageRepository: PackageRepository;
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
+  gateway: Pick<Gateway, "getDefaultModel" | "listModels">;
+  imageAssets: ImageAssetPort;
 }
 
 export async function handleGetTurnContextPreview(
@@ -51,6 +55,8 @@ export async function handleGetTurnContextPreview(
     blocks: conversation.blocks,
     packageRepository: deps.packageRepository,
     toolRegistry: deps.toolRegistry,
+    gateway: deps.gateway,
+    imageAssets: deps.imageAssets,
     baseTools: deps.toolExecutor.getDefinitions?.(),
     persistBake: false,
   });

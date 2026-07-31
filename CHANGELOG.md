@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+- `apps/app`: `@` now completes references everywhere a writer types. In the
+  editor it offers documents and pictures — a document pick lands as
+  `[[Title]]` (or a title-labeled canonical URI when two documents share the
+  name), a picture pick places the image inline. The chat composer gained the
+  same `@` over a new rich input: a picked reference is one atomic pill that
+  backspaces out whole, pictures ride to the model as image references, and a
+  quiet line says when the current model cannot see them (sending never
+  blocks). Pasting a file into the composer uploads it immediately to the
+  Work's `uploads://` source with a preview chip above the input — removing
+  the pill or the chip both detach it, and a draft's own never-sent upload is
+  deleted on detach. Markdown pastes become editable documents; other files
+  attach as named references. A failed upload holds the send with a plain
+  sentence until retried or removed. The link form's URL field offers the
+  same document completion, stepping aside for typed web addresses. Sent
+  turns render references as live links and keep Shift+Enter line breaks.
+  `uploads://` source with their writer-facing filename, using deterministic
+  `-2`, `-3` suffixes on collisions. The hidden project-level
+  `thread_uploads` store is gone; the thread rail reads attached context
+  documents directly, and its document-ID delete route soft-deletes through
+  the context tree. Runtime image resolution now requires the reference to
+  match that document's authoritative Work URI.
+- `apps/server`, `packages/contracts`: thread messages can carry ordered image
+  references to manuscript assets and thread uploads. Vision models receive
+  request-time image parts; unavailable references are dropped with a
+  diagnostic while the writer's surrounding prose still starts the turn.
+  Manuscript images resolve by document identity at any path, not by an
+  `assets/` folder convention. Thread snapshots now expose the resolved model
+  capability list.
 - `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
   table cells now hold full block content. Tables serialize as HTML every time
   while pipe-table imports still parse, and Enter in cell prose splits a
@@ -34,8 +62,8 @@
   corruption.
 - `apps/server`: project links now resolve through one owner-gated endpoint.
   Wikilink titles and aliases, manuscript and Work locations, and relative
-  paths all return one canonical document or an ordinary unresolved result;
-  ambiguous names are never guessed.
+  paths all return one canonical document with its classified file type or an
+  ordinary unresolved result; ambiguous names are never guessed.
 - `apps/app`, `packages/markup`, `packages/prosemirror-schema`: chapters now
   carry tables, diagrams, and block alignment, with full writer-facing
   controls. A ```mermaid fence renders as a diagram with a pan/zoom
