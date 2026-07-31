@@ -141,7 +141,7 @@ async function scenarioDelete(env: DemoEnvironment, docId: string) {
   const inserted = before.find((block) => block.text === "A foxfire lantern flared to life.");
   assert(inserted !== undefined, "inserted paragraph should exist before delete");
   const result = await env.core.write(
-    { command: "replace", file: docId, in: inserted.hash, content: "" },
+    { command: "delete", file: docId, in: inserted.hash },
     defaultContext,
   );
   const after = await blocks(env, docId);

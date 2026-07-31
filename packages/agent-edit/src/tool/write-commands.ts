@@ -26,7 +26,6 @@ import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
   errorResponse,
-  isUnconfirmedDestructiveReplace,
   mutationMeta,
   mutationUpdateOrigin,
   parseFileAddress,
@@ -204,14 +203,21 @@ export function createWriteCommands(deps: {
     let deletedHashes = new Set<string>();
     let semanticEditIr: SemanticEditIRV1 | undefined;
     if (overwriting && existingBlocks.length > 0) {
+      const replacement = command.content ?? "";
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-        {
-          command: "replace",
-          documentAddress: address,
-          content: command.content ?? "",
-          in: [1, existingBlocks.length],
-        },
+        replacement.length === 0
+          ? {
+              command: "delete",
+              documentAddress: address,
+              in: [1, existingBlocks.length],
+            }
+          : {
+              command: "replace",
+              documentAddress: address,
+              content: replacement,
+              in: [1, existingBlocks.length],
+            },
       );
       if (!resolved.ok) {
         return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
@@ -364,7 +370,7 @@ export function createWriteCommands(deps: {
   }
 
   async function mutate(
-    command: Extract<WriteCommand, { command: "insert" | "replace" }>,
+    command: Extract<WriteCommand, { command: "insert" | "replace" | "delete" }>,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -386,7 +392,6 @@ export function createWriteCommands(deps: {
       command.command,
       address.filePath,
       runtime,
-      { rejectOnStale: isUnconfirmedDestructiveReplace(command, address) },
     );
     if (!synced.ok) return synced.response;
     if (context.interactionContext) {

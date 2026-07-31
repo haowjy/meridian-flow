@@ -28,6 +28,8 @@ const validCommands = [
     all: true,
   },
   { command: "replace", file: "chapter.md", content: "", in: 1 },
+  { command: "delete", file: "chapter.md", in: "a1b2" },
+  { command: "delete", file: "chapter.md", in: [1, "c3d4"] },
   {
     command: "replace",
     file: "chapter.md",
@@ -65,6 +67,8 @@ const intendedTightenings = [
   ],
   ["undo with content", { command: "undo", file: "chapter.md", content: "ignored before" }],
   ["create with find", { command: "create", file: "chapter.md", find: "ignored before" }],
+  ["delete with content", { command: "delete", file: "chapter.md", in: 1, content: "" }],
+  ["delete without scope", { command: "delete", file: "chapter.md" }],
 ] satisfies Array<[string, unknown]>;
 
 describe("WriteCommandSchema", () => {
@@ -105,6 +109,8 @@ describe("WriteCommandSchema", () => {
       "insert with undo selector",
       "undo with content",
       "create with find",
+      "delete with content",
+      "delete without scope",
     ]);
 
     for (const [, command] of intendedTightenings) {
@@ -118,6 +124,7 @@ describe("WriteCommandSchema", () => {
     expect(writeCommandCategory({ command: "insert", file: "chapter.md", content: "Beta" })).toBe(
       "mutating",
     );
+    expect(writeCommandCategory({ command: "delete", file: "chapter.md", in: 2 })).toBe("mutating");
     expect(writeCommandCategory({ command: "undo", file: "chapter.md" })).toBe("history");
   });
 });

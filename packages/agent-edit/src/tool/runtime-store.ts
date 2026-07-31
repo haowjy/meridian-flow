@@ -60,7 +60,6 @@ export interface RuntimeStore {
     commandName: WriteCommand["command"],
     filePath?: string,
     runtime?: RuntimeDocumentState,
-    options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
 }
@@ -71,10 +70,6 @@ export interface RuntimeEvictOptions {
 
 export interface RuntimeRestoreOptions {
   filePath?: string;
-}
-
-export interface RuntimeSyncOptions {
-  rejectOnStale?: boolean;
 }
 
 export function createRuntimeStore(deps: {
@@ -266,18 +261,8 @@ export function createRuntimeStore(deps: {
     commandName: WriteCommand["command"],
     filePath = docId,
     runtime?: RuntimeDocumentState,
-    options: RuntimeSyncOptions = {},
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
     if (staleLiveDocs.has(docId) && runtime) {
-      if (options.rejectOnStale) {
-        return {
-          ok: false,
-          response: {
-            status: "not_found",
-            text: `status: not_found\n\nDocument changed since your last read; a whole-scope replace/delete with no \`find\` is unsafe against a moved target. Run write(command="read", file="${filePath}") and retry.`,
-          },
-        };
-      }
       const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
         filePath,
       });

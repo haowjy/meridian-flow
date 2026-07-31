@@ -89,7 +89,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use read for block-hashed content. Use diff to inspect the folded net effect of this turn's writes; it is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits a scope; find replaces only the exact matched span, never following blocks. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. undo and redo reverse or reapply this thread's document writes.",
+          "Document edit tool. Use read for block-addressed content. Use diff to inspect the folded net effect of this turn's writes; it is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits content; find replaces only the exact matched span, never following blocks. delete removes the block or block range selected by in. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details. undo and redo reverse or reapply this thread's document writes.",
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },

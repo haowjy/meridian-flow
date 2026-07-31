@@ -22,16 +22,20 @@
     for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
     to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
 
-### Destructive scoped replace/delete wrong-target residual
+### Destructive scope targeting and recovery
+
+`delete` is the structural block-removal command and requires an explicit `in`
+scope. `replace({ find, content: "" })` remains exact text-span deletion, while
+an empty scope-only `replace` is rejected so an empty-string sentinel cannot be
+confused with structural deletion.
 
 Scope addresses are view-scoped; durable identity is the full CRDT item hash and
-its content. A stale no-`find` destructive replace/delete scoped by hash, numeric
-index, range, or section can resolve to a different current block after
-concurrent edits, and without content confirmation the target cannot be verified.
-Mitigations are layered: `find`-based replace is content-backstopped;
-no-`find` destructive scoped replace/delete is staleness-gated and asks for a
-re-read when the doc changed since the last read; any remaining wrong-target is
-visible in the op echo and recoverable through undo lineage.
+its content. When canonical state advances, the runtime rebuilds and resolves the
+writer-requested command against the current document instead of requiring a
+reread. A missing target returns ordinary `not_found`. Any wrong-target residual
+is visible in the result receipt and recoverable through durable undo lineage;
+target uncertainty never becomes an approval or refusal gate on the writer's
+instruction.
 
 - **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
   parse. Repeated serialize → parse cycles produce identical output.

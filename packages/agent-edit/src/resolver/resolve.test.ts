@@ -155,7 +155,7 @@ describe("resolveWrite", () => {
     expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
     for (const params of [
       { command: "replace" as const, content: "Replacement", in: "#cafe" },
-      { command: "replace" as const, content: "", in: "#cafe" },
+      { command: "delete" as const, in: "#cafe" },
       { command: "replace" as const, content: "Replacement", find: "Scene", in: "#cafe" },
     ]) {
       expect(resolve(doc, params)).toMatchObject({

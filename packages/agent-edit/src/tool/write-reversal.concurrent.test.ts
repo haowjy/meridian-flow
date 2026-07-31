@@ -112,11 +112,11 @@ describe("write reversal under concurrent edits", () => {
       },
     );
     await scenario.ctx.core.write(
-      { command: "replace", file: "chapter.md", in: 2, content: "" },
+      { command: "delete", file: "chapter.md", in: 2 },
       { ...context, turnId: "turn-delete-first" },
     );
     await scenario.ctx.core.write(
-      { command: "replace", file: "chapter.md", in: 2, content: "" },
+      { command: "delete", file: "chapter.md", in: 2 },
       { ...context, turnId: "turn-delete-second" },
     );
     for (const writeId of ["w2", "w1"]) {

@@ -1272,7 +1272,7 @@ describe("write tool dispatch", () => {
     ).toEqual(["Only block"]);
   });
 
-  it("replaces text, formatting, and deletes through replace(content='')", async () => {
+  it("replaces text and formatting, then structurally deletes a block", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nDelete me." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
@@ -1294,13 +1294,20 @@ describe("write tool dispatch", () => {
 
     const deleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
     const deletion = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "", in: deleteHash },
+      { command: "delete", file: "chapter.md", in: deleteHash },
       context,
     );
 
     expect(outcomeText(deletion)).toContain("status: success");
     expect(outcomeText(deletion)).toContain(`deleted: ${deleteHash}`);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+
+    const rejectedSentinel = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "", in: 1 },
+      context,
+    );
+    expect(rejectedSentinel.status).toBe("invalid_write");
+    expect(outcomeText(rejectedSentinel)).toContain("Use the delete command");
   });
 
   it("replaces with a find needle copied from hash-prefixed read output", async () => {

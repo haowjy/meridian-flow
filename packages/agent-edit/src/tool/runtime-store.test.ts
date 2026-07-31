@@ -117,36 +117,32 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
   });
 
-  it("rejects stale unconfirmed scoped replacement without mutating", async () => {
+  it("auto-resyncs stale scoped replacement and preserves the writer's concurrent edit", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
     await appendHumanPrefixAndInvalidate(ctx, "chapter.md");
 
-    const rejected = await ctx.core.write(
+    const replaced = await ctx.core.write(
       { command: "replace", file: "chapter.md", in: alphaHash, content: "Agent replacement." },
       context,
     );
 
-    expect(rejected.status).toBe("not_found");
-    expect(outcomeText(rejected)).toContain("Document changed since your last read");
-    expect(outcomeText(rejected)).toContain('Run write(command="read", file="chapter.md")');
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword.", "Beta shield."]);
+    expect(replaced.status).toBe("success");
+    expect(outcomeText(replaced)).not.toContain("last read");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement.", "Beta shield."]);
   });
 
-  it("rejects stale unconfirmed numeric-scope delete without mutating", async () => {
+  it("auto-resyncs stale numeric-scope deletion", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await appendHumanPrefixAndInvalidate(ctx, "chapter.md");
 
-    const rejected = await ctx.core.write(
-      { command: "replace", file: "chapter.md", in: 2, content: "" },
-      context,
-    );
+    const deleted = await ctx.core.write({ command: "delete", file: "chapter.md", in: 2 }, context);
 
-    expect(rejected.status).toBe("not_found");
-    expect(outcomeText(rejected)).toContain("whole-scope replace/delete with no `find` is unsafe");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword.", "Beta shield."]);
+    expect(deleted.status).toBe("success");
+    expect(outcomeText(deleted)).not.toContain("unsafe");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha sword."]);
   });
 
   it("keeps non-destructive stale-doc operations on the auto-rebuild path", async () => {
@@ -183,7 +179,7 @@ describe("runtime store", () => {
     expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
   });
 
-  it("allows unconfirmed scoped replace and delete on non-stale docs and after re-read", async () => {
+  it("allows scoped replace and delete without a reread gate", async () => {
     const nonStale = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
     await nonStale.core.write({ command: "read", file: "chapter.md" }, context);
     const alphaHash = hashAt(nonStale.liveDoc("chapter.md"), 0);
@@ -198,7 +194,7 @@ describe("runtime store", () => {
     ]);
     const betaHash = hashAt(nonStale.liveDoc("chapter.md"), 1);
     const deleted = await nonStale.core.write(
-      { command: "replace", file: "chapter.md", in: betaHash, content: "" },
+      { command: "delete", file: "chapter.md", in: betaHash },
       context,
     );
     expect(deleted.status).toBe("success");
@@ -212,14 +208,7 @@ describe("runtime store", () => {
       { command: "replace", file: "chapter.md", in: staleHash, content: "Agent replacement." },
       context,
     );
-    expect(staleAttempt.status).toBe("not_found");
-    const freshRead = await reread.core.write({ command: "read", file: "chapter.md" }, context);
-    expect(freshRead.status).toBe("success");
-    const retried = await reread.core.write(
-      { command: "replace", file: "chapter.md", in: staleHash, content: "Agent replacement." },
-      context,
-    );
-    expect(retried.status).toBe("success");
+    expect(staleAttempt.status).toBe("success");
     expect(blockTexts(reread.liveDoc("chapter.md"))).toEqual([
       "Agent replacement.",
       "Beta shield.",

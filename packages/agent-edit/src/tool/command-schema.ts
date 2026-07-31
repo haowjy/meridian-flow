@@ -77,6 +77,11 @@ export const ReplaceCommandSchema = BaseCommandSchema.extend({
   all: z.boolean().optional(),
 }).strict();
 
+export const DeleteCommandSchema = BaseCommandSchema.extend({
+  command: z.literal("delete"),
+  in: ScopeTargetSchema,
+}).strict();
+
 export const UndoCommandSchema = BaseCommandSchema.extend({
   command: z.literal("undo"),
   ...WriteHandleSelectorSchema,
@@ -93,11 +98,12 @@ export const WriteCommandSchema = z.discriminatedUnion("command", [
   DiffCommandSchema,
   InsertCommandSchema,
   ReplaceCommandSchema,
+  DeleteCommandSchema,
   UndoCommandSchema,
   RedoCommandSchema,
 ]);
 
-export const MUTATING_WRITE_COMMANDS = ["create", "insert", "replace"] as const;
+export const MUTATING_WRITE_COMMANDS = ["create", "insert", "replace", "delete"] as const;
 
 export type WriteCommandCategory = "query" | "mutating" | "history";
 
@@ -113,6 +119,7 @@ export function writeCommandCategory(
     case "create":
     case "insert":
     case "replace":
+    case "delete":
       return "mutating";
     case "undo":
     case "redo":

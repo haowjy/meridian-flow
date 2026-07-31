@@ -87,6 +87,7 @@ export function fallbackCommandName(command: unknown): WriteCommand["command"] {
       case "diff":
       case "insert":
       case "replace":
+      case "delete":
       case "undo":
       case "redo":
         return value;
@@ -104,15 +105,4 @@ export function writeSchemaError(error: {
       return `${path}${issue.message}`;
     })
     .join("; ");
-}
-
-export function isUnconfirmedDestructiveReplace(
-  command: Extract<WriteCommand, { command: "insert" | "replace" }>,
-  address: DocumentAddress,
-): boolean {
-  return (
-    command.command === "replace" &&
-    command.find === undefined &&
-    (command.in !== undefined || address.fragment !== undefined)
-  );
 }

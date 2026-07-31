@@ -41,6 +41,7 @@ export function createWriteDispatch(input: {
         return input.commands.create(command, session, context);
       case "insert":
       case "replace":
+      case "delete":
         return input.commands.mutate(command, session, context);
       case "undo":
       case "redo":

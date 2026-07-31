@@ -109,6 +109,7 @@ const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
   "insert",
   "replace",
+  "delete",
   "undo",
   "redo",
 ]);

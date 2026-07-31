@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`: agents can delete a block scope with the
+  explicit `delete` command. Stale runtimes now rebuild and apply the requested
+  edit instead of refusing destructive writes until the agent rereads; Yjs
+  merge, write receipts, and undo preserve the writer's recovery path.
 - `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
   table cells now hold full block content. Tables serialize as HTML every time
   while pipe-table imports still parse, and Enter in cell prose splits a
