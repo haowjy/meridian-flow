@@ -99,11 +99,15 @@ export function createInMemoryWorkRepository(
       return { ...row };
     },
 
+    async hasUnreviewedDraft(id: WorkId): Promise<boolean> {
+      return (await options.hasUnreviewedDrafts?.(id)) ?? false;
+    },
+
     async softDelete(id: WorkId): Promise<void> {
       const row = rows.get(id);
       if (!row || row.deletedAt) return;
       if (await options.hasLiveThreads?.(id)) throw new WorkDeleteBlockedError("threads");
-      if (await options.hasUnreviewedDrafts?.(id)) throw new WorkDeleteBlockedError("drafts");
+      if (await repo.hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
       row.deletedAt = now();
       row.updatedAt = row.deletedAt;
       row.lastActivityAt = row.updatedAt;

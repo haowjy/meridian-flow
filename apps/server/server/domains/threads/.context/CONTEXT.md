@@ -64,6 +64,7 @@ instead of the N:1 `threads.workId` column.
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
+| `reassignThreadPrimaryWork` | Validates the target Work, blocks on a pending draft in the old primary Work, then atomically flips primary membership. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 

@@ -37,6 +37,24 @@ export interface DrizzleWorkRepositoryDeps {
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
   const { db } = deps;
 
+  async function hasUnreviewedDraft(
+    queryDb: Pick<Database, "select">,
+    id: WorkId,
+  ): Promise<boolean> {
+    const [draft] = await queryDb
+      .select({ id: documentBranches.id })
+      .from(documentBranches)
+      .where(
+        and(
+          eq(documentBranches.workId, id),
+          eq(documentBranches.kind, "work_draft"),
+          eq(documentBranches.status, "active"),
+        ),
+      )
+      .limit(1);
+    return Boolean(draft);
+  }
+
   async function findWorkById(id: WorkId): Promise<Work | null> {
     if (!isUuid(id)) return null;
     const [row] = await db.select().from(works).where(eq(works.id, id)).limit(1);
@@ -110,6 +128,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       if (existing?.status === "active") return existing;
       return updateWork(id, { status: "active", archivedAt: null });
     },
+    async hasUnreviewedDraft(id: WorkId): Promise<boolean> {
+      if (!isUuid(id)) return false;
+      return hasUnreviewedDraft(db, id);
+    },
     async softDelete(id: WorkId): Promise<void> {
       await db.transaction(async (tx) => {
         const [work] = await tx
@@ -130,18 +152,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
         // The shipped branch model has active/closed lifecycle states. Its
         // active state covers the design's active/accepting review window.
-        const [draft] = await tx
-          .select({ id: documentBranches.id })
-          .from(documentBranches)
-          .where(
-            and(
-              eq(documentBranches.workId, id),
-              eq(documentBranches.kind, "work_draft"),
-              eq(documentBranches.status, "active"),
-            ),
-          )
-          .limit(1);
-        if (draft) throw new WorkDeleteBlockedError("drafts");
+        if (await hasUnreviewedDraft(tx, id)) throw new WorkDeleteBlockedError("drafts");
 
         await tx
           .update(works)

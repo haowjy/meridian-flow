@@ -10,6 +10,9 @@
   conversation or an unreviewed draft.
 - `apps/server`: projects with multiple active Works now list normally instead
   of failing the Work collection request.
+- `apps/server`: Work create, edit, archive, restore, delete, current selection,
+  thread listing, and conversation move routes are available. Moving a
+  conversation waits until its pending draft is reviewed.
 
 - `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
   (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at

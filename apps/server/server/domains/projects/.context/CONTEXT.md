@@ -23,6 +23,7 @@ This domain is not the full project CRUD surface; that lives in
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
 | `WorkRepository` | Create/list/update/archive/unarchive/delete Works; delete is guarded by live thread memberships and unreviewed drafts. |
 | `resolveCurrentWork(user, project)` | Preference first, then newest active Work, newest archived Work, then concrete default creation. |
+| `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 
 ## Invariants
 
@@ -49,6 +50,8 @@ This domain is not the full project CRUD surface; that lives in
   advisory lock and never enter collab.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
+- Work collections nest under `/api/projects/:projectId/works`; Work items and
+  their thread lists are flat under `/api/works/:workId`.
 
 ## Relationship to `domains/projects`
 

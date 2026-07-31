@@ -741,6 +741,9 @@ export function createInMemoryAppServices(): AppServices {
       async unarchive() {
         throw new Error("in-memory work repository is not implemented");
       },
+      async hasUnreviewedDraft() {
+        return false;
+      },
       async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -806,6 +809,9 @@ export function createInMemoryAppServices(): AppServices {
       },
       async unarchive() {
         throw new Error("in-memory work repository is not implemented");
+      },
+      async hasUnreviewedDraft() {
+        return false;
       },
       async softDelete() {
         throw new Error("in-memory work repository is not implemented");

@@ -465,3 +465,4 @@ export {
   type WorkRepository,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
+export { requireWorkOwner } from "./work-access.js";

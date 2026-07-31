@@ -54,6 +54,7 @@ export interface WorkRepository {
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
+  hasUnreviewedDraft(id: WorkId): Promise<boolean>;
   /** Soft-deletes only when no live thread membership or unreviewed Work draft remains. */
   softDelete(id: WorkId): Promise<void>;
   /**
