@@ -59,16 +59,24 @@ stays behind the gateway port. Disabled behavior is represented by explicit
 adapters (for example no-op sinks), not by omitted deps.
 
 The user-message append boundary remains text-first. Its optional ordered
-`blocks` array contains text blocks plus image references with both a stable
-document ID and the writer-visible `manuscript://assets/…` or `uploads://…`
-spelling. The orchestrator persists reference metadata only. `ImageAssetPort`
-validates authoritative project/thread scope at append time
-and reads object bytes into request-time image data during context assembly;
-bytes and signed URLs never enter turn blocks.
-Context assembly gives newer images priority within a 10 MiB per-image and
-20 MiB aggregate request budget, and caches repeated references for one object
-read. Missing objects stay quiet; operational storage failures emit diagnostics
-and still degrade without failing the turn.
+`blocks` array contains text blocks plus image references with a stable document
+ID and a writer-visible canonical `manuscript://<path>` or `uploads://…` URI.
+Malformed block shapes are rejected; a well-formed reference that is unavailable
+to the thread is omitted before persistence without vetoing its prose or other
+available blocks. Each omitted reference normally emits
+`runtime.user-message` / `image_reference.dropped`; diagnostics are best-effort
+and their failure cannot alter the send.
+
+The orchestrator persists only reference metadata. At append time,
+`ImageAssetPort` checks metadata identity and project/thread scope without
+reading bytes. Context assembly rechecks authority and resolves object bytes
+only for an image-capable model; bytes and signed URLs never enter turn blocks.
+For manuscript images, identity is the document, project manuscript source, and
+its authoritative full path—not an `assets/` folder convention. Context
+assembly gives newer images priority within a 10 MiB per-image and 20 MiB
+aggregate request budget, and caches repeated references for one object read.
+Missing objects stay quiet; operational storage failures emit best-effort
+diagnostics and still degrade without failing the turn.
 
 Thread snapshots expose `{ model: { id, capabilities } }`. This is the same
 registry-backed capability vocabulary used by context assembly, not a

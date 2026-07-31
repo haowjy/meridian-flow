@@ -47,14 +47,20 @@ with a single unified `ContextPort` that resolves durable project schemes
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
   one chapter cannot disturb another that references the same asset.
-  Runtime image references bind the stable document ID to its authoritative
-  top-level `manuscript://assets/` path; project ownership alone is not enough,
+  Runtime manuscript-image references bind the stable document ID to its
+  project manuscript source and authoritative full `manuscript://` path—not to
+  an `assets/` folder convention. Project ownership alone is not enough,
   because thread uploads are also project documents.
-- **Asset-path resolver adapter** (`adapters/asset-path-resolver.ts`) — preloads
-  persisted `manuscript://assets/` identities for codec composition and is
-  updated immediately when figure upload creates a binary asset. A path shared
-  by more than one asset resolves to nothing: the id direction is unique, the
-  path direction is not.
+- **Asset-path resolver adapter** (`adapters/asset-path-resolver.ts`) — maps
+  asset document IDs to manuscript paths for codec composition and is updated
+  immediately when figure upload creates a binary asset. A path shared by more
+  than one asset resolves to nothing: the id direction is unique, the path
+  direction is not.
+
+  > [!FLAG] **Needs human review**
+  > Cold-start loading still preloads only the top-level `assets` folder. Runtime
+  > image authorization correctly uses a document's full authoritative manuscript
+  > path, so the resolver must not be treated as the image-identity authority.
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
   resolution boundary for wikilink titles/aliases, `manuscript://` and
   `work://` locations, and paths relative to the containing document. The
