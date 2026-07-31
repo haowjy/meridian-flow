@@ -363,14 +363,15 @@ describe("seamDropTransaction", () => {
     expect(columnCounts(current)).toEqual([3, 3, 3]);
   });
 
-  it("refuses a slice that would change the table's shape", () => {
+  it("lands a two-paragraph drag inside the target cell", () => {
+    // §3b: cells hold any block sequence, so a multi-block slice has an
+    // honest seam landing — inside the pressed cell, with the grid untouched.
     const current = createTableEditor();
     const shape = docShape(current);
     const two = Fragment.fromArray([
       current.state.schema.nodes.paragraph.create(null, current.state.schema.text("one")),
       current.state.schema.nodes.paragraph.create(null, current.state.schema.text("two")),
     ]);
-    const blockSlice = new Slice(two, 0, 0);
     const decision = resolveTableDrop({
       doc: current.state.doc,
       rawPos: shape.cellPositions[2][1] + 1,
@@ -379,7 +380,79 @@ describe("seamDropTransaction", () => {
       cells: syntheticBands(shape),
     });
     if (decision.kind !== "snap") throw new Error("expected snap");
-    const transaction = seamDropTransaction(current.state, decision.pos, blockSlice, {
+    const transaction = seamDropTransaction(current.state, decision.pos, new Slice(two, 1, 1), {
+      moved: false,
+      node: null,
+    });
+    expect(transaction).not.toBeNull();
+    if (!transaction) throw new Error("unreachable");
+    current.view.dispatch(transaction);
+
+    expect(columnCounts(current)).toEqual([3, 3, 3]);
+    expectOnlyTableStructure(current);
+    const targetCell = current.state.doc.nodeAt(docShape(current).cellPositions[2][1]);
+    expect(targetCell?.textContent).toContain("one");
+    expect(targetCell?.textContent).toContain("two");
+  });
+
+  it("lands a list followed by a paragraph inside the target cell", () => {
+    const current = createTableEditor();
+    const shape = docShape(current);
+    const { schema } = current.state;
+    const listAndParagraph = Fragment.fromArray([
+      schema.nodes.bullet_list.create(null, [
+        schema.nodes.list_item.create(
+          null,
+          schema.nodes.paragraph.create(null, schema.text("item")),
+        ),
+      ]),
+      schema.nodes.paragraph.create(null, schema.text("tail")),
+    ]);
+    const decision = resolveTableDrop({
+      doc: current.state.doc,
+      rawPos: shape.cellPositions[2][1] + 1,
+      x: 101,
+      y: 75,
+      cells: syntheticBands(shape),
+    });
+    if (decision.kind !== "snap") throw new Error("expected snap");
+    const transaction = seamDropTransaction(
+      current.state,
+      decision.pos,
+      new Slice(listAndParagraph, 0, 0),
+      { moved: false, node: null },
+    );
+    expect(transaction).not.toBeNull();
+    if (!transaction) throw new Error("unreachable");
+    current.view.dispatch(transaction);
+
+    expect(columnCounts(current)).toEqual([3, 3, 3]);
+    expectOnlyTableStructure(current);
+    const targetCell = current.state.doc.nodeAt(docShape(current).cellPositions[2][1]);
+    let hasList = false;
+    targetCell?.descendants((node) => {
+      if (node.type.name === "bullet_list") hasList = true;
+      return true;
+    });
+    expect(hasList).toBe(true);
+    expect(targetCell?.textContent).toContain("tail");
+  });
+
+  it("keeps the grid when the slice is table structure itself", () => {
+    const current = createTableEditor();
+    const shape = docShape(current);
+    const cellNode = current.state.doc.nodeAt(shape.cellPositions[2][0]);
+    if (!cellNode) throw new Error("no cell in the fixture");
+    const cellSlice = new Slice(Fragment.from(cellNode), 0, 0);
+    const decision = resolveTableDrop({
+      doc: current.state.doc,
+      rawPos: shape.cellPositions[2][1] + 1,
+      x: 101,
+      y: 75,
+      cells: syntheticBands(shape),
+    });
+    if (decision.kind !== "snap") throw new Error("expected snap");
+    const transaction = seamDropTransaction(current.state, decision.pos, cellSlice, {
       moved: false,
       node: null,
     });
@@ -392,28 +465,57 @@ describe("seamDropTransaction", () => {
 });
 
 describe("seamHostableSlice", () => {
+  /** An inline position inside B2's paragraph — a seam snap's landing. */
+  function seamPos(current: Editor): number {
+    return docShape(current).cellPositions[2][1] + 2;
+  }
+
   it("hosts a dragged inline image", () => {
     const current = createTableEditor();
     const shape = docShape(current);
-    expect(seamHostableSlice(imageSlice(current, shape.imagePos))).toBe(true);
+    expect(
+      seamHostableSlice(current.state, seamPos(current), imageSlice(current, shape.imagePos)),
+    ).toBe(true);
   });
 
   it("hosts a plain text drag", () => {
     const current = createTableEditor();
     const p = current.state.schema.nodes.paragraph.create(null, current.state.schema.text("word"));
-    expect(seamHostableSlice(new Slice(Fragment.from(p), 1, 1))).toBe(true);
+    expect(
+      seamHostableSlice(current.state, seamPos(current), new Slice(Fragment.from(p), 1, 1)),
+    ).toBe(true);
   });
 
   it("hosts a file drop, which carries no slice", () => {
-    expect(seamHostableSlice(null)).toBe(true);
+    const current = createTableEditor();
+    expect(seamHostableSlice(current.state, seamPos(current), null)).toBe(true);
   });
 
-  it("does not host a multi-paragraph drag", () => {
+  it("hosts a multi-paragraph drag", () => {
+    // The deleted one-paragraph floor's last stand: cells hold any block
+    // sequence now, and hostability is the actual schema fit, not a count.
     const current = createTableEditor();
     const two = Fragment.fromArray([
       current.state.schema.nodes.paragraph.create(null, current.state.schema.text("one")),
       current.state.schema.nodes.paragraph.create(null, current.state.schema.text("two")),
     ]);
-    expect(seamHostableSlice(new Slice(two, 1, 1))).toBe(false);
+    expect(seamHostableSlice(current.state, seamPos(current), new Slice(two, 1, 1))).toBe(true);
+  });
+
+  it("hosts a list followed by a paragraph", () => {
+    const current = createTableEditor();
+    const { schema } = current.state;
+    const listAndParagraph = Fragment.fromArray([
+      schema.nodes.bullet_list.create(null, [
+        schema.nodes.list_item.create(
+          null,
+          schema.nodes.paragraph.create(null, schema.text("item")),
+        ),
+      ]),
+      schema.nodes.paragraph.create(null, schema.text("tail")),
+    ]);
+    expect(
+      seamHostableSlice(current.state, seamPos(current), new Slice(listAndParagraph, 0, 0)),
+    ).toBe(true);
   });
 });

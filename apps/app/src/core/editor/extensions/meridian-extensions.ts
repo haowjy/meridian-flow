@@ -27,6 +27,7 @@ import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
+import { cellInteriorPressPlugin } from "../cell-interior-press";
 import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
@@ -220,8 +221,11 @@ export const MeridianTable = Table.extend({
 
   // Before the parent's, so the sweep-replace paste answers ahead of
   // prosemirror-tables' rectangle overwrite on the same handlePaste ladder.
+  // The cell press router rides AFTER the parent's for the mirrored reason:
+  // a column-resize press must claim first, and the cell-sweep drag must arm
+  // its listeners before the router claims an inert padding press.
   addProseMirrorPlugins() {
-    return [tableSweepPastePlugin(), ...(this.parent?.() ?? [])];
+    return [tableSweepPastePlugin(), ...(this.parent?.() ?? []), cellInteriorPressPlugin()];
   },
 
   addAttributes() {

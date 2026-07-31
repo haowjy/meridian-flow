@@ -100,18 +100,24 @@ const BAND_WINDOW = 2;
  * The one impure step: it reads the prose rectangle and the neighbouring block
  * rectangles, then hands pure data to `resolvePointerBoundary`. Callers
  * dispatch the selection; nothing here touches editor state.
+ *
+ * `known` is the pressed cell when the caller already holds it from the DOM
+ * (`cell-interior-press.ts`, whose event target IS the cell element). It
+ * outranks the geometric reading below, which depends on `posAtCoords` — the
+ * very reading a border press cannot trust.
  */
 export function pointerBoundaryDecision(
   view: EditorView,
   clientX: number,
   clientY: number,
+  known?: PointerBoundaryContainer,
 ): PointerBoundaryDecision {
   const prose = view.dom.getBoundingClientRect();
   const coords = view.posAtCoords({
     left: Math.min(Math.max(clientX, prose.left + 1), prose.right - 1),
     top: Math.min(Math.max(clientY, prose.top + 1), prose.bottom - 1),
   });
-  const container = cellUnderPress(view, clientX, clientY, coords?.pos ?? null);
+  const container = known ?? cellUnderPress(view, clientX, clientY, coords?.pos ?? null);
   return resolvePointerBoundary({
     doc: view.state.doc,
     y: clientY,
@@ -262,6 +268,19 @@ function pressOnBlock(
     if (near instanceof TextSelection && inScope && !opaqueObjectAround(near.$head)) {
       return { kind: "place", selection: near };
     }
+  }
+
+  // Geometry can betray the press outright: beside a cell border,
+  // `posAtCoords` answers the NEIGHBOURING cell (the S6 probe watched a fence
+  // cell's padding put the caret one cell over). The press is still ON this
+  // block, and a block whose text is on the page takes it — at the nearer of
+  // its two ends, because the line the pointer sat beside is unknowable once
+  // geometry has lied. An opaque object still refuses (hidden interior), and
+  // a container block still answers through the seam walk below.
+  const held = doc.nodeAt(band.pos);
+  if (held?.isTextblock && !isOpaqueObject(held)) {
+    const pastMiddle = y >= (band.top + band.bottom) / 2;
+    return placeText(doc, pastMiddle ? band.pos + 1 + held.content.size : band.pos + 1);
   }
 
   const index = bands.indexOf(band);
