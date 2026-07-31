@@ -37,6 +37,7 @@ export interface UploadDocumentRecord {
   markdownProjection: string;
   updatedAt: string;
   projectId: string | null;
+  workId: string | null;
   /** Canonical URI when the document belongs to the work-scoped uploads source. */
   uploadUri: string | null;
 }
@@ -182,6 +183,7 @@ export function createDrizzleThreadUploadDocumentStore(
           markdownProjection: document.markdownProjection,
           updatedAt: document.updatedAt.toISOString(),
           projectId: sourceProjectId ?? workProjectId,
+          workId: sourceWorkId,
           uploadUri: path ? toCanonical("uploads", path, sourceWorkId) : null,
         };
       }),

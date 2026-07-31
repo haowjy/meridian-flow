@@ -28,6 +28,7 @@ scheme.
 - `thread_documents` is provenance and the rail index. Deleting the context
   document does not erase that provenance row, but active rail queries no
   longer return the soft-deleted document.
-- Runtime image references must match the attached document's canonical
-  `uploads://<workId>/path`; attachment alone is not a substitute for URI
-  validation.
+- Runtime image references with an explicit Work authority must match the
+  attached document's canonical `uploads://<workId>/path`. An omitted authority
+  resolves the same path against the thread's primary Work; attachment alone is
+  not a substitute for URI validation.

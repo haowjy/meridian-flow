@@ -143,14 +143,28 @@ async function deleteObjectBestEffort(
   }
 }
 
-async function deleteDocumentBestEffort(
+async function removeActiveDocumentBestEffort(
   deps: Pick<ThreadUploadImportServiceDeps, "eventSink">,
   port: ContextPort,
   uri: string,
   context: Record<string, unknown>,
-): Promise<void> {
+): Promise<boolean> {
   try {
+    const existing = await port.stat(uri);
+    if (!existing.ok && existing.error.code === "not_found") return true;
+    if (!existing.ok) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "lib.thread-upload-import",
+        name: "document_cleanup.inspect_failed",
+        payload: { uri, error: existing.error, ...context },
+      });
+      return false;
+    }
     const deleted = await port.delete(uri, { origin: { type: "system" } });
+    if (deleted.ok) return true;
+    const remaining = await port.stat(uri);
+    if (!remaining.ok && remaining.error.code === "not_found") return true;
     if (!deleted.ok)
       emitEvent(deps.eventSink, {
         level: "warn",
@@ -158,6 +172,7 @@ async function deleteDocumentBestEffort(
         name: "document_cleanup.failed",
         payload: { uri, error: deleted.error, ...context },
       });
+    return false;
   } catch (error) {
     emitEvent(deps.eventSink, {
       level: "warn",
@@ -165,6 +180,7 @@ async function deleteDocumentBestEffort(
       name: "document_cleanup.threw",
       payload: { uri, ...unknownToEventPayload(error), ...context },
     });
+    return false;
   }
 }
 
@@ -210,73 +226,76 @@ export function createThreadUploadImportService(
       let createdUri: string | null = null;
       let documentId: string | null = null;
       try {
-        for (let ordinal = 1; ordinal < Number.MAX_SAFE_INTEGER; ordinal += 1) {
-          const candidate = uploadFilenameCandidate(input.filename, ordinal);
-          const uri = toCanonical("uploads", candidate, resolution.primaryWorkId);
-          const existing = await port.stat(uri);
-          if (existing.ok) continue;
-          if (existing.error.code !== "not_found") {
-            return err("repository_error", `Failed to inspect upload path: ${existing.error.code}`);
+        const result = await deps.repos.transaction(async () => {
+          for (let ordinal = 1; ordinal < Number.MAX_SAFE_INTEGER; ordinal += 1) {
+            const candidate = uploadFilenameCandidate(input.filename, ordinal);
+            const uri = toCanonical("uploads", candidate, resolution.primaryWorkId);
+            const existing = await port.stat(uri);
+            if (existing.ok) continue;
+            if (existing.error.code !== "not_found") {
+              return err(
+                "repository_error",
+                `Failed to inspect upload path: ${existing.error.code}`,
+              );
+            }
+
+            const origin = {
+              type: "import" as const,
+              userId: resolution.thread.userId,
+              source: "thread_upload",
+              filename: input.filename,
+              sourceId: input.threadId,
+            };
+            const created = editable
+              ? await port.createTrackedDocument(uri, markdownProjection, { origin })
+              : await port.writeBinary(uri, {
+                  fileType: documentFileTypeFor({ filetype, mimeType: input.mimeType }) ?? "binary",
+                  storageUrl: storageUrl ?? "",
+                  mimeType: input.mimeType,
+                  sizeBytes: input.bytes.byteLength,
+                  origin,
+                });
+            if (!created.ok && created.error.code === "conflict") continue;
+            if (!created.ok) {
+              return err(
+                editable && created.error.code === "io_error" ? "collab_error" : "repository_error",
+                `Failed to create upload document: ${created.error.code}`,
+              );
+            }
+            createdUri = uri;
+            if (!created.value.documentId) {
+              throw new Error("Upload document creation returned no document ID");
+            }
+            documentId = created.value.documentId;
+            break;
           }
 
-          const origin = {
-            type: "import" as const,
-            userId: resolution.thread.userId,
-            source: "thread_upload",
-            filename: input.filename,
-            sourceId: input.threadId,
-          };
-          const created = editable
-            ? await port.createTrackedDocument(uri, markdownProjection, { origin })
-            : await port.writeBinary(uri, {
-                fileType: documentFileTypeFor({ filetype, mimeType: input.mimeType }) ?? "binary",
-                storageUrl: storageUrl ?? "",
-                mimeType: input.mimeType,
-                sizeBytes: input.bytes.byteLength,
-                origin,
-              });
-          if (!created.ok && created.error.code === "conflict") continue;
-          if (!created.ok) {
-            return err(
-              editable && created.error.code === "io_error" ? "collab_error" : "repository_error",
-              `Failed to create upload document: ${created.error.code}`,
-            );
+          if (!createdUri || !documentId) {
+            return err("repository_error", "No available upload filename could be allocated");
           }
-          if (!created.value.documentId) {
-            return err("repository_error", "Upload document creation returned no document ID");
-          }
-          createdUri = uri;
-          documentId = created.value.documentId;
-          break;
-        }
-
-        if (!createdUri || !documentId) {
-          return err("repository_error", "No available upload filename could be allocated");
-        }
-        await deps.repos.threadDocuments.attach(input.threadId, documentId, "editing");
-        const upload = await deps.uploadDocuments.getUpload(input.threadId, documentId);
-        if (!upload) throw new Error("Upload document was not attached");
-        imported = true;
-        return ok(upload);
+          await deps.repos.threadDocuments.attach(input.threadId, documentId, "editing");
+          const upload = await deps.uploadDocuments.getUpload(input.threadId, documentId);
+          if (!upload) throw new Error("Upload document was not attached");
+          return ok(upload);
+        });
+        imported = result.ok;
+        return result;
       } catch (error) {
-        if (createdUri) {
-          await deleteDocumentBestEffort(deps, port, createdUri, {
-            documentId,
-            threadId: input.threadId,
-          });
-        }
-        if (documentId) {
-          await deps.repos.threadDocuments
-            .detach(input.threadId, documentId)
-            .catch(() => undefined);
-        }
         return err("repository_error", errorMessage(error, "Failed to import upload"));
       } finally {
         if (!imported) {
-          await deleteObjectBestEffort(deps.eventSink, deps.objectStore, storageUrl, {
-            documentId,
-            threadId: input.threadId,
-          });
+          const documentRemoved =
+            !createdUri ||
+            (await removeActiveDocumentBestEffort(deps, port, createdUri, {
+              documentId,
+              threadId: input.threadId,
+            }));
+          if (documentRemoved) {
+            await deleteObjectBestEffort(deps.eventSink, deps.objectStore, storageUrl, {
+              documentId,
+              threadId: input.threadId,
+            });
+          }
         }
       }
     },

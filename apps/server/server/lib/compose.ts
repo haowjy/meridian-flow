@@ -365,6 +365,7 @@ export async function createProductionAppPorts(input: {
   const imageAssets = createContextImageAssetAdapter({
     figures: figureDocuments,
     uploads: uploadDocuments,
+    threadWorks: threadRepos.threadWorks,
     objectStore,
     eventSink,
   });

@@ -145,6 +145,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const imageAssets = createContextImageAssetAdapter({
         figures: createDrizzleFigureDocumentRepository({ db }),
         uploads: uploadDocuments,
+        threadWorks: repos.threadWorks,
         objectStore,
         eventSink,
       });
@@ -154,7 +155,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             type: "image_reference",
             documentId: first.value.documentId,
-            uri: `uploads://${WORK_ID}/image.png`,
+            uri: "uploads://image.png",
           },
           { maxBytes: 1024 },
         ),
@@ -183,6 +184,58 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect.objectContaining({ documentId: second.value.documentId }),
         ]),
       );
+    });
+
+    it("rolls back the context document and attachment when rail confirmation fails", async () => {
+      const repos = createDrizzleRepositories(db);
+      const objectStore = createInMemoryObjectStore();
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: {} as never,
+        manifestMembership: {
+          async recordManifestDocumentCreated() {},
+          async recordManifestDocumentDeleted() {},
+        },
+      });
+      const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, repos.threadDocuments);
+      const imports = createThreadUploadImportService({
+        repos,
+        contextPorts,
+        uploadDocuments: {
+          ...uploadDocuments,
+          async getUpload() {
+            return null;
+          },
+        },
+        objectStore,
+        eventSink: createInMemoryEventSink(),
+      });
+
+      await expect(
+        imports.importUpload({
+          projectId: PROJECT_ID,
+          threadId: THREAD_ID,
+          filename: "rollback.png",
+          bytes: Uint8Array.from([137, 80, 78, 71]),
+          mimeType: "image/png",
+        }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "repository_error" },
+      });
+      const context = contextPorts.forWork(
+        WORK_ID,
+        PROJECT_ID,
+        USER_ID,
+        new Set([WORK_ID]),
+        THREAD_ID,
+      );
+      await expect(context.list("uploads://")).resolves.toEqual({ ok: true, value: [] });
+      await expect(repos.threadDocuments.listByThread(THREAD_ID)).resolves.toEqual([]);
+      await expect(objectStore.list("uploads/")).resolves.toEqual({
+        ok: true,
+        value: { keys: [] },
+      });
     });
   });
 }

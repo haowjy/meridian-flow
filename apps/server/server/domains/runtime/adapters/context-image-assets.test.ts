@@ -22,6 +22,11 @@ function deps() {
       getUpload: vi.fn(),
       getDocument: vi.fn(),
     },
+    threadWorks: {
+      findPrimary: vi.fn().mockResolvedValue({
+        workId: "22222222-2222-4222-8222-222222222222",
+      }),
+    },
     objectStore: {
       get: vi.fn().mockResolvedValue({
         ok: true,
@@ -100,12 +105,14 @@ describe("context image asset adapter", () => {
         storageUrl: "object://meridian/uploads/map.png",
         mimeType: "image/webp",
         projectId: "project-1",
+        workId: "22222222-2222-4222-8222-222222222222",
         uploadUri: "uploads://22222222-2222-4222-8222-222222222222/map.webp",
       })
       .mockResolvedValueOnce({
         storageUrl: "object://meridian/uploads/notes.pdf",
         mimeType: "application/pdf",
         projectId: "project-1",
+        workId: "22222222-2222-4222-8222-222222222222",
         uploadUri: "uploads://22222222-2222-4222-8222-222222222222/map.webp",
       });
     const adapter = createContextImageAssetAdapter(stubs as never);
@@ -119,6 +126,27 @@ describe("context image asset adapter", () => {
     await expect(adapter.isValidReference(context, reference)).resolves.toBe(false);
   });
 
+  it("resolves an authority-omitted upload URI against the thread's primary Work", async () => {
+    const stubs = deps();
+    stubs.uploads.getUpload.mockResolvedValue({ documentId });
+    stubs.uploads.getDocument.mockResolvedValue({
+      storageUrl: "object://meridian/uploads/map.png",
+      mimeType: "image/png",
+      projectId: "project-1",
+      workId: "22222222-2222-4222-8222-222222222222",
+      uploadUri: "uploads://22222222-2222-4222-8222-222222222222/map.png",
+    });
+    const adapter = createContextImageAssetAdapter(stubs as never);
+
+    await expect(
+      adapter.isValidReference(context, {
+        type: "image_reference",
+        documentId,
+        uri: "uploads://map.png",
+      }),
+    ).resolves.toBe(true);
+  });
+
   it("requires an upload reference to spell the document's authoritative Work URI", async () => {
     const stubs = deps();
     stubs.uploads.getUpload.mockResolvedValue({ documentId });
@@ -126,6 +154,7 @@ describe("context image asset adapter", () => {
       storageUrl: "object://meridian/uploads/map.png",
       mimeType: "image/png",
       projectId: "project-1",
+      workId: "33333333-3333-4333-8333-333333333333",
       uploadUri: "uploads://33333333-3333-4333-8333-333333333333/map.png",
     });
     const adapter = createContextImageAssetAdapter(stubs as never);
@@ -166,6 +195,7 @@ describe("context image asset adapter", () => {
       const adapter = createContextImageAssetAdapter({
         figures: stubs.figures as never,
         uploads: stubs.uploads as never,
+        threadWorks: stubs.threadWorks,
         objectStore,
         eventSink: createInMemoryEventSink(),
       });
