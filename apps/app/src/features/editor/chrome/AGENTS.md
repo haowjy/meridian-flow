@@ -147,6 +147,15 @@ is ever painted outside the editor".
   that failed to reach it would silently drop every claimed menu in the top-left
   corner. `EditorPopover` measures a virtual reference instead and takes either
   a fixed point (`at`) or a rect that moves with the text (`anchorRect`).
+- **An anchor that cannot be measured is no anchor, and no surface.** Null is a
+  real answer — a trigger's decoration leaves the DOM the moment its text does —
+  and `EditorPopover` then does not mount, the same answer `useAnchorRect` gives
+  measured chrome. A zero rect would have been a live menu in the corner of the
+  viewport. Once placed it keeps its last rect for a frame that cannot measure,
+  so a peer's whole-document rebuild does not take an open menu away; and the
+  chrome LAYER still registers on the lane's own `open`, because whether a
+  surface can be drawn and whether it is open are different questions and
+  Escape must have an owner either way.
 - **A menu keyed on a pointer point remounts when the point moves.** Radix
   positions through floating-ui's `autoUpdate`, which never sees a fixed anchor
   move, so `EditorMenu` carries the key. A virtual reference is re-measured

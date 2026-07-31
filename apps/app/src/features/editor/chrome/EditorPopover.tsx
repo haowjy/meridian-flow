@@ -24,6 +24,13 @@
  * editor's DOM as the anchor's `contextElement` is what lets floating-ui find
  * the scroll container to watch; without it a virtual anchor only hears the
  * window.
+ *
+ * **No anchor is not an anchor at the origin.** An unmeasurable anchor answers
+ * null — the trigger's decoration has left the DOM, the caller has nothing to
+ * point at yet — and this surface then does not mount, the same answer
+ * `useAnchorRect` gives measured chrome. Inventing a zero `DOMRect` put a live
+ * menu in the viewport's top-left corner, over content it had nothing to do
+ * with and with no way for the writer to read what it belonged to.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -75,9 +82,33 @@ export function EditorPopover({
   className,
   children,
 }: EditorPopoverProps) {
+  // Read through a ref so the anchor object stays identical across renders:
+  // Radix re-points the popper at `virtualRef.current` on every render, and a
+  // fresh object each time would restart positioning mid-keystroke.
+  const measure = useRef<() => DOMRect | null>(() => null);
+  measure.current = anchorRect ?? (() => (at ? new DOMRect(at.x, at.y, 0, 0) : null));
+
+  // The last place this anchor was, kept for as long as the surface is open.
+  // floating-ui asks for a rect synchronously and has no way to hear "not just
+  // now", so a single frame where the anchor cannot be measured — a remote
+  // write rebuilding the manuscript between two paints — answers with where it
+  // last was rather than with a corner. Never measured at all is the different
+  // answer: there is nowhere to put this, so it does not open.
+  const placed = useRef<DOMRect | null>(null);
+  const here = measure.current();
+  if (!open) placed.current = null;
+  else if (here) placed.current = here;
+  const mounted = open && (Boolean(trigger) || placed.current !== null);
+
   // Radix carries its own Escape listener, so the kernel must not also
   // dismiss this one; `scope` is what lets a layer opened inside it — a
   // source pane — be recognised as the deeper one.
+  //
+  // The LANE's `open`, not the anchored `mounted`: whether a surface can be
+  // drawn is geometry, whether it is open is the lane's own state, and a
+  // surface whose anchor cannot be measured must still be the one thing Escape
+  // closes and Mod+K replaces. Registering on the mount instead would leave an
+  // unplaceable surface open with nothing able to close it.
   const layer = useChromeLayer(editor, {
     id,
     open,
@@ -86,17 +117,11 @@ export function EditorPopover({
     returnFocus,
   });
 
-  // Read through a ref so the anchor object stays identical across renders:
-  // Radix re-points the popper at `virtualRef.current` on every render, and a
-  // fresh object each time would restart positioning mid-keystroke.
-  const measure = useRef<() => DOMRect | null>(() => null);
-  measure.current = anchorRect ?? (() => (at ? new DOMRect(at.x, at.y, 0, 0) : null));
-
   const contextElement = editor && !editor.isDestroyed ? editor.view.dom : undefined;
   const virtualRef = useMemo<{ current: EditorPopoverAnchor }>(
     () => ({
       current: {
-        getBoundingClientRect: () => measure.current() ?? new DOMRect(),
+        getBoundingClientRect: () => measure.current() ?? placed.current ?? new DOMRect(),
         contextElement,
       },
     }),
@@ -104,7 +129,7 @@ export function EditorPopover({
   );
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange} modal={false}>
+    <Popover open={mounted} onOpenChange={onOpenChange} modal={false}>
       {trigger ? (
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       ) : (

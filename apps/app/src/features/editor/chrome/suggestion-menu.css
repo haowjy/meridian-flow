@@ -7,16 +7,32 @@
  */
 
 /* The popover clips its children to its own rounded corners; the list inside
-   it is what scrolls. */
+   it is what scrolls.
+
+   It also never asks for more room than the caret leaves it. A menu opened from
+   a cell near the bottom of the window is taller than the space under it, so
+   floating-ui flips it above the caret — and a menu still taller than the space
+   ABOVE hangs off the top of the window, taking the refusal note with it, which
+   is the one line saying why the rows below are grey. Radix measures that space
+   for every placement it tries; capping to it makes the list give way instead
+   of the note. */
 .meridian-suggestion-menu-shell {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  max-height: var(--radix-popper-available-height);
 }
 
 /* Height caps near eight rows and the list scrolls inside itself (ruled). The
    native scrollbar stays hidden: the fades at the list's own edges already say
-   there is more, and a bar on a 14rem menu is louder than the menu. */
+   there is more, and a bar on a 14rem menu is louder than the menu.
+
+   `min-height: 0` is what lets the cap above shorten it: a flex child's floor
+   is its content, so without this the list keeps its eight rows and pushes the
+   note back off the screen. */
 .meridian-suggestion-menu {
   max-height: 19.5rem;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
