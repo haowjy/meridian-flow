@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `packages/markup`: sized image HTML now decodes attribute entities once, so
+  repeated saves preserve image paths, alt text, titles, and stable project
+  asset identity, including inside spanned tables.
 - `apps/app`: end-to-end document fixtures now create canonical collaboration
   state through the authenticated context API instead of seeding a derived cache.
 - `apps/server`: every model now receives the Meridian document dialect in its

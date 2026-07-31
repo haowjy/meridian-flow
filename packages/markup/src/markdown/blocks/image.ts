@@ -39,7 +39,7 @@ export const imageCodec: BlockCodec<MdastImage | MdastWikiLinkImage> = {
 
   parse(ast, ctx) {
     if (ast.type === "wikiLinkImage") {
-      return imageNode(ctx, {
+      return imageNodeFromAttributes(ctx, {
         url: `[[${ast.target}]]`,
         alt: ast.alt ?? null,
         title: ast.title ?? null,
@@ -47,7 +47,7 @@ export const imageCodec: BlockCodec<MdastImage | MdastWikiLinkImage> = {
       });
     }
     if (ast.type === "image") {
-      return imageNode(ctx, {
+      return imageNodeFromAttributes(ctx, {
         url: ast.url,
         alt: ast.alt ?? null,
         title: ast.title ?? null,
@@ -55,7 +55,7 @@ export const imageCodec: BlockCodec<MdastImage | MdastWikiLinkImage> = {
       });
     }
     const tag = parseImageHtmlAst(ast);
-    return tag && imageNode(ctx, tag);
+    return tag && imageNodeFromAttributes(ctx, tag);
   },
 };
 
@@ -67,7 +67,7 @@ export const imageCodec: BlockCodec<MdastImage | MdastWikiLinkImage> = {
  * path this project cannot claim stays the path it was written as, because
  * guessing an id would write a reference that can never render.
  */
-function imageNode(ctx: ParseContext, tag: ImageHtmlAttributes): PMNode {
+export function imageNodeFromAttributes(ctx: ParseContext, tag: ImageHtmlAttributes): PMNode {
   const target = wikilinkTarget(tag.url);
   const assetDocumentId = tag.url === "" ? null : ctx.assetPathResolver.assetForPath(tag.url);
   return ctx.schema.node("image", {

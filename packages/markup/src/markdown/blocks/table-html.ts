@@ -3,7 +3,6 @@
 import type { Mark, Node as PMNode } from "prosemirror-model";
 
 import { inlineContentToMdast, type MdastInline, rawTextForAst } from "../../helpers.js";
-import { getRuntime } from "../../runtime.js";
 import type { ParseContext, SerializeContext } from "../../types.js";
 import {
   decodeHtml,
@@ -14,7 +13,8 @@ import {
   type HtmlNode,
   parseHtml,
 } from "../html-tag.js";
-import { imageHtmlTag, parseImageHtmlAttributes } from "./image-html.js";
+import { imageNodeFromAttributes } from "./image.js";
+import { imageHtmlTag, parseRawImageHtmlAttributes } from "./image-html.js";
 
 const ALIGNMENTS = new Set(["left", "center", "right"]);
 
@@ -300,24 +300,9 @@ function inlineMark(element: HtmlElement, ctx: ParseContext): Mark | null {
 }
 
 function parseImage(element: HtmlElement, ctx: ParseContext): PMNode | null {
-  const tag = parseImageHtmlAttributes(element.attributes);
+  const tag = parseRawImageHtmlAttributes(element.attributes);
   if (!tag) return null;
-
-  const imageCodec = getRuntime(ctx).blockMap.get("image");
-  return (
-    imageCodec?.parse(
-      {
-        type: "html",
-        value: imageHtmlTag({
-          ...tag,
-          url: decodeHtml(tag.url),
-          alt: tag.alt === null ? null : decodeHtml(tag.alt),
-          title: tag.title === null ? null : decodeHtml(tag.title),
-        }),
-      },
-      ctx,
-    ) ?? null
-  );
+  return imageNodeFromAttributes(ctx, tag);
 }
 
 function htmlSource(ast: unknown, ctx: ParseContext): string {

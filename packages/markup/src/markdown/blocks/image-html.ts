@@ -17,7 +17,7 @@
 
 import type { MdastJsxFlow, MdastJsxText, MdxJsxAttribute } from "../../ast.js";
 import type { PMNode, SerializeContext } from "../../types.js";
-import { escapeHtmlAttribute, parseHtml } from "../html-tag.js";
+import { decodeHtml, escapeHtmlAttribute, parseHtml } from "../html-tag.js";
 
 /** The picture's wire facts, whichever dialect spelled them. */
 export type ImageHtmlAttributes = {
@@ -85,11 +85,28 @@ export function parseImageHtmlAst(ast: unknown): ImageHtmlAttributes | null {
   if (record.type !== "html" || typeof record.value !== "string") return null;
   const element = parseHtml(record.value.trim());
   if (element?.name !== "img" || element.children.length > 0) return null;
-  return parseImageHtmlAttributes(element.attributes);
+  return parseRawImageHtmlAttributes(element.attributes);
 }
 
-/** The same reading from an already-parsed tag: an `<img>` inside an HTML table. */
-export function parseImageHtmlAttributes(
+/**
+ * Read an image from raw HTML attributes, decoding entity references at the
+ * boundary before the image becomes document data.
+ */
+export function parseRawImageHtmlAttributes(
+  attributes: ReadonlyMap<string, string | null>,
+): ImageHtmlAttributes | null {
+  return parseImageHtmlAttributes(
+    new Map(
+      [...attributes].map(([name, value]) => [
+        name,
+        typeof value === "string" ? decodeHtml(value) : value,
+      ]),
+    ),
+  );
+}
+
+/** Read attributes whose parser has already decoded their values, as MDX does. */
+function parseImageHtmlAttributes(
   attributes: ReadonlyMap<string, string | null>,
 ): ImageHtmlAttributes | null {
   const allowed = new Set(["src", "alt", "title", "width"]);

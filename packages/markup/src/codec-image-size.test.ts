@@ -13,7 +13,10 @@ import { createAssetPathResolver } from "./asset-path-resolver.js";
 import { components, docFrom, paragraph, parsedDoc, schema, t } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec } from "./index.js";
 
-const assetPathResolver = createAssetPathResolver([["asset-1", "assets/map.png"]]);
+const assetPathResolver = createAssetPathResolver([
+  ["asset-1", "assets/map.png"],
+  ["asset-entity", 'assets/realm&"map".png'],
+]);
 const dialects = [
   { name: "markdown", codec: markdownCodec({ schema, assetPathResolver }) },
   { name: "mdx", codec: mdxCodec({ schema, assetPathResolver, components }) },
@@ -21,6 +24,8 @@ const dialects = [
 
 const PLAIN = "![World map](assets/map.png)";
 const SIZED = '<img src="assets/map.png" alt="World map" width="240" />';
+const ENTITY_SIZED =
+  '<img src="assets/realm&amp;&quot;map&quot;.png" alt="Realm &amp; &quot;map&quot;" title="The &quot;realm&quot; &amp; beyond" width="240" />';
 
 function image(attrs: Record<string, unknown>) {
   return schema.node("image", { src: "asset:asset-1", alt: "World map", title: null, ...attrs });
@@ -61,6 +66,48 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     const wire = '<img src="assets/map.png" alt="World map" title="The realm" width="96" />';
     expect(codec.serialize(codec.parse(wire).blocks)).toBe(`${wire}\n`);
     expect(codec.parse(wire).blocks[0]?.firstChild?.attrs.title).toBe("The realm");
+  });
+
+  it("decodes a sized HTML picture once and stays stable across saves", () => {
+    const first = codec.serialize(codec.parse(ENTITY_SIZED).blocks);
+    const second = codec.serialize(codec.parse(first).blocks);
+
+    expect(first).toBe(`${ENTITY_SIZED}\n`);
+    expect(second).toBe(first);
+    expect(codec.parse(ENTITY_SIZED).blocks[0]?.firstChild?.attrs).toMatchObject({
+      src: "asset:asset-entity",
+      alt: 'Realm & "map"',
+      title: 'The "realm" & beyond',
+      width: 240,
+    });
+  });
+
+  it("decodes a sized picture in a spanned HTML table once across saves", () => {
+    const wire = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      `      <td rowspan="2">${ENTITY_SIZED}</td>`,
+      "      <td>Upper</td>",
+      "    </tr>",
+      "    <tr>",
+      "      <td>Lower</td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const first = codec.serialize(codec.parse(wire).blocks);
+    const second = codec.serialize(codec.parse(first).blocks);
+    const tableImage = codec.parse(wire).blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild;
+
+    expect(first).toBe(`${wire}\n`);
+    expect(second).toBe(first);
+    expect(tableImage?.attrs).toMatchObject({
+      src: "asset:asset-entity",
+      alt: 'Realm & "map"',
+      title: 'The "realm" & beyond',
+      width: 240,
+    });
   });
 
   it("sizes a picture whose slot has no source yet", () => {
