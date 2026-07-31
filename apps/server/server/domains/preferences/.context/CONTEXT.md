@@ -1,13 +1,14 @@
 # domains/preferences — project preferences
 
 Manages per-project user preferences (thread grouping, pinned threads, default
-agent, auto-resume settings, AI write mode). Copy-on-write merge semantics keep in-memory and
-Drizzle adapters behaviorally identical.
+agent, auto-resume settings, and current Work). Copy-on-write merge semantics
+keep in-memory and Drizzle adapters behaviorally identical.
 
 ## What it owns
 
-- **`ProjectPreferencesRepository` port** — `get` / `set` with
-  `defaultProjectPreferences()` fallback.
+- **`ProjectPreferencesRepository` port** — `read` / `upsert` with
+  `defaultProjectPreferences()` fallback, plus `getCurrentWorkId` /
+  `setCurrentWorkId`.
 - **Domain helpers** — `copyProjectPreferences` (defensive copy),
   `mergeProjectPreferences` (patch application),
   `defaultProjectPreferences` (canonical defaults).
@@ -18,7 +19,7 @@ Drizzle adapters behaviorally identical.
 
 | Port | Surface |
 |---|---|
-| `ProjectPreferencesRepository` | `get(projectId)` → `ProjectPreferences`, `set(projectId, patch)` → `ProjectPreferences` |
+| `ProjectPreferencesRepository` | Read/upsert UI preferences and get/set the writer's current Work for one project. |
 
 ## Adapters
 
@@ -41,6 +42,8 @@ hermetic tests and local reference behavior.
 - **Patch semantics.** Nullable fields (`autoResume`) can be set to `undefined`
   via `UpdateProjectPreferencesRequest`.
 - **Persistence.** Production preferences survive server restart through Drizzle/Postgres.
+- **Current Work is an identity, not UI state.** It stays on the same
+  `(userId, projectId)` row, and archive does not clear it.
 
 ## Cross-domain dependencies
 

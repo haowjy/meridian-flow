@@ -445,6 +445,7 @@ export { createInMemoryUserRepository } from "./adapters/user-repository/in-memo
 // ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
+export { resolveCurrentWork } from "./current-work.js";
 export { resolveDefaultWork } from "./default-work.js";
 export type {
   CreateProjectInput,
@@ -457,5 +458,11 @@ export {
   type EnsureUserInput,
   type UserRepository,
 } from "./ports/user-repository.js";
-export type { CreateWorkInput, ListWorksOptions, WorkRepository } from "./ports/work-repository.js";
+export {
+  type CreateWorkInput,
+  type ListWorksOptions,
+  type UpdateWorkInput,
+  WorkDeleteBlockedError,
+  type WorkRepository,
+} from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";

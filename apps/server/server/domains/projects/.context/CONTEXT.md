@@ -11,8 +11,8 @@ This domain is not the full project CRUD surface; that lives in
   agent, first work, manuscript context source, `chapter-1.md` document, and
   primary thread.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `work://manuscript/chapter-1.md`.
-- **Phase marker** — `WorkRepository` is still a temporary ownership seam here; full
-  work CRUD is owned by `domains/projects`.
+- **Work domain** — `WorkRepository` owns Work metadata/lifecycle persistence;
+  `resolveCurrentWork` owns per-writer selection policy.
 
 ## Contracts
 
@@ -21,7 +21,8 @@ This domain is not the full project CRUD surface; that lives in
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
-| `WorkRepository` | Phase marker only; do not add work CRUD here while `domains/projects` owns it. |
+| `WorkRepository` | Create/list/update/archive/unarchive/delete Works; delete is guarded by live thread memberships and unreviewed drafts. |
+| `resolveCurrentWork(user, project)` | Preference first, then newest active Work, newest archived Work, then concrete default creation. |
 
 ## Invariants
 
@@ -29,7 +30,7 @@ This domain is not the full project CRUD surface; that lives in
   so concurrent first-load requests converge.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
-- The default agent slug is `writer`; the default work title is `Book 1`; the
+- The default agent slug is `writer`; the default work name is `Book 1`; the
   initial thread is `kind = "primary"` and linked to the chapter document with
   `relationship = "editing"`.
 - Re-running bootstrap must return the same logical bundle instead of creating a
@@ -53,8 +54,6 @@ This domain is not the full project CRUD surface; that lives in
 
 `domains/projects` carries the copied upstream repository and owner-gate
 surface: project CRUD, work list/search/touch, user provisioning, and
-`requireProjectOwner`. `resolveDefaultWork(user, project)` is the sole default-Work
-policy seam; today it enforces the one-active-Work invariant and the works bootstrap
-response exposes its ID. Route wrappers under `/api/projects/*` should use
-that domain. Keep this `projects` domain narrow unless the bootstrap flow itself
-needs to change.
+`requireProjectOwner`. Multi-Work callers resolve selection through
+`resolveCurrentWork`; repository ordering alone is not selection policy. Route
+wrappers under `/api/projects/*` should stay thin over this domain.

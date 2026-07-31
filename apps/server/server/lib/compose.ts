@@ -731,6 +731,18 @@ export function createInMemoryAppServices(): AppServices {
       async listByProject() {
         return [];
       },
+      async update() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async archive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async unarchive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async softDelete() {
+        throw new Error("in-memory work repository is not implemented");
+      },
       async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -783,6 +795,18 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async listByProject() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async update() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async archive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async unarchive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
       async ensureDefaultForProject() {

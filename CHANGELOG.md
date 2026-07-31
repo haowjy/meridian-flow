@@ -5,6 +5,9 @@
 - `apps/server`: works now have required names, goals, descriptions, and
   archive state. Projects remember each writer's current work, and titled
   conversations gain stable human-readable slugs.
+- `apps/server`: current Work selection now prefers the writer's saved choice,
+  falls back deterministically, and refuses to delete Works that still hold a
+  conversation or an unreviewed draft.
 
 - `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
   (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at

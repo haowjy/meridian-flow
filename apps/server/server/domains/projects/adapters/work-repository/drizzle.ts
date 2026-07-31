@@ -1,14 +1,16 @@
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode, Work, WorkStatus } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
-import { projects, works } from "@meridian/database/schema";
+import { documentBranches, projects, threads, threadWorks, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
+  UpdateWorkInput,
   WorkRepository,
 } from "../../ports/work-repository.js";
+import { WorkDeleteBlockedError } from "../../ports/work-repository.js";
 import { DEFAULT_WORK_NAME } from "./shared.js";
 
 type WorkRow = typeof works.$inferSelect;
@@ -34,6 +36,24 @@ export interface DrizzleWorkRepositoryDeps {
 }
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
   const { db } = deps;
+
+  async function findWorkById(id: WorkId): Promise<Work | null> {
+    if (!isUuid(id)) return null;
+    const [row] = await db.select().from(works).where(eq(works.id, id)).limit(1);
+    return row ? mapWork(row) : null;
+  }
+
+  async function updateWork(id: WorkId, patch: Partial<typeof works.$inferInsert>): Promise<Work> {
+    if (!isUuid(id)) throw new Error(`Work not found: ${id}`);
+    const [row] = await db
+      .update(works)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(and(eq(works.id, id), isNull(works.deletedAt)))
+      .returning();
+    if (!row) throw new Error(`Work not found: ${id}`);
+    return mapWork(row);
+  }
+
   return {
     async create(input: CreateWorkInput): Promise<Work> {
       const id = input.id ?? crypto.randomUUID();
@@ -50,6 +70,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           createdByUserId:
             project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
           name: input.name.trim(),
+          goal: input.goal,
+          description: input.description,
         })
         .returning();
       if (!row) throw new Error("Failed to create work");
@@ -58,16 +80,74 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async findById(id: WorkId): Promise<Work | null> {
       // A non-UUID id would reach the `uuid` column and raise a Postgres parse
       // error; treat it as not-found so callers get a clean 404, not a 500.
-      if (!isUuid(id)) return null;
-      const [row] = await db.select().from(works).where(eq(works.id, id)).limit(1);
-      return row ? mapWork(row) : null;
+      return findWorkById(id);
     },
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
-      const where = opts?.includeDeleted
-        ? eq(works.projectId, projectId)
-        : and(eq(works.projectId, projectId), isNull(works.deletedAt));
+      const where = and(
+        eq(works.projectId, projectId),
+        opts?.includeDeleted ? undefined : isNull(works.deletedAt),
+        opts?.status ? eq(works.status, opts.status) : undefined,
+      );
       const rows = await db.select().from(works).where(where).orderBy(desc(works.updatedAt));
       return rows.map(mapWork);
+    },
+    async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
+      const patch: Partial<typeof works.$inferInsert> = {};
+      if (input.name !== undefined) patch.name = input.name.trim();
+      if (input.goal !== undefined) patch.goal = input.goal;
+      if (input.description !== undefined) patch.description = input.description;
+      return updateWork(id, patch);
+    },
+    async archive(id: WorkId): Promise<Work> {
+      const existing = await findWorkById(id);
+      if (!existing || existing.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (existing?.status === "archived") return existing;
+      return updateWork(id, { status: "archived", archivedAt: new Date() });
+    },
+    async unarchive(id: WorkId): Promise<Work> {
+      const existing = await findWorkById(id);
+      if (!existing || existing.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (existing?.status === "active") return existing;
+      return updateWork(id, { status: "active", archivedAt: null });
+    },
+    async softDelete(id: WorkId): Promise<void> {
+      await db.transaction(async (tx) => {
+        const [work] = await tx
+          .select({ id: works.id, deletedAt: works.deletedAt })
+          .from(works)
+          .where(eq(works.id, id))
+          .limit(1)
+          .for("update");
+        if (!work || work.deletedAt) return;
+
+        const [membership] = await tx
+          .select({ threadId: threadWorks.threadId })
+          .from(threadWorks)
+          .innerJoin(threads, eq(threadWorks.threadId, threads.id))
+          .where(and(eq(threadWorks.workId, id), isNull(threads.deletedAt)))
+          .limit(1);
+        if (membership) throw new WorkDeleteBlockedError("threads");
+
+        // The shipped branch model has active/closed lifecycle states. Its
+        // active state covers the design's active/accepting review window.
+        const [draft] = await tx
+          .select({ id: documentBranches.id })
+          .from(documentBranches)
+          .where(
+            and(
+              eq(documentBranches.workId, id),
+              eq(documentBranches.kind, "work_draft"),
+              eq(documentBranches.status, "active"),
+            ),
+          )
+          .limit(1);
+        if (draft) throw new WorkDeleteBlockedError("drafts");
+
+        await tx
+          .update(works)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(works.id, id), isNull(works.deletedAt)));
+      });
     },
     async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {
       return db.transaction(async (tx) => {
@@ -78,12 +158,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           .select()
           .from(works)
           .where(and(eq(works.projectId, projectId), isNull(works.deletedAt)))
-          .limit(2);
-        if (existing.length > 1) {
-          throw new Error(
-            `Project ${projectId} has multiple active Works; cannot provision default`,
-          );
-        }
+          .orderBy(desc(works.updatedAt))
+          .limit(1);
         if (existing[0]) return mapWork(existing[0]);
         const [project] = await tx
           .select()

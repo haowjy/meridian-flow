@@ -4,12 +4,21 @@ import type { Work } from "@meridian/contracts/works";
 import type {
   CreateWorkInput,
   ListWorksOptions,
+  UpdateWorkInput,
   WorkRepository,
 } from "../../ports/work-repository.js";
+import { WorkDeleteBlockedError } from "../../ports/work-repository.js";
 import { DEFAULT_WORK_NAME } from "./shared.js";
 
+export interface InMemoryWorkRepositoryOptions {
+  hasLiveThreads?: (workId: WorkId) => boolean | Promise<boolean>;
+  hasUnreviewedDrafts?: (workId: WorkId) => boolean | Promise<boolean>;
+}
+
 /** In-memory {@link WorkRepository} for tests. */
-export function createInMemoryWorkRepository(): WorkRepository {
+export function createInMemoryWorkRepository(
+  options: InMemoryWorkRepositoryOptions = {},
+): WorkRepository {
   const rows = new Map<string, Work>();
 
   function now(): string {
@@ -23,8 +32,8 @@ export function createInMemoryWorkRepository(): WorkRepository {
       projectId: input.projectId,
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
       name: input.name.trim(),
-      goal: null,
-      description: null,
+      goal: input.goal ?? null,
+      description: input.description ?? null,
       status: "active",
       archivedAt: null,
       aiWriteMode: "direct",
@@ -50,17 +59,61 @@ export function createInMemoryWorkRepository(): WorkRepository {
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
       return [...rows.values()]
         .filter((w) => w.projectId === projectId && (opts?.includeDeleted || w.deletedAt === null))
+        .filter((w) => !opts?.status || w.status === opts.status)
         .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
         .map((w) => ({ ...w }));
+    },
+
+    async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
+      const row = rows.get(id);
+      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (input.name !== undefined) row.name = input.name.trim();
+      if (input.goal !== undefined) row.goal = input.goal;
+      if (input.description !== undefined) row.description = input.description;
+      row.updatedAt = now();
+      row.lastActivityAt = row.updatedAt;
+      return { ...row };
+    },
+
+    async archive(id: WorkId): Promise<Work> {
+      const row = rows.get(id);
+      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (row.status === "active") {
+        row.status = "archived";
+        row.archivedAt = now();
+        row.updatedAt = row.archivedAt;
+        row.lastActivityAt = row.updatedAt;
+      }
+      return { ...row };
+    },
+
+    async unarchive(id: WorkId): Promise<Work> {
+      const row = rows.get(id);
+      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (row.status === "archived") {
+        row.status = "active";
+        row.archivedAt = null;
+        row.updatedAt = now();
+        row.lastActivityAt = row.updatedAt;
+      }
+      return { ...row };
+    },
+
+    async softDelete(id: WorkId): Promise<void> {
+      const row = rows.get(id);
+      if (!row || row.deletedAt) return;
+      if (await options.hasLiveThreads?.(id)) throw new WorkDeleteBlockedError("threads");
+      if (await options.hasUnreviewedDrafts?.(id)) throw new WorkDeleteBlockedError("drafts");
+      row.deletedAt = now();
+      row.updatedAt = row.deletedAt;
+      row.lastActivityAt = row.updatedAt;
     },
 
     async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {
       const existing = [...rows.values()].filter(
         (work) => work.projectId === projectId && work.deletedAt === null,
       );
-      if (existing.length > 1) {
-        throw new Error(`Project ${projectId} has multiple active Works; cannot provision default`);
-      }
+      existing.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       if (existing[0]) return { ...existing[0] };
       const work = build({ projectId, name: name?.trim() || DEFAULT_WORK_NAME });
       rows.set(work.id, work);

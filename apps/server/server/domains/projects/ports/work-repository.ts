@@ -4,7 +4,7 @@
  * in-memory work adapters implement.
  */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import type { Work, WorkStatus } from "@meridian/contracts/works";
 
 export interface CreateWorkInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
@@ -12,11 +12,31 @@ export interface CreateWorkInput {
   projectId: ProjectId;
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
   name: string;
+  goal?: string;
+  description?: string;
+}
+
+export interface UpdateWorkInput {
+  name?: string;
+  goal?: string;
+  description?: string;
 }
 
 export interface ListWorksOptions {
   /** Include soft-deleted works. Defaults to false. */
   includeDeleted?: boolean;
+  status?: WorkStatus;
+}
+
+export class WorkDeleteBlockedError extends Error {
+  constructor(public readonly reason: "threads" | "drafts") {
+    super(
+      reason === "threads"
+        ? "Work cannot be deleted while it has conversations"
+        : "Work cannot be deleted while it has an unreviewed draft",
+    );
+    this.name = "WorkDeleteBlockedError";
+  }
 }
 
 /**
@@ -29,7 +49,13 @@ export interface ListWorksOptions {
 export interface WorkRepository {
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
+  /** Lists most recently updated first. */
   listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]>;
+  update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
+  archive(id: WorkId): Promise<Work>;
+  unarchive(id: WorkId): Promise<Work>;
+  /** Soft-deletes only when no live thread membership or unreviewed Work draft remains. */
+  softDelete(id: WorkId): Promise<void>;
   /**
    * Provision the project's sole active Work when none exists. Refuses multiple
    * active Works; selection policy belongs to resolveDefaultWork.

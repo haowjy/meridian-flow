@@ -7,7 +7,7 @@ import type {
   ThreadGroupBy,
   UpdateProjectPreferencesRequest,
 } from "@meridian/contracts/preferences";
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projectUserPreferences } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
@@ -87,6 +87,30 @@ export function createDrizzleProjectPreferencesRepository(
         .returning();
       if (!row) throw new Error("Failed to upsert project preferences");
       return mapPreferences(row);
+    },
+
+    async getCurrentWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null> {
+      const [row] = await db
+        .select({ currentWorkId: projectUserPreferences.currentWorkId })
+        .from(projectUserPreferences)
+        .where(
+          and(
+            eq(projectUserPreferences.userId, userId),
+            eq(projectUserPreferences.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      return row?.currentWorkId ?? null;
+    },
+
+    async setCurrentWorkId(userId: UserId, projectId: ProjectId, workId: WorkId): Promise<void> {
+      await db
+        .insert(projectUserPreferences)
+        .values({ userId, projectId, currentWorkId: workId })
+        .onConflictDoUpdate({
+          target: [projectUserPreferences.userId, projectUserPreferences.projectId],
+          set: { currentWorkId: workId, updatedAt: new Date() },
+        });
     },
   };
 }
