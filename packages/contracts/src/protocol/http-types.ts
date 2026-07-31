@@ -433,7 +433,7 @@ export type ThreadSnapshotResponse = {
   liveState: ThreadLiveState;
   attention: ThreadAttention;
   /** Gateway model resolved from the thread's agent binding and server default. */
-  model?: {
+  model: {
     id: string | null;
     capabilities: ModelCapability[];
   };

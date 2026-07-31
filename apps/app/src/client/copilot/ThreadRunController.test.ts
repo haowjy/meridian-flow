@@ -84,6 +84,7 @@ function snapshot(nextSeq = "10", turns: Turn[] = [assistantTurn]): ThreadSnapsh
       resumeAfterSeq: "9",
     },
     attention: "none",
+    model: { id: null, capabilities: [] },
     nextSeq,
   };
 }
