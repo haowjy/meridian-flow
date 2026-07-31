@@ -16,7 +16,6 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { TextSelection } from "@tiptap/pm/state";
 
 import {
   anchorRange,
@@ -38,6 +37,7 @@ import {
   sendIngressMessage,
   uploadEntry,
 } from "./image-ingress-runtime";
+import { insertInlineImage } from "./image-insertion";
 import { acceptsInlineImage, imageAltFromFilename, isImageFile } from "./image-workflow";
 import { measureImageFile } from "./measure-image";
 import {
@@ -235,7 +235,11 @@ export function insertImageFile(editor: Editor | null, file: File, pos?: number)
   if (!host) return;
   const alt = imageAltFromFilename(file.name);
   const upload = beginUpload(editor, { file, alt, landing: "insert" });
-  const at = insertPendingImageNode(editor, alt, upload.id, pos);
+  const at = insertInlineImage(
+    editor,
+    { src: PENDING_IMAGE_SRC, alt, uploadToken: upload.id },
+    pos === undefined ? undefined : { from: pos, to: pos },
+  );
   if (at === null) {
     cancelUpload(editor, upload);
     storage.status.refuse(t`A picture cannot go there.`);
@@ -269,59 +273,6 @@ export function removePendingImage(editor: Editor | null, pos: number): void {
   const transaction = editor.state.tr.delete(pos, pos + 1);
   transaction.setMeta(imageIngressPluginKey, { drop: entry.id } satisfies ImageIngressMessage);
   editor.view.dispatch(transaction);
-}
-
-/**
- * The picture's slot, opened where the writer asked for it.
- *
- * `image` is an inline atom (§5.6), so where it can sit is a schema question
- * and not a preference: inside a paragraph it goes between the words, and
- * anywhere that cannot hold an inline picture (the seam between blocks, a code
- * fence) it arrives in a paragraph of its own after that block. Null is the
- * refusal, for a position that can take neither.
- *
- * The slot carries its upload's token from the first moment, in the same
- * transaction, so the insert and its identity are one undoable step.
- */
-function insertPendingImageNode(
-  editor: Editor,
-  alt: string,
-  token: string,
-  pos?: number,
-): number | null {
-  const { state } = editor;
-  const imageType = state.schema.nodes.image;
-  const paragraphType = state.schema.nodes.paragraph;
-  if (!imageType || !paragraphType) return null;
-
-  const target = Math.max(0, Math.min(pos ?? state.selection.from, state.doc.content.size));
-  const image = imageType.create({
-    src: PENDING_IMAGE_SRC,
-    alt,
-    title: null,
-    [UPLOAD_TOKEN_ATTR]: token,
-  });
-  const $target = state.doc.resolve(target);
-  const transaction = state.tr;
-  let imagePos: number;
-
-  if ($target.parent.canReplaceWith($target.index(), $target.index(), imageType)) {
-    transaction.insert(target, image);
-    imagePos = target;
-  } else {
-    const seam = $target.depth === 0 ? target : $target.after($target.depth);
-    const $seam = state.doc.resolve(seam);
-    if (!$seam.parent.canReplaceWith($seam.index(), $seam.index(), paragraphType)) return null;
-    transaction.insert(seam, paragraphType.create(null, image));
-    imagePos = seam + 1;
-  }
-
-  // The caret lands after the picture: the writer asked for an image mid
-  // sentence and the sentence continues.
-  transaction.setSelection(TextSelection.near(transaction.doc.resolve(imagePos + 1)));
-  transaction.scrollIntoView();
-  editor.view.dispatch(transaction);
-  return imagePos;
 }
 
 /**
