@@ -13,7 +13,7 @@
  * a chip — no consumer of this module learns a new shape.
  */
 
-import type { LinkTarget } from "./link-target";
+import type { LinkTarget } from "@/core/links";
 
 /**
  * Where a followed internal link goes. Registered by the app shell, because

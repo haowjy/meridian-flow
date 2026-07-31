@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-
+import type { LinkTarget } from "@/core/links";
 import { canFollowLink, followLink, linkClickIntent } from "./link-navigation";
-import type { LinkTarget } from "./link-target";
 
 const press = {
   button: 0,

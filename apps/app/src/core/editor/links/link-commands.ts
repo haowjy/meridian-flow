@@ -13,9 +13,8 @@ import { type Editor, getMarkRange } from "@tiptap/core";
 import type { Mark } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
-
+import { normalizeLinkHref } from "@/core/links";
 import { anchorRange, type EditorAnchor, followAnchor, resolveAnchor } from "../anchors";
-import { normalizeLinkHref } from "./link-target";
 
 export type LinkSelection = {
   from: number;

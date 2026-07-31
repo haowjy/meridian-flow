@@ -27,7 +27,8 @@ import type { Editor } from "@tiptap/core";
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { type LinkHint as LinkHintTarget, linkTargetHref } from "@/core/editor/links";
+import type { LinkHint as LinkHintTarget } from "@/core/editor/links";
+import { linkTargetHref } from "@/core/links";
 import {
   type AnchorRect,
   manuscriptOverlay,

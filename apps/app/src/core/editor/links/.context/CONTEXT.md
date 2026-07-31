@@ -4,6 +4,9 @@ Reference depth. Read [`AGENTS.md`](../AGENTS.md) first.
 
 ## The classification seam
 
+Owned by [`@/core/links`](../../../links/index.ts), not by this lane: the chat
+transcript classifies the same hrefs and resolves them through the same store.
+
 ```ts
 export type LinkTarget =
   | { kind: "wikilink"; name: string }   // [[The Second Gate]]
@@ -184,7 +187,7 @@ ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`, so
 `surfaces/link/link-surfaces.css` reaches the anchor through
 `a:has([data-link-state="unresolved"])`
 — the underline belongs to the anchor and a descendant cannot call it off.
-`link-resolution.test.ts` asserts that nesting, because a change to it is a
+`link-resolution-decorations.test.ts` asserts that nesting, because a change to it is a
 silently unstyled unresolved link.
 
 Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs

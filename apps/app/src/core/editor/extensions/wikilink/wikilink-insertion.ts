@@ -15,7 +15,7 @@
 
 import type { Editor } from "@tiptap/core";
 
-import { normalizeLinkHref } from "../../links";
+import { normalizeLinkHref } from "@/core/links";
 
 export type WikilinkRange = { from: number; to: number };
 

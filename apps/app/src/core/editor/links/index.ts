@@ -1,8 +1,13 @@
 /**
- * The link system's public seam.
+ * The editor's link lane: everything about a link that touches a document.
  *
- * Everything here is headless: classification, commands, the click decision,
- * and the per-editor store. React lives in `features/editor/surfaces/link/`,
+ * The mark commands, the click decision, the per-editor surface store, and the
+ * extension that mounts them. What an href MEANS and what it points at are
+ * [`@/core/links`](../../links/index.ts) — a string question the chat
+ * transcript asks too — and a consumer that needs the classifier imports it
+ * from there rather than through this lane.
+ *
+ * Everything here is headless. React lives in `features/editor/surfaces/link/`,
  * which is where a link surface actually renders.
  */
 
@@ -46,12 +51,6 @@ export {
   MIDDLE_BUTTON,
 } from "./link-navigation";
 export {
-  createLinkResolution,
-  type InternalLinkResolver,
-  type LinkResolution,
-  type LinkResolutionEntry,
-} from "./link-resolution";
-export {
   createLinkSurface,
   type LinkFollowOutcome,
   type LinkFormRequest,
@@ -64,11 +63,3 @@ export {
   type LinkSurfaceState,
   linkMenuRange,
 } from "./link-surface";
-export {
-  classifyLinkTarget,
-  documentLinkTarget,
-  isInternalLinkTarget,
-  type LinkTarget,
-  linkTargetHref,
-  normalizeLinkHref,
-} from "./link-target";

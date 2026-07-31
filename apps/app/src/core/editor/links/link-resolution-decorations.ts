@@ -18,10 +18,13 @@ import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { AddMarkStep, RemoveMarkStep } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-
+import {
+  classifyLinkTarget,
+  isInternalLinkTarget,
+  type LinkResolution,
+  linkTargetHref,
+} from "@/core/links";
 import { isRemoteDocumentRebuild } from "../anchors";
-import type { LinkResolution } from "./link-resolution";
-import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
 export const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
 

@@ -35,14 +35,12 @@ import { useCallback, useEffect, useMemo } from "react";
 
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import {
-  documentLinkTarget,
   getLinkResolution,
   getLinkSurface,
   type InternalLinkNavigator,
   type LinkFollowDisposition,
-  type LinkTarget,
-  linkTargetHref,
 } from "@/core/editor/links";
+import { documentLinkTarget, type LinkTarget, linkTargetHref } from "@/core/links";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
