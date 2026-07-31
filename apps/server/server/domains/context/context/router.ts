@@ -14,6 +14,7 @@ import type {
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentResult,
+  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextMoveOptions,
@@ -387,7 +388,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return treeMover.commitWriterLocation(source.value, destination.value);
     },
 
-    async delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
+    async delete(uri: string, options?: ContextDeleteOptions): Promise<Result<void, ContextError>> {
       const r = await resolve(uri);
       if (!r.ok) return r;
       if (!r.value.adapter.capabilities.writable) {

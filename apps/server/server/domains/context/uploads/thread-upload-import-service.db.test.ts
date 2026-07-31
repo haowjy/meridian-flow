@@ -237,5 +237,95 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         value: { keys: [] },
       });
     });
+
+    it("never lets failed-import cleanup delete a concurrent winner at the same path", async () => {
+      const repos = createDrizzleRepositories(db);
+      const objectStore = createInMemoryObjectStore();
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: {} as never,
+        manifestMembership: {
+          async recordManifestDocumentCreated() {},
+          async recordManifestDocumentDeleted() {},
+        },
+      });
+      const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, repos.threadDocuments);
+      let failedDocumentId: string | null = null;
+      let enterFailure!: () => void;
+      const failureEntered = new Promise<void>((resolve) => {
+        enterFailure = resolve;
+      });
+      let releaseFailure!: () => void;
+      const failureReleased = new Promise<void>((resolve) => {
+        releaseFailure = resolve;
+      });
+      const failedImports = createThreadUploadImportService({
+        repos,
+        contextPorts,
+        uploadDocuments: {
+          ...uploadDocuments,
+          async getUpload(_threadId, documentId) {
+            failedDocumentId = documentId;
+            enterFailure();
+            await failureReleased;
+            return null;
+          },
+        },
+        objectStore,
+        eventSink: createInMemoryEventSink(),
+      });
+      const winningImports = createThreadUploadImportService({
+        repos,
+        contextPorts,
+        uploadDocuments,
+        objectStore,
+        eventSink: createInMemoryEventSink(),
+      });
+      const input = {
+        projectId: PROJECT_ID,
+        threadId: THREAD_ID,
+        filename: "race.png",
+        bytes: Uint8Array.from([137, 80, 78, 71]),
+        mimeType: "image/png",
+      };
+
+      const failed = failedImports.importUpload(input);
+      await failureEntered;
+      const winning = winningImports.importUpload(input);
+      releaseFailure();
+      const [failedResult, winningResult] = await Promise.all([failed, winning]);
+
+      expect(failedResult).toMatchObject({
+        ok: false,
+        error: { code: "repository_error" },
+      });
+      expect(winningResult).toMatchObject({
+        ok: true,
+        value: { name: "race", extension: "png" },
+      });
+      if (!winningResult.ok) throw new Error("concurrent winner failed");
+      expect(winningResult.value.documentId).not.toBe(failedDocumentId);
+      await expect(uploadDocuments.listUploads(THREAD_ID)).resolves.toEqual([
+        expect.objectContaining({
+          documentId: winningResult.value.documentId,
+          name: "race",
+        }),
+      ]);
+      const context = contextPorts.forWork(
+        WORK_ID,
+        PROJECT_ID,
+        USER_ID,
+        new Set([WORK_ID]),
+        THREAD_ID,
+      );
+      await expect(context.stat(`uploads://${WORK_ID}/race.png`)).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: winningResult.value.documentId },
+      });
+      await expect(objectStore.list("uploads/")).resolves.toMatchObject({
+        ok: true,
+        value: { keys: [expect.objectContaining({ key: expect.any(String) })] },
+      });
+    });
   });
 }

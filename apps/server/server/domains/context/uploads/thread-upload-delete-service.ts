@@ -34,7 +34,10 @@ export async function deleteThreadUpload(
 
   const deleted = await contextPortForThread(deps.contextPorts, resolution).delete(
     document.uploadUri,
-    { origin: { type: "human", userId: input.userId, threadId: input.threadId } },
+    {
+      expectedDocumentId: document.id,
+      origin: { type: "human", userId: input.userId, threadId: input.threadId },
+    },
   );
   return deleted.ok
     ? { ok: true }

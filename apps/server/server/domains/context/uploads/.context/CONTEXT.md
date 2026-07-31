@@ -19,7 +19,9 @@ scheme.
   `documentFileTypeFor()` from `@meridian/contracts/protocol` for every upload
   classification.
 - Binary object writes are cleaned up best-effort when later persistence or
-  context-document or attachment steps fail.
+  context-document or attachment steps fail. Cleanup resolves the failed
+  document by stable ID and uses identity-bound context deletion, so a
+  concurrent upload that later claims the same path cannot be deleted.
 - Tracked content enters through `ContextPort.createTrackedDocument`; binary
   content enters through `ContextPort.writeBinary`. There is no parallel upload
   document store.

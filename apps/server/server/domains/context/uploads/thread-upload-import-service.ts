@@ -144,33 +144,27 @@ async function deleteObjectBestEffort(
 }
 
 async function removeActiveDocumentBestEffort(
-  deps: Pick<ThreadUploadImportServiceDeps, "eventSink">,
+  deps: Pick<ThreadUploadImportServiceDeps, "eventSink" | "uploadDocuments">,
   port: ContextPort,
-  uri: string,
+  documentId: string,
   context: Record<string, unknown>,
 ): Promise<boolean> {
   try {
-    const existing = await port.stat(uri);
-    if (!existing.ok && existing.error.code === "not_found") return true;
-    if (!existing.ok) {
-      emitEvent(deps.eventSink, {
-        level: "warn",
-        source: "lib.thread-upload-import",
-        name: "document_cleanup.inspect_failed",
-        payload: { uri, error: existing.error, ...context },
-      });
-      return false;
-    }
-    const deleted = await port.delete(uri, { origin: { type: "system" } });
+    const document = await deps.uploadDocuments.getDocument(documentId);
+    if (!document?.uploadUri) return true;
+    const deleted = await port.delete(document.uploadUri, {
+      expectedDocumentId: document.id,
+      origin: { type: "system" },
+    });
     if (deleted.ok) return true;
-    const remaining = await port.stat(uri);
-    if (!remaining.ok && remaining.error.code === "not_found") return true;
+    const remaining = await deps.uploadDocuments.getDocument(documentId);
+    if (!remaining?.uploadUri) return true;
     if (!deleted.ok)
       emitEvent(deps.eventSink, {
         level: "warn",
         source: "lib.thread-upload-import",
         name: "document_cleanup.failed",
-        payload: { uri, error: deleted.error, ...context },
+        payload: { uri: document.uploadUri, error: deleted.error, ...context },
       });
     return false;
   } catch (error) {
@@ -178,7 +172,7 @@ async function removeActiveDocumentBestEffort(
       level: "warn",
       source: "lib.thread-upload-import",
       name: "document_cleanup.threw",
-      payload: { uri, ...unknownToEventPayload(error), ...context },
+      payload: { documentId, ...unknownToEventPayload(error), ...context },
     });
     return false;
   }
@@ -285,9 +279,9 @@ export function createThreadUploadImportService(
       } finally {
         if (!imported) {
           const documentRemoved =
-            !createdUri ||
-            (await removeActiveDocumentBestEffort(deps, port, createdUri, {
-              documentId,
+            !documentId ||
+            (await removeActiveDocumentBestEffort(deps, port, documentId, {
+              createdUri,
               threadId: input.threadId,
             }));
           if (documentRemoved) {

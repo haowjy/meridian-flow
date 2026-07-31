@@ -9,11 +9,11 @@
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type {
+  ContextDeleteOptions,
   ContextError,
   ContextMoveOptions,
   ContextMoveResult,
   ContextScheme,
-  ContextWriteOptions,
 } from "../ports/context-port.js";
 import type {
   ContextLocationToken,
@@ -157,7 +157,7 @@ export class ContextTreeMover {
 
   async delete(
     target: ContextTreeDispatch,
-    _options?: ContextWriteOptions,
+    options?: ContextDeleteOptions,
   ): Promise<Result<void, ContextError>> {
     if (!target.adapter.capabilities.writable || !target.adapter.tree) {
       return Err({ code: "permission_denied", uri: target.canonical });
@@ -166,6 +166,12 @@ export class ContextTreeMover {
     const token = await this.inspect(target);
     if (!token.ok) return token;
     if (token.value === null) return Err({ code: "not_found", uri: target.canonical });
+    if (
+      options?.expectedDocumentId &&
+      (token.value.kind !== "file" || token.value.nodeId !== options.expectedDocumentId)
+    ) {
+      return Err({ code: "not_found", uri: target.canonical });
+    }
 
     const result = await callAdapter(
       target.canonical,
