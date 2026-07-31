@@ -171,6 +171,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     projectId: ProjectId,
     userId: UserId,
   ): Promise<WorkId> {
+    // Bootstrap inserts its membership directly later in this transaction, so
+    // this lock must share the deletion gate used by ThreadWorksRepository.
     const [existing] = await tx
       .select({ id: works.id })
       .from(works)
@@ -181,7 +183,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
           isNull(works.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (existing) return existing.id;
 
     const [work] = await tx
