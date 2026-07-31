@@ -16,7 +16,7 @@
  *   index (Anthropic block `index`, OpenAI Responses `output_index`, OpenAI-Chat
  *   `tool_calls[].index`), used by adapters to reconstruct source order.
  */
-import type { Usage } from "@meridian/contracts/runtime";
+import type { ModelCapability, Usage } from "@meridian/contracts/runtime";
 
 export type ProviderOptions = Record<string, Record<string, unknown>>;
 
@@ -25,16 +25,7 @@ export type ProviderOptions = Record<string, Record<string, unknown>>;
  * to decide whether to include images, enable tool calling, etc. Each adapter
  * reports capabilities from its static model catalog in config/providers.ts.
  */
-export type Capability =
-  | "streaming"
-  | "tool_calling"
-  | "parallel_tool_calls"
-  | "image_input"
-  | "image_output"
-  | "file_input"
-  | "structured_output"
-  | "reasoning"
-  | "caching";
+export type Capability = ModelCapability;
 
 /**
  * Static model metadata registered per provider. `provider` is filled in by

@@ -233,6 +233,24 @@ export interface Block {
   createdAt: string;
 }
 
+/** Ordered user-message content accepted by the append boundary. */
+export type UserMessageBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      /** Stable documents.id identity; signed URLs and bytes never cross this boundary. */
+      documentId: string;
+      /** Writer-visible internal spelling retained beside the stable identity. */
+      uri: string;
+    };
+
+/** Durable image block content. Resolved image data is request-time only. */
+export interface PersistedImageReference {
+  type: "image_reference";
+  documentId: string;
+  uri: string;
+}
+
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";

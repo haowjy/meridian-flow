@@ -22,5 +22,8 @@ runtime shapes, and observability records.
 - Figure and image references carry a stable `assetDocumentId` plus a
   project-relative `assetPath`. Signed URLs are expiring render details and
   never belong in a field a document persists.
+- `ModelCapability` is the shared gateway/client vocabulary. Thread snapshots
+  expose the resolved model's capability list; consumers derive feature hints
+  from that list instead of adding bespoke booleans.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.

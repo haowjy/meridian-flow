@@ -59,6 +59,7 @@ export async function buildThreadSnapshot(
   runner: RunningTurnQuery,
   threadId: ThreadId,
   userId: UserId,
+  model: ThreadSnapshotResponse["model"] = { id: null, capabilities: [] },
 ): Promise<ThreadSnapshotResponse> {
   const thread = await repos.threads.findById(threadId);
   if (!thread) {
@@ -135,6 +136,7 @@ export async function buildThreadSnapshot(
       headTurn ? (headTurn.completedAt ?? headTurn.createdAt) : null,
       lastOpenedAt,
     ),
+    model,
     nextSeq,
   };
 }

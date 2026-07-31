@@ -43,6 +43,7 @@ skeleton and delegates the moving parts.
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
+| `image-context.ts` | Resolves durable user image references through `ImageAssetPort` only for models declaring `image_input`; missing assets and unsupported models drop the image part while retaining the text spelling. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, skills catalog, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -56,6 +57,18 @@ interrupt artifact flush, child-run coordinator, interrupt registry, and
 `EventSink` are all explicit dependencies. Provider-specific model-call behavior
 stays behind the gateway port. Disabled behavior is represented by explicit
 adapters (for example no-op sinks), not by omitted deps.
+
+The user-message append boundary remains text-first. Its optional ordered
+`blocks` array contains text blocks plus image references with both a stable
+document ID and the writer-visible `manuscript://assets/…` or `uploads://…`
+spelling. The orchestrator persists reference metadata only. The
+`ImageAssetPort` validates project/thread scope at append time and mints signed
+request-time image data during context assembly; bytes and signed URLs never
+enter turn blocks.
+
+Thread snapshots expose `{ model: { id, capabilities } }`. This is the same
+registry-backed capability vocabulary used by context assembly, not a
+composer-specific vision flag.
 
 ## tools — registry, executor, and handlers
 
