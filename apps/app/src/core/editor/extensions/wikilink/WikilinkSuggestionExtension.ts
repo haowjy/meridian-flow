@@ -12,6 +12,10 @@
  * reference in scope, images included, and `[[` narrows it to what a title can
  * name — an image has no title the resolver could match.
  *
+ * Where it may open is the shared reference envelope and nothing more: two
+ * brackets are already an unambiguous request, so unlike `/` and `@` this lane
+ * asks for no word boundary.
+ *
  * `allowSpaces` is on, and has to be: document titles have spaces in them, and
  * a menu that stopped filtering at "The Second" would be a menu that cannot
  * find "The Second Gate". The cost is that the match runs to the end of the
@@ -26,9 +30,12 @@ import {
   type ReferenceItemOf,
 } from "@/core/references";
 import { autoClosedRunLength } from "../auto-pair";
-import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
+import {
+  allowsProseTrigger,
+  createSuggestionLane,
+  type SuggestionLaneOptions,
+} from "../suggestion";
 import { insertWikilink } from "./wikilink-insertion";
-import { allowsWikilinkTrigger } from "./wikilink-trigger";
 
 /** `[[` names documents, so an asset row can never reach this menu. */
 export type WikilinkItem = ReferenceItemOf<"document">;
@@ -53,7 +60,7 @@ const wikilinkLane = createSuggestionLane<ReferenceCatalog, WikilinkItem>({
   allowSpaces: true,
   keymapId: "wikilink-menu",
   label: (catalog) => catalog.label,
-  allows: allowsWikilinkTrigger,
+  allows: allowsProseTrigger,
   items: (catalog, query) =>
     UNSPELLABLE_QUERY.test(query)
       ? []

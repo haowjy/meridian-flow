@@ -63,7 +63,7 @@ msgid "'.' and '..' cannot be used as names"
 msgstr ""
 
 #. placeholder {0}: item.matchedAlias
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "(also {0})"
 msgstr ""
 
@@ -801,7 +801,7 @@ msgid "Couldn't write"
 msgstr ""
 
 #. placeholder {0}: item.name
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "Create “{0}”"
 msgstr ""
 
@@ -932,12 +932,20 @@ msgstr ""
 msgid "Dock view"
 msgstr ""
 
+#: src/features/editor/surfaces/link/reference-rows.tsx
+msgid "document"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 msgid "Document"
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Document name and location"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Documents"
 msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1424,7 +1432,7 @@ msgstr ""
 msgid "Link text"
 msgstr ""
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "links now, page later"
 msgstr ""
 
@@ -1946,8 +1954,13 @@ msgstr ""
 msgid "photo"
 msgstr ""
 
+#: src/features/editor/surfaces/link/reference-rows.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Pictures"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
@@ -2076,6 +2089,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Redoing…"
+msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Reference a document or picture"
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
@@ -2849,7 +2866,7 @@ msgstr ""
 msgid "Turn into"
 msgstr ""
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "two documents share this name"
 msgstr ""
 

@@ -21,6 +21,7 @@ import type { ReferenceCatalog } from "@/core/references";
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
+import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
@@ -97,6 +98,13 @@ export type MountedEditorInput = {
    * is not.
    */
   wikilinkCatalog?: () => ReferenceCatalog | null;
+  /**
+   * Reads the same project when the `@` menu opens, plus the headings its two
+   * kinds sit under. A second getter rather than the same one: the two menus
+   * are named differently to the writer, and a menu's own copy is not something
+   * the other lane should be able to change.
+   */
+  atReferenceCatalog?: () => AtReferenceCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
@@ -109,6 +117,7 @@ export function useMountedEditor({
   placeholder,
   slashCommandCatalog,
   wikilinkCatalog,
+  atReferenceCatalog,
   surface,
   evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
@@ -119,6 +128,8 @@ export function useMountedEditor({
   catalogRef.current = slashCommandCatalog;
   const wikilinkCatalogRef = useRef(wikilinkCatalog);
   wikilinkCatalogRef.current = wikilinkCatalog;
+  const atReferenceCatalogRef = useRef(atReferenceCatalog);
+  atReferenceCatalogRef.current = atReferenceCatalog;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
@@ -139,6 +150,7 @@ export function useMountedEditor({
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
       wikilinks: { catalog: () => wikilinkCatalogRef.current?.() ?? null },
+      atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
     });
     return {
       editorConfig,

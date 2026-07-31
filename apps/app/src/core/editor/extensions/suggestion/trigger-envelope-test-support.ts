@@ -1,12 +1,12 @@
 /**
  * The envelope both suggestion triggers share, as rows.
  *
- * `/` and `[[` differ in their boundary rules — one needs a word boundary, the
- * other refuses an existing link — but the places a trigger may open at all are
- * one decision, held in `PROSE_TRIGGER_BLOCKS` and read by both predicates. So
- * the containers and the source refusals are one corpus, consumed by both lane
- * suites, and a block that becomes prose (or stops being it) is one row here
- * rather than two edits in two files.
+ * `/`, `[[`, and `@` differ in their boundary rules — two need a word boundary,
+ * two refuse an existing link — but the places a trigger may open at all are one
+ * decision, held in `trigger-envelope.ts` and read by every predicate. So the
+ * containers and the source refusals are one corpus, consumed by every lane
+ * suite, and a block that becomes prose (or stops being it) is one row here
+ * rather than an edit in each.
  *
  * Lane-specific rules stay in the lane's own suite: this corpus says where a
  * trigger may open, never what a trigger is.

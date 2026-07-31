@@ -20,6 +20,7 @@ import type { AgentNameStore } from "./agent-name-store";
 import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
+import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
@@ -100,6 +101,8 @@ export type CreateEditorExtensionsOptions = {
   slashCommands?: SlashCommandExtensionOptions;
   /** Mounts the `[[` document menu; a surface with no project offers none. */
   wikilinks?: WikilinkExtensionOptions;
+  /** Mounts the `@` menu over documents and assets; same rule as `[[`. */
+  atReferences?: AtReferenceExtensionOptions;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -278,6 +281,7 @@ export function createEditorExtensions({
   agentNames,
   slashCommands,
   wikilinks,
+  atReferences,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -292,6 +296,7 @@ export function createEditorExtensions({
       assetRenderContext,
       slashCommands,
       wikilinks,
+      atReferences,
     }),
     ...collaboration,
     // Undo exists only alongside collaboration's UndoManager, so its owned key
@@ -311,9 +316,10 @@ export function createStandaloneEditorExtensions({
   assetRenderContext,
   slashCommands,
   wikilinks,
+  atReferences,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands" | "wikilinks"
+  "schemaType" | "assetRenderContext" | "slashCommands" | "wikilinks" | "atReferences"
 > = {}): Extensions {
   if (schemaType === "code") {
     return [
@@ -351,6 +357,7 @@ export function createStandaloneEditorExtensions({
     }),
     ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
     ...(wikilinks ? [WikilinkSuggestionExtension.configure(wikilinks)] : []),
+    ...(atReferences ? [AtReferenceExtension.configure(atReferences)] : []),
     MarkdownAutoformatExtension,
     // Below the autoformat, which owns the delimiters this deliberately does
     // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
@@ -380,6 +387,7 @@ export function createEditorConfig({
   agentNames,
   slashCommands,
   wikilinks,
+  atReferences,
   editable = true,
   autofocus = false,
   placeholder,
@@ -409,6 +417,7 @@ export function createEditorConfig({
         agentNames,
         slashCommands,
         wikilinks,
+        atReferences,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],

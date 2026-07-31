@@ -1,11 +1,12 @@
 # surfaces/link — everything a writer meets a link through
 
-The destination hint, the right-click menu, the form, the `[[` menu, what a
-follow says when it finds nothing, and the runtime that gives an internal link
-somewhere to go. Three entries in `EDITOR_CHROME_SURFACES` plus one headless
+The destination hint, the right-click menu, the form, the two reference menus,
+what a follow says when it finds nothing, and the runtime that gives an internal
+link somewhere to go. Four entries in `EDITOR_CHROME_SURFACES` plus one headless
 runtime `EditorView` mounts; policy and state live in
 [`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
 [`core/editor/extensions/wikilink/`](../../../../core/editor/extensions/wikilink/AGENTS.md),
+[`core/editor/extensions/at-reference/`](../../../../core/editor/extensions/at-reference/AGENTS.md),
 and — for the rows and their ranking, which the chat composer will share —
 [`core/references/`](../../../../core/references/AGENTS.md).
 
@@ -26,16 +27,21 @@ Three summoned components, three physics, one store.
 
 Beside them, three things that are not summoned surfaces:
 
-- **`WikilinkMenu`** — rows for the `[[` trigger, over the shared
-  `SuggestionMenu` the slash menu also renders through. Its documents come from
-  the context trees the app already caches (`useReferenceCandidates`), so opening
-  it costs no request: the manuscript and the active Work's scratch, which is the
-  resolver's candidate set and therefore the only honest offer. That index also
-  carries the images and PDFs beside them, which `[[` narrows away by asking for
-  documents alone. It carries each document's id and URI, which is where a
-  relative link's base comes from, and its own revision, which is what tells a
-  cached answer that the project moved underneath it — assets stay out of the
-  revision, because an upload changes no link's destination.
+- **`WikilinkMenu` and `AtReferenceMenu`** — rows for the `[[` and `@` triggers,
+  over the shared `SuggestionMenu` the slash menu also renders through, and over
+  one `ReferenceRow`: a document a writer reached through either door has to read
+  the same. Their candidates come from the context trees the app already caches
+  (`useReferenceCandidates`), so opening either costs no request: the manuscript
+  and the active Work's scratch, which is the resolver's candidate set and
+  therefore the only honest offer. That index also carries the images and PDFs
+  beside them, which `[[` narrows away by asking for documents alone. It carries
+  each document's id and URI, which is where a relative link's base comes from,
+  and its own revision, which is what tells a cached answer that the project
+  moved underneath it — assets stay out of the revision, because an upload
+  changes no link's destination.
+  `@` is here rather than in a directory of its own because it reads that same
+  index and offers that same row; that a pick can also place a picture is what
+  the lane writes, not what the menu is.
 - **`FollowOutcomeDialog`** — what a follow says when the document is not there.
   A chrome surface rather than the runtime's own dialog, and that is the whole
   point: it can open a quarter second after the click, so the kernel has to know
@@ -66,6 +72,12 @@ Beside them, three things that are not summoned surfaces:
   swept around the link is what they chose, so Cut takes that.
 - **Copy comes from the link core.** A component that spells out what a target
   means, or decides whether it can be followed, is a second classifier.
+- **A reference row separates its facts with layout, never a glyph.** The icon
+  says what kind of thing it is, the name is the row, and where it lives sits far
+  right in the quiet size — plus the kind spelled once for a screen reader, which
+  has no icon to read. `@` names the kinds out loud only while the writer is
+  browsing: once a query narrows the list, matches sort by fit rather than by
+  kind and headings over that would stutter.
 - **Unresolved is a sentence, never a warning.** The hint says no document
   carries that name yet and the follow offers to write the page; neither is
   an error voice, because linking ahead of writing is the job (§5.5).

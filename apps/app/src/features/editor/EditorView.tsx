@@ -297,14 +297,28 @@ function ActiveSessionEditorView({
     return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
-  // Read when the `[[` menu opens, for the same reason as the slash catalog:
-  // the label resolves against whatever locale is active then, and the document
+  // Read when a reference menu opens, for the same reason as the slash catalog:
+  // the copy resolves against whatever locale is active then, and the document
   // list changes every time the writer creates or renames a file.
   const { candidates } = useReferenceCandidates(scope);
+  const referencesOffered =
+    identity.schemaType === "document" && effectiveEditable && Boolean(projectId);
   const wikilinkCatalog = useCallback(() => {
-    if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
+    if (!referencesOffered) return null;
     return { label: t`Link a document`, candidates };
-  }, [candidates, effectiveEditable, identity.schemaType, projectId]);
+  }, [candidates, referencesOffered]);
+
+  // The same candidates through the other door, named for what `@` does with
+  // them: a picture is not something a writer links to, it is something they
+  // put here.
+  const atReferenceCatalog = useCallback(() => {
+    if (!referencesOffered) return null;
+    return {
+      label: t`Reference a document or picture`,
+      candidates,
+      groupLabels: { document: t`Documents`, asset: t`Pictures` },
+    };
+  }, [candidates, referencesOffered]);
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press
@@ -326,6 +340,7 @@ function ActiveSessionEditorView({
     placeholder: t`Start writing…`,
     slashCommandCatalog,
     wikilinkCatalog,
+    atReferenceCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
   });
