@@ -1,0 +1,23 @@
+/**
+ * The composer's contenteditable, styled to be indistinguishable from the
+ * textarea it replaced. Typography comes from the `composer-input` utility on
+ * the element itself; what lives here is only what a class cannot say about
+ * ProseMirror's own generated markup.
+ */
+
+/* The placeholder, exactly where the textarea drew its own: first line, quiet
+   ink, gone the moment anything is in the message. `is-editor-empty` rather
+   than `is-empty` so a blank second line mid-draft never re-prompts. */
+.composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: var(--color-muted-foreground);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+/* Between paragraphs only — a single-line message must sit exactly where the
+   textarea's one line sat. */
+.composer-editor .ProseMirror > p + p {
+  margin-top: 0.25rem;
+}
