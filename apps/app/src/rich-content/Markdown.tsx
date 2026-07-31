@@ -19,6 +19,7 @@ import {
   REFERENCE_TARGET_PROPERTY,
   remarkInternalReferences,
 } from "./internal-references";
+import { remarkLineBreaks } from "./remark-line-breaks";
 
 export type MarkdownProps = {
   children: string;
@@ -33,6 +34,13 @@ export type MarkdownProps = {
    *  - `static` → settled content; single markdown tree.
    */
   mode?: "streaming" | "static";
+  /**
+   * Render every newline as a visible line break. For text where `\n` was a
+   * deliberate keystroke — a sent user turn carries the composer's
+   * Shift+Enter as exactly that — not for assistant markdown, which keeps
+   * commonmark's soft-break-is-a-space.
+   */
+  breaks?: boolean;
   className?: string;
 };
 
@@ -44,6 +52,12 @@ const CONTROLS = { code: true, table: false, mermaid: false } as const;
 const REMARK_PLUGINS: NonNullable<StreamdownProps["remarkPlugins"]> = [
   ...Object.values(defaultRemarkPlugins),
   remarkInternalReferences,
+];
+
+/** Breaks after references, so a reference's own text is already settled. */
+const REMARK_PLUGINS_WITH_BREAKS: NonNullable<StreamdownProps["remarkPlugins"]> = [
+  ...REMARK_PLUGINS,
+  remarkLineBreaks,
 ];
 
 /**
@@ -63,7 +77,7 @@ const COMPONENTS = { [REFERENCE_TAG]: InternalReference } as NonNullable<
  * Thin Streamdown shell. Warm Organic element styling lives in `globals.css`
  * under `.prose-tokens` — not a full `components` override map.
  */
-export function Markdown({ children, variant, mode = "static", className }: MarkdownProps) {
+export function Markdown({ children, variant, mode = "static", breaks, className }: MarkdownProps) {
   const streaming = mode === "streaming";
 
   return (
@@ -73,7 +87,7 @@ export function Markdown({ children, variant, mode = "static", className }: Mark
       parseMarkdownIntoBlocksFn={streaming ? collapseMarkdownBlocks : undefined}
       shikiTheme={SHIKI_THEME}
       controls={CONTROLS}
-      remarkPlugins={REMARK_PLUGINS}
+      remarkPlugins={breaks ? REMARK_PLUGINS_WITH_BREAKS : REMARK_PLUGINS}
       allowedTags={ALLOWED_TAGS}
       components={COMPONENTS}
       className={cn(
