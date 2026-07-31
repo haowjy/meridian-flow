@@ -7,8 +7,8 @@
  * What a query means stays [`@/core/references`](../../../core/references/index.ts),
  * what an open menu does with a key stays
  * [`@/core/completion`](../../../core/completion/index.ts); this file declares
- * only the composer's own answers: documents and pictures, no create row, and
- * a pick that inserts an atomic reference token rather than splicing text.
+ * only the composer's own answers: documents and asset files, no create row,
+ * and a pick that inserts an atomic reference token rather than splicing text.
  *
  * **Not the editor's suggestion lane**, deliberately. `createSuggestionLane`
  * binds its keys through the editor chrome kernel, which the composer does not
@@ -43,7 +43,6 @@ import { allowsProseTrigger, atWordBoundary } from "@/core/editor/extensions/sug
 import {
   filterReferenceItems,
   type ReferenceAssetItem,
-  type ReferenceCandidate,
   type ReferenceCatalog,
   type ReferenceDocumentItem,
   referenceSpelling,
@@ -56,22 +55,11 @@ const EXTENSION_NAME = "composerReferenceSuggestion";
 const pluginKey = new PluginKey(EXTENSION_NAME);
 const catalogFencePluginKey = new PluginKey(`${EXTENSION_NAME}CatalogFence`);
 
-/** The editor `@`'s scope: a page to name, or a picture to send along. */
+/** The composer `@`'s scope: a page to name, or an asset file to designate. */
 const COMPOSER_SCOPE = ["document", "asset"] as const;
 
 /** A row the composer offers: never the create row (declined below). */
 export type ComposerReferenceItem = ReferenceDocumentItem | ReferenceAssetItem;
-
-/**
- * Pictures, not the PDFs beside them. A picture is the one asset a message
- * can carry to the model today (the image block); every other file waits on
- * the attachments slice, and a row that attaches nothing is worse than a row
- * that was never offered. Same line the editor's `@` draws
- * (`at-reference-catalog.ts`).
- */
-function offerable(candidate: ReferenceCandidate): boolean {
-  return candidate.kind !== "asset" || candidate.fileType === "image";
-}
 
 /**
  * A query that opens with a space is not a name — "meet @ noon" is the writer's
@@ -90,9 +78,16 @@ type ComposerReferenceStorage = {
   controller: SuggestionMenuController<ComposerReferenceItem>;
 };
 
+/**
+ * Every asset the project holds, pictures and PDFs alike (ratified decision
+ * 5): a picture rides as an image block, anything else is designation-only —
+ * the pick spells its canonical URI and the agent reads it through tools.
+ * The editor's `@` draws a narrower line (`at-reference-catalog.ts`) because
+ * its pick inserts an inline image, which only pixels can be.
+ */
 function composerReferenceItems(catalog: ReferenceCatalog, query: string): ComposerReferenceItem[] {
   if (NOT_A_NAME.test(query)) return [];
-  return filterReferenceItems(catalog.candidates.filter(offerable), COMPOSER_SCOPE, query).filter(
+  return filterReferenceItems(catalog.candidates, COMPOSER_SCOPE, query).filter(
     (item): item is ComposerReferenceItem => item.kind !== "create",
   );
 }
@@ -111,6 +106,7 @@ export function insertComposerReference(
   const attrs: ReferenceTokenAttributes = {
     kind: item.kind,
     documentId: item.kind === "asset" ? item.assetDocumentId : item.documentId,
+    fileType: item.kind === "asset" ? item.fileType : null,
     uri: item.uri,
     label: item.name,
     spelling: referenceSpelling(item),

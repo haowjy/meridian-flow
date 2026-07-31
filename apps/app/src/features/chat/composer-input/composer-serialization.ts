@@ -75,7 +75,9 @@ export function composerImageBlocks(doc: PMNode): ComposerImageBlock[] {
 }
 
 function ridesAsImageBlock(token: ReferenceTokenAttributes): boolean {
-  if (token.kind === "asset") return true;
+  // A non-image asset (a PDF the writer @-named) is designation-only: its
+  // spelling already put the URI in the text, and that is all that rides.
+  if (token.kind === "asset") return token.fileType === "image";
   return (
     token.kind === "upload" &&
     token.upload?.state === "ready" &&

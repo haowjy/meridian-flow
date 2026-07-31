@@ -100,6 +100,7 @@ describe("what a pick writes", () => {
       {
         kind: "document",
         documentId: "document-The Third Gate",
+        fileType: null,
         uri: "manuscript://chapters/The Third Gate.md",
         label: "The Third Gate",
         spelling: "[[The Third Gate]]",
@@ -266,6 +267,7 @@ describe("pictures through @", () => {
       {
         kind: "asset",
         documentId: "asset-map.png",
+        fileType: "image",
         uri: "manuscript://assets/map.png",
         label: "map.png",
         spelling: "manuscript://assets/map.png",
@@ -277,11 +279,18 @@ describe("pictures through @", () => {
     expect(serializeComposerText(editor.state.doc)).toBe("Look at manuscript://assets/map.png ");
   });
 
-  it("offers pictures but not the PDFs beside them", async () => {
+  it("offers the PDFs beside the pictures, designation-only (no image block)", async () => {
     const { editor } = mount([picture("gate.png"), picture("gate-plans.pdf", { fileType: "pdf" })]);
     await type(editor, "See @gate");
+    expect(rows(editor)).toEqual(["gate.png", "gate-plans.pdf"]);
 
-    expect(rows(editor)).toEqual(["gate.png"]);
+    await type(editor, "-plans");
+    menu(editor).chooseActive();
+
+    // The pick spells the canonical URI — that designation IS the whole ride:
+    // the agent reads the file through tools, nothing becomes a block.
+    expect(serializeComposerText(editor.state.doc)).toBe("See manuscript://assets/gate-plans.pdf ");
+    expect(composerImageBlocks(editor.state.doc)).toEqual([]);
   });
 
   it("derives a block from a picture at any manuscript path, not only assets/", async () => {

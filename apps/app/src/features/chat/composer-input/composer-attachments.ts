@@ -125,6 +125,7 @@ export function createComposerAttachments(
     return {
       kind: "upload",
       documentId: "",
+      fileType: null,
       uri,
       label: entry.file.name,
       spelling: `[${entry.file.name}](${uri})`,

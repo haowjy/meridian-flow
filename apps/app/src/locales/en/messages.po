@@ -1172,6 +1172,10 @@ msgstr "fig:terrace"
 msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+msgid "file"
+msgstr "file"
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr "File name"
@@ -1180,6 +1184,7 @@ msgstr "File name"
 msgid "File suggestions"
 msgstr "File suggestions"
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
 msgstr "Files"
@@ -1986,7 +1991,6 @@ msgstr "photo"
 msgid "picture"
 msgstr "picture"
 
-#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/editor/EditorView.tsx
 msgid "Pictures"
 msgstr "Pictures"

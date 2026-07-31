@@ -1172,6 +1172,10 @@ msgstr ""
 msgid "Figure could not be loaded."
 msgstr ""
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
+msgid "file"
+msgstr ""
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr ""
@@ -1180,6 +1184,7 @@ msgstr ""
 msgid "File suggestions"
 msgstr ""
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
 msgstr ""
@@ -1986,7 +1991,6 @@ msgstr ""
 msgid "picture"
 msgstr ""
 
-#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/editor/EditorView.tsx
 msgid "Pictures"
 msgstr ""
