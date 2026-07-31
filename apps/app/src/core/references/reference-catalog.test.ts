@@ -104,6 +104,63 @@ describe("filterReferenceItems ranking", () => {
     expect(items).toHaveLength(21);
     expect(items.at(-1)).toMatchObject({ kind: "create", name: "gate" });
   });
+
+  it("keeps pictures in reach while the writer browses a document-heavy project", () => {
+    const many = [
+      ...Array.from({ length: 22 }, (_, index) => document(`Chapter ${index + 1}`)),
+      asset("map.png"),
+      asset("gate.png"),
+      asset("keep.png"),
+      asset("crest.png"),
+    ];
+    const items = filterReferenceItems(many, EVERYTHING, "");
+
+    expect(items).toHaveLength(20);
+    expect(items.filter((item) => item.kind === "document")).toHaveLength(16);
+    expect(names(items.filter((item) => item.kind === "asset"))).toEqual([
+      "map.png",
+      "gate.png",
+      "keep.png",
+      "crest.png",
+    ]);
+    // Documents still lead, in the order the manuscript reads in.
+    expect(items[0]).toMatchObject({ kind: "document", name: "Chapter 1" });
+  });
+
+  it("lets pictures fill a browse the documents cannot", () => {
+    const many = [
+      ...Array.from({ length: 3 }, (_, index) => document(`Chapter ${index + 1}`)),
+      ...Array.from({ length: 30 }, (_, index) => asset(`figure-${index + 1}.png`)),
+    ];
+    const items = filterReferenceItems(many, EVERYTHING, "");
+
+    expect(items).toHaveLength(20);
+    expect(items.filter((item) => item.kind === "document")).toHaveLength(3);
+    expect(items.filter((item) => item.kind === "asset")).toHaveLength(17);
+  });
+
+  it("changes nothing about a browse the cap never touched", () => {
+    const few = [document("Gate One"), document("Gate Two"), asset("map.png")];
+
+    expect(names(filterReferenceItems(few, EVERYTHING, ""))).toEqual([
+      "Gate One",
+      "Gate Two",
+      "map.png",
+    ]);
+  });
+
+  it("lets a typed query spend the whole cap on the best matches, whatever their kind", () => {
+    const many = [
+      ...Array.from({ length: 22 }, (_, index) => document(`Gate ${index + 1}`)),
+      asset("map.png"),
+    ];
+    const items = filterReferenceItems(many, EVERYTHING, "gate");
+
+    // Every ranked row is a document: fit decides, the browse floor does not.
+    expect(items.filter((item) => item.kind === "asset")).toHaveLength(0);
+    expect(items).toHaveLength(21);
+    expect(items.at(-1)).toMatchObject({ kind: "create", name: "gate" });
+  });
 });
 
 describe("filterReferenceItems ambiguity", () => {
