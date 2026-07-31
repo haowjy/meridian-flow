@@ -14,23 +14,26 @@
  * waited until submit to decide between `[[Title]]` and the canonical URI
  * would be asking a catalog that may have moved.
  *
- * `kind` is `"document"` today and deliberately an attribute rather than a
- * fact: the attachment slices add upload/asset kinds to the same node, and a
- * chip row derives from token presence rather than owning parallel state.
+ * `kind` says what the token names — a page or a picture — and stays an
+ * attribute rather than a fact so the attachment slices can add upload kinds
+ * to the same node. An asset token is also where a message's image blocks
+ * come from: at submit the composer walks these tokens and sends
+ * `{ documentId, uri }` beside the text, so the model can see the picture the
+ * sentence names.
  */
 
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type NodeViewProps, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
-import { FileText } from "lucide-react";
+import { FileText, Image } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 export const REFERENCE_TOKEN_NODE = "referenceToken";
 
 export type ReferenceTokenAttributes = {
-  /** Kind-extensible: attachments slices add their kinds beside `"document"`. */
-  kind: "document";
+  /** Kind-extensible: attachments slices add upload kinds beside these two. */
+  kind: "document" | "asset";
   documentId: string;
   /** The resolver's canonical spelling, kept for chips and future detach UI. */
   uri: string;
@@ -62,7 +65,7 @@ export const ReferenceTokenNode = Node.create({
       {
         tag: "span[data-reference-token]",
         getAttrs: (element) => ({
-          kind: element.getAttribute("data-kind") ?? "document",
+          kind: element.getAttribute("data-kind") === "asset" ? "asset" : "document",
           documentId: element.getAttribute("data-document-id") ?? "",
           uri: element.getAttribute("data-uri") ?? "",
           label: element.getAttribute("data-label") ?? "",
@@ -125,6 +128,8 @@ export const ReferenceTokenNode = Node.create({
  */
 function ReferenceTokenView({ node, selected }: NodeViewProps) {
   const attrs = node.attrs as ReferenceTokenAttributes;
+  // The icon is the kind, same glyphs as the menu rows: a page, or a picture.
+  const Icon = attrs.kind === "asset" ? Image : FileText;
   return (
     <NodeViewWrapper
       as="span"
@@ -134,7 +139,7 @@ function ReferenceTokenView({ node, selected }: NodeViewProps) {
         selected && "border-border-focus bg-accent text-accent-foreground",
       )}
     >
-      <FileText aria-hidden className="size-[0.85em] shrink-0 self-center text-muted-foreground" />
+      <Icon aria-hidden className="size-[0.85em] shrink-0 self-center text-muted-foreground" />
       <span className="truncate">{attrs.label}</span>
     </NodeViewWrapper>
   );

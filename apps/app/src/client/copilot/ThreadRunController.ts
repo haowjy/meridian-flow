@@ -7,6 +7,7 @@
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
 import { EventType } from "@meridian/contracts/protocol";
+import type { UserMessageBlock } from "@meridian/contracts/threads";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
   appendUserMessage,
@@ -34,6 +35,8 @@ export type SubscribeLiveOptions = {
 export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
+  /** Ordered message content (text + image references); omitted for plain text. */
+  blocks?: UserMessageBlock[];
 };
 
 export type ThreadRunControllerOptions = {
@@ -105,6 +108,7 @@ export class ThreadRunController {
         data: {
           threadId,
           text,
+          blocks: options.blocks,
           connectionToken,
         },
       });

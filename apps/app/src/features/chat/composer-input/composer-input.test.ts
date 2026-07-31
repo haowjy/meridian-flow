@@ -15,7 +15,7 @@ import type { ReferenceCandidate, ReferenceCatalog } from "@/core/references";
 
 import { createComposerExtensions } from "./composer-extensions";
 import { getComposerReferenceMenu } from "./composer-reference-suggestion";
-import { serializeComposerText } from "./composer-serialization";
+import { composerImageBlocks, serializeComposerText } from "./composer-serialization";
 import { composerReferenceTokens, REFERENCE_TOKEN_NODE } from "./reference-token";
 
 const live: Editor[] = [];
@@ -31,6 +31,19 @@ function document_(title: string, overrides: Partial<ReferenceCandidate> = {}): 
     location: "Chapters",
     documentId: `document-${title}`,
     uri: `manuscript://chapters/${title}.md`,
+    ...overrides,
+  } as ReferenceCandidate;
+}
+
+function picture(name: string, overrides: Partial<ReferenceCandidate> = {}): ReferenceCandidate {
+  return {
+    kind: "asset",
+    name,
+    location: "Assets",
+    assetDocumentId: `asset-${name}`,
+    path: `/assets/${name}`,
+    fileType: "image",
+    uri: `manuscript://assets/${name}`,
     ...overrides,
   } as ReferenceCandidate;
 }
@@ -239,5 +252,54 @@ describe("serialization", () => {
       REFERENCE_TOKEN_NODE,
       "text",
     ]);
+  });
+});
+
+describe("pictures through @", () => {
+  it("a picture pick tokenizes with the asset kind, spelled as its canonical URI", async () => {
+    const { editor } = mount([picture("map.png")]);
+    await type(editor, "Look at @map");
+    menu(editor).chooseActive();
+
+    expect(tokens(editor)).toEqual([
+      {
+        kind: "asset",
+        documentId: "asset-map.png",
+        uri: "manuscript://assets/map.png",
+        label: "map.png",
+        spelling: "manuscript://assets/map.png",
+      },
+    ]);
+    // The URI is in the text, which is what lets the server's
+    // image-URI-appears-in-text check hold by construction.
+    expect(serializeComposerText(editor.state.doc)).toBe("Look at manuscript://assets/map.png ");
+  });
+
+  it("offers pictures but not the PDFs beside them", async () => {
+    const { editor } = mount([picture("gate.png"), picture("gate-plans.pdf", { fileType: "pdf" })]);
+    await type(editor, "See @gate");
+
+    expect(rows(editor)).toEqual(["gate.png"]);
+  });
+
+  it("derives one image block per distinct picture, repeats collapsed", async () => {
+    const { editor } = mount([picture("map.png")]);
+    await type(editor, "Compare @map");
+    menu(editor).chooseActive();
+    await type(editor, "with @map");
+    menu(editor).chooseActive();
+
+    expect(composerImageBlocks(editor.state.doc)).toEqual([
+      { type: "image", documentId: "asset-map.png", uri: "manuscript://assets/map.png" },
+    ]);
+  });
+
+  it("derives nothing from document tokens or hand-typed URIs", async () => {
+    const { editor } = mount();
+    await type(editor, "Rewrite @thi");
+    menu(editor).chooseActive();
+    await type(editor, "near manuscript://assets/map.png");
+
+    expect(composerImageBlocks(editor.state.doc)).toEqual([]);
   });
 });

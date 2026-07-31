@@ -31,6 +31,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     thread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    model: snapshotModel,
     settled: historySettled,
   } = useThreadSnapshotSync(threadId);
   const projectId = thread?.projectId ?? null;
@@ -81,6 +82,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
             activeWork={activeWork}
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
+            snapshotModel={snapshotModel}
             historySettled={historySettled}
             key={threadId}
           />

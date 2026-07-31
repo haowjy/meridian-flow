@@ -9,19 +9,26 @@ serialization the wire reads.
 
 ## Mental model
 
-**Tokens own attachment state.** A pick from `@` inserts an atomic
-`referenceToken` — it never splices text. The token carries identity
-(`documentId`, `uri`) and its wire `spelling`, computed at pick time
-(`[[Title]]`, or the canonical URI when the title is ambiguous). Backspace at
+**Tokens own attachment state.** A pick from `@` — a document or a picture —
+inserts an atomic `referenceToken`; it never splices text. The token carries
+identity (`documentId`, `uri`) and its wire `spelling`, computed at pick time
+(`[[Title]]`, or the canonical URI when the title is ambiguous; a picture is
+always its canonical `manuscript://assets/…` URI). Backspace at
 the token's boundary deletes the whole token, and that IS detach; a future
 chip row is a derived view over `composerReferenceTokens(doc)`, never a
 parallel store. Hand-typed `[[…]]` or `manuscript://…` stays plain text —
 only picks create tokens (ruled; see the divergence record
 [composer-tiptap-atomic-tokens](https://github.com/haowjy/meridian-flow-docs/blob/main/work/editor-toolbar-split/DIVERGENCE/composer-tiptap-atomic-tokens.md)).
 
-**Serialization is the wire contract.** `onSubmit(text)` still carries a
-plain string: text verbatim, hard break → `\n`, paragraphs joined on `\n`,
-token → its stored `spelling`. Nothing downstream changed.
+**Serialization is the wire contract.** `onSubmit` still carries a plain
+string: text verbatim, hard break → `\n`, paragraphs joined on `\n`, token →
+its stored `spelling`. Beside it, and only when the draft holds picture
+tokens, `composerImageBlocks(doc)` derives the message's image blocks
+(`{ documentId, uri }`, one per distinct picture) — derived from token
+presence at submit, never stored anywhere else. The token's spelling IS its
+URI, which is what satisfies the server's image-URI-appears-in-text check by
+construction. When the thread's model lacks `image_input`, `Composer.tsx`
+shows a quiet hint under the draft; it informs and never gates the send.
 
 **The `@` rides `@tiptap/suggestion`**, the same utility as the editor's
 lanes, with the shared trigger envelope's word-boundary rule — but not

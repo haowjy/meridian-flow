@@ -83,6 +83,7 @@ function ChatScreenLoaded({
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    model: snapshotModel,
     isError,
     settled: historySettled,
     refetch,
@@ -125,6 +126,7 @@ function ChatScreenLoaded({
               activeWork={activeWork}
               snapshotLiveState={snapshotLiveState}
               snapshotNextSeq={snapshotNextSeq}
+              snapshotModel={snapshotModel}
               historySettled={historySettled}
               key={`${projectId}:${threadId}`}
             />

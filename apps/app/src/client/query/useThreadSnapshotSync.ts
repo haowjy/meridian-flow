@@ -26,6 +26,8 @@ export type ThreadSnapshotSyncStatus = {
   liveState: DeserializedThreadSnapshot["liveState"] | null;
   attention: DeserializedThreadSnapshot["attention"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
+  /** Resolved gateway model + capabilities; the composer's vision hint reads it. */
+  model: DeserializedThreadSnapshot["model"] | null;
   /**
    * The request resolved at least once — applied or failed. Surfaces that must
    * distinguish "this thread has no such turn" from "history hasn't arrived
@@ -76,6 +78,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     liveState: data?.liveState ?? null,
     attention: data?.attention ?? null,
     nextSeq: data?.nextSeq ?? null,
+    model: data?.model ?? null,
     settled: data !== undefined || isError,
     isError,
     isFetching,
