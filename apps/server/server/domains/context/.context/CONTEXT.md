@@ -65,7 +65,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   resolution boundary for wikilink titles/aliases, `manuscript://` and
   `work://` locations, and paths relative to the containing document. The
   Drizzle adapter reads authoritative document/folder state for every
-  resolution; the in-memory adapter obeys the same contract.
+  resolution and returns the document row's persisted filetype with a match;
+  consumers never reclassify a resolved document from its path or extension.
+  The in-memory adapter obeys the same contract.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
@@ -83,7 +85,7 @@ with a single unified `ContextPort` that resolves durable project schemes
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. |
-| `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
+| `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document, including its persisted `fileType`, or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
 
 ## URI and router invariants
 
