@@ -89,6 +89,16 @@ export type ReferenceItem =
     }
   | { kind: "create"; key: "create"; name: string };
 
+/**
+ * The rows a given scope can produce. `[[` asks for documents and therefore
+ * cannot be handed an asset row, and the menu that renders it should not have
+ * to carry a branch for a state it will never see.
+ */
+export type ReferenceItemOf<TKind extends ReferenceKind> = Extract<
+  ReferenceItem,
+  { kind: TKind | "create" }
+>;
+
 /** Longer queries are a writer who kept typing past a menu that had no answer. */
 const MAX_QUERY_LENGTH = 80;
 
@@ -101,22 +111,23 @@ const MAX_CANDIDATE_ROWS = 20;
  * carry a query — `]` or `|` after `[[` — refuses it before asking here, so
  * this stays about what exists rather than about how one trigger spells it.
  */
-export function filterReferenceItems(
+export function filterReferenceItems<TKind extends ReferenceKind>(
   candidates: readonly ReferenceCandidate[],
-  scope: readonly ReferenceKind[],
+  scope: readonly TKind[],
   query: string,
-): ReferenceItem[] {
+): ReferenceItemOf<TKind>[] {
   if (query.length > MAX_QUERY_LENGTH) return [];
   const name = query.trim();
+  const kinds: readonly ReferenceKind[] = scope;
 
-  const inScope = candidates.filter((candidate) => scope.includes(candidate.kind));
+  const inScope = candidates.filter((candidate) => kinds.includes(candidate.kind));
   const duplicated = duplicatedTitles(inScope);
-  const matched = rank(inScope, name)
+  const matched: ReferenceItem[] = rank(inScope, name)
     .slice(0, MAX_CANDIDATE_ROWS)
     .map(({ candidate, matchedAlias }, index) =>
       candidate.kind === "document"
         ? {
-            kind: "document" as const,
+            kind: "document",
             key: `document-${index}-${candidate.title}`,
             name: candidate.title,
             location: candidate.location,
@@ -124,7 +135,7 @@ export function filterReferenceItems(
             ambiguous: duplicated.has(normalized(candidate.title)),
           }
         : {
-            kind: "asset" as const,
+            kind: "asset",
             key: `asset-${index}-${candidate.name}`,
             name: candidate.name,
             location: candidate.location,
@@ -133,14 +144,21 @@ export function filterReferenceItems(
           },
     );
 
-  if (!name || !scope.includes("document")) return matched;
   // Naming a document that already exists is how a writer makes their own link
-  // ambiguous, so the create row steps aside for an exact match. An asset of
-  // the same name is not that: the resolver never sees it.
+  // ambiguous, so the create row steps aside for an exact match. An asset of the
+  // same name is not that: the resolver never sees it.
   const exists = matched.some(
     (item) => item.kind === "document" && normalized(item.name) === normalized(name),
   );
-  return exists ? matched : [...matched, { kind: "create", key: "create", name }];
+  const items =
+    name && kinds.includes("document") && !exists
+      ? [...matched, { kind: "create" as const, key: "create" as const, name }]
+      : matched;
+
+  // Every row came from a candidate `scope` admitted, plus a create row only a
+  // document scope reaches. The compiler cannot follow that through the map, so
+  // the promise the signature makes is asserted once, here.
+  return items as ReferenceItemOf<TKind>[];
 }
 
 type RankedCandidate = {

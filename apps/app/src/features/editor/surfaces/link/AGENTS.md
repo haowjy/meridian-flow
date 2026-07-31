@@ -7,7 +7,7 @@ runtime `EditorView` mounts; policy and state live in
 [`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
 [`core/editor/extensions/wikilink/`](../../../../core/editor/extensions/wikilink/AGENTS.md),
 and — for the rows and their ranking, which the chat composer will share —
-[`core/completion/`](../../../../core/completion/AGENTS.md).
+[`core/references/`](../../../../core/references/AGENTS.md).
 
 ## Mental model
 
@@ -28,12 +28,14 @@ Beside them, three things that are not summoned surfaces:
 
 - **`WikilinkMenu`** — rows for the `[[` trigger, over the shared
   `SuggestionMenu` the slash menu also renders through. Its documents come from
-  the context trees the app already caches (`useLinkableDocuments`), so opening
+  the context trees the app already caches (`useReferenceCandidates`), so opening
   it costs no request: the manuscript and the active Work's scratch, which is the
-  resolver's candidate set and therefore the only honest offer. That same index
-  carries each document's id and URI, which is where a relative link's base comes
-  from, and its own revision, which is what tells a cached answer that the
-  project moved underneath it.
+  resolver's candidate set and therefore the only honest offer. That index also
+  carries the images and PDFs beside them, which `[[` narrows away by asking for
+  documents alone. It carries each document's id and URI, which is where a
+  relative link's base comes from, and its own revision, which is what tells a
+  cached answer that the project moved underneath it — assets stay out of the
+  revision, because an upload changes no link's destination.
 - **`FollowOutcomeDialog`** — what a follow says when the document is not there.
   A chrome surface rather than the runtime's own dialog, and that is the whole
   point: it can open a quarter second after the click, so the kernel has to know

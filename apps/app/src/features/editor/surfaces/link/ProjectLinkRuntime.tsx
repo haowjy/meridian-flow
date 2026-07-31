@@ -46,7 +46,7 @@ import {
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
-import { useLinkableDocuments } from "./useLinkableDocuments";
+import { useReferenceCandidates } from "./useReferenceCandidates";
 
 /**
  * How long a follow waits before admitting it is still asking. Under this, the
@@ -66,17 +66,20 @@ export function ProjectLinkRuntime({
   const { projectId, workId } = scope;
   const resolution = useMemo(() => getLinkResolution(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
-  const { documents, revision } = useLinkableDocuments(scope);
+  const { candidates, revision } = useReferenceCandidates(scope);
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
 
   // What this document's relative links are relative to, read out of the same
   // index the `[[` menu offers rows from: a scratch note the menu names is a
   // note that can hold `./cast.md` too. Null until the tree carrying it
   // arrives, which is a link with no answer yet rather than a missing document.
-  const baseUri = useMemo(
-    () => documents.find((document) => document.documentId === documentId)?.uri ?? null,
-    [documents, documentId],
-  );
+  const baseUri = useMemo(() => {
+    for (const candidate of candidates) {
+      if (candidate.kind === "document" && candidate.documentId === documentId)
+        return candidate.uri;
+    }
+    return null;
+  }, [candidates, documentId]);
 
   useEffect(() => {
     if (!resolution || !projectId) return;

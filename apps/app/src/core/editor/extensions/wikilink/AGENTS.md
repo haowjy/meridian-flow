@@ -5,8 +5,10 @@ Two small modules and a spec: where `[[` may open
 document ([`wikilink-insertion.ts`](wikilink-insertion.ts)), and the lane spec
 that hands both to the shared mechanism
 ([`WikilinkSuggestionExtension.ts`](WikilinkSuggestionExtension.ts)). What the
-menu offers, how it ranks, and the open menu React reads are
-[`@/core/completion`](../../../completion/AGENTS.md), which the composer shares.
+menu may offer and how it ranks is
+[`@/core/references`](../../../references/AGENTS.md); the open menu React reads
+is [`@/core/completion`](../../../completion/AGENTS.md). The composer shares
+both.
 The surface that renders it is
 [`features/editor/surfaces/link/`](../../../../features/editor/surfaces/link/AGENTS.md).
 
@@ -16,7 +18,7 @@ The surface that renders it is
 lifecycle, the arrow keys, the catalog fence, and dismissal live once in
 [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts). What this
 directory declares is only what makes `[[` itself: the two characters, spaces
-allowed, the predicate, the catalog filter, and the insertion. A behavior that
+allowed, the predicate, the scope it asks the catalog with, and the insertion. A behavior that
 should hold for `/` and `@` too belongs in the mechanism, not here — and a change
 here that needs a new field on the spec is telling you the same thing.
 
@@ -31,9 +33,10 @@ disagree with the classifier about what a name means.
 
 - **`allowSpaces` is on, and has to be.** Titles have spaces; a trigger that
   stopped at the first one could not find "The Second Gate". The cost is that the
-  match runs to the end of the text node, which is why the catalog returns no
-  rows for a query carrying `]` or `|` — a writer who closed their own brackets
-  is left alone with their own text.
+  match runs to the end of the text node, which is why this lane refuses a query
+  carrying `]` or `|` before it asks the catalog — a writer who closed their own
+  brackets is left alone with their own text. That guard lives here, not in the
+  catalog: it is a fact about how `[[…]]` is spelled, and `@` spells nothing.
 - **The brackets after the caret are already there.** Auto-pairing writes `]]`
   when the writer types the second `[`, so the trigger opens inside `[[]]` and
   the range a choice replaces has to reach past them — `autoClosedRunLength` is
@@ -43,7 +46,9 @@ disagree with the classifier about what a name means.
   "Links now, page later" is the whole point: serial writers link chapters
   before they write them.
 - **The catalog is the host's**, read at open, and null withdraws the trigger. A
-  read-only surface or a fenced document therefore pays for no menu.
+  read-only surface or a fenced document therefore pays for no menu. It carries
+  every reference in scope, images included; `scope: ["document"]` is what makes
+  this the document menu, because an image has no title the resolver can match.
 
 ## Anti-patterns
 
@@ -51,13 +56,15 @@ disagree with the classifier about what a name means.
 - Reimplementing any part of the suggestion lifecycle here. Keymap timing,
   catalog withdrawal, and dismissal were duplicated across two lanes once
   already; the third copy is what this shape exists to prevent.
-- Ranking or filtering rows here. That is `@/core/completion`, so the composer
+- Ranking or filtering rows here. That is `@/core/references`, so the composer
   and the editor agree about one query.
 
 → [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts) — the
   mechanism every lane shares
-→ [`../../../completion/AGENTS.md`](../../../completion/AGENTS.md) — what the rows
+→ [`../../../references/AGENTS.md`](../../../references/AGENTS.md) — what the rows
   are and how they rank
+→ [`../../../completion/AGENTS.md`](../../../completion/AGENTS.md) — the open menu
+  the rows are published through
 → [`../auto-pair/AGENTS.md`](../auto-pair/AGENTS.md) — who wrote the `]]`
 → [`../../links/AGENTS.md`](../../links/AGENTS.md) — what a link means once it exists
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the layer, keymap, and Esc contracts

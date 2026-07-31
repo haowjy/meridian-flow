@@ -53,7 +53,7 @@ import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
-import { ProjectLinkRuntime, useLinkableDocuments } from "./surfaces/link";
+import { ProjectLinkRuntime, useReferenceCandidates } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
@@ -300,11 +300,11 @@ function ActiveSessionEditorView({
   // Read when the `[[` menu opens, for the same reason as the slash catalog:
   // the label resolves against whatever locale is active then, and the document
   // list changes every time the writer creates or renames a file.
-  const { documents: wikilinkDocuments } = useLinkableDocuments(scope);
+  const { candidates } = useReferenceCandidates(scope);
   const wikilinkCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
-    return { label: t`Link a document`, documents: wikilinkDocuments };
-  }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
+    return { label: t`Link a document`, candidates };
+  }, [candidates, effectiveEditable, identity.schemaType, projectId]);
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press

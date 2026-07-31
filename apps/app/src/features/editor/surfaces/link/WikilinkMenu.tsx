@@ -11,13 +11,13 @@ import { t } from "@lingui/core/macro";
 import { FilePlus2, FileText } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
-import { closedSuggestionMenu, type WikilinkMenuItem } from "@/core/completion";
-import { getWikilinkMenu } from "@/core/editor/extensions/wikilink";
+import { closedSuggestionMenu } from "@/core/completion";
+import { getWikilinkMenu, type WikilinkItem } from "@/core/editor/extensions/wikilink";
 
 import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
 
 const NO_SUBSCRIPTION = () => () => {};
-const closed = () => closedSuggestionMenu<WikilinkMenuItem>();
+const closed = () => closedSuggestionMenu<WikilinkItem>();
 
 export function WikilinkMenu({ editor }: EditorChromeSurfaceProps) {
   const menu = getWikilinkMenu(editor);
@@ -54,7 +54,7 @@ export function WikilinkMenu({ editor }: EditorChromeSurfaceProps) {
   );
 }
 
-function WikilinkRow({ item }: { item: WikilinkMenuItem }) {
+function WikilinkRow({ item }: { item: WikilinkItem }) {
   if (item.kind === "create") {
     return (
       <>

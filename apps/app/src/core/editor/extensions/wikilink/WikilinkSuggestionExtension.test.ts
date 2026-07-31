@@ -10,7 +10,7 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { WikilinkCatalog } from "@/core/completion";
+import type { ReferenceCatalog } from "@/core/references";
 
 import { createStandaloneEditorExtensions } from "../../config";
 import { getWikilinkMenu } from "./WikilinkSuggestionExtension";
@@ -22,17 +22,36 @@ afterEach(() => {
   editor = null;
 });
 
-const CATALOG: WikilinkCatalog = {
+const CATALOG: ReferenceCatalog = {
   label: "Link a document",
-  documents: [
-    { title: "The Third Gate", location: "Chapters" },
-    { title: "Third Gate Aspirants", location: "Worldbuilding" },
-    { title: "Warden Ilsever", location: "Characters", aliases: ["The Warden"] },
+  candidates: [
+    doc("The Third Gate", "Chapters"),
+    doc("Third Gate Aspirants", "Worldbuilding"),
+    { ...doc("Warden Ilsever", "Characters"), aliases: ["The Warden"] },
+    // Assets ride in the same catalog `@` will read; `[[` must never show one.
+    {
+      kind: "asset",
+      name: "third-gate.png",
+      location: "Assets",
+      assetDocumentId: "asset-third-gate",
+      path: "/assets/third-gate.png",
+      fileType: "image",
+    },
   ],
 };
 
+function doc(title: string, location: string) {
+  return {
+    kind: "document",
+    title,
+    location,
+    documentId: `document-${title}`,
+    uri: `manuscript://${title}.md`,
+  } as const;
+}
+
 function mount(content = "<p></p>") {
-  let catalog: WikilinkCatalog | null = CATALOG;
+  let catalog: ReferenceCatalog | null = CATALOG;
   const instance = new Editor({
     extensions: createStandaloneEditorExtensions({ wikilinks: { catalog: () => catalog } }),
     content,
@@ -107,6 +126,20 @@ describe("the `[[` trigger against a live editor", () => {
     await type(instance, "[[The Third Gate]]");
 
     expect(getWikilinkMenu(instance)?.snapshot().open).toBe(false);
+  });
+
+  it("closes on a pipe, which a wikilink cannot carry either", async () => {
+    const { editor: instance } = mount();
+    await type(instance, "[[the third|");
+
+    expect(getWikilinkMenu(instance)?.snapshot().open).toBe(false);
+  });
+
+  it("never offers an asset the same catalog carries", async () => {
+    const { editor: instance } = mount();
+    await type(instance, "[[third");
+
+    expect(rows(instance)).toEqual(["Third Gate Aspirants", "The Third Gate", "create:third"]);
   });
 
   it("leaves the literal brackets in the sentence when the menu is dismissed", async () => {

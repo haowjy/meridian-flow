@@ -25,5 +25,6 @@ export {
   type ReferenceCandidate,
   type ReferenceCatalog,
   type ReferenceItem,
+  type ReferenceItemOf,
   type ReferenceKind,
 } from "./reference-catalog";

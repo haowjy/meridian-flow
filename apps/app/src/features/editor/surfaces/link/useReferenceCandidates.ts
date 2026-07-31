@@ -1,20 +1,24 @@
 /**
- * Every document a link in this scope can reach, from the trees the app already
+ * Everything a reference in this scope can name, from the trees the app already
  * has.
  *
- * One index answers both halves of a link question, because they are the same
- * question asked twice. "What can `[[…]]` name?" is the manuscript plus the
- * active Work's scratch, titled by filename. "What is `./cast.md` relative to?"
+ * One index answers every half of the question, because they are the same
+ * question asked several ways. "What can `[[…]]` name?" is the manuscript plus
+ * the active Work's scratch, titled by filename. "What can `@` bring here?" is
+ * that plus the images and PDFs beside them. "What is `./cast.md` relative to?"
  * is the URI of the document holding it, which has to come out of that same set
  * or a note the menu happily offers becomes a document that cannot host a
  * relative link of its own.
  *
  * The candidate set is the resolver's, not the tree panel's: a row for anything
  * the resolver cannot match is a row that inserts a link nobody can follow, and
- * withholding one it CAN match is the menu disagreeing with the link.
+ * withholding one it CAN match is the menu disagreeing with the link. Assets are
+ * the exception that proves it — they never go through the resolver at all, so a
+ * pick carries the concrete document id instead of a name.
  *
  * Titles are filenames without their extension, which is what `documents.name`
- * holds and what the server matches on.
+ * holds and what the server matches on. An asset keeps its extension, because
+ * `map.png` is the file and `map` would be the chapter.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
@@ -34,23 +38,13 @@ import type {
 import { useMemo } from "react";
 
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import type { WikilinkDocument } from "@/core/completion";
+import type { ReferenceCandidate } from "@/core/references";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 
 import type { EditorScope } from "../../editor-scope";
 
-export type LinkableDocument = WikilinkDocument & {
-  /** The persisted `documents.id`, which is what a follow opens. */
-  documentId: string;
-  /**
-   * The document's URI in the resolver's spelling, which is what a relative
-   * link in it resolves against.
-   */
-  uri: string;
-};
-
-export type LinkableDocumentIndex = {
-  readonly documents: readonly LinkableDocument[];
+export type ReferenceCandidateIndex = {
+  readonly candidates: readonly ReferenceCandidate[];
   /**
    * Which catalog these rows are. Content, not an object identity and not a
    * counter: a refetch that found the same documents is the same revision and
@@ -60,7 +54,10 @@ export type LinkableDocumentIndex = {
   readonly revision: string;
 };
 
-export function useLinkableDocuments({ projectId, workId }: EditorScope): LinkableDocumentIndex {
+export function useReferenceCandidates({
+  projectId,
+  workId,
+}: EditorScope): ReferenceCandidateIndex {
   const { tree: manuscript } = useProjectContextTree(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
   });
@@ -70,25 +67,32 @@ export function useLinkableDocuments({ projectId, workId }: EditorScope): Linkab
   });
 
   return useMemo(() => {
-    const documents = [
+    const candidates = [
       // The manuscript first, so a title both trees carry keeps the chapter's
       // row above the note's: ranking ties hold the order they arrive in.
-      ...(manuscript ? linkableDocuments(manuscript, []) : []),
-      ...(scratch ? linkableDocuments(scratch, [schemeLabel("scratch")]) : []),
+      ...(manuscript ? referenceCandidates(manuscript, []) : []),
+      ...(scratch ? referenceCandidates(scratch, [schemeLabel("scratch")]) : []),
     ];
-    return { documents, revision: catalogRevision(documents) };
+    return { candidates, revision: catalogRevision(candidates) };
   }, [manuscript, scratch]);
 }
 
 /**
- * Everything an answer depends on, in one string: which documents exist, what
- * each is called, and where each one is. Two catalogs with the same revision
- * cannot disagree about where any link goes, which is the property the
+ * Everything a link's answer depends on, in one string: which documents exist,
+ * what each is called, and where each one is. Two catalogs with the same
+ * revision cannot disagree about where any link goes, which is the property the
  * resolution scope needs — a link is re-asked when this changes and left alone
  * when it does not.
+ *
+ * Assets are deliberately not in it. They resolve to nothing by name, so an
+ * upload changes what `@` offers without changing where a single link goes, and
+ * counting one would throw away every resolved link in the document for it.
  */
-function catalogRevision(documents: readonly LinkableDocument[]): string {
-  return documents.map((entry) => `${entry.documentId} ${entry.uri} ${entry.title}`).join("\n");
+function catalogRevision(candidates: readonly ReferenceCandidate[]): string {
+  return candidates
+    .filter((candidate) => candidate.kind === "document")
+    .map((entry) => `${entry.documentId} ${entry.uri} ${entry.title}`)
+    .join("\n");
 }
 
 /**
@@ -98,11 +102,11 @@ function catalogRevision(documents: readonly LinkableDocument[]): string {
  * lives and needs no label; a scratch note says so, because "where it lives" is
  * the only thing separating two documents whose titles look alike.
  */
-function linkableDocuments(
+function referenceCandidates(
   tree: ProjectContextTreeDirectory,
   root: readonly string[],
-): LinkableDocument[] {
-  const documents: LinkableDocument[] = [];
+): ReferenceCandidate[] {
+  const candidates: ReferenceCandidate[] = [];
 
   const visit = (node: ProjectContextTreeNode, folders: readonly string[]) => {
     if (node.kind === "dir") {
@@ -110,18 +114,29 @@ function linkableDocuments(
       for (const child of node.children) visit(child, inside);
       return;
     }
-    // An image or a PDF has no title a wikilink can name.
-    if (!node.editable) return;
-    documents.push({
-      documentId: node.documentId,
-      title: documentTitle(node.name),
-      location: folders.join("/"),
-      uri: resolverUri(node.uri),
-    });
+    const location = folders.join("/");
+    candidates.push(
+      node.editable
+        ? {
+            kind: "document",
+            documentId: node.documentId,
+            title: documentTitle(node.name),
+            location,
+            uri: resolverUri(node.uri),
+          }
+        : {
+            kind: "asset",
+            assetDocumentId: node.documentId,
+            name: node.name,
+            location,
+            path: node.path,
+            fileType: node.fileType,
+          },
+    );
   };
 
   visit(tree, root);
-  return documents;
+  return candidates;
 }
 
 /**

@@ -26,7 +26,7 @@ import { getLinkResolution } from "@/core/editor/links";
 
 import { EditorScopeProvider } from "../../editor-scope";
 import { ProjectLinkRuntime } from "./ProjectLinkRuntime";
-import { useLinkableDocuments } from "./useLinkableDocuments";
+import { useReferenceCandidates } from "./useReferenceCandidates";
 
 const resolveDocumentLink = vi.fn(
   async (
@@ -325,10 +325,11 @@ type Candidate = { title: string; location: string };
 function candidates(scope: { projectId: string | null; workId: string | null }): Candidate[] {
   let offered: Candidate[] = [];
   const Probe = () => {
-    offered = useLinkableDocuments(scope).documents.map(({ title, location }) => ({
-      title,
-      location,
-    }));
+    offered = useReferenceCandidates(scope).candidates.flatMap((candidate) =>
+      candidate.kind === "document"
+        ? [{ title: candidate.title, location: candidate.location }]
+        : [],
+    );
     return null;
   };
   act(() => root?.render(<Probe />));

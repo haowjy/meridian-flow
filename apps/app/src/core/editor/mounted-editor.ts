@@ -16,7 +16,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { WikilinkCatalog } from "@/core/completion";
+import type { ReferenceCatalog } from "@/core/references";
 
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
@@ -96,7 +96,7 @@ export type MountedEditorInput = {
    * offers — which changes every time the writer creates or renames a file —
    * is not.
    */
-  wikilinkCatalog?: () => WikilinkCatalog | null;
+  wikilinkCatalog?: () => ReferenceCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
