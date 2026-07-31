@@ -13,6 +13,7 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
+import { uniqueThreadSlug } from "../../domain/thread-slug.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
@@ -166,6 +167,15 @@ export function createInMemoryRepositories(
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
 
+  function nextSlug(projectId: string, title: string | null | undefined): string | null {
+    return uniqueThreadSlug(
+      title,
+      [...threads.values()]
+        .filter((thread) => thread.projectId === projectId && !thread.deletedAt)
+        .flatMap((thread) => (thread.slug ? [thread.slug] : [])),
+    );
+  }
+
   function openedKey(threadId: ThreadId, userId: string): string {
     return `${threadId}:${userId}`;
   }
@@ -219,21 +229,26 @@ export function createInMemoryRepositories(
 
   const threadRepo: ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory = {
     async create(input) {
-      const thread = defaultThread(input);
+      const thread = {
+        ...defaultThread(input),
+        slug: nextSlug(input.projectId, input.title),
+      };
       threads.set(thread.id, thread);
       return projectThread(thread);
     },
     async createSubagent(input) {
-      const thread = buildSubagentThreadRow({
-        ...input,
-      });
+      const thread = {
+        ...buildSubagentThreadRow(input),
+        slug: nextSlug(input.projectId, input.title),
+      };
       threads.set(thread.id, { ...thread, workId: null });
       return projectThread(thread);
     },
     async createDerivedPrimary(input) {
-      const thread = buildDerivedPrimaryThreadRow({
-        ...input,
-      });
+      const thread = {
+        ...buildDerivedPrimaryThreadRow(input),
+        slug: nextSlug(input.projectId, input.title),
+      };
       threads.set(thread.id, { ...thread, workId: null });
       return projectThread(thread);
     },

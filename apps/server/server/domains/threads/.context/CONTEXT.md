@@ -159,6 +159,9 @@ contract shapes.
   carry a raw pre-bake system prompt.
 - Soft-delete (`deletedAt`) is idempotent for both threads and the
   `requireThreadOwner` gate treats soft-deleted threads as 404.
+- A thread receives its project-unique slug when created with its first
+  non-empty title. Collisions use `-2`, `-3`, and later mutations never
+  regenerate the handle; untitled threads keep `slug = null`.
 - Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
 - Hot cache is bounded at 500 events; older events fall through to journal

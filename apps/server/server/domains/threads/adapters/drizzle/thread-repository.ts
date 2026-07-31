@@ -6,13 +6,15 @@
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { TurnRole, TurnStatus } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, desc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
+import { uniqueThreadSlug } from "../../domain/thread-slug.js";
 import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
@@ -21,7 +23,7 @@ import type {
   UpdateSpawnLifecycleInput,
 } from "../../ports/repositories.js";
 import { mapThread } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
+import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 
 const activeLeafTurn = alias(schema.turns, "active_leaf_turn");
 
@@ -115,16 +117,48 @@ export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
   if (!row) throw new Error(`Thread not found: ${id}`);
 }
 
+async function insertThreadWithStableSlug(
+  db: DrizzleDatabase,
+  values: typeof schema.threads.$inferInsert,
+  title: string | null | undefined,
+) {
+  return runInDrizzleTransaction(db, async () => {
+    const activeDb = currentDrizzleDb(db);
+    await activeDb.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${values.projectId}, 73::bigint))`,
+    );
+    const rows = await activeDb
+      .select({ slug: schema.threads.slug })
+      .from(schema.threads)
+      .where(
+        and(
+          eq(schema.threads.projectId, values.projectId as ProjectId),
+          isNotNull(schema.threads.slug),
+          isNull(schema.threads.deletedAt),
+        ),
+      );
+    const slug = uniqueThreadSlug(
+      title,
+      rows.flatMap((row) => (row.slug ? [row.slug] : [])),
+    );
+    const [created] = await activeDb
+      .insert(schema.threads)
+      .values({ ...values, slug })
+      .returning();
+    return created;
+  });
+}
+
 export function createDrizzleThreadRepository(
-  db: DrizzleDb,
+  db: DrizzleDatabase,
 ): ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory {
   return {
     async create(input: CreateThreadInput) {
       const normalized = normalizeThreadCreate(input);
       const threadId = input.id ?? crypto.randomUUID();
-      const [row] = await currentDrizzleDb(db)
-        .insert(schema.threads)
-        .values({
+      const row = await insertThreadWithStableSlug(
+        db,
+        {
           id: threadId,
           projectId: input.projectId as ProjectId,
           createdByUserId: input.userId as string,
@@ -137,16 +171,17 @@ export function createDrizzleThreadRepository(
           spawnStatus: normalized.spawnStatus,
           spawnDepth: normalized.spawnDepth,
           status: "idle",
-        })
-        .returning();
+        },
+        normalized.title,
+      );
       if (!row) throw new Error("Failed to create thread");
       return mapThread({ ...row, workId: input.workId ?? null });
     },
     async createSubagent(input) {
       const thread = buildSubagentThreadRow(input);
-      const [row] = await currentDrizzleDb(db)
-        .insert(schema.threads)
-        .values({
+      const row = await insertThreadWithStableSlug(
+        db,
+        {
           id: thread.id,
           projectId: thread.projectId as ProjectId,
           createdByUserId: thread.userId,
@@ -162,16 +197,17 @@ export function createDrizzleThreadRepository(
           spawnStatus: thread.spawnStatus,
           spawnDepth: thread.spawnDepth,
           status: thread.status,
-        })
-        .returning();
+        },
+        thread.title,
+      );
       if (!row) throw new Error("Failed to create subagent thread");
       return mapThread({ ...row, workId: thread.workId });
     },
     async createDerivedPrimary(input) {
       const thread = buildDerivedPrimaryThreadRow(input);
-      const [row] = await currentDrizzleDb(db)
-        .insert(schema.threads)
-        .values({
+      const row = await insertThreadWithStableSlug(
+        db,
+        {
           id: thread.id,
           projectId: thread.projectId as ProjectId,
           createdByUserId: thread.userId,
@@ -184,8 +220,9 @@ export function createDrizzleThreadRepository(
           originType: input.originType,
           spawnDepth: 0,
           status: thread.status,
-        })
-        .returning();
+        },
+        thread.title,
+      );
       if (!row) throw new Error("Failed to create derived primary thread");
       return mapThread({ ...row, workId: thread.workId });
     },
