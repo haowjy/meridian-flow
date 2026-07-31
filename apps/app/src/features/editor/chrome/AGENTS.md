@@ -31,8 +31,8 @@ Five primitives and one host.
   all wear the same pill.
 - **`SuggestionMenu`** — the list a writer types underneath, for `/` and for
   `[[`. It owns the eight-row cap, the internal scroll that follows the arrow
-  keys, the hairline fades, and the announcement the caret's own element has to
-  carry; a lane brings rows.
+  keys, the fades on the list's own edges, and the announcement the caret's own
+  element has to carry; a lane brings rows.
 - **`EditorChromeHost`** — the one place chrome mounts, with nothing rendering
   editor chrome beside it. Surfaces arrive through `EDITOR_CHROME_SURFACES`;
   `EditorView.tsx` never learns about one. What a lane needs about the app rather
@@ -159,6 +159,14 @@ is ever painted outside the editor".
   ladder — measured chrome included, which lands in the pane rather than the
   body but is still outside `view.dom` where every hit test looks. The mark names the editor, because two documents open side by side
   are two kernels listening on one page.
+- **A scroll-edge fade is a mask on the element that scrolls** (ruling
+  2026-07-30). Drawn on the surface around it, the band sits at that surface's
+  border instead of the list's and cannot tell a pinned header from content —
+  the slash menu's veiled the table-cell notice and said "more above" about a
+  header that never moves. A mask also spares the fade from having to imitate
+  the surface colour. `chat-scroll-fade-bottom` (globals.css) is the same
+  mechanism on the transcript.
+
 - **A greyed row shows its LABEL alone** (law 5, ruling 2026-07-29). Grey must
   still say why, on demand rather than permanently: a reason printed under
   every refused row is standing information, and three of them turn a menu into
