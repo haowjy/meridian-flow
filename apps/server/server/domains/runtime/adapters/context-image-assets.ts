@@ -37,12 +37,14 @@ async function findImageStorage(
   if (!parsed.ok) return null;
 
   if (parsed.value.scheme === "manuscript" && parsed.value.path.startsWith("assets/")) {
-    const document = await deps.figures.findDocumentFileForProject(
+    const document = await deps.figures.findManuscriptAssetForProject(
       context.projectId,
       reference.documentId,
     );
     const mediaType = imageMediaType(document?.mimeType);
-    return document && mediaType ? { mediaType, storageUrl: document.storageUrl } : null;
+    return document && mediaType && document.assetPath === parsed.value.path
+      ? { mediaType, storageUrl: document.storageUrl }
+      : null;
   }
 
   if (parsed.value.scheme !== "uploads") return null;
@@ -65,9 +67,12 @@ export function createContextImageAssetAdapter(deps: ContextImageAssetAdapterDep
         if (!image) return null;
         const key = objectStoreKeyFromStorageUrl(image.storageUrl);
         if (!key) return null;
-        const signed = await deps.objectStore.getSignedUrl(key);
-        if (!signed.ok) return null;
-        return { mediaType: image.mediaType, data: new URL(signed.value) };
+        const object = await deps.objectStore.get(key);
+        if (!object.ok || imageMediaType(object.value.mimeType) !== image.mediaType) return null;
+        return {
+          mediaType: image.mediaType,
+          data: Buffer.from(object.value.bytes).toString("base64"),
+        };
       } catch {
         return null;
       }

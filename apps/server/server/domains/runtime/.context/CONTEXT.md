@@ -61,10 +61,10 @@ adapters (for example no-op sinks), not by omitted deps.
 The user-message append boundary remains text-first. Its optional ordered
 `blocks` array contains text blocks plus image references with both a stable
 document ID and the writer-visible `manuscript://assets/…` or `uploads://…`
-spelling. The orchestrator persists reference metadata only. The
-`ImageAssetPort` validates project/thread scope at append time and mints signed
-request-time image data during context assembly; bytes and signed URLs never
-enter turn blocks.
+spelling. The orchestrator persists reference metadata only. `ImageAssetPort`
+validates authoritative project/thread scope at append time
+and reads object bytes into request-time image data during context assembly;
+bytes and signed URLs never enter turn blocks.
 
 Thread snapshots expose `{ model: { id, capabilities } }`. This is the same
 registry-backed capability vocabulary used by context assembly, not a

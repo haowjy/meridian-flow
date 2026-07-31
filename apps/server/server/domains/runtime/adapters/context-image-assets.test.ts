@@ -1,6 +1,10 @@
 /** Adapter coverage for manuscript assets and thread-attached upload images. */
 
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { LocalObjectStoreAdapter } from "../../storage/index.js";
 import { createContextImageAssetAdapter } from "./context-image-assets.js";
 
 const documentId = "11111111-1111-4111-8111-111111111111";
@@ -11,15 +15,16 @@ function deps() {
     figures: {
       documentExistsForProject: vi.fn(),
       findDocumentFileForProject: vi.fn(),
+      findManuscriptAssetForProject: vi.fn(),
     },
     uploads: {
       getUpload: vi.fn(),
       getDocument: vi.fn(),
     },
     objectStore: {
-      getSignedUrl: vi.fn().mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
         ok: true,
-        value: "https://assets.example/signed",
+        value: { bytes: Uint8Array.from([1, 2, 3]), mimeType: "image/png" },
       }),
     },
   };
@@ -28,8 +33,9 @@ function deps() {
 describe("context image asset adapter", () => {
   it("resolves a manuscript image belonging to the project", async () => {
     const stubs = deps();
-    stubs.figures.findDocumentFileForProject.mockResolvedValue({
+    stubs.figures.findManuscriptAssetForProject.mockResolvedValue({
       assetDocumentId: documentId,
+      assetPath: "assets/map.png",
       storageUrl: "object://meridian/figures/map.png",
       mimeType: "image/png",
       fileType: "image",
@@ -45,9 +51,28 @@ describe("context image asset adapter", () => {
     await expect(adapter.isValidReference(context, reference)).resolves.toBe(true);
     await expect(adapter.resolve(context, reference)).resolves.toEqual({
       mediaType: "image/png",
-      data: new URL("https://assets.example/signed"),
+      data: "AQID",
     });
-    expect(stubs.figures.findDocumentFileForProject).toHaveBeenCalledWith("project-1", documentId);
+    expect(stubs.figures.findManuscriptAssetForProject).toHaveBeenCalledWith(
+      "project-1",
+      documentId,
+    );
+  });
+
+  it("does not let an upload masquerade as a project manuscript asset", async () => {
+    const stubs = deps();
+    stubs.figures.findManuscriptAssetForProject.mockResolvedValue(null);
+    stubs.uploads.getUpload.mockResolvedValue({ documentId });
+    const adapter = createContextImageAssetAdapter(stubs as never);
+
+    await expect(
+      adapter.isValidReference(context, {
+        type: "image_reference",
+        documentId,
+        uri: "manuscript://assets/stolen.png",
+      }),
+    ).resolves.toBe(false);
+    expect(stubs.uploads.getUpload).not.toHaveBeenCalled();
   });
 
   it("requires upload attachment to the current thread", async () => {
@@ -85,5 +110,47 @@ describe("context image asset adapter", () => {
 
     await expect(adapter.isValidReference(context, reference)).resolves.toBe(true);
     await expect(adapter.isValidReference(context, reference)).resolves.toBe(false);
+  });
+
+  it("resolves bytes from the real local object store", async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), "meridian-image-assets-"));
+    try {
+      const objectStore = new LocalObjectStoreAdapter({
+        rootDir,
+        signedUrlBasePath: "/api/objects",
+        signingSecret: "test-secret",
+        signedUrlTtlSeconds: 60,
+      });
+      const stored = await objectStore.put(
+        "figures/map.png",
+        Uint8Array.from([1, 2, 3]),
+        "image/png",
+      );
+      if (!stored.ok) throw new Error(stored.error.message);
+      const stubs = deps();
+      stubs.figures.findManuscriptAssetForProject.mockResolvedValue({
+        assetDocumentId: documentId,
+        assetPath: "assets/map.png",
+        storageUrl: stored.value.storageUrl,
+        mimeType: "image/png",
+        fileType: "image",
+        sizeBytes: 3,
+      });
+      const adapter = createContextImageAssetAdapter({
+        figures: stubs.figures as never,
+        uploads: stubs.uploads as never,
+        objectStore,
+      });
+
+      await expect(
+        adapter.resolve(context, {
+          type: "image_reference",
+          documentId,
+          uri: "manuscript://assets/map.png",
+        }),
+      ).resolves.toEqual({ mediaType: "image/png", data: "AQID" });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
   });
 });

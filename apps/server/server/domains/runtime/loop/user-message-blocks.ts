@@ -13,6 +13,9 @@ import { contentForBlockInput } from "./block-helpers.js";
 
 export class InvalidUserMessageBlocksError extends Error {}
 
+export const MAX_USER_MESSAGE_BLOCKS = 64;
+export const MAX_USER_MESSAGE_IMAGES = 16;
+
 function isExactObject(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const actual = Object.keys(value).sort();
@@ -24,6 +27,11 @@ export function parseUserMessageBlocks(value: unknown, fallbackText: string): Us
   if (value === undefined) return [{ type: "text", text: fallbackText }];
   if (!Array.isArray(value) || value.length === 0) {
     throw new InvalidUserMessageBlocksError("blocks must be a non-empty array");
+  }
+  if (value.length > MAX_USER_MESSAGE_BLOCKS) {
+    throw new InvalidUserMessageBlocksError(
+      `blocks must contain at most ${MAX_USER_MESSAGE_BLOCKS} entries`,
+    );
   }
 
   const blocks = value.map((candidate, index): UserMessageBlock => {
@@ -83,6 +91,12 @@ export function parseUserMessageBlocks(value: unknown, fallbackText: string): Us
       );
     }
   }
+  const imageCount = blocks.filter((block) => block.type === "image").length;
+  if (imageCount > MAX_USER_MESSAGE_IMAGES) {
+    throw new InvalidUserMessageBlocksError(
+      `blocks must contain at most ${MAX_USER_MESSAGE_IMAGES} images`,
+    );
+  }
   return blocks;
 }
 
@@ -91,10 +105,14 @@ export async function validateUserMessageImageReferences(
   context: ImageAssetContext,
   imageAssets: ImageAssetPort,
 ): Promise<void> {
+  const validity = new Map<string, Promise<boolean>>();
   for (const [index, block] of blocks.entries()) {
     if (block.type !== "image") continue;
     const reference = persistedImageReference(block);
-    if (!(await imageAssets.isValidReference(context, reference))) {
+    const key = `${reference.documentId}\0${reference.uri}`;
+    const valid = validity.get(key) ?? imageAssets.isValidReference(context, reference);
+    validity.set(key, valid);
+    if (!(await valid)) {
       throw new InvalidUserMessageBlocksError(
         `blocks[${index}] does not reference an image available to this thread`,
       );

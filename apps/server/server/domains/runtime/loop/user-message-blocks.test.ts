@@ -5,6 +5,8 @@ import type { ImageAssetPort } from "../ports/image-asset.js";
 import {
   contentBlocksForUserMessage,
   InvalidUserMessageBlocksError,
+  MAX_USER_MESSAGE_BLOCKS,
+  MAX_USER_MESSAGE_IMAGES,
   parseUserMessageBlocks,
   validateUserMessageImageReferences,
 } from "./user-message-blocks.js";
@@ -94,6 +96,33 @@ describe("user message blocks", () => {
     expect(() => parseUserMessageBlocks(blocks, text)).toThrow(InvalidUserMessageBlocksError);
   });
 
+  it("bounds block and image fan-out", () => {
+    expect(() =>
+      parseUserMessageBlocks(
+        Array.from({ length: MAX_USER_MESSAGE_BLOCKS + 1 }, () => ({
+          type: "text",
+          text: "x",
+        })),
+        "x".repeat(MAX_USER_MESSAGE_BLOCKS + 1),
+      ),
+    ).toThrow(/at most 64 entries/);
+
+    const text = `Look at ${uri}`;
+    expect(() =>
+      parseUserMessageBlocks(
+        [
+          { type: "text", text },
+          ...Array.from({ length: MAX_USER_MESSAGE_IMAGES + 1 }, () => ({
+            type: "image",
+            documentId,
+            uri,
+          })),
+        ],
+        text,
+      ),
+    ).toThrow(/at most 16 images/);
+  });
+
   it("authorizes every image through the asset port without capability gating", async () => {
     const isValidReference = vi.fn().mockResolvedValue(true);
     const imageAssets = {
@@ -118,6 +147,21 @@ describe("user message blocks", () => {
       { projectId: "project-1", threadId: "thread-1" },
       { type: "image_reference", documentId, uri },
     );
+  });
+
+  it("deduplicates authorization for repeated identical references", async () => {
+    const isValidReference = vi.fn().mockResolvedValue(true);
+    await validateUserMessageImageReferences(
+      [
+        { type: "text", text: uri },
+        { type: "image", documentId, uri },
+        { type: "image", documentId, uri },
+      ],
+      { projectId: "project-1", threadId: "thread-1" },
+      { isValidReference, resolve: vi.fn() },
+    );
+
+    expect(isValidReference).toHaveBeenCalledTimes(1);
   });
 
   it("rejects image references unavailable to the thread", async () => {

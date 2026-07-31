@@ -27,6 +27,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const SOURCE_ID = "00000000-0000-4000-8000-000000000a03";
     const HOST_DOCUMENT_ID = "00000000-0000-4000-8000-000000000a04";
     const ASSET_KEY_ID = "00000000-0000-4000-8000-000000000a05";
+    const UPLOAD_SOURCE_ID = "00000000-0000-4000-8000-000000000a06";
+    const UPLOAD_DOCUMENT_ID = "00000000-0000-4000-8000-000000000a07";
     const db = createDb(DATABASE_URL, { max: 4 });
     const storedObjects = new Map<string, { bytes: Uint8Array; mimeType: string }>();
     const objectStore: ObjectStorePort = {
@@ -85,6 +87,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     afterAll(async () => db.$client.end());
+
+    it("does not classify project-scoped thread uploads as manuscript assets", async () => {
+      await db.insert(contextSources).values({
+        id: UPLOAD_SOURCE_ID,
+        projectId: PROJECT_ID,
+        name: "Thread Uploads",
+        slug: "thread_uploads",
+        scope: "project",
+      });
+      await db.insert(documents).values({
+        id: UPLOAD_DOCUMENT_ID,
+        contextSourceId: UPLOAD_SOURCE_ID,
+        name: "foreign-thread-map",
+        extension: "png",
+        fileType: "image",
+        mimeType: "image/png",
+        sizeBytes: 3,
+        storageUrl: createObjectStorageUrl("uploads/foreign-thread-map.png"),
+      });
+      const repository = createDrizzleFigureDocumentRepository({ db });
+
+      await expect(
+        repository.findDocumentFileForProject(PROJECT_ID, UPLOAD_DOCUMENT_ID),
+      ).resolves.not.toBeNull();
+      await expect(
+        repository.findManuscriptAssetForProject(PROJECT_ID, UPLOAD_DOCUMENT_ID),
+      ).resolves.toBeNull();
+    });
 
     it("creates a distinct binary asset without changing the host document", async () => {
       const rememberedPaths = new Map<string, string>();

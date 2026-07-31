@@ -4,7 +4,7 @@
 
 - `apps/server`, `packages/contracts`: thread messages can carry ordered image
   references to manuscript assets and thread uploads. Vision models receive
-  signed request-time image parts; other models and deleted assets keep the
+  request-time image parts; other models and deleted assets keep the
   surrounding text without failing the turn. Thread snapshots now expose the
   resolved model capability list.
 - `packages/markup`: sized image HTML now decodes attribute entities once, so

@@ -38,6 +38,13 @@ export class InMemoryFigureDocumentRepository implements FigureDocumentRepositor
     const record = this.records.get(keyFor(projectId, assetDocumentId));
     return record ? { ...record } : null;
   }
+  async findManuscriptAssetForProject(
+    projectId: string,
+    assetDocumentId: string,
+  ): Promise<(DocumentFileRecord & { assetPath: string }) | null> {
+    const record = this.records.get(keyFor(projectId, assetDocumentId));
+    return record ? { ...record, assetPath: `assets/${assetDocumentId}` } : null;
+  }
 }
 
 export function createInMemoryFigureDocumentRepository(

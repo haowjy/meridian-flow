@@ -1,10 +1,11 @@
 import type { Database } from "@meridian/database";
-import { contextSources, documents, works } from "@meridian/database/schema";
+import { contextSources, documents, folders, works } from "@meridian/database/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { mapFigureFileType } from "../../figures/figure-file-types.js";
 import type {
   DocumentFileRecord,
   FigureDocumentRepository,
+  ManuscriptAssetFileRecord,
 } from "../../ports/figure-document-repository.js";
 
 type DocumentRow = typeof documents.$inferSelect;
@@ -37,6 +38,45 @@ export class DrizzleFigureDocumentRepository implements FigureDocumentRepository
   ): Promise<DocumentFileRecord | null> {
     const row = await this.findDocumentForProject(projectId, assetDocumentId);
     return row ? mapDocumentFile(row) : null;
+  }
+
+  async findManuscriptAssetForProject(
+    projectId: string,
+    assetDocumentId: string,
+  ): Promise<ManuscriptAssetFileRecord | null> {
+    const [row] = await this.db
+      .select({
+        id: documents.id,
+        storageUrl: documents.storageUrl,
+        mimeType: documents.mimeType,
+        fileType: documents.fileType,
+        sizeBytes: documents.sizeBytes,
+        name: documents.name,
+        extension: documents.extension,
+      })
+      .from(documents)
+      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .innerJoin(folders, eq(documents.folderId, folders.id))
+      .where(
+        and(
+          eq(documents.id, assetDocumentId),
+          eq(contextSources.projectId, projectId),
+          eq(contextSources.slug, "manuscript"),
+          eq(folders.name, "assets"),
+          isNull(folders.parentId),
+          isNull(documents.deletedAt),
+          isNull(folders.deletedAt),
+          isNull(contextSources.deletedAt),
+        ),
+      )
+      .limit(1);
+    const file = row ? mapDocumentFile(row) : null;
+    return file
+      ? {
+          ...file,
+          assetPath: `assets/${row?.name}${row?.extension ? `.${row.extension}` : ""}`,
+        }
+      : null;
   }
 
   private async findDocumentForProject(projectId: string, documentId: string) {

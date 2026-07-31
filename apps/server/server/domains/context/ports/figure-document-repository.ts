@@ -12,10 +12,18 @@ export interface ProjectDocumentFileRecord extends DocumentFileRecord {
   projectId: string;
 }
 
+export interface ManuscriptAssetFileRecord extends DocumentFileRecord {
+  assetPath: string;
+}
+
 export interface FigureDocumentRepository {
   documentExistsForProject(projectId: string, documentId: string): Promise<boolean>;
   findDocumentFileForProject(
     projectId: string,
     assetDocumentId: string,
   ): Promise<DocumentFileRecord | null>;
+  findManuscriptAssetForProject(
+    projectId: string,
+    assetDocumentId: string,
+  ): Promise<ManuscriptAssetFileRecord | null>;
 }
