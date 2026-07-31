@@ -216,8 +216,10 @@ the same split from the other side; change one and the other is wrong.
 The approach is the kernel's, through one `registerHoverAnchor` lane
 (`core/editor/chrome/hover-anchor.ts`). This lane answers one question — which
 cell of this table is at this point — and gets back its share of whichever
-block currently owns hover chrome, keyed on the cell ELEMENT so an unchanged
-cell settles once rather than on every pointer move.
+block currently owns hover chrome. The reading it hands over is a `NodeHold`
+(the cell's identity, not its element or position), so an unchanged cell
+settles once rather than on every pointer move and a peer's inserted row
+cannot leave the grips on the wrong cell.
 
 **No pointer listener here.** The grips are portalled OUTSIDE the editor, so a
 listener bound to the prose watches the pointer leave and never watches it
