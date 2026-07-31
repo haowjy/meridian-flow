@@ -3,8 +3,9 @@
 The open-menu store every trigger publishes through. Two hosts drive it: the
 editor's lane mechanism
 ([`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts))
-and, next, the chat composer's textarea. Neither one is visible from here, and
-neither is what a row means — that is
+and the chat composer's own suggestion extension
+([`../../features/chat/composer-input/`](../../features/chat/composer-input/AGENTS.md)).
+Neither one is visible from here, and neither is what a row means — that is
 [`../references/`](../references/AGENTS.md).
 
 ## Mental model
@@ -12,7 +13,7 @@ neither is what a row means — that is
 **Nothing here knows what is rendering it.** No ProseMirror, no DOM, no React,
 no writer-facing string. `anchorRect` is the single piece of geometry a menu
 carries and the host supplies it as a callback, so the same store serves a
-ProseMirror rect and a caret-mirror measurement without learning which it got.
+ProseMirror rect and a degraded frame-edge fallback without learning which it got.
 The placement argument, drawn from the real dependency graph, is the module
 header in [`index.ts`](index.ts).
 

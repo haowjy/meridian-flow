@@ -2,7 +2,7 @@
  * What a reference may name, and in what order a menu should offer it.
  *
  * One ranking for every trigger. `[[` in prose, `@` in prose, `@` in the
- * composer's textarea and the href slot are four ways of asking the same
+ * chat composer and the href slot are four ways of asking the same
  * question — "which thing did the writer mean?" — and a second implementation
  * of the answer is two menus that disagree about one query, one of which
  * disagrees with the resolver.

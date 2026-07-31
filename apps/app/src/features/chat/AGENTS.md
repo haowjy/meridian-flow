@@ -12,11 +12,12 @@ single scroll container for the conversation. It is NOT the chat session, thread
 management, or composer — those are adjacent concerns in sibling files
 (`useChatThreadSession`, `Composer.tsx`).
 
-The composer's `@` lives in
-[`composer-references/`](composer-references/AGENTS.md) — a thin host over the
-same completion engine and listbox the manuscript's `[[` uses. The composer
-itself owns one rule about it: an open menu gets the key first, so a pick is
-never also a sent message.
+The composer is a minimal TipTap input whose engine lives in
+[`composer-input/`](composer-input/AGENTS.md): an `@` pick inserts an atomic
+reference token (tokens own attachment state; backspace on one is detach), and
+the doc serializes back to the plain string `onSubmit` has always carried. The
+composer itself owns one rule about the menu: an open menu gets the key first,
+so a pick is never also a sent message.
 
 ## Mental model
 

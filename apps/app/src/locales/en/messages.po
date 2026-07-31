@@ -63,7 +63,7 @@ msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
 #. placeholder {0}: item.matchedAlias
-#: src/features/chat/composer-references/ComposerReferenceMenu.tsx
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "(also {0})"
 msgstr "(also {0})"
@@ -2092,7 +2092,7 @@ msgstr "Redo is no longer available because the manuscript changed."
 msgid "Redoing…"
 msgstr "Redoing…"
 
-#: src/features/chat/composer-references/useComposerReferences.ts
+#: src/features/chat/Composer.tsx
 #: src/features/editor/surfaces/link/useHrefReferences.ts
 msgid "Reference a document"
 msgstr "Reference a document"
@@ -2872,7 +2872,7 @@ msgstr "Try again, or return to the live document."
 msgid "Turn into"
 msgstr "Turn into"
 
-#: src/features/chat/composer-references/ComposerReferenceMenu.tsx
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "two documents share this name"
 msgstr "two documents share this name"

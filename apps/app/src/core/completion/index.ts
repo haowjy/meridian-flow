@@ -10,13 +10,13 @@
  * **Why this sits beside `core/editor` rather than inside it.** Read the real
  * dependency graph: this file imports nothing at all, and its consumers are the
  * editor's TipTap lanes (`core/editor/extensions/{slash,wikilink}`), the
- * editor's React surfaces (`features/editor/surfaces/{slash,link}`), and —
- * next — the chat composer, which is a plain `<textarea>` in `features/chat/`.
+ * editor's React surfaces (`features/editor/surfaces/{slash,link}`), and the
+ * chat composer's own minimal TipTap input in `features/chat/`.
  * Imports run `core/*` → `features/*`, and one feature never reaches into
  * another's internals, so `core/` is the shallowest node covering every
  * consumer. Left under `core/editor`, the composer would have to import the
- * editor to open a menu under a textarea, which is a layering smell standing in
- * for a shared module. That is the same reason `core/session` and
+ * manuscript editor to open a menu under a message box, which is a layering
+ * smell standing in for a shared module. That is the same reason `core/session` and
  * `core/transport` are siblings rather than tenants of whoever needed them
  * first.
  *

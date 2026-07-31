@@ -13,21 +13,26 @@
  * upward, into the transcript the writer can see, and turns downward only when
  * there is genuinely no room above.
  *
+ * **The anchor is the suggestion's own rect** — TipTap's `clientRect`, read
+ * fresh on every paint. It can decline to answer (a decoration mid-remount, a
+ * layout that has not happened); the composer frame's top edge is then the
+ * anchor of last resort. Degraded placement is the contract, a missing menu is
+ * not.
+ *
  * **The writer never leaves the sentence.** Nothing here is focusable and every
- * row cancels its own mousedown, because the caret is still in the textarea and
+ * row cancels its own mousedown, because the caret is still in the composer and
  * the next keystroke has to keep filtering.
  */
 
 import { t } from "@lingui/core/macro";
 import { FileText } from "lucide-react";
-import type { CSSProperties } from "react";
+import { type CSSProperties, type RefObject, useEffect, useReducer } from "react";
 import { createPortal } from "react-dom";
 
 import { SUGGESTION_MENU_SHELL, SuggestionList } from "@/components/app/SuggestionList";
+import type { SuggestionMenu, SuggestionMenuSnapshot } from "@/core/completion";
 import type { ReferenceDocumentItem } from "@/core/references";
 import { cn } from "@/lib/utils";
-
-import type { ComposerReferences } from "./useComposerReferences";
 
 /** Between the caret's line and the menu's edge, so neither sits on the other. */
 const GAP = 6;
@@ -43,14 +48,48 @@ const MIN_ROOM = 120;
 
 export function ComposerReferenceMenu({
   id,
-  references,
+  menu,
+  snapshot,
+  frameRef,
 }: {
   /** Listbox id, and what a probe looks for. */
   id: string;
-  references: ComposerReferences;
+  /** Null before the editor mounts, when the snapshot is closed anyway. */
+  menu: SuggestionMenu<ReferenceDocumentItem> | null;
+  snapshot: SuggestionMenuSnapshot<ReferenceDocumentItem>;
+  /** The composer's own box, for the anchor of last resort. */
+  frameRef: RefObject<HTMLElement | null>;
 }) {
-  const { anchor, menu, snapshot } = references;
-  if (!snapshot.open || !anchor) return null;
+  // Anything that moves the caret without changing the query re-anchors the
+  // menu: the composer growing or scrolling, the transcript scrolling under
+  // it, the window resizing, a phone keyboard shortening the visual viewport,
+  // a webfont arriving after first paint. The rect itself is read fresh each
+  // paint; these listeners only cause the paint.
+  const [, remeasure] = useReducer((tick: number) => tick + 1, 0);
+  useEffect(() => {
+    if (!snapshot.open) return;
+    const viewport = window.visualViewport;
+    const tick = () => remeasure();
+
+    // Capture catches the composer's own internal scroll and the transcript's.
+    window.addEventListener("scroll", tick, { capture: true, passive: true });
+    window.addEventListener("resize", tick);
+    viewport?.addEventListener("resize", tick);
+    viewport?.addEventListener("scroll", tick);
+    document.fonts?.ready?.then(tick).catch(() => {});
+
+    return () => {
+      window.removeEventListener("scroll", tick, { capture: true });
+      window.removeEventListener("resize", tick);
+      viewport?.removeEventListener("resize", tick);
+      viewport?.removeEventListener("scroll", tick);
+    };
+  }, [snapshot.open]);
+
+  if (!snapshot.open || !menu) return null;
+
+  const anchor = snapshot.anchorRect?.() ?? frameAnchorRect(frameRef.current);
+  if (!anchor) return null;
 
   return createPortal(
     <div
@@ -97,6 +136,13 @@ function ReferenceRow({ item }: { item: ReferenceDocumentItem }) {
       </span>
     </>
   );
+}
+
+/** The composer's top edge: degraded placement, never a missing menu. */
+function frameAnchorRect(frame: HTMLElement | null): DOMRect | null {
+  if (!frame) return null;
+  const box = frame.getBoundingClientRect();
+  return new window.DOMRect(box.left, box.top, box.width, 0);
 }
 
 /**
