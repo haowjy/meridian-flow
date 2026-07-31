@@ -81,6 +81,13 @@ its rung is the ladder's floor rather than the object rung.
   there, so nothing is inserted or removed and undo takes it back in one step.
   The picture is HELD as the picker opens (`holdNode`), because the writer is in
   front of an operating-system dialog while the document keeps moving.
+- **Reset size is the way back down the escalation ladder**, and the only door
+  to it once the drag has left the writer's undo stack. It is offered only to a
+  picture that carries a width, which is the absent-beats-disabled rule below
+  read on an attribute. The grips themselves belong to the picture's node view,
+  not to this surface (`core/editor/images`): a drag on the object's own bounds
+  is direct manipulation, and it needs the element per frame rather than a hold
+  per verb.
 - **Absent beats disabled** on every menu here. A diagram that has not rendered
   has no image to hand over, so those items are not there — not greyed.
 - **Every verb answers, and keeps its reason.** Copy and download reach a

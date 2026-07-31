@@ -20,6 +20,7 @@ import {
   ImageDown,
   ImageUp,
   Maximize2,
+  Scaling,
   Trash2,
   Type,
 } from "lucide-react";
@@ -27,7 +28,7 @@ import type { ReactNode } from "react";
 
 import { holdNode } from "@/core/editor/anchors";
 import { diagramProviderFor } from "@/core/editor/diagrams";
-import { openImageReplacePicker } from "@/core/editor/images";
+import { imageWidthAttr, openImageReplacePicker, setImageWidth } from "@/core/editor/images";
 import { type ObjectSurfaceField, objectSurfaceFields } from "@/core/editor/objects";
 import {
   EditorMenuItem,
@@ -185,6 +186,23 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
           {t`Download image`}
         </EditorMenuItem>
       ) : null}
+
+      {/* The way back down the escalation ladder, and the only one the writer
+          has once the drag has left their undo stack. Absent for a picture at
+          its own size — there is nothing to reset, and an item that greys on
+          most pictures teaches less than one that appears when it means
+          something (this lane's own rule). */}
+      {imageWidthAttr(target.node.attrs) === null ? null : (
+        <EditorMenuItem
+          onSelect={() => {
+            const hold = holdNode(editor.state, target.pos);
+            if (hold) setImageWidth(editor, hold, null);
+          }}
+        >
+          <Scaling aria-hidden />
+          {t`Reset size`}
+        </EditorMenuItem>
+      )}
 
       <EditorMenuSeparator />
       <EditorMenuItem onSelect={() => duplicateObject(editor, target.pos)}>

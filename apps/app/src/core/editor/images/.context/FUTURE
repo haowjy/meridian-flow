@@ -1,6 +1,6 @@
 - `ImageResizeHandles.tsx`: the grips are pointer-only. A writer who cannot drag
   has no way to set a picture's size — undo recovers a drag, but nothing offers
   one. The natural home is the object surface's ⋮ beside alt text
-  (`features/editor/surfaces/objects`), which already edits a picture's own
-  attributes and is already reachable by keyboard; a role on the grips
-  themselves would promise a focus path the editor's Tab does not give them.
+  (`features/editor/surfaces/objects`), which already carries Reset size and is
+  already reachable by keyboard; a role on the grips themselves would promise a
+  focus path the editor's Tab does not give them.

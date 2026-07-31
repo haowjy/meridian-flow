@@ -46,7 +46,9 @@
   picture at the size the writer chose — and shrinking a big picture is how the
   words come to stand beside it in the line. A picture nobody resized still
   spells itself `![alt](path)` byte for byte; one that was resized escalates to
-  `<img src alt width>`, and clearing the size walks back down.
+  `<img src alt width>`, and clearing the size walks back down — Reset size in
+  the picture's own menu is the door to that once the drag has left the undo
+  stack.
 - `apps/app`: images live like text. A picture in a sentence is an
   oversized word — it sits on the text baseline, the line grows to hold
   it, and the words after it wrap below, the way Docs and Word read

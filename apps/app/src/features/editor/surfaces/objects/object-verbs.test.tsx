@@ -109,6 +109,36 @@ describe("the object ⋮", () => {
     expect(verbs).not.toContain("Label");
   });
 
+  // The way back down the escalation ladder. Absent on a picture at its own
+  // size, because there is nothing there to reset (absent beats disabled).
+  it("offers Reset size only to a picture that carries one, and clears it", () => {
+    expect(verbsAt("img[alt='A lantern']")).not.toContain("Reset size");
+
+    let at = -1;
+    page.editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "image" && node.attrs.alt === "A lantern") at = pos;
+      return at === -1;
+    });
+    const picture = page.editor.state.doc.nodeAt(at);
+    if (!picture) throw new Error("no picture in the fixture");
+    act(() => {
+      page.editor.view.dispatch(
+        page.editor.state.tr.setNodeMarkup(at, undefined, { ...picture.attrs, width: 240 }),
+      );
+    });
+
+    const verbs = verbsAt("img[alt='A lantern']");
+    expect(verbs).toContain("Reset size");
+
+    act(() => {
+      const item = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find(
+        (candidate) => candidate.textContent === "Reset size",
+      );
+      item?.click();
+    });
+    expect(page.editor.state.doc.nodeAt(at)?.attrs.width).toBeNull();
+  });
+
   it("gives a diagram its source and no image metadata", () => {
     const verbs = verbsAt("pre");
 
