@@ -10,7 +10,8 @@ import type {
 import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projectUserPreferences } from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { defaultProjectPreferences, mergeProjectPreferences } from "../../domain.js";
 import type { ProjectPreferencesRepository } from "../../ports/project-preferences-repository.js";
 
@@ -39,7 +40,7 @@ export function createDrizzleProjectPreferencesRepository(
 
   return {
     async read(userId: UserId, projectId: ProjectId): Promise<ProjectPreferences> {
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .select()
         .from(projectUserPreferences)
         .where(
@@ -69,7 +70,7 @@ export function createDrizzleProjectPreferencesRepository(
         set.autoResumeTimeoutMs = input.autoResume.timeoutMs;
       }
 
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .insert(projectUserPreferences)
         .values({
           userId,
@@ -90,7 +91,7 @@ export function createDrizzleProjectPreferencesRepository(
     },
 
     async getCurrentWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null> {
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .select({ currentWorkId: projectUserPreferences.currentWorkId })
         .from(projectUserPreferences)
         .where(
@@ -104,13 +105,44 @@ export function createDrizzleProjectPreferencesRepository(
     },
 
     async setCurrentWorkId(userId: UserId, projectId: ProjectId, workId: WorkId): Promise<void> {
-      await db
+      await currentDrizzleDb(db)
         .insert(projectUserPreferences)
         .values({ userId, projectId, currentWorkId: workId })
         .onConflictDoUpdate({
           target: [projectUserPreferences.userId, projectUserPreferences.projectId],
           set: { currentWorkId: workId, updatedAt: new Date() },
         });
+    },
+
+    async setCurrentWorkIdIfUnchanged(
+      userId: UserId,
+      projectId: ProjectId,
+      expectedWorkId: WorkId | null,
+      workId: WorkId,
+    ): Promise<boolean> {
+      const activeDb = currentDrizzleDb(db);
+      const [updated] = await activeDb
+        .update(projectUserPreferences)
+        .set({ currentWorkId: workId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(projectUserPreferences.userId, userId),
+            eq(projectUserPreferences.projectId, projectId),
+            expectedWorkId === null
+              ? isNull(projectUserPreferences.currentWorkId)
+              : eq(projectUserPreferences.currentWorkId, expectedWorkId),
+          ),
+        )
+        .returning({ userId: projectUserPreferences.userId });
+      if (updated) return true;
+      if (expectedWorkId !== null) return false;
+
+      const [inserted] = await activeDb
+        .insert(projectUserPreferences)
+        .values({ userId, projectId, currentWorkId: workId })
+        .onConflictDoNothing()
+        .returning({ userId: projectUserPreferences.userId });
+      return Boolean(inserted);
     },
   };
 }

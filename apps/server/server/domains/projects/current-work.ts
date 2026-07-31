@@ -19,25 +19,26 @@ export async function resolveCurrentWork(
     throw new Error("Cannot resolve current Work for a project the user does not own");
   }
 
-  const preferredId = await deps.preferences.getCurrentWorkId(user.userId, project.id);
-  if (preferredId) {
-    const preferred = await deps.works.findById(preferredId);
-    if (preferred && !preferred.deletedAt && preferred.projectId === project.id) return preferred;
-  }
+  let preferredId = await deps.preferences.getCurrentWorkId(user.userId, project.id);
+  for (;;) {
+    if (preferredId) {
+      const preferred = await deps.works.findById(preferredId);
+      if (preferred && !preferred.deletedAt && preferred.projectId === project.id) return preferred;
+    }
 
-  const [active] = await deps.works.listByProject(project.id, { status: "active" });
-  if (active) {
-    await deps.preferences.setCurrentWorkId(user.userId, project.id, active.id);
-    return active;
+    const [active] = await deps.works.listByProject(project.id, { status: "active" });
+    const [archived] = active
+      ? []
+      : await deps.works.listByProject(project.id, { status: "archived" });
+    const fallback =
+      active ?? archived ?? (await deps.works.ensureDefaultForProject(project.id, project.name));
+    const persisted = await deps.preferences.setCurrentWorkIdIfUnchanged(
+      user.userId,
+      project.id,
+      preferredId,
+      fallback.id,
+    );
+    if (persisted) return fallback;
+    preferredId = await deps.preferences.getCurrentWorkId(user.userId, project.id);
   }
-
-  const [archived] = await deps.works.listByProject(project.id, { status: "archived" });
-  if (archived) {
-    await deps.preferences.setCurrentWorkId(user.userId, project.id, archived.id);
-    return archived;
-  }
-
-  const created = await deps.works.ensureDefaultForProject(project.id, project.name);
-  await deps.preferences.setCurrentWorkId(user.userId, project.id, created.id);
-  return created;
 }

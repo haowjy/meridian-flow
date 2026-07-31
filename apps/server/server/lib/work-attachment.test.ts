@@ -103,7 +103,16 @@ describe("resolveWorkMembership", () => {
           } as never,
           preferences: {
             getCurrentWorkId: async () => null,
-            setCurrentWorkId,
+            setCurrentWorkIdIfUnchanged: async (
+              _userId: string,
+              _projectId: string,
+              expectedWorkId: string | null,
+              workId: string,
+            ) => {
+              if (expectedWorkId !== null) return false;
+              setCurrentWorkId(_userId, _projectId, workId);
+              return true;
+            },
           } as never,
           threadWorks: { addMembership: async () => {} } as never,
         },

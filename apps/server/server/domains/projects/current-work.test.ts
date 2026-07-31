@@ -24,6 +24,16 @@ describe("resolveCurrentWork", () => {
         setCurrentWorkId: async (_userId: string, _projectId: string, workId: string) => {
           currentWorkId = workId;
         },
+        setCurrentWorkIdIfUnchanged: async (
+          _userId: string,
+          _projectId: string,
+          expectedWorkId: string | null,
+          workId: string,
+        ) => {
+          if (currentWorkId !== expectedWorkId) return false;
+          currentWorkId = workId;
+          return true;
+        },
       },
       works: {
         findById: async (id: string) => rows.find((candidate) => candidate.id === id) ?? null,
@@ -37,6 +47,31 @@ describe("resolveCurrentWork", () => {
 
     newer.status = "archived";
     await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(newer);
+  });
+
+  it("keeps an explicit switch that races fallback persistence", async () => {
+    const fallback = work("fallback");
+    const explicitlySelected = work("explicit");
+    let currentWorkId: string | null = null;
+    const deps = {
+      preferences: {
+        getCurrentWorkId: async () => currentWorkId,
+        setCurrentWorkIdIfUnchanged: async () => {
+          currentWorkId = explicitlySelected.id;
+          return false;
+        },
+      },
+      works: {
+        findById: async (id: string) => (id === explicitlySelected.id ? explicitlySelected : null),
+        listByProject: async (_projectId: string, options?: { status?: Work["status"] }) =>
+          options?.status === "active" ? [fallback] : [],
+      },
+    } as never;
+
+    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(
+      explicitlySelected,
+    );
+    expect(currentWorkId).toBe(explicitlySelected.id);
   });
 
   it("keeps an archived preference current", async () => {
@@ -67,7 +102,7 @@ describe("resolveCurrentWork", () => {
         {
           preferences: {
             getCurrentWorkId: async () => "deleted",
-            setCurrentWorkId: async () => {},
+            setCurrentWorkIdIfUnchanged: async () => true,
           } as never,
           works: { findById: async () => null, listByProject } as never,
         },
@@ -88,6 +123,16 @@ describe("resolveCurrentWork", () => {
         getCurrentWorkId: async () => currentWorkId,
         setCurrentWorkId: async (_userId: string, _projectId: string, workId: string) => {
           currentWorkId = workId;
+        },
+        setCurrentWorkIdIfUnchanged: async (
+          _userId: string,
+          _projectId: string,
+          expectedWorkId: string | null,
+          workId: string,
+        ) => {
+          if (currentWorkId !== expectedWorkId) return false;
+          currentWorkId = workId;
+          return true;
         },
       },
       works: {
@@ -119,7 +164,7 @@ describe("resolveCurrentWork", () => {
         {
           preferences: {
             getCurrentWorkId: async () => null,
-            setCurrentWorkId: async () => {},
+            setCurrentWorkIdIfUnchanged: async () => true,
           } as never,
           works: { listByProject } as never,
         },
@@ -138,7 +183,7 @@ describe("resolveCurrentWork", () => {
         {
           preferences: {
             getCurrentWorkId: async () => null,
-            setCurrentWorkId: async () => {},
+            setCurrentWorkIdIfUnchanged: async () => true,
           } as never,
           works: {
             listByProject: async () => [],

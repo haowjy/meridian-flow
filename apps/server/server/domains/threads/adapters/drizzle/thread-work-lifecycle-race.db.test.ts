@@ -23,9 +23,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { WorkDeleteBlockedError } = await import("../../../projects/index.js");
-    const { createDrizzleProjectWorkRepository } = await import("../../../projects/index.js");
+    const { createDrizzleProjectRepository, createDrizzleProjectWorkRepository } = await import(
+      "../../../projects/index.js"
+    );
+    const { createDrizzleProjectPreferencesRepository } = await import(
+      "../../../preferences/index.js"
+    );
+    const { createInMemoryEventSink } = await import("../../../observability/index.js");
+    const { createThreadForProject } = await import("../../../../lib/thread-creation.js");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositories } = await import("./repositories.js");
+    const { eq } = await import("drizzle-orm");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -126,6 +134,35 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           DROP FUNCTION IF EXISTS test_block_thread_work_insert();
         `);
       }
+    });
+
+    it("creates a root conversation without self-blocking when the project has no Work", async () => {
+      await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
+      await db.delete(schema.works).where(eq(schema.works.id, WORK_ID));
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+
+      const thread = await createThreadForProject(
+        {
+          projects: createDrizzleProjectRepository({ db }),
+          workRepo: works,
+          preferences,
+          threads: threads.threads,
+          threadWorks: threads.threadWorks,
+          transaction: threads.transaction,
+          eventSink: createInMemoryEventSink(),
+        },
+        {
+          projectId: PROJECT_ID,
+          userId: USER_ID,
+          title: "First conversation",
+        },
+      );
+
+      expect(thread.workId).toBeTruthy();
+      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(thread.workId);
+      await expect(threads.threadWorks.findPrimary(thread.id)).resolves.toEqual({
+        workId: thread.workId,
+      });
     });
   });
 }

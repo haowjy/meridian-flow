@@ -37,5 +37,12 @@ export function createInMemoryProjectPreferencesRepository(): ProjectPreferences
     async setCurrentWorkId(userId, projectId, workId) {
       currentWorkIds.set(preferenceKey(userId, projectId), workId);
     },
+
+    async setCurrentWorkIdIfUnchanged(userId, projectId, expectedWorkId, workId) {
+      const key = preferenceKey(userId, projectId);
+      if ((currentWorkIds.get(key) ?? null) !== expectedWorkId) return false;
+      currentWorkIds.set(key, workId);
+      return true;
+    },
   };
 }

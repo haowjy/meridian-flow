@@ -17,4 +17,10 @@ export interface ProjectPreferencesRepository {
   ): Promise<ProjectPreferences>;
   getCurrentWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null>;
   setCurrentWorkId(userId: UserId, projectId: ProjectId, workId: WorkId): Promise<void>;
+  setCurrentWorkIdIfUnchanged(
+    userId: UserId,
+    projectId: ProjectId,
+    expectedWorkId: WorkId | null,
+    workId: WorkId,
+  ): Promise<boolean>;
 }

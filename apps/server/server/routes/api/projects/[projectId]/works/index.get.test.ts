@@ -43,7 +43,7 @@ describe("GET /api/projects/:projectId/works", () => {
         },
         preferences: {
           getCurrentWorkId: async () => null,
-          setCurrentWorkId: async () => {},
+          setCurrentWorkIdIfUnchanged: async () => true,
         },
         documentSync: { countUnpushedRowsForWork: async () => 0 },
       },
