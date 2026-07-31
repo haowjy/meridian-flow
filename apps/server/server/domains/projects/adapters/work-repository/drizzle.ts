@@ -1,7 +1,7 @@
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode, Work, WorkStatus } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
-import { documentBranches, projects, threads, threadWorks, works } from "@meridian/database/schema";
+import { projects, threads, threadWorks, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -10,10 +10,22 @@ import type {
   UpdateWorkInput,
   WorkRepository,
 } from "../../ports/work-repository.js";
-import { WorkDeleteBlockedError } from "../../ports/work-repository.js";
+import { WorkDeleteBlockedError, WorkNameConflictError } from "../../ports/work-repository.js";
 import { DEFAULT_WORK_NAME } from "./shared.js";
 
 type WorkRow = typeof works.$inferSelect;
+function isWorkNameConflict(cause: unknown): boolean {
+  let current: unknown = cause;
+  while (current) {
+    const error = current as { cause?: unknown; code?: unknown; constraint_name?: unknown };
+    if (error.code === "23505" && error.constraint_name === "works_project_name_active") {
+      return true;
+    }
+    current = error.cause;
+  }
+  return false;
+}
+
 function mapWork(row: WorkRow): Work {
   return {
     id: row.id,
@@ -33,27 +45,11 @@ function mapWork(row: WorkRow): Work {
 }
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
+  /** Canonical collab-domain predicate for reviewable Work draft content. */
+  hasUnreviewedDraft(workId: WorkId): Promise<boolean>;
 }
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
-  const { db } = deps;
-
-  async function hasUnreviewedDraft(
-    queryDb: Pick<Database, "select">,
-    id: WorkId,
-  ): Promise<boolean> {
-    const [draft] = await queryDb
-      .select({ id: documentBranches.id })
-      .from(documentBranches)
-      .where(
-        and(
-          eq(documentBranches.workId, id),
-          eq(documentBranches.kind, "work_draft"),
-          eq(documentBranches.status, "active"),
-        ),
-      )
-      .limit(1);
-    return Boolean(draft);
-  }
+  const { db, hasUnreviewedDraft } = deps;
 
   async function findWorkById(id: WorkId): Promise<Work | null> {
     if (!isUuid(id)) return null;
@@ -80,18 +76,24 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         .from(projects)
         .where(eq(projects.id, input.projectId))
         .limit(1);
-      const [row] = await db
-        .insert(works)
-        .values({
-          id,
-          projectId: input.projectId,
-          createdByUserId:
-            project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
-          name: input.name.trim(),
-          goal: input.goal,
-          description: input.description,
-        })
-        .returning();
+      let row: WorkRow | undefined;
+      try {
+        [row] = await db
+          .insert(works)
+          .values({
+            id,
+            projectId: input.projectId,
+            createdByUserId:
+              project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
+            name: input.name.trim(),
+            goal: input.goal,
+            description: input.description,
+          })
+          .returning();
+      } catch (cause) {
+        if (isWorkNameConflict(cause)) throw new WorkNameConflictError();
+        throw cause;
+      }
       if (!row) throw new Error("Failed to create work");
       return mapWork(row);
     },
@@ -114,7 +116,12 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.goal !== undefined) patch.goal = input.goal;
       if (input.description !== undefined) patch.description = input.description;
-      return updateWork(id, patch);
+      try {
+        return await updateWork(id, patch);
+      } catch (cause) {
+        if (isWorkNameConflict(cause)) throw new WorkNameConflictError();
+        throw cause;
+      }
     },
     async archive(id: WorkId): Promise<Work> {
       const existing = await findWorkById(id);
@@ -130,9 +137,13 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     },
     async hasUnreviewedDraft(id: WorkId): Promise<boolean> {
       if (!isUuid(id)) return false;
-      return hasUnreviewedDraft(db, id);
+      return hasUnreviewedDraft(id);
     },
     async softDelete(id: WorkId): Promise<void> {
+      const existing = await findWorkById(id);
+      if (!existing || existing.deletedAt) return;
+      if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
+
       await db.transaction(async (tx) => {
         const [work] = await tx
           .select({ id: works.id, deletedAt: works.deletedAt })
@@ -149,10 +160,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           .where(and(eq(threadWorks.workId, id), isNull(threads.deletedAt)))
           .limit(1);
         if (membership) throw new WorkDeleteBlockedError("threads");
-
-        // The shipped branch model has active/closed lifecycle states. Its
-        // active state covers the design's active/accepting review window.
-        if (await hasUnreviewedDraft(tx, id)) throw new WorkDeleteBlockedError("drafts");
 
         await tx
           .update(works)

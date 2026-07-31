@@ -39,6 +39,13 @@ export class WorkDeleteBlockedError extends Error {
   }
 }
 
+export class WorkNameConflictError extends Error {
+  constructor() {
+    super("A Work with this name already exists in the project");
+    this.name = "WorkNameConflictError";
+  }
+}
+
 /**
  * Work-item CRUD for the projects domain. Backed by the `schema` `works`
  * table; rows map to the JSON-natural {@link Work} contract.

@@ -7,7 +7,7 @@ import type {
   UpdateWorkInput,
   WorkRepository,
 } from "../../ports/work-repository.js";
-import { WorkDeleteBlockedError } from "../../ports/work-repository.js";
+import { WorkDeleteBlockedError, WorkNameConflictError } from "../../ports/work-repository.js";
 import { DEFAULT_WORK_NAME } from "./shared.js";
 
 export interface InMemoryWorkRepositoryOptions {
@@ -44,9 +44,21 @@ export function createInMemoryWorkRepository(
     };
   }
 
+  function nameIsTaken(projectId: ProjectId, name: string, exceptId?: WorkId): boolean {
+    const normalized = name.trim().toLocaleLowerCase();
+    return [...rows.values()].some(
+      (row) =>
+        row.id !== exceptId &&
+        row.projectId === projectId &&
+        row.deletedAt === null &&
+        row.name.toLocaleLowerCase() === normalized,
+    );
+  }
+
   const repo: WorkRepository = {
     async create(input: CreateWorkInput): Promise<Work> {
       const work = build(input);
+      if (nameIsTaken(work.projectId, work.name)) throw new WorkNameConflictError();
       rows.set(work.id, work);
       return { ...work };
     },
@@ -67,7 +79,10 @@ export function createInMemoryWorkRepository(
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       const row = rows.get(id);
       if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
-      if (input.name !== undefined) row.name = input.name.trim();
+      if (input.name !== undefined) {
+        if (nameIsTaken(row.projectId, input.name, row.id)) throw new WorkNameConflictError();
+        row.name = input.name.trim();
+      }
       if (input.goal !== undefined) row.goal = input.goal;
       if (input.description !== undefined) row.description = input.description;
       row.updatedAt = now();

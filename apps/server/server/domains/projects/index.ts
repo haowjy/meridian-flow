@@ -462,6 +462,7 @@ export {
   type ListWorksOptions,
   type UpdateWorkInput,
   WorkDeleteBlockedError,
+  WorkNameConflictError,
   type WorkRepository,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";

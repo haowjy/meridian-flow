@@ -1,7 +1,7 @@
 /** WorkRepository lifecycle and D17 deletion contract at the domain port boundary. */
 import { describe, expect, it } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-import { WorkDeleteBlockedError } from "./ports/work-repository.js";
+import { WorkDeleteBlockedError, WorkNameConflictError } from "./ports/work-repository.js";
 
 const PROJECT_ID = "project-1";
 
@@ -47,11 +47,17 @@ describe("WorkRepository", () => {
   });
 
   it("rejects soft-delete while an unreviewed Work draft exists", async () => {
-    const repo = createInMemoryWorkRepository({ hasUnreviewedDrafts: () => true });
+    let hasUnreviewedDraft = true;
+    const repo = createInMemoryWorkRepository({
+      hasUnreviewedDrafts: () => hasUnreviewedDraft,
+    });
     const created = await repo.create({ projectId: PROJECT_ID, name: "Review pending" });
 
     await expect(repo.softDelete(created.id)).rejects.toEqual(new WorkDeleteBlockedError("drafts"));
     await expect(repo.findById(created.id)).resolves.toMatchObject({ deletedAt: null });
+
+    hasUnreviewedDraft = false;
+    await expect(repo.softDelete(created.id)).resolves.toBeUndefined();
   });
 
   it("soft-deletes an empty Work", async () => {
@@ -61,6 +67,24 @@ describe("WorkRepository", () => {
     await repo.softDelete(created.id);
     await expect(repo.findById(created.id)).resolves.toMatchObject({
       deletedAt: expect.any(String),
+    });
+  });
+
+  it("rejects case-insensitive active name conflicts", async () => {
+    const repo = createInMemoryWorkRepository();
+    const first = await repo.create({ projectId: PROJECT_ID, name: "Book Two" });
+    const second = await repo.create({ projectId: PROJECT_ID, name: "Book Three" });
+
+    await expect(repo.create({ projectId: PROJECT_ID, name: " book two " })).rejects.toBeInstanceOf(
+      WorkNameConflictError,
+    );
+    await expect(repo.update(second.id, { name: "BOOK TWO" })).rejects.toBeInstanceOf(
+      WorkNameConflictError,
+    );
+
+    await repo.softDelete(first.id);
+    await expect(repo.update(second.id, { name: "BOOK TWO" })).resolves.toMatchObject({
+      name: "BOOK TWO",
     });
   });
 });
