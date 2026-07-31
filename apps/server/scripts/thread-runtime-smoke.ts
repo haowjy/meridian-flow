@@ -118,7 +118,7 @@ await db.insert(projects).values({
 });
 await db
   .insert(works)
-  .values({ id: workId, projectId, createdByUserId: userId, title: "Smoke work" });
+  .values({ id: workId, projectId, createdByUserId: userId, name: "Smoke work" });
 await db.insert(threads).values({
   id: threadId,
   projectId,

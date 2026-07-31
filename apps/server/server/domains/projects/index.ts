@@ -189,7 +189,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .values({
         projectId,
         createdByUserId: userId,
-        title: "Book 1",
+        name: "Book 1",
       })
       .returning({ id: works.id });
     if (!work) throw new Error("Failed to create default work");

@@ -61,7 +61,7 @@ function threadListSelect() {
   return {
     ...getTableColumns(schema.threads),
     workId: schema.threadWorks.workId,
-    workTitle: schema.works.title,
+    workTitle: schema.works.name,
     lastTurnRole: activeLeafTurn.role,
     lastTurnStatus: activeLeafTurn.status,
     lastTurnAt: sql<Date | null>`COALESCE(${activeLeafTurn.completedAt}, ${activeLeafTurn.createdAt})`,
@@ -279,7 +279,7 @@ export function createDrizzleThreadRepository(
         .select({
           ...getTableColumns(schema.threads),
           workId: primaryThreadWorks.workId,
-          workTitle: primaryWorks.title,
+          workTitle: primaryWorks.name,
           lastTurnRole: activeLeafTurn.role,
           lastTurnStatus: activeLeafTurn.status,
           lastTurnAt: sql<Date | null>`COALESCE(${activeLeafTurn.completedAt}, ${activeLeafTurn.createdAt})`,

@@ -78,7 +78,7 @@ export function ContextTreePanel({
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);
   const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
-  const workLabel = works?.find((work) => work.id === workId)?.title ?? t`Work`;
+  const workLabel = works?.find((work) => work.id === workId)?.name ?? t`Work`;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto overflow-x-hidden pb-2">

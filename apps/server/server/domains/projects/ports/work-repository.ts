@@ -11,7 +11,7 @@ export interface CreateWorkInput {
   id?: WorkId;
   projectId: ProjectId;
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
-  title?: string;
+  name: string;
 }
 
 export interface ListWorksOptions {
@@ -34,6 +34,6 @@ export interface WorkRepository {
    * Provision the project's sole active Work when none exists. Refuses multiple
    * active Works; selection policy belongs to resolveDefaultWork.
    */
-  ensureDefaultForProject(projectId: ProjectId, title?: string): Promise<Work>;
+  ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work>;
   touch(id: WorkId): Promise<void>;
 }

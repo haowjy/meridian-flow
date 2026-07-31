@@ -16,6 +16,7 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     kind: "primary",
     status: "idle",
     title: null,
+    slug: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
     systemPrompt: null,

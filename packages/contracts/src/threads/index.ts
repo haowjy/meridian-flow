@@ -134,6 +134,8 @@ export interface Thread {
   kind: ThreadKind;
   status: ThreadStatus;
   title: string | null;
+  /** Stable human-readable handle generated when the thread is first titled. */
+  slug: string | null;
   /** Baked system prompt output — set only by first-attempt bake or subagent creation. */
   composedSystemPrompt?: string | null;
   /**

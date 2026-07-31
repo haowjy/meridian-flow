@@ -6,7 +6,7 @@ import type {
   ListWorksOptions,
   WorkRepository,
 } from "../../ports/work-repository.js";
-import { DEFAULT_WORK_TITLE } from "./shared.js";
+import { DEFAULT_WORK_NAME } from "./shared.js";
 
 /** In-memory {@link WorkRepository} for tests. */
 export function createInMemoryWorkRepository(): WorkRepository {
@@ -22,8 +22,11 @@ export function createInMemoryWorkRepository(): WorkRepository {
       id: input.id ?? crypto.randomUUID(),
       projectId: input.projectId,
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
-      title: input.title?.trim() || DEFAULT_WORK_TITLE,
-      visibility: "private",
+      name: input.name.trim(),
+      goal: null,
+      description: null,
+      status: "active",
+      archivedAt: null,
       aiWriteMode: "direct",
       lastActivityAt: timestamp,
       createdAt: timestamp,
@@ -51,7 +54,7 @@ export function createInMemoryWorkRepository(): WorkRepository {
         .map((w) => ({ ...w }));
     },
 
-    async ensureDefaultForProject(projectId: ProjectId, title?: string): Promise<Work> {
+    async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {
       const existing = [...rows.values()].filter(
         (work) => work.projectId === projectId && work.deletedAt === null,
       );
@@ -59,7 +62,7 @@ export function createInMemoryWorkRepository(): WorkRepository {
         throw new Error(`Project ${projectId} has multiple active Works; cannot provision default`);
       }
       if (existing[0]) return { ...existing[0] };
-      const work = build({ projectId, title });
+      const work = build({ projectId, name: name?.trim() || DEFAULT_WORK_NAME });
       rows.set(work.id, work);
       return { ...work };
     },

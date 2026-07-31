@@ -27,6 +27,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     kind: "primary",
     status: "idle",
     title: input.title ?? null,
+    slug: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
     systemPrompt: input.systemPrompt ?? null,

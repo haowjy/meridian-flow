@@ -23,6 +23,7 @@ const thread: Thread = {
   kind: "primary",
   status: "active",
   title: "Thread",
+  slug: "thread",
   currentAgent: null,
   activeLeafTurnId: null,
   parentThreadId: null,

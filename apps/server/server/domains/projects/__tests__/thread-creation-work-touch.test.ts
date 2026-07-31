@@ -44,8 +44,8 @@ describe("createThreadForProject work activity", () => {
     const workRepo = createInMemoryWorkRepository();
     const repos = createInMemoryRepositories({ projects });
     const project = await projects.create({ userId: "user-1", title: "Sample Project" });
-    await workRepo.create({ projectId: project.id, createdByUserId: "user-1", title: "One" });
-    await workRepo.create({ projectId: project.id, createdByUserId: "user-1", title: "Two" });
+    await workRepo.create({ projectId: project.id, createdByUserId: "user-1", name: "One" });
+    await workRepo.create({ projectId: project.id, createdByUserId: "user-1", name: "Two" });
 
     await expect(
       createThreadForProject(

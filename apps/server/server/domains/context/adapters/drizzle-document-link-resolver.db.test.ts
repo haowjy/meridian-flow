@@ -48,7 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOCUMENT_LINK_CONTRACT_IDS.work,
         projectId: DOCUMENT_LINK_CONTRACT_IDS.project,
         createdByUserId: USER_ID,
-        title: "Resolver Work",
+        name: "Resolver Work",
       });
       await db.insert(contextSources).values([
         {

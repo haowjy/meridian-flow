@@ -35,6 +35,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     kind: "subagent",
     status: "idle",
     title: input.title ?? null,
+    slug: null,
     composedSystemPrompt: input.composedSystemPrompt,
     bakedSkillSlugs: input.bakedSkillSlugs,
     // Frozen subagents bake into composedSystemPrompt; systemPrompt stays null

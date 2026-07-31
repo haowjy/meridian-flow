@@ -1,5 +1,5 @@
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { AiWriteMode, Work } from "@meridian/contracts/works";
+import type { AiWriteMode, Work, WorkStatus } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -9,7 +9,7 @@ import type {
   ListWorksOptions,
   WorkRepository,
 } from "../../ports/work-repository.js";
-import { DEFAULT_WORK_TITLE } from "./shared.js";
+import { DEFAULT_WORK_NAME } from "./shared.js";
 
 type WorkRow = typeof works.$inferSelect;
 function mapWork(row: WorkRow): Work {
@@ -17,8 +17,11 @@ function mapWork(row: WorkRow): Work {
     id: row.id,
     projectId: row.projectId,
     createdByUserId: row.createdByUserId,
-    title: row.title,
-    visibility: row.visibility,
+    name: row.name,
+    goal: row.goal,
+    description: row.description,
+    status: row.status as WorkStatus,
+    archivedAt: row.archivedAt?.toISOString() ?? null,
     aiWriteMode: row.aiWriteMode as AiWriteMode,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -46,7 +49,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           projectId: input.projectId,
           createdByUserId:
             project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
-          title: input.title?.trim() || DEFAULT_WORK_TITLE,
+          name: input.name.trim(),
         })
         .returning();
       if (!row) throw new Error("Failed to create work");
@@ -66,7 +69,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const rows = await db.select().from(works).where(where).orderBy(desc(works.updatedAt));
       return rows.map(mapWork);
     },
-    async ensureDefaultForProject(projectId: ProjectId, title?: string): Promise<Work> {
+    async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {
       return db.transaction(async (tx) => {
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${projectId}, 42::bigint))`,
@@ -92,7 +95,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           .values({
             projectId: projectId,
             createdByUserId: project?.userId,
-            title: title?.trim() || DEFAULT_WORK_TITLE,
+            name: name?.trim() || DEFAULT_WORK_NAME,
           })
           .returning();
         if (!created) throw new Error(`Default work not found for project: ${projectId}`);

@@ -12,6 +12,7 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     kind: "primary",
     status: "idle",
     title: "Draft review",
+    slug: null,
     currentAgent: null,
     activeLeafTurnId: null,
     parentThreadId: null,

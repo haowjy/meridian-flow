@@ -295,7 +295,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Scratch Work",
+        name: "Scratch Work",
       });
       const collab = createCollabDomain({
         db,
@@ -365,7 +365,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Scratch Work",
+        name: "Scratch Work",
       });
       const collab = createCollabDomain({
         db,
@@ -408,7 +408,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Deleted Project Work",
+        name: "Deleted Project Work",
       });
       await db.insert(schema.contextSources).values({
         id: workSourceId,

@@ -82,6 +82,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     kind: normalized.kind,
     status: "idle",
     title: normalized.title === "" ? null : normalized.title,
+    slug: null,
     systemPrompt: normalized.systemPrompt,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
@@ -143,7 +144,7 @@ interface ProjectVisibilityRepository {
 interface WorkProjectionRepository {
   findById(
     id: string,
-  ): Promise<{ id: string; title: string; projectId: string; deletedAt: string | null } | null>;
+  ): Promise<{ id: string; name: string; projectId: string; deletedAt: string | null } | null>;
 }
 
 export interface InMemoryRepositoriesOptions {
@@ -207,7 +208,7 @@ export function createInMemoryRepositories(
 
     return toThreadListItem({
       thread: projected,
-      workTitle: work && !work.deletedAt ? work.title : null,
+      workTitle: work && !work.deletedAt ? work.name : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
       lastTurnAt: latestTurn ? (latestTurn.completedAt ?? latestTurn.createdAt) : null,

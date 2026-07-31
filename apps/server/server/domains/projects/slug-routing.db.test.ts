@@ -51,7 +51,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const projects = createDrizzleProjectRepository({ db });
       const works = createDrizzleWorkRepository({ db });
       await projects.create({ id: projectId, userId, title: "UUID grammar" });
-      await works.create({ id: workId, projectId, createdByUserId: userId, title: "Work" });
+      await works.create({ id: workId, projectId, createdByUserId: userId, name: "Work" });
 
       await expect(projects.findById(projectId.toUpperCase() as never)).resolves.toMatchObject({
         id: projectId,

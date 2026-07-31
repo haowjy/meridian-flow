@@ -172,7 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Branch Work",
+        name: "Branch Work",
       });
       await db.insert(contextSources).values({
         id: SOURCE_ID,
