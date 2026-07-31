@@ -171,6 +171,7 @@ export function ChatView({
             onStop={handleStop}
             projectId={projectId}
             workId={activeWork?.id ?? null}
+            threadId={threadId}
             // Unknown until the snapshot resolves a model; the hint stays
             // quiet rather than guessing about a model nobody named yet.
             modelSupportsImageInput={

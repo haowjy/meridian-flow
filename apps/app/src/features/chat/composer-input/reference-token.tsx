@@ -31,9 +31,28 @@ import { cn } from "@/lib/utils";
 
 export const REFERENCE_TOKEN_NODE = "referenceToken";
 
+/**
+ * Paste-time upload lifecycle, carried on the token because the token IS the
+ * attachment: the chip row derives every state it shows from these fields,
+ * never from a parallel store. `state` walks uploading → ready (or failed);
+ * the identity (`id`) is draft-local, minted at paste time, and is what the
+ * lifecycle engine keys retries and detach-deletes on — `documentId` does not
+ * exist until the server answers.
+ */
+export type ReferenceTokenUpload = {
+  /** Draft-local attachment id (client-minted at paste time). */
+  id: string;
+  state: "uploading" | "ready" | "failed";
+  /** The pasted file's MIME type; `image/*` is what earns a thumbnail. */
+  mimeType: string;
+  /** Object URL of the pasted bytes, the thumbnail while (and after) upload. */
+  previewUrl: string;
+  sizeBytes: number;
+};
+
 export type ReferenceTokenAttributes = {
-  /** Kind-extensible: attachments slices add upload kinds beside these two. */
-  kind: "document" | "asset";
+  /** What the token names: a page, a picture, or a pasted upload. */
+  kind: "document" | "asset" | "upload";
   documentId: string;
   /** The resolver's canonical spelling, kept for chips and future detach UI. */
   uri: string;
@@ -41,6 +60,8 @@ export type ReferenceTokenAttributes = {
   label: string;
   /** Exactly what serialization writes: `[[Title]]`, or the URI when ambiguous. */
   spelling: string;
+  /** Present exactly when `kind` is `"upload"`. */
+  upload: ReferenceTokenUpload | null;
 };
 
 export const ReferenceTokenNode = Node.create({
@@ -57,6 +78,7 @@ export const ReferenceTokenNode = Node.create({
       uri: { default: "" },
       label: { default: "" },
       spelling: { default: "" },
+      upload: { default: null },
     };
   },
 
@@ -64,12 +86,15 @@ export const ReferenceTokenNode = Node.create({
     return [
       {
         tag: "span[data-reference-token]",
+        // Upload lifecycle state never revives from markup — a token pasted
+        // back arrives as plain text anyway (clipboard speaks the wire).
         getAttrs: (element) => ({
           kind: element.getAttribute("data-kind") === "asset" ? "asset" : "document",
           documentId: element.getAttribute("data-document-id") ?? "",
           uri: element.getAttribute("data-uri") ?? "",
           label: element.getAttribute("data-label") ?? "",
           spelling: element.getAttribute("data-spelling") ?? "",
+          upload: null,
         }),
       },
     ];
@@ -129,7 +154,11 @@ export const ReferenceTokenNode = Node.create({
 function ReferenceTokenView({ node, selected }: NodeViewProps) {
   const attrs = node.attrs as ReferenceTokenAttributes;
   // The icon is the kind, same glyphs as the menu rows: a page, or a picture.
-  const Icon = attrs.kind === "asset" ? Image : FileText;
+  // A pasted upload reads as whichever of the two it is (pixels or a file).
+  const pictorial =
+    attrs.kind === "asset" ||
+    (attrs.kind === "upload" && (attrs.upload?.mimeType.startsWith("image/") ?? false));
+  const Icon = pictorial ? Image : FileText;
   return (
     <NodeViewWrapper
       as="span"

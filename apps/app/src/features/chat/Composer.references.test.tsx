@@ -21,6 +21,11 @@ vi.mock("@lingui/core/macro", () => ({
     strings.reduce((result, part, index) => result + part + (values[index] ?? ""), ""),
 }));
 vi.mock("./placeholders", () => ({ useComposerPlaceholder: () => "Ask anything" }));
+// The harness mounts the composer without an app QueryClientProvider; the
+// uploads-rail invalidation hook is all the composer asks of it.
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: async () => {} }),
+}));
 
 let candidates: ReferenceCandidate[] = [];
 vi.mock("@/features/project/context/useReferenceCandidates", () => ({

@@ -114,6 +114,7 @@ export function insertComposerReference(
     uri: item.uri,
     label: item.name,
     spelling: referenceSpelling(item),
+    upload: null,
   };
   const next = editor.state.doc.resolve(
     Math.min(range.to, editor.state.doc.content.size),

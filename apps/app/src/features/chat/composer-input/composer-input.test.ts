@@ -103,6 +103,7 @@ describe("what a pick writes", () => {
         uri: "manuscript://chapters/The Third Gate.md",
         label: "The Third Gate",
         spelling: "[[The Third Gate]]",
+        upload: null,
       },
     ]);
     expect(serializeComposerText(editor.state.doc)).toBe("Rewrite [[The Third Gate]] ");
@@ -268,6 +269,7 @@ describe("pictures through @", () => {
         uri: "manuscript://assets/map.png",
         label: "map.png",
         spelling: "manuscript://assets/map.png",
+        upload: null,
       },
     ]);
     // The URI is in the text, which is what lets the server's

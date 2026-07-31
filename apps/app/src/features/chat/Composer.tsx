@@ -16,6 +16,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { UserMessageBlock } from "@meridian/contracts/threads";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { ArrowUp } from "lucide-react";
@@ -29,16 +30,22 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { Button } from "@/components/ui/button";
 import type { ReferenceCatalog } from "@/core/references";
 import { useReferenceCandidates } from "@/features/project/context/useReferenceCandidates";
 import { cn } from "@/lib/utils";
 
 import {
+  attachableFiles,
+  ComposerAttachmentChips,
+  type ComposerAttachments,
   ComposerReferenceMenu,
+  type ComposerUploadToken,
   closedComposerReferenceMenu,
   composerImageBlocks,
+  composerUploadTokens,
+  createComposerAttachments,
   createComposerExtensions,
   getComposerReferenceMenu,
   serializeComposerText,
@@ -82,6 +89,12 @@ export type ComposerProps = {
   projectId?: string | null;
   workId?: string | null;
   /**
+   * The thread pasted files attach to (paste-time upload into the thread's
+   * primary Work `uploads://`). Absent on the Home hero, where no thread
+   * exists yet and pasting a file stays inert.
+   */
+  threadId?: string | null;
+  /**
    * Whether the thread's model can view pictures (the `image_input`
    * capability, read off the thread snapshot). False shows a quiet hint under
    * a draft carrying picture tokens — informational only, never a gate: the
@@ -111,6 +124,12 @@ type ComposerRuntime = {
   catalog: ReferenceCatalog | null;
   placeholder: string;
   streaming: boolean;
+  threadId: string | null;
+  attachments: ComposerAttachments | null;
+  /** True while a submit is quietly awaiting in-flight uploads. */
+  sending: boolean;
+  /** Filenames of failed uploads a submit ran into — the ratified send hold. */
+  holdSend: (failedNames: string[] | null) => void;
   onSubmit: (text: string, blocks?: UserMessageBlock[]) => void;
   onStop: (() => void) | undefined;
 };
@@ -135,6 +154,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     toolbarLeft,
     projectId = null,
     workId = null,
+    threadId = null,
     modelSupportsImageInput = null,
   },
   ref,
@@ -143,8 +163,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const resolvedPlaceholder = placeholder ?? rotatingPlaceholder;
   const { candidates } = useReferenceCandidates({ projectId, workId });
   const frameRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
   const [canSend, setCanSend] = useState(false);
   const [draftHasPictures, setDraftHasPictures] = useState(false);
+  const [uploadTokens, setUploadTokens] = useState<ComposerUploadToken[]>([]);
+  const [heldUploadNames, setHeldUploadNames] = useState<string[] | null>(null);
 
   // The editor's callbacks are created once and live for the mount; this ref
   // is how they read the render they are actually running in.
@@ -153,6 +176,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     catalog: null,
     placeholder: "",
     streaming: false,
+    threadId: null,
+    attachments: null,
+    sending: false,
+    holdSend: () => {},
     onSubmit,
     onStop,
   });
@@ -161,8 +188,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   runtime.current.catalog = projectId ? { label: t`Reference a document`, candidates } : null;
   runtime.current.placeholder = resolvedPlaceholder;
   runtime.current.streaming = streaming;
+  runtime.current.threadId = threadId;
+  runtime.current.holdSend = setHeldUploadNames;
   runtime.current.onSubmit = onSubmit;
   runtime.current.onStop = onStop;
+
+  // Paste-time upload lifecycle. Created once per mount; reads the live
+  // thread through the runtime ref, tells the uploads rail when the server's
+  // file set changed.
+  const attachments = useMemo(
+    () =>
+      createComposerAttachments({
+        threadId: () => runtime.current.threadId,
+        onUploadsChanged: (changedThreadId) =>
+          void queryClient.invalidateQueries({
+            queryKey: threadQueryKeys.uploads(changedThreadId),
+          }),
+      }),
+    [queryClient],
+  );
+  runtime.current.attachments = attachments;
+  useEffect(() => () => attachments.dispose(), [attachments]);
 
   const extensions = useMemo(
     () =>
@@ -213,20 +259,56 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             // action button is "stop" — but the key is still swallowed so a
             // newline never sneaks into a message Enter would have sent.
             if (event.metaKey || event.ctrlKey || !event.shiftKey) {
-              if (!current.streaming) submit(current);
+              if (!current.streaming) void submit(current);
               return true;
             }
             // Shift+Enter falls through to the hard-break keymap.
           }
           return false;
         },
+        // A paste carrying files attaches them (paste-time upload, ruled);
+        // text-only pastes fall through to the plain-text clipboard plugin.
+        // Without a thread nothing can hold an upload, so the paste stays
+        // whatever the platform makes of it (today: nothing).
+        handlePaste: (_view, event) => {
+          const current = runtime.current;
+          const files = attachableFiles(event.clipboardData);
+          if (files.length === 0 || !current.editor || !current.attachments?.canAttach()) {
+            return false;
+          }
+          event.preventDefault();
+          return current.attachments.attachFiles(current.editor, files);
+        },
+        // Dropped files land where they were dropped, same lifecycle as paste.
+        handleDrop: (view, event, _slice, moved) => {
+          if (moved) return false;
+          const current = runtime.current;
+          const files = attachableFiles(event.dataTransfer);
+          if (files.length === 0 || !current.editor || !current.attachments?.canAttach()) {
+            return false;
+          }
+          event.preventDefault();
+          const drop = view.posAtCoords({ left: event.clientX, top: event.clientY });
+          return current.attachments.attachFiles(current.editor, files, drop?.pos);
+        },
       },
       onCreate: ({ editor: created }) => {
         runtime.current.editor = created;
       },
       onUpdate: ({ editor: updated }) => {
-        setCanSend(serializeComposerText(updated.state.doc).trim().length > 0);
-        setDraftHasPictures(composerImageBlocks(updated.state.doc).length > 0);
+        runtime.current.attachments?.handleDocChange(updated);
+        const doc = updated.state.doc;
+        setCanSend(serializeComposerText(doc).trim().length > 0);
+        setDraftHasPictures(composerImageBlocks(doc).length > 0);
+        const uploads = composerUploadTokens(doc);
+        // Unchanged tokens keep their attrs object identity across
+        // transactions, so this compare keeps keystrokes from re-rendering.
+        setUploadTokens((previous) => (sameTokens(previous, uploads) ? previous : uploads));
+        // The hold names failed uploads; once none remain (retried, removed),
+        // the message clears itself rather than scolding a solved problem.
+        if (!uploads.some((token) => token.upload.state === "failed")) {
+          setHeldUploadNames(null);
+        }
       },
     },
     [],
@@ -280,10 +362,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   return (
     <div ref={frameRef} className={cn("px-4 pt-4 pb-3", containerClassName)}>
+      <ComposerAttachmentChips
+        tokens={uploadTokens}
+        onRemove={(uploadId) => editor && attachments.detach(editor, uploadId)}
+        onRetry={(uploadId) => editor && attachments.retry(editor, uploadId)}
+      />
       <EditorContent
         editor={editor}
         className={cn("composer-editor", variant === "hero" ? "min-h-[52px]" : "min-h-[40px]")}
       />
+
+      {/* The one ratified hold: a failed upload keeps the message here until
+          the writer retries it or removes it — never a silent drop. */}
+      {heldUploadNames && heldUploadNames.length > 0 ? (
+        <p role="alert" className="mt-1 px-1.5 text-destructive text-xs">
+          {heldUploadNames.length === 1
+            ? t`${heldUploadNames[0]} didn't upload. Retry it or remove it, then send again.`
+            : t`Some files didn't upload. Retry them or remove them, then send again.`}
+        </p>
+      ) : null}
 
       {/* Informational only — send stays live, matching the server's own
           quiet degrade (the image is dropped, the text reference stays). */}
@@ -303,7 +400,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <Button
           type="button"
           size="icon-sm"
-          onClick={() => (streaming ? onStop?.() : submit(runtime.current))}
+          onClick={() => (streaming ? onStop?.() : void submit(runtime.current))}
           disabled={streaming ? false : !canSend}
           aria-label={streaming ? t`Stop` : t`Send message`}
           className={cn(
@@ -325,6 +422,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 });
 
 const noSubscription = () => () => {};
+
+/** Element-wise identity: ProseMirror keeps attrs objects stable for untouched nodes. */
+function sameTokens(previous: ComposerUploadToken[], next: ComposerUploadToken[]): boolean {
+  return previous.length === next.length && previous.every((token, index) => token === next[index]);
+}
 
 /** True when the menu took the key and the composer must not act on it. */
 function menuKeyDown(
@@ -350,15 +452,50 @@ function menuKeyDown(
   }
 }
 
-/** Serializes the draft, sends it, clears, and keeps focus for a follow-up. */
-function submit(runtime: ComposerRuntime) {
+/**
+ * Serializes the draft, sends it, clears, and keeps focus for a follow-up.
+ *
+ * Uploads shape two moments here (ratified decision 3): a submit during an
+ * in-flight upload waits for it quietly — the draft stays editable, the
+ * message goes the instant the last upload settles — and a failed upload
+ * holds the send with a plain sentence until the writer retries or removes
+ * it. The wait also guarantees every upload token carries its final
+ * server-allocated spelling before the text serializes.
+ */
+async function submit(runtime: ComposerRuntime) {
   const editor = runtime.editor;
-  if (!editor || editor.isDestroyed) return;
+  if (!editor || editor.isDestroyed || runtime.sending) return;
+  const attachments = runtime.attachments;
+
+  if (
+    attachments &&
+    composerUploadTokens(editor.state.doc).some((token) => token.upload.state === "uploading")
+  ) {
+    runtime.sending = true;
+    try {
+      await attachments.settle();
+    } finally {
+      runtime.sending = false;
+    }
+    if (editor.isDestroyed) return;
+  }
+
+  const failedNames = composerUploadTokens(editor.state.doc)
+    .filter((token) => token.upload.state === "failed")
+    .map((token) => token.label);
+  if (failedNames.length > 0) {
+    runtime.holdSend(failedNames);
+    return;
+  }
+
   const text = serializeComposerText(editor.state.doc).trim();
   if (!text) return;
   // The trim never reaches a picture's URI (edge whitespace only), so the
   // server's every-image-URI-appears-in-text check holds by construction.
   const images = composerImageBlocks(editor.state.doc);
+  // Everything in the draft is about to ride a turn: the clear below must
+  // read as sent, never as detach-and-delete.
+  attachments?.markSent(editor.state.doc);
   if (images.length > 0) runtime.onSubmit(text, [{ type: "text", text }, ...images]);
   else runtime.onSubmit(text);
   editor.chain().clearContent(true).focus().run();

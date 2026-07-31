@@ -19,7 +19,11 @@
 import type { UserMessageBlock } from "@meridian/contracts/threads";
 import type { Fragment, Node as PMNode } from "@tiptap/pm/model";
 
-import { composerReferenceTokens, REFERENCE_TOKEN_NODE } from "./reference-token";
+import {
+  composerReferenceTokens,
+  REFERENCE_TOKEN_NODE,
+  type ReferenceTokenAttributes,
+} from "./reference-token";
 
 /** The hard-break node keeps the manuscript's name (`MeridianHardBreak`). */
 const HARD_BREAK_NODE = "hard_break";
@@ -47,14 +51,17 @@ export type ComposerImageBlock = Extract<UserMessageBlock, { type: "image" }>;
  * The pictures this draft is sending, one block per distinct asset — naming
  * the same picture twice is one attachment, so repeats collapse on identity.
  *
- * Only the URI families the append contract accepts ride along
- * (`manuscript://assets/…` now, `uploads://…` when the attachments slice
- * lands); any other asset token stays what its spelling already is, text.
+ * Two token families ride: `@`-picked pictures, and pasted image uploads once
+ * their upload has resolved (a pending upload has no documentId yet, and
+ * submit waits for it; a non-image upload is designation-only and never
+ * becomes a block). Only the URI families the append contract accepts ride
+ * along (`manuscript://assets/…`, `uploads://…`); any other token stays what
+ * its spelling already is, text.
  */
 export function composerImageBlocks(doc: PMNode): ComposerImageBlock[] {
   const blocks = new Map<string, ComposerImageBlock>();
   for (const token of composerReferenceTokens(doc)) {
-    if (token.kind !== "asset" || !imageBlockUri(token.uri)) continue;
+    if (!ridesAsImageBlock(token)) continue;
     blocks.set(`${token.documentId}\0${token.uri}`, {
       type: "image",
       documentId: token.documentId,
@@ -62,6 +69,17 @@ export function composerImageBlocks(doc: PMNode): ComposerImageBlock[] {
     });
   }
   return [...blocks.values()];
+}
+
+function ridesAsImageBlock(token: ReferenceTokenAttributes): boolean {
+  if (!imageBlockUri(token.uri)) return false;
+  if (token.kind === "asset") return true;
+  return (
+    token.kind === "upload" &&
+    token.upload?.state === "ready" &&
+    token.upload.mimeType.startsWith("image/") &&
+    token.documentId !== ""
+  );
 }
 
 function imageBlockUri(uri: string): boolean {

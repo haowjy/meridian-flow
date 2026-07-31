@@ -93,6 +93,11 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
 
+#. placeholder {0}: heldUploadNames[0]
+#: src/features/chat/Composer.tsx
+msgid "{0} didn't upload. Retry it or remove it, then send again."
+msgstr "{0} didn't upload. Retry it or remove it, then send again."
+
 #. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -118,11 +123,25 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
+#. placeholder {0}: (bytes / 1024).toFixed(1)
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{0} KB"
+msgstr "{0} KB"
+
+#. placeholder {0}: (bytes / (1024 * 1024)).toFixed(1)
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{0} MB"
+msgstr "{0} MB"
+
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{0} source copied"
 msgstr "{0} source copied"
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{bytes} B"
+msgstr "{bytes} B"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
@@ -362,6 +381,10 @@ msgstr "Ask about your data, methods, or the next step in your work—plain lang
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Attachments"
+msgstr "Attachments"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Auto-apply"
@@ -2117,6 +2140,11 @@ msgstr "remaining"
 msgid "Remove"
 msgstr "Remove"
 
+#. placeholder {0}: token.label
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Remove {0}"
+msgstr "Remove {0}"
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
@@ -2208,6 +2236,11 @@ msgstr "Retry"
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr "Retry sign-in"
+
+#. placeholder {0}: token.label
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Retry uploading {0}"
+msgstr "Retry uploading {0}"
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
@@ -2378,6 +2411,10 @@ msgstr "Some changes couldn't be completed."
 #: src/features/chat/tool-renderers.tsx
 msgid "Some changes to {name} couldn't be completed."
 msgstr "Some changes to {name} couldn't be completed."
+
+#: src/features/chat/Composer.tsx
+msgid "Some files didn't upload. Retry them or remove them, then send again."
+msgstr "Some files didn't upload. Retry them or remove them, then send again."
 
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
@@ -2943,6 +2980,10 @@ msgstr "Updated"
 msgid "upload"
 msgstr "upload"
 
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Upload failed"
+msgstr "Upload failed"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr "Upload figure"
@@ -2950,6 +2991,10 @@ msgstr "Upload figure"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Upload or paste"
 msgstr "Upload or paste"
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Uploading"
+msgstr "Uploading"
 
 #. placeholder {0}: state.filename
 #. placeholder {1}: state.percent

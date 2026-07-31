@@ -93,6 +93,11 @@ msgstr ""
 msgid "{0} additional balance"
 msgstr ""
 
+#. placeholder {0}: heldUploadNames[0]
+#: src/features/chat/Composer.tsx
+msgid "{0} didn't upload. Retry it or remove it, then send again."
+msgstr ""
+
 #. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -118,10 +123,24 @@ msgstr ""
 msgid "{0} isn't in {section}."
 msgstr ""
 
+#. placeholder {0}: (bytes / 1024).toFixed(1)
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{0} KB"
+msgstr ""
+
+#. placeholder {0}: (bytes / (1024 * 1024)).toFixed(1)
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{0} MB"
+msgstr ""
+
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{0} source copied"
+msgstr ""
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "{bytes} B"
 msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -362,6 +381,10 @@ msgstr "用日常语言描述你的数据、方法或下一步即可。"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Attachments"
+msgstr ""
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Auto-apply"
@@ -2117,6 +2140,11 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
+#. placeholder {0}: token.label
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Remove {0}"
+msgstr ""
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
@@ -2207,6 +2235,11 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
+msgstr ""
+
+#. placeholder {0}: token.label
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Retry uploading {0}"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -2377,6 +2410,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Some changes to {name} couldn't be completed."
+msgstr ""
+
+#: src/features/chat/Composer.tsx
+msgid "Some files didn't upload. Retry them or remove them, then send again."
 msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
@@ -2943,12 +2980,20 @@ msgstr ""
 msgid "upload"
 msgstr ""
 
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Upload failed"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Upload or paste"
+msgstr ""
+
+#: src/features/chat/composer-input/ComposerAttachmentChips.tsx
+msgid "Uploading"
 msgstr ""
 
 #. placeholder {0}: state.filename

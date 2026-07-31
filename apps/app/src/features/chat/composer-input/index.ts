@@ -4,7 +4,17 @@
  * serialization the wire reads. `Composer.tsx` is the surface over this.
  */
 
+export { ComposerAttachmentChips } from "./ComposerAttachmentChips";
 export { ComposerReferenceMenu } from "./ComposerReferenceMenu";
+export {
+  attachableFiles,
+  type ComposerAttachments,
+  type ComposerAttachmentsApi,
+  type ComposerAttachmentsOptions,
+  type ComposerUploadToken,
+  composerUploadTokens,
+  createComposerAttachments,
+} from "./composer-attachments";
 export { type ComposerExtensionsOptions, createComposerExtensions } from "./composer-extensions";
 export {
   type ComposerReferenceItem,
@@ -23,4 +33,5 @@ export {
   composerReferenceTokens,
   REFERENCE_TOKEN_NODE,
   type ReferenceTokenAttributes,
+  type ReferenceTokenUpload,
 } from "./reference-token";
