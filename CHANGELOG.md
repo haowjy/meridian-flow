@@ -67,6 +67,16 @@
   its source; opening stays an explicit Enter or click. Typing beside a
   selected object starts a paragraph where the writer is looking
   instead of editing into hidden diagram code.
+- `apps/app`: `/` in a table cell works again. Image is choosable (a
+  picture is an oversized word, and a cell paragraph holds words); block
+  commands stay visible but grey with their reason. The chosen image
+  lands in the asked-from cell even if collaborators edit while the file
+  chooser is open, and refuses honestly if that cell is gone when the
+  chooser returns.
+- `apps/app`: the slash and `[[` menus' scroll fade now lives on the list
+  that actually scrolls. Top fade only when scrolled down, bottom fade
+  only when more items remain, no fade when everything fits, and pinned
+  notices are never veiled by it.
 - `apps/app`: hover chrome (table grips, add tabs, the margin handle,
   drop lines, link hints) is anchored to the content it labels. It
   appears at the hovered row instantly with no travel animation, rides
@@ -90,10 +100,11 @@
   time. `FigureAssetReference` now carries `assetDocumentId` and a
   project-relative `assetPath`; figure upload no longer attaches file metadata to
   the host document.
-- `packages/prosemirror-schema`: collaboration schema surface is now `0.3.0`.
+- `packages/prosemirror-schema`: collaboration schema surface is now `0.4.0`.
   Block alignment added an `align` attr to paragraphs, headings, and tables
   (`0.2`); pending uploads add a transient `uploadToken` attr to images and
-  figures (`0.3`). Clients on an older bundle are fenced and reload.
+  figures (`0.3`); display resize adds a `width` attr to images (`0.4`).
+  Clients on an older bundle are fenced and reload.
 - `apps/app`: chapters now wait briefly for complete local and server state
   before binding, then report schema-normalized prose in a dismissible copyable
   notice without blocking editing; repairs that arrive during live
