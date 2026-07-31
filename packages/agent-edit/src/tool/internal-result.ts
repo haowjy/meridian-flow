@@ -3,11 +3,6 @@
 import type { AgentEditModelPayload } from "./model-result.js";
 import type { WriteCommand, WriteErrorDetail, WriteStatus, WriteSuccessPhase } from "./types.js";
 
-export interface WriteResultBlock {
-  type: "text";
-  text: string;
-}
-
 export type InternalWriteResult = InternalWriteResultBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
 
@@ -17,8 +12,6 @@ interface InternalWriteResultBase {
   writeId?: string;
   settlementId?: string;
   error?: WriteErrorDetail;
-  /** Multi-block content for structured tool_result. Block 1 = metadata, Block 2 = echo. */
-  content?: WriteResultBlock[];
 }
 
 export function documentNotFound(

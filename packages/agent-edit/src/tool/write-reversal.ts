@@ -23,7 +23,7 @@ import {
 import { reconstructReversalUpdate } from "../undo/reversal-reconstruction.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
-import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
+import type { InternalWriteResult } from "./internal-result.js";
 import { modelConcurrentResult } from "./model-result.js";
 import type {
   DestructiveSweepReport,
@@ -284,12 +284,13 @@ export function createWriteReversal(deps: {
     if (sync.concurrentEdits) metaLines.push(...formatConcurrent(sync.concurrentEdits));
 
     const echoLines = sync.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-    const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
-    if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+    const text = [
+      metaLines.join("\n"),
+      ...(echoLines.length > 0 ? [echoLines.join("\n")] : []),
+    ].join("\n\n");
     return {
       status: reversal.status,
-      text: content.map((block) => block.text).join("\n\n"),
-      content,
+      text,
       model: {
         reversal: {
           direction: input.direction,

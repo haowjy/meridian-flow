@@ -5,7 +5,7 @@ import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
 import { splitHashline } from "../model/hashline.js";
 import type { TurnDiffResult } from "../ports/turn-diff-query.js";
-import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
+import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockRecord,
   type AgentEditBlockRelation,
@@ -114,14 +114,14 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     metaLines.push("destructive awareness degraded after durable recovery; re-read required");
   }
 
-  const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
-  if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+  const text = [metaLines.join("\n"), ...(echoLines.length > 0 ? [echoLines.join("\n")] : [])].join(
+    "\n\n",
+  );
 
   return {
     status: "success",
     phase: input.phase,
-    text: content.map((block) => block.text).join("\n\n"),
-    content,
+    text,
     model: {
       ...(input.writeId || (input.deletedBlocks && input.deletedBlocks.length > 0)
         ? {

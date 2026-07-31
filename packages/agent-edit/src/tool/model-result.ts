@@ -6,6 +6,8 @@ import type { WriteCommandName, WriteStatus, WriteSuccessPhase } from "./types.j
 
 export const AGENT_EDIT_RESULT_SCHEMA = "meridian.agent-edit.v1" as const;
 
+export type AgentEditResultCommand = WriteCommandName | "unknown";
+
 export type AgentEditBlockExtent = "full" | "prefix";
 export type AgentEditBlockRelation =
   | "document"
@@ -52,13 +54,13 @@ export interface AgentEditModelPayload {
 
 export interface AgentEditResultV1 extends AgentEditModelPayload {
   schema: typeof AGENT_EDIT_RESULT_SCHEMA;
-  command: WriteCommandName;
+  command: AgentEditResultCommand;
   status: WriteStatus;
   phase?: WriteSuccessPhase;
 }
 
 export function modelResult(input: {
-  command: WriteCommandName;
+  command: AgentEditResultCommand;
   status: WriteStatus;
   phase?: WriteSuccessPhase;
   payload?: AgentEditModelPayload;

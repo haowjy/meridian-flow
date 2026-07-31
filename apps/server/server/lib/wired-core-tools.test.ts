@@ -286,6 +286,47 @@ describe("agent-edit response write lifecycle", () => {
 });
 
 describe("wired write tool", () => {
+  it("keeps boundary failures in the versioned write result contract", async () => {
+    const documentId = crypto.randomUUID();
+    const filePath = "chapter.md";
+    const write = wiredWriteHandler({
+      documentId,
+      filePath,
+      core: createWriteToolHarness({ [documentId]: "Alpha" }).core,
+    });
+    const ctx = toolContext();
+
+    await expect(write(null, ctx)).resolves.toMatchObject({
+      isError: true,
+      preserveOutput: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "unknown",
+        status: "invalid_write",
+        message: "write input must be an object",
+      },
+    });
+    await expect(write({ command: "read", path: "missing.md" }, ctx)).resolves.toMatchObject({
+      isError: true,
+      preserveOutput: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "read",
+        status: "document_not_found",
+      },
+    });
+    await expect(write({ command: "diff" }, ctx)).resolves.toMatchObject({
+      isError: true,
+      preserveOutput: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "diff",
+        status: "invalid_write",
+        message: "Turn diff queries are not available in this host.",
+      },
+    });
+  });
+
   it("forwards undo and redo to/from selectors through the model-facing tool boundary", async () => {
     const single = await seededWiredWrite();
 

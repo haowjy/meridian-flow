@@ -67,6 +67,7 @@ import {
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
   modelConcurrentResult,
+  modelResult,
   type ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
@@ -205,20 +206,6 @@ function settledReceipt(
     throw new Error(`Settled receipt missing for ${documentId}:${settlementId}.`);
   }
   return settled.receipt;
-}
-
-function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every(
-      (item) =>
-        typeof item === "object" &&
-        item !== null &&
-        (item as { type?: unknown }).type === "text" &&
-        typeof (item as { text?: unknown }).text === "string",
-    )
-  );
 }
 
 function isAgentEditResult(value: unknown): value is AgentEditResultV1 {
@@ -476,9 +463,8 @@ async function reconcileOrphanedPendingWrites(
       output?: unknown;
       metadata?: { stagedWrite?: unknown };
     } | null;
-    if (content?.metadata?.stagedWrite !== true || !isTextContentBlockArray(content.output))
-      continue;
-    if (!content.output.some(({ text }) => text.startsWith("status: pending_commit"))) continue;
+    if (content?.metadata?.stagedWrite !== true || !isAgentEditResult(content.output)) continue;
+    if (content.output.phase !== "staged") continue;
     await persistUncommittedWriteResult({
       deps,
       threadId,
@@ -717,12 +703,15 @@ async function persistUncommittedWriteResult(input: {
 }): Promise<{ block: Block; events: OrchestratorEvent[] }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
-  const output = [
-    {
-      type: "text" as const,
-      text: ["status: internal_error", "Write did not land.", input.text].join("\n\n"),
-    },
-  ];
+  const priorOutput = (input.block.content as { output?: unknown } | null)?.output;
+  const message = ["Write did not land.", input.text].join("\n\n");
+  const output = toJsonValue(
+    modelResult({
+      command: isAgentEditResult(priorOutput) ? priorOutput.command : "unknown",
+      status: "internal_error",
+      payload: { message },
+    }),
+  );
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       id: input.block.id,

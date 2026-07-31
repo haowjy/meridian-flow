@@ -58,6 +58,7 @@ export type {
   AgentEditBlockRecord,
   AgentEditBlockRelation,
   AgentEditConcurrentRun,
+  AgentEditResultCommand,
   AgentEditResultV1,
 } from "./tool/model-result.js";
 export {

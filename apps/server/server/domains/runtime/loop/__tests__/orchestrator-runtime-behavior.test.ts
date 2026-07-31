@@ -23,6 +23,7 @@ import {
 } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
+import { toJsonValue } from "../streaming.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestNoticePort, createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -135,7 +136,9 @@ describe("runtime orchestrator behavior", () => {
         async executeTool(call: { id: string }) {
           return {
             toolCallId: call.id,
-            output: [{ type: "text" as const, text: "status: success" }],
+            output: toJsonValue(
+              modelResult({ command: "replace", status: "success", phase: "staged" }),
+            ),
             metadata: {
               documentId: "doc-1",
               stagedWrite: true,
@@ -182,7 +185,7 @@ describe("runtime orchestrator behavior", () => {
     const persistedAfterCrash = JSON.stringify(await repos.blocks.listByThread(thread.id));
     expect(persistedAfterCrash).toContain('"status":"success"');
     expect(persistedAfterCrash).toContain('"schema":"meridian.agent-edit.v1"');
-    expect(persistedAfterCrash).not.toContain("pending_commit");
+    expect(persistedAfterCrash).not.toContain('"phase":"staged"');
 
     const resumedRequests: GenerateRequest[] = [];
     const resumedGateway: Gateway = {
@@ -198,7 +201,7 @@ describe("runtime orchestrator behavior", () => {
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
     expect(JSON.stringify(resumedRequests[0]?.messages)).toContain('"status":"success"');
-    expect(JSON.stringify(resumedRequests[0]?.messages)).not.toContain("pending_commit");
+    expect(JSON.stringify(resumedRequests[0]?.messages)).not.toContain('"phase":"staged"');
   });
 
   it("reconciles a pre-commit crash to a typed rejection before the next model request", async () => {
@@ -222,7 +225,9 @@ describe("runtime orchestrator behavior", () => {
         async executeTool(call: { id: string }) {
           return {
             toolCallId: call.id,
-            output: [{ type: "text" as const, text: "status: success" }],
+            output: toJsonValue(
+              modelResult({ command: "replace", status: "success", phase: "staged" }),
+            ),
             metadata: {
               documentId: "doc-1",
               stagedWrite: true,
@@ -256,7 +261,9 @@ describe("runtime orchestrator behavior", () => {
         }),
       ).runTurn({ threadId: thread.id, userText: "write" }),
     );
-    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).toContain("pending_commit");
+    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).toContain(
+      '"phase":"staged"',
+    );
 
     const resumedRequests: GenerateRequest[] = [];
     const resumedGateway: Gateway = {
@@ -272,11 +279,12 @@ describe("runtime orchestrator behavior", () => {
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
     const resumedContext = JSON.stringify(resumedRequests[0]?.messages);
-    expect(resumedContext).toContain("status: internal_error");
+    expect(resumedContext).toContain('"schema":"meridian.agent-edit.v1"');
+    expect(resumedContext).toContain('"status":"internal_error"');
     expect(resumedContext).toContain("Write did not land");
-    expect(resumedContext).not.toContain("pending_commit");
+    expect(resumedContext).not.toContain('"phase":"staged"');
     expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).not.toContain(
-      "pending_commit",
+      '"phase":"staged"',
     );
   });
 
