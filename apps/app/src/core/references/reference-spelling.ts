@@ -17,6 +17,9 @@ import type { ReferenceItem } from "./reference-catalog";
 /** A document row, without the create row a `document` scope also produces. */
 export type ReferenceDocumentItem = Extract<ReferenceItem, { kind: "document" }>;
 
+/** A picture row, where `@` offers assets beside the documents. */
+export type ReferenceAssetItem = Extract<ReferenceItem, { kind: "asset" }>;
+
 /**
  * The one policy for what a picked document links as, whichever host asks.
  *
@@ -37,8 +40,13 @@ export function referenceLinkSpelling(item: ReferenceDocumentItem): ReferenceLin
   return { kind: "uri", text: item.name, uri: item.uri };
 }
 
-/** The policy above, for a plain string: the wikilink's brackets or the bare URI. */
-export function referenceSpelling(item: ReferenceDocumentItem): string {
+/**
+ * The policy above, for a plain string: the wikilink's brackets or the bare
+ * URI. An asset is always its canonical URI — assets resolve by id, never by
+ * name, so `[[map.png]]` would be a link the resolver refuses on arrival.
+ */
+export function referenceSpelling(item: ReferenceDocumentItem | ReferenceAssetItem): string {
+  if (item.kind === "asset") return item.uri;
   const spelling = referenceLinkSpelling(item);
   return spelling.kind === "wikilink" ? `[[${spelling.name}]]` : spelling.uri;
 }

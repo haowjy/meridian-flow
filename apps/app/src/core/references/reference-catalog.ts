@@ -52,6 +52,12 @@ export type ReferenceCandidate =
       /** Slash-prefixed display path, for the row and for an alt text. */
       path: string;
       fileType: string;
+      /**
+       * The canonical context URI (`manuscript://assets/…`). Assets resolve by
+       * id, never by name, so a surface that can only write text — the
+       * composer's token spelling, an image block — names one by this instead.
+       */
+      uri: string;
     };
 
 /** What a host offers a trigger: everything it can name, plus the menu's name. */
@@ -95,6 +101,8 @@ export type ReferenceItem =
       location: string;
       assetDocumentId: string;
       path: string;
+      /** The candidate's canonical URI, carried through for the same reason. */
+      uri: string;
     }
   | { kind: "create"; key: "create"; name: string };
 
@@ -164,6 +172,7 @@ export function filterReferenceItems<TKind extends ReferenceKind>(
           location: candidate.location,
           assetDocumentId: candidate.assetDocumentId,
           path: candidate.path,
+          uri: candidate.uri,
         },
   );
 

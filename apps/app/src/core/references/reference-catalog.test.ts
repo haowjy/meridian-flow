@@ -36,6 +36,7 @@ function asset(name: string): ReferenceCandidate {
     assetDocumentId: `asset-${name}`,
     path: `/assets/${name}`,
     fileType: "image",
+    uri: `manuscript://assets/${name}`,
   };
 }
 

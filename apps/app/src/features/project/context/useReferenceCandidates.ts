@@ -145,6 +145,10 @@ function referenceCandidates(
             location,
             path: node.path,
             fileType: node.fileType,
+            // Raw, not resolverUri-translated: assets never go through the
+            // resolver, and the image-block contract speaks the browse URI
+            // (`manuscript://assets/…`), not the `work://` scheme swap.
+            uri: node.uri,
           },
     );
   };
