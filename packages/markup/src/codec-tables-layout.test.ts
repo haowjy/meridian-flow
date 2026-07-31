@@ -408,6 +408,26 @@ describe("tables and Layout round-trip corpus", () => {
     expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
 
+  it("treats the visible delegated block body as its only source of truth", () => {
+    const original = oneCellTable(oneCellTable(paragraph(t("Inner"))));
+    const edited = codec.serializeBlock(original).replace("<p>Inner</p>", "<p>Edited</p>");
+    const parsed = firstParsedBlock(codec, edited);
+
+    expect(parsed.textContent).toBe("Edited");
+    expect(codec.serializeBlock(parsed)).toContain("<p>Edited</p>");
+    expect(codec.serializeBlock(parsed)).not.toContain("Inner");
+  });
+
+  it("keeps deeply nested table wire growth linear", () => {
+    let nested: PMNode = paragraph(t("Core"));
+    for (let depth = 0; depth < 10; depth += 1) nested = oneCellTable(nested);
+    const html = codec.serializeBlock(nested);
+
+    expect(html.length).toBeLessThan(50_000);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(nested.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
   it.each([
     {
       block: "figure",
@@ -437,6 +457,15 @@ describe("tables and Layout round-trip corpus", () => {
     const html = codec.serializeBlock(original);
 
     expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("delegates the generic serializer's malformed-Unicode normalization", () => {
+    const original = oneCellTable(
+      schema.node("jsx_leaf", { name: "Badge", props: { tone: "warning" } }, [t("\ud800")]),
+    );
+    const html = codec.serializeBlock(original);
+
     expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
 

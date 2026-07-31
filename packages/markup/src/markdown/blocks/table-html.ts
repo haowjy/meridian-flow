@@ -19,9 +19,10 @@ import { imageNodeFromAttributes } from "./image.js";
 import { imageHtmlTag, parseRawImageHtmlAttributes } from "./image-html.js";
 
 const ALIGNMENTS = new Set(["left", "center", "right"]);
-const DELEGATED_BLOCK_ATTRIBUTE = "data-meridian-block";
+const DELEGATED_BLOCK_ELEMENT = "meridian-block";
+const DELEGATED_BLOCK_SOURCE_ATTRIBUTE = "source";
 const BLOCK_ELEMENTS = new Set([
-  "div",
+  DELEGATED_BLOCK_ELEMENT,
   "p",
   "h1",
   "h2",
@@ -47,7 +48,7 @@ export function parseHtmlTable(ast: unknown, ctx: ParseContext): PMNode | null {
   if (astType !== "html" && astType !== "mdxJsxFlowElement") return null;
   const source = htmlSource(ast, ctx);
   if (!/^<table(?:\s|>)/i.test(source)) return null;
-  const root = parseHtml(source);
+  const root = parseHtml(source, { opaqueElements: new Set([DELEGATED_BLOCK_ELEMENT]) });
   return root?.name === "table" ? parseTableElement(root, ctx) : null;
 }
 
@@ -150,16 +151,16 @@ function serializeDelegatedCellBlock(
   indent: string,
 ): string[] {
   const source = getRuntime(ctx).serializeBlock(block, ctx).replace(/\n+$/, "");
-  const lines = [`${indent}<div ${DELEGATED_BLOCK_ATTRIBUTE}="${encodeURIComponent(source)}">`];
-
-  if (block.type.name === "table") {
-    lines.push(...source.split("\n").map((line) => `${indent}  ${line}`));
-  } else {
-    lines.push(`${indent}  <pre><code>${escapeHtmlText(source)}</code></pre>`);
+  if (block.type.name !== "table") {
+    return [
+      `${indent}<${DELEGATED_BLOCK_ELEMENT} ${DELEGATED_BLOCK_SOURCE_ATTRIBUTE}="${escapeHtmlAttribute(source)}" />`,
+    ];
   }
-
-  lines.push(`${indent}</div>`);
-  return lines;
+  return [
+    `${indent}<${DELEGATED_BLOCK_ELEMENT}>`,
+    source,
+    `${indent}</${DELEGATED_BLOCK_ELEMENT}>`,
+  ];
 }
 
 function serializeList(
@@ -259,7 +260,7 @@ function parseCellBlocks(cell: HtmlElement, ctx: ParseContext): PMNode[] | null 
 }
 
 function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
-  if (element.name === "div") return parseDelegatedCellBlock(element, ctx);
+  if (element.name === DELEGATED_BLOCK_ELEMENT) return parseDelegatedCellBlock(element, ctx);
   if (element.name === "p") {
     const align = blockAlignment(element);
     const inline = align === undefined ? null : parseInlineNodes(element.children, ctx, []);
@@ -289,15 +290,18 @@ function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null 
 }
 
 function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
-  if (element.attributes.size !== 1 || !element.attributes.has(DELEGATED_BLOCK_ATTRIBUTE)) {
-    return null;
-  }
-  const encoded = element.attributes.get(DELEGATED_BLOCK_ATTRIBUTE);
-  if (typeof encoded !== "string") return null;
   let source: string;
-  try {
-    source = decodeURIComponent(encoded);
-  } catch {
+  if (element.attributes.size === 0 && element.rawContent !== undefined) {
+    source = element.rawContent.replace(/^\n/, "").replace(/\n$/, "");
+  } else if (
+    element.attributes.size === 1 &&
+    element.rawContent === undefined &&
+    element.attributes.has(DELEGATED_BLOCK_SOURCE_ATTRIBUTE)
+  ) {
+    const encoded = element.attributes.get(DELEGATED_BLOCK_SOURCE_ATTRIBUTE);
+    if (typeof encoded !== "string") return null;
+    source = decodeHtmlAttribute(encoded);
+  } else {
     return null;
   }
   const blocks = getRuntime(ctx).parseBlocks(source, ctx);

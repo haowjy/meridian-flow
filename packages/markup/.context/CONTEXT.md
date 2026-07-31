@@ -94,15 +94,16 @@ liberal ingress and normalize to HTML in one parse-serialize pass, including
 the backslash-newline hard-break spelling. HTML cells carry paragraphs,
 headings, lists, blockquotes, fenced-code content, horizontal rules, and nested
 tables; inline marks, links, images, and `<br>` remain legal inside their text
-blocks. Block kinds without a native cell HTML spelling use a
-`data-meridian-block` envelope carrying their ordinary top-level wire form;
-parsing that envelope re-enters the complete block codec with a fresh source
-context, so Figure, registered JSX, nested table Layout metadata, and future
-block codecs do not need a second table-only implementation. Nested tables
-also render their ordinary HTML body inside the envelope. Positive `colspan`
-and `rowspan` round-trip. Unknown table structure is inert raw text, while
-invalid PM span/alignment attrs and malformed `Layout` column widths still
-throw rather than serialize lossily.
+blocks. Block kinds without a native cell HTML spelling use one
+`<meridian-block>` envelope carrying their ordinary top-level wire form. A
+nested table's visible body is the source of truth, so it still renders as a
+table; non-HTML MDX blocks use the carrier's entity-escaped `source` attribute
+instead. Neither form duplicates its source. Parsing re-enters the complete
+block codec with a fresh source context, so Figure, registered JSX, nested
+table Layout metadata, and future block codecs do not need a second table-only
+implementation. Positive `colspan` and `rowspan` round-trip. Unknown table
+structure is inert raw text, while invalid PM span/alignment attrs and
+malformed `Layout` column widths still throw rather than serialize lossily.
 
 `widths` counts GRID columns, and so does `colwidth` (ruling, 2026-07-29). A
 cell's index among its row's children stops being its column the moment

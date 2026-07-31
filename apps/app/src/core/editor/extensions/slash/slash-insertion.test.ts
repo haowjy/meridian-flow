@@ -409,16 +409,21 @@ describe("slash insertion out of nested structures", () => {
     expect(instance.state.doc.textContent).toBe("");
   });
 
-  it("reports no table-cell refusal for schema-valid entries", () => {
-    const inCell = mountAround([
-      { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
-    ]);
+  it("reports no table-cell refusal and converts empty cell prose in place", () => {
+    const inCell = mountAround([{ type: "table", content: [row(cell(TRIGGER), cell("skill"))] }]);
     const cellRefusals = slashRefusals(inCell.editor, inCell.range, [
       item("heading-1"),
       item("code"),
       item("table"),
     ]);
     expect(cellRefusals.size).toBe(0);
+    expect(applySlashCommand(inCell.editor, inCell.range, item("heading-1"), catalog())).toBe(true);
+    expect(
+      inCell.editor.state.doc.firstChild?.firstChild?.firstChild?.content.content.map(
+        (node) => node.type.name,
+      ),
+    ).toEqual(["heading"]);
+    expect(caretChain(inCell.editor)).toEqual(["table", "table_row", "table_cell", "heading"]);
     inCell.editor.destroy();
 
     const inProse = mountWithTrigger("She stepped through. ", "/x");

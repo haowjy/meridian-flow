@@ -20,6 +20,8 @@ export interface HtmlElement {
   name: string;
   attributes: ReadonlyMap<string, string | null>;
   children: HtmlNode[];
+  /** Exact body of an element the caller asked the HTML reader not to interpret. */
+  rawContent?: string;
 }
 
 export interface HtmlText {
@@ -53,7 +55,10 @@ export function decodeHtmlAttribute(value: string): string {
 }
 
 /** The one element `source` holds, or null for anything else at all. */
-export function parseHtml(source: string): HtmlElement | null {
+export function parseHtml(
+  source: string,
+  options?: { opaqueElements?: ReadonlySet<string> },
+): HtmlElement | null {
   const root: HtmlElement = {
     type: "element",
     name: "#root",
@@ -91,12 +96,39 @@ export function parseHtml(source: string): HtmlElement | null {
       children: [],
     };
     stack.at(-1)?.children.push(element);
+    if (!parsed.selfClosing && options?.opaqueElements?.has(parsed.name)) {
+      const closing = opaqueElementClosing(source, offset, parsed.name);
+      if (!closing) return null;
+      element.rawContent = source.slice(offset, closing.start);
+      offset = closing.end;
+      continue;
+    }
     if (!parsed.selfClosing && !VOID_ELEMENTS.has(parsed.name)) stack.push(element);
   }
 
   if (stack.length !== 1) return null;
   const children = elementChildren(root);
   return children?.length === 1 ? children[0] : null;
+}
+
+function opaqueElementClosing(
+  source: string,
+  start: number,
+  name: string,
+): { start: number; end: number } | null {
+  const tags = new RegExp(`<\\/?${name}(?:\\s[^<>]*?)?\\s*\\/?>`, "gi");
+  tags.lastIndex = start;
+  let depth = 1;
+  for (let match = tags.exec(source); match; match = tags.exec(source)) {
+    const tag = match[0];
+    if (tag.startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) return { start: match.index, end: tags.lastIndex };
+    } else if (!tag.endsWith("/>")) {
+      depth += 1;
+    }
+  }
+  return null;
 }
 
 /**
