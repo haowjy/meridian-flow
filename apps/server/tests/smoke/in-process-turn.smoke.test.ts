@@ -144,7 +144,12 @@ describe("smoke: in-process turn", () => {
     const toolResultBlock = blocks.find((block) => block.blockType === "tool_result");
     expect(toolResultBlock?.content).toMatchObject({
       toolCallId: "call-read-smoke",
-      output: expect.stringContaining(FILE_CONTENT),
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "read",
+        status: "success",
+        blocks: [expect.objectContaining({ body: FILE_CONTENT, extent: "full" })],
+      },
     });
   });
 });
