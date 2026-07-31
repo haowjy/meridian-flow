@@ -152,15 +152,11 @@ change-trail events, not manuscript content.
   indented code block, so the codec writes it `&#x9;`, and `packages/markup`'s
   codec test is what keeps the key safe to press.
 
-- **Enter in a cell breaks the line** (`TableEnterKeymapExtension`, human
-  ruling, 2026-07-30) — Docs and Word both grow the cell a line, and a Meridian
-  cell holds exactly one paragraph, so every rung of ProseMirror's base Enter
-  chain declines in one and the press used to reach the browser unhandled. It
-  is a hard break rather than a split for the same reason it is not a paragraph
-  gap: the cell stays one paragraph, and a GFM pipe cell cannot hold a raw
-  newline while an inline break already has a wire spelling there. Enter runs
-  the very command Shift-Enter runs, so the two cannot drift, and the break
-  renders at the cell's own line-height with nothing styling it specially.
+- **Enter in cell prose splits the paragraph**, exactly as it does outside a
+  table; Shift-Enter remains the hard break. `TableEnterKeymapExtension` owns
+  only the refusal: it consumes Enter over a swept `CellSelection` so the base
+  keymap cannot empty the rectangle, and declines caret/text selections to the
+  ordinary split chain.
 
 - What an href means is `links/`, once. A link is four kinds — wikilink,
   scheme, relative, external — and every consumer (the click, the hover hint,
