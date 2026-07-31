@@ -31,7 +31,7 @@
  * already pays for, so opening the menu costs no request.
  *
  * It lives beside the context trees rather than in the editor's link surface
- * because the chat composer's `@` asks the same question, and a textarea in
+ * because the chat composer's `@` asks the same question, and a composer in
  * `features/chat/` reaching into an editor surface for it would be a layering
  * smell standing in for a shared module.
  */

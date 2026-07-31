@@ -3,7 +3,7 @@
  * them.
  *
  * Three triggers render this: `/` and `[[` in the manuscript, and `@` in the
- * chat composer's textarea. What they share is not a popover — the editor's
+ * chat composer. What they share is not a popover — the editor's
  * opens through the chrome kernel and the composer's does not — but the list
  * inside one: the eight-row cap, the internal scroll, the fades on its own
  * edges, the highlight following the arrow keys, and the listbox semantics a
@@ -16,7 +16,7 @@
  * renders it.
  *
  * **Nothing here is focusable and every row cancels its own mousedown.** The
- * writer's caret is in the prose or in the textarea; a menu that took focus
+ * writer's caret is in the prose or in the composer; a menu that took focus
  * would stop the next keystroke from filtering.
  *
  * A row a host cannot take is shown greyed rather than hidden, with the reason

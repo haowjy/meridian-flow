@@ -1,9 +1,8 @@
 # core/references — one ranking for everything a writer can point at
 
 The completion engine behind every reference trigger: `[[` and `@` in prose,
-`@` in the chat composer's textarea, and the href slot. Candidates in, rows
-out. No menu state, no rendering, and no editor — plus the one trigger a host
-with only a string can't get from `@tiptap/suggestion`.
+`@` in the chat composer, and the href slot. Candidates in, rows out. No menu
+state, no rendering, and no editor — plus the one spelling every pick writes.
 
 ## Mental model
 
@@ -29,13 +28,11 @@ insertion spells the title, but a pick made where a title is ambiguous has to
 be able to name identity instead, and rebuilding that above this boundary means
 asking the tree twice.
 
-**A plain-text host gets its trigger here too.**
-[`reference-trigger.ts`](reference-trigger.ts) answers the three questions
-`@tiptap/suggestion` answers for the editor — where the `@token` is, what a
-pick spells, what the string reads afterwards — as functions over a string and
-a caret. The rules it enforces are the composition contract's: `@` needs a word
-boundary where `[[` needs none, spaces stay in the query because titles have
-them, and an empty list closes rather than fences.
+**What a pick spells is decided once.**
+[`reference-spelling.ts`](reference-spelling.ts) is the one answer for every
+surface that writes a picked document as a string — the manuscript's wikilink
+and the composer's reference token alike: `[[Title]]` normally, the canonical
+URI when the title is ambiguous or the wire format cannot carry it.
 
 ## Key rules
 
