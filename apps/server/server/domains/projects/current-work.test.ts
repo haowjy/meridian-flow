@@ -78,6 +78,36 @@ describe("resolveCurrentWork", () => {
     expect(listByProject).toHaveBeenCalledWith(PROJECT_ID, { status: "active" });
   });
 
+  it("repairs a soft-deleted preference so restoring the old Work does not select it again", async () => {
+    const deleted = work("deleted");
+    deleted.deletedAt = new Date().toISOString();
+    const active = work("active");
+    let currentWorkId = deleted.id;
+    const deps = {
+      preferences: {
+        getCurrentWorkId: async () => currentWorkId,
+        setCurrentWorkId: async (_userId: string, _projectId: string, workId: string) => {
+          currentWorkId = workId;
+        },
+      },
+      works: {
+        findById: async (id: string) => {
+          if (id === deleted.id) return deleted;
+          if (id === active.id) return active;
+          return null;
+        },
+        listByProject: async (_projectId: string, options?: { status?: Work["status"] }) =>
+          options?.status === "active" ? [active] : [],
+      },
+    } as never;
+
+    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(active);
+    expect(currentWorkId).toBe(active.id);
+
+    deleted.deletedAt = null;
+    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(active);
+  });
+
   it("uses the newest archived Work when no active Work remains", async () => {
     const archived = work("archived", "archived");
     const listByProject = vi.fn(async (_projectId, options) =>
