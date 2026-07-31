@@ -124,9 +124,11 @@ change-trail events, not manuscript content.
   dragged picture manufactured a fourth column (`fixTables` then pads every
   row). [`table-drop.ts`](table-drop.ts) is the one answer, pointer-boundary
   style (impure geometry reading, pure decision): a table-structural drop
-  position snaps into the nearest cell's paragraph or refuses, and the
-  transaction reads the table's shape back after the insert so the column
-  count is invariant under drops. Both consumers go through it —
+  position snaps into the nearest cell or refuses, hostability is the actual
+  schema fit (any block sequence a cell legally holds, §3b), and the
+  transaction reads the table's shape and the pressed cell's bounds back
+  after the insert so the column count is invariant under drops and nothing
+  lands beyond the cell the dropcursor promised. Both consumers go through it —
   `extensions/DropLandingExtension.ts` carries the drop handler AND the
   dropcursor (the vendor view, carried because its target arithmetic is not
   pluggable), so the caret shown during the drag is the landing the release
