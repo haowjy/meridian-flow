@@ -68,6 +68,14 @@ adapters (for example no-op sinks), not by omitted deps.
 | Skill tools | One statically registered `invoke` dispatcher (`source: "skill"`, `advertise: false`) with schema `{ skillname }` only (`additionalProperties: false`). First turn attempt atomically bakes model-invocable skill catalogs (slug + description rows) into `composedSystemPrompt` and persists `bakedSkillSlugs` via compare-and-swap (`bakeComposedSystemPrompt` while `bakedSkillSlugs` is null); concurrent losers use the winner's frozen prompt. `invoke` advertisement on later turns follows the persisted slug set (non-empty → advertise). Dispatch enforces: `skillname` ∈ baked set (added-after-bake → unknown); still model-invocable and resolvable (demoted/deleted → no-longer-available). Extra invoke properties from frozen prompts are ignored; skills read project workspace context, not call-time params. Error listings = baked ∩ currently-invocable. Subagent threads bake both fields at creation (empty set when no skills). |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
+Handler-owned `{ isError: true, output }` results already define their
+model-facing protocol, so the executor preserves their output by definition.
+Parse, timeout, abort, and thrown failures belong to the executor; it delegates
+those to the registration's `formatExecutionError` when present and otherwise
+uses the generic Meridian error format. The `write` registration owns such a
+formatter so every executor-owned write failure still returns
+`meridian.agent-edit.v1` without teaching the generic executor about agent-edit.
+
 The core-tool publication boundary lives in `tools/core-tools.ts`: definitions,
 names, and constraints are canonical there, but `createCoreToolRegistrations()`
 requires handlers for every core tool. The composition root supplies executable
@@ -140,8 +148,11 @@ facet.
   host-only settlement id correlates each tool call to its receipt; the
   model-facing write handle is not unique within a response. A staged result
   left by a pre-commit process failure becomes a typed rejection before a later
-  turn assembles model context. Cancellation paths roll the response buffer back
-  before finalizing the turn as cancelled.
+  turn assembles model context. Durable orphan recovery recognizes that state
+  only when the persisted block is marked as a staged write, its output passes
+  the canonical `isAgentEditResult` guard, and the discriminated result phase is
+  `staged`; a schema string alone is not sufficient. Cancellation paths roll the
+  response buffer back before finalizing the turn as cancelled.
 - **Response write settlement is report-only** — ordinary Yjs merge always
   commits. Destructive effects are echoed to the model and writer-lineage
   overlap may elevate receiving-writer-specific session marks. Trail evidence

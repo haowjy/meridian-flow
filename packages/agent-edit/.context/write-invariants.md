@@ -109,8 +109,11 @@ going blind to a concurrent human edit.
   reads as cosmetic and is not: find-all deletion legitimately leaves double
   spaces, and an agent retrying with what it was just shown then fails
   deterministically (#383). Model-facing framing is a versioned JSON envelope:
-  every logical block is a separate `{ hash, body, extent, relation }` record, so
-  multiline prose cannot be parsed as a neighboring block.
+  groups carry `{ extent, relation, items: [{ hash, body }] }`, so each logical
+  block remains distinct without repeating shared semantics. Only full
+  document/changed/swept groups and prefix context groups exist. Concurrent
+  blocks and tombstones sit in `concurrent.runs`; placement, not another block
+  relation, conveys their concurrent semantics.
 - **Tool results have one model representation.** Read, diff, mutation, undo,
   redo, and write errors return `meridian.agent-edit.v1`. Provider adapters
   JSON-stringify that object; no provider receives the internal diagnostic

@@ -6,11 +6,21 @@
 `WriteOutcome { command, status, isError, text, result }` (`src/tool/types.ts`).
 `result` is the versioned `meridian.agent-edit.v1` JSON envelope and is the only
 representation sent to the LLM. `text` is host-facing diagnostic text, not a
-second model protocol. Block records carry `{ hash, body, extent, relation }`,
-so multiline bodies cannot collide with adjacent blocks and truncated context
-is explicitly an exact prefix. Hashes are model/tool targeting tokens: expose
-them in tool arguments and results, never as labels or quoted prefixes in
-writer-facing prose unless the writer asks for protocol detail.
+second model protocol. Block groups carry shared semantics as
+`{ extent, relation, items: [{ hash, body }] }`, so multiline bodies cannot
+collide with adjacent blocks without repeating metadata on every item. The only
+group kinds are full `document`, `changed`, or `swept` bodies and prefix
+`context`; concurrent bodies and tombstones live under `concurrent.runs`, where
+their placement already conveys the concurrent relation. Full and outline reads
+derive diagnostic text and typed items from one batch serialization. Hashes are
+model/tool targeting tokens: expose them in tool arguments and results, never as
+labels or quoted prefixes in writer-facing prose unless the writer asks for
+protocol detail.
+
+The result lifecycle is discriminated: `status: "success"` requires
+`phase: "staged" | "committed"`, while every non-success status excludes
+`phase`. Hosts must use the exported `isAgentEditResult` guard when recognizing
+persisted results rather than inferring validity from the schema string alone.
 `idempotency` is provided by `tool_use_id`, but provider tool ids are
 response-local: cache and durable attempt ids scope them by `responseId`, or by
 `turnId` when no response id exists. Same-response retries return the cached
