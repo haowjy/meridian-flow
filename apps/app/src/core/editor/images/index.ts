@@ -40,6 +40,7 @@ export {
 export {
   acceptsInlineImage,
   assetDocumentIdFromSrc,
+  imageAltFromFilename,
   imageAttrsFromUpload,
   signedUrlRefreshDelayMs,
 } from "./image-workflow";
