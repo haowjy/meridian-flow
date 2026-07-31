@@ -114,7 +114,11 @@ describe("the composer's @ menu", () => {
 
         // The catalog's ranking, unchanged by the host: a title that STARTS
         // with what was typed comes before one that carries it partway in.
-        expect(rows()).toEqual(["Third Gate AspirantsChapters", "The Third GateChapters"]);
+        // "document" between name and location is the sr-only kind word.
+        expect(rows()).toEqual([
+          "Third Gate AspirantsdocumentChapters",
+          "The Third GatedocumentChapters",
+        ]);
       },
     );
   });

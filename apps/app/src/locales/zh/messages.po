@@ -924,6 +924,7 @@ msgstr ""
 msgid "Dock view"
 msgstr ""
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "document"
 msgstr ""

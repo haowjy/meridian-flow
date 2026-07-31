@@ -924,6 +924,7 @@ msgstr "Divider"
 msgid "Dock view"
 msgstr "Dock view"
 
+#: src/features/chat/composer-input/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "document"
 msgstr "document"

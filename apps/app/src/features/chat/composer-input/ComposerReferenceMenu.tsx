@@ -162,6 +162,10 @@ function ReferenceRow({ item }: { item: ComposerReferenceItem }) {
           <span className="text-ink-subtle"> {t`(also ${item.matchedAlias})`}</span>
         ) : null}
       </span>
+      {/* Spelled for a screen reader, which has no glyph to read — `map` the
+          chapter and `map.png` the picture are one word apart otherwise. Same
+          sentence as the editor's rows (reference-rows.tsx). */}
+      <span className="sr-only">{t`document`}</span>
       <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">
         {/* Two documents answering to one name resolve to neither, so telling
             them apart by folder would not help. The pick still works: it names
