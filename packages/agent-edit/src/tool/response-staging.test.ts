@@ -50,8 +50,8 @@ describe("response staging", () => {
 
     const commit = await ctx.core.commitResponse("response-overwrite-after-pull");
     expect(commit.documents[0]?.receipts[0]?.settlementId).toBe(receipt.settlementId);
-    const settledText = commit.documents[0]?.receipts[0]?.content
-      .map((block) => block.text)
+    const settledText = commit.documents[0]?.receipts[0]?.result.blocks
+      ?.map((block) => block.body)
       .join("\n\n");
     expect(settledText).not.toContain("She still held the key.");
     expect(settledText?.match(/# Chapter/g)).toHaveLength(1);

@@ -30,7 +30,19 @@ export interface DocumentRenderer {
   renderBlocks(doc: DocHandle, blocks: readonly BlockRef[]): string;
   renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[];
   renderOutline(doc: DocHandle, blocks: readonly BlockRef[], filePath: string): string;
+  renderRead(
+    doc: DocHandle,
+    blocks: readonly BlockRef[],
+    filePath: string,
+    format: "full" | "outline",
+  ): RenderedRead;
   parseForCommand(content: string): ParseForCommandResult;
+}
+
+export interface RenderedRead {
+  text: string;
+  format: "full" | "outline";
+  blocks: Array<{ hash: string; body: string }>;
 }
 
 export type ParseForCommandResult =
@@ -48,6 +60,7 @@ export function createDocumentRenderer(deps: {
     renderBlocks,
     renderBlockLines,
     renderOutline,
+    renderRead,
     parseForCommand,
   };
 
@@ -105,6 +118,30 @@ export function createDocumentRenderer(deps: {
       lines.push(`write(command="read", file="${filePath}#${hash}")`);
     }
     return lines.join("\n");
+  }
+
+  function renderRead(
+    doc: DocHandle,
+    blocks: readonly BlockRef[],
+    filePath: string,
+    format: "full" | "outline",
+  ): RenderedRead {
+    const renderedBlocks =
+      format === "outline" && blocks.some((block) => isHeading(model, block))
+        ? blocks.filter((block) => isHeading(model, block))
+        : blocks;
+    const bodies = model.serializeBlockBodies(doc, codec, renderedBlocks);
+    return {
+      text:
+        format === "outline"
+          ? renderOutline(doc, blocks, filePath)
+          : renderBlocks(doc, renderedBlocks),
+      format,
+      blocks: renderedBlocks.map((block, index) => ({
+        hash: model.getBlockId(block),
+        body: bodies[index] ?? "",
+      })),
+    };
   }
 
   function parseForCommand(content: string): ParseForCommandResult {

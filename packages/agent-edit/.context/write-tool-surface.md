@@ -2,18 +2,22 @@
 
 ## Tool surface
 
-`write()` returns a structured `WriteOutcome { command, status, isError, text }`
-(`src/tool/types.ts`). The host routing layer reads the structured envelope; the
-LLM-facing response is the plain `text` field (status line + echo + content).
+`write()` returns host metadata plus one canonical model result:
+`WriteOutcome { command, status, isError, text, result }` (`src/tool/types.ts`).
+`result` is the versioned `meridian.agent-edit.v1` JSON envelope and is the only
+representation sent to the LLM. `text` is host-facing diagnostic text, not a
+second model protocol. Block records carry `{ hash, body, extent, relation }`,
+so multiline bodies cannot collide with adjacent blocks and truncated context
+is explicitly an exact prefix.
 `idempotency` is provided by `tool_use_id`, but provider tool ids are
 response-local: cache and durable attempt ids scope them by `responseId`, or by
 `turnId` when no response id exists. Same-response retries return the cached
-text; a later response that reuses the same provider id must dispatch as a new
-write.
+outcome; a later response that reuses the same provider id must dispatch as a
+new write.
 
 ### Response commit lifecycle
 
-Passing `WriteContext.responseId` makes `create` / `insert` / `replace` apply to
+Passing `WriteContext.responseId` makes `create` / `insert` / `replace` / `delete` apply to
 the session runtime immediately while `ResponseCommitter` buffers the exact
 updates and mutation metadata that will be committed. Per-write echoes therefore
 initially reflect cumulative response-local state; `commitResponse` returns
@@ -137,6 +141,7 @@ commit/recovery, and create lifecycle.
 
 Every successful mutating write returns a short handle line (`write id: w<N>`) in the metadata block. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 
-Undo/redo echoes use the same two-block result format as writes: metadata first, echo lines second.
+Undo/redo use the same versioned result envelope as writes, with typed reversal
+metadata and block records.
 
 Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`from` + `to`), newest N (`last`), or all (`all`). The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.

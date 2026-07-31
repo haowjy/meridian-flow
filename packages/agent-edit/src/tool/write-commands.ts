@@ -92,12 +92,14 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    if (command.format === "outline") {
-      return readSuccess(
-        renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
-      );
-    }
-    return readSuccess(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
+    return readSuccess(
+      renderer.renderRead(
+        toDocHandle(runtime.doc),
+        selection.blocks,
+        address.filePath,
+        command.format === "outline" ? "outline" : "full",
+      ),
+    );
   }
 
   async function create(

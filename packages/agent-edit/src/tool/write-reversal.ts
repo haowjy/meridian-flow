@@ -24,12 +24,13 @@ import { reconstructReversalUpdate } from "../undo/reversal-reconstruction.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
+import { modelConcurrentResult } from "./model-result.js";
 import type {
   DestructiveSweepReport,
   MutationCommit,
   SyncedMutationSummary,
 } from "./mutation-commit.js";
-import { formatConcurrent, status, toOutcome } from "./response-format.js";
+import { blockRecord, formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
@@ -289,6 +290,28 @@ export function createWriteReversal(deps: {
       status: reversal.status,
       text: content.map((block) => block.text).join("\n\n"),
       content,
+      model: {
+        reversal: {
+          direction: input.direction,
+          count: reversal.targetCount ?? 0,
+        },
+        ...(echoLines.length > 0
+          ? {
+              blocks: sync.echo.flatMap((hunk) =>
+                hunk.blocks.map((block) =>
+                  blockRecord(
+                    block,
+                    hunk.mode === "full" ? "full" : "prefix",
+                    hunk.mode === "full" ? "changed" : "context",
+                  ),
+                ),
+              ),
+            }
+          : {}),
+        ...(sync.concurrentEdits
+          ? { concurrent: modelConcurrentResult(sync.concurrentEdits) }
+          : {}),
+      },
     };
   }
 

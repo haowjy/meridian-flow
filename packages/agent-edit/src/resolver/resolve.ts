@@ -187,6 +187,9 @@ function resolveDelete(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteResultWithoutIr {
+  if (params.documentAddress.fragment !== undefined) {
+    return error("invalid_write", "delete uses `in` for its block scope; remove the file fragment");
+  }
   const scope = resolveScope(ctx, params.in, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   return deleteScope(params, scope.scope);

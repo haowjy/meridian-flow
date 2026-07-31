@@ -54,6 +54,19 @@ export {
   writeCommandCategory,
 } from "./tool/command-schema.js";
 export type {
+  AgentEditBlockExtent,
+  AgentEditBlockRecord,
+  AgentEditBlockRelation,
+  AgentEditConcurrentRun,
+  AgentEditResultV1,
+} from "./tool/model-result.js";
+export {
+  AGENT_EDIT_RESULT_SCHEMA,
+  modelBlockRecord,
+  modelConcurrentResult,
+  modelResult,
+} from "./tool/model-result.js";
+export type {
   MutationActor,
   RedoResult,
   ResponseClaimDiscardedEntry,
@@ -73,7 +86,6 @@ export type {
   WriteFunction,
   WriteIdempotencyHitDetail,
   WriteOutcome,
-  WriteResultBlock,
   WriteStatus,
   WriteSuccessPhase,
 } from "./tool/types.js";

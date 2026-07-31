@@ -3,6 +3,7 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { UpdateMeta } from "../ports/types.js";
+import type { RenderedRead } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { result, status } from "./response-format.js";
@@ -38,8 +39,19 @@ export function errorResponse(
   );
 }
 
-export function readSuccess(text: string): InternalWriteResult {
-  return result("success", text, { phase: "committed" });
+export function readSuccess(read: RenderedRead): InternalWriteResult {
+  return result("success", read.text, {
+    phase: "committed",
+    model: {
+      read: { format: read.format },
+      blocks: read.blocks.map(({ hash, body }) => ({
+        hash,
+        body,
+        extent: "full",
+        relation: "document",
+      })),
+    },
+  });
 }
 
 export function writeError(cause: unknown): InternalWriteResult {

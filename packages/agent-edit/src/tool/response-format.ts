@@ -6,6 +6,13 @@ import type { DocHandle } from "../handles.js";
 import { splitHashline } from "../model/hashline.js";
 import type { TurnDiffResult } from "../ports/turn-diff-query.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
+import {
+  type AgentEditBlockRecord,
+  type AgentEditBlockRelation,
+  modelBlockRecord,
+  modelConcurrentResult,
+  modelResult,
+} from "./model-result.js";
 import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
   WriteCommandName,
@@ -36,7 +43,7 @@ export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult
     return result(
       "success",
       `status: success\n\nNo turn-owned changes; thread-shared effects exist for this turn's documents.${provisional}`,
-      { phase: "committed" },
+      { phase: "committed", model: { diff } },
     );
   }
   if (!diff || diff.changes.length === 0) {
@@ -47,7 +54,7 @@ export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult
     return result(
       "success",
       `status: success\n\nNo settled changes for this turn yet.${provisional}`,
-      { phase: "committed" },
+      { phase: "committed", model: { diff } },
     );
   }
 
@@ -75,7 +82,7 @@ export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult
     }
   }
 
-  return result("success", lines.join("\n"), { phase: "committed" });
+  return result("success", lines.join("\n"), { phase: "committed", model: { diff } });
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -115,6 +122,38 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     phase: input.phase,
     text: content.map((block) => block.text).join("\n\n"),
     content,
+    model: {
+      ...(input.writeId || (input.deletedBlocks && input.deletedBlocks.length > 0)
+        ? {
+            write: {
+              ...(input.writeId ? { id: input.writeId } : {}),
+              ...(input.deletedBlocks && input.deletedBlocks.length > 0
+                ? { deletedHashes: [...input.deletedBlocks] }
+                : {}),
+            },
+          }
+        : {}),
+      ...(echoLines.length > 0 ? { blocks: echoRecords(input.echo) } : {}),
+      ...(input.concurrentEdits
+        ? { concurrent: modelConcurrentResult(input.concurrentEdits) }
+        : {}),
+      ...(input.lateSweep
+        ? {
+            blocks: [
+              ...echoRecords(input.echo),
+              ...(input.lateSweep.capturedDeletedBodies ?? []).map(
+                ({ hash, body }): AgentEditBlockRecord => ({
+                  hash,
+                  body,
+                  extent: "full",
+                  relation: "swept",
+                }),
+              ),
+            ],
+          }
+        : {}),
+      ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
+    },
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),
   };
@@ -133,23 +172,34 @@ export function status(
   message?: string,
   options: { error?: WriteErrorDetail } = {},
 ): InternalWriteResult {
-  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`, options);
+  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`, {
+    ...options,
+    ...(message ? { model: { message } } : {}),
+  });
 }
 
 export function result(
   status: "success",
   text: string,
-  options: { phase: WriteSuccessPhase; error?: WriteErrorDetail },
+  options: {
+    phase: WriteSuccessPhase;
+    error?: WriteErrorDetail;
+    model?: InternalWriteResult["model"];
+  },
 ): InternalWriteResult;
 export function result(
   status: Exclude<WriteStatus, "success">,
   text: string,
-  options?: { error?: WriteErrorDetail },
+  options?: { error?: WriteErrorDetail; model?: InternalWriteResult["model"] },
 ): InternalWriteResult;
 export function result(
   status: WriteStatus,
   text: string,
-  options: { phase?: WriteSuccessPhase; error?: WriteErrorDetail } = {},
+  options: {
+    phase?: WriteSuccessPhase;
+    error?: WriteErrorDetail;
+    model?: InternalWriteResult["model"];
+  } = {},
 ): InternalWriteResult {
   if (status === "success") {
     if (!options.phase) {
@@ -160,9 +210,15 @@ export function result(
       phase: options.phase,
       text,
       ...(options.error ? { error: options.error } : {}),
+      ...(options.model ? { model: options.model } : {}),
     };
   }
-  return { status, text, ...(options.error ? { error: options.error } : {}) };
+  return {
+    status,
+    text,
+    ...(options.error ? { error: options.error } : {}),
+    ...(options.model ? { model: options.model } : {}),
+  };
 }
 
 export function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
@@ -172,13 +228,40 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     ...(result.writeId ? { writeId: result.writeId } : {}),
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
+    result: modelResult({
+      command,
+      status: result.status,
+      ...(result.status === "success" ? { phase: result.phase } : {}),
+      ...(result.model ? { payload: result.model } : {}),
+    }),
     text: result.text,
-    ...(result.content ? { content: result.content } : {}),
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };
   }
   return { ...base, status: result.status };
+}
+
+export function blockRecord(
+  serialized: string,
+  extent: "full" | "prefix",
+  relation: AgentEditBlockRelation,
+): AgentEditBlockRecord {
+  return modelBlockRecord(serialized, extent, relation);
+}
+
+function echoRecords(echo: readonly ApplyEchoHunk[]): AgentEditBlockRecord[] {
+  return echo.flatMap((hunk) =>
+    hunk.blocks
+      .filter((serialized) => serialized.length > 0)
+      .map((serialized) =>
+        blockRecord(
+          serialized,
+          hunk.mode === "full" ? "full" : "prefix",
+          hunk.mode === "full" ? "changed" : "context",
+        ),
+      ),
+  );
 }
 
 export function formatConcurrent(

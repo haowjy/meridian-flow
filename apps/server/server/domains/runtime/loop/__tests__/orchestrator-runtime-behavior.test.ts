@@ -3,6 +3,7 @@
  * cancellation, and tool dispatch boundaries without involving real providers.
  */
 
+import { modelResult } from "@meridian/agent-edit/integration";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -158,7 +159,12 @@ describe("runtime orchestrator behavior", () => {
                 receipt: {
                   writeId: "w1",
                   settlementId: "write-1",
-                  content: [{ type: "text", text: "status: success" }],
+                  result: modelResult({
+                    command: "replace",
+                    status: "success",
+                    phase: "committed",
+                    payload: { write: { id: "w1" } },
+                  }),
                 },
               },
             ],
@@ -174,7 +180,8 @@ describe("runtime orchestrator behavior", () => {
     );
 
     const persistedAfterCrash = JSON.stringify(await repos.blocks.listByThread(thread.id));
-    expect(persistedAfterCrash).toContain("status: success");
+    expect(persistedAfterCrash).toContain('"status":"success"');
+    expect(persistedAfterCrash).toContain('"schema":"meridian.agent-edit.v1"');
     expect(persistedAfterCrash).not.toContain("pending_commit");
 
     const resumedRequests: GenerateRequest[] = [];
@@ -190,7 +197,7 @@ describe("runtime orchestrator behavior", () => {
         createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
-    expect(JSON.stringify(resumedRequests[0]?.messages)).toContain("status: success");
+    expect(JSON.stringify(resumedRequests[0]?.messages)).toContain('"status":"success"');
     expect(JSON.stringify(resumedRequests[0]?.messages)).not.toContain("pending_commit");
   });
 
@@ -504,10 +511,22 @@ describe("runtime orchestrator behavior", () => {
                 receipt: {
                   writeId: "w1",
                   settlementId: "write-1",
-                  content: [
-                    { type: "text" as const, text: "status: success\nwrite id: w1" },
-                    { type: "text" as const, text: "final1|Final settled line." },
-                  ],
+                  result: modelResult({
+                    command: "replace",
+                    status: "success",
+                    phase: "committed",
+                    payload: {
+                      write: { id: "w1" },
+                      blocks: [
+                        {
+                          hash: "final1",
+                          body: "Final settled line.",
+                          extent: "full",
+                          relation: "changed",
+                        },
+                      ],
+                    },
+                  }),
                 },
               },
             ],
@@ -547,9 +566,9 @@ describe("runtime orchestrator behavior", () => {
     );
 
     const secondRequest = JSON.stringify(requests[1]?.messages);
-    expect(secondRequest).toContain("concurrent edits:\\n  human:");
-    expect(secondRequest).toContain("abcd|Human changed line.");
-    expect(secondRequest).toContain("final1|Final settled line.");
+    expect(secondRequest).toContain('"origin":"human"');
+    expect(secondRequest).toContain('"hash":"abcd","body":"Human changed line."');
+    expect(secondRequest).toContain('"hash":"final1","body":"Final settled line."');
     expect(secondRequest).not.toContain("Old speculative line.");
     expect(secondRequest).not.toContain("New speculative line.");
   });
@@ -623,7 +642,12 @@ describe("runtime orchestrator behavior", () => {
               receipt: {
                 writeId: "w1",
                 settlementId,
-                content: [{ type: "text" as const, text: `settled ${settlementId}` }],
+                result: modelResult({
+                  command: "replace",
+                  status: "success",
+                  phase: "committed",
+                  payload: { write: { id: "w1" }, message: `settled ${settlementId}` },
+                }),
               },
             })),
             concurrentEdits: [],
@@ -655,11 +679,21 @@ describe("runtime orchestrator behavior", () => {
     expect(persistedResults).toEqual([
       {
         toolCallId: "write-first",
-        output: [{ type: "text", text: "settled write-first" }],
+        output: modelResult({
+          command: "replace",
+          status: "success",
+          phase: "committed",
+          payload: { write: { id: "w1" }, message: "settled write-first" },
+        }),
       },
       {
         toolCallId: "write-second",
-        output: [{ type: "text", text: "settled write-second" }],
+        output: modelResult({
+          command: "replace",
+          status: "success",
+          phase: "committed",
+          payload: { write: { id: "w1" }, message: "settled write-second" },
+        }),
       },
     ]);
     const secondRequest = JSON.stringify(requests[1]?.messages);

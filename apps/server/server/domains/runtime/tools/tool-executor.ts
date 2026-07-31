@@ -100,9 +100,11 @@ function toJsonValue(value: unknown): JsonValue {
  * error. The executor extracts the `output` field directly rather than
  * wrapping it in a generic error message.
  */
-function isHandlerErrorResult(
-  value: unknown,
-): value is { isError: true; output: MeridianError | JsonValue } {
+function isHandlerErrorResult(value: unknown): value is {
+  isError: true;
+  output: MeridianError | JsonValue;
+  preserveOutput?: boolean;
+} {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -125,12 +127,16 @@ function isStructuredHandlerResult(
 
 /**
  * Normalizes a handler return value into a `ToolExecutionResult`.
- * If the handler returned a structured error (`{ isError: true, output: ... }`),
- * the output is used verbatim and `isError` is forwarded. Otherwise the
- * value is serialized through `toJsonValue` for JSON safety.
+ * Structured errors normally normalize to MeridianError. A tool that owns a
+ * versioned error protocol can set `preserveOutput: true`; the executor keeps
+ * that JSON value verbatim while forwarding `isError`. Other values serialize
+ * through `toJsonValue` for JSON safety.
  */
 function successResult(toolCallId: string, output: unknown): ToolExecutionResult {
   if (isHandlerErrorResult(output)) {
+    if (output.preserveOutput === true) {
+      return { toolCallId, output: toJsonValue(output.output), isError: true };
+    }
     const meridianError = isMeridianError(output.output)
       ? output.output
       : meridianErrorFromStructuredToolOutput(output.output as JsonValue);

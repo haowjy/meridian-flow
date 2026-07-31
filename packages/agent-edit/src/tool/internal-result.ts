@@ -1,4 +1,6 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
+
+import type { AgentEditModelPayload } from "./model-result.js";
 import type { WriteCommand, WriteErrorDetail, WriteStatus, WriteSuccessPhase } from "./types.js";
 
 export interface WriteResultBlock {
@@ -11,6 +13,7 @@ export type InternalWriteResult = InternalWriteResultBase &
 
 interface InternalWriteResultBase {
   text: string;
+  model?: AgentEditModelPayload;
   writeId?: string;
   settlementId?: string;
   error?: WriteErrorDetail;
@@ -45,5 +48,6 @@ function status(code: Exclude<WriteStatus, "success">, message?: string): Intern
   return {
     status: code,
     text: message ? `status: ${code}\n\n${message}` : `status: ${code}`,
+    ...(message ? { model: { message } } : {}),
   };
 }

@@ -63,8 +63,10 @@
  */
 
 import {
+  type AgentEditResultV1,
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
+  modelConcurrentResult,
   type ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
@@ -219,16 +221,12 @@ function isTextContentBlockArray(value: unknown): value is Array<{ type: "text";
   );
 }
 
-function formatConcurrentEdits(info: ConcurrentEditInfo): string {
-  const lines = ["concurrent edits:"];
-  for (const run of info.runs) {
-    lines.push(`  ${run.origin}:`, ...run.blocks.map((block) => `    ${block}`));
-    for (const tombstone of run.tombstones) {
-      lines.push(`    ${tombstone.hash}| [explicit deletion]`, tombstone.capturedBody);
-    }
-  }
-  if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
-  return lines.join("\n");
+function isAgentEditResult(value: unknown): value is AgentEditResultV1 {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { schema?: unknown }).schema === "meridian.agent-edit.v1"
+  );
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
@@ -1218,7 +1216,7 @@ async function* generateEvents(
                         threadId: input.threadId,
                         block: write.block,
                         output: settledReceipt(result.receipts, documentId, write.settlementId)
-                          .content,
+                          .result,
                       })
                     : await persistUncommittedWriteResult({
                         deps,
@@ -1261,16 +1259,12 @@ async function* generateEvents(
           if (!content?.output) continue;
 
           const output = content.output;
-          if (!isTextContentBlockArray(output)) continue;
+          if (!isAgentEditResult(output)) continue;
 
-          const [metadataBlock, ...remainingBlocks] = output;
-          const updatedOutput = [
-            {
-              ...metadataBlock,
-              text: `${metadataBlock.text}\n${formatConcurrentEdits(boundedEdits)}`,
-            },
-            ...remainingBlocks,
-          ];
+          const updatedOutput: AgentEditResultV1 = {
+            ...output,
+            concurrent: modelConcurrentResult(boundedEdits),
+          };
           const updatedContent = {
             ...content,
             output: updatedOutput,

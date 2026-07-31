@@ -404,8 +404,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           tool_use_id: ctx.toolCallId,
         });
         return outcome.isError
-          ? toolError({ message: outcome.text })
-          : { output: outcome.content ?? outcome.text };
+          ? { isError: true, output: outcome.result, preserveOutput: true }
+          : { output: outcome.result };
       }
 
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
@@ -444,7 +444,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             });
           }
         }
-        return toolError({ message: outcome.text });
+        return { isError: true, output: outcome.result, preserveOutput: true };
       }
       if (stagedCreate) {
         const responseId = ctx.responseId;
@@ -462,12 +462,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         ctx.responseId !== undefined &&
         (parsed.command === "create" ||
           parsed.command === "insert" ||
-          parsed.command === "replace");
+          parsed.command === "replace" ||
+          parsed.command === "delete");
       if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
         await refreshProjectionAfterToolWrite(deps, address.documentId, ctx);
       }
       return {
-        output: outcome.content ?? outcome.text,
+        output: outcome.result,
         ...(stagedWrite
           ? {
               metadata: {

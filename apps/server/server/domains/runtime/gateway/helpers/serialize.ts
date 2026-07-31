@@ -8,9 +8,8 @@
 
 /**
  * Detects content block arrays: `[{type: "text", text: "..."}, ...]`.
- * These are produced by the write tool for structured tool_result blocks
- * and should be joined into a single string for providers that don't
- * support multi-block tool results natively.
+ * Runtime callers may still use these for generic multi-block tool results;
+ * agent-edit itself returns a versioned JSON object.
  */
 function isContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
   return (

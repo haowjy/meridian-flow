@@ -99,7 +99,7 @@ describe("createToolExecutor", () => {
           turnId: context.turnId,
           sessionId: context.threadId,
         });
-        return { output: outcome.text };
+        return { output: outcome.result };
       },
       ls: async () => ({}),
       search: async () => ({}),
@@ -118,11 +118,21 @@ describe("createToolExecutor", () => {
     );
 
     expect(received).toEqual([{ threadId: "thread-1", turnId: "turn-1", documentId: undefined }]);
-    expect(result.output).toEqual(expect.stringContaining("Results are provisional"));
-    expect(result.output).toEqual(expect.stringContaining("Before:\nWriter's opening."));
-    expect(result.output).toEqual(
-      expect.stringContaining("Merged over writer-authored content:\nA concurrent sentence."),
-    );
+    expect(result.output).toMatchObject({
+      schema: "meridian.agent-edit.v1",
+      command: "diff",
+      status: "success",
+      diff: {
+        trailState: "building",
+        changes: [
+          {
+            before: "Writer's opening.",
+            after: "Agent's revised opening.",
+            mergedOver: [{ body: "A concurrent sentence.", writerAuthored: true }],
+          },
+        ],
+      },
+    });
   });
 
   it("returns handler output on success", async () => {
@@ -138,6 +148,34 @@ describe("createToolExecutor", () => {
     expect(result).toEqual({
       toolCallId: "call-1",
       output: { echoed: { msg: "hi" } },
+    });
+  });
+
+  it("preserves a tool-owned structured error result when requested", async () => {
+    const registry = createToolRegistry();
+    const output = {
+      schema: "meridian.agent-edit.v1",
+      command: "delete",
+      status: "not_found",
+      message: "Block not found",
+    };
+    registry.register(
+      serverTool("structured_error", async () => ({
+        isError: true,
+        output,
+        preserveOutput: true,
+      })),
+    );
+
+    await expect(
+      createToolExecutor(registry).executeTool(
+        { id: "call-structured-error", name: "structured_error", arguments: {} },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      toolCallId: "call-structured-error",
+      output,
+      isError: true,
     });
   });
 

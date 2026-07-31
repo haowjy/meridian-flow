@@ -202,6 +202,27 @@ describe("resolveWrite", () => {
     expect(edits[0]).toMatchObject({ kind: "text", block: beta, newText: "Gamma" });
   });
 
+  it("keeps delete on its single required in scope", () => {
+    const doc = createDoc("Alpha\n\nBeta");
+    const [, beta] = model.getBlocks(doc);
+    const hash = model.getBlockId(beta);
+
+    expect(
+      resolveWrite(
+        { doc, model, codec },
+        {
+          documentAddress: {
+            documentId: "123e4567-e89b-12d3-a456-426614174000",
+            filePath: "chapter.md",
+            fragment: hash,
+          },
+          command: "delete",
+          in: hash,
+        },
+      ),
+    ).toMatchObject({ ok: false, error: { code: "invalid_write" } });
+  });
+
   it("returns an actionable ambiguous error for insert block anchors", () => {
     const doc = createDoc(collisionMarkdown());
     const fixture = prefixCollisionFixture(model, model.getBlocks(doc));

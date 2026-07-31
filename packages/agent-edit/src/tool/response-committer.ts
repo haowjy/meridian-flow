@@ -14,6 +14,7 @@ import { withLiveDocument } from "./coordinator.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
+import { modelResult } from "./model-result.js";
 import type { CommitPreflightInput, JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import { formatApplySuccess } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -713,19 +714,17 @@ export function createResponseCommitter(deps: {
           phase: "committed",
           writeId: update.writeId,
           echo,
-          ...(update.commandName === "replace" && update.deletedHashes.size > 0
-            ? { deletedBlocks: [...update.deletedHashes] }
-            : {}),
+          ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
         });
-        if (!receipt.content) {
-          throw new Error(
-            `Settled receipt missing content for ${docBuffer.docId}:${update.writeId}.`,
-          );
-        }
         return {
           writeId: update.writeId,
           settlementId: update.durableWriteId,
-          content: receipt.content,
+          result: modelResult({
+            command: update.commandName,
+            status: "success",
+            phase: "committed",
+            ...(receipt.model ? { payload: receipt.model } : {}),
+          }),
         };
       } finally {
         beforeDoc.destroy();

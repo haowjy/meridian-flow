@@ -1,4 +1,8 @@
-import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit/integration";
+import {
+  type AgentEditCore,
+  modelResult,
+  type ResponseCommitSuccessResult,
+} from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
@@ -20,6 +24,7 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): Age
       phase: "committed",
       isError: false,
       text: "",
+      result: modelResult({ command: "read", status: "success", phase: "committed" }),
     }),
     recover: async () => {},
     commitResponse: async () => commitResult,
@@ -37,18 +42,24 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): Age
       status: "nothing_to_undo",
       isError: false,
       text: "",
+      result: modelResult({ command: "undo", status: "nothing_to_undo" }),
     }),
     redo: async () => ({
       command: "redo",
       status: "nothing_to_redo",
       isError: false,
       text: "",
+      result: modelResult({ command: "redo", status: "nothing_to_redo" }),
     }),
     reverse: async (input) => ({
       command: input.direction,
       status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
       isError: false,
       text: "",
+      result: modelResult({
+        command: input.direction,
+        status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
+      }),
     }),
     invalidateThread: async () => {},
   };
@@ -98,7 +109,12 @@ describe("agent-edit response write lifecycle", () => {
             {
               writeId: "w1",
               settlementId: "write-1",
-              content: [{ type: "text", text: "status: success\nwrite id: w1" }],
+              result: modelResult({
+                command: "replace",
+                status: "success",
+                phase: "committed",
+                payload: { write: { id: "w1" } },
+              }),
             },
           ],
           concurrentEdits: { human: ["abcd"], agent: [], runs: [] },
@@ -146,7 +162,12 @@ describe("agent-edit response write lifecycle", () => {
           receipt: {
             writeId: "w1",
             settlementId: "write-1",
-            content: [{ type: "text", text: "status: success\nwrite id: w1" }],
+            result: modelResult({
+              command: "replace",
+              status: "success",
+              phase: "committed",
+              payload: { write: { id: "w1" } },
+            }),
           },
         },
       ],
@@ -270,7 +291,7 @@ describe("wired write tool", () => {
 
     await expect(
       writeText(single.write, { command: "undo", path: single.filePath, to: "w3" }, single.ctx),
-    ).resolves.toContain("status: reversed");
+    ).resolves.toContain('"status":"reversed"');
     const afterSingleUndo = await writeText(
       single.write,
       { command: "read", path: single.filePath },
@@ -281,7 +302,7 @@ describe("wired write tool", () => {
 
     await expect(
       writeText(single.write, { command: "redo", path: single.filePath, to: "w3" }, single.ctx),
-    ).resolves.toContain("status: reconciled");
+    ).resolves.toContain('"status":"reconciled"');
     expect(
       await writeText(single.write, { command: "read", path: single.filePath }, single.ctx),
     ).toContain("Three");
@@ -293,7 +314,7 @@ describe("wired write tool", () => {
         { command: "undo", path: range.filePath, from: "w2", to: "w5" },
         range.ctx,
       ),
-    ).resolves.toContain("status: reversed");
+    ).resolves.toContain('"status":"reversed"');
     const afterRangeUndo = await writeText(
       range.write,
       { command: "read", path: range.filePath },
@@ -310,7 +331,7 @@ describe("wired write tool", () => {
         { command: "redo", path: range.filePath, from: "w2", to: "w5" },
         range.ctx,
       ),
-    ).resolves.toContain("status: reconciled");
+    ).resolves.toContain('"status":"reconciled"');
     const afterRangeRedo = await writeText(
       range.write,
       { command: "read", path: range.filePath },
@@ -368,7 +389,7 @@ function toolResultText(result: unknown): string {
       )
       .join("\n\n");
   }
-  return String(output);
+  return typeof output === "string" ? output : JSON.stringify(output);
 }
 
 async function seededWiredWrite() {

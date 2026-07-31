@@ -98,21 +98,23 @@ going blind to a concurrent human edit.
 - **Echoes are one per-write function.** `computeEcho(before, after, touched,
   deleted)` expands a ±1 window around the agent-touched/deleted hashes and tiers
   each surviving post-write block independently: inserted or serialized-content
-  changed from `v_pre` to `v_post` → full `hash|content`; identical context →
-  first ~8 words plus `...`; outside the window → omitted. Concurrent overlap and
-  structural changes are not separate modes.
+  changed from `v_pre` to `v_post` → full body; identical context → an exact
+  first-~8-word prefix; outside the window → omitted. Concurrent overlap and
+  structural changes are not separate modes. The model result labels the former
+  `extent: "full"` and the latter `extent: "prefix"`.
 - **Echoed text is verbatim, because the model targets it.** Every character an
   echo shows must resolve through the exact matcher, so the echo path normalizes
   nothing — no whitespace collapsing, no tab/NBSP folding. Truncation may drop a
   suffix but never rewrites the prefix it keeps. The tempting `\s+ → " "` cleanup
   reads as cosmetic and is not: find-all deletion legitimately leaves double
   spaces, and an agent retrying with what it was just shown then fails
-  deterministically (#383). Block framing is the open counterpart — multi-line
-  bodies still break the `hash|body` line grammar (#409).
-- **Tool results use two content blocks.** Successful writes and undo/redo
-  return metadata in block 1 (`status`, write id or reversal count, concurrent
-  edits) and echo `hash|content` lines in block 2 when there are echo lines.
-  Hosts should prefer structured `content` over the joined `text`.
+  deterministically (#383). Model-facing framing is a versioned JSON envelope:
+  every logical block is a separate `{ hash, body, extent, relation }` record, so
+  multiline prose cannot be parsed as a neighboring block.
+- **Tool results have one model representation.** Read, diff, mutation, undo,
+  redo, and write errors return `meridian.agent-edit.v1`. Provider adapters
+  JSON-stringify that object; no provider receives the internal diagnostic
+  hashline stream or a parallel compatibility rendering.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
   Whole-document overwrite preserves this behavior for positional same-type
