@@ -17,18 +17,21 @@
  */
 
 import type { Editor, JSONContent, Range } from "@tiptap/core";
-import type { NodeType, Node as PMNode, ResolvedPos, Schema } from "@tiptap/pm/model";
+import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 import { Selection } from "@tiptap/pm/state";
 
+import { anchorRange } from "../../anchors";
 import { defaultDiagramProvider } from "../../diagrams";
+import { acceptsInlineImage } from "../../images";
 import { engageObject } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
 
 const TABLE_COLUMNS = 3;
 const TABLE_ROWS = 3;
 
-type SlashInsertion = {
+/** The node a block entry makes, and where its caret lands inside it. */
+type SlashBlock = {
   /** The node the entry creates, in the schema's own JSON. */
   node: JSONContent;
   /**
@@ -37,22 +40,33 @@ type SlashInsertion = {
    * to keep typing on.
    */
   caret: "inside" | "after";
-  /**
-   * The host puts this one in the document: a picker, then an upload or a
-   * paste. Two things follow. The lane's own job ends at consuming the
-   * trigger, and the entry never CONVERTS — the host adds a block at the
-   * caret rather than retyping the block the writer is standing in, so an
-   * empty paragraph is a place to insert beside, not a thing to become.
-   *
-   * That second part is what makes `Image` refuse in an empty table cell
-   * (ruling). A cell holds one plain paragraph and the image lands in a
-   * paragraph too, so asking "may this replace the empty one" answered yes
-   * and sent the pick out through the picker, which put the image past the
-   * table. The honest question is whether the cell has room for another
-   * block, and it never does.
-   */
-  hostDispatched?: boolean;
 };
+
+/**
+ * What an entry lands, which is the question availability has to ask.
+ *
+ * The two strategies are the two KINDS of thing the menu makes, and they ask
+ * different questions of the same position. A block needs a level of the
+ * document that will hold it, and §5.7's convert-or-insert-after rule decides
+ * which. A picture is an inline atom, so it needs one thing only: that the very
+ * paragraph the writer typed `/` in accepts an `image`.
+ *
+ * One boolean used to stand in for both, and it meant three things at once — the
+ * host owns the dispatch, the entry may not convert, and the shape to ask
+ * availability about is an empty paragraph. That bundle is what made an inline
+ * picture indistinguishable from a block insert, and it is why `Image` died in
+ * every table cell: "is there room for another block here" is a true question
+ * with a true answer of no, and the wrong question to ask about a picture.
+ */
+type SlashInsertion =
+  | ({ strategy: "block" } & SlashBlock)
+  /**
+   * A picture, inline where the trigger was. The lane's job ends at consuming
+   * the trigger and handing the host an anchor for that place: the file comes
+   * from the operating system's chooser, which outlives every raw position in
+   * the document (`images/image-uploads.ts`).
+   */
+  | { strategy: "image" };
 
 const emptyParagraph: JSONContent = { type: "paragraph" };
 
@@ -68,57 +82,50 @@ function tableRow(cell: "table_header" | "table_cell"): JSONContent {
   };
 }
 
+function block(node: JSONContent, caret: "inside" | "after" = "inside"): SlashInsertion {
+  return { strategy: "block", node, caret };
+}
+
 function heading(level: 1 | 2 | 3): SlashInsertion {
-  return { node: { type: "heading", attrs: { level } }, caret: "inside" };
+  return block({ type: "heading", attrs: { level } });
 }
 
 /**
- * One row per catalog id, `image` included. The picker is the host's and so is
- * the dispatch, but the SHAPE an image lands is known here — a paragraph — and
- * availability has to be answerable for every visible row, including that one.
+ * One row per catalog id, `image` included. The picture's own dispatch is the
+ * host's, but WHAT it lands is known here — an inline `image` — and availability
+ * has to be answerable for every visible row, including that one.
  */
 const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   "heading-1": heading(1),
   "heading-2": heading(2),
   "heading-3": heading(3),
-  "bullet-list": { node: { type: "bullet_list", content: [listItem] }, caret: "inside" },
-  "numbered-list": { node: { type: "ordered_list", content: [listItem] }, caret: "inside" },
-  quote: { node: { type: "blockquote", content: [emptyParagraph] }, caret: "inside" },
-  divider: { node: { type: "horizontal_rule" }, caret: "after" },
-  table: {
-    node: {
-      type: "table",
-      content: [
-        tableRow("table_header"),
-        ...Array.from({ length: TABLE_ROWS - 1 }, () => tableRow("table_cell")),
-      ],
-    },
-    caret: "inside",
-  },
+  "bullet-list": block({ type: "bullet_list", content: [listItem] }),
+  "numbered-list": block({ type: "ordered_list", content: [listItem] }),
+  quote: block({ type: "blockquote", content: [emptyParagraph] }),
+  divider: block({ type: "horizontal_rule" }, "after"),
+  table: block({
+    type: "table",
+    content: [
+      tableRow("table_header"),
+      ...Array.from({ length: TABLE_ROWS - 1 }, () => tableRow("table_cell")),
+    ],
+  }),
   // "Diagram" means the catalog's first provider, and its starter source comes
   // from the same row (law 2's sole auto-edit: a new diagram has nothing to view
   // yet, so it opens on something that draws). Other dialects are reached
   // through the fence's language menu rather than a slash entry each.
   diagram: diagramInsertion(),
-  code: { node: { type: "code_block" }, caret: "inside" },
-  image: { node: emptyParagraph, caret: "inside", hostDispatched: true },
+  code: block({ type: "code_block" }),
+  image: { strategy: "image" },
 };
 
 function diagramInsertion(): SlashInsertion {
   const provider = defaultDiagramProvider();
-  return {
-    node: {
-      type: "code_block",
-      attrs: { language: provider.language },
-      content: [{ type: "text", text: provider.starterSource }],
-    },
-    caret: "inside",
-  };
-}
-
-/** The type an entry would put in the document, for asking whether it may. */
-function insertionType(schema: Schema, id: SlashCommandId): NodeType | null {
-  return schema.nodes[SLASH_INSERTIONS[id].node.type as string] ?? null;
+  return block({
+    type: "code_block",
+    attrs: { language: provider.language },
+    content: [{ type: "text", text: provider.starterSource }],
+  });
 }
 
 /**
@@ -139,10 +146,7 @@ export function slashRefusals(
   const refusals = new Map<SlashCommandId, SlashRefusal>();
 
   for (const item of items) {
-    const insertion = SLASH_INSERTIONS[item.id];
-    const type = insertionType(editor.schema, item.id);
-    const target =
-      type && slashTarget(landing.doc, pos, type, { converts: !insertion.hostDispatched });
+    const target = slashTarget(landing.doc, pos, SLASH_INSERTIONS[item.id]);
     if (target?.mode === "blocked") refusals.set(item.id, target.reason);
   }
   return refusals;
@@ -155,13 +159,40 @@ export function slashRefusals(
  */
 export type SlashRefusal = "table-cell";
 
-export type SlashTarget =
+type SlashTarget =
   /** The block the writer typed `/` in becomes the new node. */
-  | { mode: "convert"; from: number; to: number }
+  | { mode: "convert"; from: number; to: number; block: SlashBlock }
   /** The block keeps its text and the new node lands after it. */
-  | { mode: "insert-after"; pos: number }
+  | { mode: "insert-after"; pos: number; block: SlashBlock }
+  /** A picture stands exactly where the trigger was, among the same words. */
+  | { mode: "inline"; pos: number }
   /** Nowhere this entry may land without leaving the writer's structure. */
   | { mode: "blocked"; reason: SlashRefusal };
+
+/**
+ * What this entry would do at this position, or null when the schema holds
+ * nothing it could make (a surface with no image node, a catalog id whose node
+ * type is not in this document's schema).
+ */
+function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): SlashTarget | null {
+  return insertion.strategy === "image"
+    ? inlineImageTarget(doc, pos)
+    : blockTarget(doc, pos, insertion);
+}
+
+/**
+ * Where a picture goes: exactly where the trigger was, or nowhere.
+ *
+ * No outward walk, because there is nothing to walk out of. An inline atom
+ * belongs in the sentence the writer typed `/` in, and every trigger position is
+ * inside prose by definition (`allowsSlashTrigger`). A cell's paragraph accepts
+ * a picture like any other paragraph does, and that is the whole of this entry's
+ * cell exception: the picture lands IN the cell, so the ceiling the block walk
+ * stops at is never approached.
+ */
+function inlineImageTarget(doc: PMNode, pos: number): SlashTarget | null {
+  return acceptsInlineImage(doc, pos) ? { mode: "inline", pos } : null;
+}
 
 /**
  * Nodes whose parts are not free-standing blocks: a list item exists only as
@@ -205,23 +236,20 @@ const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
  * the node, which no trigger position can produce; blocked is the refusal a
  * writer can read.
  */
-export function slashTarget(
-  doc: PMNode,
-  pos: number,
-  type: NodeType,
-  { converts = true }: { converts?: boolean } = {},
-): SlashTarget | null {
+function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget | null {
+  const type = doc.type.schema.nodes[block.node.type as string];
   const $pos = doc.resolve(pos);
   const depth = $pos.depth;
-  if (depth === 0) return null;
+  if (!type || depth === 0) return null;
 
   const index = $pos.index(depth - 1);
   const convertible =
-    converts &&
     $pos.parent.type.name === "paragraph" &&
     $pos.parent.content.size === 0 &&
     $pos.node(depth - 1).canReplaceWith(index, index + 1, type);
-  if (convertible) return { mode: "convert", from: $pos.before(depth), to: $pos.after(depth) };
+  if (convertible) {
+    return { mode: "convert", from: $pos.before(depth), to: $pos.after(depth), block };
+  }
 
   // Start outside every owning structure the caret is in — the outermost one,
   // so a nested list is escaped whole — then take the first level that will
@@ -231,7 +259,7 @@ export function slashTarget(
     const parent = $pos.node(level - 1);
     const insertIndex = $pos.indexAfter(level - 1);
     if (parent.canReplaceWith(insertIndex, insertIndex, type)) {
-      return { mode: "insert-after", pos: $pos.after(level) };
+      return { mode: "insert-after", pos: $pos.after(level), block };
     }
   }
   return floor > 0 ? { mode: "blocked", reason: "table-cell" } : null;
@@ -265,26 +293,29 @@ export function applySlashCommand(
   item: SlashCommandItem,
   catalog: SlashCommandCatalog,
 ): boolean {
-  const insertion = SLASH_INSERTIONS[item.id];
-  const node = editor.schema.nodeFromJSON(insertion.node);
-
   // Decided against the document the delete will produce, and decided BEFORE
   // anything is dispatched: TipTap dispatches a chain's transaction even when
   // one of its commands declines, so resolving the target inside the chain
   // would let a refusal eat the trigger text and insert nothing in its place.
   // A refusal therefore costs the writer nothing — not even the `/` they typed.
   const deleted = editor.state.tr.delete(range.from, range.to);
-  const target = slashTarget(deleted.doc, deleted.mapping.map(range.from), node.type, {
-    converts: !insertion.hostDispatched,
-  });
+  const at = deleted.mapping.map(range.from);
+  const target = slashTarget(deleted.doc, at, SLASH_INSERTIONS[item.id]);
   if (!target || target.mode === "blocked") return false;
 
-  if (insertion.hostDispatched) {
+  if (target.mode === "inline") {
     const consumed = editor.chain().focus().deleteRange(range).run();
-    catalog.requestImageUpload();
-    return consumed;
+    if (!consumed) return false;
+    // The place the trigger left behind, pinned before the host opens anything:
+    // the operating system's chooser can stay up for a minute, and the writer's
+    // own caret and every peer's writes move on without it. `at` describes the
+    // document the delete just produced, which is the document this anchor is
+    // taken against.
+    catalog.requestImageUpload(anchorRange(editor.state, { from: at, to: at }));
+    return true;
   }
 
+  const node = editor.schema.nodeFromJSON(target.block.node);
   const start = target.mode === "convert" ? target.from : target.pos;
   const applied = editor
     .chain()
@@ -296,7 +327,7 @@ export function applySlashCommand(
       if (target.mode === "convert") tr.replaceWith(target.from, target.to, node);
       else tr.insert(target.pos, node);
 
-      landCaret(tr, start, node.nodeSize, insertion.caret);
+      landCaret(tr, start, node.nodeSize, target.block.caret);
       return true;
     })
     .run();

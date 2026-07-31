@@ -292,9 +292,9 @@ function ActiveSessionEditorView({
   // editor, so a menu already open when the fence lands would still insert.
   const slashCommandCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable) return null;
-    return documentSlashCatalog(() =>
-      openImagePicker(editorRef.current, imageCaretTarget(editorRef.current)),
-    );
+    // The place the pick was made, not the caret when the file comes back: the
+    // chooser outlives both the writer's own caret and every peer's writes.
+    return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
   // Read when the `[[` menu opens, for the same reason as the slash catalog:

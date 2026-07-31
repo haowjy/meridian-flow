@@ -35,6 +35,20 @@ function item(id: SlashCommandId): SlashCommandItem {
   return { id, group: "text", label: id, aliases: [] };
 }
 
+/** Every entry that makes a block: the whole catalog except the picture. */
+const BLOCK_ENTRIES = [
+  "heading-1",
+  "heading-2",
+  "heading-3",
+  "bullet-list",
+  "numbered-list",
+  "quote",
+  "divider",
+  "table",
+  "diagram",
+  "code",
+] as const satisfies readonly SlashCommandId[];
+
 /**
  * Mounts a document whose last paragraph ends in `trigger`, and returns the
  * range covering it — exactly what `@tiptap/suggestion` hands `command`.
@@ -225,6 +239,11 @@ describe("slash insertion semantics", () => {
     expect(blockTypes(instance)).toEqual(["paragraph"]);
     expect(instance.state.doc.firstChild?.textContent).toBe("A portrait: ");
     expect(requestImageUpload).toHaveBeenCalledTimes(1);
+    // Mid sentence: the picture goes between the words, not after the block.
+    expect(requestImageUpload.mock.calls[0][0]).toMatchObject({
+      from: range.from,
+      to: range.from,
+    });
   });
 
   it("consumes the trigger text on every path", () => {
@@ -329,35 +348,49 @@ describe("slash insertion out of nested structures", () => {
   });
 
   /**
-   * An EMPTY cell is where the refusal used to leak. A cell holds one plain
-   * paragraph, and the image the host inserts is a paragraph too, so asking
-   * "may this block replace the empty one" answered yes — and the pick then
-   * went out through the host's picker and landed the image past the table.
-   * The question for an entry the host inserts is always "is there room for
-   * another block", and in a cell there is not.
+   * The cell's one legal act. A cell holds one plain paragraph, so every entry
+   * that makes a BLOCK has nowhere to go and says so — but a picture is an
+   * inline atom that same paragraph can hold, and refusing it too left the
+   * writer a menu with nothing in it they could choose. Both halves are one
+   * case because the contract is the pair: one row live, ten truthfully grey.
    */
-  it("refuses Image in an empty cell like every other entry", () => {
-    const { editor: instance, range } = mountAround([
-      { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
-    ]);
+  it("keeps Image choosable in a cell while every block entry refuses", () => {
+    for (const text of ["portrait ", ""]) {
+      const { editor: instance, range } = mountAround([
+        { type: "table", content: [row(cell(`${text}${TRIGGER}`), cell("notes"))] },
+      ]);
+      const refusals = slashRefusals(instance, range, [item("image"), ...BLOCK_ENTRIES.map(item)]);
 
-    const refusals = slashRefusals(instance, range, [item("image"), item("heading-1")]);
-    expect(refusals.get("image")).toBe("table-cell");
-    expect(refusals.get("heading-1")).toBe("table-cell");
+      expect(refusals.get("image"), `in a cell saying "${text}"`).toBeUndefined();
+      expect(
+        Object.fromEntries(BLOCK_ENTRIES.map((id) => [id, refusals.get(id)])),
+        `in a cell saying "${text}"`,
+      ).toEqual(Object.fromEntries(BLOCK_ENTRIES.map((id) => [id, "table-cell"])));
+      instance.destroy();
+    }
   });
 
-  it("costs the writer nothing when Image is refused: no picker, no edit", () => {
+  /**
+   * Where the picture is asked for, rather than where the writer is standing
+   * when the file comes back. The host's chooser outlives the pick, so the lane
+   * hands over an anchored place and nothing else; a picker reading the
+   * selection then is what put a cell's picture past the whole table.
+   */
+  it("asks the host for a picture at the place the trigger left, inside the cell", () => {
     const requestImageUpload = vi.fn();
     const { editor: instance, range } = mountAround([
-      { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
+      { type: "table", content: [row(cell(`portrait ${TRIGGER}`), cell("notes"))] },
     ]);
-    const before = instance.state.doc.toJSON();
 
     const applied = applySlashCommand(instance, range, item("image"), catalog(requestImageUpload));
 
-    expect(applied).toBe(false);
-    expect(requestImageUpload).not.toHaveBeenCalled();
-    expect(instance.state.doc.toJSON()).toEqual(before);
+    expect(applied).toBe(true);
+    expect(blockTypes(instance)).toEqual(["table"]);
+    expect(instance.state.doc.textContent).toBe("portrait notes");
+    expect(requestImageUpload).toHaveBeenCalledTimes(1);
+    const [anchor] = requestImageUpload.mock.calls[0];
+    expect(anchor).toMatchObject({ from: range.from, to: range.from });
+    expect(instance.state.doc.resolve(anchor.from).node(-1).type.spec.tableRole).toBe("cell");
     expect(cellAroundCaret(instance)).toBe("cell");
   });
 
@@ -369,6 +402,7 @@ describe("slash insertion out of nested structures", () => {
 
     expect(applied).toBe(true);
     expect(requestImageUpload).toHaveBeenCalledTimes(1);
+    expect(requestImageUpload.mock.calls[0][0]).toMatchObject({ from: 1, to: 1 });
     expect(blockTypes(instance)).toEqual(["paragraph"]);
     expect(instance.state.doc.textContent).toBe("");
   });
@@ -381,14 +415,8 @@ describe("slash insertion out of nested structures", () => {
       item("heading-1"),
       item("code"),
       item("table"),
-      item("image"),
     ]);
-    expect([...cellRefusals.values()]).toEqual([
-      "table-cell",
-      "table-cell",
-      "table-cell",
-      "table-cell",
-    ]);
+    expect([...cellRefusals.values()]).toEqual(["table-cell", "table-cell", "table-cell"]);
     inCell.editor.destroy();
 
     const inProse = mountWithTrigger("She stepped through. ", "/x");
