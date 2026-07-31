@@ -12,10 +12,10 @@
  * Detach is one operation with two doors: backspacing the token and a chip's
  * × both remove the node, and `handleDocChange` (the doc diff run on every
  * update) is the single place removal is noticed. Removing a draft-created,
- * never-sent upload also deletes it server-side (ratified decision 4);
- * `markSent` at submit is what flips uploads out of the deletable set before
- * the composer clears. `@`-picked tokens are a different kind entirely and
- * this engine never touches them.
+ * never-sent upload also deletes it server-side (ratified decision 4).
+ * `markSent` releases the transport entry before the composer clears, so that
+ * clear cannot read as detach-and-delete. `@`-picked tokens are a different
+ * kind entirely and this engine never touches them.
  *
  * Failure never drops silently: a failed upload stays a token (chip shows
  * retry and ×), and the composer refuses to send past it until the writer
@@ -102,8 +102,6 @@ type UploadEntry = {
   abort: AbortController;
   /** The token left the doc; a still-flying request resolves into a delete. */
   detached: boolean;
-  /** A sent turn references this upload — never delete it on later removal. */
-  sent: boolean;
 };
 
 const defaultApi: ComposerAttachmentsApi = {
@@ -137,6 +135,14 @@ export function createComposerAttachments(
         sizeBytes: entry.file.size,
       },
     };
+  }
+
+  function forget(entry: UploadEntry): void {
+    if (entry.objectUrl) {
+      URL.revokeObjectURL(entry.objectUrl);
+      entry.objectUrl = null;
+    }
+    entries.delete(entry.uploadId);
   }
 
   function findToken(editor: Editor, uploadId: string): { node: PMNode; pos: number } | null {
@@ -194,10 +200,11 @@ export function createComposerAttachments(
         });
         entry.status = "ready";
         entry.documentId = item.documentId;
-        if (entry.detached && !entry.sent) {
+        if (entry.detached) {
           // Detached while the bytes were still in flight: the writer already
           // said "not this file", so finish the gesture they made.
           await removeQuietly(entry);
+          forget(entry);
           return;
         }
         // The server owns the final name (collision suffixing); the token's
@@ -213,7 +220,11 @@ export function createComposerAttachments(
         options.onUploadsChanged?.(entry.threadId);
       } catch {
         entry.status = "failed";
-        if (entry.detached) return;
+        if (entry.detached) {
+          // An aborted or failed detached attempt created nothing to clean up.
+          forget(entry);
+          return;
+        }
         patchToken(editor, entry.uploadId, {}, { state: "failed" });
       }
     })();
@@ -240,7 +251,6 @@ export function createComposerAttachments(
           attempt: Promise.resolve(),
           abort: new AbortController(),
           detached: false,
-          sent: false,
         };
         entries.set(entry.uploadId, entry);
         created.push(entry);
@@ -286,19 +296,18 @@ export function createComposerAttachments(
       for (const entry of entries.values()) {
         if (entry.detached || present.has(entry.uploadId)) continue;
         entry.detached = true;
-        if (entry.objectUrl) {
-          URL.revokeObjectURL(entry.objectUrl);
-          entry.objectUrl = null;
-        }
-        if (entry.sent) continue;
         if (entry.status === "uploading") {
           // The attempt's own resolution decides: abort usually wins, but a
           // request that already landed resolves into the delete instead.
           entry.abort.abort();
           continue;
         }
-        if (entry.status === "ready") void removeQuietly(entry);
+        if (entry.status === "ready") {
+          void removeQuietly(entry).then(() => forget(entry));
+          continue;
+        }
         // Failed uploads created nothing server-side; dropping the token is all.
+        forget(entry);
       }
     },
 
@@ -316,7 +325,7 @@ export function createComposerAttachments(
     markSent(doc) {
       for (const token of composerUploadTokens(doc)) {
         const entry = entries.get(token.upload.id);
-        if (entry) entry.sent = true;
+        if (entry) forget(entry);
       }
     },
 

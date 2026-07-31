@@ -160,11 +160,17 @@ describe("detach and its delete-draft-own half", () => {
     await attachments.settle();
 
     const [token] = composerUploadTokens(editor.state.doc);
+    const previewUrl = token?.upload.previewUrl;
     deleteToken(editor, token?.upload.id ?? "");
     await drain();
 
     expect(composerUploadTokens(editor.state.doc)).toEqual([]);
     expect(removed).toEqual([{ threadId: "thread-1", documentId: "document-1" }]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previewUrl);
+
+    // Once server cleanup finishes, no retained entry can accidentally retry.
+    attachments.retry(editor, token?.upload.id ?? "");
+    expect(pending).toHaveLength(1);
   });
 
   it("never deletes an upload a sent turn references", async () => {
@@ -173,7 +179,14 @@ describe("detach and its delete-draft-own half", () => {
     pending[0]?.resolve(uploadItem());
     await attachments.settle();
 
+    const [token] = composerUploadTokens(editor.state.doc);
+    const previewUrl = token?.upload.previewUrl;
     attachments.markSent(editor.state.doc);
+    // Sending is terminal immediately; the subsequent draft clear has no
+    // lifecycle work left and the original File is no longer retained.
+    attachments.retry(editor, token?.upload.id ?? "");
+    expect(pending).toHaveLength(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previewUrl);
     editor.commands.clearContent();
     await drain();
 
@@ -189,6 +202,8 @@ describe("detach and its delete-draft-own half", () => {
     expect(pending[0]?.signal?.aborted).toBe(true);
     await attachments.settle();
     expect(removed).toEqual([]);
+    attachments.retry(editor, token?.upload.id ?? "");
+    expect(pending).toHaveLength(1);
   });
 
   it("an upload that lands after its token was detached gets deleted", async () => {
@@ -203,6 +218,8 @@ describe("detach and its delete-draft-own half", () => {
     await drain();
 
     expect(removed).toEqual([{ threadId: "thread-1", documentId: "document-9" }]);
+    attachments.retry(editor, token?.upload.id ?? "");
+    expect(pending).toHaveLength(1);
   });
 });
 
@@ -221,5 +238,23 @@ describe("failure stays loud", () => {
     pending[1]?.resolve(uploadItem());
     await attachments.settle();
     expect(composerUploadTokens(editor.state.doc)[0]?.upload.state).toBe("ready");
+  });
+
+  it("forgets a failed upload only after the writer removes its token", async () => {
+    const { editor, attachments, pending } = mount();
+    attachments.attachFiles(editor, [file()]);
+    pending[0]?.reject(new Error("network down"));
+    await attachments.settle();
+
+    const [token] = composerUploadTokens(editor.state.doc);
+    const previewUrl = token?.upload.previewUrl;
+    // Failure itself remains retriable and therefore retained.
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+
+    deleteToken(editor, token?.upload.id ?? "");
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previewUrl);
+    attachments.retry(editor, token?.upload.id ?? "");
+    expect(pending).toHaveLength(1);
   });
 });
