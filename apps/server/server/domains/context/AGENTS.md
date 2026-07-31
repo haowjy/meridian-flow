@@ -8,6 +8,11 @@ default to `manuscript://`.
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,
 never scheme-specific adapters directly.
 
+Thread attachments are ordinary documents in the thread's primary Work
+`uploads://` source plus a `thread_documents` provenance row. The import path
+keeps the original filename and allocates collisions as `name-2.ext`,
+`name-3.ext`, and so on; do not add a second upload source.
+
 Text creation and writes must resolve the document filetype and use the collab
 document engine. Never seed Yjs by hand with an assumed markdown schema.
 

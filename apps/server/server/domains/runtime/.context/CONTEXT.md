@@ -182,4 +182,7 @@ facet.
   `turnRunner.startTurn` / `turnRunner.cancel`; composition wires adapters.
 - **The loop has no direct dependency on `domains/context`** — it depends on
   `ImageAssetPort`. The runtime image adapter is the composition-facing bridge
-  over context document metadata, thread-upload attachments, and object storage.
+  over context document metadata, thread attachments, and object storage.
+  An upload reference must name an attached document and match that document's
+  current Work-scoped `uploads://` URI. An omitted authority resolves against
+  the thread's primary Work; attachment membership alone is insufficient.

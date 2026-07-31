@@ -7,6 +7,7 @@ import type { FigureDocumentRepository } from "../../context/ports/figure-docume
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import { objectStoreKeyFromStorageUrl } from "../../storage/index.js";
+import type { ThreadWorksRepository } from "../../threads/index.js";
 import type {
   ImageAssetContext,
   ImageAssetPort,
@@ -22,6 +23,7 @@ interface ImageStorageRecord {
 export interface ContextImageAssetAdapterDeps {
   figures: FigureDocumentRepository;
   uploads: ThreadUploadDocumentStore;
+  threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
 }
@@ -55,7 +57,15 @@ async function findImageStorage(
   if (!attached) return null;
   const document = await deps.uploads.getDocument(reference.documentId);
   const mediaType = imageMediaType(document?.mimeType);
-  return document?.storageUrl && mediaType
+  const authoritative = document?.uploadUri ? parseContextUri(document.uploadUri) : null;
+  const uriMatches =
+    authoritative?.ok && parsed.value.authority
+      ? authoritative.value.canonical === parsed.value.canonical
+      : authoritative?.ok
+        ? authoritative.value.path === parsed.value.path &&
+          document?.workId === (await deps.threadWorks.findPrimary(context.threadId))?.workId
+        : false;
+  return document?.projectId === context.projectId && uriMatches && document.storageUrl && mediaType
     ? {
         mediaType,
         storageUrl: document.storageUrl,

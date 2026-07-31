@@ -291,13 +291,11 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     };
   }
 
-  async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
+  async createBinaryDocumentIfAbsent(
+    input: CreateBinaryDocumentInput,
+  ): Promise<ContextDocument | null> {
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
-    if (existing) {
-      throw new Error(
-        `Duplicate binary document: ${input.name}.${input.extension} in folder ${input.folderId ?? "(root)"}`,
-      );
-    }
+    if (existing) return null;
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
@@ -317,6 +315,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     };
     this.backing.documents.set(doc.id, doc);
     return this.publicDocument(doc);
+  }
+
+  async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
+    const created = await this.createBinaryDocumentIfAbsent(input);
+    if (!created) {
+      throw new Error(
+        `Duplicate binary document: ${input.name}.${input.extension} in folder ${input.folderId ?? "(root)"}`,
+      );
+    }
+    return created;
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
