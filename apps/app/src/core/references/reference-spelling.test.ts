@@ -8,7 +8,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { type ReferenceDocumentItem, referenceSpelling } from "./reference-spelling";
+import {
+  type ReferenceDocumentItem,
+  referenceLinkSpelling,
+  referenceSpelling,
+} from "./reference-spelling";
 
 function documentItem(
   name: string,
@@ -44,5 +48,30 @@ describe("what a pick spells", () => {
     expect(referenceSpelling(documentItem("Kael|the warden"))).toBe(
       "manuscript://chapters/the-third-gate.md",
     );
+  });
+});
+
+describe("what a pick links as, for a host that writes a mark", () => {
+  it("spells the title as a wikilink when the title reaches one document", () => {
+    expect(referenceLinkSpelling(documentItem("The Third Gate"))).toEqual({
+      kind: "wikilink",
+      name: "The Third Gate",
+    });
+  });
+
+  it("keeps the title as the text and names the document by URI when two answer", () => {
+    expect(referenceLinkSpelling(documentItem("Notes", { ambiguous: true }))).toEqual({
+      kind: "uri",
+      text: "Notes",
+      uri: "manuscript://chapters/the-third-gate.md",
+    });
+  });
+
+  it("falls back to the URI for a title the wire format cannot carry", () => {
+    expect(referenceLinkSpelling(documentItem("Kael|the warden"))).toEqual({
+      kind: "uri",
+      text: "Kael|the warden",
+      uri: "manuscript://chapters/the-third-gate.md",
+    });
   });
 });

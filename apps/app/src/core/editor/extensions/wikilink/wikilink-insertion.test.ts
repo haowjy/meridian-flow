@@ -12,8 +12,10 @@ import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { ReferenceDocumentItem } from "@/core/references";
+
 import { createStandaloneEditorExtensions } from "../../config";
-import { insertWikilink } from "./wikilink-insertion";
+import { insertDocumentReference, insertWikilink } from "./wikilink-insertion";
 
 let editor: Editor | null = null;
 
@@ -41,6 +43,20 @@ function serialize(target: Editor): string {
 function triggerRange(target: Editor, typed: string): { from: number; to: number } {
   const from = target.state.doc.textContent.indexOf(typed) + 1;
   return { from, to: from + typed.length };
+}
+
+function documentRow(overrides: Partial<ReferenceDocumentItem> = {}): ReferenceDocumentItem {
+  return {
+    kind: "document",
+    key: "document-0",
+    name: "Notes",
+    location: "Book 2",
+    documentId: "document-notes",
+    uri: "manuscript://book-2/notes.md",
+    matchedAlias: null,
+    ambiguous: false,
+    ...overrides,
+  };
 }
 
 describe("choosing a row inserts a wikilink", () => {
@@ -89,6 +105,57 @@ describe("choosing a row inserts a wikilink", () => {
 
     expect(insertWikilink(target, triggerRange(target, "[["), "  Warden Ilsever  ")).toBe(true);
     expect(serialize(target)).toBe("[[Warden Ilsever]]\n");
+  });
+
+  it("writes an unambiguous document row exactly as the bare name inserts", () => {
+    const target = editorWith("<p>@not</p>");
+    const other = editorWith("<p>@not</p>");
+
+    const done = insertDocumentReference(target, triggerRange(target, "@not"), documentRow());
+    expect(done).toBe(true);
+    insertWikilink(other, triggerRange(other, "@not"), "Notes");
+
+    expect(target.state.doc.toJSON()).toEqual(other.state.doc.toJSON());
+    // `editorWith` remembers only the last editor for teardown.
+    target.destroy();
+  });
+
+  it("names an ambiguous pick by its canonical URI, labeled with the title", () => {
+    const target = editorWith("<p>She kept it in @not</p>");
+
+    const done = insertDocumentReference(
+      target,
+      triggerRange(target, "@not"),
+      documentRow({ ambiguous: true }),
+    );
+
+    expect(done).toBe(true);
+    expect(target.state.doc.toJSON().content[0].content).toEqual([
+      { type: "text", text: "She kept it in " },
+      {
+        type: "text",
+        text: "Notes",
+        marks: [{ type: "link", attrs: { href: "manuscript://book-2/notes.md", title: null } }],
+      },
+    ]);
+    expect(serialize(target)).toBe("She kept it in [Notes](manuscript://book-2/notes.md)\n");
+  });
+
+  it("round-trips the labeled URI shape back into the same document", () => {
+    const target = editorWith("<p>@not</p>");
+    insertDocumentReference(target, triggerRange(target, "@not"), documentRow({ ambiguous: true }));
+
+    const codec = mdxCodec({
+      schema: target.schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+      components: {},
+    });
+    const reparsed = codec.parse(serialize(target)).blocks;
+
+    expect(serialize(target)).toBe("[Notes](manuscript://book-2/notes.md)\n");
+    expect(reparsed.map((block) => block.toJSON())).toEqual(
+      target.state.doc.content.content.map((block) => block.toJSON()),
+    );
   });
 
   it("refuses a name the wire format cannot carry, rather than writing half of one", () => {

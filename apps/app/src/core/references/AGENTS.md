@@ -46,6 +46,12 @@ URI when the title is ambiguous or the wire format cannot carry it.
 - **A trigger's own spelling is the trigger's own guard.** `]` or `|` cannot
   ride inside `[[…]]`, so the `[[` lane refuses that query before asking here.
   A rule that is true of one trigger's brackets does not belong in the rank.
+- **Browsing keeps a seat for every kind in scope.** An empty query ranks
+  every candidate equal, and documents sort ahead of assets on ties, so the
+  twenty-row cap alone would starve pictures out of a document-heavy project.
+  While the writer is still browsing, assets keep a small floor under the same
+  total; a typed query spends the whole cap on fit, kind-blind, because that
+  is the ranking.
 - **One ranking implementation, forever.** A second one is two menus that
   disagree about one query, and one of them disagrees with the server.
 - **The create row is a row, not a footer**, because the keyboard has to reach

@@ -29,4 +29,9 @@ export {
   type ReferenceItemOf,
   type ReferenceKind,
 } from "./reference-catalog";
-export { type ReferenceDocumentItem, referenceSpelling } from "./reference-spelling";
+export {
+  type ReferenceDocumentItem,
+  type ReferenceLinkSpelling,
+  referenceLinkSpelling,
+  referenceSpelling,
+} from "./reference-spelling";

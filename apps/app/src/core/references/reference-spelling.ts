@@ -17,7 +17,28 @@ import type { ReferenceItem } from "./reference-catalog";
 /** A document row, without the create row a `document` scope also produces. */
 export type ReferenceDocumentItem = Extract<ReferenceItem, { kind: "document" }>;
 
+/**
+ * The one policy for what a picked document links as, whichever host asks.
+ *
+ * A URI pick keeps the title as what the writer reads; a host that can only
+ * splice a string drops the label and spells the URI alone. This lives here
+ * rather than in either host so the editor's `@` and the composer's `@`
+ * cannot drift: one catalog row, one answer.
+ */
+export type ReferenceLinkSpelling =
+  | { kind: "wikilink"; name: string }
+  | { kind: "uri"; text: string; uri: string };
+
+export function referenceLinkSpelling(item: ReferenceDocumentItem): ReferenceLinkSpelling {
+  if (!item.ambiguous) {
+    const href = normalizeLinkHref(`[[${item.name}]]`);
+    if (href) return { kind: "wikilink", name: href.slice(2, -2) };
+  }
+  return { kind: "uri", text: item.name, uri: item.uri };
+}
+
+/** The policy above, for a plain string: the wikilink's brackets or the bare URI. */
 export function referenceSpelling(item: ReferenceDocumentItem): string {
-  if (item.ambiguous) return item.uri;
-  return normalizeLinkHref(`[[${item.name}]]`) ?? item.uri;
+  const spelling = referenceLinkSpelling(item);
+  return spelling.kind === "wikilink" ? `[[${spelling.name}]]` : spelling.uri;
 }

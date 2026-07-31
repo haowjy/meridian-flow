@@ -114,6 +114,18 @@ export const MAX_REFERENCE_QUERY_LENGTH = 80;
 const MAX_CANDIDATE_ROWS = 20;
 
 /**
+ * Browsing keeps a seat for pictures. An empty query ranks every candidate
+ * equal, and documents sort ahead of assets on ties, so a project past twenty
+ * documents would fill the whole cap with them — the menu would read "no
+ * pictures" when the truth is "type to narrow". So while the writer is still
+ * browsing, assets keep a floor of rows (fewer when fewer exist, more when the
+ * documents cannot fill their share), and the total still honors the cap. A
+ * typed query is not this: it ranks by fit and takes the top rows regardless
+ * of kind.
+ */
+const BROWSE_ASSET_FLOOR = 4;
+
+/**
  * The rows for what the writer has typed after a trigger.
  *
  * An empty list closes the menu (law 5). A trigger whose own spelling cannot
@@ -131,29 +143,29 @@ export function filterReferenceItems<TKind extends ReferenceKind>(
 
   const inScope = candidates.filter((candidate) => kinds.includes(candidate.kind));
   const duplicated = duplicatedTitles(inScope);
-  const matched: ReferenceItem[] = rank(inScope, name)
-    .slice(0, MAX_CANDIDATE_ROWS)
-    .map(({ candidate, matchedAlias }, index) =>
-      candidate.kind === "document"
-        ? {
-            kind: "document",
-            key: `document-${index}-${candidate.title}`,
-            name: candidate.title,
-            location: candidate.location,
-            documentId: candidate.documentId,
-            uri: candidate.uri,
-            matchedAlias,
-            ambiguous: duplicated.has(normalized(candidate.title)),
-          }
-        : {
-            kind: "asset",
-            key: `asset-${index}-${candidate.name}`,
-            name: candidate.name,
-            location: candidate.location,
-            assetDocumentId: candidate.assetDocumentId,
-            path: candidate.path,
-          },
-    );
+  const ranked = rank(inScope, name);
+  const capped = name ? ranked.slice(0, MAX_CANDIDATE_ROWS) : browseRows(ranked);
+  const matched: ReferenceItem[] = capped.map(({ candidate, matchedAlias }, index) =>
+    candidate.kind === "document"
+      ? {
+          kind: "document",
+          key: `document-${index}-${candidate.title}`,
+          name: candidate.title,
+          location: candidate.location,
+          documentId: candidate.documentId,
+          uri: candidate.uri,
+          matchedAlias,
+          ambiguous: duplicated.has(normalized(candidate.title)),
+        }
+      : {
+          kind: "asset",
+          key: `asset-${index}-${candidate.name}`,
+          name: candidate.name,
+          location: candidate.location,
+          assetDocumentId: candidate.assetDocumentId,
+          path: candidate.path,
+        },
+  );
 
   // Naming a document that already exists is how a writer makes their own link
   // ambiguous, so the create row steps aside for an exact match. An asset of the
@@ -170,6 +182,23 @@ export function filterReferenceItems<TKind extends ReferenceKind>(
   // document scope reaches. The compiler cannot follow that through the map, so
   // the promise the signature makes is asserted once, here.
   return items as ReferenceItemOf<TKind>[];
+}
+
+/**
+ * The browse-state cap: documents first and most, assets never starved. The
+ * ranked list already reads documents-then-assets in tree order, so taking a
+ * slice of each keeps that order intact.
+ */
+function browseRows(
+  ranked: readonly { candidate: ReferenceCandidate; matchedAlias: string | null }[],
+): { candidate: ReferenceCandidate; matchedAlias: string | null }[] {
+  if (ranked.length <= MAX_CANDIDATE_ROWS) return [...ranked];
+  const assets = ranked.filter(({ candidate }) => candidate.kind === "asset");
+  const floor = Math.min(assets.length, BROWSE_ASSET_FLOOR);
+  const documents = ranked
+    .filter(({ candidate }) => candidate.kind !== "asset")
+    .slice(0, MAX_CANDIDATE_ROWS - floor);
+  return [...documents, ...assets.slice(0, MAX_CANDIDATE_ROWS - documents.length)];
 }
 
 type RankedCandidate = {

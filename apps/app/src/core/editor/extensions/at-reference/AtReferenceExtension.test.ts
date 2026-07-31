@@ -13,6 +13,8 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { classifyLinkTarget } from "@/core/links";
+
 import { createStandaloneEditorExtensions } from "../../config";
 import { getWikilinkMenu } from "../wikilink";
 import { getAtReferenceMenu } from "./AtReferenceExtension";
@@ -64,8 +66,8 @@ function document(title: string, location: string) {
 }
 
 /** Both reference lanes, because the document rows they write must agree. */
-function mount(content = "<p></p>") {
-  let catalog: AtReferenceCatalog | null = CATALOG;
+function mount(content = "<p></p>", offered: AtReferenceCatalog = CATALOG) {
+  let catalog: AtReferenceCatalog | null = offered;
   const instance = new Editor({
     extensions: createStandaloneEditorExtensions({
       atReferences: { catalog: () => catalog },
@@ -245,6 +247,39 @@ describe("what choosing an `@` row writes", () => {
     expect(editor.state.doc.firstChild?.firstChild?.marks[0]?.attrs.href).toBe(
       "[[The Third Gate]]",
     );
+  });
+
+  it("names an ambiguous document by canonical URI, labeled with the title", async () => {
+    // Two documents answer to "Notes", so `[[Notes]]` would resolve to neither
+    // and land dashed the instant it was inserted. The pick keeps the title as
+    // what the writer reads and carries the row's own URI as the href.
+    const { editor } = mount("<p></p>", {
+      ...CATALOG,
+      candidates: [
+        {
+          ...document("Notes", "Book 1"),
+          documentId: "document-notes-1",
+          uri: "manuscript://book-1/notes.md",
+        },
+        {
+          ...document("Notes", "Book 2"),
+          documentId: "document-notes-2",
+          uri: "manuscript://book-2/notes.md",
+        },
+      ],
+    });
+    await type(editor, "She kept it in @notes");
+    menu(editor)?.chooseActive();
+
+    expect(editor.state.doc.textContent).toBe("She kept it in Notes");
+    const href = editor.state.doc.toJSON().content[0].content[1].marks[0].attrs.href;
+    expect(href).toBe("manuscript://book-1/notes.md");
+    // A scheme href resolves by identity, never by name: the link cannot open
+    // in the unresolved state the wikilink spelling would have landed in.
+    expect(classifyLinkTarget(href)).toEqual({
+      kind: "scheme",
+      uri: "manuscript://book-1/notes.md",
+    });
   });
 
   it("writes an asset as the inline picture the upload path lands", async () => {

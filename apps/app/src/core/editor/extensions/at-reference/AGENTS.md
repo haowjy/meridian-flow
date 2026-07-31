@@ -15,10 +15,13 @@ renders it is
 
 **One primitive, two doors.** `@` deliberately overlaps `[[` on documents, and
 a document picked here becomes the same link mark `[[` writes — same text, same
-href, byte for byte. It is not a second reference construct; it is the same one
-reached by writers with a different habit, and the habit generalizes: an asset
-picked here becomes the inline `image` node the upload path lands. Phase 1 adds
-no wire spelling.
+href, byte for byte — except an ambiguous title, where the shared spelling
+policy (`core/references`) keeps the title as the text and carries the pick's
+canonical URI as the href, because the resolver refuses a name two documents
+answer to. It is not a second reference construct; it is the same one reached
+by writers with a different habit, and the habit generalizes: an asset picked
+here becomes the inline `image` node the upload path lands. Phase 1 adds no
+wire spelling.
 
 **`@` is prose until it is a request.** Two brackets are already unambiguous; a
 lone `@` is a preposition, half an address, and a handle someone is quoting. So
@@ -50,8 +53,11 @@ those apart:
 
 ## Anti-patterns
 
-- Writing a document reference any way but `insertWikilink`. A second spelling
-  of one meaning is two things every consumer must treat as one, forever.
+- Writing a document reference any way but the wikilink lane's insertion
+  (`insertDocumentReference` for a catalog row, `insertWikilink` for a bare
+  name). A second spelling of one meaning is two things every consumer must
+  treat as one, forever — and a branch on `ambiguous` in this lane is that
+  drift starting: which shape a row gets is `referenceLinkSpelling`'s call.
 - Inserting the `figure` node for an asset. The inline `image` is the object
   §5.6 settled; `figure` is a different dialect contract.
 - A kind-specific ranking rule here or in the engine. Kinds differ in what a
