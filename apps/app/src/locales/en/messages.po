@@ -2140,6 +2140,10 @@ msgstr "Required"
 msgid "Reset column widths"
 msgstr "Reset column widths"
 
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
+msgid "Reset size"
+msgstr "Reset size"
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr "Resize right rail"
