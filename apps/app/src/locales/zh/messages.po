@@ -216,6 +216,7 @@ msgid "A folder named {trimmed} already exists in this location."
 msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
+#: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
 msgstr ""
 
