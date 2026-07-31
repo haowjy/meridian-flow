@@ -2,10 +2,11 @@
 /**
  * Paste over a swept rectangle of cells is a replace of the sweep.
  *
- * Every case runs the real paste pipeline (`pasteText` / `pasteHTML`), because
- * the subject is the seam between three answers: the markdown clipboard
- * parser, this module's sweep replace, and prosemirror-tables' rectangle
- * overwrite for table content. Which one answers is the behavior under test.
+ * Every case runs the real paste pipeline (a dispatched paste event, or
+ * ProseMirror's own `pasteHTML`), because the subject is the seam between
+ * three answers: the markdown clipboard parser, this module's sweep replace,
+ * and prosemirror-tables' rectangle overwrite for table content. Which one
+ * answers is the behavior under test.
  */
 import type { Editor, JSONContent } from "@tiptap/core";
 import { history, undo } from "@tiptap/pm/history";
@@ -80,6 +81,20 @@ function caretInCell(editor: Editor, index: number): void {
   editor.view.dispatch(editor.state.tr.setSelection(TextSelection.near(end, -1)));
 }
 
+/**
+ * A real paste of clipboard text, through the view's own paste handler, so the
+ * markdown clipboard parser runs. `view.pasteText` deliberately asks for the
+ * plain-text path (its `plain` flag is hardwired true), which would skip the
+ * parser this suite depends on.
+ */
+function pasteMarkdown(editor: Editor, text: string): void {
+  const event = new ClipboardEvent("paste", { cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: { getData: (type: string) => (type === "text/plain" ? text : "") },
+  });
+  editor.view.dom.dispatchEvent(event);
+}
+
 /** What each cell holds: its child block types and its flattened text. */
 function cellSnapshots(editor: Editor): { blocks: string[]; text: string }[] {
   const cells: { blocks: string[]; text: string }[] = [];
@@ -98,14 +113,18 @@ function cellSnapshots(editor: Editor): { blocks: string[]; text: string }[] {
 }
 
 describe("a caret in a cell takes the clipboard like prose", () => {
-  it("inserts a multi-block clipboard inside the cell", () => {
+  // The shape is ProseMirror's slice fitting, identical to the same paste at
+  // a top-level paragraph: the first block's text joins the caret's sentence
+  // and the rest stand as blocks after it. The claim is parity, not a
+  // cell-only dialect.
+  it("inserts a multi-block clipboard inside the cell, fitted as in prose", () => {
     const editor = mount([table2x3]);
     caretInCell(editor, 4);
 
-    editor.view.pasteText("## Heading\n\nAnd prose.");
+    pasteMarkdown(editor, "## Heading\n\nAnd prose.");
 
     expect(cellSnapshots(editor)[4]).toEqual({
-      blocks: ["paragraph", "heading", "paragraph"],
+      blocks: ["paragraph", "paragraph"],
       text: "b2HeadingAnd prose.",
     });
     // The neighbours never hear about it.
@@ -113,11 +132,26 @@ describe("a caret in a cell takes the clipboard like prose", () => {
     expect(cellSnapshots(editor)[5]).toEqual({ blocks: ["paragraph"], text: "b3" });
   });
 
+  it("replaces a text selection with the clipboard's blocks, structure intact", () => {
+    const editor = mount([table2x3]);
+    const pos = cellPositions(editor)[4];
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos + 2, pos + 4)),
+    );
+
+    pasteMarkdown(editor, "## Heading\n\nAnd prose.");
+
+    expect(cellSnapshots(editor)[4]).toEqual({
+      blocks: ["heading", "paragraph"],
+      text: "HeadingAnd prose.",
+    });
+  });
+
   it("still joins a single styled paragraph into the cell's sentence", () => {
     const editor = mount([table2x3]);
     caretInCell(editor, 4);
 
-    editor.view.pasteText("a **bold** word");
+    pasteMarkdown(editor, "a **bold** word");
 
     expect(cellSnapshots(editor)[4]).toEqual({ blocks: ["paragraph"], text: "b2a bold word" });
   });
@@ -128,7 +162,7 @@ describe("a sweep is a selection: paste replaces it", () => {
     const editor = mount([table2x3]);
     sweep(editor, 0, 4);
 
-    editor.view.pasteText("## Heading\n\nAnd prose.");
+    pasteMarkdown(editor, "## Heading\n\nAnd prose.");
 
     expect(cellSnapshots(editor)).toEqual([
       { blocks: ["heading", "paragraph"], text: "HeadingAnd prose." },
@@ -144,7 +178,7 @@ describe("a sweep is a selection: paste replaces it", () => {
     const editor = mount([table2x3]);
     sweep(editor, 4, 0);
 
-    editor.view.pasteText("## Heading\n\nAnd prose.");
+    pasteMarkdown(editor, "## Heading\n\nAnd prose.");
 
     const cells = cellSnapshots(editor);
     expect(cells[0]).toEqual({ blocks: ["heading", "paragraph"], text: "HeadingAnd prose." });
@@ -157,7 +191,7 @@ describe("a sweep is a selection: paste replaces it", () => {
     const before = editor.state.doc.toJSON();
     sweep(editor, 0, 4);
 
-    editor.view.pasteText("## Heading\n\nAnd prose.");
+    pasteMarkdown(editor, "## Heading\n\nAnd prose.");
     expect(cellSnapshots(editor)[0].blocks).toEqual(["heading", "paragraph"]);
 
     undo(editor.view.state, editor.view.dispatch);
