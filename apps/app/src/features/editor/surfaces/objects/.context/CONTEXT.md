@@ -63,12 +63,12 @@ holding a `NodeHold` like every other surface here. Three rules:
   Radix's own entry focus is declined: it would take the first control, which is
   the wrong one whenever the writer picked Caption or Label.
 
-Replace runs `openImageReplacePicker` from `core/editor/images`: the same upload
-lifecycle as an insert, aimed at the node that is already there, so the writer's
-alt text, caption, and label survive and the manuscript does not move. The menu
-hands it a `holdNode` of the target rather than the target's position — the file
-chooser is open across peer writes and AI writes, and the ingress lane resolves
-that hold only once a file comes back.
+Replace runs `openImagePicker` from `core/editor/images` with an
+`imageReplaceTarget`: the same upload lifecycle as an insert, aimed at the node
+that is already there, so the writer's alt text, caption, and label survive and
+the manuscript does not move. The target is a hold of the node rather than its
+position — the file chooser is open across peer writes and AI writes, and the
+ingress lane resolves that hold only once a file comes back.
 
 ## The approach reading
 

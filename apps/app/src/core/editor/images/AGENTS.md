@@ -156,17 +156,23 @@ every door refuses out loud rather than opening onto nothing.
 - **One entry per upload.** Two pictures arriving together are two lifecycles.
   Nothing about one upload gates another, which is why the toolbar's image
   control has no busy state.
-- **Replace is an upload aimed at a slot that already exists, and it holds that
-  slot.** The object surface's Replace verb (§5.6) hands
-  `openImageReplacePicker` a `NodeHold` and never a position: the writer is in
+- **The picker aims at a HELD target, never at a number.** The writer is in
   front of an operating-system dialog while peers and AI writes move the
-  document, and a number aimed at a picture then aims at prose or at somebody
-  else's picture. The hold is resolved after the file comes back and the node is
-  read back as a registered image surface; a picture that is gone cancels out
-  loud, with no entry opened and no asset uploaded. Then the ordinary lifecycle
-  runs on that node, so nothing is inserted or removed and the alt text and a
-  figure's caption and label survive. It works for the `figure` node for the same
-  reason: the landing writes `src` on whatever node the hold resolves to.
+  document, so a position taken before the dialog opened means something else by
+  the time a file comes back. `openImagePicker` therefore takes one
+  `ImagePickerTarget` and nothing else: an `EditorAnchor` for a new picture
+  (`imageCaretTarget`, or the anchor the slash lane pins where its trigger text
+  was), a `NodeHold` for §5.6's Replace (`imageReplaceTarget`). Each is resolved
+  when the file arrives and read back before anything is opened — the place
+  through `acceptsInlineImage`, the node through `objectSurfaceKind` — and a
+  target that is gone refuses out loud, with no entry opened and no asset
+  uploaded. Nothing falls back to the selection or hunts for another home: a
+  picture that appeared past the table the writer asked from is what this
+  contract exists to prevent. Replace then runs the ordinary lifecycle on the
+  node that was already there, so nothing is inserted or removed and the alt
+  text and a figure's caption and label survive; it works for `figure` for the
+  same reason, since the landing writes `src` on whatever node the hold
+  resolves to.
 - **What one undo takes back depends on how the slot was opened.** The entry
   carries it (`landing`). An INSERT's landing stays out of history, because the
   insert already IS the writer's event and undo should take the picture away

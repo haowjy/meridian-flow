@@ -35,16 +35,24 @@ Each step's rule:
   size, bounded by the prose column, sitting on the text baseline either way.
   Insert and drop are deliberately not unified — the caret is the insert's
   answer, the dropcursor is the drop's.
-- **Replace claims an existing slot, and takes hold of it first.**
-  `openImageReplacePicker` accepts a `NodeHold` — the identity the object surface
-  already carries — never a position: the operating system's chooser stays open
-  across peer writes and AI writes, and a raw number means something else by the
-  time a file comes back. After the file arrives the hold is resolved, the node is
-  read back through `objectSurfaceKind(node) === "image"`, and a picture that went
-  away refuses out loud rather than opening an entry or an upload. Then the token
-  goes on (`addToHistory: false`, because it is bookkeeping) and the ordinary
-  lifecycle runs. It works on `figure` for the same reason it works on `image`:
-  both carry the attribute, and both are registered image surfaces.
+- **The picker takes a held target, and only a held target.** `openImagePicker`
+  accepts one `ImagePickerTarget`: `{ kind: "insert", at: EditorAnchor }` for a
+  new picture, `{ kind: "replace", slot: NodeHold }` for a slot the writer
+  already placed. The operating system's chooser stays open across peer writes
+  and AI writes, and a raw number means something else by the time a file comes
+  back, so nothing may read the selection then. `imageCaretTarget` pins the
+  caret for a toolbar or menu press; the slash lane pins the position its
+  trigger text left behind and hands that anchor through the catalog callback.
+  Both kinds are resolved after the file arrives and read back before anything
+  is opened — an insert asks `acceptsInlineImage` of the resolved position, a
+  replace asks `objectSurfaceKind(node) === "image"` of the resolved node — and
+  a target that is gone refuses out loud rather than opening an entry or an
+  upload. Neither searches for somewhere else to put the picture: a picture that
+  appeared outside the table the writer asked from is a worse answer than one
+  that says it cannot go. Replace then writes the token
+  (`addToHistory: false`, because it is bookkeeping) and the ordinary lifecycle
+  runs. It works on `figure` for the same reason it works on `image`: both carry
+  the attribute, and both are registered image surfaces.
 - **The frame.** `measure-image.ts` decodes the local file for its intrinsic
   size, and that size is what the slot reserves wherever it stands. The node
   view puts it on the wrapper and REMEMBERS it, because

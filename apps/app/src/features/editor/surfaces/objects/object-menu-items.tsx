@@ -28,7 +28,12 @@ import type { ReactNode } from "react";
 
 import { holdNode } from "@/core/editor/anchors";
 import { diagramProviderFor } from "@/core/editor/diagrams";
-import { imageWidthAttr, openImageReplacePicker, setImageWidth } from "@/core/editor/images";
+import {
+  imageReplaceTarget,
+  imageWidthAttr,
+  openImagePicker,
+  setImageWidth,
+} from "@/core/editor/images";
 import { type ObjectSurfaceField, objectSurfaceFields } from "@/core/editor/objects";
 import {
   EditorMenuItem,
@@ -157,7 +162,7 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
           picture they pointed at (`core/editor/images/image-uploads.ts`). */}
       {fields.length > 0 ? (
         <EditorMenuItem
-          onSelect={() => openImageReplacePicker(editor, holdNode(editor.state, target.pos))}
+          onSelect={() => openImagePicker(editor, imageReplaceTarget(editor, target.pos))}
         >
           <ImageUp aria-hidden />
           {t`Replace image`}

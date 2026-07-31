@@ -14,12 +14,11 @@
  * on a shared document is the Yjs UndoManager rather than ProseMirror's own
  * history.
  */
-import type { Editor } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { holdNode } from "@/core/editor/anchors";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
-import { createStandaloneEditor } from "@/test-support/standalone-editor";
+import { createStandaloneEditor, requireNode } from "@/test-support/standalone-editor";
 
 // A refused door says why (law 5), and the reason is a macro the test transform
 // does not compile. The lane's copy is not what these cases are about.
@@ -36,10 +35,16 @@ if (typeof globalThis.ClipboardEvent === "undefined") {
 }
 
 import type { ImageUploadPort, UploadedImage } from "./image-ingress-ports";
-import { ingressState, registerImageIngressHost } from "./image-ingress-runtime";
 import {
+  imageIngressStatus,
+  ingressState,
+  registerImageIngressHost,
+} from "./image-ingress-runtime";
+import {
+  imageCaretTarget,
+  imageReplaceTarget,
   insertImageFile,
-  openImageReplacePicker,
+  openImagePicker,
   removePendingImage,
   retryPendingImage,
 } from "./image-uploads";
@@ -147,14 +152,14 @@ function mount(text = "The gate opened."): Ingress {
 }
 
 /** The same document, with a collaborator bound to it. */
-function mountPair(text = "The gate opened."): Ingress & {
+function mountPair(document: string | JSONContent = "The gate opened."): Ingress & {
   peer: Editor;
   sync: () => void;
   syncAwareness: () => void;
   awareness: CollabPair["awareness"];
   presence: CollabPair["presence"];
 } {
-  const pair = createCollabPair(documentSaying(text));
+  const pair = createCollabPair(typeof document === "string" ? documentSaying(document) : document);
   close = pair.destroy;
   return {
     ...withHeldPorts(pair.local),
@@ -559,6 +564,91 @@ function peerPictureBlock(editor: Editor) {
   ]);
 }
 
+/** A stat block, so the place a writer asks from is one cell of a table. */
+function documentWithTable(): JSONContent {
+  const cell = (text: string): JSONContent => ({
+    type: "table_cell",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  });
+  return {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "The gate opened." }] },
+      { type: "table", content: [{ type: "table_row", content: [cell("rank"), cell("skill")] }] },
+    ],
+  };
+}
+
+/** The paragraph this picture landed in, and the table role of whatever holds it. */
+function pictureHome(editor: Editor, alt: string): { text: string; role: unknown } {
+  const at = imageNodes(editor).find((node) => node.alt === alt)?.pos;
+  if (at === undefined) throw new Error(`no picture called ${alt} in the document`);
+  const $at = editor.state.doc.resolve(at);
+  return { text: $at.parent.textContent, role: $at.node(-1).type.spec.tableRole };
+}
+
+/**
+ * A new picture goes where it was asked for, and the ask outlives the chooser.
+ *
+ * This is the seam a slash pick from a table cell rides: the writer types `/`
+ * in a cell, picks Image, and is then in front of an operating-system dialog
+ * while their own caret and everybody else's writes move the document. A picker
+ * that read the selection when the file came back put the picture wherever the
+ * writer happened to be standing — which for a cell meant past the whole table.
+ */
+describe("a new picture lands where the writer asked for it", () => {
+  it("lands in the cell it was asked from, after the caret moves and a peer writes", async () => {
+    const { editor, peer, sync, held } = mountPair(documentWithTable());
+    const rank = requireNode(editor, { type: "paragraph", startsWith: "rank" });
+    const askedAt = rank.pos + 1 + rank.node.content.size;
+    editor.commands.setTextSelection(askedAt);
+
+    const chooseFile = openChooser(() => openImagePicker(editor, imageCaretTarget(editor)));
+
+    // The writer clicks back into the prose above while the dialog is up, and a
+    // collaborator writes a whole block in over the top of the document, so
+    // every raw number the pick was made against now means something else.
+    editor.commands.setTextSelection(2);
+    peer.view.dispatch(peer.state.tr.insert(0, peerPictureBlock(peer)));
+    sync();
+    await settle();
+
+    chooseFile(imageFile("portrait.png"));
+    await settle();
+
+    expect(held).toHaveLength(1);
+    expect(pictureHome(editor, "portrait")).toEqual({ text: "rank", role: "cell" });
+    // And the caret is after the picture, in the same cell: the writer is where
+    // the picture is, not where they clicked while they waited.
+    expect(editor.state.selection.$from.node(-1).type.spec.tableRole).toBe("cell");
+  });
+
+  it("refuses out loud when the place is gone by the time the file comes back", async () => {
+    const { editor, peer, sync, held } = mountPair(documentWithTable());
+    const rank = requireNode(editor, { type: "paragraph", startsWith: "rank" });
+    editor.commands.setTextSelection(rank.pos + 1);
+    const table = requireNode(editor, "table");
+
+    const chooseFile = openChooser(() => openImagePicker(editor, imageCaretTarget(editor)));
+
+    // The collaborator takes the whole table away. There is no cell to land in,
+    // and landing anywhere else would be a picture the writer never asked for.
+    peer.view.dispatch(peer.state.tr.delete(table.pos, table.pos + table.node.nodeSize));
+    sync();
+    await settle();
+
+    chooseFile(imageFile("portrait.png"));
+    await settle();
+
+    expect(held).toEqual([]);
+    expect(imageNodes(editor)).toEqual([]);
+    expect(pendingImages(editor)).toEqual([]);
+    expect(imageIngressStatus(editor)?.getSnapshot().notice?.message).toBe(
+      "There is nowhere left to put that picture.",
+    );
+  });
+});
+
 describe("Replace aims at the picture the writer pointed at", () => {
   it("lands on the original picture after a peer writes a picture in above", async () => {
     const { editor, peer, sync, held } = mountPair();
@@ -569,7 +659,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     sync();
 
     const chooseFile = openChooser(() =>
-      openImageReplacePicker(editor, holdNode(editor.state, imageNodes(editor)[0].pos)),
+      openImagePicker(editor, imageReplaceTarget(editor, imageNodes(editor)[0].pos)),
     );
 
     // The peer's block arrives while the chooser is still open, and its own
@@ -595,9 +685,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     await settle();
 
     const at = imageNodes(editor)[0].pos;
-    const chooseFile = openChooser(() =>
-      openImageReplacePicker(editor, holdNode(editor.state, at)),
-    );
+    const chooseFile = openChooser(() => openImagePicker(editor, imageReplaceTarget(editor, at)));
     editor.view.dispatch(editor.state.tr.delete(at, at + 1));
     await settle();
 
@@ -624,7 +712,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     await settle();
 
     const chooseFile = openChooser(() =>
-      openImageReplacePicker(editor, holdNode(editor.state, imageNodes(editor)[0].pos)),
+      openImagePicker(editor, imageReplaceTarget(editor, imageNodes(editor)[0].pos)),
     );
     chooseFile(imageFile("replacement.png"));
     await settle();
