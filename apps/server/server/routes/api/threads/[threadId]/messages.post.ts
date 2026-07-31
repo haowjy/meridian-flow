@@ -9,9 +9,9 @@ import {
 } from "nitro/h3";
 import { StaleConnectionTokenError } from "../../../../domains/runtime/loop/turn-runner.js";
 import {
+  filterAvailableUserMessageImageReferences,
   InvalidUserMessageBlocksError,
   parseUserMessageBlocks,
-  validateUserMessageImageReferences,
 } from "../../../../domains/runtime/loop/user-message-blocks.js";
 import { TurnStartConflictError } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
@@ -28,15 +28,16 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
   const thread = await app.threadRuntime.requireOwnedThread(threadId, user.userId);
   try {
     const blocks = parseUserMessageBlocks(body.blocks, body.text);
-    await validateUserMessageImageReferences(
+    const availableBlocks = await filterAvailableUserMessageImageReferences(
       blocks,
       { threadId, projectId: thread.projectId },
       app.imageAssets,
+      app.eventSink,
     );
     const result = await app.runner.startTurn({
       threadId,
       userText: body.text,
-      userBlocks: body.blocks ? blocks : undefined,
+      userBlocks: body.blocks ? availableBlocks : undefined,
       connectionToken: body.connectionToken,
     });
     setResponseStatus(event, 202);

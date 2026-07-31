@@ -8,6 +8,7 @@ import type {
   PersistedImageReference,
   UserMessageBlock,
 } from "@meridian/contracts/threads";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ImageAssetContext, ImageAssetPort } from "../ports/image-asset.js";
 import { contentForBlockInput } from "./block-helpers.js";
 
@@ -98,24 +99,61 @@ export function parseUserMessageBlocks(value: unknown, fallbackText: string): Us
   return blocks;
 }
 
-export async function validateUserMessageImageReferences(
+export async function filterAvailableUserMessageImageReferences(
   blocks: readonly UserMessageBlock[],
   context: ImageAssetContext,
   imageAssets: ImageAssetPort,
-): Promise<void> {
-  const validity = new Map<string, Promise<boolean>>();
-  for (const [index, block] of blocks.entries()) {
+  eventSink: EventSink,
+): Promise<UserMessageBlock[]> {
+  const availability = new Map<
+    string,
+    Promise<{ available: boolean; error?: Record<string, unknown> }>
+  >();
+  const kept: UserMessageBlock[] = [];
+  for (const block of blocks) {
     if (block.type !== "image") continue;
     const reference = persistedImageReference(block);
     const key = `${reference.documentId}\0${reference.uri}`;
-    const valid = validity.get(key) ?? imageAssets.isValidReference(context, reference);
-    validity.set(key, valid);
-    if (!(await valid)) {
-      throw new InvalidUserMessageBlocksError(
-        `blocks[${index}] does not reference an image available to this thread`,
-      );
-    }
+    const result =
+      availability.get(key) ??
+      imageAssets
+        .isValidReference(context, reference)
+        .then((available) => ({ available }))
+        .catch((error: unknown) => ({
+          available: false,
+          error: unknownToEventPayload(error),
+        }));
+    availability.set(key, result);
   }
+
+  for (const block of blocks) {
+    if (block.type !== "image") {
+      kept.push(block);
+      continue;
+    }
+    const reference = persistedImageReference(block);
+    const result = await availability.get(`${reference.documentId}\0${reference.uri}`);
+    if (result?.available) {
+      kept.push(block);
+      continue;
+    }
+    emitEvent(eventSink, {
+      level: "warn",
+      source: "runtime.user-message",
+      name: "image_reference.dropped",
+      correlation: {
+        threadId: context.threadId,
+        documentId: reference.documentId,
+      },
+      payload: {
+        projectId: context.projectId,
+        uri: reference.uri,
+        reason: result?.error ? "availability_check_failed" : "unavailable",
+        ...result?.error,
+      },
+    });
+  }
+  return kept;
 }
 
 export function persistedImageReference(

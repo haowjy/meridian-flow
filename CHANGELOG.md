@@ -11,10 +11,11 @@
   match that document's authoritative Work URI.
 - `apps/server`, `packages/contracts`: thread messages can carry ordered image
   references to manuscript assets and thread uploads. Vision models receive
-  request-time image parts; other models and deleted assets keep the
-  surrounding text without failing the turn. Manuscript images resolve by
-  document identity at any path, not by an `assets/` folder convention. Thread
-  snapshots now expose the resolved model capability list.
+  request-time image parts; unavailable references are dropped with a
+  diagnostic while the writer's surrounding prose still starts the turn.
+  Manuscript images resolve by document identity at any path, not by an
+  `assets/` folder convention. Thread snapshots now expose the resolved model
+  capability list.
 - `apps/app`: dragging a picture onto a table's cell border no longer grows
   the table a new column. The drop lands inside the nearest cell's paragraph
   (or refuses when nothing can host it), the drop caret shown during the drag

@@ -1,14 +1,15 @@
 /** Contract coverage for ordered append-block parsing and image-reference authorization. */
 
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import {
   contentBlocksForUserMessage,
+  filterAvailableUserMessageImageReferences,
   InvalidUserMessageBlocksError,
   MAX_USER_MESSAGE_BLOCKS,
   MAX_USER_MESSAGE_IMAGES,
   parseUserMessageBlocks,
-  validateUserMessageImageReferences,
 } from "./user-message-blocks.js";
 
 const documentId = "11111111-1111-4111-8111-111111111111";
@@ -153,11 +154,14 @@ describe("user message blocks", () => {
       `Look at ${uri}`,
     );
 
-    await validateUserMessageImageReferences(
-      blocks,
-      { projectId: "project-1", threadId: "thread-1" },
-      imageAssets,
-    );
+    await expect(
+      filterAvailableUserMessageImageReferences(
+        blocks,
+        { projectId: "project-1", threadId: "thread-1" },
+        imageAssets,
+        createInMemoryEventSink(),
+      ),
+    ).resolves.toEqual(blocks);
 
     expect(isValidReference).toHaveBeenCalledWith(
       { projectId: "project-1", threadId: "thread-1" },
@@ -167,7 +171,7 @@ describe("user message blocks", () => {
 
   it("deduplicates authorization for repeated identical references", async () => {
     const isValidReference = vi.fn().mockResolvedValue(true);
-    await validateUserMessageImageReferences(
+    await filterAvailableUserMessageImageReferences(
       [
         { type: "text", text: uri },
         { type: "image", documentId, uri },
@@ -175,12 +179,13 @@ describe("user message blocks", () => {
       ],
       { projectId: "project-1", threadId: "thread-1" },
       { isValidReference, resolve: vi.fn() },
+      createInMemoryEventSink(),
     );
 
     expect(isValidReference).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects image references unavailable to the thread", async () => {
+  it("drops image references unavailable to the thread and emits diagnostics", async () => {
     const blocks = parseUserMessageBlocks(
       [
         { type: "text", text: `Look at ${uri}` },
@@ -188,9 +193,10 @@ describe("user message blocks", () => {
       ],
       `Look at ${uri}`,
     );
+    const eventSink = createInMemoryEventSink();
 
     await expect(
-      validateUserMessageImageReferences(
+      filterAvailableUserMessageImageReferences(
         blocks,
         { projectId: "project-1", threadId: "thread-1" },
         {
@@ -201,7 +207,48 @@ describe("user message blocks", () => {
             return null;
           },
         },
+        eventSink,
       ),
-    ).rejects.toThrow(/available to this thread/);
+    ).resolves.toEqual([{ type: "text", text: `Look at ${uri}` }]);
+    expect(eventSink.events).toContainEqual(
+      expect.objectContaining({
+        source: "runtime.user-message",
+        name: "image_reference.dropped",
+        correlation: { threadId: "thread-1", documentId },
+        payload: expect.objectContaining({ uri, reason: "unavailable" }),
+      }),
+    );
+  });
+
+  it("degrades when the availability check itself fails", async () => {
+    const eventSink = createInMemoryEventSink();
+    const blocks = [
+      { type: "text" as const, text: `Look at ${uri}` },
+      { type: "image" as const, documentId, uri },
+    ];
+
+    await expect(
+      filterAvailableUserMessageImageReferences(
+        blocks,
+        { projectId: "project-1", threadId: "thread-1" },
+        {
+          async isValidReference() {
+            throw new Error("metadata store unavailable");
+          },
+          async resolve() {
+            return null;
+          },
+        },
+        eventSink,
+      ),
+    ).resolves.toEqual([blocks[0]]);
+    expect(eventSink.events[0]).toMatchObject({
+      name: "image_reference.dropped",
+      payload: {
+        reason: "availability_check_failed",
+        name: "Error",
+        message: "metadata store unavailable",
+      },
+    });
   });
 });
