@@ -18,7 +18,10 @@ export default defineEventHandler(async (event) => {
 
   const project = await requireProjectOwner({ projects: projectRepo }, projectId, userId);
   const currentWork = await resolveCurrentWork({ works: workRepo, preferences }, user, project);
-  const works = await workRepo.listByProject(projectId, { status });
+  const listedWorks = await workRepo.listByProject(projectId, { status });
+  const works = listedWorks.some((work) => work.id === currentWork.id)
+    ? listedWorks
+    : [currentWork, ...listedWorks];
   const enrichedWorks = await Promise.all(
     works.map(async (work) => ({
       ...work,

@@ -41,7 +41,10 @@ describe("GET /api/projects/:projectId/works", () => {
           findById: async () => null,
           listByProject: async () => works,
         },
-        preferences: { getCurrentWorkId: async () => null },
+        preferences: {
+          getCurrentWorkId: async () => null,
+          setCurrentWorkId: async () => {},
+        },
         documentSync: { countUnpushedRowsForWork: async () => 0 },
       },
     } as never);
@@ -58,6 +61,40 @@ describe("GET /api/projects/:projectId/works", () => {
       value: {
         defaultWorkId: "work-2",
         works: [{ id: "work-2" }, { id: "work-1" }],
+      },
+    });
+  });
+
+  it("includes the archived current Work in the default active list", async () => {
+    const active = work("active");
+    const current = { ...work("current"), status: "archived" as const };
+    vi.mocked(requireAppUser).mockResolvedValue({
+      user: { userId: USER_ID },
+      app: {
+        projectRepo: { findById: async () => project },
+        workRepo: {
+          findById: async () => current,
+          listByProject: async () => [active],
+        },
+        preferences: { getCurrentWorkId: async () => current.id },
+        documentSync: { countUnpushedRowsForWork: async () => 0 },
+      },
+    } as never);
+    const event = {
+      req: new Request(`https://server.local/api/projects/${PROJECT_ID}/works`),
+      context: { params: { projectId: PROJECT_ID } },
+      res: { status: 200 },
+    };
+
+    const response = await handler(event as never);
+
+    expect(response).toMatchObject({
+      value: {
+        defaultWorkId: current.id,
+        works: [
+          { id: current.id, status: "archived" },
+          { id: active.id, status: "active" },
+        ],
       },
     });
   });
