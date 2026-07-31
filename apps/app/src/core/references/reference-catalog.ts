@@ -109,7 +109,7 @@ export type ReferenceItemOf<TKind extends ReferenceKind> = Extract<
 >;
 
 /** Longer queries are a writer who kept typing past a menu that had no answer. */
-const MAX_QUERY_LENGTH = 80;
+export const MAX_REFERENCE_QUERY_LENGTH = 80;
 
 const MAX_CANDIDATE_ROWS = 20;
 
@@ -125,7 +125,7 @@ export function filterReferenceItems<TKind extends ReferenceKind>(
   scope: readonly TKind[],
   query: string,
 ): ReferenceItemOf<TKind>[] {
-  if (query.length > MAX_QUERY_LENGTH) return [];
+  if (query.length > MAX_REFERENCE_QUERY_LENGTH) return [];
   const name = query.trim();
   const kinds: readonly ReferenceKind[] = scope;
 
