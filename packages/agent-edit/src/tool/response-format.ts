@@ -7,14 +7,15 @@ import { splitHashline } from "../model/hashline.js";
 import type { TurnDiffResult } from "../ports/turn-diff-query.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
-  type AgentEditBlockRecord,
+  type AgentEditBlockGroup,
   type AgentEditBlockRelation,
-  modelBlockRecord,
+  modelBlockItem,
   modelConcurrentResult,
   modelResult,
 } from "./model-result.js";
-import type { DestructiveSweepReport } from "./mutation-commit.js";
+import type { DestructiveSweepReport, SyncedMutationSummary } from "./mutation-commit.js";
 import type {
+  UndoRedoOutcome,
   WriteCommandName,
   WriteErrorDetail,
   WriteErrorStatus,
@@ -32,6 +33,13 @@ export interface ApplySuccessResponseInput {
   deletedBlocks?: readonly string[];
   lateSweep?: DestructiveSweepReport;
   awarenessDegraded?: boolean;
+}
+
+export interface ReversalSuccessResponseInput {
+  direction: "undo" | "redo";
+  status: UndoRedoOutcome;
+  targetCount?: number;
+  sync: SyncedMutationSummary;
 }
 
 export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult {
@@ -117,6 +125,17 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
   const text = [metaLines.join("\n"), ...(echoLines.length > 0 ? [echoLines.join("\n")] : [])].join(
     "\n\n",
   );
+  const blocks = echoGroups(input.echo);
+  if (input.lateSweep) {
+    const swept = input.lateSweep.capturedDeletedBodies ?? [];
+    if (swept.length > 0) {
+      blocks.push({
+        extent: "full",
+        relation: "swept",
+        items: swept.map(({ hash, body }) => ({ hash, body })),
+      });
+    }
+  }
 
   return {
     status: "success",
@@ -133,29 +152,45 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
             },
           }
         : {}),
-      ...(echoLines.length > 0 ? { blocks: echoRecords(input.echo) } : {}),
+      ...(echoLines.length > 0 || input.lateSweep ? { blocks } : {}),
       ...(input.concurrentEdits
         ? { concurrent: modelConcurrentResult(input.concurrentEdits) }
-        : {}),
-      ...(input.lateSweep
-        ? {
-            blocks: [
-              ...echoRecords(input.echo),
-              ...(input.lateSweep.capturedDeletedBodies ?? []).map(
-                ({ hash, body }): AgentEditBlockRecord => ({
-                  hash,
-                  body,
-                  extent: "full",
-                  relation: "swept",
-                }),
-              ),
-            ],
-          }
         : {}),
       ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
     },
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),
+  };
+}
+
+export function formatReversalSuccess(input: ReversalSuccessResponseInput): InternalWriteResult {
+  const metaLines = [`status: ${input.status}`];
+  if (input.targetCount && input.targetCount > 0) {
+    metaLines.push(`${input.direction}: ${input.targetCount} edit(s)`);
+  }
+  if (input.sync.concurrentEdits) {
+    metaLines.push(...formatConcurrent(input.sync.concurrentEdits));
+  }
+
+  const echoLines = input.sync.echo
+    .flatMap((hunk) => hunk.blocks)
+    .filter((line) => line.length > 0);
+  const text = [metaLines.join("\n"), ...(echoLines.length > 0 ? [echoLines.join("\n")] : [])].join(
+    "\n\n",
+  );
+  return {
+    status: input.status,
+    text,
+    model: {
+      reversal: {
+        direction: input.direction,
+        count: input.targetCount ?? 0,
+      },
+      ...(echoLines.length > 0 ? { blocks: echoGroups(input.sync.echo) } : {}),
+      ...(input.sync.concurrentEdits
+        ? { concurrent: modelConcurrentResult(input.sync.concurrentEdits) }
+        : {}),
+    },
   };
 }
 
@@ -222,18 +257,26 @@ export function result(
 }
 
 export function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
+  const model =
+    result.status === "success"
+      ? modelResult({
+          command,
+          status: "success",
+          phase: result.phase,
+          ...(result.model ? { payload: result.model } : {}),
+        })
+      : modelResult({
+          command,
+          status: result.status,
+          ...(result.model ? { payload: result.model } : {}),
+        });
   const base = {
     command,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
-    result: modelResult({
-      command,
-      status: result.status,
-      ...(result.status === "success" ? { phase: result.phase } : {}),
-      ...(result.model ? { payload: result.model } : {}),
-    }),
+    result: model,
     text: result.text,
   };
   if (result.status === "success") {
@@ -242,29 +285,30 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
   return { ...base, status: result.status };
 }
 
-export function blockRecord(
-  serialized: string,
+function blockGroup(
+  serialized: readonly string[],
   extent: "full" | "prefix",
   relation: AgentEditBlockRelation,
-): AgentEditBlockRecord {
-  return modelBlockRecord(serialized, extent, relation);
+): AgentEditBlockGroup {
+  return { extent, relation, items: serialized.map(modelBlockItem) };
 }
 
-function echoRecords(echo: readonly ApplyEchoHunk[]): AgentEditBlockRecord[] {
-  return echo.flatMap((hunk) =>
-    hunk.blocks
-      .filter((serialized) => serialized.length > 0)
-      .map((serialized) =>
-        blockRecord(
-          serialized,
-          hunk.mode === "full" ? "full" : "prefix",
-          hunk.mode === "full" ? "changed" : "context",
-        ),
-      ),
-  );
+function echoGroups(echo: readonly ApplyEchoHunk[]): AgentEditBlockGroup[] {
+  return echo.flatMap((hunk) => {
+    const serialized = hunk.blocks.filter((block) => block.length > 0);
+    return serialized.length > 0
+      ? [
+          blockGroup(
+            serialized,
+            hunk.mode === "full" ? "full" : "prefix",
+            hunk.mode === "full" ? "changed" : "context",
+          ),
+        ]
+      : [];
+  });
 }
 
-export function formatConcurrent(
+function formatConcurrent(
   info: ConcurrentEditInfo,
   options: { excludeHashes?: ReadonlySet<string> } = {},
 ): string[] {

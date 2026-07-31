@@ -47,9 +47,7 @@
  * back to the model's output item order.
  */
 import {
-  isMeridianError,
   type MeridianError,
-  meridianErrorFromStructuredToolOutput,
   meridianErrorFromTool,
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
@@ -123,8 +121,7 @@ function toJsonValue(value: unknown): JsonValue {
  */
 function isHandlerErrorResult(value: unknown): value is {
   isError: true;
-  output: MeridianError | JsonValue;
-  preserveOutput?: boolean;
+  output: unknown;
 } {
   return (
     typeof value === "object" &&
@@ -148,20 +145,13 @@ function isStructuredHandlerResult(
 
 /**
  * Normalizes a handler return value into a `ToolExecutionResult`.
- * Structured errors normally normalize to MeridianError. A tool that owns a
- * versioned error protocol can set `preserveOutput: true`; the executor keeps
- * that JSON value verbatim while forwarding `isError`. Other values serialize
- * through `toJsonValue` for JSON safety.
+ * Handler-owned errors keep their JSON value verbatim while the executor
+ * forwards `isError`. Thrown and executor-owned failures use the registration's
+ * formatter or the generic Meridian error protocol.
  */
 function successResult(toolCallId: string, output: unknown): ToolExecutionResult {
   if (isHandlerErrorResult(output)) {
-    if (output.preserveOutput === true) {
-      return { toolCallId, output: toJsonValue(output.output), isError: true };
-    }
-    const meridianError = isMeridianError(output.output)
-      ? output.output
-      : meridianErrorFromStructuredToolOutput(output.output as JsonValue);
-    return { toolCallId, output: meridianErrorToJson(meridianError), isError: true };
+    return { toolCallId, output: toJsonValue(output.output), isError: true };
   }
   if (isStructuredHandlerResult(output)) {
     return {

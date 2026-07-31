@@ -10,12 +10,11 @@
  * of ContextPort or other app-layer adapter imports.
  */
 import {
-  AGENT_EDIT_RESULT_SCHEMA,
   agentEditResultCommand,
+  modelResult,
   WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
-import type { JsonValue } from "@meridian/contracts/threads";
 import { z } from "zod";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
@@ -35,13 +34,12 @@ function writeToolInputSchema(): Record<string, unknown> {
   return packageSchemaToModelSchema(z.toJSONSchema(WriteCommandSchema));
 }
 
-function formatWriteExecutionError(error: ToolExecutionError): JsonValue {
-  return {
-    schema: AGENT_EDIT_RESULT_SCHEMA,
+function formatWriteExecutionError(error: ToolExecutionError) {
+  return modelResult({
     command: agentEditResultCommand(error.arguments),
     status: error.kind === "arguments_parse" ? "invalid_write" : "internal_error",
-    message: error.message,
-  };
+    payload: { message: error.message },
+  });
 }
 
 function packageSchemaToModelSchema(schema: unknown): Record<string, unknown> {

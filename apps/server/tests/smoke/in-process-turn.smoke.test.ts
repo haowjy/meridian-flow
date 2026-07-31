@@ -148,7 +148,12 @@ describe("smoke: in-process turn", () => {
         schema: "meridian.agent-edit.v1",
         command: "read",
         status: "success",
-        blocks: [expect.objectContaining({ body: FILE_CONTENT, extent: "full" })],
+        blocks: [
+          expect.objectContaining({
+            extent: "full",
+            items: [expect.objectContaining({ body: FILE_CONTENT })],
+          }),
+        ],
       },
     });
   });

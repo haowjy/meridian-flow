@@ -527,10 +527,9 @@ describe("runtime orchestrator behavior", () => {
                       write: { id: "w1" },
                       blocks: [
                         {
-                          hash: "final1",
-                          body: "Final settled line.",
                           extent: "full",
                           relation: "changed",
+                          items: [{ hash: "final1", body: "Final settled line." }],
                         },
                       ],
                     },

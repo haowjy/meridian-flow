@@ -24,13 +24,12 @@ import { reconstructReversalUpdate } from "../undo/reversal-reconstruction.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { modelConcurrentResult } from "./model-result.js";
 import type {
   DestructiveSweepReport,
   MutationCommit,
   SyncedMutationSummary,
 } from "./mutation-commit.js";
-import { blockRecord, formatConcurrent, status, toOutcome } from "./response-format.js";
+import { formatReversalSuccess, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
@@ -277,43 +276,12 @@ export function createWriteReversal(deps: {
     if (!reversal.ok) return reversal.response;
     if (reversal.sync) runtimeStore.markSynced(input.session, input.docId, input.runtime);
     const sync = reversal.sync ?? { echo: [], reconciled: false };
-
-    const metaLines = [`status: ${reversal.status}`];
-    if (reversal.targetCount > 0)
-      metaLines.push(`${input.direction}: ${reversal.targetCount} edit(s)`);
-    if (sync.concurrentEdits) metaLines.push(...formatConcurrent(sync.concurrentEdits));
-
-    const echoLines = sync.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-    const text = [
-      metaLines.join("\n"),
-      ...(echoLines.length > 0 ? [echoLines.join("\n")] : []),
-    ].join("\n\n");
-    return {
+    return formatReversalSuccess({
+      direction: input.direction,
       status: reversal.status,
-      text,
-      model: {
-        reversal: {
-          direction: input.direction,
-          count: reversal.targetCount ?? 0,
-        },
-        ...(echoLines.length > 0
-          ? {
-              blocks: sync.echo.flatMap((hunk) =>
-                hunk.blocks.map((block) =>
-                  blockRecord(
-                    block,
-                    hunk.mode === "full" ? "full" : "prefix",
-                    hunk.mode === "full" ? "changed" : "context",
-                  ),
-                ),
-              ),
-            }
-          : {}),
-        ...(sync.concurrentEdits
-          ? { concurrent: modelConcurrentResult(sync.concurrentEdits) }
-          : {}),
-      },
-    };
+      targetCount: reversal.targetCount,
+      sync,
+    });
   }
 
   type PreparedReversal = {

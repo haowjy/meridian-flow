@@ -113,7 +113,11 @@ describe("runtime store", () => {
     expect(outcomeText(edit)).toContain("swept:");
     expect(outcomeText(edit)).toContain("Alpha sword.");
     expect(outcomeText(edit)).toContain("Beta shield.");
-    expect(edit.result.blocks?.some((block) => block.body === "Beta shield.")).toBe(true);
+    expect(
+      edit.result.blocks?.some((group) =>
+        group.items.some((block) => block.body === "Beta shield."),
+      ),
+    ).toBe(true);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
   });
 

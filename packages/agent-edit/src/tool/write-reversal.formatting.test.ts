@@ -112,7 +112,11 @@ describe("write reversal formatting", () => {
     expect(undo.result.reversal).toEqual({ direction: "undo", count: 1 });
     expect(undo.result.blocks).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ body: "Alpha sword.", extent: "full", relation: "changed" }),
+        expect.objectContaining({
+          extent: "full",
+          relation: "changed",
+          items: expect.arrayContaining([expect.objectContaining({ body: "Alpha sword." })]),
+        }),
       ]),
     );
 
@@ -120,7 +124,11 @@ describe("write reversal formatting", () => {
     expect(redo.result.reversal).toEqual({ direction: "redo", count: 1 });
     expect(redo.result.blocks).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ body: "Alpha blade.", extent: "full", relation: "changed" }),
+        expect.objectContaining({
+          extent: "full",
+          relation: "changed",
+          items: expect.arrayContaining([expect.objectContaining({ body: "Alpha blade." })]),
+        }),
       ]),
     );
   });

@@ -151,7 +151,7 @@ describe("createToolExecutor", () => {
     });
   });
 
-  it("preserves a tool-owned structured error result when requested", async () => {
+  it("preserves a tool-owned structured error result", async () => {
     const registry = createToolRegistry();
     const output = {
       schema: "meridian.agent-edit.v1",
@@ -163,7 +163,6 @@ describe("createToolExecutor", () => {
       serverTool("structured_error", async () => ({
         isError: true,
         output,
-        preserveOutput: true,
       })),
     );
 

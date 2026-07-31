@@ -70,12 +70,13 @@ describe("model result envelope", () => {
       command: "replace",
       blocks: [
         {
-          hash: "a1b2",
-          body: "first line\nc3d4|looks like another block",
           extent: "full",
           relation: "changed",
+          items: [
+            { hash: "a1b2", body: "first line\nc3d4|looks like another block" },
+            { hash: "c3d4", body: "actual block" },
+          ],
         },
-        { hash: "c3d4", body: "actual block", extent: "full", relation: "changed" },
       ],
     });
   });
@@ -87,7 +88,11 @@ describe("model result envelope", () => {
     });
 
     expect(toOutcome("replace", formatted).result.blocks).toEqual([
-      { hash: "a1b2", body: "one two three", extent: "prefix", relation: "context" },
+      {
+        extent: "prefix",
+        relation: "context",
+        items: [{ hash: "a1b2", body: "one two three" }],
+      },
     ]);
   });
 });

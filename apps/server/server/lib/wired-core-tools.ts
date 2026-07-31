@@ -73,7 +73,6 @@ type ToolErrorOutput = { isError: true; output: MeridianError };
 type WriteToolErrorOutput = {
   isError: true;
   output: ReturnType<typeof modelResult>;
-  preserveOutput: true;
 };
 type DiffWriteCommand = Extract<WriteCommand, { command: "diff" }>;
 type DocumentWriteCommand = Exclude<WriteCommand, DiffWriteCommand>;
@@ -138,7 +137,6 @@ function writeToolError(
   return {
     isError: true,
     output: modelResult({ command, status, payload: { message } }),
-    preserveOutput: true,
   };
 }
 
@@ -437,7 +435,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           tool_use_id: ctx.toolCallId,
         });
         return outcome.isError
-          ? { isError: true, output: outcome.result, preserveOutput: true }
+          ? { isError: true, output: outcome.result }
           : { output: outcome.result };
       }
 
@@ -481,7 +479,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             );
           }
         }
-        return { isError: true, output: outcome.result, preserveOutput: true };
+        return { isError: true, output: outcome.result };
       }
       if (stagedCreate) {
         const responseId = ctx.responseId;

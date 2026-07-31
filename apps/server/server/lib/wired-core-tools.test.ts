@@ -298,7 +298,6 @@ describe("wired write tool", () => {
 
     await expect(write(null, ctx)).resolves.toMatchObject({
       isError: true,
-      preserveOutput: true,
       output: {
         schema: "meridian.agent-edit.v1",
         command: "unknown",
@@ -308,7 +307,6 @@ describe("wired write tool", () => {
     });
     await expect(write({ command: "read", path: "missing.md" }, ctx)).resolves.toMatchObject({
       isError: true,
-      preserveOutput: true,
       output: {
         schema: "meridian.agent-edit.v1",
         command: "read",
@@ -317,7 +315,6 @@ describe("wired write tool", () => {
     });
     await expect(write({ command: "diff" }, ctx)).resolves.toMatchObject({
       isError: true,
-      preserveOutput: true,
       output: {
         schema: "meridian.agent-edit.v1",
         command: "diff",

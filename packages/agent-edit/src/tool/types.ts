@@ -1,33 +1,17 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
 
-import type { z } from "zod";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { WriteCommandSchema } from "./command-schema.js";
-import type { AgentEditResultV1 } from "./model-result.js";
+import type { WriteCommand, WriteCommandName } from "./command-schema.js";
+import type { AgentEditResultV1, WriteStatus, WriteSuccessPhase } from "./model-result.js";
 
-export type WriteErrorStatus =
-  | "not_found"
-  | "ambiguous_match"
-  | "invalid_write"
-  | "document_not_found"
-  | "partial_failure"
-  | "cant_undo_dependent"
-  | "internal_error";
-
-export type UndoRedoOutcome =
-  | "reversed"
-  | "reconciled"
-  | "partial"
-  | "nothing_to_undo"
-  | "nothing_to_redo"
-  | "expired";
-
-// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
-export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
-
-export type WriteCommand = z.infer<typeof WriteCommandSchema>;
-export type WriteCommandName = WriteCommand["command"];
+export type { WriteCommand, WriteCommandName } from "./command-schema.js";
+export type {
+  UndoRedoOutcome,
+  WriteErrorStatus,
+  WriteStatus,
+  WriteSuccessPhase,
+} from "./model-result.js";
 export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
 export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
 export type DiffCommand = Extract<WriteCommand, { command: "diff" }>;
@@ -39,8 +23,6 @@ export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
-
-export type WriteSuccessPhase = "staged" | "committed";
 
 interface WriteOutcomeBase {
   command: WriteCommandName;

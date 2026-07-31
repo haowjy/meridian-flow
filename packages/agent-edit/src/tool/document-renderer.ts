@@ -3,6 +3,7 @@
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
+import { splitHashline } from "../model/hashline.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
   isHeading,
@@ -110,14 +111,8 @@ export function createDocumentRenderer(deps: {
     if (blocks.length === 0) return "";
     const headingBlocks = blocks.filter((block) => isHeading(model, block));
     if (headingBlocks.length === 0) return renderBlocks(doc, blocks);
-    const lines: string[] = [];
     const serialized = model.serializeBlockLines(doc, codec, headingBlocks);
-    for (let i = 0; i < headingBlocks.length; i++) {
-      const hash = model.getBlockId(headingBlocks[i]);
-      lines.push(serialized[i]);
-      lines.push(`write(command="read", file="${filePath}#${hash}")`);
-    }
-    return lines.join("\n");
+    return outlineFromSerialized(serialized, filePath);
   }
 
   function renderRead(
@@ -126,21 +121,17 @@ export function createDocumentRenderer(deps: {
     filePath: string,
     format: "full" | "outline",
   ): RenderedRead {
-    const renderedBlocks =
-      format === "outline" && blocks.some((block) => isHeading(model, block))
-        ? blocks.filter((block) => isHeading(model, block))
-        : blocks;
-    const bodies = model.serializeBlockBodies(doc, codec, renderedBlocks);
+    const headingBlocks =
+      format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
+    const renderedBlocks = headingBlocks.length > 0 ? headingBlocks : blocks;
+    const serialized = model.serializeBlockLines(doc, codec, renderedBlocks);
     return {
       text:
-        format === "outline"
-          ? renderOutline(doc, blocks, filePath)
-          : renderBlocks(doc, renderedBlocks),
+        format === "outline" && headingBlocks.length > 0
+          ? outlineFromSerialized(serialized, filePath)
+          : serialized.join("\n"),
       format,
-      blocks: renderedBlocks.map((block, index) => ({
-        hash: model.getBlockId(block),
-        body: bodies[index] ?? "",
-      })),
+      blocks: serialized.map(readBlock),
     };
   }
 
@@ -151,4 +142,22 @@ export function createDocumentRenderer(deps: {
       return { ok: false, message: cause instanceof Error ? cause.message : String(cause) };
     }
   }
+}
+
+function outlineFromSerialized(serialized: readonly string[], filePath: string): string {
+  return serialized
+    .flatMap((line) => {
+      const hash = splitHashline(line)?.hash ?? line;
+      return [line, `write(command="read", file="${filePath}#${hash}")`];
+    })
+    .join("\n");
+}
+
+function readBlock(serialized: string): { hash: string; body: string } {
+  const line = splitHashline(serialized);
+  if (!line) return { hash: "", body: serialized };
+  return {
+    hash: line.hash,
+    body: line.body.startsWith("\n") ? line.body.slice(1) : line.body,
+  };
 }

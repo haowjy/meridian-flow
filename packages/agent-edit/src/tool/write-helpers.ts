@@ -3,6 +3,7 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { UpdateMeta } from "../ports/types.js";
+import { writeCommandName } from "./command-schema.js";
 import type { RenderedRead } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
@@ -44,12 +45,16 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
     phase: "committed",
     model: {
       read: { format: read.format },
-      blocks: read.blocks.map(({ hash, body }) => ({
-        hash,
-        body,
-        extent: "full",
-        relation: "document",
-      })),
+      blocks:
+        read.blocks.length > 0
+          ? [
+              {
+                extent: "full",
+                relation: "document",
+                items: read.blocks,
+              },
+            ]
+          : [],
     },
   });
 }
@@ -91,21 +96,7 @@ export function mutationUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrig
 }
 
 export function fallbackCommandName(command: unknown): WriteCommand["command"] {
-  if (typeof command === "object" && command !== null && "command" in command) {
-    const value = (command as { command?: unknown }).command;
-    switch (value) {
-      case "create":
-      case "read":
-      case "diff":
-      case "insert":
-      case "replace":
-      case "delete":
-      case "undo":
-      case "redo":
-        return value;
-    }
-  }
-  return "read";
+  return writeCommandName(command) ?? "read";
 }
 
 export function writeSchemaError(error: {

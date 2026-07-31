@@ -66,6 +66,7 @@ import {
   type AgentEditResultV1,
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
+  isAgentEditResult,
   modelConcurrentResult,
   modelResult,
   type ResponseCommitWriteReceipt,
@@ -206,14 +207,6 @@ function settledReceipt(
     throw new Error(`Settled receipt missing for ${documentId}:${settlementId}.`);
   }
   return settled.receipt;
-}
-
-function isAgentEditResult(value: unknown): value is AgentEditResultV1 {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { schema?: unknown }).schema === "meridian.agent-edit.v1"
-  );
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {

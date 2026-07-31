@@ -10,14 +10,21 @@ describe("safeToolOutput", () => {
       status: "success",
       blocks: [
         {
-          hash: "a1b2",
-          body: "first line\nc3d4|looks like another block",
           extent: "full",
           relation: "document",
+          items: [
+            { hash: "a1b2", body: "first line\nc3d4|looks like another block" },
+            { hash: "c3d4", body: "actual block" },
+          ],
         },
-        { hash: "c3d4", body: "actual block", extent: "full", relation: "document" },
       ],
     };
+
+    expect(JSON.parse(safeToolOutput(result))).toEqual(result);
+  });
+
+  it("serializes every array uniformly instead of guessing a content protocol", () => {
+    const result = [{ type: "text", text: "structured data" }];
 
     expect(JSON.parse(safeToolOutput(result))).toEqual(result);
   });

@@ -2,11 +2,32 @@
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import { splitHashline } from "../model/hashline.js";
 import type { TurnDiffResult } from "../ports/turn-diff-query.js";
-import type { WriteCommandName, WriteStatus, WriteSuccessPhase } from "./types.js";
+import { type WriteCommandName, writeCommandName } from "./command-schema.js";
 
 export const AGENT_EDIT_RESULT_SCHEMA = "meridian.agent-edit.v1" as const;
 
 export type AgentEditResultCommand = WriteCommandName | "unknown";
+
+export type WriteErrorStatus =
+  | "not_found"
+  | "ambiguous_match"
+  | "invalid_write"
+  | "document_not_found"
+  | "partial_failure"
+  | "cant_undo_dependent"
+  | "internal_error";
+
+export type UndoRedoOutcome =
+  | "reversed"
+  | "reconciled"
+  | "partial"
+  | "nothing_to_undo"
+  | "nothing_to_redo"
+  | "expired";
+
+// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
+export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteSuccessPhase = "staged" | "committed";
 
 export type AgentEditBlockExtent = "full" | "prefix";
 export type AgentEditBlockRelation =
@@ -17,16 +38,20 @@ export type AgentEditBlockRelation =
   | "deleted"
   | "swept";
 
-export interface AgentEditBlockRecord {
+export interface AgentEditBlockItem {
   hash: string;
   body: string;
+}
+
+export interface AgentEditBlockGroup {
   extent: AgentEditBlockExtent;
   relation: AgentEditBlockRelation;
+  items: AgentEditBlockItem[];
 }
 
 export interface AgentEditConcurrentRun {
   origin: "human" | "agent" | "mixed" | "concurrent edits";
-  blocks: AgentEditBlockRecord[];
+  blocks: AgentEditBlockItem[];
   tombstones: Array<{ hash: string; body: string }>;
 }
 
@@ -43,7 +68,7 @@ export interface AgentEditModelPayload {
   read?: {
     format: "full" | "outline";
   };
-  blocks?: AgentEditBlockRecord[];
+  blocks?: AgentEditBlockGroup[];
   concurrent?: {
     runs: AgentEditConcurrentRun[];
     syncOverflow?: boolean;
@@ -52,58 +77,85 @@ export interface AgentEditModelPayload {
   awarenessDegraded?: boolean;
 }
 
-export interface AgentEditResultV1 extends AgentEditModelPayload {
+interface AgentEditResultBase extends AgentEditModelPayload {
   schema: typeof AGENT_EDIT_RESULT_SCHEMA;
   command: AgentEditResultCommand;
-  status: WriteStatus;
-  phase?: WriteSuccessPhase;
 }
 
-export function modelResult(input: {
+export type AgentEditResultV1 = AgentEditResultBase &
+  (
+    | { status: "success"; phase: WriteSuccessPhase }
+    | { status: Exclude<WriteStatus, "success">; phase?: never }
+  );
+
+type ModelResultInput = {
   command: AgentEditResultCommand;
-  status: WriteStatus;
-  phase?: WriteSuccessPhase;
   payload?: AgentEditModelPayload;
-}): AgentEditResultV1 {
-  return {
+} & (
+  | { status: "success"; phase: WriteSuccessPhase }
+  | { status: Exclude<WriteStatus, "success">; phase?: never }
+);
+
+export function modelResult(input: ModelResultInput): AgentEditResultV1 {
+  const base = {
+    ...input.payload,
     schema: AGENT_EDIT_RESULT_SCHEMA,
     command: input.command,
-    status: input.status,
-    ...(input.phase ? { phase: input.phase } : {}),
-    ...input.payload,
   };
+  if (input.status === "success") {
+    return { ...base, status: "success", phase: input.phase };
+  }
+  return { ...base, status: input.status };
 }
 
 export function agentEditResultCommand(input: unknown): AgentEditResultCommand {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return "unknown";
-  const command = (input as { command?: unknown }).command;
-  switch (command) {
-    case "read":
-    case "diff":
-    case "create":
-    case "insert":
-    case "replace":
-    case "delete":
-    case "undo":
-    case "redo":
-      return command;
+  return writeCommandName(input) ?? "unknown";
+}
+
+export function isAgentEditResult(input: unknown): input is AgentEditResultV1 {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return false;
+  const result = input as Record<string, unknown>;
+  if (
+    result.schema !== AGENT_EDIT_RESULT_SCHEMA ||
+    (result.command !== "unknown" && writeCommandName(result) === undefined) ||
+    !isWriteStatus(result.status)
+  ) {
+    return false;
+  }
+  if (result.status === "success") {
+    return result.phase === "staged" || result.phase === "committed";
+  }
+  return result.phase === undefined;
+}
+
+function isWriteStatus(status: unknown): status is WriteStatus {
+  switch (status) {
+    case "success":
+    case "not_found":
+    case "ambiguous_match":
+    case "invalid_write":
+    case "document_not_found":
+    case "partial_failure":
+    case "cant_undo_dependent":
+    case "internal_error":
+    case "reversed":
+    case "reconciled":
+    case "partial":
+    case "nothing_to_undo":
+    case "nothing_to_redo":
+    case "expired":
+      return true;
     default:
-      return "unknown";
+      return false;
   }
 }
 
-export function modelBlockRecord(
-  serialized: string,
-  extent: AgentEditBlockExtent,
-  relation: AgentEditBlockRelation,
-): AgentEditBlockRecord {
+export function modelBlockItem(serialized: string): AgentEditBlockItem {
   const line = splitHashline(serialized);
-  if (!line) return { hash: "", body: serialized, extent, relation };
+  if (!line) return { hash: "", body: serialized };
   return {
     hash: line.hash,
     body: line.body.startsWith("\n") ? line.body.slice(1) : line.body,
-    extent,
-    relation,
   };
 }
 
@@ -113,7 +165,7 @@ export function modelConcurrentResult(
   return {
     runs: info.runs.map((run) => ({
       origin: run.origin,
-      blocks: run.blocks.map((block) => modelBlockRecord(block, "full", "concurrent")),
+      blocks: run.blocks.map(modelBlockItem),
       tombstones: run.tombstones.map(({ hash, capturedBody }) => ({
         hash,
         body: capturedBody,

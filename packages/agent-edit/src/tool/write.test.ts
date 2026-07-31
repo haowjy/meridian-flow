@@ -45,15 +45,15 @@ describe("write tool dispatch", () => {
       status: "success",
       read: { format: "full" },
     });
-    expect(
-      read.result.blocks?.map(({ body, extent, relation }) => ({
-        body,
-        extent,
-        relation,
-      })),
-    ).toEqual([
-      { body: firstBody, extent: "full", relation: "document" },
-      { body: "Actual block.", extent: "full", relation: "document" },
+    expect(read.result.blocks).toEqual([
+      {
+        extent: "full",
+        relation: "document",
+        items: [
+          expect.objectContaining({ body: firstBody }),
+          expect.objectContaining({ body: "Actual block." }),
+        ],
+      },
     ]);
   });
 

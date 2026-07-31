@@ -47,15 +47,21 @@ export {
   isBlockItemId,
   validateLiveBlockRange,
 } from "./model/navigation-target.js";
-export type { WriteCommandCategory } from "./tool/command-schema.js";
+export type {
+  WriteCommand,
+  WriteCommandCategory,
+  WriteCommandName,
+} from "./tool/command-schema.js";
 export {
   MUTATING_WRITE_COMMANDS,
   WriteCommandSchema,
   writeCommandCategory,
+  writeCommandName,
 } from "./tool/command-schema.js";
 export type {
   AgentEditBlockExtent,
-  AgentEditBlockRecord,
+  AgentEditBlockGroup,
+  AgentEditBlockItem,
   AgentEditBlockRelation,
   AgentEditConcurrentRun,
   AgentEditResultCommand,
@@ -64,7 +70,8 @@ export type {
 export {
   AGENT_EDIT_RESULT_SCHEMA,
   agentEditResultCommand,
-  modelBlockRecord,
+  isAgentEditResult,
+  modelBlockItem,
   modelConcurrentResult,
   modelResult,
 } from "./tool/model-result.js";
@@ -82,7 +89,6 @@ export type {
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   UndoResult,
-  WriteCommand,
   WriteContext,
   WriteErrorStatus,
   WriteFunction,

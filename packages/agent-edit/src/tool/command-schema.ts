@@ -103,13 +103,32 @@ export const WriteCommandSchema = z.discriminatedUnion("command", [
   RedoCommandSchema,
 ]);
 
+export type WriteCommand = z.infer<typeof WriteCommandSchema>;
+export type WriteCommandName = WriteCommand["command"];
+
+export function writeCommandName(input: unknown): WriteCommandName | undefined {
+  if (typeof input !== "object" || input === null || !("command" in input)) return undefined;
+  const command = (input as { command?: unknown }).command;
+  switch (command) {
+    case "read":
+    case "diff":
+    case "create":
+    case "insert":
+    case "replace":
+    case "delete":
+    case "undo":
+    case "redo":
+      return command;
+    default:
+      return undefined;
+  }
+}
+
 export const MUTATING_WRITE_COMMANDS = ["create", "insert", "replace", "delete"] as const;
 
 export type WriteCommandCategory = "query" | "mutating" | "history";
 
-export function writeCommandCategory(
-  command: z.infer<typeof WriteCommandSchema>,
-): WriteCommandCategory {
+export function writeCommandCategory(command: WriteCommand): WriteCommandCategory {
   switch (command.command) {
     case "read":
       // Not pure: read rebuilds the runtime from live state and replays staged updates.

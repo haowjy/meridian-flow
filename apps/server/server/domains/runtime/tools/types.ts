@@ -244,7 +244,7 @@ export interface ToolRegistration {
   sequential?: boolean;
   capability?: "interrupt" | "spawn" | "return_result";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
-  formatExecutionError?: (error: ToolExecutionError) => JsonValue;
+  formatExecutionError?: (error: ToolExecutionError) => unknown;
 }
 
 export interface ToolExecutionError {
