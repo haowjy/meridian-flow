@@ -47,6 +47,8 @@ export class DrizzleFigureDocumentRepository implements FigureDocumentRepository
     const [row] = await this.db
       .select({
         id: documents.id,
+        contextSourceId: documents.contextSourceId,
+        folderId: documents.folderId,
         storageUrl: documents.storageUrl,
         mimeType: documents.mimeType,
         fileType: documents.fileType,
@@ -56,27 +58,40 @@ export class DrizzleFigureDocumentRepository implements FigureDocumentRepository
       })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .innerJoin(folders, eq(documents.folderId, folders.id))
       .where(
         and(
           eq(documents.id, assetDocumentId),
           eq(contextSources.projectId, projectId),
           eq(contextSources.slug, "manuscript"),
-          eq(folders.name, "assets"),
-          isNull(folders.parentId),
           isNull(documents.deletedAt),
-          isNull(folders.deletedAt),
           isNull(contextSources.deletedAt),
         ),
       )
       .limit(1);
     const file = row ? mapDocumentFile(row) : null;
-    return file
-      ? {
-          ...file,
-          assetPath: `assets/${row?.name}${row?.extension ? `.${row.extension}` : ""}`,
-        }
-      : null;
+    if (!row || !file) return null;
+    const path = [`${row.name}${row.extension ? `.${row.extension}` : ""}`];
+    let folderId = row.folderId;
+    while (folderId) {
+      const [folder] = await this.db
+        .select({ id: folders.id, name: folders.name, parentId: folders.parentId })
+        .from(folders)
+        .where(
+          and(
+            eq(folders.id, folderId),
+            eq(folders.contextSourceId, row.contextSourceId),
+            isNull(folders.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!folder) return null;
+      path.unshift(folder.name);
+      folderId = folder.parentId;
+    }
+    return {
+      ...file,
+      assetPath: path.join("/"),
+    };
   }
 
   private async findDocumentForProject(projectId: string, documentId: string) {

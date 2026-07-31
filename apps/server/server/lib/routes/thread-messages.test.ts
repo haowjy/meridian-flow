@@ -142,4 +142,58 @@ describe("thread messages route", () => {
     await expect(sendMessage(event)).rejects.toMatchObject({ statusCode: 400 });
     expect(startTurn).not.toHaveBeenCalled();
   });
+
+  it("accepts degraded prose even when the diagnostic sink fails", async () => {
+    const startTurn = vi.fn().mockResolvedValue({
+      userTurnId: "user-turn-1",
+      assistantTurnId: "assistant-turn-1",
+      resumeAfterSeq: "0",
+      snapshotFloorNextSeq: "1",
+    });
+    const uri = "manuscript://pictures/missing.png";
+    const event: TestEvent = {
+      params: { threadId: "11111111-1111-4111-8111-111111111111" },
+      body: {
+        text: `Keep this prose and ignore ${uri}`,
+        blocks: [
+          { type: "text", text: `Keep this prose and ignore ${uri}` },
+          {
+            type: "image",
+            documentId: "22222222-2222-4222-8222-222222222222",
+            uri,
+          },
+        ],
+      },
+      res: { status: 200 },
+      auth: {
+        app: {
+          threadRuntime: {
+            requireOwnedThread: vi.fn().mockResolvedValue({ projectId: "project-1" }),
+          },
+          imageAssets: {
+            isValidReference: vi.fn().mockResolvedValue(false),
+            resolve: vi.fn(),
+          },
+          runner: { startTurn },
+          eventSink: {
+            emit() {
+              throw new Error("sink failed");
+            },
+            emitBatch() {},
+            async flush() {},
+          },
+        },
+        user: { userId: "user-1" },
+      },
+    };
+
+    await expect(sendMessage(event)).resolves.toMatchObject({ status: "accepted" });
+    expect(event.res.status).toBe(202);
+    expect(startTurn).toHaveBeenCalledWith({
+      threadId: "11111111-1111-4111-8111-111111111111",
+      userText: `Keep this prose and ignore ${uri}`,
+      userBlocks: [{ type: "text", text: `Keep this prose and ignore ${uri}` }],
+      connectionToken: undefined,
+    });
+  });
 });

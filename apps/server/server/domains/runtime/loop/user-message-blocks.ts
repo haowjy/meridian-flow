@@ -137,21 +137,25 @@ export async function filterAvailableUserMessageImageReferences(
       kept.push(block);
       continue;
     }
-    emitEvent(eventSink, {
-      level: "warn",
-      source: "runtime.user-message",
-      name: "image_reference.dropped",
-      correlation: {
-        threadId: context.threadId,
-        documentId: reference.documentId,
-      },
-      payload: {
-        projectId: context.projectId,
-        uri: reference.uri,
-        reason: result?.error ? "availability_check_failed" : "unavailable",
-        ...result?.error,
-      },
-    });
+    try {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "runtime.user-message",
+        name: "image_reference.dropped",
+        correlation: {
+          threadId: context.threadId,
+          documentId: reference.documentId,
+        },
+        payload: {
+          projectId: context.projectId,
+          uri: reference.uri,
+          reason: result?.error ? "availability_check_failed" : "unavailable",
+          ...result?.error,
+        },
+      });
+    } catch {
+      // Observability cannot turn an unavailable attachment back into a writer-message veto.
+    }
   }
   return kept;
 }
