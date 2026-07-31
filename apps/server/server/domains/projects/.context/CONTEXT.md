@@ -10,7 +10,7 @@ This domain is not the full project CRUD surface; that lives in
   idempotently creates or reuses the user's personal project, default `Writer`
   agent, first work, manuscript context source, `chapter-1.md` document, and
   primary thread.
-- **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `work://manuscript/chapter-1.md`.
+- **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Phase marker** — `WorkRepository` is still a temporary ownership seam here; full
   work CRUD is owned by `domains/projects`.
 
