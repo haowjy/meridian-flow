@@ -446,7 +446,7 @@ export type BinaryDocumentFileType = "docx" | "image" | "pdf";
 export type DocumentFileType = BinaryDocumentFileType | "binary";
 
 export interface FigureNodeReference {
-  /** Stable MyST figure src. This is not an expiring render URL. */
+  /** Stable asset identity. This is not an expiring render URL. */
   src: string;
   alt: string;
   label: string | null;
@@ -454,7 +454,9 @@ export interface FigureNodeReference {
 }
 
 export interface FigureAssetReference {
-  documentId: string;
+  assetDocumentId: string;
+  /** Project-relative markdown path for codec and clipboard translation. */
+  assetPath: string;
   storageUrl: string;
   mimeType: string;
   fileType: BinaryDocumentFileType;
@@ -468,7 +470,7 @@ export interface FigureAssetReference {
 export type UploadFigureAssetResponse = FigureAssetReference;
 
 export type GetFigureSignedUrlResponse = {
-  documentId: string;
+  assetDocumentId: string;
   storageUrl: string;
   mimeType: string;
   fileType: BinaryDocumentFileType;

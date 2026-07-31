@@ -1,0 +1,243 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { createEditorChrome } from "./editor-chrome";
+import { CHROME_TIMING, type HoverIntentTimers } from "./hover-intent";
+
+/** A hand-cranked clock, so the timing policy is asserted rather than waited on. */
+function fakeTimers() {
+  const queued = new Map<number, { run: () => void; at: number }>();
+  let handle = 0;
+  let now = 0;
+
+  const timers: HoverIntentTimers = {
+    setTimeout(run, ms) {
+      handle += 1;
+      queued.set(handle, { run, at: now + ms });
+      return handle;
+    },
+    clearTimeout(id) {
+      queued.delete(id);
+    },
+  };
+
+  return {
+    timers,
+    advance(ms: number) {
+      now += ms;
+      for (const [id, entry] of [...queued]) {
+        if (entry.at > now) continue;
+        queued.delete(id);
+        entry.run();
+      }
+    },
+  };
+}
+
+describe("chrome layers", () => {
+  it("closes the topmost layer through the surface's own dismissal", () => {
+    const { chrome } = createEditorChrome();
+    const closeDialog = vi.fn();
+    const closeSource = vi.fn();
+
+    chrome.openLayer({ id: "dialog", close: closeDialog });
+    const source = chrome.openLayer({ id: "source", parentId: "dialog", close: closeSource });
+
+    expect(chrome.closeTopLayer()).toBe(true);
+    expect(closeSource).toHaveBeenCalledOnce();
+    expect(closeDialog).not.toHaveBeenCalled();
+
+    // Asked once. The layer leaves the walk on the asking rather than on the
+    // release, so a dismissal that never lands costs one Escape instead of
+    // every Escape after it. The surface may still be on screen finishing its
+    // exit; the chain has simply stopped offering it the key.
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog"]);
+    source.release();
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog"]);
+  });
+
+  it("orders by nesting, not by the order effects happened to run in", () => {
+    const { chrome } = createEditorChrome();
+    const closeDialog = vi.fn();
+    const closeSource = vi.fn();
+
+    // React mounts child effects first, so this is the order the kernel
+    // actually sees for a dialog that opens with its source pane showing.
+    chrome.openLayer({ id: "source", parentId: "dialog", close: closeSource });
+    chrome.openLayer({ id: "dialog", close: closeDialog });
+
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["dialog", "source"]);
+    chrome.closeTopLayer();
+    expect(closeSource).toHaveBeenCalledOnce();
+    expect(closeDialog).not.toHaveBeenCalled();
+  });
+
+  it("replaces the open transient when another one is summoned", () => {
+    const { chrome } = createEditorChrome();
+    const closeSlash = vi.fn();
+
+    const slash = chrome.openLayer({
+      id: "slash-menu",
+      close: () => {
+        closeSlash();
+        slash.release();
+      },
+    });
+    chrome.openLayer({ id: "link-form", close: () => {} });
+
+    // Law 4: one transient surface. Two would leave the slash menu and the
+    // link form both live, competing for the same keystrokes.
+    expect(closeSlash).toHaveBeenCalledOnce();
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["link-form"]);
+  });
+
+  it("leaves a layer opened INSIDE another alone", () => {
+    const { chrome } = createEditorChrome();
+    const closeDialog = vi.fn();
+
+    chrome.openLayer({ id: "diagram-dialog", close: closeDialog });
+    chrome.openLayer({ id: "diagram-source", parentId: "diagram-dialog", close: () => {} });
+
+    // A source pane is not a rival surface, it is part of the one that is
+    // open. Same for a submenu inside a menu.
+    expect(closeDialog).not.toHaveBeenCalled();
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["diagram-dialog", "diagram-source"]);
+  });
+
+  it("takes a replaced surface's whole subtree out of the walk", () => {
+    const { chrome } = createEditorChrome();
+    const dialog = chrome.openLayer({
+      id: "diagram-dialog",
+      close: () => dialog.release(),
+    });
+    const source = chrome.openLayer({
+      id: "diagram-source",
+      parentId: "diagram-dialog",
+      close: () => source.release(),
+    });
+
+    chrome.openLayer({ id: "link-form", close: () => {} });
+
+    expect(chrome.layers.map((layer) => layer.id)).toEqual(["link-form"]);
+  });
+
+  it("reports how the topmost layer expects Escape to reach it", () => {
+    const { chrome } = createEditorChrome();
+    expect(chrome.topLayerDismissal).toBeNull();
+
+    chrome.openLayer({ id: "dialog", close: () => {}, dismissal: "self" });
+    expect(chrome.topLayerDismissal).toBe("self");
+
+    chrome.openLayer({ id: "source", parentId: "dialog", close: () => {} });
+    expect(chrome.topLayerDismissal).toBe("kernel");
+  });
+
+  it("reports no layer to close when nothing is open", () => {
+    const { chrome } = createEditorChrome();
+    expect(chrome.closeTopLayer()).toBe(false);
+  });
+
+  it("keeps two opens of one surface distinct rather than leaving a ghost step", () => {
+    const { chrome } = createEditorChrome();
+    // A menu whose submenu happens to carry the same id: both are open, so
+    // both need their own place in the walk.
+    const first = chrome.openLayer({ id: "menu", close: () => {} });
+    const second = chrome.openLayer({ id: "menu", parentId: first.id, close: () => {} });
+
+    expect(first.id).not.toBe(second.id);
+    second.release();
+    expect(chrome.layers).toHaveLength(1);
+  });
+});
+
+describe("gesture suppression", () => {
+  it("suppresses for a surface-owned drag and re-evaluates on release", () => {
+    const { chrome } = createEditorChrome();
+    const listener = vi.fn();
+    chrome.subscribe(listener);
+
+    const endDrag = chrome.beginDrag();
+    expect(chrome.suppressed).toBe(true);
+    endDrag();
+    expect(chrome.suppressed).toBe(false);
+    // Two notifications: one to stand down, one to look again.
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets Esc reach a drag its owner is running", () => {
+    const { chrome, controller } = createEditorChrome();
+    const abandonDrag = vi.fn();
+    chrome.beginDrag(abandonDrag);
+
+    controller.cancelGesture();
+
+    expect(abandonDrag).toHaveBeenCalledOnce();
+    expect(chrome.gesture).toBe("idle");
+  });
+
+  it("gives each drag its own end, so a stale one cannot release a newer drag", () => {
+    const { chrome } = createEditorChrome();
+
+    const endFirst = chrome.beginDrag();
+    const endSecond = chrome.beginDrag();
+
+    // The block handle's drag ended a frame late while the column resize is
+    // still running. The late call belongs to a gesture nobody is holding.
+    endFirst();
+    expect(chrome.gesture).toBe("drag");
+    expect(chrome.suppressed).toBe(true);
+
+    endSecond();
+    expect(chrome.gesture).toBe("idle");
+  });
+
+  it("cancels the drag it replaced, so no owner is left holding a dead pointer", () => {
+    const { chrome } = createEditorChrome();
+    const abandonFirst = vi.fn();
+
+    chrome.beginDrag(abandonFirst);
+    chrome.beginDrag();
+
+    expect(abandonFirst).toHaveBeenCalledOnce();
+  });
+
+  it("cancels only the drag that is running", () => {
+    const { chrome, controller } = createEditorChrome();
+    const abandonFirst = vi.fn();
+    const abandonSecond = vi.fn();
+
+    chrome.beginDrag(abandonFirst);
+    chrome.beginDrag(abandonSecond);
+    // Replacing the first drag already cancelled it; what Esc must not do is
+    // reach back and cancel it a second time.
+    abandonFirst.mockClear();
+
+    controller.cancelGesture();
+
+    expect(abandonSecond).toHaveBeenCalledOnce();
+    expect(abandonFirst).not.toHaveBeenCalled();
+    expect(chrome.gesture).toBe("idle");
+  });
+
+  it("drops revealed approach chrome the moment a gesture starts", () => {
+    const { timers, advance } = fakeTimers();
+    const { chrome, controller } = createEditorChrome(timers);
+    const settled = vi.fn();
+    const figure = { name: "figure" };
+
+    chrome.registerHoverAnchor<string>({
+      id: "probe",
+      probe: () => ({ owner: figure, value: "row" }),
+      onSettle: settled,
+    });
+    controller.hoverAnchors.observe((x, y) => ({ x, y, element: {} as Element, onChrome: false }));
+
+    controller.hoverAnchors.pointerAt(10, 10);
+    advance(CHROME_TIMING.handleIntentMs);
+    expect(settled).toHaveBeenLastCalledWith("row");
+
+    // A drag blanks every surface on the page for its whole length, not just
+    // where the pointer is now.
+    chrome.beginDrag();
+    expect(settled).toHaveBeenLastCalledWith(null);
+  });
+});

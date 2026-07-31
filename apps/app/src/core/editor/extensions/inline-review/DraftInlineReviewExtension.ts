@@ -22,8 +22,10 @@ import { Extension } from "@tiptap/core";
 import type { EditorState } from "@tiptap/pm/state";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { DecorationSet } from "@tiptap/pm/view";
-import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
+import { escapeCssIdent } from "@/lib/css-selector";
+
+import { isRemoteDocumentRebuild } from "../../anchors";
 import { buildDecorations, resolverFromState } from "./decorations";
 import type { InlineReviewModel } from "./model";
 
@@ -34,15 +36,6 @@ export interface DraftInlineReviewOptions {
 
 /** A decoration DOM node carries operation attribution on `data-review-operations`. */
 const OPERATION_ATTR = "data-review-operations";
-
-/**
- * Escape an operation id for use in an attribute selector. `CSS.escape` is the
- * browser primitive, but jsdom/Node test environments don't always expose a
- * global `CSS`, so fall back to escaping the CSS special characters by hand —
- * enough for the command to run (and be testable) outside a real browser.
- */
-const escapeCssIdent: (value: string) => string =
-  globalThis.CSS?.escape ?? ((value) => value.replace(/[^\w-]/g, (ch) => `\\${ch}`));
 
 export interface InlineReviewPluginState {
   model: InlineReviewModel | null;
@@ -152,14 +145,11 @@ export function buildInlineReviewPlugin({ initialModel }: PluginContext) {
       },
       apply(tr, previous, _oldState, newState) {
         const meta = tr.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
-        // Remote y-sync transactions carry `isChangeOrigin: true` — they're
-        // the moments the y-prosemirror binding populates or updates its
-        // mapping. Re-resolve from RelativePositions on those. This also
-        // handles the initial-mount race where the model can arrive before
-        // the binding has any mapping entries at all.
-        const ySyncChangeOrigin =
-          (tr.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean } | undefined)
-            ?.isChangeOrigin === true;
+        // A remote y-sync transaction is the moment the y-prosemirror binding
+        // populates or updates its mapping. Re-resolve from RelativePositions
+        // on those. This also handles the initial-mount race where the model
+        // can arrive before the binding has any mapping entries at all.
+        const ySyncChangeOrigin = isRemoteDocumentRebuild(tr);
 
         let model = previous.model;
         let activeOperationId = previous.activeOperationId;

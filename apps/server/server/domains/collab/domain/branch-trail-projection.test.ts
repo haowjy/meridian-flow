@@ -5,7 +5,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
@@ -17,7 +17,9 @@ import {
 
 it("projects a same-identity whole-block rewrite as a live modification", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const liveDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Writer text."));
@@ -137,7 +139,9 @@ it("projects a same-identity whole-block rewrite as a live modification", () => 
 
 it("projects identity-shifted surviving prose as deletion of the displaced passage", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(
@@ -214,7 +218,9 @@ it("projects identity-shifted surviving prose as deletion of the displaced passa
 
 it("traces multi-block identity shifts back to the displaced passage", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo.\n\nCharlie."));
@@ -315,7 +321,9 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
 
 it("preserves ordinary changes when two blocks claim the same relocated passage", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo.\n\nCharlie."));
@@ -422,7 +430,9 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
 
 it("does not relocate content from a structurally replaced source block", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo."));
@@ -526,7 +536,9 @@ it("does not relocate content from a structurally replaced source block", () => 
 
 it("keeps canonical identities distinct when snapshot block hashes collide", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   beforeDoc.clientID = 111_111_111;
@@ -588,7 +600,9 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
 
 it("projects a structurally adjacent whole-block replacement as one modification", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   const afterDoc = createCollabYDoc({ gc: false });
@@ -677,7 +691,9 @@ it("projects a structurally adjacent whole-block replacement as one modification
 
 it("keeps an unrelated deletion and insertion in one push as separate events", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   const afterDoc = createCollabYDoc({ gc: false });
@@ -774,7 +790,9 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
 
 it("preserves proven replacement promotion", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const codec = createAgentEditCodec(
+    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+  );
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   const afterDoc = createCollabYDoc({ gc: false });

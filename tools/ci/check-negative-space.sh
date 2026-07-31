@@ -137,4 +137,27 @@ if (( ${#forbidden_safety_fallbacks[@]} > 0 )); then
   exit 1
 fi
 
+# This client's own awareness fields have exactly one write path, the presence
+# port in apps/app/src/core/editor/local-presence.ts. A raw local write anywhere
+# else is the suspension defect returning: y-protocols silently drops the write
+# while local state is null (which is what inline review and a schema fence look
+# like), and resume then republishes the snapshot over it.
+local_presence_bypass=()
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && local_presence_bypass+=("$hit")
+done < <(
+  git grep -n -E 'setLocalStateField|setLocalState\(' \
+    -- \
+    'apps/app/src/**/*.ts' \
+    'apps/app/src/**/*.tsx' \
+    ':!apps/app/src/core/editor/local-presence.ts' \
+    2>/dev/null || true
+)
+
+if (( ${#local_presence_bypass[@]} > 0 )); then
+  echo "ERROR: local awareness written outside the presence port (core/editor/local-presence.ts):"
+  printf '  %s\n' "${local_presence_bypass[@]}"
+  exit 1
+fi
+
 printf 'Negative-space guard passed.\n'

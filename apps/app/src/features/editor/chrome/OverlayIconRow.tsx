@@ -1,0 +1,172 @@
+/**
+ * OverlayIconRow — an object's verbs, overlaid just inside its top-right
+ * bounds (ruling 8; mockup 03b is the decision record).
+ *
+ * Zero footprint is the whole point: no band above the object, no reserved
+ * space, no layout growth, nothing that moves a line of the manuscript when it
+ * appears. So the row is absolutely positioned rather than laid out — inside
+ * the object's own element wherever that element belongs to a node view, and
+ * measured onto the page where it does not. `object-overlay.ts` owns that
+ * choice; the row only wears it.
+ *
+ * Each button is its own compact rounded-square card chip so it reads over
+ * diagram lines, with its label in a tooltip and the row ending in ⋮. They are
+ * the dense `xs` size because the row may not stand taller than one line of
+ * the text it decorates (see overlay-icon-row.css). The occlusion trade is
+ * accepted (the human's "literally basically inside the diagram").
+ *
+ * Approach chrome, not an active surface: `anchor` says which object is being
+ * approached, `visible` fades the row in and out over it, and the kernel
+ * suppresses the whole thing while the writer drags or sweeps. Fading rather
+ * than unmounting is deliberate — a row that vanishes on the frame the pointer
+ * leaves reads as a flicker, and the design asks for a fade both ways.
+ */
+
+import { t } from "@lingui/core/macro";
+import type { Editor } from "@tiptap/core";
+import { MoreVertical } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
+import { createPortal } from "react-dom";
+
+import { IconButton } from "@/components/ui/icon-button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+import { editorChromeAttributes } from "@/core/editor/chrome";
+
+import { type ObjectOverlayCorner, useObjectOverlayCorner } from "./object-overlay";
+import { useChromeSuppressed, useEditorChrome } from "./useEditorChrome";
+import "./overlay-icon-row.css";
+
+export type OverlayIconRowItem = {
+  id: string;
+  /** Writer-facing; the button is icon-only so this is its whole name. */
+  label: string;
+  icon: ReactNode;
+  onSelect: () => void;
+};
+
+export type OverlayIconRowProps = {
+  editor: Editor | null;
+  /**
+   * Which corner to hang in, and against what. Null when no object is being
+   * approached — that, not `visible`, is what takes the row out of the page.
+   */
+  corner: ObjectOverlayCorner | null;
+  /** Hover settled on it, or its object is selected. Drives the fade. */
+  visible: boolean;
+  items: readonly OverlayIconRowItem[];
+  /**
+   * The ⋮ menu that ends the row, given the chip to use as its trigger. The
+   * menu's items differ per object so they belong to the lane; the chip stays
+   * the row's, so every object's overflow looks the same.
+   */
+  overflow?: (chip: ReactNode) => ReactNode;
+  /** Names the row for probes and tests, e.g. `"diagram"`. */
+  kind: string;
+};
+
+export function OverlayIconRow({
+  editor,
+  corner,
+  visible,
+  items,
+  overflow,
+  kind,
+}: OverlayIconRowProps) {
+  const chrome = useEditorChrome(editor);
+  const suppressed = useChromeSuppressed(editor);
+  const placement = useObjectOverlayCorner(editor, corner);
+
+  if (!placement || !chrome) return null;
+
+  const chromeAttributes = editorChromeAttributes(chrome);
+
+  return createPortal(
+    <TooltipProvider delayDuration={400}>
+      <div
+        data-overlay-icon-row={kind}
+        {...chromeAttributes}
+        data-state={visible && !suppressed ? "open" : "closed"}
+        data-placement={placement.placement}
+        className="meridian-object-overlay meridian-overlay-icon-row"
+        style={placement.style}
+        // Rendered inside the manuscript when it is attached, so it says what
+        // it is: chrome, never text ProseMirror owns.
+        contentEditable={false}
+      >
+        {items.map((item) => (
+          <OverlayIconChip
+            key={item.id}
+            label={item.label}
+            onSelect={item.onSelect}
+            chromeAttributes={chromeAttributes}
+          >
+            {item.icon}
+          </OverlayIconChip>
+        ))}
+        {overflow?.(
+          <OverlayIconChip label={t`More`} asTrigger chromeAttributes={chromeAttributes}>
+            <MoreVertical aria-hidden />
+          </OverlayIconChip>,
+        )}
+      </div>
+    </TooltipProvider>,
+    placement.container,
+  );
+}
+
+function OverlayIconChip({
+  label,
+  onSelect,
+  asTrigger = false,
+  chromeAttributes,
+  onMouseDown,
+  children,
+  ...rest
+}: ComponentProps<"button"> & {
+  label: string;
+  onSelect?: () => void;
+  /** The ⋮ chip is a menu trigger, so the lane's menu owns its press. */
+  asTrigger?: boolean;
+  /**
+   * The tooltip is portalled out of the row, so it carries the row's mark
+   * itself — a surface watching the pointer must read it as part of the same
+   * chrome rather than as a step off the object.
+   */
+  chromeAttributes: Record<string, string>;
+  children: ReactNode;
+}) {
+  const chip = (
+    // The rest props are the menu's: a lane hands this chip to Radix as its
+    // trigger, and Radix opens on the `onPointerDown` it injects here. Dropping
+    // them leaves a ⋮ that cannot be pressed.
+    <IconButton
+      {...rest}
+      type="button"
+      variant="ghost"
+      size="xs"
+      aria-label={label}
+      className="meridian-overlay-icon-chip"
+      onClick={asTrigger ? rest.onClick : onSelect}
+      // A press on the chrome must not move the caret out from under the
+      // object the chrome belongs to.
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onMouseDown?.(event);
+      }}
+    >
+      {children}
+    </IconButton>
+  );
+
+  if (asTrigger) return chip;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipContent side="top" {...chromeAttributes}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}

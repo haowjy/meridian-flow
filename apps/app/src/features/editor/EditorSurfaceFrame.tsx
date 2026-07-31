@@ -1,12 +1,13 @@
 /** Shared docked-toolbar and scrolling layout for document editor surfaces. */
-import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import type { MouseEvent as ReactMouseEvent, ReactNode, Ref, UIEventHandler } from "react";
 
+import { pointerBoundaryDecision } from "@/core/editor/pointer-boundary";
 import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
+  /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;
   children: ReactNode;
   /**
@@ -29,24 +30,17 @@ function focusEditorFromGutterPress(editor: Editor, event: ReactMouseEvent<HTMLD
   // must keep their default behavior.
   if (event.clientX - frameRect.left >= frame.clientWidth) return;
 
-  const prose = editor.view.dom.getBoundingClientRect();
-  const pos = editor.view.posAtCoords({
-    left: Math.min(Math.max(event.clientX, prose.left + 1), prose.right - 1),
-    top: Math.min(Math.max(event.clientY, prose.top + 1), prose.bottom - 1),
-  });
   // Focusing on mousedown (not click) matches ProseMirror's own timing;
   // preventDefault stops the press from re-blurring the editor it just focused.
   event.preventDefault();
-  if (!pos) {
-    editor.commands.focus("end");
-    return;
-  }
-  // posAtCoords in the inter-paragraph gap returns a block-boundary position;
-  // fed raw to focus() it parks the selection at doc level — remote collab
-  // cursors then render BETWEEN <p>s as a phantom uneditable row. near()
-  // always resolves into the adjacent textblock.
+
+  // Where an outside press may land is `core/editor/pointer-boundary`, not this
+  // layout component: a seam between two blocks belongs to neither of them, and
+  // the raw `posAtCoords` answer there can be a rendered diagram's hidden
+  // source. A decline leaves the selection standing, which is still a focus.
   const { state, view } = editor;
-  view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(pos.pos))));
+  const decision = pointerBoundaryDecision(view, event.clientX, event.clientY);
+  if (decision.kind === "place") view.dispatch(state.tr.setSelection(decision.selection));
   view.focus();
 }
 
@@ -74,8 +68,12 @@ export function EditorSurfaceFrame({
         // the prose node must fill the scroll area for click-below-text focus.
         // cursor-text: the whole scroll area is caret territory when an editor
         // is attached — the cursor must promise what the press delivers.
+        // relative: this pane is the coordinate space every piece of measured
+        // chrome is placed in, and the box that clips it
+        // (`chrome/manuscript-overlay.ts`), which needs the pane to be the
+        // containing block of everything portalled into it.
         className={cn(
-          "flex min-h-0 flex-1 flex-col overflow-y-auto",
+          "relative flex min-h-0 flex-1 flex-col overflow-y-auto",
           editor && "cursor-text",
           scrollClassName,
         )}
@@ -86,11 +84,14 @@ export function EditorSurfaceFrame({
             ? (event) => {
                 if (event.button !== 0 || event.defaultPrevented || editor.isDestroyed) return;
                 // The hijack covers inert gutter layout only: ProseMirror owns
-                // presses in the prose ([contenteditable]), and interactive or
-                // live-status children ([role], controls) keep native behavior
-                // — including selectable text in upload error messages. The
-                // closest() match only counts INSIDE the scroller: ancestors
-                // (the pane's tabpanel role, etc.) must not veto gutter presses.
+                // presses in the prose ([contenteditable]) — inert space
+                // INSIDE it, a cell's padding and seams, is claimed one level
+                // down by `core/editor/cell-interior-press.ts` on the same
+                // policy — and interactive or live-status children ([role],
+                // controls) keep native behavior, including selectable text
+                // in upload error messages. The closest() match only counts
+                // INSIDE the scroller: ancestors (the pane's tabpanel role,
+                // etc.) must not veto gutter presses.
                 const match = (event.target as Element).closest(
                   "[contenteditable], [role], a, button, input, textarea, select",
                 );

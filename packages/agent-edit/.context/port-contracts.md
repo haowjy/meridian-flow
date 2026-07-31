@@ -99,7 +99,8 @@ and multiline blocks as `hash|\nbody`.
 
 Markdown/MDX BlockCodec and MarkCodec registration, unified/remark assembly, and
 component registry types live in `@meridian/markup`. Codec factories require the
-host's ProseMirror `Schema`; agent-edit has no default Meridian schema.
+host's ProseMirror `Schema` and its `AssetPathResolver`; agent-edit has no
+default Meridian schema and no project asset namespace of its own.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
 the schema explicitly. This keeps the package host-agnostic without server/infra
 dependency leaks.

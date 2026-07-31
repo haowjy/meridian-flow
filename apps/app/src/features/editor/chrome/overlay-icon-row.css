@@ -1,0 +1,29 @@
+/**
+ * The object row's own styles (ruling 8, mockup 03b) — the shape it makes in
+ * the corner that `object-overlay.css` puts it in.
+ *
+ * Rendered inside the object it decorates or portalled into the manuscript's
+ * scroll pane, depending on who owns that DOM (`object-overlay.ts`), so nothing
+ * here may nest under the prose — the `meridian-` prefix is what scopes it.
+ * Imported by the component, so a lane that never renders a row still gets the
+ * rules the moment it does.
+ */
+
+/* One line of editor text is the ceiling for anything hovering over an object
+   (human ruling): a one-line fence is ~50px tall, and a row that ate 40px of
+   it read as a second block squatting on the first. Every control in an object
+   overlay is therefore the dense `xs` button size — the ceiling is held by the
+   shared button scale, not by heights hand-rolled per surface. */
+.meridian-overlay-icon-row {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* Its own card chip, so a verb still reads where it lands on a diagram line. */
+.meridian-overlay-icon-chip {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  color: var(--color-foreground);
+}

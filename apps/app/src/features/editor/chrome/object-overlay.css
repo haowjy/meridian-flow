@@ -1,0 +1,55 @@
+/**
+ * The corner every object overlay hangs in — the object row, the code fence's
+ * chip cluster, whatever comes next (ruling 8, mockup 03b).
+ *
+ * Two placements, one look. `inside` is rendered in the object's own node-view
+ * element and needs no measurement at all; `over` is portalled into the
+ * manuscript's scroll pane for the elements ProseMirror owns, and its top-left
+ * arrives as an inline style in that pane's coordinates. Nothing here nests
+ * under `.meridian-editor` — the `meridian-` prefix is what scopes it, since
+ * an overlay is never a descendant of the prose it decorates.
+ */
+
+.meridian-object-overlay {
+  z-index: 30;
+  transition: opacity 120ms ease-out;
+  /* The overlay is a control, not prose: a sweep through the object must not
+     drag its labels into the writer's selection. */
+  user-select: none;
+}
+
+/* Inside the object's own bounds, with no footprint: absolute against the node
+   view, which the manuscript already positions and sizes for the selection
+   ring. Nothing is measured, so nothing can go stale. */
+.meridian-object-overlay[data-placement="inside"] {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* Measured onto the manuscript's scroll pane instead, and pulled back over its
+   own width so the right edge lands on the inline `left`. Absolute against the
+   pane, not fixed against the viewport: the pane then scrolls it with the
+   object and clips it at its own edge. */
+.meridian-object-overlay[data-placement="over"] {
+  position: absolute;
+  transform: translateX(-100%);
+}
+
+.meridian-object-overlay[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Clickable only once it is legible. `step-end` holds the hit target off for
+   the whole fade in, so an overlay revealing under a resting pointer cannot eat
+   the click the writer aimed at the prose beneath it. Leaving is the other way
+   round — the base rule transitions opacity alone, so a closing overlay stops
+   taking clicks on the frame it starts to fade. */
+.meridian-object-overlay[data-state="open"] {
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 120ms ease-out,
+    pointer-events 120ms step-end allow-discrete;
+}

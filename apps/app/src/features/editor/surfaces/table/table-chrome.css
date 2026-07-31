@@ -1,0 +1,107 @@
+/**
+ * Table chrome (M6, §5.4 and Q6): grips, add tabs, and the resize affordance.
+ *
+ * Grips and tabs live OUTSIDE the frame and are portalled into the manuscript's
+ * scroll pane, so the table reserves nothing for them; geometry they share with
+ * `table-anchors.ts` is measured there, in the pane's own coordinates, and
+ * arrives as inline style.
+ */
+
+/* The fade, and nothing else: a zero-size box pinned to the pane's content
+   origin, so a child placed against it lands on exactly the coordinates
+   `table-anchors.ts` measured. One fade drives all four pieces, and the pane
+   below carries them through a scroll and clips them at its own edge. */
+.meridian-table-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  transition: opacity 120ms ease-out;
+}
+
+.meridian-table-chrome[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Clickable only once it is legible. `step-end` holds the hit target off for
+   the whole fade, so a reveal that lands under a resting pointer cannot eat the
+   click the writer aimed at the prose it is fading in over. Leaving is the
+   other way round — the base rule has no `pointer-events` transition, so a
+   closing surface stops taking clicks on the frame it starts to fade. */
+.meridian-table-chrome[data-state="open"] {
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 120ms ease-out,
+    pointer-events 120ms step-end allow-discrete;
+}
+
+/* Absolute against the manuscript's pane: the pane scrolls each piece with the
+   row or edge it labels, at no cost and with no frame of lag, and clips it at
+   its own boundary rather than letting it ride up over the app's chrome. There
+   is deliberately no transition on `top` or `left` — hovering another row
+   re-anchors the grip there, it does not send it travelling (human ruling,
+   2026-07-30). */
+.meridian-table-grip,
+.meridian-table-add-tab {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  color: var(--color-ink-subtle);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.meridian-table-grip:hover,
+.meridian-table-add-tab:hover,
+.meridian-table-grip[data-state="open"] {
+  color: var(--color-foreground);
+  border-color: var(--color-border-focus);
+}
+
+/* Sizes and positions are inline, measured together in `table-anchors.ts`:
+   the module that decides whether a grip still fits in the manuscript's pane
+   is the one that has to know how big it is. */
+.meridian-table-grip svg {
+  width: 13px;
+  height: 13px;
+}
+
+.meridian-table-add-tab svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* The resize widget is a real DOM sibling inside the cell, so the moment a
+   boundary is hovered the cell's paragraph stops being the last child, its
+   bottom margin comes back, and every row in the column grows by it. Anchoring
+   the rule to the last PARAGRAPH ignores the widget and holds the row still —
+   measured: 41px cells with the hairline up and down. */
+.meridian-editor .ProseMirror td > p:last-of-type,
+.meridian-editor .ProseMirror th > p:last-of-type {
+  margin-bottom: 0;
+}
+
+/* Q6's resize affordance: a hairline that appears under the pointer and takes
+   no space of its own, so hovering a boundary never nudges a column. */
+.meridian-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  z-index: 2;
+  width: 2px;
+  background: var(--color-primary);
+  pointer-events: none;
+}
+
+.meridian-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}

@@ -19,7 +19,7 @@ journaling.
 
 ## HTTP routes
 
-Eight context routes live under
+Eight filesystem routes live under
 `routes/api/projects/[projectId]/context/[scheme]/`. Most use `_helpers.ts` for
 auth, project ownership, scheme/Work resolution, canonical error translation,
 and URI construction. Writer-facing mutation input goes through the shared
@@ -36,3 +36,8 @@ canonical scheme/path/Work authority. Returned `name` values are full filenames.
 
 Routes: `tree.get.ts`, `read.get.ts`, `create.post.ts`, `create-untitled.post.ts`,
 `rename.post.ts`, `move.post.ts`, `delete.post.ts`, `upload.post.ts`.
+
+Internal document links resolve through the same domain at
+`POST /api/projects/[projectId]/links/resolve`. The route accepts a discriminated
+wikilink, scheme, or relative target and returns `{ document: null }` for both
+misses and ambiguity.

@@ -4,7 +4,7 @@ import type { Schema } from "prosemirror-model";
 
 import { createMarkupCodec } from "../codec.js";
 import { demoteAutolinks } from "../helpers.js";
-import type { BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
+import type { AssetPathResolver, BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
 import {
   blockquoteCodec,
   bulletListCodec,
@@ -17,6 +17,7 @@ import {
   paragraphCodec,
   tableCodec,
 } from "./blocks/index.js";
+import { normalizeGfmTableHardBreaks } from "./blocks/table.js";
 import {
   codeMarkCodec,
   emMarkCodec,
@@ -24,6 +25,7 @@ import {
   strikeMarkCodec,
   strongMarkCodec,
 } from "./marks/index.js";
+import { remarkWikiLink } from "./wikilink.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,
@@ -54,12 +56,14 @@ export function markdown(): MarkupPlugin {
   return {
     blocks: markdownBlockCodecs,
     marks: markdownMarkCodecs,
+    remarkPlugins: [remarkWikiLink],
+    preprocess: normalizeGfmTableHardBreaks,
     postParse: demoteAutolinks,
   };
 }
 
-export function markdownCodec(options: { schema: Schema }) {
-  return createMarkupCodec({ schema: options.schema })
+export function markdownCodec(options: { schema: Schema; assetPathResolver: AssetPathResolver }) {
+  return createMarkupCodec(options)
     .use(markdown())
     .build({ requiredBlockNames: markdownRequiredBlockNames });
 }

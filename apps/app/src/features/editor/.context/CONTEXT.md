@@ -3,34 +3,72 @@
 Reference depth for the app-facing editor surface. Read
 [`AGENTS.md`](../AGENTS.md) first.
 
-## Toolbar — placement contract
+## One persistent surface, no contextual bubbles
 
-The formatting toolbar is a **docked prose-aligned row** above the scroll area.
-No card chrome, no rule beneath it: the row is bare controls sitting on canvas,
-separated from the prose by whitespace only.
+The document toolbar is the only chrome that persists, and it never overlays
+the text: `EditorSurfaceFrame` docks it in a prose-aligned row above the
+scroll area, and `EditorView` decides whether a host gets one at all
+(read-only phone documents do not). Everything it can do is document-level;
+the contextual surfaces that replace the deleted bubbles anchor to the block
+they serve and belong to the rebuild, not to incremental patches here. See
+[`surfaces/toolbar/AGENTS.md`](../surfaces/toolbar/AGENTS.md).
 
-`EditorToolbar` owns the control cluster and command dispatch.
-`EditorSurfaceFrame` owns the placement invariant around it: an in-flow
-`h-9` row that is a **sibling of the scroll container** (so it stays put
-while text scrolls beneath), aligned to the prose column.
+The rest of this surface is the prose column, the sync indicator, and the
+notice/popover surfaces below. Image ingress is not here: it is a lane of its
+own ([`surfaces/images/AGENTS.md`](../surfaces/images/AGENTS.md)) whose runtime
+`EditorView` mounts, exactly as it mounts the link runtime.
+
+Block alignment is a shared command module, not the toolbar's own:
+`block-alignment.ts` resolves every alignable block a selection touches (a
+table counts as one, never its cells) and writes to all of them, so selecting
+three paragraphs and pressing Center centers three paragraphs.
 
 **One column, one owner**: `editor-column.ts` is the single home of prose
-geometry — the chrome alignment (toolbar row), the canvas wrapper, and
-`editorProseClass(toolbar)` for the ProseMirror node (the top inset depends on
-whether a docked toolbar already supplies the breathing room; hosts choose at
-editor creation). Tracked and untitled documents share this column exactly, so
-nothing moves when an untitled tab materializes. Never re-encode these classes
-at a call site. (The document identity bar deliberately does NOT share the
-column: it is pane-wide navigation chrome, like the tab strip.)
+geometry — the chrome row inset, the canvas wrapper, and `editorProseClass`
+for the ProseMirror node. The toolbar row's inset equals the canvas inset plus
+the prose inset, so the first control sits exactly above the first character;
+that sum is the invariant the file documents. `editorProseClass` takes the
+toolbar state because a docked row already provides the top breathing room.
+Tracked and untitled documents share this column exactly, so nothing moves when
+an untitled tab materializes. Never re-encode these classes at a call site.
+(The document identity bar deliberately does NOT share the column: it is
+pane-wide navigation chrome, like the tab strip.)
 
-The bottom padding (`pb-[50vh]`) on the ProseMirror node is deliberate: it
-keeps the active writing line near the vertical center of the viewport in long
-manuscripts, and makes clicking below the last line focus the editor at the
-document end. This padding lives in `editorProseClass`, not in editor CSS —
-it is geometry, owned by `editor-column.ts`.
+**Scroll past end**: `editorProseScrollPastEnd` reserves half a viewport of
+padding under the last block, so a manuscript keeps scrolling until its final
+line sits in the upper half of the pane and a writer never types against the
+bottom edge. The reserve is on the ProseMirror node rather than a wrapper, so a
+press in it is ProseMirror's to answer: the caret lands at the end of the
+document, and after an object it lands as a gapcursor rather than selecting the
+object. Chrome that measures the manuscript checks a block's own box
+(`surfaces/blocks/block-geometry.ts`), because the prose node keeps answering
+`posAtCoords` far below the last line and a handle beside blank page belongs to
+nothing.
+
+The reserve only works because the prose node also carries `shrink-0`. It is a
+flex item in the fill chain, and `min-h-full` replaces the automatic minimum
+size that would otherwise hold a flex item at its content height; without
+`shrink-0` the flex algorithm squashes the box back to the scroll viewport, and
+the padding is drawn behind the blocks instead of below them. The failure is
+quiet — the manuscript still scrolls, it just stops dead at its last block — so
+verify past-the-end scrolling in a browser after touching this chain.
 
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
+
+## The typed-under menus
+
+Two triggers publish an open menu the writer keeps typing underneath: `/` for
+blocks (`surfaces/slash/`) and `[[` for documents (`surfaces/link/`). They share
+one surface, `chrome/SuggestionMenu`, one editor-side mechanism,
+`core/editor/extensions/suggestion/`, and one headless store,
+`core/completion/` — each lane brings rows and reacts to a choice, and nothing
+else. The store is where the chat composer's own `@` menu will read from, so a
+surface change that assumes ProseMirror geometry belongs in the surface, not the
+store. What matters from outside them: focus stays in the
+prose while a menu is open (`focusOnOpen="prose"`), and the anchor is something
+that moves, so they read `anchorRect` rather than a captured point. Both are
+`EditorPopover` capabilities, and the link lane's other surfaces inherit them.
 
 ## Draft chrome
 
@@ -42,7 +80,7 @@ Two self-contained surfaces, both resolving their own state from
   its document is under inline review.
 - `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
   ABOVE the identity bar (order: tab strip → review strip → identity bar →
-  toolbar → prose). Matches the DraftDock strip's geometry and tone
+  prose). Matches the DraftDock strip's geometry and tone
   (`min-h-7`, `bg-dock-surface`, `text-caption`); destructive verb left,
   jade primary pill far right — the same order as the dock.
 
@@ -69,20 +107,66 @@ visible signal that the draft surface is active.
 
 ## Component API
 
-`EditorToolbar` is the canonical formatting control cluster (H1 / B /
-I / code / list / link / figure). It subscribes to the editor's selection and
-transaction events to keep active-mark highlighting in sync.
+### Command modules the surfaces consume
 
-Props:
+`block-alignment.ts`, `link-selection.ts`, and `core/editor/table-operations.ts`
+outlived the chrome that called them and are the command and resolution layer
+the rebuilt surfaces consume. The toolbar uses the first two; the third waits
+for the table surfaces.
 
-- `editor: Editor | null` — the TipTap instance. `null` is valid (pre-mount shell).
-- `disabled` — blocks every mutating command while the host is read-only.
-- `figureUpload*` — delegates back to the host for the file-input flow.
+`linkAttributesAtSelection` exists because `editor.isActive("link")` can miss an
+empty selection at a mark boundary, notably the link's start. It uses
+`getMarkRange` for carets so a link control stays available at either edge. Any
+control that opens on a mark-touching caret should resolve the same way rather
+than gating on `isActive` alone.
 
-`EditorSurfaceFrame` accepts the optional `toolbar`, the host-specific
-`toolbarPositionClassName`, scrolling content, and the tracked editor's optional
+### Insertion and document catalogs
+
+`EditorView` owns §5.7's eleven-entry slash catalog and the `[[` menu's
+document list, and hands `useMountedEditor` a *getter* for each, never the
+catalog itself. The extension mounts as a construction fact;
+its localized labels, group headings, hints, and the door into the image picker
+are read when the menu opens, so a locale switch relabels the menu instead of
+appearing in `EditorMountIdentity` and remounting the editor. The getter returns
+null on a code surface, on a read-only host, and behind a schema fence — the
+last because a slash command dispatches through a chain, and chains run on a
+non-editable editor. The wikilink getter answers null on the same three, plus a
+host with no project: without one there is nothing to search and nothing a link
+could resolve against. Its documents are the manuscript plus the active Work's
+scratch, which is the resolver's own candidate set.
+
+## The editor's scope
+
+One value, `{ projectId, workId }`, provided by `EditorView` around everything it
+renders (`editor-scope.tsx`) and read with `useEditorScope()`. It answers the
+questions the document itself cannot:
+
+| Consumer | What the Work decides |
+|---|---|
+| `useLinkableDocuments` | the `[[` menu offers that Work's scratch beside the manuscript |
+| `ResolveDocumentLinkRequest.workId` | a `work://` shorthand has a Work to be relative to |
+| `useOpenProjectDocument` | a followed link is looked for in that Work's scratch |
+
+`workId` arrives as a prop (the active thread's Work, or the project's default)
+and is deliberately NOT part of `EditorMountIdentity`: it is runtime scope, and
+remounting a collaborative editor destroys its UndoManager. `reviewWorkId` is a
+different fact — the Work that owns a draft under review — and stays separate.
+
+The runtimes `EditorView` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
+are ports and render nothing; the surfaces those lanes show the writer mount
+through the chrome host like every other one. See
+[`surfaces/link/.context/CONTEXT.md`](../surfaces/link/.context/CONTEXT.md).
+
+`EditorSurfaceFrame` accepts scrolling content and the tracked editor's optional
 scroll class/ref/handler. The frame owns every shared vertical, scroll, and
 prose-trim rule; hosts own their content and horizontal coordinate strategy.
+
+The frame's scroller is also the manuscript overlay: `position: relative` plus
+an overflow clip, which makes it the containing block for every measured
+surface and the box that takes one off the page when it leaves
+([`chrome/manuscript-overlay.ts`](../chrome/manuscript-overlay.ts)). That clip
+turns the column's gutter into a hard constraint rather than a look —
+`editor-column.ts` states the floor and `editor-column.test.ts` holds it.
 
 Passing the optional `editor` makes the whole scroll area click-to-focus
 territory: gutter presses place the caret at the nearest text position —
@@ -118,17 +202,15 @@ surface is deliberately unstyled and has no reinsertion or approval action.
 
 ## Peer mark popover
 
-`PeerMarkPopover.tsx` is the anchored evidence surface for one live
-session peer mark. The marker projection itself (`SessionMarkerStore` +
-`PeerMarkerExtension`) lives in
-[`core/editor`](../../../core/editor/.context/CONTEXT.md); this component is
-editor-host chrome, not a ProseMirror plugin.
+The lane is [`surfaces/peer-marks/`](../surfaces/peer-marks/AGENTS.md): one
+chrome surface over the press the projection's own plugin writes. `EditorView`
+holds nothing about it — the click, the Enter, the caret the writer left, and the
+mark that is open all live in `core/editor/extensions/` beside the decorations
+they belong to, and the surface reads them.
 
-`EditorView`'s click and keyboard handlers resolve the closest
-`[data-peer-mark]` element to a live `SessionMarker` from the session's
-`markerStore` and set it as the popover target; the popover is suppressed
-during inline draft review (`inReview`), since markers are a live-document
-surface and branch rooms have a different anchor space.
+Review needs no special case. A branch room has its own anchor space, so it
+mounts no projection at all, and a surface with no projection to read stands
+down on its own.
 
 Detail comes from the shared trail-detail cache in
 [`features/change-trail`](../../change-trail/AGENTS.md). `EditorView` prefetches
@@ -148,6 +230,8 @@ Trail-row navigation addresses a matching live session mark first, preserving
 its range/tick anatomy and emphasis treatment. Generic temporary range
 navigation remains the fallback after that mark has cleared or expired.
 
-Popover focus follows activation. Pointer open prevents Radix autofocus and
-pointer close restores the captured editor selection and caret. Keyboard
-activation moves focus into the popover; Escape/close returns focus to the mark.
+Popover focus follows activation. Pointer open leaves the caret in the prose and
+pointer close restores the held selection. Keyboard activation moves focus into
+the popover; Escape or close returns focus to the mark's current span. Neither
+hands anything back when another surface opened in its place — Mod+K reaches the
+popover as a close, and the caret then belongs to what opened.

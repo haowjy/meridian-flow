@@ -1,0 +1,540 @@
+// @vitest-environment jsdom
+/**
+ * The semantics matrix: what each entry leaves in the document, and where the
+ * caret is standing afterwards.
+ *
+ * Both halves of §5.7 are contracts a writer feels immediately — an entry that
+ * restyles the sentence they were writing, or one that lands the caret outside
+ * the thing they just asked for, is the F4/law 2 failure the rebuild exists to
+ * fix — and neither is visible from the trigger's own tests.
+ */
+import { Editor, type JSONContent } from "@tiptap/core";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { createStandaloneEditorExtensions } from "../../config";
+import { defaultDiagramProvider } from "../../diagrams";
+import { type ObjectAt, registerObjectEngagement } from "../../objects";
+import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
+import { applySlashCommand } from "./slash-insertion";
+
+let editor: Editor | null = null;
+
+afterEach(() => {
+  editor?.destroy();
+  editor = null;
+});
+
+const catalog = (requestImageUpload = vi.fn()): SlashCommandCatalog => ({
+  items: [],
+  menuLabel: "Insert",
+  groupLabels: { text: "Text", insert: "Insert" },
+  requestImageUpload,
+});
+
+function item(id: SlashCommandId): SlashCommandItem {
+  return { id, group: "text", label: id, aliases: [] };
+}
+
+/** Every entry that makes a block: the whole catalog except the picture. */
+const BLOCK_ENTRIES = [
+  "heading-1",
+  "heading-2",
+  "heading-3",
+  "bullet-list",
+  "numbered-list",
+  "quote",
+  "divider",
+  "table",
+  "diagram",
+  "code",
+] as const satisfies readonly SlashCommandId[];
+
+/**
+ * Mounts a document whose last paragraph ends in `trigger`, and returns the
+ * range covering it — exactly what `@tiptap/suggestion` hands `command`.
+ */
+function mountWithTrigger(text: string, trigger: string, trailing: JSONContent[] = []) {
+  const line = `${text}${trigger}`;
+  editor = new Editor({
+    extensions: createStandaloneEditorExtensions(),
+    content: {
+      type: "doc",
+      content: [
+        line
+          ? { type: "paragraph", content: [{ type: "text", text: line }] }
+          : { type: "paragraph" },
+        ...trailing,
+      ],
+    },
+  });
+  const from = 1 + text.length;
+  return { editor, range: { from, to: from + trigger.length } };
+}
+
+/**
+ * Mounts arbitrary structure and finds the `/x` a writer typed inside it, so a
+ * nested case reads as the document it is rather than as position arithmetic.
+ */
+const TRIGGER = "/x";
+
+function mountAround(content: JSONContent[]) {
+  editor = new Editor({
+    extensions: createStandaloneEditorExtensions(),
+    content: { type: "doc", content },
+  });
+  let from: number | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (from !== null) return false;
+    if (!node.isText) return true;
+    const index = node.text?.indexOf(TRIGGER) ?? -1;
+    if (index >= 0) from = pos + index;
+    return true;
+  });
+  if (from === null) throw new Error("fixture has no trigger");
+  return { editor, range: { from, to: from + TRIGGER.length } };
+}
+
+const listItem = (text: string): JSONContent => ({
+  type: "list_item",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }],
+});
+
+const cell = (text: string): JSONContent => ({
+  type: "table_cell",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }],
+});
+
+const row = (...cells: JSONContent[]): JSONContent => ({ type: "table_row", content: cells });
+
+/** The node types the caret's block chain sits in, outermost first. */
+function caretChain(instance: Editor): string[] {
+  const { $from } = instance.state.selection;
+  return Array.from({ length: $from.depth }, (_, depth) => $from.node(depth + 1).type.name);
+}
+
+/** The table role of the node holding the caret's paragraph, so "still in the cell" reads as itself. */
+function cellAroundCaret(instance: Editor): unknown {
+  return instance.state.selection.$from.node(-1).type.spec.tableRole;
+}
+
+function blockTypes(instance: Editor): string[] {
+  return instance.state.doc.content.content.map((node) => node.type.name);
+}
+
+/** What each catalog entry leaves standing in a cell (the diagram is a fence). */
+const CELL_LANDINGS: Record<(typeof BLOCK_ENTRIES)[number], string> = {
+  "heading-1": "heading",
+  "heading-2": "heading",
+  "heading-3": "heading",
+  "bullet-list": "bullet_list",
+  "numbered-list": "ordered_list",
+  quote: "blockquote",
+  divider: "horizontal_rule",
+  table: "table",
+  diagram: "code_block",
+  code: "code_block",
+};
+
+/** The first cell in document order, with its outer document range. */
+function firstCell(instance: Editor): { node: PMNode; from: number; to: number } {
+  let found: { node: PMNode; from: number; to: number } | null = null;
+  instance.state.doc.descendants((node, pos) => {
+    if (found) return false;
+    const role = node.type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") {
+      found = { node, from: pos, to: pos + node.nodeSize };
+    }
+    return !found;
+  });
+  if (!found) throw new Error("fixture has no cell");
+  return found;
+}
+
+function firstCellBlockTypes(instance: Editor): string[] {
+  return firstCell(instance).node.content.content.map((node) => node.type.name);
+}
+
+function firstCellText(instance: Editor): string {
+  return firstCell(instance).node.textContent;
+}
+
+/** Positional, not structural: whatever the entry made, the caret is in the cell. */
+function expectCaretInFirstCell(instance: Editor, entry: string): void {
+  const { from, to } = firstCell(instance);
+  const head = instance.state.selection.head;
+  expect(head, `${entry} caret`).toBeGreaterThan(from);
+  expect(head, `${entry} caret`).toBeLessThan(to);
+}
+
+describe("slash insertion semantics", () => {
+  it("converts an empty paragraph in place", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/head");
+    applySlashCommand(instance, range, item("heading-1"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["heading"]);
+    expect(instance.state.doc.firstChild?.attrs.level).toBe(1);
+    expect(instance.state.doc.firstChild?.textContent).toBe("");
+  });
+
+  it("inserts after a paragraph that has content, leaving the sentence alone", () => {
+    const { editor: instance, range } = mountWithTrigger("The Warden said nothing. ", "/head");
+    applySlashCommand(instance, range, item("heading-2"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["paragraph", "heading"]);
+    expect(instance.state.doc.firstChild?.textContent).toBe("The Warden said nothing. ");
+    expect(caretChain(instance)).toEqual(["heading"]);
+  });
+
+  it("opens a table with the caret in the first cell", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/table");
+    applySlashCommand(instance, range, item("table"), catalog());
+
+    const table = instance.state.doc.firstChild;
+    expect(table?.type.name).toBe("table");
+    expect(table?.childCount).toBe(3);
+    expect(table?.firstChild?.firstChild?.type.name).toBe("table_header");
+    expect(caretChain(instance)).toEqual(["table", "table_row", "table_header", "paragraph"]);
+  });
+
+  it("opens a code block with the caret in the fence", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/code");
+    applySlashCommand(instance, range, item("code"), catalog());
+
+    expect(caretChain(instance)).toEqual(["code_block"]);
+    expect(instance.state.doc.firstChild?.textContent).toBe("");
+  });
+
+  /**
+   * A diagram's readiness is a surface, not a caret: law 2's exception says a
+   * just-made object opens ready to edit, and the object lane owns what
+   * "open" means for one. This asserts the hand-off rather than the fence,
+   * because the fence is what the writer sees only until M5's dialog exists.
+   */
+  it("hands a new diagram to the object lane, at the position it landed", () => {
+    const { editor: instance, range } = mountWithTrigger("The gate stood open. ", "/diagram");
+    const provider = defaultDiagramProvider();
+    const opened: ObjectAt[] = [];
+    // Registered against the diagram's own registration, which is how a second
+    // dialect would register its own surface beside this one.
+    registerObjectEngagement(instance, `diagram:${provider.language}`, (target) =>
+      opened.push(target),
+    );
+
+    applySlashCommand(instance, range, item("diagram"), catalog());
+
+    expect(opened).toHaveLength(1);
+    expect(instance.state.doc.nodeAt(opened[0].pos)).toBe(opened[0].node);
+    expect(opened[0].node.attrs.language).toBe(provider.language);
+    expect(opened[0].node.textContent).toBe(provider.starterSource);
+  });
+
+  it("leaves a diagram editable in place while no lane has registered its surface", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/diagram");
+    applySlashCommand(instance, range, item("diagram"), catalog());
+
+    const node = instance.state.doc.firstChild;
+    expect(node?.attrs.language).toBe(defaultDiagramProvider().language);
+    expect(node?.textContent).toBe(defaultDiagramProvider().starterSource);
+    expect(caretChain(instance)).toEqual(["code_block"]);
+  });
+
+  it("asks no surface for a table: its readiness is the caret in its first cell", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/table");
+    const opened: ObjectAt[] = [];
+    registerObjectEngagement(instance, "table", (target) => opened.push(target));
+
+    applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(opened).toHaveLength(0);
+    expect(caretChain(instance)).toEqual(["table", "table_row", "table_header", "paragraph"]);
+  });
+
+  it("opens a list with the caret in its first item", () => {
+    const { editor: instance, range } = mountWithTrigger("", "/bullet");
+    applySlashCommand(instance, range, item("bullet-list"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["bullet_list"]);
+    expect(caretChain(instance)).toEqual(["bullet_list", "list_item", "paragraph"]);
+  });
+
+  it("gives a divider at the end of the document a line to keep typing on", () => {
+    const { editor: instance, range } = mountWithTrigger("She stepped through. ", "/div");
+    applySlashCommand(instance, range, item("divider"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["paragraph", "horizontal_rule", "paragraph"]);
+    expect(instance.state.selection.$from.parent.type.name).toBe("paragraph");
+    expect(instance.state.selection.from).toBeGreaterThan(instance.state.doc.content.size - 3);
+  });
+
+  it("lands the caret in the paragraph that already follows a divider", () => {
+    const { editor: instance, range } = mountWithTrigger("Before. ", "/div", [
+      { type: "paragraph", content: [{ type: "text", text: "After." }] },
+    ]);
+    applySlashCommand(instance, range, item("divider"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["paragraph", "horizontal_rule", "paragraph"]);
+    expect(instance.state.selection.$from.parent.textContent).toBe("After.");
+  });
+
+  it("hands the image entry to the host picker and inserts nothing", () => {
+    const requestImageUpload = vi.fn();
+    const { editor: instance, range } = mountWithTrigger("A portrait: ", "/image");
+    applySlashCommand(instance, range, item("image"), catalog(requestImageUpload));
+
+    expect(blockTypes(instance)).toEqual(["paragraph"]);
+    expect(instance.state.doc.firstChild?.textContent).toBe("A portrait: ");
+    expect(requestImageUpload).toHaveBeenCalledTimes(1);
+    // Mid sentence: the picture goes between the words, not after the block.
+    expect(requestImageUpload.mock.calls[0][0]).toMatchObject({
+      from: range.from,
+      to: range.from,
+    });
+  });
+
+  it("consumes the trigger text on every path", () => {
+    const { editor: instance, range } = mountWithTrigger("Keep this. ", "/quote");
+    applySlashCommand(instance, range, item("quote"), catalog());
+
+    expect(instance.state.doc.textContent).toBe("Keep this. ");
+    expect(caretChain(instance)).toEqual(["blockquote", "paragraph"]);
+  });
+});
+
+/**
+ * §5.7 says the new block lands "after the current one", and inside a list or
+ * a table that sentence needs a level. A list item exists only as part of its
+ * list and a cell only as part of its table, so "after" means after the whole
+ * structure: a table wedged inside a bullet, or a command that silently does
+ * nothing because the cell will not take it (law 5), is not what the writer
+ * asked for.
+ */
+describe("slash insertion out of nested structures", () => {
+  it("lands after the whole list, not inside the item", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "bullet_list", content: [listItem(`hello ${TRIGGER}`)] },
+    ]);
+    const applied = applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(applied).toBe(true);
+    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
+    expect(instance.state.doc.firstChild?.childCount).toBe(1);
+    expect(instance.state.doc.firstChild?.textContent).toBe("hello ");
+  });
+
+  it("keeps a multi-item list whole and lands after it", () => {
+    const { editor: instance, range } = mountAround([
+      {
+        type: "bullet_list",
+        content: [listItem("first"), listItem(`second ${TRIGGER}`), listItem("third")],
+      },
+    ]);
+    applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
+    expect(instance.state.doc.firstChild?.childCount).toBe(3);
+    expect(instance.state.doc.firstChild?.textContent).toBe("firstsecond third");
+  });
+
+  it("escapes a nested list all the way out", () => {
+    const { editor: instance, range } = mountAround([
+      {
+        type: "bullet_list",
+        content: [
+          {
+            type: "list_item",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "outer" }] },
+              { type: "bullet_list", content: [listItem(`inner ${TRIGGER}`)] },
+            ],
+          },
+        ],
+      },
+    ]);
+    applySlashCommand(instance, range, item("table"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
+    expect(instance.state.doc.firstChild?.textContent).toBe("outerinner ");
+  });
+
+  it("inserts inside the cell without escaping it, from any cell", () => {
+    for (const target of ["first", "middle", "last"]) {
+      const cells = ["first", "middle", "last"].map((name) =>
+        cell(name === target ? `${name} ${TRIGGER}` : name),
+      );
+      const { editor: instance, range } = mountAround([
+        { type: "table", content: [row(...cells)] },
+      ]);
+      const applied = applySlashCommand(instance, range, item("table"), catalog());
+
+      expect(applied, `from the ${target} cell`).toBe(true);
+      expect(blockTypes(instance), `from the ${target} cell`).toEqual(["table"]);
+      const targetCell = instance.state.doc.firstChild?.firstChild?.child(
+        ["first", "middle", "last"].indexOf(target),
+      );
+      expect(
+        targetCell?.content.content.map((node) => node.type.name),
+        `from the ${target} cell`,
+      ).toEqual(["paragraph", "table"]);
+      expect(caretChain(instance), `from the ${target} cell`).toEqual([
+        "table",
+        "table_row",
+        "table_cell",
+        "table",
+        "table_row",
+        "table_header",
+        "paragraph",
+      ]);
+      instance.destroy();
+    }
+  });
+
+  it("inserts after nonempty cell prose and keeps the caret in the cell", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
+    ]);
+    const applied = applySlashCommand(instance, range, item("heading-1"), catalog());
+
+    expect(applied).toBe(true);
+    expect(blockTypes(instance)).toEqual(["table"]);
+    expect(
+      instance.state.doc.firstChild?.firstChild?.firstChild?.content.content.map(
+        (node) => node.type.name,
+      ),
+    ).toEqual(["paragraph", "heading"]);
+    expect(caretChain(instance)).toEqual(["table", "table_row", "table_cell", "heading"]);
+  });
+
+  /**
+   * The whole catalog, applied where the schema now says it may go: each block
+   * entry lands INSIDE the cell (teleport rule), the sentence the writer was
+   * standing in is untouched, and the caret stays within the cell's own range
+   * so the pick never walks the writer out of the structure they were in.
+   */
+  it("lands every block entry inside the cell, after the cell's prose", () => {
+    for (const id of BLOCK_ENTRIES) {
+      const { editor: instance, range } = mountAround([
+        { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
+      ]);
+      const applied = applySlashCommand(instance, range, item(id), catalog());
+
+      expect(applied, id).toBe(true);
+      expect(blockTypes(instance), id).toEqual(["table"]);
+      const landed = firstCellBlockTypes(instance);
+      const expected =
+        id === "divider"
+          ? ["paragraph", "horizontal_rule", "paragraph"]
+          : ["paragraph", CELL_LANDINGS[id]];
+      expect(landed, id).toEqual(expected);
+      expect(firstCellText(instance), id).toContain("rank ");
+      expectCaretInFirstCell(instance, id);
+      instance.destroy();
+    }
+  });
+
+  /**
+   * The other half of §5.7 in a cell: an empty cell paragraph CONVERTS, so the
+   * cell then holds exactly what the writer asked for — including a nested
+   * table — and the caret is ready to work inside it.
+   */
+  it("converts an empty cell's paragraph in place, for every block entry", () => {
+    for (const id of BLOCK_ENTRIES) {
+      const { editor: instance, range } = mountAround([
+        { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
+      ]);
+      const applied = applySlashCommand(instance, range, item(id), catalog());
+
+      expect(applied, id).toBe(true);
+      expect(blockTypes(instance), id).toEqual(["table"]);
+      const expected = id === "divider" ? ["horizontal_rule", "paragraph"] : [CELL_LANDINGS[id]];
+      expect(firstCellBlockTypes(instance), id).toEqual(expected);
+      expectCaretInFirstCell(instance, id);
+      instance.destroy();
+    }
+  });
+
+  /**
+   * Where the picture is asked for, rather than where the writer is standing
+   * when the file comes back. The host's chooser outlives the pick, so the lane
+   * hands over an anchored place and nothing else; a picker reading the
+   * selection then is what put a cell's picture past the whole table.
+   */
+  it("asks the host for a picture at the place the trigger left, inside the cell", () => {
+    const requestImageUpload = vi.fn();
+    const { editor: instance, range } = mountAround([
+      { type: "table", content: [row(cell(`portrait ${TRIGGER}`), cell("notes"))] },
+    ]);
+
+    const applied = applySlashCommand(instance, range, item("image"), catalog(requestImageUpload));
+
+    expect(applied).toBe(true);
+    expect(blockTypes(instance)).toEqual(["table"]);
+    expect(instance.state.doc.textContent).toBe("portrait notes");
+    expect(requestImageUpload).toHaveBeenCalledTimes(1);
+    const [anchor] = requestImageUpload.mock.calls[0];
+    expect(anchor).toMatchObject({ from: range.from, to: range.from });
+    expect(instance.state.doc.resolve(anchor.from).node(-1).type.spec.tableRole).toBe("cell");
+    expect(cellAroundCaret(instance)).toBe("cell");
+  });
+
+  it("still opens the picker from an empty paragraph in prose", () => {
+    const requestImageUpload = vi.fn();
+    const { editor: instance, range } = mountWithTrigger("", "/image");
+
+    const applied = applySlashCommand(instance, range, item("image"), catalog(requestImageUpload));
+
+    expect(applied).toBe(true);
+    expect(requestImageUpload).toHaveBeenCalledTimes(1);
+    expect(requestImageUpload.mock.calls[0][0]).toMatchObject({ from: 1, to: 1 });
+    expect(blockTypes(instance)).toEqual(["paragraph"]);
+    expect(instance.state.doc.textContent).toBe("");
+  });
+
+  it("opens a nested table ready to work: caret in its first cell", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
+    ]);
+    expect(applySlashCommand(instance, range, item("table"), catalog())).toBe(true);
+    expect(caretChain(instance)).toEqual([
+      "table",
+      "table_row",
+      "table_cell",
+      "table",
+      "table_row",
+      "table_header",
+      "paragraph",
+    ]);
+  });
+
+  it("carries a text entry out of a list too", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "bullet_list", content: [listItem(`hello ${TRIGGER}`)] },
+    ]);
+    applySlashCommand(instance, range, item("heading-2"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["bullet_list", "heading"]);
+    expect(caretChain(instance)).toEqual(["heading"]);
+  });
+
+  /**
+   * A quote is not an owning structure: its children ARE free-standing blocks
+   * that happen to be quoted, so the new one belongs inside it. Pinned because
+   * it is the deliberate other side of the rule above.
+   */
+  it("stays inside a quote", () => {
+    const { editor: instance, range } = mountAround([
+      {
+        type: "blockquote",
+        content: [{ type: "paragraph", content: [{ type: "text", text: `she wrote ${TRIGGER}` }] }],
+      },
+    ]);
+    applySlashCommand(instance, range, item("code"), catalog());
+
+    expect(blockTypes(instance)).toEqual(["blockquote"]);
+    expect(instance.state.doc.firstChild?.content.content.map((node) => node.type.name)).toEqual([
+      "paragraph",
+      "code_block",
+    ]);
+    expect(caretChain(instance)).toEqual(["blockquote", "code_block"]);
+  });
+});

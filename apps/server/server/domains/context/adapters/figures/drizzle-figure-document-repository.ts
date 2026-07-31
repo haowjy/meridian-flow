@@ -3,7 +3,6 @@ import { contextSources, documents, works } from "@meridian/database/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { mapFigureFileType } from "../../figures/figure-file-types.js";
 import type {
-  AttachDocumentFileInput,
   DocumentFileRecord,
   FigureDocumentRepository,
 } from "../../ports/figure-document-repository.js";
@@ -17,7 +16,7 @@ function mapDocumentFile(
   const fileType = mapFigureFileType(row.mimeType);
   if (!fileType || row.fileType !== fileType) return null;
   return {
-    documentId: row.id,
+    assetDocumentId: row.id,
     storageUrl: row.storageUrl,
     mimeType: row.mimeType,
     fileType,
@@ -28,34 +27,15 @@ function mapDocumentFile(
 export class DrizzleFigureDocumentRepository implements FigureDocumentRepository {
   constructor(private readonly db: Database) {}
 
-  async findDocumentFileForProject(
-    projectId: string,
-    documentId: string,
-  ): Promise<DocumentFileRecord | null> {
-    const row = await this.findDocumentForProject(projectId, documentId);
-    return row ? mapDocumentFile(row) : null;
+  async documentExistsForProject(projectId: string, documentId: string): Promise<boolean> {
+    return (await this.findDocumentForProject(projectId, documentId)) !== null;
   }
 
-  async attachDocumentFile(input: AttachDocumentFileInput): Promise<DocumentFileRecord | null> {
-    const existing = await this.findDocumentForProject(input.projectId, input.documentId);
-    if (!existing) return null;
-    const [row] = await this.db
-      .update(documents)
-      .set({
-        storageUrl: input.storageUrl,
-        mimeType: input.mimeType,
-        fileType: input.fileType,
-        sizeBytes: input.sizeBytes,
-        updatedAt: new Date(),
-      })
-      .where(eq(documents.id, input.documentId))
-      .returning({
-        id: documents.id,
-        storageUrl: documents.storageUrl,
-        mimeType: documents.mimeType,
-        fileType: documents.fileType,
-        sizeBytes: documents.sizeBytes,
-      });
+  async findDocumentFileForProject(
+    projectId: string,
+    assetDocumentId: string,
+  ): Promise<DocumentFileRecord | null> {
+    const row = await this.findDocumentForProject(projectId, assetDocumentId);
     return row ? mapDocumentFile(row) : null;
   }
 

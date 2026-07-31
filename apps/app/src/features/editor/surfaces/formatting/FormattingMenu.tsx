@@ -1,0 +1,255 @@
+/**
+ * FormattingMenu — the menu a writer asks for in the prose (§5.1).
+ *
+ * Selection alone raises nothing (law 7, ruling 13): highlighting is how a
+ * writer reads and how they point a passage out to the AI, so formatting is
+ * asked for by right-click, Menu key, or long press. `useFormattingMenuDoors`
+ * owns those three; this file owns what the menu says and what each item does.
+ *
+ * A right-click over a selection and a right-click at a bare caret both arrive
+ * here (human ruling, 2026-07-29): the ladder's floor moves the caret to where
+ * the writer pointed, so the same items answer for the same block either way.
+ * In a table cell the menu carries the row and column lists as well, straight
+ * from the grips' own surface.
+ *
+ * Every item works or greys with a reason, and never disappears (law 5). The
+ * marks row reflects and reverses (law 6), Turn into checks the type the block
+ * already is and converts back to a paragraph when it is chosen again, and the
+ * clipboard staples are here so taking the browser's menu costs the writer
+ * nothing they used daily.
+ */
+
+import type { Editor } from "@tiptap/core";
+import {
+  Bold,
+  ChevronRight,
+  Code,
+  Italic,
+  Link as LinkIcon,
+  Repeat,
+  Strikethrough,
+} from "lucide-react";
+import { type ComponentType, useRef, useState } from "react";
+
+import { openLinkForm } from "@/core/editor/links";
+import { cn } from "@/lib/utils";
+import {
+  EditorMenu,
+  EditorMenuCheckboxItem,
+  EditorMenuItem,
+  EditorMenuSeparator,
+  EditorMenuShortcut,
+  EditorMenuSub,
+  EditorMenuSubContent,
+  EditorMenuSubTrigger,
+} from "../../chrome";
+import { TableCaretMenuItems } from "../table";
+import {
+  BLOCK_TYPE_IDS,
+  type BlockedSubject,
+  type BlockTypeId,
+  blockTypeLabel,
+  toggleTextMark,
+  turnIntoBlockType,
+} from "../toolbar";
+import { ClipboardMenuItems } from "./clipboard-menu";
+import {
+  addLinkLabel,
+  formattingBlockedMessage,
+  formattingMarkLabel,
+  turnIntoLabel,
+} from "./formatting-copy";
+import {
+  FORMATTING_MARK_IDS,
+  FORMATTING_MARKS,
+  type FormattingItemState,
+  type FormattingMarkId,
+  type FormattingMenuModel,
+  formattingMenuModel,
+} from "./formatting-menu-items";
+import type { FormattingMenuPoint } from "./formatting-triggers";
+import { useFormattingMenuDoors } from "./useFormattingMenuDoors";
+
+const MARK_ICONS: Record<FormattingMarkId, ComponentType<{ className?: string }>> = {
+  bold: Bold,
+  italic: Italic,
+  strike: Strikethrough,
+  code: Code,
+};
+
+export function FormattingMenu({ editor }: { editor: Editor }) {
+  const [anchor, setAnchor] = useState<FormattingMenuPoint | null>(null);
+
+  useFormattingMenuDoors(editor, setAnchor);
+
+  // Held through the close so the menu fades out with its contents rather than
+  // emptying a frame before it goes.
+  const lastModel = useRef<FormattingMenuModel | null>(null);
+  if (anchor) lastModel.current = formattingMenuModel(editor);
+  const model = lastModel.current;
+
+  return (
+    <EditorMenu
+      editor={editor}
+      id="formatting-menu"
+      open={anchor !== null}
+      onOpenChange={(open) => {
+        if (!open) setAnchor(null);
+      }}
+      at={anchor}
+    >
+      {model ? (
+        <>
+          <div className="flex items-center gap-0.5 px-1 py-0.5">
+            {FORMATTING_MARK_IDS.map((id) => (
+              <MarkButton key={id} id={id} state={model.marks[id]} editor={editor} />
+            ))}
+          </div>
+          <EditorMenuSeparator />
+          <TurnInto model={model} editor={editor} />
+          <FormattingItem
+            subject="link"
+            label={addLinkLabel()}
+            icon={LinkIcon}
+            state={model.link}
+            // The link lane's own surface, not a second copy of it: a link
+            // made here and a link made from Ctrl+K or the toolbar commit
+            // through one flow, and it hangs at the phrase the writer
+            // selected rather than at the menu that opened it.
+            //
+            // Synchronously: the form registers its layer before the menu
+            // finishes closing, and `useChromeLayer` hands the caret back
+            // only when nothing succeeded it.
+            onSelect={() => openLinkForm(editor)}
+          />
+          {model.inTable ? (
+            <>
+              <EditorMenuSeparator />
+              <TableCaretMenuItems editor={editor} />
+            </>
+          ) : null}
+          <EditorMenuSeparator />
+          <ClipboardMenuItems editor={editor} closeMenu={() => setAnchor(null)} />
+        </>
+      ) : null}
+    </EditorMenu>
+  );
+}
+
+function MarkButton({
+  id,
+  state,
+  editor,
+}: {
+  id: FormattingMarkId;
+  state: FormattingItemState;
+  editor: Editor;
+}) {
+  const label = formattingMarkLabel(id);
+  const Icon = MARK_ICONS[id];
+
+  return (
+    // Icon-only, so the row's own tooltip names it — from `aria-label`, whether
+    // or not it can run.
+    <EditorMenuItem
+      aria-label={label}
+      aria-pressed={state.active || undefined}
+      blockedReason={formattingBlockedMessage("mark", state.blockedBy)}
+      className={cn("size-8 justify-center rounded-sm p-0", state.active && "bg-primary/10")}
+      onSelect={() => toggleTextMark(editor, FORMATTING_MARKS[id])}
+    >
+      {/* An explicit text colour every time: the menu's own rule mutes any
+          icon that has none, which would swallow the lit state. */}
+      <Icon className={cn("size-4", state.active ? "text-primary" : "text-foreground")} />
+    </EditorMenuItem>
+  );
+}
+
+function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const label = turnIntoLabel();
+  const blockedReason = formattingBlockedMessage("block-type", model.turnIntoBlockedBy);
+
+  // Every type refuses for one reason, so the list is not worth opening: the
+  // trigger greys in the list's place and answers for all eight.
+  if (blockedReason) {
+    return (
+      <EditorMenuItem blockedReason={blockedReason}>
+        <Repeat aria-hidden />
+        {label}
+        <ChevronRight className="ml-auto" aria-hidden />
+      </EditorMenuItem>
+    );
+  }
+
+  return (
+    <EditorMenuSub open={open} onOpenChange={setOpen}>
+      <EditorMenuSubTrigger>
+        <Repeat aria-hidden />
+        {label}
+      </EditorMenuSubTrigger>
+      <EditorMenuSubContent
+        className="min-w-44"
+        // Radix answers Escape inside a submenu by closing the whole menu,
+        // which spends two steps of the walk home on one key (law 3). Taking
+        // the key here closes this list and leaves the menu standing, so the
+        // next Escape is the one that puts the writer back in the prose.
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          setOpen(false);
+        }}
+      >
+        {BLOCK_TYPE_IDS.map((id) => (
+          <TurnIntoItem key={id} id={id} state={model.turnInto[id]} editor={editor} />
+        ))}
+      </EditorMenuSubContent>
+    </EditorMenuSub>
+  );
+}
+
+function TurnIntoItem({
+  id,
+  state,
+  editor,
+}: {
+  id: BlockTypeId;
+  state: FormattingItemState;
+  editor: Editor;
+}) {
+  return (
+    <EditorMenuCheckboxItem
+      checked={state.active}
+      blockedReason={formattingBlockedMessage("block-type", state.blockedBy)}
+      onSelect={() => turnIntoBlockType(editor, id)}
+    >
+      {blockTypeLabel(id)}
+    </EditorMenuCheckboxItem>
+  );
+}
+
+function FormattingItem({
+  subject,
+  label,
+  shortcut,
+  icon: Icon,
+  state,
+  onSelect,
+}: {
+  subject: BlockedSubject;
+  label: string;
+  shortcut?: string;
+  icon: ComponentType<{ className?: string }>;
+  state: FormattingItemState;
+  onSelect: () => void;
+}) {
+  return (
+    <EditorMenuItem
+      blockedReason={formattingBlockedMessage(subject, state.blockedBy)}
+      onSelect={onSelect}
+    >
+      <Icon />
+      {label}
+      {shortcut ? <EditorMenuShortcut>{shortcut}</EditorMenuShortcut> : null}
+    </EditorMenuItem>
+  );
+}

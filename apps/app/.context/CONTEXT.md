@@ -399,6 +399,16 @@ geometry) or it's a token that wants promoting.
 - Thread event log is in-memory in `apps/server`. Agent events lost on `apps/server` restart. Swap the adapter there without touching this app.
 - Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`) and skips `/api/auth/*` so TanStack Start route handlers can own WorkOS AuthKit cookie auth in-process.
 
+## E2E document fixtures
+
+E2E fixtures create document content through the authenticated context HTTP API.
+They may seed the relational project, Work, thread, and context-source shell in
+SQL, but never write `documents.markdown_projection` or collaboration tables.
+Yjs is the content authority, while `markdown_projection` is only a derived
+cache; a document row without canonical Yjs state is treated by
+`ensureDocument` as an empty checkpoint. Teardown deletes the owning context
+sources and relies on their document and collaboration cascades.
+
 ## Seeded from
 
 The official TanStack Start example (originally seeded from

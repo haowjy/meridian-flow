@@ -2,6 +2,7 @@
 
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import type { AssetPathResolver } from "@meridian/markup";
 import {
   deferUntilDrizzleCommit,
   deferUntilDrizzleRollback,
@@ -108,6 +109,8 @@ type CollabDocumentAccess = {
 
 type CollabDomainDeps = {
   db: Database;
+  /** Project asset index threaded to the markup codec at the composition root. */
+  assetPathResolver?: AssetPathResolver;
   documentAccess: CollabDocumentAccess;
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
@@ -186,6 +189,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,
+    assetPathResolver: deps.assetPathResolver,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
   });
   const projectionRefresher = createDocumentProjectionRefresher({

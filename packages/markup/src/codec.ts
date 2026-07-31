@@ -11,6 +11,7 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
+  AssetPathResolver,
   BuildOptions,
   CodecParseErrorLocation,
   MarkupCodec,
@@ -33,7 +34,10 @@ export function requiredBlockNamesForSchema(schema: Schema): string[] {
   return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));
 }
 
-export function createMarkupCodec(options: { schema: Schema }): MarkupCodecBuilder {
+export function createMarkupCodec(options: {
+  schema: Schema;
+  assetPathResolver: AssetPathResolver;
+}): MarkupCodecBuilder {
   const plugins: MarkupPlugin[] = [];
   return {
     use(plugin: MarkupPlugin) {
@@ -41,13 +45,19 @@ export function createMarkupCodec(options: { schema: Schema }): MarkupCodecBuild
       return this;
     },
     build(buildOptions?: BuildOptions) {
-      return buildMarkupCodec(options.schema, plugins, buildOptions ?? {});
+      return buildMarkupCodec(
+        options.schema,
+        options.assetPathResolver,
+        plugins,
+        buildOptions ?? {},
+      );
     },
   };
 }
 
 function buildMarkupCodec(
   schema: Schema,
+  assetPathResolver: AssetPathResolver,
   plugins: readonly MarkupPlugin[],
   options: BuildOptions,
 ): MarkupCodec {
@@ -61,6 +71,9 @@ function buildMarkupCodec(
   const postParsers = plugins
     .map((plugin) => plugin.postParse)
     .filter((hook): hook is NonNullable<MarkupPlugin["postParse"]> => hook !== undefined);
+  const postSerializers = plugins
+    .map((plugin) => plugin.postSerializeBlock)
+    .filter((hook): hook is NonNullable<MarkupPlugin["postSerializeBlock"]> => hook !== undefined);
 
   const blockMap = uniqueCodecMap(blocks, "block");
   const markMap = uniqueCodecMap(marks, "mark");
@@ -98,6 +111,22 @@ function buildMarkupCodec(
   const stringifyMarkdown = (root: MdastRoot): string =>
     stringifyProcessor.stringify(root as Parameters<typeof stringifyProcessor.stringify>[0]);
 
+  const parseBlocks = (content: string, baseCtx: ParseContext): PMNode[] => {
+    const source = preprocess(content);
+    const runtime = makeRuntime(source);
+    const ctx = withRuntime<ParseContext>(
+      { schema: baseCtx.schema, assetPathResolver: baseCtx.assetPathResolver },
+      runtime,
+    );
+    const tree = postParsers.reduce(
+      (current, hook) => hook(current),
+      parsePreparedMarkdown(source),
+    );
+    return tree.children
+      .map((child) => parseBlockAst(child, ctx))
+      .filter((node): node is PMNode => node !== null);
+  };
+
   const makeRuntime = (source: string): CodecRuntime => ({
     source,
     schema,
@@ -105,14 +134,22 @@ function buildMarkupCodec(
     blockMap,
     markMap,
     parseMarkdown,
+    parseBlocks,
     stringifyMarkdown,
+    serializeBlock: serializeWithHooks,
   });
 
-  const serializeOne = (block: PMNode, ctx: SerializeContext): string => {
+  const serializeWithHooks = (block: PMNode, ctx: SerializeContext): string => {
     const codec = blockMap.get(block.type.name);
     if (!codec) throw new Error(`pm->mdast: unsupported block node "${block.type.name}"`);
-    return ensureTrailingNewline(codec.serialize(block, ctx));
+    return postSerializers.reduce(
+      (current, hook) => hook(block, current, ctx),
+      codec.serialize(block, ctx),
+    );
   };
+
+  const serializeOne = (block: PMNode, ctx: SerializeContext): string =>
+    ensureTrailingNewline(serializeWithHooks(block, ctx));
 
   const serializeBody = (block: PMNode, ctx: SerializeContext): string => {
     const body = trimOneTrailingNewline(serializeOne(block, ctx));
@@ -121,14 +158,14 @@ function buildMarkupCodec(
 
   const serializeBlocks = (blockList: readonly PMNode[]): string[] => {
     const runtime = makeRuntime("");
-    const ctx = withRuntime<SerializeContext>({ schema }, runtime);
+    const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
     return blockList.map((block) => serializeBody(block, ctx));
   };
 
   return {
     serialize(blockList: PMNode[]): string {
       const runtime = makeRuntime("");
-      const ctx = withRuntime<SerializeContext>({ schema }, runtime);
+      const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
       const result = blockList.map((block) => serializeOne(block, ctx)).join("\n");
       if (result.replace(/\s/g, "").replace(/ /g, "").length === 0) return "";
       return result;
@@ -138,16 +175,7 @@ function buildMarkupCodec(
       if (content.trim().length === 0) {
         return { blocks: [schema.node("paragraph")] };
       }
-      const source = preprocess(content);
-      const runtime = makeRuntime(source);
-      const ctx = withRuntime<ParseContext>({ schema }, runtime);
-      const tree = postParsers.reduce(
-        (current, hook) => hook(current),
-        parsePreparedMarkdown(source),
-      );
-      const parsed = tree.children
-        .map((child) => parseBlockAst(child, ctx))
-        .filter((node): node is PMNode => node !== null);
+      const parsed = parseBlocks(content, { schema, assetPathResolver });
       return { blocks: parsed.length > 0 ? parsed : [schema.node("paragraph")] };
     },
 

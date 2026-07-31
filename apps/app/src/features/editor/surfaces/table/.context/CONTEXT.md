@@ -1,0 +1,326 @@
+# Table chrome — contracts and the calls behind them
+
+Reference depth for the table surface. Read [`AGENTS.md`](../AGENTS.md) first.
+
+## The verb matrix
+
+`tableVerbStates(state, { editable })` maps the selection to one
+`{ active, blockedBy }` per verb. Reasons are codes; `table-copy.ts` turns them
+into writer copy, so the same code can read differently per verb.
+
+| Context | Blocked verbs | Reason code |
+|---|---|---|
+| Selection outside any table | all | `no-table` |
+| Read-only host or schema fence | all | `document-read-only` |
+| Selection is on the header row | insert row above, move row up, move row down | `header-row-first` |
+| First or last row/column in the move's direction | that move | `at-table-edge` |
+| Any merged cell anywhere in the table | all four moves | `merged-cells` |
+| One row left | delete row | `single-row` |
+| One column left | delete column | `single-column` |
+| A caret rather than a cell selection | merge cells | `one-cell-selected` |
+| Cell selection that is not a rectangle | merge cells | `cells-not-rectangular` |
+| Selection spans the header row and the body | merge cells | `header-and-body` |
+| More than one cell selected | split cell | `many-cells-selected` |
+| One cell selected, carrying no span | split cell | `not-merged` |
+| No cell carries a `colwidth` | reset column widths | `no-column-widths` |
+
+Read-only outranks every structural reason: on a document the writer cannot
+change, saying so once is the honest answer.
+
+Inserts, deletes, alignment, the header toggle, and placement are never blocked
+by a span — only the four moves are, because reordering rows or columns by
+index across a merged cell corrupts the grid. `active` is computed for the
+reflecting verbs (alignment, header, placement) even where something is
+blocked: what is on can always come off.
+
+**Alignment reports unset as unset.** A column nobody has aligned reads in the
+reading direction and has not been decided, which is different from a column
+decided to be left. The radio group shows no choice made; `null` is a value.
+
+## Geometry
+
+`tableChromePieces` is the whole placement decision: a pure function of three
+rectangles — the table, the hovered column band, the hovered row band —
+returning a box per piece. All three arrive in the manuscript pane's
+coordinates and so does every answer, which is what makes a grip a label on its
+row rather than a thing that chases it: the pane carries the chrome through a
+scroll and these numbers never change. Sizes live there too, not in CSS: the
+module that decides where a grip goes has to know how big it is.
+
+| Piece | Placement |
+|---|---|
+| Column grip | 30×15 pill, centred on the hovered column, bottom edge 4px above the table |
+| Row grip | 15×30 pill, centred on the hovered row, right edge 6px left of the table |
+| Add column tab | 18px circle, 9px right of the table's right edge, vertically centred |
+| Add row tab | 18px circle, 6px INSIDE the table's bottom edge, horizontally centred |
+
+**The add-row tab is inside the frame, and mockup 05 draws it below.** The
+constraint won (human ruling, 2026-07-29: chrome never overlaps prose, and a
+click aimed at prose must never mutate a table). All that separates two blocks
+is `.ProseMirror > * + *` at `0.9em` — 14.4px at the reading size, less at a
+smaller one — and the tab is 18px, so no gap below the frame keeps it out of
+the paragraph under the table. At 9px it ran to y=1092.6 while that paragraph's
+first line box began at 1083, and a click on the writer's own first line added
+a row. Sideways nothing collides: a table is a block, so the space beside it is
+the page gutter or the table's own empty half, and the add-column tab keeps its
+gap.
+
+`tableHoverZone` is the other half of the same decision: the frame expanded by
+each side's band (19 top, 21 left, 27 right, 15 bottom), which is what the
+pointer has to stay inside for a reveal to hold. The bottom band is half a row
+grip, because nothing is placed below the frame any more and the only thing
+that still reaches there is a grip centred on a last row shorter than itself.
+Placement and hover are checked against each other in the tests — a piece drawn
+outside the zone would dismiss itself as the writer reached for it.
+
+**The pane clips; nothing here does.** The chrome is drawn IN the manuscript's
+scroll pane, so its overflow takes off whatever has left it, exactly and on the
+frame it leaves — a grip whose row is halfway off the top slides under the edge
+with the row. Nothing is clamped either: a grip pushed back inside would sit
+beside a row it does not serve. The document toolbar needs no special case; it
+lives above the pane rather than inside it, so nothing drawn in the pane can
+reach it.
+
+This replaced a per-piece fit test against a viewport rect, which was wrong
+twice over: it was all-or-nothing where the clip is exact, and it was computed
+from a measurement a frame behind the scroll that invalidated it. Probed at one
+wheel notch a frame, that frame drew the row grip beside a row three below the
+one the pointer was on, and the block handle — which had no fit test at all —
+over the app's breadcrumb.
+
+When the hovered cell itself leaves the visible part of the pane — scrolled
+away, or taken by a peer deleting the row — the anchor is released whole: open
+menu closed, anchor dropped. `overlayViewport` is what answers that, and it is
+the one question the pane's clip cannot: a grip half off the edge is still the
+right grip, while a row nobody can see has nothing left for a menu to aim at.
+Closing the menu is the load-bearing part. An open menu holds the anchor still
+so a stray hover cannot move the grips out from under it, so a menu that
+outlived its own row would pin the surface to a cell nobody is on and no later
+hover could replace it: the table's chrome never came back.
+
+The coordinator is handed a `NodeHold` as this lane's reading
+(`registerHoverAnchor<NodeHold>`), because it keeps that reading until the
+pointer moves again and re-delivers it after any layout change. A position kept
+there is a position cached across a peer's write: with a grip menu open, a peer
+`addRowBefore` above the writer's row made the re-delivered number name the new
+empty cell, and the grips jumped to the peer's row the moment the menu closed
+(measured in a two-browser CDP session, 2026-07-29). Resolving the hold answers
+with the cell or with nothing.
+
+What "the cell" means here is the hold, not the element. The approach settles on
+a `NodeHold` and `useNodeHold` carries it through every transaction, so a rebuild
+that replaces the `<td>` moves the grips and a rebuild that takes the cell away
+releases them. `cellElementAt` is the crossing back to geometry and
+`cellDocPosition` the crossing in from the pointer. Nothing between them is kept
+as a number: an open menu freezes the grips on the cell it already holds, and
+where the pointer is remains the kernel's to report at its next reading of the
+page.
+
+Opacity on the container fades all four together. The container is a zero-size
+box pinned to the pane's content origin, and opacity makes a stacking context
+but **not** a containing block, so each piece still resolves against the pane
+and lands on exactly the coordinates it was measured in — do not add
+`transform` or `will-change` to that container or every grip will jump.
+
+Rects are re-measured on `watchManuscriptLayout`: a `ResizeObserver` over the
+cell and the table, a resize, and every editor transaction, because a row grows
+as the writer types into it. Scroll is in that list too and no longer changes
+anything — the numbers are scroll-invariant now, which is the point.
+
+## The four menus, and who takes a right-click
+
+| Shape | Door | Carries |
+|---|---|---|
+| Row | row grip, left-click or right-click | insert, merge/split, move, delete, `Table ▸` |
+| Column | column grip, either button | insert, alignment, merge/split, move, delete, `Table ▸` |
+| Cells | right-click inside a swept rectangle | merge/split, alignment, `Table ▸` |
+| Table | the selected table's ⋮ | header row, alignment, placement, widths, delete |
+
+The cell menu is deliberately the shortest. Merge and split are what a
+rectangle exists for, alignment applies to the columns it covers, and the row
+and column verbs already have a home on the grips a few pixels away; a third
+copy of them would be three places saying the same thing.
+
+`cell-selection` is the ladder's last rung, added because nothing above it
+wanted a `CellSelection`: `proseSelectionCovers` admits `TextSelection` and
+`AllSelection` only, so the formatting menu stands down, a grip is chrome
+rather than a cell, and `objectSurfaceKind` returns null for a table. A swept
+rectangle therefore reached no menu at all. Last is the right place for it: a
+link inside a selected cell is still a link, and a grip drawn over one is
+still a grip.
+
+`claimedSweptCells` decides it, pure and testable, and answers with the two
+cells rather than with a yes: the claim is the last moment the rectangle is on
+screen. It asks whether the pointer is inside one of the cells the selection
+COVERS, not whether it falls in the selection's `from`..`to` range: a rectangle
+two columns wide in a four-column table spans cells it does not contain.
+
+## What a menu acts on
+
+`TableMenuTarget` is the one answer, in three shapes:
+
+| Shape | Held | Materialized as |
+|---|---|---|
+| `axis` | the cell a grip serves, and `row` or `column` | `CellSelection.rowSelection` / `colSelection` on that cell |
+| `cells` | a swept rectangle's anchor and head cells | `CellSelection.create` between them |
+| `selection` | nothing | the writer's own selection, as it stands |
+
+`tableTargetState` materializes a target into the state the verb matrix is read
+from — applied, never dispatched, because asking what a verb would do must not
+move the writer's selection. `runTableVerbOn` dispatches that same selection and
+then runs the verb. Both answer null once a held cell is gone, and null closes
+the menu.
+
+Neither the selection nor a position can be the target, and both were measured:
+
+- A peer typing one character above the table restores the writer's place as a
+  caret, so a swept rectangle stops being selected and `mergeCells` answers
+  `one-cell-selected` while its menu is still open.
+- A peer's `addRowBefore` leaves a different, EMPTY cell at the number the
+  pointer last read, so a position that still starts a cell says nothing about
+  which cell. Re-holding there moved the grips to the peer's new row and pointed
+  "delete row" at it.
+
+Both cases are in [`table-cell-hold.test.ts`](../table-cell-hold.test.ts),
+against two real bindings, because only a second y-prosemirror binding produces
+the whole-document rebuild that causes them.
+
+`selection` holds nothing because those menus are mounted BY the arrangement
+they act on — the caret's lists inside the formatting menu, the selected table's
+⋮ — and they end by being unmounted rather than by outliving it.
+
+## The left margin is shared, and the bands must not stack
+
+Measured on the manuscript column: prose edge 288, table frame 328, so the
+margin is a 40px band. Two controls live in it, and the split is a ruling:
+
+| Band | Owner | x |
+|---|---|---|
+| outer | block handle | 284 to **306** |
+| inner | row grips | **307** to 322 |
+
+A grip belongs beside the row it serves; the block handle is a document-level
+control, so it takes the outer band. This lane's half is
+`table.left - ROW_GRIP_GAP - GRIP_SHORT`, which is 21px inside the frame at
+any column width; M9's handle clears 22, one pixel outside it. `ROW_GRIP_GAP`
+is the one number to change here if the ruling ever goes the other way, and
+the grip cannot vacate inward much: it is 15px around a 13px icon. The hover
+zone's left edge is the same 21: it has to reach the grip and must not reach
+past it, or the band the handle is hovered in belongs to two surfaces again.
+
+M9's [`blocks/.context/CONTEXT.md`](../../blocks/.context/CONTEXT.md) states
+the same split from the other side; change one and the other is wrong.
+
+## Hover and the menus
+
+The approach is the kernel's, through one `registerHoverAnchor` lane
+(`core/editor/chrome/hover-anchor.ts`). This lane answers one question — which
+cell of this table is at this point — and gets back its share of whichever
+block currently owns hover chrome, keyed on the cell ELEMENT so an unchanged
+cell settles once rather than on every pointer move.
+
+**No pointer listener here.** The grips are portalled OUTSIDE the editor, so a
+listener bound to the prose watches the pointer leave and never watches it
+arrive. Pairing that with a React `onMouseEnter` on the portal put two
+mechanisms in a 120ms race across a tree boundary, and the race is why a grip
+stopped being clickable a moment after it appeared: the reveal faded,
+`pointer-events: none` went on, and the right-click fell through to the
+browser. The kernel's one reading of the page answers the same on both sides of
+the portal, and it re-asks after a scroll the writer's hand did not follow.
+
+**The zone, not the chrome's elements — and that part is still this lane's.**
+Asking whether the pointer is over a grip leaves the pixels BETWEEN the frame
+and the grip belonging to nobody, and the pointer crosses them on every
+approach: measured, 4px above the frame and 6px left of it. That is the lane's
+`holds` predicate (`pointerHoldsTableChrome`), the one thing about this reveal
+the kernel cannot know. The kernel's own re-entry is what cancels the grace the
+frame's edge scheduled — left running, it fades the grip out from under a
+pointer already resting on it, after which the closed chrome takes no pointer
+events and `elementFromPoint` over the grip answers the prose underneath.
+
+While a menu is open the anchor is frozen: a stray hover would slide the grips
+out from under the menu and leave it pointing at another row. The approach
+keeps settling meanwhile and the lane remembers the answer, so on close the
+pointer's real position is read back rather than the chrome lingering where the
+writer left it.
+
+**The selected table's ⋮ reads the kernel's context, not the document.** This
+surface is mounted for the whole session, so a blunt per-transaction
+subscription re-rendered it on every keystroke of the chapter to answer a
+question that changes rarely. `useChromeContext` reports `owner: "object"` with
+`nodeType: "table"` and the position, and the store only notifies when that
+answer changes. The rects follow the document separately, and only while a cell
+is anchored.
+
+Each grip is its own Radix trigger, so nothing here uses the pointer anchor.
+`GripButton` composes Radix's injected `onPointerDown` rather than replacing
+it: the selection is armed first, then the library opens.
+
+## Column resize: the plugin, not our own (verdict)
+
+prosemirror-tables' `columnResizing` was already mounted by
+`MeridianTable.configure({ resizable: true })`. It was kept. Evidence from the
+browser:
+
+- **Hover-only.** The handle is a widget decoration the plugin adds only while
+  the pointer is within `handleWidth` (5px) of a boundary, and removes on the
+  next `mousemove` away.
+- **Zero layout shift**, after one fix. The widget is `position: absolute`
+  inside the cell, so it takes no space — but it is a real DOM sibling, so the
+  cell's paragraph stopped being the last child and its 8px bottom margin came
+  back, growing every row in the column. `td > p:last-of-type` ignores the
+  widget (it is a `div`), and the cell measures 41px with the hairline up and
+  down.
+- **Widths persist where the codec reads them.** A drag writes `colwidth: [n]`
+  on every cell of the column via `setNodeMarkup`; `Layout`'s `widths` prop is
+  serialized from the first row's `colwidth`. Measured: a 70px drag produced
+  `[266]` on all six cells of the column and `<col style="width: 266px">`.
+
+Owning resize would have bought nothing and cost a drag implementation, a drop
+of the plugin's spanned-column arithmetic, and a second place widths are
+written.
+
+**A column is sized by its prose, and by a picture only through a fence.** The
+grid is auto layout, which sizes columns from what is inside them — right for
+text, and a trap for a picture, whose box carries a width in pixels that the
+column would grow to before `max-width: 100%` had anything to resolve against.
+A cell holding a picture therefore contains its own size and asks the table for
+one definite 8rem instead, in `features/editor/editor.css`; the reasoning is
+[`core/editor/images/.context/CONTEXT.md`](../../../../../core/editor/images/.context/CONTEXT.md).
+The dragged widths above are unaffected: they are `colwidth` on the cells, which
+the fence never touches.
+
+## Merging block-capable cells
+
+`mergeTableCells` is prosemirror-tables' `mergeCells` behind one fence:
+
+- **The header row does not merge into the body** (`mergeCrossesHeader`).
+  Upstream merges any rectangle and keeps the first cell's type, so a
+  whole-column merge on a headed table yields one header cell spanning every
+  row. The fence is in the command as well as the menu. Merging the header row
+  across itself stays allowed: that is a title row.
+
+Cells hold `block+`, so upstream's append of every filled cell's blocks into
+the merged cell is schema-legal as it stands — lists, headings, and fences
+land whole, in reading order. Upstream's emptiness test is structural (one
+childless text block), so a cell holding only a hard break or an inline image
+counts as filled and merges in rather than being skipped.
+
+## What the wire carries now
+
+**Spans** are on the wire (the codec escalates a spanned table to raw
+HTML), and so are span-sized `colwidth` arrays — see the widths ruling in
+[`packages/markup/.context/CONTEXT.md`](../../../../../../../../packages/markup/.context/CONTEXT.md).
+Cells carrying several blocks, or blocks beyond a paragraph, travel the same
+way: the codec escalates them too.
+
+## Where the lane touched shared code
+
+- `core/editor/table-operations.ts` — grid coordinates, header awareness,
+  `toggleTableHeaderRow`, `mergeTableCells`, `setTablePlacement`,
+  `resetTableColumnWidths`. `resetTableLayout` was deleted: it had no consumer
+  and conflated placement with widths, which the menu offers separately.
+- `core/editor/chrome/` — the Esc chain's fourth step (prose inside an object
+  steps out onto the object) and `ChromeContext.objectPos` behind it.
+- `features/editor/chrome/OverlayIconRow.tsx` — the overflow chip forwards its
+  props, so it can actually be a menu trigger.

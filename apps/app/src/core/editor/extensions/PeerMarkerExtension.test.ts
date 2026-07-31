@@ -9,6 +9,7 @@ import { activateLocale } from "@/lib/i18n";
 import { relativePositionForEditorIndex } from "@/test-support/editor-relative-position";
 import { createAgentNameStore } from "../agent-name-store";
 import { createEditorConfig } from "../config";
+import { createLocalPresence } from "../local-presence";
 import { SessionMarkerStore } from "../session-marker-store";
 
 let editor: Editor;
@@ -81,7 +82,7 @@ beforeEach(() => {
     element: document.createElement("div"),
     ...createEditorConfig({
       document: doc,
-      awareness: new Awareness(doc),
+      presence: createLocalPresence(new Awareness(doc)),
       markerStore: store,
     }),
   });
@@ -286,7 +287,7 @@ describe("peer marker agent names", () => {
       element: document.createElement("div"),
       ...createEditorConfig({
         document: doc,
-        awareness: new Awareness(doc),
+        presence: createLocalPresence(new Awareness(doc)),
         markerStore: store,
         agentNames,
       }),

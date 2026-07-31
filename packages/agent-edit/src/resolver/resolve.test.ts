@@ -1,4 +1,4 @@
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   buildDocumentSchema,
   createCollabYDoc,
@@ -14,7 +14,9 @@ import { resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }));
+const codec = createAgentEditCodec(
+  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+);
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {

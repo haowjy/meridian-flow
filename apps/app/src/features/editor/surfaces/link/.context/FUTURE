@@ -1,0 +1,19 @@
+# Deferred, link surfaces
+
+- `[[` autocomplete inside the Ctrl+K form's Link field (impl-plan P4c names
+  "in prose and inside the Ctrl+K field"). The field already accepts and
+  normalizes the wikilink spelling, and `filterWikilinkItems` would rank the
+  rows; what is missing is a way for the form to reach the host's document
+  list (the trigger reads it from its own options today) and a listbox under
+  the input whose Escape closes the list before the popover.
+  Deferred deliberately: the prose trigger is the path a writer and an LLM
+  share, and a second keyboard surface inside the form is where M7's focus
+  contract is easiest to break.
+
+- One request per distinct internal target per open document, four at a time.
+  A chapter with dozens of links pays dozens of round trips on open, and each
+  is a query over the project's documents. A batch endpoint would collapse
+  them; the client cache already keeps it to once per target, per catalog. That
+  last part is the new weight: a rename anywhere in the project starts a new
+  resolution generation, so the chapter pays those round trips again. A batch
+  endpoint is what makes the honest invalidation cheap.

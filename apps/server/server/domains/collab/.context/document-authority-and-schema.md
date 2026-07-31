@@ -30,6 +30,14 @@ including insert-only normalization; its best-effort EventSink delivery never
 fails the projection. The event carries schema version, node types, and clock
 counts, never prose.
 
+`domain/agent-edit-runtime.ts` is the one place a `mdxCodec` is built, so it is
+also the one place the project asset index enters serialization. The composition
+root passes `assetPathResolver`; compositions with no asset namespace (in-memory,
+tests) omit it and get `unresolvedAssetPathResolver`, which throws rather than
+inventing a path. The resolver translates `asset:<documentId>` to a
+project-relative path on serialize and back on parse, so an asset's identity
+survives a rename while markdown keeps a readable path.
+
 **Durable whole-document projections route through this engine.** Push
 completion derives the projection at settlement through
 `DurableProjectionSerializer`; `PreparedPushCommit` must not carry a prepared

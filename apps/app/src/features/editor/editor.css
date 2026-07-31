@@ -7,6 +7,11 @@
  * `prose-tokens` reading scale. The prose stays
  * undecorated — the cinnabar signature lives only in chrome, never in the
  * manuscript itself.
+ *
+ * The document only: the page, its marks, and the decorations drawn over the
+ * words. Every control surface styles itself from a stylesheet beside its own
+ * component, so a lane is one directory rather than one directory plus a hunk
+ * in here.
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
@@ -16,10 +21,13 @@
 }
 
 .meridian-editor .ProseMirror {
-  min-height: 100%;
   outline: none;
   max-width: 68ch;
-  /* Font family, reading scale, AND color inherit from `prose-tokens` — the
+  /* Height, insets, and the scroll-past-end reserve are the prose column's,
+     applied as utilities from `editor-column.ts` — one owner for the geometry
+     that decides where a click below the last line lands.
+
+     Font family, reading scale, AND color inherit from `prose-tokens` — the
      editor must read identically to chat prose (one reading surface). A
      `--color-foreground` override here once made the manuscript render darker
      and visually heavier than chat at the same font size. */
@@ -29,7 +37,7 @@
   margin-top: 0.9em;
 }
 
-.meridian-editor .ProseMirror p.is-editor-empty:first-child::before {
+.meridian-editor .ProseMirror p.is-empty::before {
   float: left;
   height: 0;
   color: var(--color-muted-foreground);
@@ -148,8 +156,18 @@
   border-radius: var(--radius-md);
 }
 
+.meridian-editor .ProseMirror table[data-align] {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.meridian-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+
 .meridian-editor .ProseMirror th,
 .meridian-editor .ProseMirror td {
+  position: relative;
   border: 1px solid var(--color-border-subtle);
   padding: 0.5rem 0.625rem;
   vertical-align: top;
@@ -163,6 +181,118 @@
 .meridian-editor .ProseMirror img {
   max-width: 100%;
   border-radius: var(--radius-md);
+}
+
+/* A picture is a big glyph. Its bottom sits on the text baseline, so the words
+   before it and after it stand at its foot, the line box grows as tall as the
+   picture, and what follows wraps onto the line below — the "in line" of Docs
+   and Word (human ruling, 2026-07-30). It is the same object at the same size
+   mid-sentence or alone in its paragraph, and the prose column is its only
+   bound.
+
+   Baseline alignment is asked of TipTap's own inline wrapper, because that is
+   the box the line box is built out of. An inline-block takes its baseline from
+   its last in-flow line box, which would hang the font's descender under the
+   picture and float it off the baseline. So the wrapper inside it is a block
+   and everything inside THAT is block-level: with no line box to read, CSS
+   falls back to the bottom margin edge, and that edge is the picture's foot. */
+.meridian-editor .ProseMirror span.react-renderer.node-image {
+  vertical-align: baseline;
+}
+
+.meridian-editor .ProseMirror .meridian-image-node {
+  display: block;
+  max-width: 100%;
+}
+
+.meridian-editor .ProseMirror .meridian-image-node > img {
+  display: block;
+}
+
+/* A picture the writer dragged to a size. The stored width lives on the wrapper
+   (the box the line is built out of), and the picture fills it — without this
+   the `<img>` would keep its own intrinsic width inside a box that changed
+   around it. `height: auto` is what keeps the ratio; the drag preserves it too,
+   and this is what holds it after a reload. The column still wins: `max-width`
+   above bounds a stored width exactly as it bounds a natural one. */
+.meridian-editor .ProseMirror .meridian-image-node--sized > img {
+  width: 100%;
+  height: auto;
+}
+
+/* The four grips a selected picture wears (§5.2's ring, made draggable).
+
+   Rendered inside the picture's own node view, which is the object overlay's
+   own default: chrome in the element it decorates scrolls and reflows with the
+   manuscript for free, so there is no rect to chase and no way to strand a grip
+   beside the paragraph that took the picture's place.
+
+   Just INSIDE the bounds, like every other object control (mockup 03b) — a grip
+   hanging outside them would be the first thing a picture at the column edge
+   lost to the clip. Nothing here reserves space: the layer is absolute over a
+   box the manuscript already sized. */
+.meridian-image-resize {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.meridian-image-resize__grip {
+  position: absolute;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 0.125rem solid var(--color-background);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  pointer-events: auto;
+  /* A grip is a control, not prose: pressing one must not sweep a selection
+     through the paragraph the picture stands in. */
+  user-select: none;
+  touch-action: none;
+}
+
+.meridian-image-resize__grip--top-left {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.meridian-image-resize__grip--top-right {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.meridian-image-resize__grip--bottom-left {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.meridian-image-resize__grip--bottom-right {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.meridian-image-node__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-muted);
+  padding: 0.75rem;
+  color: var(--color-muted-foreground);
+}
+
+/* The readable box a slot with no measured frame brings, as the pending
+   placeholder brings its own (`surfaces/images/image-ingress.css`). A measured
+   frame is already the picture's box and a minimum would overflow it. */
+.meridian-image-node:not(.meridian-image-node--framed) > .meridian-image-node__placeholder {
+  min-width: 8rem;
+  min-height: 6rem;
 }
 
 .meridian-editor .ProseMirror figure {
@@ -179,8 +309,99 @@
   font-size: 0.8125rem;
 }
 
-.meridian-editor .ProseMirror-selectednode {
-  outline: 0.125rem solid var(--color-border-focus);
+/* Object chrome is rendered inside the object's own node view and placed
+   absolutely in its corner (`chrome/object-overlay.ts`), so the node view is
+   what that corner is measured from. `relative` with no offsets moves nothing
+   and reserves nothing; the class is TipTap's container for a node view, which
+   is exactly the set of elements the manuscript does not own. */
+.meridian-editor .ProseMirror .react-renderer {
+  position: relative;
+}
+
+/* A cell holding object chrome is measured by the table, never by the object.
+
+   An auto-layout table sizes its columns from what is inside them, and object
+   chrome carries its own width: a measured picture's pixels (the upload's
+   frame, or the width the writer dragged to), a rendered diagram's SVG, a
+   fence's longest unbroken line. Percentages are dropped while that measuring
+   happens, so `max-width: 100%` cannot cap what it is being asked to widen: a
+   1280px screenshot dropped into a cell at a 500px viewport took the column to
+   1301px, the table to 1352px, and left half of the picture's resize grips on
+   the far side of the wrapper's horizontal scroller. With `block+` cells a
+   640px diagram SVG did the same — 707px column, 797px table, prose columns
+   crushed to 30px beside it.
+
+   Size containment is the fence. The box the object stands in is sized as if
+   it were empty, so nothing inside it can reach the column's arithmetic; the
+   room it asks for instead is one definite number, the same 8rem the unmeasured
+   placeholder box is built on — a thumbnail's worth, which a table can afford in
+   any layout. The cell is then definite, `max-width: 100%` finally has a box to
+   answer against, and the object fills whatever the column turned out to be:
+   a diagram scales down, a fence pans on its own `overflow-x` scroller.
+
+   Two shapes hold every case, so an ordinary table still sizes its columns to
+   its prose: a paragraph carrying an inline picture, and a node view standing
+   as a cell's own block — the same `.react-renderer` host the rule above
+   positions, which is exactly the set of blocks the manuscript does not lay
+   out itself (fences, rendered diagrams, figures). */
+.meridian-editor .ProseMirror :is(td, th) > p:has(.meridian-image-node),
+.meridian-editor .ProseMirror :is(td, th) > .react-renderer {
+  contain: inline-size;
+  contain-intrinsic-inline-size: 8rem;
+}
+
+/* An inline node view's outer wrapper is `display: inline` by default, so its
+   box is the line box rather than the thing inside it — a 64px image wears a
+   22px ring with its horizontals painted behind the picture. ProseMirror puts
+   the selected-node class on exactly this element, so it has to bound the
+   object. TipTap emits a `span` wrapper only for inline nodes, which is what
+   makes this structural rather than a list of node names; it applies at rest
+   too, so selecting reflows nothing. */
+.meridian-editor .ProseMirror span.react-renderer {
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+/* The jade ring a selected object wears — law 1's click, read back. A ring
+   rather than an outline so it follows the object's own radius, and jade
+   rather than the focus tone because selection is a state, not focus.
+
+   The class is ours, painted by a decoration object physics derives from the
+   selection. ProseMirror's own `ProseMirror-selectednode` is applied once by a
+   node view's lifecycle and does not survive the document rebuild a peer's
+   write causes — see `core/editor/objects`. */
+.meridian-editor .meridian-object-selected {
+  outline: none;
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 0.125rem var(--color-primary);
+}
+
+/* An object's body is not text, so it does not wear the text caret. The
+   browser hands every child of a contenteditable the I-beam unless told
+   otherwise; on a picture that promises a caret the press will never place
+   (the press selects — see core/editor/objects). The arrow is the honest
+   cursor: click reads, drag moves, and neither is typing. */
+.meridian-editor .ProseMirror .node-image,
+.meridian-editor .ProseMirror .meridian-figure-node,
+.meridian-editor .ProseMirror .meridian-diagram-block,
+.meridian-editor .ProseMirror hr {
+  cursor: default;
+}
+
+/* A table wears the same ring, one node in and turned inward.
+   In: the node ProseMirror decorates is prosemirror-tables' scroll wrapper,
+   which is the full column even when the grid is narrower or aligned right.
+   Inward: that wrapper scrolls, and a scroll container clips its children's
+   shadows, so an outward ring on the grid would be invisible. */
+.meridian-editor .tableWrapper.meridian-object-selected {
+  box-shadow: none;
+}
+
+.meridian-editor .tableWrapper.meridian-object-selected > table {
+  /* One cell border thicker than the ring above: the grid's own 1px border
+     paints over the outermost pixel of an inset shadow, so this is what
+     leaves the same weight of jade showing. */
+  box-shadow: inset 0 0 0 calc(0.125rem + 1px) var(--color-primary);
 }
 
 .meridian-collab-cursor {
@@ -416,55 +637,6 @@
   }
 }
 
-.meridian-editor--drag-active .ProseMirror {
-  background: color-mix(in srgb, var(--color-card) 65%, transparent);
-}
-
-.meridian-editor-drop-overlay {
-  position: absolute;
-  inset: 0.75rem;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 0.75rem;
-  border: 0.125rem dashed var(--color-border-focus);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-card) 88%, transparent);
-  color: var(--color-primary);
-  font-size: 0.875rem;
-  font-weight: 650;
-  pointer-events: none;
-}
-
-.meridian-figure-upload-status {
-  position: absolute;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 3;
-  display: inline-flex;
-  max-width: min(24rem, calc(100% - 2rem));
-  align-items: center;
-  gap: 0.5rem;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-card);
-  box-shadow: var(--shadow-card);
-  color: var(--color-foreground);
-  font-size: 0.8125rem;
-  padding: 0.625rem 0.75rem;
-}
-
-.meridian-figure-upload-status--error {
-  border-color: var(--color-destructive);
-  color: var(--color-destructive);
-}
-
-.meridian-figure-upload-status--success {
-  border-color: var(--color-border-focus);
-  color: var(--color-primary);
-}
-
 .meridian-editor .ProseMirror .meridian-figure-node {
   display: grid;
   gap: 0.625rem;
@@ -472,9 +644,6 @@
   border-radius: var(--radius-lg);
   background: var(--color-card);
   padding: 0.75rem;
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
 }
 
 .meridian-figure-node__media {
@@ -537,58 +706,6 @@
   font-size: 0.75rem;
   font-weight: 650;
   padding: 0.125rem 0.375rem;
-}
-
-.meridian-figure-node__meta {
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
-.meridian-figure-node__editor {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.625rem;
-  border-top: 1px solid var(--color-border-subtle);
-  padding-top: 0.625rem;
-}
-
-.meridian-figure-node__editor label {
-  display: grid;
-  gap: 0.25rem;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.meridian-figure-node__editor input,
-.meridian-figure-node__editor textarea {
-  width: 100%;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-card);
-  color: var(--color-foreground);
-  font: inherit;
-  font-weight: 400;
-  line-height: 1.4;
-  padding: 0.5rem 0.625rem;
-}
-
-.meridian-figure-node__editor input:focus,
-.meridian-figure-node__editor textarea:focus {
-  border-color: var(--color-border-focus);
-  outline: none;
-  box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--color-border-focus) 24%, transparent);
-}
-
-.meridian-figure-node__caption-input {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 48rem) {
-  .meridian-figure-node__editor {
-    grid-template-columns: 1fr;
-  }
 }
 
 .meridian-editor .ProseMirror .live-range-navigation-highlight {

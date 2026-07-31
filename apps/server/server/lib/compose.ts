@@ -22,6 +22,8 @@ import {
   createInMemoryCollabDomain,
 } from "../domains/collab/index.js";
 import {
+  createDrizzleAssetPathResolver,
+  createDrizzleDocumentLinkResolver,
   createDrizzleFigureDocumentRepository,
   createDrizzleResultRepository,
   createDrizzleThreadUploadDocumentStore,
@@ -31,7 +33,9 @@ import {
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createThreadUploadImportService,
+  type DocumentLinkResolver,
   type FigureAssetService,
+  InMemoryDocumentLinkResolver,
   type PromotionService,
   type ResultRepository,
   type ThreadUploadDocumentStore,
@@ -149,6 +153,7 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
+  documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -196,6 +201,7 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
+  documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -295,8 +301,10 @@ export async function createProductionAppPorts(input: {
   let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
+  const assetPathResolver = await createDrizzleAssetPathResolver(db);
   const documentSync = createCollabDomain({
     db,
+    assetPathResolver,
     documentAccess,
     eventSink,
     notices,
@@ -328,18 +336,23 @@ export async function createProductionAppPorts(input: {
     objectStore,
     eventSink,
   });
-  const figureAssets = createFigureAssetService({
-    objectStore,
-    documents: createDrizzleFigureDocumentRepository({ db }),
-    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    eventSink,
-  });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({ objectStore, results });
   contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
+  });
+  // Upload creates the asset as a context document, so the service needs the
+  // context ports; it feeds each new path straight back into the resolver the
+  // codec reads.
+  const figureAssets = createFigureAssetService({
+    objectStore,
+    documents: createDrizzleFigureDocumentRepository({ db }),
+    contextPorts,
+    signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    eventSink,
+    assetPaths: assetPathResolver,
   });
   const packageRepository = createDrizzlePackageStore({ db });
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
@@ -378,6 +391,7 @@ export async function createProductionAppPorts(input: {
     eventQuery: input.eventQuery,
     documentSync,
     contextPorts,
+    documentLinks: createDrizzleDocumentLinkResolver(input.db),
     projects,
     works: workRepo,
     projectRepo,
@@ -545,6 +559,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadRuntime: createThreadRuntimeService({ db: ports.db }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
+    documentLinks: ports.documentLinks,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -694,6 +709,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    documentLinks: new InMemoryDocumentLinkResolver(),
     projects: {
       async findPersonalProjectId() {
         return null;

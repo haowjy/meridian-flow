@@ -7,9 +7,9 @@ Yjs document session. It must stay structurally aligned with
 ## Contracts
 
 - `createEditorExtensions()` is the only app-side extension assembly point for
-  collaborative documents. The editor schema and
-  `@meridian/prosemirror-schema` are built separately; parity is not enforced,
-  so structural changes must update both surfaces together.
+  collaborative documents, and its TipTap schema must stay structurally equal to
+  `buildDocumentSchema()`. The two are built separately and parity is not
+  enforced, so a node or attr added on either side is a two-file change.
 - Collaboration uses the shared `PROSEMIRROR_FRAGMENT_NAME` Y.XmlFragment. Do
   not create a second fragment name or a second editor sync path.
 - `DocumentSessionRegistry` is keyed by the Yjs room key, not by editor surface:
@@ -90,6 +90,12 @@ Yjs document session. It must stay structurally aligned with
   anchored popover lazy-reads trail detail and the originating thread snapshot.
   The popover is evidence and navigation only; producing-turn receipt Undo/Redo
   is the sole reversal authority for AI changes.
+- Opening a mark belongs to the projection, not to the host: the press
+  ([`extensions/peer-mark-press.ts`](../extensions/peer-mark-press.ts)) is a
+  per-editor store the plugin writes from its own DOM handlers, holding the
+  `changeId` and the caret the writer left as an `EditorAnchor`. The surface reads
+  it. An editor with no projection has no press to read, which is why draft
+  review needs no suppression flag.
 - Peer-mark manuscript color describes the change, not the thread identity:
   added/modified marks use jade and deletions use crimson. Ordinary ranges rest
   as an underline only; a sweep is the sole resting warning tint. Per-thread
@@ -120,6 +126,28 @@ Yjs document session. It must stay structurally aligned with
   colors must be resolved before publication and serialized as concrete
   six-digit RGB hex. CSS variables and OKLCH strings are valid token sources,
   not valid y-prosemirror awareness colors.
+- Local awareness fields belong to `DocumentSession` through `local-presence.ts`,
+  and reach publishers as a `LocalPresenceFields` port
+  (`createEditorExtensions({ presence })`, which takes no `Awareness`: the port is
+  the editor's whole reach into it, and `DocumentSession.awareness` belongs to the
+  transport). While presence is live, `Awareness` IS the desired state and
+  `setField` writes straight through. A suspension (inline review's
+  `suspendPresence`, a schema fence) is the only span where the two differ: the
+  port holds the desired field map for its duration, takes every write into it,
+  publishes null as the transport state, and publishes the map as it then stands
+  on resume — never the snapshot taken when the suspension began. Suspensions
+  nest, and only the outermost one snapshots or republishes.
+- The port hands out three shapes, and which one a consumer holds is the rule:
+  `setField` writes one field; `peers` is a read-only `PeerAwareness`
+  (`clientID`, `getStates`, `on`, `off`) for reading other clients, so a
+  publisher has no mutable `Awareness` to reach for; and `caretProvider` is the
+  `{ awareness }` that TipTap's CollaborationCaret and y-prosemirror's cursor
+  plugin demand — an Awareness-shaped facade whose `setLocalStateField` is
+  `setField` and whose `getLocalState` answers the desired map, so the cursor
+  plugin's comparison and its clears on blur and view destroy stay true through a
+  suspension. `suspend`/`resume`/`release` belong to the session alone. The
+  negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
+  anywhere in `apps/app/src` outside `local-presence.ts`.
 - Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
   exist before server transport. Ordinary acquisition of an existing detached
   room leaves it detached; post-create reconciliation explicitly attaches
@@ -150,6 +178,269 @@ Yjs document session. It must stay structurally aligned with
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.
+- Inserted images are inline `image` nodes: inline where the insertion point can
+  hold one, in a paragraph of their own where it cannot. Their `src` is a stable
+  `asset:<documentId>`; `ImageNodeView` resolves a signed read
+  URL through `asset-image-render-state.ts`, while the markup codec materializes
+  project-relative paths. One failed media load may refresh the signed URL
+  automatically; the next one surfaces an error instead of looping. That budget
+  is per picture the browser reported rendering (`onLoad`), not per mounted node
+  view — a view lives as long as the chapter is open, so a budget spent once
+  would leave every later expiry with a placeholder. A failure arriving while a
+  load is in flight is ignored: a refresh keeps the expiring URL on screen, and
+  the request already running is the answer.
+- A picture in flight is a document node. `images/` inserts
+  the `image` node with `src: ""` before the upload starts and sets `src` on that
+  same node when the bytes land, so nothing is inserted at completion and the
+  manuscript does not reflow. The slot's identity is its `uploadToken` attribute,
+  NOT a `NodeHold`: the design lets the writer move a placeholder mid-upload, and
+  a hold ends at a Yjs move by contract. Progress, the file, and the abort live in
+  the plugin's state keyed by that token; which tokens other clients are filling
+  arrives through awareness, so a collaborator draws "uploading elsewhere" and
+  only an unclaimed token is the abandoned slot. Losing the slot (a delete, an
+  undone insert, editor teardown) aborts the request. Failure keeps the node with
+  Retry and Remove on it. The empty `src` is the wire-safety decision: it
+  round-trips as `![alt]()`, while an `asset:` ref minted before its asset exists
+  throws in the codec's `pathForAsset`. Replace is the same lifecycle aimed at a
+  slot the writer already has: it takes a `NodeHold` across the file chooser
+  because a raw position means nothing after a peer's write, and its landing is
+  one history event (old picture to new) where an insert's landing is
+  deliberately outside history.
+- Assets cross the clipboard as project-relative paths and live inside the
+  editor as stable refs. `images/image-workflow.ts` owns both directions, and the
+  asset index behind them lives in the ingress extension's storage because a path
+  only means something inside one project's asset namespace.
+- A paste never lands an image the project does not own.
+  `resolveImagesFromClipboard` is the one seam: a copied path comes home as its
+  ref, and every other address becomes a link to itself. The ingress extension
+  then attempts the import — fetch the bytes through its port, take the ordinary
+  upload path, and replace the link with the picture — so an external `src` is
+  never written to the shared document even briefly. Each import owns its own
+  entry in the pending state, so two pasted pictures are two lifecycles. A site that refuses the fetch (CORS is the
+  common answer) leaves the link, which is the honest result rather than a
+  broken figure. The link is found again through `pastedContentRange` plus
+  `pastedImageLinkRange`, held as an `EditorAnchor` for the length of the
+  import.
+- Block alignment lives as an `align` attr on `paragraph`, `heading`, and
+  `table`, mirroring `@meridian/markup`'s reserved `Layout` wire wrapper. Only
+  `null`, `"center"`, and `"right"` exist; there is no `"left"` ghost state
+  because unaligned is the default. Table alignment renders twice — through the
+  node's `renderHTML` and through `MeridianTableView`, because the resize plugin
+  takes over table DOM once `resizable` is on.
+- `table-operations.ts` owns the table transforms prosemirror-tables omits (row
+  and column moves, whole-column alignment, layout reset). All of them refuse a
+  table containing spans — not for the wire (spans serialize fine since the
+  codec's HTML table serialization) but because row/column moves over merged
+  cells would break prosemirror-tables' rectangular invariants. Row zero is
+  the structural GFM header and never moves.
+- The slash trigger lives under `extensions/slash/` and is summarized below.
+- `pointer-boundary.ts` answers a press that landed outside the prose:
+  `pointerBoundaryDecision(view, clientX, clientY)` reads the prose rectangle
+  and the neighbouring block rectangles, and `resolvePointerBoundary` decides
+  over that geometry plus the document alone. Three sites, two policies. A
+  press whose y is inside a block's band — or past the first or last band,
+  which is the page above and below the document — is a press ON that block:
+  it takes the `posAtCoords` line beside the pointer unless that line is an
+  opaque object's interior, in which case it falls to the nearer of the
+  block's edges. A press in the vertical strip BETWEEN two bands is a seam and
+  belongs to neither block: the following block's first writer text answers
+  first, then the preceding block's last, then a gap cursor at the boundary
+  when prosemirror-gapcursor admits one, then the nearest writer text outward
+  (forward first). `writerTextEdge` is what "writer text" means — never an
+  opaque object's interior, and at a seam never a source block either, since
+  the seam belongs to no block and prose beats syntax. `PointerBoundaryDecision`
+  is a discriminated union so the last case, a document with no visible caret
+  anywhere, declines out loud instead of falling through to
+  `TextSelection.near`. The decision table in `pointer-boundary.test.ts` is the
+  contract; the two doors only dispatch what it returns —
+  `EditorSurfaceFrame` for a press outside the prose, and
+  [`cell-interior-press.ts`](../cell-interior-press.ts) for a press on a
+  cell's own inert surface (the event target IS the cell element), which
+  rides `handleDOMEvents.mousedown` after prosemirror-tables' resize and
+  sweep handlers and hands the policy the pressed cell straight from the
+  DOM, because a border press cannot trust `posAtCoords` to name its own
+  cell.
+- Enter on a whole-block selection is object physics', not the base keymap's
+  (§4). What it means comes from the block: a registered object with a
+  `surface` intent opens its lane's surface, a table takes the caret into its
+  first cell, and a selected plain fence takes the caret to its own start —
+  its rendering IS its source, so there is nothing else to open. The binding
+  sits at `block` scope precisely because a plain fence is NOT an object;
+  making it one would trade click-to-caret for click-to-select. It always
+  consumes the key, because letting Enter reach the base keymap splits the
+  block and leaves a stray paragraph behind.
+- A lane that owns an object's surface registers it with
+  `registerObjectEngagement`, and receives an `ObjectOpening` saying why it was
+  asked: `"engage"` for something that already exists, `"created"` for one made
+  a moment ago. Law 2's sole exception rides that distinction — a new empty
+  diagram opens ready to work rather than showing a viewer with nothing in it.
+- A `code_block` whose `language` a diagram provider claims renders as a diagram
+  and hides its own `<pre>`; every other language is the fence itself. WHICH
+  languages those are is the catalog's answer (`diagrams/AGENTS.md`), never a
+  name in the node view: `CodeBlockNodeView.tsx` is that node view and a
+  provider row carries the async parser edge behind it. It has three faces and
+  none of them is a code block (§5.2, "the page never shows a diagram's
+  syntax"): the render; the LAST GOOD render plus a parse note, once an edit
+  stops parsing; and an error card with the renderer's own message and an Edit
+  source button, for source that has never rendered at all. Source access belongs to the diagram dialog
+  (`features/editor/surfaces/objects`); caret-enters-source is not coming back.
+  The one exception the view owns is a caret INSIDE the fence — a fence typed
+  as markdown is filled in by hand, and a caret in a hidden element eats every
+  keystroke it is given. Its invariant: **a selection inside the fence implies
+  a visible, connected source content DOM, and rendering that implication must
+  not itself change the selection.** The second half is structural. The
+  `NodeViewContent` host is the wrapper's first child and never conditional,
+  and the render layer is one stable sibling after it, mounted for the life of
+  a diagram fence — so neither a face swap nor a parse settling moves DOM in
+  front of ProseMirror's live selection. DOM vanishing ahead of a live
+  selection is what made the two faces alternate, and
+  `CodeBlockNodeView.test.tsx` asserts the sibling list ahead of the host across
+  both transitions. The render layer is keyed by provider: a language change is
+  a document change, so remounting there is allowed, and it keeps one provider's
+  render state from being handed to another. The face is derived from the current selection on every
+  render (`useSyncExternalStore`, no local face state) and tests nothing about
+  how the caret arrived, so a keystroke, a command, a peer's mapped write and a
+  press all converge after one render. Do not reintroduce a provenance test:
+  the premise that a pointer cannot produce this caret was false. Where an
+  outside press may land is `pointer-boundary.ts`; object physics selecting an
+  opaque body on the PRESS (see `objects/.context`) is one more entry it
+  closes, and neither of them is what makes the node view safe.
+- `useDiagramRender` keeps the LAST GOOD svg across a failing edit, which is
+  what lets the dialog show a live preview beside source that does not parse
+  yet. It is provider-neutral — the debounce, the out-of-order guard, and the
+  palette redraw are the same problem for every diagram language — so a provider
+  brings only its `render`. Every consumer gets its own render id: a renderer
+  writes it into the markup, and two faces of one diagram sharing an id collide
+  over the arrow markers they reference.
+- The clipboard has two doors, one per flavour it can carry. HTML goes through
+  `sanitize-paste.ts`, which rebuilds rather than scrubs: allowed elements are
+  copied into a fresh document under an attribute allowlist, so a
+  newly-supported browser attribute is unsafe by default. `createEditorConfig`
+  composes it *after* any caller `transformPastedHTML` so a caller can never
+  reintroduce markup the schema would accept.
+- Clipboard **text** goes through `markdown-paste.ts` and comes out as the
+  document it describes. It is the same `markdownCodec` the wire uses, so
+  headings, lists, quotes, fences, tables, links and `[[wikilinks]]` all arrive
+  as themselves and nothing in the app has to know what markdown looks like.
+  `markdownCodec` rather than `mdxCodec`: clipboard text comes from anywhere and
+  MDX reads `<` and `{` as syntax, which fiction contains.
+  Three refusals bound it, and each is a behaviour, not an implementation detail:
+  paste-without-formatting yields characters; a caret inside a code block
+  yields characters, because block structure cannot live there; and
+  `markdownPasteAddsStructure` declines any parse that amounts to the paragraphs
+  the default paste would have produced anyway. That last one is the
+  false-positive guard, and it is decided on the parsed blocks rather than on a
+  guess about the raw text: pasted prose never takes a detour through a parser
+  that could re-spell it. A lone paragraph comes back as an open slice so a
+  bolded phrase joins the sentence at the caret; anything with blocks comes back
+  closed so its structure survives.
+  Only text-only clipboards reach this door. ProseMirror prefers `text/html`
+  when the source offers both, which is how copying between rendered surfaces
+  already worked.
+- Editable link clicks place a cursor instead of navigating: `openOnClick` is
+  off and a plugin calls `preventDefault()` while still letting ProseMirror
+  resolve the selection. `link-url.ts` is the single normalizer for
+  writer-entered targets (http/https/mailto only).
+
+## Holding a position across a remote write
+
+Any surface that outlives a keystroke — an open menu aimed at a link, a form
+mid-typing, a drop line, a grip, a decoration — has to answer "where is my
+thing now" after the document changes. ProseMirror's transaction mapping
+answers that for a local edit and **not** for a remote one.
+
+Every remote change arrives as a replacement of the WHOLE document.
+y-prosemirror rebuilds the ProseMirror doc from the Yjs type and dispatches a
+single `tr.replace(0, doc.content.size, …)` (`sync-plugin.js`, `_typeChanged`).
+So every position maps to a boundary and every `mapResult` reports `deleted`,
+whatever the change actually was. A surface holding raw numbers is pointing at
+nothing, and one that closes on `deleted` closes on every peer edit and every
+AI write — which this product produces constantly.
+
+The mechanism that survives it is Yjs relative positions, through
+[`relative-position-runtime.ts`](../relative-position-runtime.ts). It is what
+y-prosemirror itself uses to carry the selection across the rebuild, and what
+peer marks, live-range navigation, and inline review already hold their anchors
+with. [`anchors.ts`](../anchors.ts) is that mechanism as one type, and every
+surface holding a position consumes it — links, blocks, the fence source pane,
+the peer-mark popover, the slot a picture is being uploaded into. A second copy of the
+machinery is the thing this module exists to prevent.
+
+```ts
+type EditorAnchor = {
+  from: number;
+  to: number;
+  /** null on an editor with no shared document: there is nothing to survive. */
+  relative: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
+};
+
+const anchor = anchorRange(state, { from, to });   // pin when the surface opens
+followAnchor(state, anchor, transaction.mapping);  // re-pin on every transaction
+resolveAnchorIn(state, anchor);                    // read it where no mapping is in hand
+```
+
+`carryAnchor` and `resolveAnchorIn` are the halves behind those, for a holder
+that cannot do both at once — a plugin's `apply` runs before the Yjs binding
+has finished describing the new document, so it carries the numbers there and
+resolves at read time (`BlockDragExtension`).
+
+`isRemoteDocumentRebuild(transaction)` names the same fact for surfaces that
+diff rather than point: the fence source pane cannot carry its base's offsets
+across a rebuild, so it re-reads instead.
+
+Three rules a lane holding one should follow:
+
+- **Position is half the answer.** Coordinates outlive the thing that was at
+  them. Re-read what is actually there and compare it — a mark by attributes, a
+  node by type — or the surface acts on whatever slid into the numbers.
+- **A rebuilt document makes new objects.** Object identity (`===`) fails for
+  equal marks and nodes after a remote write; equality (`Mark.eq`, `node.eq`)
+  is what "the same thing" means here.
+- **Bounds-check what you resolve.** A relative position can land at the very
+  end of the document, and resolving one past it throws inside a Yjs update
+  handler, where the throw is swallowed and the editor quietly stops applying
+  peer writes.
+
+A deleted thing's anchor resolves to the seam it left behind, so "is it still
+there" needs an answer of its own, and positions cannot give it. `NodeHold`
+([`anchors.ts`](../anchors.ts)) is that answer, and every long-lived surface in
+the editor holds one: the node's two seams for where it is, plus the **Yjs
+element** behind it for which node it is, plus its type as the read-back check.
+The element is the same object for as long as the node lives — local typing, a
+peer's typing, an AI write all mutate it in place — and a different one for
+anything that is really a new node. It is found by walking the Yjs tree and the
+document in step, so a hold works at any depth: a top-level figure, an inline
+image inside a paragraph, a cell two levels down.
+
+Both halves earn their place. Without identity, a peer deleting the document's
+only heading leaves the schema to supply an empty paragraph in its place, and
+the seams describe that replacement perfectly: uncollapsed, at depth 0, a
+good-looking block a menu would happily delete. Without the seams, an editor
+with no shared document has no deletion signal at all, because there is no
+element to compare.
+
+`holdBlock` / `resolveBlockHold` / `followBlock` are the same hold with one
+extra rule — it must still be a TOP-LEVEL block — which is what the block
+surfaces need and what a wrap into a blockquote breaks.
+
+## Elements are geometry, holds are identity
+
+A DOM element is the other thing a surface is tempted to remember, and it is
+never the answer to "what is this aimed at". ProseMirror rebuilds node views and
+decoration spans whenever it decides they no longer match, which is not the same
+question as whether the writer's content is still there:
+
+- a keyed peer-mark widget is rebuilt when the mark is emphasised or its author's
+  name arrives, while the mark has not moved;
+- a node view is replaced when a rebuild reconciles a same-type sibling onto its
+  desc, while the node it was showing lives on somewhere else.
+
+So an element is read for exactly one purpose — where something is drawn, right
+now — and dropped. `useNodeHold`
+([`features/editor/chrome/useNodeHold.ts`](../../../features/editor/chrome/useNodeHold.ts))
+is the React binding: take a hold, carry it through every transaction, let go
+when the node is gone. Letting go IS a surface's dismissal, which is what keeps
+a menu from retaining state for a block that has been deleted.
 
 ## TipTap v3 defaults we intentionally disable
 
@@ -157,9 +448,92 @@ Yjs document session. It must stay structurally aligned with
   after terminal blocks. In this Yjs-backed editor that would be a real shared
   document mutation on open/sync, not visual chrome. Keep trailing-space UX as an
   explicit editor feature if needed, not an inherited StarterKit default.
-- `undoRedo: false` — collaborative history is not TipTap local history.
+- `undoRedo: false` — collaborative history is not TipTap local history. The
+  history is the Yjs UndoManager the collaboration extension installs, and
+  `UndoRedoKeymapExtension` binds Mod-z / Mod-y / Mod-Shift-z to it above every
+  other keymap. Meridian owns those keys rather than inheriting them (ruling
+  17): undo is the writer's recovery over LLM writes, so no later extension may
+  shadow it. It mounts only alongside collaboration — a standalone editor has
+  no undo command to bind.
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
+
+## Slash trigger — the `/` menu
+
+Colocated under `extensions/slash/`, with its own
+[`AGENTS.md`](../extensions/slash/AGENTS.md). It is one spec over the lane
+mechanism in `extensions/suggestion/`, which `[[` shares, so the first two
+contracts below hold for every lane; the store and catalog a lane publishes
+through are `core/completion/`. Two contracts cross this boundary:
+
+- **The catalog is the host's, read at open.** `slashCommands.catalog()` is
+  called when the menu opens and may return null, which is how a surface turns
+  the trigger off. `EditorView` withdraws it behind a schema fence, because a
+  slash command dispatches through a TipTap chain and chains run on a
+  non-editable editor: withdrawing editability alone would leave an open menu
+  able to insert.
+- **The open menu is a store, not a render prop.** `getSlashMenu(editor)`
+  returns what the surface subscribes to; the surface never reads editor state
+  to decide what the menu shows. It may be null on an editor without the
+  extension.
+- **A pick never leaves a table cell.** The insertion walk stops at the cell
+  the caret is in. Under block-capable cells all entries are enabled with
+  nothing greyed — the menu is schema-driven and `canReplaceWith` is the only
+  authority. Lists are the other rule: a bullet's target lands after the whole
+  list, because a list item is only part of its list.
+- **A new object opens through `engageObject`.** The slash lane does not know
+  what a diagram dialog is; it hands the node it just made to the object lane,
+  which resolves the surface a type registered. Enter on a selected object
+  takes the same path, so "what opens this" has one answer.
+
+The trigger mounts with the catalog option rather than through
+`EDITOR_CHROME_EXTENSIONS`, so a surface that offers no catalog pays for no
+plugin.
+
+## Markdown autoformat while typing (ruling 18)
+
+The surface is mostly inherited. TipTap's node and mark extensions ship GFM
+input rules, its engine refuses to run any of them inside a node or mark whose
+spec is `code`, and it completes a rule on Enter as well as on the trigger
+character. Because the parity wrappers rename types and nothing else, those
+rules resolve `strong`, `em`, `bullet_list`, `code_block` on their own. So the
+whole ruled set — `# `…`###### `, `**b**` / `*i*` / `~~s~~` / `` `c` ``, `> `,
+`- ` / `* ` / `+ `, `1. `, `---`, and the fence — is live without a second set
+of rules to race the first.
+
+Two places the live surface is wider than ruling 18's wording, deliberately.
+Headings go to `######` rather than stopping at `###`: the schema, the codec and
+every paste path already carry h4-h6, so denying the trigger would leave a
+writer who typed valid markdown holding literal `#### `. Fences accept `~~~` as
+well as ``` , and bullets accept `+`, for the same reason: all of them are GFM
+the codec reads, and all of them produce the same node.
+
+`MarkdownAutoformatExtension` owns only what inheritance gets wrong, and
+`MarkdownAutoformatExtension.test.ts` is the truth table for the surface as a
+whole, inherited rules included: a dependency upgrade that drops a trigger has
+to fail there rather than in a manuscript.
+
+- The code fence takes the whole GFM info string, lowercased. TipTap's rule
+  captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
+  block at all. Lowercasing is what makes the attr a usable key: highlighting
+  and the diagram-provider catalog both look it up. The opening run is
+  captured apart from the info token, because the two differ per fence
+  character — a backtick fence's info string may not hold backticks, a tilde
+  fence's may hold anything — and because a run longer than three is one fence
+  with no info, not a failed match. The fence rules live here and
+  `MeridianCodeBlockLowlight` yields its own.
+- Backspace reverts the transform the last keystroke made. TipTap reaches for
+  `undoInputRule` too, but from the core keymap, which sits below every node
+  extension's: CodeBlock's "delete the empty block" binding got to a just-opened
+  fence first and swallowed the ``` that opened it. A rule completed by Enter
+  restores a literal newline along with its source, and that newline comes back
+  out — Enter is a key, not a character the writer typed.
+
+Attribute names are parity too, not just type names, and an inherited rule that
+writes TipTap's name loses the value: the ordered-list rule writes `start` where
+the schema says `order`, so every list opened at one whatever number was typed.
+`MeridianOrderedList` renames it across the input rule and the DOM mapping
+both. Expect the same shape from any other inherited rule that carries attrs.
 
 ## Draft review — projection-only view extension
 

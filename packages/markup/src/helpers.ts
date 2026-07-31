@@ -13,10 +13,18 @@ import type {
   MdastParagraph,
   MdastRoot,
   MdastText,
+  MdastWikiLinkImage,
   MdxJsxAttribute,
   MdxJsxAttributeValueExpression,
 } from "./ast.js";
-import type { ComponentRegistry, ComponentSpec, PropSpec } from "./components.js";
+import {
+  builtInComponents,
+  type ComponentRegistry,
+  type ComponentSpec,
+  type PropSpec,
+} from "./components.js";
+import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
+import { wikilinkTarget } from "./markdown/wikilink-target.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
 
@@ -37,6 +45,7 @@ export type {
   MdastTable,
   MdastTableCell,
   MdastThematicBreak,
+  MdastWikiLinkImage,
   MdxJsxAttribute,
 } from "./ast.js";
 
@@ -50,14 +59,81 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
   const runtime = getRuntime(ctx);
   const out: MdastBlock[] = [];
   node.forEach((child) => {
-    const codec = runtime.blockMap.get(child.type.name);
-    if (!codec) {
-      throw new Error(`pm->mdast: unsupported block node "${child.type.name}"`);
-    }
-    const serialized = codec.serialize(child, ctx);
-    out.push(...demoteAutolinks(runtime.parseMarkdown(serialized)).children);
+    const serialized = runtime.serializeBlock(child, ctx);
+    out.push(
+      ...demoteAutolinks(parseWithOpaqueHtmlTables(serialized, runtime.parseMarkdown)).children,
+    );
   });
   return out;
+}
+
+/**
+ * Keep canonical HTML tables opaque while container codecs reparse their
+ * serialized children into mdast. Interior `<p>`, `<thead>`, and nested table
+ * tags otherwise split one raw-HTML block into several Markdown blocks.
+ */
+function parseWithOpaqueHtmlTables(
+  serialized: string,
+  parseMarkdown: (content: string) => MdastRoot,
+): MdastRoot {
+  if (!serialized.includes("<table>")) return parseMarkdown(serialized);
+
+  const lines = serialized.split("\n");
+  const tables = new Map<string, string>();
+  const protectedLines: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
+    const opening = line.indexOf("<table>");
+    if (opening === -1) {
+      protectedLines.push(line);
+      continue;
+    }
+
+    const prefix = line.slice(0, opening);
+    const tableLines: string[] = [];
+    let depth = 0;
+    let end = index;
+    for (; end < lines.length; end++) {
+      const candidate = lines[end] ?? "";
+      for (const tag of candidate.matchAll(/<\/?table>/g)) {
+        depth += tag[0].startsWith("</") ? -1 : 1;
+      }
+      tableLines.push(candidate.startsWith(prefix) ? candidate.slice(prefix.length) : candidate);
+      if (depth === 0) break;
+    }
+    if (depth !== 0) return parseMarkdown(serialized);
+
+    let tokenIndex = tables.size;
+    let name = `MeridianOpaqueTable${tokenIndex}`;
+    while (serialized.includes(name)) {
+      name = `MeridianOpaqueTable${++tokenIndex}`;
+    }
+    tables.set(name, tableLines.join("\n"));
+    protectedLines.push(`${prefix}<${name} />`);
+    index = end;
+  }
+
+  const root = parseMarkdown(protectedLines.join("\n"));
+  restoreOpaqueTables(root, tables);
+  return root;
+}
+
+function restoreOpaqueTables(node: unknown, tables: ReadonlyMap<string, string>): void {
+  const record = node as { children?: unknown[] };
+  if (!Array.isArray(record.children)) return;
+  record.children = record.children.map((child) => {
+    const value = child as { type?: unknown; name?: unknown; value?: unknown };
+    const htmlName =
+      value.type === "html" && typeof value.value === "string"
+        ? value.value.trim().match(/^<([A-Za-z0-9]+)\s*\/>$/)?.[1]
+        : undefined;
+    const name =
+      value.type === "mdxJsxFlowElement" && typeof value.name === "string" ? value.name : htmlName;
+    const table = name ? tables.get(name) : undefined;
+    if (table !== undefined) return { type: "html", value: table };
+    restoreOpaqueTables(child, tables);
+    return child;
+  });
 }
 
 export function parseBlockChildren(children: readonly MdastBlock[], ctx: ParseContext): PMNode[] {
@@ -71,9 +147,37 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
   const runtime = getRuntime(ctx);
   for (const codec of runtime.blocks) {
     const parsed = codec.parse(ast, ctx);
-    if (parsed) return parsed;
+    if (parsed) return asBlockNode(parsed, ctx);
   }
   return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
+}
+
+/**
+ * A block parse yields a block, whatever its codec answered with.
+ *
+ * One node is both: a picture is inline by schema, and a picture alone on its
+ * own line is a whole block of the document. The wrapping belongs here rather
+ * than in the image codec because the codec has no way to tell which of the two
+ * it is looking at — pure Markdown reports a raw tag as the same `html` node
+ * either way.
+ */
+function asBlockNode(node: PMNode, ctx: ParseContext): PMNode {
+  return node.isInline ? ctx.schema.node("paragraph", null, [node]) : node;
+}
+
+/** Parse only through an explicitly registered codec, without raw-text recovery. */
+export function parseRecognizedBlockAst(
+  ast: unknown,
+  ctx: ParseContext,
+  excludedCodecNames: ReadonlySet<string> = new Set(),
+): PMNode | null {
+  const runtime = getRuntime(ctx);
+  for (const codec of runtime.blocks) {
+    if (excludedCodecNames.has(codec.name)) continue;
+    const parsed = codec.parse(ast, ctx);
+    if (parsed) return asBlockNode(parsed, ctx);
+  }
+  return null;
 }
 
 export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): MdastInline[] {
@@ -86,16 +190,26 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
       case "hard_break":
         tokens.push({ type: "break", marks: child.marks });
         break;
-      case "image":
+      case "image": {
         ensureBlockCodecRegistered("image", ctx);
+        const image = imageWireAttributes(child, ctx);
+        // A picture the writer resized has a size Markdown cannot spell, so it
+        // escalates to the raw tag right here among the words it stands in.
+        if (image.width !== null) {
+          tokens.push({ type: "html", value: imageHtmlTag(image), marks: child.marks });
+          break;
+        }
+        const target = wikilinkTarget(image.url);
         tokens.push({
-          type: "image",
-          url: String(child.attrs.src ?? ""),
-          alt: attrStringOrNull(child.attrs.alt),
-          title: attrStringOrNull(child.attrs.title),
+          ...(target === null
+            ? { type: "image" as const, url: image.url }
+            : { type: "wikiLinkImage" as const, target }),
+          alt: image.alt,
+          title: image.title,
           marks: child.marks,
         });
         break;
+      }
       default:
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }
@@ -119,14 +233,20 @@ export function parseInlineChildren(
       case "break":
         out.push(ctx.schema.node("hard_break"));
         break;
-      case "image": {
-        const imageCodec = getRuntime(ctx).blockMap.get("image");
-        if (!imageCodec) throw new Error('mdast->pm: missing "image" codec');
-        const image = imageCodec.parse(child, ctx);
+      case "image":
+      case "wikiLinkImage": {
+        const image = parseInlineImage(child, ctx);
         if (image) out.push(image);
         break;
       }
       default: {
+        // A raw `<img>` tag: pure Markdown hands it over as `html`, MDX as a
+        // parsed JSX element, and the image codec reads both.
+        const image = parseInlineImage(child, ctx);
+        if (image) {
+          out.push(image);
+          break;
+        }
         const marked = addRegisteredMark(activeMarks, child, ctx);
         if (marked) {
           const value = inlineCodeValue(child);
@@ -209,15 +329,61 @@ export function jsxAttributesFromProps(props: Record<string, unknown>): MdxJsxAt
 }
 
 export function jsxAttribute(name: string, value: unknown): MdxJsxAttribute {
-  if (typeof value === "string") return { type: "mdxJsxAttribute", name, value };
+  if (typeof value === "string") {
+    if (!needsJsonStringAttribute(value)) {
+      return { type: "mdxJsxAttribute", name, value };
+    }
+    return {
+      type: "mdxJsxAttribute",
+      name,
+      value: {
+        type: "mdxJsxAttributeValueExpression",
+        value: jsonLiteral(value),
+      },
+    };
+  }
   if (!isJsonValue(value)) {
     throw new Error(`JSX prop "${name}" is not JSON-serializable`);
   }
   return {
     type: "mdxJsxAttribute",
     name,
-    value: { type: "mdxJsxAttributeValueExpression", value: JSON.stringify(value) },
+    value: { type: "mdxJsxAttributeValueExpression", value: jsonLiteral(value) },
   };
+}
+
+function needsJsonStringAttribute(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      codePoint === 0x26 ||
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function jsonLiteral(value: JsonValue): string {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new Error("JSON value did not serialize");
+
+  let literal = "";
+  for (const character of serialized) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    literal +=
+      codePoint === 0x3c ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
+        ? `\\u${codePoint.toString(16).padStart(4, "0")}`
+        : character;
+  }
+  return literal;
 }
 
 export function parseComponentProps(
@@ -276,7 +442,7 @@ export function registeredComponent(
   components: ComponentRegistry | undefined,
   name: string | null,
 ): ComponentSpec | null {
-  if (!name || name === "Figure") return null;
+  if (!name || Object.hasOwn(builtInComponents, name)) return null;
   return components?.[name] ?? null;
 }
 
@@ -326,7 +492,10 @@ function inlineChildrenOf(node: MdastInline): MdastInline[] {
 type InlineToken =
   | (MdastText & { marks: readonly Mark[] })
   | (MdastBreak & { marks: readonly Mark[] })
-  | (MdastImage & { marks: readonly Mark[] });
+  | (MdastImage & { marks: readonly Mark[] })
+  | (MdastWikiLinkImage & { marks: readonly Mark[] })
+  /** A raw tag standing among the words: the escalated spelling of a sized picture. */
+  | { type: "html"; value: string; marks: readonly Mark[] };
 
 function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeContext): MdastInline[] {
   const out: MdastInline[] = [];
@@ -402,7 +571,10 @@ function plainText(tokens: readonly InlineToken[]): string {
         case "break":
           return "\n";
         case "image":
+        case "wikiLinkImage":
           return token.alt ?? "";
+        case "html":
+          return token.value;
         default:
           return "";
       }
@@ -426,14 +598,21 @@ function addRegisteredMark(
   return null;
 }
 
+/**
+ * The picture an inline AST node means, through the one registered image codec:
+ * `![alt](src)`, a wikilink picture, and the raw `<img>` tag a sized picture
+ * escalates to, in whichever shape this dialect's parser reports it.
+ */
+function parseInlineImage(ast: unknown, ctx: ParseContext): PMNode | null {
+  const imageCodec = getRuntime(ctx).blockMap.get("image");
+  if (!imageCodec) throw new Error('mdast->pm: missing "image" codec');
+  return imageCodec.parse(ast, ctx);
+}
+
 function ensureBlockCodecRegistered(name: string, ctx: SerializeContext): void {
   if (!getRuntime(ctx).blockMap.has(name)) {
     throw new Error(`pm->mdast: missing block codec "${name}"`);
   }
-}
-
-function attrStringOrNull(value: unknown): string | null {
-  return value === null || value === undefined ? null : String(value);
 }
 
 function inlineCodeValue(ast: unknown): string | null {

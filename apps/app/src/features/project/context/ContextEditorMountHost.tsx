@@ -52,6 +52,8 @@ export const MAX_MOUNTED_EDITORS = 6;
 
 export type ContextEditorMountHostProps = {
   projectId: string;
+  /** The Work every mounted editor is open in; scopes links and `[[` candidates. */
+  workId: string | null;
   /** TRACKED tabs only — viewer tabs are routed elsewhere. */
   trackedTabs: EditableContextTab[];
   /** The currently visible tab id. Must reference a tab in `trackedTabs`. */
@@ -85,6 +87,7 @@ export function pickMountedIds(
 
 export function ContextEditorMountHost({
   projectId,
+  workId,
   trackedTabs,
   activeTabId,
   active,
@@ -225,7 +228,11 @@ export function ContextEditorMountHost({
               ) : waitingForReviewRoom ? null : (
                 <EditorView
                   projectId={projectId}
+                  workId={workId}
                   documentId={tab.documentId}
+                  // A warm editor is hidden, not gone. Its chrome portals to
+                  // the body, where `hidden` on an ancestor means nothing.
+                  active={isActive}
                   detached={tab.kind === "new"}
                   schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                   reviewDraftId={reviewDraftId}

@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
+import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -310,7 +311,7 @@ function useDeviceOnly(documentId: string): boolean {
 function focusEditorProse(documentId: string) {
   document
     .querySelector<HTMLElement>(
-      `[data-context-editor-document-id="${CSS.escape(documentId)}"] [contenteditable="true"]`,
+      `[data-context-editor-document-id="${escapeCssIdent(documentId)}"] [contenteditable="true"]`,
     )
     ?.focus();
 }

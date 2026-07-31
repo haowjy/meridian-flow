@@ -2,6 +2,128 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
+  table cells now hold full block content. Tables serialize as HTML every time
+  while pipe-table imports still parse, and Enter in cell prose splits a
+  paragraph while Shift-Enter keeps the hard break. The collaboration schema is
+  now `0.5.0`. Multiline Figure captions survive table-cell transport intact.
+- `apps/app`: dragging a picture onto a table's cell border no longer grows
+  the table a new column. The drop lands inside the nearest cell's paragraph
+  (or refuses when nothing can host it), the drop caret shown during the drag
+  is the landing the release keeps, and dropped files and in-cell pastes
+  follow the same rule. Column count cannot change under a drop.
+- `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
+  (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at
+  the size the screen can actually give it. At phone widths the source pane
+  stacks above the picture instead of squeezing the canvas into a gutter.
+
+- `packages/markup`: sized image HTML now decodes attribute entities once, so
+  repeated saves preserve image paths, alt text, titles, and stable project
+  asset identity, including inside spanned tables.
+- `apps/app`: end-to-end document fixtures now create canonical collaboration
+  state through the authenticated context API instead of seeding a derived cache.
+- `apps/server`: every model now receives the Meridian document dialect in its
+  baked system prompt. The card teaches GFM, wikilinks, fenced diagrams,
+  minimal table spelling, Layout, and asset paths, with a codec round-trip gate
+  preventing the instructions from drifting.
+- `packages/markup`: `[[target]]` is now first-class markdown/MDX wire syntax.
+  It round-trips as an ordinary editor link without embedding resolution state,
+  so links to documents that do not exist yet remain valid prose.
+- `packages/markup`: labeled links and images whose destination is a wikilink,
+  including targets with spaces, now round-trip without escaped-bracket
+  corruption.
+- `apps/server`: project links now resolve through one owner-gated endpoint.
+  Wikilink titles and aliases, manuscript and Work locations, and relative
+  paths all return one canonical document or an ordinary unresolved result;
+  ambiguous names are never guessed.
+- `apps/app`, `packages/markup`, `packages/prosemirror-schema`: chapters now
+  carry tables, diagrams, and block alignment, with full writer-facing
+  controls. A ```mermaid fence renders as a diagram with a pan/zoom
+  lightbox and a source pane that keeps the last good render on parse
+  errors; diagram image copy and download work (they never did — the
+  renderer's HTML labels tainted the export canvas). Tables get
+  outside-frame grips, add tabs, hover column resize, row/column menus,
+  header toggle, and merge/split; spans are legal on the wire. Center or
+  right alignment travels as a `Layout` wrapper in MDX, so a document
+  nobody has aligned still serializes as byte-identical plain markdown.
+- `apps/app`: the editor's complete interaction model landed — a document
+  toolbar whose greying always says why, context-resolved right-click
+  everywhere (Shift+right-click is the native escape), a slash menu, block
+  movement (margin handle, drag with legal-seam drop lines, Alt+arrows),
+  and Esc that always walks one step home. Every control works or says
+  why it can't; a denied clipboard verb greys in place with its reason
+  instead of closing silently.
+- `apps/app`: typing mechanics — full markdown autoformat (headings,
+  marks, quotes, lists, fences with GFM info strings; Backspace reverts
+  any transform), auto-paired `[ ] ( ) " "` with step-over and unpair,
+  Tab that indents fences, sinks lists, walks cells, and never ejects
+  focus. `[[` autocompletes documents from the manuscript and the active
+  Work's scratch.
+- `apps/app`, `packages/markup`, `packages/prosemirror-schema`: a picture can
+  be resized for display. Select one and drag a corner: the ratio holds, the
+  prose column is the ceiling, one line of prose the floor, and the whole drag
+  is one undo. The size is a document attribute, so every collaborator draws the
+  picture at the size the writer chose — and shrinking a big picture is how the
+  words come to stand beside it in the line. A picture nobody resized still
+  spells itself `![alt](path)` byte for byte; one that was resized escalates to
+  `<img src alt width>`, and clearing the size walks back down — Reset size in
+  the picture's own menu is the door to that once the drag has left the undo
+  stack.
+- `apps/app`: images live like text. A picture in a sentence is an
+  oversized word — it sits on the text baseline, the line grows to hold
+  it, and the words after it wrap below, the way Docs and Word read
+  "in line". Drag one to an inline position between words (the drag
+  ghost stays small instead of covering the viewport) or move a whole
+  figure by its handle; an in-flight upload is a real document node —
+  collaborators see "uploading elsewhere" at the announced size instead
+  of a false "abandoned", moving it mid-upload keeps the upload,
+  deleting aborts it, nothing reflows when bytes land (the reserved box
+  is exactly the measured picture, even a tiny icon), and Replace
+  undoes in one step. All image verbs (alt, caption, label, replace,
+  download) live in one object menu; the old always-visible figure
+  form is gone.
+- `apps/app`: arrow keys treat rendered diagrams and tables as one
+  object — walking the caret past one selects it whole and never opens
+  its source; opening stays an explicit Enter or click. Typing beside a
+  selected object starts a paragraph where the writer is looking
+  instead of editing into hidden diagram code.
+- `apps/app`: `/` in a table cell works again. Image is choosable (a
+  picture is an oversized word, and a cell paragraph holds words), and block
+  commands insert inside the cell without escaping it. The chosen image lands
+  in the asked-from cell even if collaborators edit while the file chooser is
+  open, and refuses honestly if that cell is gone when the chooser returns.
+- `apps/app`: the slash and `[[` menus' scroll fade now lives on the list
+  that actually scrolls. Top fade only when scrolled down, bottom fade
+  only when more items remain, no fade when everything fits, and pinned
+  notices are never veiled by it.
+- `apps/app`: hover chrome (table grips, add tabs, the margin handle,
+  drop lines, link hints) is anchored to the content it labels. It
+  appears at the hovered row instantly with no travel animation, rides
+  scrolling without lagging behind, and can no longer be caught
+  floating over the app's own header. The margin handle is fully
+  visible and clickable at every window width, including phones.
+- `apps/app`: links resolve within their Work. Switching Work invalidates
+  cached answers, renaming a document updates what its links resolve to
+  without a reload, and a scratch document can be the base of a relative
+  link.
+- `apps/app`: every menu, grip, and popover survives a collaborator's
+  write mid-gesture — surfaces remember document-native identity, never
+  screen positions, so a peer adding a table row can no longer aim your
+  open menu at the wrong cell. AI writes merge like any peer's, no gates.
+- `apps/app`: editable link clicks place a cursor rather than navigating away,
+  and pasted HTML is rebuilt through an element and attribute allowlist.
+- `apps/app`, `apps/server`, `packages/contracts`, `packages/markup`: uploaded
+  images become their own documents under `manuscript://assets/`. Prose holds a
+  stable `asset:<documentId>` reference instead of an expiring storage URL, so an
+  image survives a rename and renders through a signed URL fetched at display
+  time. `FigureAssetReference` now carries `assetDocumentId` and a
+  project-relative `assetPath`; figure upload no longer attaches file metadata to
+  the host document.
+- `packages/prosemirror-schema`: collaboration schema surface is now `0.4.0`.
+  Block alignment added an `align` attr to paragraphs, headings, and tables
+  (`0.2`); pending uploads add a transient `uploadToken` attr to images and
+  figures (`0.3`); display resize adds a `width` attr to images (`0.4`).
+  Clients on an older bundle are fenced and reload.
 - `apps/app`: the left sidebar now keeps one flat shelf tone, so selected and
   hovered rows retain the same contrast while the file tree scrolls.
 - `apps/app`: chapters now wait briefly for complete local and server state
@@ -91,7 +213,6 @@
   section per document separated by a rule, a match count beside each name, and
   "N more" to grow a document's passages in place. The searched word is the
   handle you click, and each passage opens at its own place in the document.
-
 - `apps/app`: the TipTap editor schema and the server document schema are
   structurally compared again by a parity unit test, so drift fails `pnpm check`
   instead of surfacing as decode/sync errors.
@@ -344,9 +465,9 @@
   missing tmux server counts as no live dev sessions.
 - `apps/server`: structured event writes under `logs/` no longer trigger Nitro
   dev rebuilds or restart in-flight turns.
-- `tools/dev`: restart now terminates only its owned tmux session, waits for
-  fixed ports to become bindable, and refuses non-owned or uninspectable
-  listeners instead of killing processes discovered by port.
+- `tools/dev`: restart now owns its configured fixed ports after tmux teardown,
+  logs and sends SIGTERM to every discovered holder, then SIGKILLs stragglers;
+  uninspectable bound ports still abort startup.
 - `tools/dev`: the app dev-transform smoke now uses an OS-assigned port reported
   by its child, requires the child to remain alive, and enforces `/` 307 plus
   `/login` 200 with Meridian's login-page marker.
@@ -354,8 +475,7 @@
   the generated Nitro server, and enforces the same exact public-route contract.
 - `tools/dev`: destructive and gate-critical scripts now compile under one
   strict Nx typecheck target included in root `pnpm typecheck`.
-- `tools/dev`: startup failures now print the concrete portless log path, while
-  pre-launch port refusals identify the non-owned holder by PID and command.
+- `tools/dev`: startup failures now print the concrete portless log path.
 - `apps/app`: edit cards now ignore draft-scoped lineage and record only changes to the live manuscript.
 
 - `apps/server`: durable change trails now compute additions and removals from

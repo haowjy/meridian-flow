@@ -12,14 +12,19 @@ import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
+import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
-import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { AgentNameStore } from "./agent-name-store";
+import { BlockDragExtension } from "./blocks";
+import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
+import { AutoPairExtension } from "./extensions/auto-pair";
+import { DropLandingExtension } from "./extensions/DropLandingExtension";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
+import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
   MeridianBulletList,
   MeridianCode,
@@ -27,6 +32,7 @@ import {
   MeridianEm,
   MeridianFigure,
   MeridianHardBreak,
+  MeridianHeading,
   MeridianHorizontalRule,
   MeridianImage,
   MeridianJsxContainer,
@@ -34,6 +40,7 @@ import {
   MeridianLink,
   MeridianListItem,
   MeridianOrderedList,
+  MeridianParagraph,
   MeridianStrong,
   MeridianTable,
   MeridianTableCell,
@@ -42,7 +49,16 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
-import { markdownTableClipboardParser } from "./markdown-paste";
+import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
+import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
+import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
+import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
+import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
+import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
+import { LinkSurfaceExtension } from "./links";
+import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
+import { ObjectPhysicsExtension } from "./objects";
+import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import type { SessionMarkerStore } from "./session-marker-store";
 
@@ -51,22 +67,26 @@ export type EditorUser = {
   color: string;
 };
 
-export type AwarenessProvider = {
-  awareness: Awareness;
-};
-
-export type FigureRenderContext = {
+/** Project whose asset namespace resolves `asset:<documentId>` image sources. */
+export type AssetRenderContext = {
   projectId?: string;
-  documentId?: string;
 };
 
 export type CreateEditorExtensionsOptions = {
   document: Y.Doc;
-  awareness: Awareness;
   schemaType?: YjsTrackedSchemaType;
-  cursorProvider?: AwarenessProvider;
+  /**
+   * This client's presence, held by whatever decides when it is on the wire —
+   * normally the `DocumentSession`'s (`local-presence.ts`).
+   *
+   * The editor's only reach into awareness, deliberately. The caret's provider,
+   * the peer list a cursor color is picked against, and the image-upload
+   * announcement all come from here, so nothing assembled below can publish a
+   * local field the session cannot suspend.
+   */
+  presence: LocalPresenceFields;
   user?: EditorUser;
-  figureRenderContext?: FigureRenderContext;
+  assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
   /**
@@ -78,6 +98,10 @@ export type CreateEditorExtensionsOptions = {
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
   agentNames?: AgentNameStore;
+  /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
+  slashCommands?: SlashCommandExtensionOptions;
+  /** Mounts the `[[` document menu; a surface with no project offers none. */
+  wikilinks?: WikilinkExtensionOptions;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -90,6 +114,37 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 const lowlight = createLowlight(common);
 
 /**
+ * Chrome extension registration list — the append-only seam every surface
+ * lane touches.
+ *
+ * One line per lane, in this order, and nothing else: a surface's behavior
+ * lives in its own module and reaches the editor through the kernel's
+ * registries (`getEditorChrome`, `registerObjectEngagement`), not through a
+ * new configuration knob here.
+ *
+ * Order is precedence. The kernel comes first because it resolves the context
+ * everything below reads; object physics next because it is the deepest thing
+ * in the document. Above all of it, unlisted, sits `UndoRedoKeymapExtension`
+ * at TipTap priority 1100 (ruling 17) — undo is the writer's recovery over LLM
+ * writes and no surface may shadow it.
+ */
+const EDITOR_CHROME_EXTENSIONS: Extensions = [
+  ChromeKernelExtension,
+  ObjectPhysicsExtension,
+  // Not lanes: the editor's own Tab and the cell's own Enter. Both need the
+  // kernel's registry to reach a scope, so they mount exactly where it does.
+  TabKeymapExtension,
+  TableEnterKeymapExtension,
+  // L-A formatting menu (M4)
+  // L-B object controls + diagram (M5)
+  // L-C table chrome (M6)
+  // L-D slash (M8) mounts with the catalog option instead: a surface that
+  // passes no catalog pays for no trigger.
+  BlockDragExtension, // L-E block movement (M9)
+  LinkSurfaceExtension, // L-F links (M7)
+];
+
+/**
  * Collaboration cursor default. The composition path resolves its token before
  * publishing awareness because y-prosemirror accepts concrete colors only.
  */
@@ -99,10 +154,10 @@ const DEFAULT_USER: EditorUser = {
 };
 
 /** Pick the first palette color not already claimed by another connected client. */
-function pickCursorColor(awareness: Awareness): string {
+function pickCursorColor(peers: PeerAwareness): string {
   const taken = new Set<string>();
-  for (const [clientID, state] of awareness.getStates()) {
-    if (clientID !== awareness.clientID && state.user?.color) {
+  for (const [clientID, state] of peers.getStates()) {
+    if (clientID !== peers.clientID && state.user?.color) {
       taken.add(state.user.color as string);
     }
   }
@@ -111,8 +166,18 @@ function pickCursorColor(awareness: Awareness): string {
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
+  // Off for a different reason than the rest of this list: the stock
+  // dropcursor computes its own landing, which near a cell border promises a
+  // position that would manufacture a table column. `DropLandingExtension`
+  // carries the same cursor (jade, matching the block drag's drop line) with
+  // the landing and the display resolved by one function (`table-drop.ts`).
   dropcursor: false,
-  gapcursor: false,
+  // Gapcursor is deliberately ABSENT from this list (absent = enabled): it is
+  // display-only (no schema or wire impact) and it is the caret's only way
+  // BELOW a trailing table — without it a writer can reach the document end
+  // and never type again (the trailing-table trap). The rest of this list is
+  // off for Yjs or schema-parity reasons; gapcursor never was, it had been
+  // swept up with them.
   link: false,
   listKeymap: false,
   trailingNode: false,
@@ -129,18 +194,18 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
   code: false,
   codeBlock: false,
   hardBreak: false,
+  heading: false,
   horizontalRule: false,
   italic: false,
   listItem: false,
   orderedList: false,
+  paragraph: false,
 } as const;
 
 const CODE_STARTER_KIT_OPTIONS = {
   ...DOCUMENT_STARTER_KIT_OPTIONS,
   blockquote: false,
   document: false,
-  heading: false,
-  paragraph: false,
 } as const;
 
 const CodeDocument = Node.create({
@@ -151,18 +216,16 @@ const CodeDocument = Node.create({
 
 function createCollaborationExtensions({
   document,
-  awareness,
-  cursorProvider,
+  presence,
   user,
   showCollaborationDecorations = true,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "document" | "awareness" | "cursorProvider" | "user" | "showCollaborationDecorations"
+  "document" | "presence" | "user" | "showCollaborationDecorations"
 >): Extensions {
-  const provider = cursorProvider ?? { awareness };
   const resolvedUser: EditorUser = {
     name: (user ?? DEFAULT_USER).name,
-    color: pickCursorColor(provider.awareness),
+    color: pickCursorColor(presence.peers),
   };
 
   const collaboration = [
@@ -178,8 +241,12 @@ function createCollaborationExtensions({
 
   return [
     ...collaboration,
+    // The presence owner's provider, never the bare Awareness: the caret and
+    // y-prosemirror's cursor plugin write and clear `user`/`cursor` through it,
+    // and a raw write made while the writer is hidden behind inline review is
+    // dropped, then overwritten by the snapshot the review restores.
     CollaborationCaret.configure({
-      provider,
+      provider: presence.caretProvider,
       user: resolvedUser,
       render: (cursorUser) => {
         const cursor = window.document.createElement("span");
@@ -205,27 +272,38 @@ function createCollaborationExtensions({
 
 export function createEditorExtensions({
   document,
-  awareness,
   schemaType = "document",
-  cursorProvider,
+  presence,
   user = DEFAULT_USER,
-  figureRenderContext,
+  assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview = false,
   markerStore,
   agentNames,
+  slashCommands,
+  wikilinks,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
-    awareness,
-    cursorProvider,
+    presence,
     user,
     showCollaborationDecorations,
   });
 
   return [
-    ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
+    ...createStandaloneEditorExtensions({
+      schemaType,
+      assetRenderContext,
+      slashCommands,
+      wikilinks,
+    }),
     ...collaboration,
+    // Undo exists only alongside collaboration's UndoManager, so its owned key
+    // bindings mount with it rather than in the standalone set.
+    UndoRedoKeymapExtension,
+    // A document with no shared room has no "uploading elsewhere", so the
+    // ephemeral half of image ingress mounts here rather than beside the door.
+    ...(schemaType === "document" ? [ImageUploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
     ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
@@ -234,13 +312,24 @@ export function createEditorExtensions({
 /** Meridian's canonical editor schema without transport or shared state. */
 export function createStandaloneEditorExtensions({
   schemaType = "document",
-  figureRenderContext,
-}: Pick<CreateEditorExtensionsOptions, "schemaType" | "figureRenderContext"> = {}): Extensions {
+  assetRenderContext,
+  slashCommands,
+  wikilinks,
+}: Pick<
+  CreateEditorExtensionsOptions,
+  "schemaType" | "assetRenderContext" | "slashCommands" | "wikilinks"
+> = {}): Extensions {
   if (schemaType === "code") {
     return [
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
       MeridianCodeBlockLowlight.configure({ lowlight }),
+      // A code file is one fence, so the fence's bracket/quote set is the
+      // whole document's.
+      AutoPairExtension,
+      // No tables here, so this is just the dropcursor for dragged text —
+      // the same one the document schema shows.
+      DropLandingExtension,
     ];
   }
   return [
@@ -254,63 +343,87 @@ export function createStandaloneEditorExtensions({
     MeridianListItem,
     MeridianHardBreak,
     MeridianHorizontalRule,
+    MeridianParagraph,
+    MeridianHeading,
     MeridianTable,
     MeridianTableRow,
     MeridianTableHeader,
     MeridianTableCell,
     MeridianCodeBlockLowlight.configure({ lowlight }),
-    MeridianImage,
+    MeridianImage.configure({ projectId: assetRenderContext?.projectId }),
     MeridianJsxLeaf,
     MeridianJsxContainer,
     MeridianFigure.configure({
-      projectId: figureRenderContext?.projectId,
-      documentId: figureRenderContext?.documentId,
+      projectId: assetRenderContext?.projectId,
     }),
+    ...(slashCommands ? [SlashCommandExtension.configure(slashCommands)] : []),
+    ...(wikilinks ? [WikilinkSuggestionExtension.configure(wikilinks)] : []),
+    MarkdownAutoformatExtension,
+    // Below the autoformat, which owns the delimiters this deliberately does
+    // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
+    AutoPairExtension,
     LiveRangeNavigationExtension,
     PassageHighlightExtension,
+    // The one door a picture comes in through — picker, drop, pasted file,
+    // pasted address — and the owner of the clipboard's asset translation,
+    // which is why the markdown text parser is its prop rather than a
+    // view-level default here (a view prop would shadow the plugin's).
+    ImageIngressExtension,
+    // Where dragged content lands, and the dropcursor that promises it:
+    // inside a table both resolve into a cell, never a new column.
+    DropLandingExtension,
+    // Chrome mounts only on the document schema: a code file is one code
+    // block with no objects and no surfaces to own.
+    ...EDITOR_CHROME_EXTENSIONS,
   ];
 }
 
 export function createEditorConfig({
   document,
-  awareness,
   schemaType,
-  cursorProvider,
+  presence,
   user,
-  figureRenderContext,
+  assetRenderContext,
   showCollaborationDecorations,
   enableDraftInlineReview,
   markerStore,
   agentNames,
+  slashCommands,
+  wikilinks,
   editable = true,
   autofocus = false,
   placeholder,
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
   const resolvedSchemaType = schemaType ?? "document";
-  const resolvedEditorProps =
-    resolvedSchemaType === "document"
-      ? { clipboardTextParser: markdownTableClipboardParser(), ...editorProps }
-      : editorProps;
+  // Sanitization runs last so a caller transform can never reintroduce markup
+  // the schema would otherwise accept.
+  const callerTransformPastedHTML = editorProps?.transformPastedHTML;
+  const sanitizedEditorProps = {
+    ...editorProps,
+    transformPastedHTML: (html: string, view: EditorView) =>
+      sanitizePastedHTML(callerTransformPastedHTML ? callerTransformPastedHTML(html, view) : html),
+  };
 
   return {
     extensions: [
       ...createEditorExtensions({
         document,
-        awareness,
         schemaType: resolvedSchemaType,
-        cursorProvider,
+        presence,
         user,
-        figureRenderContext,
+        assetRenderContext,
         showCollaborationDecorations,
         enableDraftInlineReview,
         markerStore,
         agentNames,
+        slashCommands,
+        wikilinks,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],
     editable,
     autofocus,
-    ...(resolvedEditorProps ? { editorProps: resolvedEditorProps } : {}),
+    editorProps: sanitizedEditorProps,
   };
 }

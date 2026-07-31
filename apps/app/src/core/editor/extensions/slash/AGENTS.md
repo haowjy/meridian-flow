@@ -1,0 +1,98 @@
+# extensions/slash — the `/` trigger
+
+Three small modules and the spec that hands them to the shared mechanism: where
+`/` may open (`slash-trigger.ts`), what a choice does to the document
+(`slash-insertion.ts`), and what the menu is offering (`slash-catalog.ts`). The
+lifecycle is [`../suggestion/`](../suggestion/suggestion-lane.ts), which `[[`
+uses too; the open menu React reads is the headless store in
+[`@/core/completion`](../../../completion/AGENTS.md). The surface that renders it
+is
+[`features/editor/surfaces/slash/`](../../../../features/editor/surfaces/slash/AGENTS.md).
+
+## Mental model
+
+**The predicate is the spec.** The old menu's failure (F6) was an undefined
+envelope, not a wrong one: preconditions lived in a plugin config and in code,
+and a writer who typed `/` and got a literal slash had nowhere to learn why.
+`allowsSlashTrigger(doc, from)` is the whole contract now, and its test is the
+§5.7 truth table rather than a sample of it. That is why `startOfLine` and
+`allowedPrefixes` are switched OFF in the suggestion config: splitting the
+envelope across two places is how the old one became unreadable.
+
+**Entries create, they never restyle** (F4). On an empty paragraph the choice
+converts the block, because there is nothing there to restyle; anywhere else it
+lands after, and the sentence the writer was standing in is untouched. Both
+decisions are `slashTarget`, read from the document after the trigger text is
+gone.
+
+**Every insertion opens ready to work** (law 2): a table with the caret in its
+first cell, a fence with the caret inside it, a divider with a line after it.
+The caret rule is a field in the insertion table, not a special case in a
+command. An object whose type registers `engage: "surface"` gets that surface
+instead, through the object lane's `engageObject` — the same door Enter uses.
+
+**"After the current one" needs a level, and a ceiling.** A list item exists
+only as part of its list, so a block asked for from inside a bullet lands after
+the whole list. A quote is deliberately not one of those: its children are
+ordinary blocks that happen to be quoted.
+
+**An entry's strategy is what it LANDS**, and it decides which question
+availability asks. A block strategy asks for a level of the document that will
+hold its node (convert, or insert after). The image strategy asks whether the
+paragraph the writer typed `/` in accepts an inline `image`. Two questions, so
+two strategies: a single flag standing for "the host dispatches it" made a
+picture answer the block question, which is how it came to refuse everywhere a
+block refuses.
+
+**A table cell is never left** (ruling). §5.7 lets `/` open in a cell, but a
+pick that answered by inserting after the whole table would yank the caret out
+of the structure the writer is standing in — the deepest owner, law 4. A cell
+holds any block (`block+`), so the ceiling costs nothing: every entry lands IN
+the cell, the menu in a cell reads exactly as it reads in a paragraph, and
+nothing but `canReplaceWith` is consulted — the menu cannot drift from the
+schema. The picture is inline and lands in the cell's own paragraph like any
+other.
+
+## Key rules
+
+- **The catalog is the host's** (`catalog()`, read at open). Labels are
+  localized and the image entry needs the host's picker, so nothing here may
+  hard-code a string. Ids are a closed union: a new entry needs a row in the
+  insertion table and an icon in the surface, or it will not compile.
+- **A picture is asked for at an anchored place.** Choosing Image consumes the
+  trigger and hands the host an `EditorAnchor` for the position it left behind
+  (`requestImageUpload`). The host's chooser is an operating-system dialog that
+  outlives the writer's caret and every peer write, so nothing downstream may
+  read the selection when the file comes back — the picker resolves the anchor,
+  checks the place still takes a picture, and refuses out loud otherwise
+  ([`../../images/AGENTS.md`](../../images/AGENTS.md)).
+- **The lifecycle is not this lane's.** Escape, the catalog fence, the arrow
+  keys' timing, dismissal, and the refusal to gate on transaction origin are one
+  mechanism's contracts, reasoned about in
+  [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts). A
+  correction to any of them belongs there, where `[[` and the next trigger get
+  it too.
+
+## Anti-patterns
+
+- Adding a precondition to `allow` instead of to the predicate. The truth table
+  is the product contract; a rule that is not in it is a silent rejection.
+- Reaching for TipTap's block commands (`setHeading`, `insertTable`) per entry.
+  They each place the caret their own way; the insertion table is one rule.
+- Modelling an entry as a node shape it does not actually land, or as a flag
+  about who dispatches it. Availability then answers about the surrogate: an
+  inline picture modelled as an empty paragraph asked "is there room for another
+  block", and truthfully got no in every cell.
+- Reaching for `insertPoint` for the insertion position. It answers a schema
+  question — first legal parent, stop climbing at a sibling — and this is a
+  domain one, which is how a table once landed inside a bullet and how the
+  Table row once died in every cell but the last.
+- Mounting this in `EDITOR_CHROME_EXTENSIONS`. It mounts with the catalog
+  option, so a surface that offers no catalog pays for no trigger.
+- Reaching for `@tiptap/suggestion` here. This lane is a spec; a rule it cannot
+  express is a missing field on the spec, not a second plugin.
+
+→ [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts) — the
+  mechanism every lane shares
+→ [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) for the layer, keymap, and Esc contracts
+→ design of record: `editor-toolbar-split/interaction-model.md` §5.7

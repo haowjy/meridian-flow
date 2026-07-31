@@ -12,12 +12,14 @@ export const bulletListCodec: BlockCodec<MdastList> = {
   name: "bullet_list",
 
   serialize(node, ctx) {
-    return stringifyBlock(ctx, {
-      type: "list",
-      ordered: false,
-      spread: !node.attrs.tight,
-      children: listItemsToMdast(node, ctx),
-    });
+    return separateHtmlTableFromListText(
+      stringifyBlock(ctx, {
+        type: "list",
+        ordered: false,
+        spread: !node.attrs.tight,
+        children: listItemsToMdast(node, ctx),
+      }),
+    );
   },
 
   parse(ast, ctx) {
@@ -34,13 +36,15 @@ export const orderedListCodec: BlockCodec<MdastList> = {
   name: "ordered_list",
 
   serialize(node, ctx) {
-    return stringifyBlock(ctx, {
-      type: "list",
-      ordered: true,
-      start: node.attrs.order ?? 1,
-      spread: !node.attrs.tight,
-      children: listItemsToMdast(node, ctx),
-    });
+    return separateHtmlTableFromListText(
+      stringifyBlock(ctx, {
+        type: "list",
+        ordered: true,
+        start: node.attrs.order ?? 1,
+        spread: !node.attrs.tight,
+        children: listItemsToMdast(node, ctx),
+      }),
+    );
   },
 
   parse(ast, ctx) {
@@ -95,4 +99,15 @@ function listItemToPm(node: MdastListItem, ctx: ParseContext): PMNode {
     return ctx.schema.node("list_item", { checked }, [ctx.schema.node("paragraph"), ...children]);
   }
   return ctx.schema.node("list_item", { checked }, children);
+}
+
+function separateHtmlTableFromListText(serialized: string): string {
+  // mdast's raw-HTML handler treats a table after prose as inline while its MDX
+  // flow handler does not. Put the table on the list item's continuation line
+  // so both dialect parsers see the same block without making the list loose.
+  return serialized.replace(
+    /^([ \t]*)([-+*] |\d+[.)] )([^\n]*\S) <table>$/gm,
+    (_line, indent: string, marker: string, text: string) =>
+      `${indent}${marker}${text}\n${indent}${" ".repeat(marker.length)}<table>`,
+  );
 }

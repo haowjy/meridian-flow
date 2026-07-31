@@ -34,25 +34,50 @@ function specOnly<T extends NodeSpec | MarkSpec>(spec: T): Omit<T, "parseDOM" | 
   return structural as Omit<T, "parseDOM" | "toDOM">;
 }
 
+/** Block alignment is a wire-level Layout wrapper, not a schema node. */
+const layoutAlignAttr = {
+  default: null,
+  validate(value: unknown) {
+    if (value !== null && value !== "center" && value !== "right") {
+      throw new RangeError('align must be null, "center", or "right"');
+    }
+  },
+};
+
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
   doc: specOnly(basicNodes.doc),
-  paragraph: specOnly(basicNodes.paragraph),
   blockquote: specOnly(basicNodes.blockquote),
-  heading: specOnly(basicNodes.heading),
   text: specOnly(basicNodes.text),
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;
 
 // ─── Nodes from basic, customized ───────────────────────────────────
 const basicNodeOverrides = {
+  paragraph: {
+    ...specOnly(basicNodes.paragraph),
+    attrs: { align: layoutAlignAttr },
+  },
+
+  heading: {
+    ...specOnly(basicNodes.heading),
+    attrs: { ...(basicNodes.heading.attrs ?? {}), align: layoutAlignAttr },
+  },
+
   // basic's code_block lacks language attr — spread and add it
   code_block: {
     ...specOnly(basicNodes.code_block),
     attrs: { language: { default: null } },
   },
 
-  // basic's image uses `validate: "string"` on src — we need `default: ""`
+  // basic's image uses `validate: "string"` on src — we need `default: ""`.
+  // `uploadToken` names a slot some browser is filling right now: whoever starts
+  // an upload writes it, a ProseMirror move copies it with the node, the landing
+  // clears it, and no serializer emits it. It is what lets a peer tell "someone
+  // is uploading this" from "this was abandoned" without any percent on the wire.
+  // `width` is the display size the writer dragged the picture to, in CSS
+  // pixels. Null is "the file's own size, capped by the column" — the state
+  // every untouched picture is in, and what keeps its wire form `![alt](src)`.
   image: {
     inline: true,
     group: "inline",
@@ -61,6 +86,8 @@ const basicNodeOverrides = {
       src: { default: "" },
       alt: { default: null },
       title: { default: null },
+      uploadToken: { default: null },
+      width: { default: null },
     },
     draggable: true,
   },
@@ -90,10 +117,11 @@ const customNodes = {
     attrs: { checked: { default: null } },
   },
 
-  // GFM table cells are single-line inline markdown; one paragraph is the
-  // structural representation TipTap table commands expect. colspan/rowspan/
-  // colwidth stay because prosemirror-tables editing commands use them internally.
+  // Cells are isolating mini-documents: any block that belongs in the manuscript
+  // can also belong in a cell. colspan/rowspan/colwidth stay because
+  // prosemirror-tables editing commands use them internally.
   table: {
+    attrs: { align: layoutAlignAttr },
     content: "table_row+",
     group: "block",
     tableRole: "table",
@@ -106,7 +134,7 @@ const customNodes = {
   },
 
   table_header: {
-    content: "paragraph",
+    content: "block+",
     tableRole: "header_cell",
     isolating: true,
     attrs: {
@@ -118,7 +146,7 @@ const customNodes = {
   },
 
   table_cell: {
-    content: "paragraph",
+    content: "block+",
     tableRole: "cell",
     isolating: true,
     attrs: {
@@ -149,6 +177,9 @@ const customNodes = {
       alt: { default: null },
       label: { default: null },
       caption: { default: "" },
+      // Replace aims an upload at an existing figure, so a figure holds the same
+      // in-flight slot identity as an `image`.
+      uploadToken: { default: null },
     },
     atom: true,
     defining: true,

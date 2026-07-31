@@ -1,11 +1,11 @@
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 
 import { prosemirrorRootOf, yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema });
+const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 const model = yProsemirrorModel(schema);
 
 const longParagraph = Array.from({ length: 360 }, (_, index) => {
@@ -45,22 +45,6 @@ const passCases: Case[] = [
   { name: "blockquote", markdown: "> quoted line\n> second line\n" },
   { name: "nested blockquote", markdown: "> outer\n>\n> > inner\n" },
   { name: "fenced code language", markdown: "```ts\nconst chi = 9;\nconsole.log(chi);\n```\n" },
-  {
-    name: "table alignment",
-    markdown: "| Left | Center | Right |\n| :--- | :----: | ----: |\n| a    |    b   |     c |\n",
-  },
-  {
-    name: "table with empty cell",
-    markdown: "| A | B |\n| - | - |\n| a |   |\n",
-  },
-  {
-    name: "table with escaped pipe in cell text",
-    markdown: "| A           | B |\n| ----------- | - |\n| has \\| pipe | b |\n",
-  },
-  {
-    name: "table with mixed alignment",
-    markdown: "| Left | Plain | Right |\n| :--- | ----- | ----: |\n| a    | b     |     c |\n",
-  },
   { name: "horizontal rule", markdown: "Before\n\n---\n\nAfter\n" },
   { name: "hard line break", markdown: "line one\\\nline two\n" },
   {
@@ -84,6 +68,22 @@ const acceptedNormalizationCases: Case[] = [
   {
     name: "ragged table rows pad to the header width after first round-trip",
     markdown: "| A | B |\n| - | - |\n| a |\n",
+  },
+  {
+    name: "table alignment canonicalizes to HTML after first round-trip",
+    markdown: "| Left | Center | Right |\n| :--- | :----: | ----: |\n| a    |    b   |     c |\n",
+  },
+  {
+    name: "table with empty cell canonicalizes to HTML after first round-trip",
+    markdown: "| A | B |\n| - | - |\n| a |   |\n",
+  },
+  {
+    name: "table with escaped pipe canonicalizes to HTML after first round-trip",
+    markdown: "| A           | B |\n| ----------- | - |\n| has \\| pipe | b |\n",
+  },
+  {
+    name: "table with mixed alignment canonicalizes to HTML after first round-trip",
+    markdown: "| Left | Plain | Right |\n| :--- | ----- | ----: |\n| a    | b     |     c |\n",
   },
 ];
 
@@ -136,9 +136,8 @@ describe("markdown → Yjs → markdown fidelity", () => {
             normalizeMarkdown(normalizeProseEscapes(testCase.markdown)),
           );
         }
-        // GFM canonicalizes table cell padding and pads ragged rows to the header width.
-        // Content, cell structure, and column alignment are preserved, so this is
-        // semantically lossless but not byte-identical to loosely-formatted source.
+        // Tables normalize to the canonical HTML spelling in one pass. Content,
+        // cell structure, and column alignment remain semantically lossless.
         expect(normalizeMarkdown(roundTrip(output))).toBe(normalizedOutput);
       });
     }

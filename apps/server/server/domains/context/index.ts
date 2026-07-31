@@ -1,9 +1,15 @@
+export {
+  createDrizzleAssetPathResolver,
+  type MutableAssetPathResolver,
+} from "./adapters/asset-path-resolver.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export {
   DrizzleContextDocumentStore,
   updateDocumentProjectionById,
 } from "./adapters/context-fs/drizzle-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
+export { createDrizzleDocumentLinkResolver } from "./adapters/drizzle-document-link-resolver.js";
+export { InMemoryDocumentLinkResolver } from "./adapters/in-memory-document-link-resolver.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
@@ -63,6 +69,12 @@ export type {
   WorkScopedContextFsScheme,
   WriteProvenance,
 } from "./ports/context-port.js";
+export type {
+  DocumentLinkResolver,
+  DocumentLinkTarget,
+  ResolveDocumentLinkInput,
+  ResolvedDocumentLink,
+} from "./ports/document-link-resolver.js";
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
 export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
 export { createInterruptArtifactFlush } from "./promotion/interrupt-artifact-flush.js";

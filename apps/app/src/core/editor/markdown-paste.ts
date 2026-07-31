@@ -1,6 +1,30 @@
-/** Markdown paste helpers for conservative GFM table clipboard handling. */
+/**
+ * The markdown door for clipboard text.
+ *
+ * Everything in a Meridian document is markdown, so text arriving on the
+ * clipboard is read as the document it describes rather than the characters it
+ * contains: a writer, or the AI relay they are working with, who pastes
+ * headings, lists, fences, tables and links gets headings, lists, fences,
+ * tables and links. `@meridian/markup`'s `markdownCodec` is the same GFM parser
+ * the wire uses, wikilinks included, so nothing here has to know what markdown
+ * looks like.
+ *
+ * `markdownCodec` and not `mdxCodec`: the clipboard carries text from anywhere,
+ * and MDX reads `<` and `{` as syntax. Fiction contains both.
+ *
+ * The door only opens when it has something to offer. ProseMirror's own
+ * plain-text paste already produces paragraphs of literal text, so a parse that
+ * amounts to those same paragraphs is declined and the default runs instead:
+ * ordinary pasted prose never takes a detour through a parser that could
+ * re-spell it. `markdownPasteAddsStructure` is that decision, made on the
+ * parsed blocks rather than on a guess about the raw text.
+ */
 
-import { mdxCodec } from "@meridian/markup";
+import {
+  type AssetPathResolver,
+  markdownCodec,
+  unresolvedAssetPathResolver,
+} from "@meridian/markup";
 import {
   Fragment,
   type Node as PMNode,
@@ -10,86 +34,85 @@ import {
 } from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
 
-const TABLE_DELIMITER_CELL = /^:?-{1,}:?$/;
-
-export function looksLikeMarkdownTable(text: string): boolean {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
-
-  for (let index = 0; index < lines.length - 1; index += 1) {
-    if (
-      looksLikeTableHeader(lines[index] ?? "") &&
-      looksLikeTableDelimiter(lines[index + 1] ?? "")
-    ) {
-      return true;
-    }
-  }
-
-  return false;
+/**
+ * Does this parse carry anything plain-text paste would have thrown away?
+ *
+ * Anything that is not a bare paragraph does: headings, lists, quotes, fences,
+ * tables, dividers. So does a paragraph holding a mark or a non-text inline
+ * node, because a link, an emphasis or an image is the structure those literal
+ * characters were spelling.
+ *
+ * What deliberately does not: paragraphs of plain text, however many. That is
+ * the false-positive guard. A soft-wrapped line, a `#` inside a sentence, an
+ * asterisk used as punctuation — each parses to plain paragraphs, so the codec
+ * and the default paste agree and the default wins.
+ */
+export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
+  return blocks.some((block) => block.type.name !== "paragraph" || carriesInlineStructure(block));
 }
 
-export function markdownTableClipboardParser(
+export function markdownClipboardParser(
   schema?: Schema,
+  assetPathResolver: AssetPathResolver = unresolvedAssetPathResolver,
 ): NonNullable<EditorProps["clipboardTextParser"]> {
   return (text, $context, plain, view) => {
-    if (plain) return fallbackToPlainPaste();
-    if (!canHostTable($context)) return fallbackToPlainPaste();
-    if (!looksLikeMarkdownTable(text)) return fallbackToPlainPaste();
+    // Paste-without-formatting asked for the characters, and gets them.
+    if (plain) return defaultPlainTextPaste();
 
+    let blocks: readonly PMNode[];
     try {
-      const { blocks } = mdxCodec({ schema: schema ?? view.state.schema }).parse(text);
-      const meaningfulBlocks = blocks.filter(isMeaningfulBlock);
-      if (
-        meaningfulBlocks.length === 0 ||
-        !meaningfulBlocks.every((block) => block.type.name === "table")
-      ) {
-        return fallbackToPlainPaste();
-      }
-
-      return new Slice(Fragment.fromArray(meaningfulBlocks), 0, 0);
+      blocks = markdownCodec({
+        assetPathResolver,
+        schema: schema ?? view.state.schema,
+      }).parse(text).blocks;
     } catch {
-      return fallbackToPlainPaste();
+      return defaultPlainTextPaste();
     }
+
+    const meaningful = blocks.filter(isMeaningfulBlock);
+    if (!markdownPasteAddsStructure(meaningful)) return defaultPlainTextPaste();
+
+    // One paragraph is inline content wherever the caret is: a bolded phrase
+    // pasted mid-sentence must join the sentence, not break it in two.
+    const only = meaningful.length === 1 ? meaningful[0] : undefined;
+    if (only?.type.name === "paragraph") return new Slice(Fragment.from(only), 1, 1);
+
+    if (!canHostBlocks($context)) return defaultPlainTextPaste();
+
+    return new Slice(Fragment.fromArray([...meaningful]), 0, 0);
   };
+}
+
+/** A link, an emphasis, an image: structure the literal characters spelled. */
+function carriesInlineStructure(block: PMNode): boolean {
+  let found = false;
+  block.descendants((node) => {
+    if (found) return false;
+    if (!node.isText || node.marks.length > 0) found = true;
+    return !found;
+  });
+  return found;
 }
 
 function isMeaningfulBlock(block: PMNode): boolean {
   return !(block.type.name === "paragraph" && block.childCount === 0);
 }
 
-// A top-level table can't live inside a code block or another table, so paste
-// destinations inside those must decline — otherwise inserting a closed table
-// slice splits the surrounding table / code block. Declining hands off to
-// ProseMirror's default plain-text paste (same as if this feature were absent);
-// pristine literal-text paste inside a cell is a separate stock-editor concern
-// tracked under #92.
-function canHostTable($context: ResolvedPos): boolean {
+// Block structure cannot live inside a code fence — its content is the literal
+// characters — so a paste landing in one declines and lets ProseMirror's
+// default plain-text handling run. ProseMirror already keeps clipboard text
+// literal inside a code block, but the rule is ours, so it is stated here
+// rather than inherited. Table cells deliberately do not decline: a cell holds
+// any block, so it takes structured paste exactly like prose (a fence inside a
+// cell still refuses, because the rule is the fence's).
+function canHostBlocks($context: ResolvedPos): boolean {
   for (let depth = $context.depth; depth >= 0; depth -= 1) {
-    const spec = $context.node(depth).type.spec;
-    if (spec.code || spec.tableRole) return false;
+    if ($context.node(depth).type.spec.code) return false;
   }
   return true;
 }
 
-function looksLikeTableHeader(line: string): boolean {
-  if (!line.includes("|")) return false;
-  const cells = tableCells(line);
-  return cells.length >= 2 && cells.some((cell) => cell.length > 0);
-}
-
-function looksLikeTableDelimiter(line: string): boolean {
-  if (!line.includes("|")) return false;
-  const cells = tableCells(line);
-  return cells.length >= 2 && cells.every((cell) => TABLE_DELIMITER_CELL.test(cell));
-}
-
-function tableCells(line: string): string[] {
-  let trimmed = line.trim();
-  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
-  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
-  return trimmed.split("|").map((cell) => cell.trim());
-}
-
-function fallbackToPlainPaste(): Slice {
+function defaultPlainTextPaste(): Slice {
   // ProseMirror treats undefined as “use the default plain-text parser”, but
   // its TypeScript signature only permits Slice. Keep the runtime contract.
   return undefined as unknown as Slice;

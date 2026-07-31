@@ -34,6 +34,9 @@ editor UI or transport-shell policy.
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
 - Route schema-aware content reads, seeds, and writes through
   `domain/markdown-document.ts`.
+- Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
+  composition root injects the project asset resolver. A second `mdxCodec(...)`
+  silently loses that index.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 Related boundaries: [`domains/notices`](../notices/AGENTS.md) and

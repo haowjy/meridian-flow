@@ -50,6 +50,8 @@ The shipped route surface covers:
 - Package preview/apply, update check/apply, and export.
 - Global thread list/create, snapshot, delete, turn cancel, model-request debug,
   and turn-context preview.
+- Project document-link resolution for wikilinks, `manuscript://`/`work://`
+  scheme links, and paths relative to a containing document.
 - First-party package catalog, builtin agent catalog, readiness, and unknown
   route handling.
 

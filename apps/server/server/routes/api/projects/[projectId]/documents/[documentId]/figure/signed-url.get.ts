@@ -6,9 +6,9 @@ import { requireRequestId } from "../../../../../../../lib/request-id.js";
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
-  const documentId = requireRequestId(getRouterParam(event, "documentId"), "documentId");
+  const assetDocumentId = requireRequestId(getRouterParam(event, "documentId"), "documentId");
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-  const result = await app.figureAssets.getSignedFigureUrl({ projectId, documentId });
+  const result = await app.figureAssets.getSignedFigureUrl({ projectId, assetDocumentId });
   if (!result.ok)
     throw createError({
       statusCode: result.error.code === "document_not_found" ? 404 : 502,

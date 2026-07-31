@@ -123,6 +123,7 @@ export function MobileDocumentHost({
       >
         <EditorView
           projectId={projectId}
+          workId={workId}
           documentId={activeTab.documentId}
           schemaType={activeTab.schemaType}
           editable={false}

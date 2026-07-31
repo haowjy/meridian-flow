@@ -10,6 +10,7 @@ import * as Y from "yjs";
 
 import { createAgentNameStore } from "./agent-name-store";
 import type { DocumentSession } from "./document-session";
+import { createLocalPresence } from "./local-presence";
 import {
   type EditorMountIdentity,
   type MountedEditorInput,
@@ -34,7 +35,7 @@ function session(documentId: string): DocumentSession {
     roomKey: documentId,
     document,
     awareness,
-    cursorProvider: { awareness },
+    presence: createLocalPresence(awareness),
     markerStore: new SessionMarkerStore("writer"),
     reportSchemaRepair: () => {},
   } as unknown as DocumentSession;

@@ -19,5 +19,8 @@ runtime shapes, and observability records.
   disjoint subsets of it. Providers disagree here, so the contract is only true
   if every gateway adapter normalizes before returning — `assertValidUsage`
   makes a violation loud rather than a silent billing error.
+- Figure and image references carry a stable `assetDocumentId` plus a
+  project-relative `assetPath`. Signed URLs are expiring render details and
+  never belong in a field a document persists.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.

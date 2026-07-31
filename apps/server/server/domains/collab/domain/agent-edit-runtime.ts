@@ -10,7 +10,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { TurnId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
+import { type AssetPathResolver, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -46,10 +46,19 @@ export function createAgentEditRuntime(input: {
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
+  /**
+   * Project asset index for `asset:<documentId>` ↔ project-relative path
+   * translation. Compositions with no asset namespace (in-memory, tests) leave
+   * it out and get the resolver that refuses to serialize an asset ref.
+   */
+  assetPathResolver?: AssetPathResolver;
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 }) {
   const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({ schema });
+  const markupCodec = mdxCodec({
+    schema,
+    assetPathResolver: input.assetPathResolver ?? unresolvedAssetPathResolver,
+  });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();

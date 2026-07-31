@@ -1,152 +1,255 @@
-import { mdxCodec } from "@meridian/markup";
+/**
+ * The markdown paste door.
+ *
+ * Every case goes through the exported `clipboardTextParser` with a real
+ * schema, because the question at this boundary is always the same one: does
+ * the writer get the document the clipboard describes, or the characters it
+ * contains?
+ */
+import {
+  createAssetPathResolver,
+  markdownCodec,
+  unresolvedAssetPathResolver,
+} from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Fragment, Node as PMNode, ResolvedPos, Schema, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { describe, expect, it } from "vitest";
 
-import { looksLikeMarkdownTable, markdownTableClipboardParser } from "./markdown-paste";
+import { markdownClipboardParser, markdownPasteAddsStructure } from "./markdown-paste";
 
 const schema = buildDocumentSchema();
+const parse = markdownClipboardParser(schema);
 
 const tableMarkdown = "| Stat | Value |\n| :-- | --: |\n| Strength | 128 |\n";
 
-// A caret inside a normal top-level paragraph — a destination that can host a table.
-const paragraphContext = resolveInside(
+/** What an AI relay actually emits into a writer's clipboard. */
+const aiChunk = [
+  "## The sect gate",
+  "",
+  "The elder paused. See [the ledger](https://example.com/ledger) and [[Cloud Peak]].",
+  "",
+  "- gather the disciples",
+  "- seal the gate",
+  "",
+  "```ts",
+  "const qi = 1;",
+  "```",
+  "",
+  tableMarkdown.trimEnd(),
+  "",
+  "---",
+].join("\n");
+
+// A caret in an ordinary top-level paragraph: a destination that can host blocks.
+const inParagraph = resolveInside(
   schema.node("doc", null, [schema.node("paragraph", null, schema.text("x"))]),
 );
 
-describe("looksLikeMarkdownTable", () => {
-  it("accepts GFM tables with outer pipes", () => {
-    expect(looksLikeMarkdownTable(tableMarkdown)).toBe(true);
+const inTableCell = resolveInside(
+  schema.node("doc", null, [
+    schema.node("table", null, [
+      schema.node("table_row", null, [
+        schema.node("table_cell", null, [schema.node("paragraph", null, schema.text("x"))]),
+      ]),
+    ]),
+  ]),
+);
+
+const inCodeBlock = resolveInside(
+  schema.node("doc", null, [schema.node("code_block", null, schema.text("x"))]),
+);
+
+function paste(text: string, $context: ResolvedPos = inParagraph, plain = false) {
+  return parse(text, $context, plain, editorViewFor(schema));
+}
+
+describe("markdown paste builds the document the clipboard describes", () => {
+  it("turns an AI-emitted chunk into every block it names", () => {
+    const slice = paste(aiChunk);
+    if (!slice) throw new Error("expected a markdown slice");
+
+    expect(blocksFromSlice(slice).map((block) => block.type.name)).toEqual([
+      "heading",
+      "paragraph",
+      "bullet_list",
+      "code_block",
+      "table",
+      "horizontal_rule",
+    ]);
   });
 
-  it("accepts GFM tables without outer pipes", () => {
-    expect(looksLikeMarkdownTable("Stat | Value\n--- | ---\nStrength | 128\n")).toBe(true);
+  it("keeps the fence's language rather than its backticks", () => {
+    const slice = paste("```ts\nconst qi = 1;\n```");
+    if (!slice) throw new Error("expected a markdown slice");
+    const [block] = blocksFromSlice(slice);
+
+    expect(block?.attrs.language).toBe("ts");
+    expect(block?.textContent).toBe("const qi = 1;");
   });
 
-  it("accepts alignment delimiters", () => {
-    expect(looksLikeMarkdownTable("| Left | Center | Right |\n| :--- | :----: | ----: |\n")).toBe(
-      true,
+  it("carries a link as a mark instead of literal bracket syntax", () => {
+    const slice = paste("See [the ledger](https://example.com/ledger).");
+    if (!slice) throw new Error("expected a markdown slice");
+
+    expect(textOf(slice)).toBe("See the ledger.");
+    expect(hrefsIn(slice)).toEqual(["https://example.com/ledger"]);
+  });
+
+  it("carries a wikilink in the spelling the link system reads", () => {
+    const slice = paste("See [[Cloud Peak]] before dusk.");
+    if (!slice) throw new Error("expected a markdown slice");
+
+    expect(textOf(slice)).toBe("See Cloud Peak before dusk.");
+    expect(hrefsIn(slice)).toEqual(["[[Cloud Peak]]"]);
+  });
+
+  it("still reads a table pasted with CRLF line endings", () => {
+    const slice = paste("| A | B |\r\n| --- | --- |\r\n| 1 | 2 |\r\n");
+    if (!slice) throw new Error("expected a markdown slice");
+
+    expect(blocksFromSlice(slice).map((block) => block.type.name)).toEqual(["table"]);
+  });
+
+  it("resolves a known pasted asset path to its stable image ref", () => {
+    const withAssets = markdownClipboardParser(
+      schema,
+      createAssetPathResolver([["map-id", "assets/map.png"]]),
     );
-  });
-
-  it("rejects plain prose", () => {
-    expect(looksLikeMarkdownTable("The sect elder paused before speaking.")).toBe(false);
-  });
-
-  it("rejects a lone pipe line", () => {
-    expect(looksLikeMarkdownTable("one | two")).toBe(false);
-  });
-
-  it("rejects bullet lists", () => {
-    expect(looksLikeMarkdownTable("- alpha\n- beta\n")).toBe(false);
-  });
-
-  it("rejects numbered lists", () => {
-    expect(looksLikeMarkdownTable("1. alpha\n2. beta\n")).toBe(false);
-  });
-
-  it("rejects normal sentences with markdown punctuation", () => {
-    expect(looksLikeMarkdownTable("A normal sentence with *emphasis* and - dashes.")).toBe(false);
-  });
-});
-
-describe("markdownTableClipboardParser", () => {
-  it("returns undefined for non-table markdown so normal plain-text paste can run", () => {
-    const parser = markdownTableClipboardParser(schema);
-
-    expect(
-      parser("A sentence with *stars*.", paragraphContext, false, editorViewFor(schema)),
-    ).toBeUndefined();
-  });
-
-  it("returns undefined for table markdown when plain paste is requested", () => {
-    const parser = markdownTableClipboardParser(schema);
-
-    expect(parser(tableMarkdown, paragraphContext, true, editorViewFor(schema))).toBeUndefined();
-  });
-
-  it("builds a closed table Slice from table markdown", () => {
-    const parser = markdownTableClipboardParser(schema);
-    const slice = parser(tableMarkdown, paragraphContext, false, editorViewFor(schema));
-
-    expect(slice).toBeDefined();
-    expect((slice as Slice).openStart).toBe(0);
-    expect((slice as Slice).openEnd).toBe(0);
-    expect(containsNodeType(slice as Slice, "table")).toBe(true);
-  });
-
-  it("builds a table Slice from CRLF table markdown", () => {
-    const parser = markdownTableClipboardParser(schema);
-    const slice = parser(
-      "| A | B |\r\n| --- | --- |\r\n| 1 | 2 |\r\n",
-      paragraphContext,
+    const slice = withAssets(
+      "![Realm map](assets/map.png)",
+      inParagraph,
       false,
       editorViewFor(schema),
     );
+    if (!slice) throw new Error("expected a markdown slice");
 
-    expect(slice).toBeDefined();
-    expect(containsNodeType(slice as Slice, "table")).toBe(true);
-  });
-
-  it.each([
-    [
-      "fenced code containing table-looking lines",
-      "```\n| A | B |\n| --- | --- |\n| 1 | 2 |\n```\n",
-    ],
-    ["paragraph plus markdown punctuation", "alpha | beta\n- | -\nC | D"],
-    ["prose mixed with a table", `Before the table.\n\n${tableMarkdown}`],
-  ])("returns undefined for %s", (_name, markdown) => {
-    const parser = markdownTableClipboardParser(schema);
-
-    expect(parser(markdown, paragraphContext, false, editorViewFor(schema))).toBeUndefined();
-  });
-
-  it("preserves the parsed table structure", () => {
-    const parser = markdownTableClipboardParser(schema);
-    const slice = parser(tableMarkdown, paragraphContext, false, editorViewFor(schema));
-    if (!slice) throw new Error("expected markdown table slice");
-
-    const originalBlocks = mdxCodec({ schema }).parse(tableMarkdown).blocks;
-    expect(blocksFromSlice(slice).map((node) => node.toJSON())).toEqual(
-      originalBlocks.map((node) => node.toJSON()),
-    );
-  });
-
-  // Inside a table the parser declines (returns undefined) so it never builds a
-  // nested-table slice that would split the surrounding table. Paste then falls
-  // back to ProseMirror's default plain-text handling. (Pristine literal-text
-  // paste inside a cell is stock-editor behavior, tracked under #92.)
-  it("declines to convert inside a table cell, deferring to default paste", () => {
-    const parser = markdownTableClipboardParser(schema);
-    const cellContext = resolveInside(
-      schema.node("doc", null, [
-        schema.node("table", null, [
-          schema.node("table_row", null, [
-            schema.node("table_cell", null, [schema.node("paragraph", null, schema.text("x"))]),
-          ]),
-        ]),
-      ]),
-    );
-
-    expect(parser(tableMarkdown, cellContext, false, editorViewFor(schema))).toBeUndefined();
-  });
-
-  it("returns undefined when pasting inside a code block so literal text is kept", () => {
-    const parser = markdownTableClipboardParser(schema);
-    const codeContext = resolveInside(
-      schema.node("doc", null, [schema.node("code_block", null, schema.text("x"))]),
-    );
-
-    expect(parser(tableMarkdown, codeContext, false, editorViewFor(schema))).toBeUndefined();
+    let src: unknown;
+    slice.content.descendants((node) => {
+      if (node.type.name === "image") src = node.attrs.src;
+    });
+    expect(src).toBe("asset:map-id");
   });
 });
+
+describe("prose stays prose", () => {
+  // Declining hands the paste back to ProseMirror's own plain-text handling,
+  // which is the whole point: text the codec would only re-spell must never
+  // take a detour through the codec.
+  const prose = [
+    ["one plain sentence", "The elder paused before speaking."],
+    ["two plain paragraphs", "The elder paused.\n\nThe gate held."],
+    ["soft-wrapped lines", "The elder paused\nbefore speaking."],
+    ["a hash inside a sentence", "He typed # into the channel."],
+    ["a bare url", "See https://example.com now."],
+    ["an asterisk used as punctuation", 'She said, "the * marks a scene break".'],
+    ["an underscore inside a word", "Open my_var_name and read it."],
+    ["angle brackets in dialogue", "He muttered <sigh> and left."],
+    ["braces in prose", "The rule {a} applies."],
+  ] as const;
+
+  for (const [name, text] of prose) {
+    it(`declines ${name}`, () => {
+      expect(paste(text)).toBeUndefined();
+    });
+  }
+
+  it("declines empty text", () => {
+    expect(paste("")).toBeUndefined();
+  });
+});
+
+describe("the destination has the last word", () => {
+  it("keeps literal text when the caret is in a code block", () => {
+    expect(paste(aiChunk, inCodeBlock)).toBeUndefined();
+  });
+
+  it("keeps literal text when paste-without-formatting was asked for", () => {
+    expect(paste(aiChunk, inParagraph, true)).toBeUndefined();
+  });
+
+  // Cells hold any block, so they take structured paste like prose anywhere.
+  it("hosts block structure inside a table cell", () => {
+    const nested = paste(tableMarkdown, inTableCell);
+    if (!nested) throw new Error("expected a markdown slice");
+    expect(blocksFromSlice(nested).map((block) => block.type.name)).toEqual(["table"]);
+
+    const heading = paste("## Heading", inTableCell);
+    if (!heading) throw new Error("expected a markdown slice");
+    expect(blocksFromSlice(heading).map((block) => block.type.name)).toEqual(["heading"]);
+  });
+
+  it("still marks up inline markdown inside a table cell", () => {
+    const slice = paste("**bold**", inTableCell);
+    if (!slice) throw new Error("expected a markdown slice");
+
+    expect(textOf(slice)).toBe("bold");
+    expect(marksIn(slice)).toEqual(["strong"]);
+  });
+});
+
+describe("the slice joins the sentence or breaks the block, deliberately", () => {
+  it("leaves a lone paragraph open so it merges into the caret's sentence", () => {
+    const slice = paste("a **bold** word");
+    if (!slice) throw new Error("expected a markdown slice");
+
+    expect([slice.openStart, slice.openEnd]).toEqual([1, 1]);
+  });
+
+  it("closes a slice that carries blocks, so their structure survives", () => {
+    const slice = paste("## Heading\n\nAnd *prose*.");
+    if (!slice) throw new Error("expected a markdown slice");
+
+    expect([slice.openStart, slice.openEnd]).toEqual([0, 0]);
+  });
+});
+
+describe("markdownPasteAddsStructure", () => {
+  const gains = [
+    ["a heading", "## Scene"],
+    ["a list", "- a\n- b"],
+    ["a fence", "```\nx\n```"],
+    ["a table", tableMarkdown],
+    ["a divider", "---"],
+    ["a blockquote", "> quoted"],
+    ["emphasis", "He was *very* tired."],
+    ["a link", "See [it](https://example.com)."],
+    ["an image", "![m](assets/map.png)"],
+    ["an explicit hard break", "line one  \nline two"],
+  ] as const;
+
+  for (const [name, text] of gains) {
+    it(`accepts ${name}`, () => {
+      expect(markdownPasteAddsStructure(blocksOf(text))).toBe(true);
+    });
+  }
+
+  const noGain = [
+    ["nothing", ""],
+    ["one sentence", "The elder paused."],
+    ["two paragraphs", "One.\n\nTwo."],
+    ["soft-wrapped lines", "line one\nline two"],
+  ] as const;
+
+  for (const [name, text] of noGain) {
+    it(`rejects ${name}`, () => {
+      expect(markdownPasteAddsStructure(blocksOf(text))).toBe(false);
+    });
+  }
+});
+
+/** The predicate judges codec output, so the fixtures are codec output. */
+function blocksOf(text: string): PMNode[] {
+  return [
+    ...markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }).parse(text).blocks,
+  ];
+}
 
 function editorViewFor(schema: Schema): EditorView {
   return { state: { schema } } as EditorView;
 }
 
-// Resolve a position inside the document's first textblock.
+/** Resolve a position inside the document's first textblock. */
 function resolveInside(doc: PMNode): ResolvedPos {
   let pos: number | null = null;
   doc.descendants((node, nodePos) => {
@@ -160,17 +263,6 @@ function resolveInside(doc: PMNode): ResolvedPos {
   return doc.resolve(pos ?? 1);
 }
 
-function containsNodeType(slice: Slice, typeName: string): boolean {
-  let found = false;
-  slice.content.forEach((node) => {
-    if (node.type.name === typeName) found = true;
-    node.descendants((child) => {
-      if (child.type.name === typeName) found = true;
-    });
-  });
-  return found;
-}
-
 function blocksFromSlice(slice: Slice): PMNode[] {
   return childrenOf(slice.content);
 }
@@ -181,4 +273,26 @@ function childrenOf(fragment: Fragment): PMNode[] {
     children.push(node);
   });
   return children;
+}
+
+function textOf(slice: Slice): string {
+  return slice.content.textBetween(0, slice.content.size, "");
+}
+
+function hrefsIn(slice: Slice): string[] {
+  const hrefs: string[] = [];
+  slice.content.descendants((node) => {
+    for (const mark of node.marks) {
+      if (mark.type.name === "link") hrefs.push(String(mark.attrs.href));
+    }
+  });
+  return hrefs;
+}
+
+function marksIn(slice: Slice): string[] {
+  const names: string[] = [];
+  slice.content.descendants((node) => {
+    for (const mark of node.marks) names.push(mark.type.name);
+  });
+  return names;
 }

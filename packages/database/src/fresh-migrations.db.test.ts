@@ -72,7 +72,12 @@ if (!enabled || !databaseUrl) {
         await target.end();
       }
     });
-    it("renames the frozen search directive without touching prompts that only mention grep", async () => {
+    // Replays the entire migration chain into a fresh database: 10-22s alone,
+    // and past the package's 30s default when parallel checkouts share the
+    // one Postgres container. The budget is the replay's, not the assertion's.
+    it("renames the frozen search directive without touching prompts that only mention grep", {
+      timeout: 90_000,
+    }, async () => {
       const ids = {
         user: "00000000-0000-4000-8000-000000000201",
         project: "00000000-0000-4000-8000-000000000202",
