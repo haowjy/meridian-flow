@@ -14,10 +14,21 @@
  * A plugin rather than an editor prop so its `handlePaste` sits in front of
  * `tableEditing`'s on the same ladder: `MeridianTable` mounts it before its
  * parent's plugins.
+ *
+ * A pasted image FILE never reaches this ladder: it carries no slice, so
+ * `ImageIngressExtension` claims it at the clipboard. That door still lands
+ * through `sweepReplaceLanding` below, so what "paste replaces a sweep" means
+ * is decided here once, whichever kind of clipboard arrives.
  */
 
 import { Fragment, type Node as PMNode, type Slice } from "@tiptap/pm/model";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import {
+  type EditorState,
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Transaction,
+} from "@tiptap/pm/state";
 import { __pastedCells, CellSelection, selectedRect } from "@tiptap/pm/tables";
 import { Transform } from "@tiptap/pm/transform";
 import type { EditorView } from "@tiptap/pm/view";
@@ -40,34 +51,54 @@ export function tableSweepPastePlugin(): Plugin {
  */
 function sweepPasteReplace(view: EditorView, slice: Slice): boolean {
   const { state } = view;
-  const { selection } = state;
-  if (!(selection instanceof CellSelection)) return false;
+  if (!(state.selection instanceof CellSelection)) return false;
   if (slice.size === 0) return false;
   if (__pastedCells(slice)) return false;
+
+  const landed = sweepReplaceLanding(state, (cell) => fitIntoCell(cell, slice));
+  if (!landed) return false;
+  view.dispatch(landed.transaction.scrollIntoView());
+  return true;
+}
+
+/** A sweep-replace, built but not dispatched: the landed content's range too. */
+export type SweepLanding = { transaction: Transaction; from: number; to: number };
+
+/**
+ * The one shape of "paste replaces a sweep": every swept cell emptied, the
+ * `landing` content standing whole in the rectangle's top-left cell, the caret
+ * after it — one transaction, so one undo takes all of it back. Null when the
+ * selection is not a sweep. Every paste door lands through here — this
+ * plugin's clipboard slices, and the image lane's pasted file
+ * (`images/image-uploads.ts`) — so no door invents its own answer.
+ */
+export function sweepReplaceLanding(
+  state: EditorState,
+  landing: (cell: PMNode) => Fragment,
+): SweepLanding | null {
+  if (!(state.selection instanceof CellSelection)) return null;
 
   const rect = selectedRect(state);
   // Row-major, so the first entry is the rectangle's top-left cell — the
   // landing, whichever corner the writer dragged from.
   const cells = rect.map.cellsInRect(rect);
   const transaction = state.tr;
-  let landingEnd: number | null = null;
+  let landed: { from: number; to: number } | null = null;
 
   // Back to front, so a replacement never moves a cell still waiting its turn
-  // — which is also what lets the top-left cell's end survive unmapped.
+  // — which is also what lets the top-left cell's range survive unmapped.
   for (let index = cells.length - 1; index >= 0; index -= 1) {
     const cell = rect.table.nodeAt(cells[index]);
     if (!cell) continue;
     const from = rect.tableStart + cells[index] + 1;
-    const content = index === 0 ? fitIntoCell(cell, slice) : emptiedCell(cell);
+    const content = index === 0 ? landing(cell) : emptiedCell(cell);
     transaction.replaceWith(from, from + cell.content.size, content);
-    if (index === 0) landingEnd = from + content.size;
+    if (index === 0) landed = { from, to: from + content.size };
   }
 
-  if (landingEnd !== null) {
-    transaction.setSelection(TextSelection.near(transaction.doc.resolve(landingEnd), -1));
-  }
-  view.dispatch(transaction.scrollIntoView());
-  return true;
+  if (!landed) return null;
+  transaction.setSelection(TextSelection.near(transaction.doc.resolve(landed.to), -1));
+  return { transaction, ...landed };
 }
 
 /** The clipboard as this cell can hold it, however open the slice arrived. */
