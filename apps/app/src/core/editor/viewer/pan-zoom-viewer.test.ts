@@ -145,4 +145,29 @@ describe("mounting", () => {
     viewer.fit();
     expect(viewer.fitted).toBe(true);
   });
+
+  // The lightbox is a near-fullscreen frame, so the host a diagram opens into
+  // is far bigger than the one it was drawn against — and it can grow again
+  // when the source pane closes. An untouched view has to spend that room.
+  it("refits an untouched view when the frame grows", () => {
+    viewer = createPanZoomViewer({ host, content, padding: 0 });
+    expect(viewer.scale).toBeCloseTo(2, 10);
+
+    sized(host, 1600, 1200);
+    viewer.resize();
+
+    expect(viewer.scale).toBeCloseTo(4, 10);
+    expect(viewer.fitted).toBe(true);
+  });
+
+  it("leaves a moved view where the writer put it when the frame grows", () => {
+    viewer = createPanZoomViewer({ host, content, padding: 0 });
+    viewer.panBy({ x: 10, y: 0 });
+    const moved = viewer.scale;
+
+    sized(host, 1600, 1200);
+    viewer.resize();
+
+    expect(viewer.scale).toBe(moved);
+  });
 });
