@@ -72,7 +72,7 @@ export function ImageResizeHandles({
         startWidth: bounds.width,
         ratio: bounds.height / bounds.width,
         minimum: proseLineHeight(element),
-        maximum: containingBlockWidth(element) ?? bounds.width,
+        maximum: visibleBoundWidth(element) ?? bounds.width,
       },
       hold,
       pointerId: event.pointerId,
@@ -136,17 +136,29 @@ export function ImageResizeHandles({
 }
 
 /**
- * The width of the block box the picture stands in — the prose column, or the
- * narrower one a list item or a table cell gives it.
+ * The widest this picture can be drawn and still be seen whole: the NARROWEST
+ * box between it and the manuscript.
  *
- * Found by walking out of the inline boxes rather than by naming node types: a
- * picture's own wrapper and TipTap's node-view container are both inline, and
- * the first ancestor that is not is by definition what bounds the line.
+ * Not the block it stands in. That block can be wider than what the writer can
+ * see of it — a table cell inside the grid's horizontal scroller is the case
+ * that proved it, and reading the block alone let a drag push the far grips out
+ * past the scroller's edge where no pointer can reach them. So every box on the
+ * way out is asked, and the smallest answer wins; each of them is a real
+ * boundary, because a box narrower than its child is a box that clips or
+ * scrolls it. The walk ends at the manuscript, which is the outermost thing a
+ * picture is ever bounded by.
+ *
+ * Inline boxes are skipped rather than named: a picture's own wrapper and
+ * TipTap's node-view container are both inline, and a box that does not bound a
+ * line has no width to offer.
  */
-function containingBlockWidth(element: HTMLElement): number | null {
+function visibleBoundWidth(element: HTMLElement): number | null {
+  let narrowest: number | null = null;
   for (let at = element.parentElement; at; at = at.parentElement) {
-    if (window.getComputedStyle(at).display.startsWith("inline")) continue;
-    return at.clientWidth > 0 ? at.clientWidth : null;
+    if (!window.getComputedStyle(at).display.startsWith("inline") && at.clientWidth > 0) {
+      narrowest = narrowest === null ? at.clientWidth : Math.min(narrowest, at.clientWidth);
+    }
+    if (at.classList.contains("ProseMirror")) break;
   }
-  return null;
+  return narrowest;
 }

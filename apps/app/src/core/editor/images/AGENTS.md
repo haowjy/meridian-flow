@@ -79,6 +79,17 @@ every door refuses out loud rather than opening onto nothing.
   what makes the Docs look reachable rather than absent: a picture as wide as
   the column fills the line it stands in by definition, and dragging it smaller
   is how words come to stand beside it.
+- **A cell has to be GIVEN a width before it can cap a picture.** The prose
+  column caps by `max-width: 100%`, which needs a box that was decided without
+  the picture. A table cell is not one: auto layout sizes columns from what is
+  inside them and drops percentages while it does, so the column becomes as wide
+  as the picture's own pixels and the cap resolves against the damage. The fence
+  is size containment on the cell's paragraph
+  ([`../../../features/editor/editor.css`](../../../features/editor/editor.css)):
+  that line is measured as if it were empty and asks the table for one definite
+  8rem, so the column is settled first and the picture fills it. Never answer
+  this with hidden overflow, and never fence a cell that holds no picture — the
+  table's columns are its prose's to size.
 - **The drag is geometry; only the release is an edit.** Each frame writes a
   width onto the picture's own element, which the writer sees and no peer does,
   and the release dispatches one `setNodeMarkup` carrying every other attribute
@@ -87,6 +98,10 @@ every door refuses out loud rather than opening onto nothing.
   times over. The target is a `NodeHold`, because a peer or an AI write can move
   the picture between the press and the release
   ([`image-resize.ts`](image-resize.ts)).
+- **A resize stops at the narrowest box between the picture and the manuscript**,
+  not at the nearest block. A block can be wider than what the writer can see of
+  it — a cell inside the table's horizontal scroller — and a ceiling read from
+  the block alone let a drag put the far grips where no pointer could reach them.
 - **The grips are inside the node view**, which is what
   `features/editor/chrome/object-overlay.ts` already calls the default for an
   object that owns its DOM: chrome rendered in the element it decorates rides

@@ -43,7 +43,11 @@ export type ImageResizeGesture = {
   ratio: number;
   /** Small enough to be a picture, big enough to still be one: a line of prose. */
   minimum: number;
-  /** The prose column. A picture is never wider than the words around it. */
+  /**
+   * The narrowest box between the picture and the manuscript: the prose column,
+   * or the cell and the scroller a table gives it instead. A picture is never
+   * wider than what the writer can see of the place it stands in.
+   */
   maximum: number;
 };
 
