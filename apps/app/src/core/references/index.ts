@@ -22,9 +22,18 @@
 
 export {
   filterReferenceItems,
+  MAX_REFERENCE_QUERY_LENGTH,
   type ReferenceCandidate,
   type ReferenceCatalog,
   type ReferenceItem,
   type ReferenceItemOf,
   type ReferenceKind,
 } from "./reference-catalog";
+export {
+  findReferenceToken,
+  type ReferenceDocumentItem,
+  type ReferenceSplice,
+  type ReferenceToken,
+  referenceSpelling,
+  spliceReference,
+} from "./reference-trigger";

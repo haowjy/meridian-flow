@@ -14,10 +14,9 @@
  */
 
 import type { Mark } from "@tiptap/pm/model";
-
+import type { LinkTarget } from "@/core/links";
 import type { LinkAnchor } from "./link-commands";
 import type { InternalLinkNavigator } from "./link-navigation";
-import type { LinkTarget } from "./link-target";
 
 export type LinkPoint = { x: number; y: number };
 

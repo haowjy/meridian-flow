@@ -69,6 +69,15 @@ export type ReferenceItem =
       /** The name the link will carry. */
       name: string;
       location: string;
+      /** The persisted `documents.id`, carried through from the candidate. */
+      documentId: string;
+      /**
+       * The resolver's spelling of this document. A host that cannot spell the
+       * name — the composer picking one of two chapters called Notes — writes
+       * this instead, and it must be the pick's own URI rather than one looked
+       * up again from a catalog that may have moved.
+       */
+      uri: string;
       /** Which alias matched, when the writer recalled one instead of the title. */
       matchedAlias: string | null;
       /**
@@ -100,7 +109,7 @@ export type ReferenceItemOf<TKind extends ReferenceKind> = Extract<
 >;
 
 /** Longer queries are a writer who kept typing past a menu that had no answer. */
-const MAX_QUERY_LENGTH = 80;
+export const MAX_REFERENCE_QUERY_LENGTH = 80;
 
 const MAX_CANDIDATE_ROWS = 20;
 
@@ -116,7 +125,7 @@ export function filterReferenceItems<TKind extends ReferenceKind>(
   scope: readonly TKind[],
   query: string,
 ): ReferenceItemOf<TKind>[] {
-  if (query.length > MAX_QUERY_LENGTH) return [];
+  if (query.length > MAX_REFERENCE_QUERY_LENGTH) return [];
   const name = query.trim();
   const kinds: readonly ReferenceKind[] = scope;
 
@@ -131,6 +140,8 @@ export function filterReferenceItems<TKind extends ReferenceKind>(
             key: `document-${index}-${candidate.title}`,
             name: candidate.title,
             location: candidate.location,
+            documentId: candidate.documentId,
+            uri: candidate.uri,
             matchedAlias,
             ambiguous: duplicated.has(normalized(candidate.title)),
           }

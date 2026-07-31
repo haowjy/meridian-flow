@@ -29,6 +29,11 @@
  *
  * Cached client-side and free: these are the same queries the context tree
  * already pays for, so opening the menu costs no request.
+ *
+ * It lives beside the context trees rather than in the editor's link surface
+ * because the chat composer's `@` asks the same question, and a textarea in
+ * `features/chat/` reaching into an editor surface for it would be a layering
+ * smell standing in for a shared module.
  */
 
 import type {
@@ -39,9 +44,18 @@ import { useMemo } from "react";
 
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import type { ReferenceCandidate } from "@/core/references";
-import { schemeLabel } from "@/features/project/context/context-schemes";
 
-import type { EditorScope } from "../../editor-scope";
+import { schemeLabel } from "./context-schemes";
+
+/**
+ * Which project, and which Work's scratch is in reach. The editor reads it off
+ * its own scope provider and the composer off its thread; both are the same
+ * two answers, so neither host has to own the other's word for them.
+ */
+export type ReferenceScope = {
+  projectId: string | null;
+  workId: string | null;
+};
 
 export type ReferenceCandidateIndex = {
   readonly candidates: readonly ReferenceCandidate[];
@@ -57,7 +71,7 @@ export type ReferenceCandidateIndex = {
 export function useReferenceCandidates({
   projectId,
   workId,
-}: EditorScope): ReferenceCandidateIndex {
+}: ReferenceScope): ReferenceCandidateIndex {
   const { tree: manuscript } = useProjectContextTree(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
   });

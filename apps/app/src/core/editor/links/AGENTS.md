@@ -1,8 +1,14 @@
-# core/editor/links — the link system, headless
+# core/editor/links — the link lane, headless
 
-What a link means, what pressing one does, and which surface is open. React
-lives in [`features/editor/surfaces/link/`](../../../features/editor/surfaces/link/AGENTS.md);
+What pressing a link does and which surface is open. React lives in
+[`features/editor/surfaces/link/`](../../../features/editor/surfaces/link/AGENTS.md);
 nothing here renders.
+
+**What an href means and what it points at are not here.** The classifier and
+the href-keyed resolution store are [`@/core/links`](../../links/AGENTS.md),
+because the chat transcript asks both questions and has no ProseMirror in it.
+This lane is everything that reads a document: the mark commands, the click
+decision, the surface store, the decoration that draws an answer.
 
 ## Mental model
 
@@ -28,9 +34,9 @@ pointer, and calls into it.
 
 ## Key rules
 
-- **A new link spelling is added to `classifyLinkTarget` and nowhere else.**
-  A consumer that pattern-matches an href itself is the drift this module
-  exists to prevent.
+- **A new link spelling is added to `classifyLinkTarget` (in
+  [`@/core/links`](../../links/AGENTS.md)) and nowhere else.** A consumer that
+  pattern-matches an href itself is the drift that module exists to prevent.
 - **The classifier is also the security fence.** An href outside both families
   is `null`, and null means no hint, no follow, no Open verb, and no rendered
   destination. `MeridianLink` asks it on parse, on command, and on render,
@@ -77,6 +83,8 @@ pointer, and calls into it.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) — the seam, the behavior matrix,
   the resolution port, and how a state nobody stored gets drawn
+→ [`../../links/AGENTS.md`](../../links/AGENTS.md) — the classifier and the
+  resolution store this lane draws from, shared with the chat transcript
 → [`../extensions/wikilink/AGENTS.md`](../extensions/wikilink/AGENTS.md) — the
   `[[` trigger that writes one of these links
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md) — the kernel this registers with

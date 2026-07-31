@@ -23,10 +23,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { getLinkResolution } from "@/core/editor/links";
-
+import { useReferenceCandidates } from "@/features/project/context/useReferenceCandidates";
 import { EditorScopeProvider } from "../../editor-scope";
 import { ProjectLinkRuntime } from "./ProjectLinkRuntime";
-import { useReferenceCandidates } from "./useReferenceCandidates";
 
 const resolveDocumentLink = vi.fn(
   async (

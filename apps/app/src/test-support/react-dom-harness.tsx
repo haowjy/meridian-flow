@@ -7,6 +7,8 @@ import { createRequire } from "node:module";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { installJsdomLayoutFallbacks } from "./jsdom-layout";
+
 const require = createRequire(import.meta.url);
 const { JSDOM } = require("jsdom") as {
   JSDOM: new (html: string) => { window: Window & typeof globalThis & { close: () => void } };
@@ -31,6 +33,9 @@ export async function withReactRoot(
   options: WithReactRootOptions = {},
 ): Promise<void> {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+  // This window's prototypes are not the ambient jsdom's, so the setup file's
+  // install did not reach them.
+  installJsdomLayoutFallbacks(dom.window);
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   const previousActEnvironment = (globalThis as ActGlobal).IS_REACT_ACT_ENVIRONMENT;

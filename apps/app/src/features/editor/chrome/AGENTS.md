@@ -29,10 +29,13 @@ Five primitives and one host.
   it would not take. Two tones and nothing else, so a lane brings the message
   and decides where it hangs; the object corner, the scroll pane, and a dialog
   all wear the same pill.
-- **`SuggestionMenu`** — the list a writer types underneath, for `/`, `[[`, and
-  `@`. It owns the eight-row cap, the internal scroll that follows the arrow
-  keys, the fades on the list's own edges, and the announcement the caret's own
-  element has to carry; a lane brings rows.
+- **`SuggestionMenu`** — the editor's half of the list a writer types
+  underneath, for `/`, `[[`, and `@`. The rows, the eight-row cap, the internal
+  scroll that follows the arrow keys, and the fades on the list's own edges are
+  [`components/app/SuggestionList`](../../../components/app/SuggestionList.tsx),
+  which the chat composer's `@` renders too; this adds the kernel's popover,
+  standing down during a drag, and the announcement the caret's own element has
+  to carry. A lane brings rows.
 - **`EditorChromeHost`** — the one place chrome mounts, with nothing rendering
   editor chrome beside it. Surfaces arrive through `EDITOR_CHROME_SURFACES`;
   `EditorView.tsx` never learns about one. What a lane needs about the app rather

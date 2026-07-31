@@ -31,7 +31,8 @@ Beside them, three things that are not summoned surfaces:
   over the shared `SuggestionMenu` the slash menu also renders through, and over
   one `ReferenceRow`: a document a writer reached through either door has to read
   the same. Their candidates come from the context trees the app already caches
-  (`useReferenceCandidates`), so opening either costs no request: the manuscript
+  (`features/project/context/useReferenceCandidates`), so opening either costs no
+  request: the manuscript
   and the active Work's scratch, which is the resolver's candidate set and
   therefore the only honest offer. That index also carries the images and PDFs
   beside them, which `[[` narrows away by asking for documents alone. It carries

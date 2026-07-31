@@ -18,5 +18,4 @@ export { LinkSurfaces } from "./LinkSurfaces";
 export { ProjectLinkRuntime } from "./ProjectLinkRuntime";
 export { useLinkResolution } from "./useLinkResolution";
 export { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
-export { type ReferenceCandidateIndex, useReferenceCandidates } from "./useReferenceCandidates";
 export { WikilinkMenu } from "./WikilinkMenu";

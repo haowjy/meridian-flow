@@ -63,6 +63,7 @@ msgid "'.' and '..' cannot be used as names"
 msgstr ""
 
 #. placeholder {0}: item.matchedAlias
+#: src/features/chat/composer-references/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "(also {0})"
 msgstr ""
@@ -2091,6 +2092,10 @@ msgstr ""
 msgid "Redoing…"
 msgstr ""
 
+#: src/features/chat/composer-references/useComposerReferences.ts
+msgid "Reference a document"
+msgstr ""
+
 #: src/features/editor/EditorView.tsx
 msgid "Reference a document or picture"
 msgstr ""
@@ -2866,6 +2871,7 @@ msgstr ""
 msgid "Turn into"
 msgstr ""
 
+#: src/features/chat/composer-references/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "two documents share this name"
 msgstr ""
