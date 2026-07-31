@@ -88,12 +88,11 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - **Alt+Arrows are consumed inside a table even when refused.** Handing a
   refused row move down the ladder would move the whole table instead, which is
   not what a writer asked for by pressing "move this row".
-- **Merging runs the cells' content together first, and refuses the header.**
-  A cell holds one paragraph, and prosemirror-tables' merge appends every
-  filled cell's content; the schema-fitted replace then splits the cell into a
-  new row and drops what it could not fit. `mergeTableCells` joins first, uses
-  the library's own structural emptiness test rather than `textContent`, and
-  refuses a rectangle that spans the header row and the body.
+- **Merging appends the cells' blocks, and refuses the header.** Cells hold
+  block sequences, so prosemirror-tables' own merge is legal as-is: every
+  filled cell's blocks land in the merged cell in reading order.
+  `mergeTableCells` adds one fence — it refuses a rectangle spanning the
+  header row and the body, or the header would stop being a row.
 - **The hover surface is the frame PLUS the bands the chrome hangs in.**
   Every piece is drawn outside the frame, so a hover that ends at the frame
   dismisses the grip the writer is travelling to, a few pixels before they

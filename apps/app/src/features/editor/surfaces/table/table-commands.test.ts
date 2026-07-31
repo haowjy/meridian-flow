@@ -328,7 +328,7 @@ describe("merge and split", () => {
     const merged = tableNode(current).child(1);
     expect(merged.childCount).toBe(1);
     expect(merged.child(0).attrs.colspan).toBe(2);
-    // A section row keeps its one label: nothing was joined onto it.
+    // A section row keeps its one label: the empty cell added nothing.
     expect(merged.textContent).toBe("Attributes");
 
     expect(states(current).splitCell.blockedBy).toBeNull();
@@ -377,8 +377,8 @@ describe("merge and split", () => {
   it("keeps a hard break and an inline image, which carry no text at all", () => {
     const current = mount();
     // A cell whose only content is a hard break reads as empty to
-    // `textContent` and as FILLED to prosemirror-tables. Disagreeing with the
-    // library is how the break ends up ejected into a new paragraph.
+    // `textContent` and as FILLED to prosemirror-tables: its paragraph merges
+    // in whole rather than being skipped as an empty cell.
     const breakCell = cellPositionAt(current, 1, 1);
     current.view.dispatch(
       current.state.tr.replaceWith(
@@ -392,14 +392,14 @@ describe("merge and split", () => {
 
     const merged = tableNode(current).child(1).child(0);
     expect(merged.attrs.colspan).toBe(2);
-    // "A1" and the joining space coalesce into one text node, then the break.
-    expect(merged.child(0).lastChild?.type.name).toBe("hard_break");
-    expect(merged.child(0).textContent).toBe("A1 ");
+    // The break's paragraph lands whole after "A1".
+    expect(merged.child(0).textContent).toBe("A1");
+    expect(merged.child(1).lastChild?.type.name).toBe("hard_break");
     // Nothing was pushed out of the table on the way.
     expect(current.state.doc.childCount).toBe(2);
   });
 
-  it("carries every paragraph of a cell into the join, in reading order", () => {
+  it("carries every cell's blocks into the merge, in reading order", () => {
     const current = mount();
     selectCells(current, "A1", "A2");
     runTableVerb(current, "mergeCells");
@@ -407,8 +407,8 @@ describe("merge and split", () => {
     runTableVerb(current, "mergeCells");
 
     const table = tableNode(current);
-    expect(table.child(1).child(0).textContent).toBe("A1 A2");
-    expect(table.child(2).child(0).textContent).toBe("B1 B2");
+    expect(table.child(1).child(0).textContent).toBe("A1A2");
+    expect(table.child(2).child(0).textContent).toBe("B1B2");
     expect(current.state.doc.childCount).toBe(2);
   });
 

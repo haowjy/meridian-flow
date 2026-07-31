@@ -61,7 +61,6 @@ function open(blocks: Partial<Record<TableVerbId, TableBlockedReason>>) {
         states={states(blocks)}
         alignment={null}
         placement="left"
-        mergeJoinsText={false}
       />
     </EditorMenu>,
   );
@@ -93,13 +92,5 @@ describe("a refused table verb", () => {
     const item = row("Split cell");
     expect(item.getAttribute("aria-disabled")).toBe("true");
     expect(item.hasAttribute("data-disabled")).toBe(false);
-  });
-});
-
-describe("a verb that runs", () => {
-  it("keeps the hint that says what it will make", () => {
-    open({});
-
-    expect(row("Merge cells").textContent).toContain("One cell across the selection");
   });
 });
