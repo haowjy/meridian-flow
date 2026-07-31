@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
+  (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at
+  the size the screen can actually give it. At phone widths the source pane
+  stacks above the picture instead of squeezing the canvas into a gutter.
+
 - `packages/markup`: sized image HTML now decodes attribute entities once, so
   repeated saves preserve image paths, alt text, titles, and stable project
   asset identity, including inside spanned tables.
