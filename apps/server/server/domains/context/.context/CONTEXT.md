@@ -47,6 +47,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
   one chapter cannot disturb another that references the same asset.
+  Runtime image references bind the stable document ID to its authoritative
+  top-level `manuscript://assets/` path; project ownership alone is not enough,
+  because thread uploads are also project documents.
 - **Asset-path resolver adapter** (`adapters/asset-path-resolver.ts`) — preloads
   persisted `manuscript://assets/` identities for codec composition and is
   updated immediately when figure upload creates a binary asset. A path shared

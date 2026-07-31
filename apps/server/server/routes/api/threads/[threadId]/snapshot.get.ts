@@ -1,6 +1,7 @@
 /** GET /api/threads/[threadId]/snapshot: returns the full thread snapshot for an initial client load. Depends on the auth gate, thread ownership, and the snapshot builder. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
+import { resolveThreadModelState } from "../../../../domains/runtime/loop/thread-model-state.js";
 import { buildThreadSnapshot, requireThreadOwner } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 
@@ -15,5 +16,12 @@ export default defineEventHandler(async (event) => {
     threadId,
     userId,
   );
-  return serializeTransport(await buildThreadSnapshot(repos, hub, runner, thread.id, userId));
+  const model = await resolveThreadModelState({
+    thread,
+    packageRepository: app.packageRepository,
+    gateway: app.gateway,
+  });
+  return serializeTransport(
+    await buildThreadSnapshot(repos, hub, runner, thread.id, userId, model),
+  );
 });

@@ -95,6 +95,7 @@ import type {
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
+import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
@@ -128,6 +129,7 @@ import {
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
+import { contentBlocksForUserMessage } from "./user-message-blocks.js";
 
 const MAX_TURN_ITERATIONS = 32;
 
@@ -168,6 +170,7 @@ export interface OrchestratorDeps {
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
+  imageAssets: ImageAssetPort;
   /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
   concurrentRenderBudgetBytes?(request: GenerateRequest): number;
   responseWrites: {
@@ -420,13 +423,10 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         role: "user",
         status: "complete",
       });
-      const userBlock = contentForBlockInput({
-        turnId: userTurn.id,
-        blockType: "text",
-        sequence: 0,
-        textContent: input.userText,
-        status: "complete",
-      });
+      const userBlocks = contentBlocksForUserMessage(
+        userTurn.id,
+        input.userBlocks ?? [{ type: "text", text: input.userText }],
+      );
 
       const assistantTurn = createLocalTurn({
         threadId: input.threadId,
@@ -441,7 +441,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
         events: [
           { type: "turn.created", turn: userTurn },
-          { type: "block.upserted", block: userBlock },
+          ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
           { type: "turn.created", turn: assistantTurn },
         ],
       };
@@ -824,6 +824,8 @@ async function buildGenerateRequest(input: {
     blocks: input.blocks,
     packageRepository: input.deps.packageRepository,
     toolRegistry: input.deps.toolRegistry,
+    gateway: input.deps.gateway,
+    imageAssets: input.deps.imageAssets,
     baseTools: input.runInput.tools ?? input.deps.toolExecutor.getDefinitions?.(),
     persistBake: true,
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(

@@ -8,6 +8,11 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { StaleConnectionTokenError } from "../../../../domains/runtime/loop/turn-runner.js";
+import {
+  InvalidUserMessageBlocksError,
+  parseUserMessageBlocks,
+  validateUserMessageImageReferences,
+} from "../../../../domains/runtime/loop/user-message-blocks.js";
 import { TurnStartConflictError } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
@@ -20,11 +25,18 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
     throw createError({ statusCode: 400, message: "text is required" });
   }
 
-  await app.threadRuntime.requireOwnedThread(threadId, user.userId);
+  const thread = await app.threadRuntime.requireOwnedThread(threadId, user.userId);
   try {
+    const blocks = parseUserMessageBlocks(body.blocks, body.text);
+    await validateUserMessageImageReferences(
+      blocks,
+      { threadId, projectId: thread.projectId },
+      app.imageAssets,
+    );
     const result = await app.runner.startTurn({
       threadId,
       userText: body.text,
+      userBlocks: body.blocks ? blocks : undefined,
       connectionToken: body.connectionToken,
     });
     setResponseStatus(event, 202);
@@ -37,6 +49,9 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       status: "accepted",
     };
   } catch (error) {
+    if (error instanceof InvalidUserMessageBlocksError) {
+      throw createError({ statusCode: 400, message: error.message });
+    }
     if (error instanceof StaleConnectionTokenError || error instanceof TurnStartConflictError) {
       throw createError({ statusCode: 409, message: error.message });
     }

@@ -72,6 +72,7 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
+import { createContextImageAssetAdapter } from "../domains/runtime/adapters/context-image-assets.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
@@ -103,6 +104,10 @@ import {
   createInMemoryModelRequestDebugStore,
   createModelRequestDebugStoreFromEnv,
 } from "../domains/runtime/model-request-debug/index.js";
+import {
+  type ImageAssetPort,
+  unresolvedImageAssetPort,
+} from "../domains/runtime/ports/image-asset.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
@@ -180,6 +185,7 @@ export type AppServices = {
   uploadDocuments: ThreadUploadDocumentStore;
   threadUploadImports: ThreadUploadImportService;
   figureAssets: FigureAssetService;
+  imageAssets: ImageAssetPort;
   results: ResultRepository;
   documentAccess: DocumentAccessPort;
   notices: NoticePort;
@@ -222,6 +228,7 @@ export type ProductionAppPorts = {
   uploadDocuments: ThreadUploadDocumentStore;
   threadUploadImports: ThreadUploadImportService;
   figureAssets: FigureAssetService;
+  imageAssets: ImageAssetPort;
   results: ResultRepository;
   promotionService: PromotionService;
   documentAccess: DocumentAccessPort;
@@ -346,13 +353,20 @@ export async function createProductionAppPorts(input: {
   // Upload creates the asset as a context document, so the service needs the
   // context ports; it feeds each new path straight back into the resolver the
   // codec reads.
+  const figureDocuments = createDrizzleFigureDocumentRepository({ db });
   const figureAssets = createFigureAssetService({
     objectStore,
-    documents: createDrizzleFigureDocumentRepository({ db }),
+    documents: figureDocuments,
     contextPorts,
     signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     eventSink,
     assetPaths: assetPathResolver,
+  });
+  const imageAssets = createContextImageAssetAdapter({
+    figures: figureDocuments,
+    uploads: uploadDocuments,
+    objectStore,
+    eventSink,
   });
   const packageRepository = createDrizzlePackageStore({ db });
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
@@ -412,6 +426,7 @@ export async function createProductionAppPorts(input: {
     uploadDocuments,
     threadUploadImports,
     figureAssets,
+    imageAssets,
     results,
     promotionService,
     documentAccess,
@@ -544,6 +559,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     notices: ports.notices,
     activeDocuments: ports.activeDocuments,
+    imageAssets: ports.imageAssets,
     concurrentRenderBudgetBytes,
   });
   runTurnProxy.bind(orchestrator);
@@ -588,6 +604,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadDocuments: ports.uploadDocuments,
     threadUploadImports: ports.threadUploadImports,
     figureAssets: ports.figureAssets,
+    imageAssets: ports.imageAssets,
     results: ports.results,
     documentAccess: ports.documentAccess,
     notices: ports.notices,
@@ -902,6 +919,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory figure assets are not implemented");
       },
     },
+    imageAssets: unresolvedImageAssetPort,
     results: {
       async create() {
         throw new Error("in-memory results are not implemented");

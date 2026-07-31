@@ -635,4 +635,26 @@ describe("createInstrumentedGateway generate", () => {
 
     expect(getDefaultModel).not.toHaveBeenCalled();
   });
+
+  it("preserves model metadata for runtime capability decisions", () => {
+    const rawGateway = {
+      ...scriptedGateway([]),
+      listModels: () => [
+        {
+          id: "vision-model",
+          provider: "test",
+          displayName: "Vision",
+          contextWindow: 10_000,
+          maxOutputTokens: 1_000,
+          capabilities: new Set(["image_input" as const]),
+        },
+      ],
+    };
+    const gateway = createInstrumentedGateway(rawGateway, {
+      sink: createInMemoryEventSink(),
+      verbose: new Set(),
+    });
+
+    expect(gateway.listModels?.()).toEqual(rawGateway.listModels());
+  });
 });

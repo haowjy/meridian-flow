@@ -1,11 +1,16 @@
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { unresolvedImageAssetPort } from "../../ports/image-asset.js";
 import { assembleComposedSystemPrompt } from "../composed-system-prompt.js";
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/document-dialect.js";
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
 import { assembleNextTurnContext } from "../turn-context-assembly.js";
 
 const createdAt = "2026-06-07T00:00:00.000Z";
+const imageContextDeps = {
+  gateway: { getDefaultModel: () => undefined },
+  imageAssets: unresolvedImageAssetPort,
+};
 
 function thread(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -60,6 +65,7 @@ function packageRepository() {
 describe("assembleNextTurnContext", () => {
   it("assembles the non-persisting preview prompt exactly once", async () => {
     const assembled = await assembleNextTurnContext({
+      ...imageContextDeps,
       thread: thread({ currentAgent: "agent-a" }),
       turns: [],
       blocks: [],
@@ -88,6 +94,7 @@ describe("assembleNextTurnContext", () => {
     const bakeAttempts: string[] = [];
 
     const assembled = await assembleNextTurnContext({
+      ...imageContextDeps,
       thread: thread({ currentAgent: "agent-a" }),
       turns: [],
       blocks: [],
@@ -119,6 +126,7 @@ describe("assembleNextTurnContext", () => {
     const bakeAttempts: string[] = [];
 
     const assembled = await assembleNextTurnContext({
+      ...imageContextDeps,
       thread: thread({ currentAgent: "agent-a" }),
       turns: [],
       blocks: [],

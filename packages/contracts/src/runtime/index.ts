@@ -5,4 +5,5 @@
  */
 export * from "./ids.js";
 export * from "./invoke-errors.js";
+export * from "./model-capabilities.js";
 export * from "./usage.js";

@@ -31,6 +31,7 @@
  *   parent cancel propagates parent→child.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { UserMessageBlock } from "@meridian/contracts/threads";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
@@ -139,6 +140,7 @@ export function createTurnRunner(deps: {
     async startTurn(input: {
       threadId: ThreadId;
       userText: string;
+      userBlocks?: UserMessageBlock[];
       connectionToken?: string;
     }): Promise<{
       userTurnId: string;
@@ -164,6 +166,7 @@ export function createTurnRunner(deps: {
         const handle = await deps.orchestrator.runTurn({
           threadId: input.threadId,
           userText: input.userText,
+          userBlocks: input.userBlocks,
           signal: controller.signal,
         });
 

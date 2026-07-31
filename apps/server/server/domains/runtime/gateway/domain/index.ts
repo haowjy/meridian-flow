@@ -7,4 +7,5 @@
  */
 
 export * from "./cancel-settlement.js";
+export * from "./model-capabilities.js";
 export * from "./types.js";
