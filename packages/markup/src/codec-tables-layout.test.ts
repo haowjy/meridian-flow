@@ -390,6 +390,56 @@ describe("tables and Layout round-trip corpus", () => {
     expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
 
+  it("round-trips nested table alignment and column widths", () => {
+    const nested = oneCellTable(paragraph(t("Inner")));
+    const row = nested.firstChild;
+    const cell = row?.firstChild;
+    if (!row || !cell) throw new Error("expected nested table cell");
+    const sizedCell = cell.type.create({ ...cell.attrs, colwidth: [144] }, cell.content);
+    const styledNested = nested.type.create(
+      { align: "right" },
+      row.type.create(row.attrs, [sizedCell]),
+    );
+    const original = oneCellTable(styledNested);
+    const html = codec.serializeBlock(original);
+
+    expect(html).toContain('<Layout align="right" widths="144">');
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it.each([
+    {
+      block: "figure",
+      node: schema.node("figure", {
+        src: "asset:portrait",
+        alt: "The Warden",
+        label: "Figure 7",
+        caption: "At the gate",
+      }),
+    },
+    {
+      block: "JSX leaf",
+      node: schema.node("jsx_leaf", { name: "Badge", props: { tone: "warning" } }, [
+        t("Low essence"),
+      ]),
+    },
+    {
+      block: "JSX container",
+      node: schema.node(
+        "jsx_container",
+        { name: "Panel", props: { title: "Stats", meta: { rank: 7 } } },
+        [paragraph(t("Strength 128"))],
+      ),
+    },
+  ])("round-trips a $block through the generic cell-block codec", ({ node }) => {
+    const original = oneCellTable(node);
+    const html = codec.serializeBlock(original);
+
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
   it("round-trips wikilinks and wikilink images inside an HTML table cell", () => {
     const link = schema.marks.link.create({ href: "[[Chapter 7]]", title: null });
     const original = oneCellTable(
