@@ -81,18 +81,22 @@ function warn(
   reference: PersistedImageReference,
   payload: Record<string, unknown>,
 ): void {
-  emitEvent(deps.eventSink, {
-    level: "warn",
-    source: "runtime.image-assets",
-    name,
-    correlation: { threadId: context.threadId },
-    payload: {
-      projectId: context.projectId,
-      documentId: reference.documentId,
-      uri: reference.uri,
-      ...payload,
-    },
-  });
+  try {
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "runtime.image-assets",
+      name,
+      correlation: { threadId: context.threadId },
+      payload: {
+        projectId: context.projectId,
+        documentId: reference.documentId,
+        uri: reference.uri,
+        ...payload,
+      },
+    });
+  } catch {
+    // Diagnostic failure cannot turn a dropped image into a failed model request.
+  }
 }
 
 export function createContextImageAssetAdapter(deps: ContextImageAssetAdapterDeps): ImageAssetPort {

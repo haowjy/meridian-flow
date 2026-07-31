@@ -271,4 +271,38 @@ describe("context image asset adapter", () => {
       }),
     ]);
   });
+
+  it("still degrades when the diagnostic sink fails", async () => {
+    const stubs = deps();
+    stubs.figures.findManuscriptAssetForProject.mockResolvedValue({
+      assetDocumentId: documentId,
+      assetPath: "pictures/map.png",
+      storageUrl: "object://meridian/figures/map.png",
+      mimeType: "image/png",
+      fileType: "image",
+      sizeBytes: 3,
+    });
+    stubs.objectStore.get.mockResolvedValue({
+      ok: false,
+      error: { code: "io_error", message: "storage unavailable" },
+    });
+    const adapter = createContextImageAssetAdapter({
+      ...stubs,
+      eventSink: {
+        emit() {
+          throw new Error("sink failed");
+        },
+        emitBatch() {},
+        async flush() {},
+      },
+    } as never);
+
+    await expect(
+      adapter.resolve(
+        context,
+        { type: "image_reference", documentId, uri: "manuscript://pictures/map.png" },
+        { maxBytes: 1024 },
+      ),
+    ).resolves.toBeNull();
+  });
 });
