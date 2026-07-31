@@ -180,5 +180,6 @@ facet.
   and response-scoped write settlement are supplied through runtime ports.
 - **Consumed by `lib/` routes** — WS/HTTP handlers call
   `turnRunner.startTurn` / `turnRunner.cancel`; composition wires adapters.
-- **No direct dependency on `domains/context`** — context-using tools receive
-  handlers via DI at composition time.
+- **The loop has no direct dependency on `domains/context`** — it depends on
+  `ImageAssetPort`. The runtime image adapter is the composition-facing bridge
+  over context document metadata, thread-upload attachments, and object storage.

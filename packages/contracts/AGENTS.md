@@ -25,5 +25,8 @@ runtime shapes, and observability records.
 - `ModelCapability` is the shared gateway/client vocabulary. Thread snapshots
   expose the resolved model's capability list; consumers derive feature hints
   from that list instead of adding bespoke booleans.
+- Message append `blocks` are ordered text plus image references. Durable image
+  content carries a stable document ID and internal URI only; request-time bytes
+  and signed URLs stay server-local.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
