@@ -3,6 +3,7 @@ import { serializeTransport } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest } from "@meridian/contracts/works";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import {
+  createWork,
   requireProjectOwner,
   WorkNameConflictError,
 } from "../../../../../domains/projects/index.js";
@@ -23,22 +24,23 @@ export default defineEventHandler(async (event) => {
   }
 
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-  const work = await app.workRepo
-    .create({
+  const work = await createWork(
+    { works: app.workRepo, preferences: app.preferences },
+    user.userId,
+    {
       id: parseOptionalRequestId(body.id, "id"),
       projectId,
       createdByUserId: user.userId,
       name,
       goal: body.goal,
       description: body.description,
-    })
-    .catch((error: unknown) => {
-      if (error instanceof WorkNameConflictError) {
-        throw createError({ statusCode: 409, message: error.message });
-      }
-      throw error;
-    });
-  await app.preferences.setCurrentWorkId(user.userId, projectId, work.id);
+    },
+  ).catch((error: unknown) => {
+    if (error instanceof WorkNameConflictError) {
+      throw createError({ statusCode: 409, message: error.message });
+    }
+    throw error;
+  });
 
   event.res.status = 201;
   return serializeTransport(work);

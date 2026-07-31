@@ -32,7 +32,10 @@ describe("POST /api/projects/:projectId/works", () => {
       user: { userId: USER_ID },
       app: {
         projectRepo: { findById: async () => project },
-        workRepo: { create: async () => created },
+        workRepo: {
+          transaction: async (operation: () => Promise<unknown>) => operation(),
+          create: async () => created,
+        },
         preferences: { setCurrentWorkId },
       },
     } as never);
