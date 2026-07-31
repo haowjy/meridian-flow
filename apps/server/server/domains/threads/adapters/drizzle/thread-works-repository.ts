@@ -25,7 +25,8 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
         const [work] = await activeDb
           .select({ projectId: schema.works.projectId, deletedAt: schema.works.deletedAt })
           .from(schema.works)
-          .where(eq(schema.works.id, workId));
+          .where(eq(schema.works.id, workId))
+          .for("update");
         if (!work || work.deletedAt) {
           throw new Error("Work is not available in this project");
         }

@@ -42,6 +42,7 @@ const expectedSuites = [
   "apps/server/server/domains/projects/project-bootstrap-readiness.db.test.ts",
   "apps/server/server/domains/projects/provisioning-race.db.test.ts",
   "apps/server/server/domains/projects/slug-routing.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/thread-work-lifecycle-race.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-start-race.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-head-projection.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
