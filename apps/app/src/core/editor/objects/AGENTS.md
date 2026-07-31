@@ -128,7 +128,10 @@ of one node type register apart.
 - Registering keys with a new TipTap extension priority instead of a scope.
 - Marking editor state from a node view's `selectNode`/`deselectNode`. Those
   fire once, and a peer's write rebuilds the node view without them — which is
-  how the jade ring went missing for a whole session. Derive it.
+  how the jade ring went missing for a whole session. Derive it. The ring's own
+  decoration carries the fact in its spec (`objectSelectedInDecorations`), so a
+  node view that has to DO something about being selected — an image's resize
+  grips — reads that rather than TipTap's `selected` prop.
 - Scoping a key by what it is about rather than where it must work. The arrow
   walk is `block` scope, not `object`: walking ONTO an object starts from the
   prose beside it, where no object is selected yet.
