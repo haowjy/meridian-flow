@@ -63,6 +63,7 @@ export type {
 } from "./tool/model-result.js";
 export {
   AGENT_EDIT_RESULT_SCHEMA,
+  agentEditResultCommand,
   modelBlockRecord,
   modelConcurrentResult,
   modelResult,

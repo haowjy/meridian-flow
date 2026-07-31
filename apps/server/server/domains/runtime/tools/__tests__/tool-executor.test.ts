@@ -213,6 +213,86 @@ describe("createToolExecutor", () => {
     expect(handlerCalled).toBe(false);
   });
 
+  it("uses the write result protocol for executor-owned failures", async () => {
+    const registry = createToolRegistry();
+    const writeRegistration = createCoreToolRegistrations({
+      write: async (input: unknown, context: ToolHandlerContext) => {
+        if ((input as { command?: unknown }).command === "delete") {
+          throw new Error("write boundary failed");
+        }
+        await new Promise<void>((resolve) => {
+          const fallback = setTimeout(resolve, 100);
+          context.signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(fallback);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+        return "late result";
+      },
+      ls: async () => ({}),
+      search: async () => ({}),
+      ask_user: async () => ({}),
+    }).find((registration) => registration.definition.name === "write");
+    if (!writeRegistration) throw new Error("write registration missing");
+    writeRegistration.timeoutMs = 10;
+    registry.register(writeRegistration);
+    const executor = createToolExecutor(registry);
+
+    await expect(
+      executor.executeTool(
+        {
+          id: "write-parse",
+          name: "write",
+          arguments: { command: "replace" },
+          argumentsParseError: { raw: '{"command":"replace"', message: "Unexpected end" },
+        },
+        ctx,
+      ),
+    ).resolves.toMatchObject({
+      toolCallId: "write-parse",
+      isError: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "replace",
+        status: "invalid_write",
+      },
+    });
+    await expect(
+      executor.executeTool(
+        { id: "write-throw", name: "write", arguments: { command: "delete" } },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      toolCallId: "write-throw",
+      isError: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "delete",
+        status: "internal_error",
+        message: "write boundary failed",
+      },
+    });
+    await expect(
+      executor.executeTool(
+        { id: "write-timeout", name: "write", arguments: { command: "read" } },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      toolCallId: "write-timeout",
+      isError: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "read",
+        status: "internal_error",
+        message: "Tool timed out after 10ms",
+      },
+    });
+  });
+
   it("binds handler output deltas to the current tool call id", async () => {
     const registry = createToolRegistry();
     registry.register(

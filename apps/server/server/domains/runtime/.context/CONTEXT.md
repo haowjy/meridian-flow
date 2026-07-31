@@ -63,7 +63,7 @@ adapters (for example no-op sinks), not by omitted deps.
 |---|---|
 | `ToolRegistry` | Name-keyed map. Duplicate names throw immediately. `getDefinitions()` advertises only server-executable registrations whose `advertise !== false`. |
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
-| `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, and a single `capability?: "interrupt" | "spawn" | "return_result"`. |
+| `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | Algorithms live under `tools/core-handlers/`; composition wires them through `lib/wired-core-tools.ts`. |
 | Skill tools | One statically registered `invoke` dispatcher (`source: "skill"`, `advertise: false`) with schema `{ skillname }` only (`additionalProperties: false`). First turn attempt atomically bakes model-invocable skill catalogs (slug + description rows) into `composedSystemPrompt` and persists `bakedSkillSlugs` via compare-and-swap (`bakeComposedSystemPrompt` while `bakedSkillSlugs` is null); concurrent losers use the winner's frozen prompt. `invoke` advertisement on later turns follows the persisted slug set (non-empty → advertise). Dispatch enforces: `skillname` ∈ baked set (added-after-bake → unknown); still model-invocable and resolvable (demoted/deleted → no-longer-available). Extra invoke properties from frozen prompts are ignored; skills read project workspace context, not call-time params. Error listings = baked ∩ currently-invocable. Subagent threads bake both fields at creation (empty set when no skills). |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
@@ -138,8 +138,8 @@ facet.
   finalize in the same database transaction as that commit using the settled
   receipts returned by agent-edit, never the speculative staged output. A
   host-only settlement id correlates each tool call to its receipt; the
-  model-facing write handle is not unique within a response. A pending result
-  left by a pre-commit process failure is rejected before a later
+  model-facing write handle is not unique within a response. A staged result
+  left by a pre-commit process failure becomes a typed rejection before a later
   turn assembles model context. Cancellation paths roll the response buffer back
   before finalizing the turn as cancelled.
 - **Response write settlement is report-only** — ordinary Yjs merge always

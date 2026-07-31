@@ -74,6 +74,24 @@ export function modelResult(input: {
   };
 }
 
+export function agentEditResultCommand(input: unknown): AgentEditResultCommand {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return "unknown";
+  const command = (input as { command?: unknown }).command;
+  switch (command) {
+    case "read":
+    case "diff":
+    case "create":
+    case "insert":
+    case "replace":
+    case "delete":
+    case "undo":
+    case "redo":
+      return command;
+    default:
+      return "unknown";
+  }
+}
+
 export function modelBlockRecord(
   serialized: string,
   extent: AgentEditBlockExtent,

@@ -19,7 +19,8 @@
  * ── Error normalization ──
  *
  * Tool handlers can signal errors in two ways, both normalized by the executor:
- *   - Throwing an exception → caught, message extracted, `isError: true`
+ *   - Throwing an exception → caught, then formatted by the registration or
+ *     normalized to MeridianError with `isError: true`
  *   - Returning `{ isError: true, output: JsonValue }` → recognized as a
  *     structured error, output extracted directly.
  *
@@ -59,10 +60,12 @@ import type {
   SpawnToolHandlerContext,
   ToolCallInput,
   ToolExecutionContext,
+  ToolExecutionError,
   ToolExecutionResult,
   ToolExecutor,
   ToolHandler,
   ToolHandlerContext,
+  ToolRegistration,
   ToolRegistry,
 } from "./types.js";
 
@@ -71,11 +74,29 @@ export type ToolExecutorWithBatch = ToolExecutor & {
 };
 
 /**
- * Constructs an error result envelope for a tool call that failed.
- * `output` is the error message as a plain `JsonValue` string.
+ * Constructs the default MeridianError result for a tool call that failed.
  */
 function errorResult(toolCallId: string, error: MeridianError): ToolExecutionResult {
   return { toolCallId, output: meridianErrorToJson(error), isError: true };
+}
+
+function executionErrorResult(
+  toolCallId: string,
+  registration: ToolRegistration | undefined,
+  error: ToolExecutionError,
+): ToolExecutionResult {
+  if (registration?.formatExecutionError) {
+    try {
+      return {
+        toolCallId,
+        output: toJsonValue(registration.formatExecutionError(error)),
+        isError: true,
+      };
+    } catch {
+      // A formatter must not break the executor's guarantee that tool failures resolve.
+    }
+  }
+  return errorResult(toolCallId, meridianErrorFromTool(error.message));
 }
 
 /**
@@ -307,8 +328,9 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
     call: ToolCallInput,
     ctx: ToolExecutionContext,
   ): Promise<ToolExecutionResult> {
+    let registration: ToolRegistration | undefined;
     try {
-      const registration = registry.getRegistration(call.name);
+      registration = registry.getRegistration(call.name);
       if (!registration) {
         return errorResult(call.id, meridianErrorFromTool(`Tool not found: ${call.name}`));
       }
@@ -327,18 +349,21 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         // emitted and self-correct — a clear JSON-parse error, never a misleading
         // downstream schema error like "path is required".
         const fragment = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
-        return errorResult(
-          call.id,
-          meridianErrorFromTool(
-            `Tool arguments for "${call.name}" were not valid JSON and could not be parsed or repaired (${message}). Received: ${fragment} — re-send this tool call with only a valid JSON object (every string value, including hashes, must be quoted).`,
-          ),
-        );
+        return executionErrorResult(call.id, registration, {
+          kind: "arguments_parse",
+          message: `Tool arguments for "${call.name}" were not valid JSON and could not be parsed or repaired (${message}). Received: ${fragment} — re-send this tool call with only a valid JSON object (every string value, including hashes, must be quoted).`,
+          arguments: call.arguments,
+        });
       }
 
       if (ctx.signal?.aborted) {
         // Early-exit: the turn was already cancelled before we started.
         // This skips handler invocation entirely, avoiding wasted work.
-        return errorResult(call.id, meridianErrorFromTool("Tool aborted"));
+        return executionErrorResult(call.id, registration, {
+          kind: "abort",
+          message: "Tool aborted",
+          arguments: call.arguments,
+        });
       }
 
       // Build the handler context. Use a dummy AbortController if no
@@ -370,13 +395,18 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
           ctx.signal,
         );
         if ("aborted" in outcome) {
-          return errorResult(call.id, meridianErrorFromTool("Tool aborted"));
+          return executionErrorResult(call.id, registration, {
+            kind: "abort",
+            message: "Tool aborted",
+            arguments: call.arguments,
+          });
         }
         if (outcome.timedOut) {
-          return errorResult(
-            call.id,
-            meridianErrorFromTool(`Tool timed out after ${registration.timeoutMs}ms`),
-          );
+          return executionErrorResult(call.id, registration, {
+            kind: "timeout",
+            message: `Tool timed out after ${registration.timeoutMs}ms`,
+            arguments: call.arguments,
+          });
         }
         return successResult(call.id, outcome.result);
       }
@@ -402,12 +432,20 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         abortPromise ? [handlerPromise, abortPromise] : [handlerPromise],
       );
       if ("aborted" in outcome) {
-        return errorResult(call.id, meridianErrorFromTool("Tool aborted"));
+        return executionErrorResult(call.id, registration, {
+          kind: "abort",
+          message: "Tool aborted",
+          arguments: call.arguments,
+        });
       }
       return successResult(call.id, outcome.result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return errorResult(call.id, meridianErrorFromTool(message));
+      return executionErrorResult(call.id, registration, {
+        kind: "exception",
+        message,
+        arguments: call.arguments,
+      });
     }
   }
 

@@ -12,6 +12,7 @@ import type {
   WriteErrorStatus,
 } from "@meridian/agent-edit/integration";
 import {
+  agentEditResultCommand,
   type DocumentAddress,
   formatDocumentFile,
   modelResult,
@@ -141,23 +142,6 @@ function writeToolError(
   };
 }
 
-function writeResultCommand(input: unknown): AgentEditResultCommand {
-  const command = asRecord(input)?.command;
-  switch (command) {
-    case "read":
-    case "diff":
-    case "create":
-    case "insert":
-    case "replace":
-    case "delete":
-    case "undo":
-    case "redo":
-      return command;
-    default:
-      return "unknown";
-  }
-}
-
 async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
@@ -206,7 +190,7 @@ function asRecord(input: unknown): Record<string, unknown> | null {
 
 function parseWriteToolInput(input: unknown): ModelWriteCommand | WriteToolErrorOutput {
   const record = asRecord(input);
-  const resultCommand = writeResultCommand(input);
+  const resultCommand = agentEditResultCommand(input);
   if (!record) return writeToolError(resultCommand, "write input must be an object");
 
   if (record.command === "diff") {
