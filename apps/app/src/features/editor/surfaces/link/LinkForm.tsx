@@ -9,6 +9,12 @@
  * — a `[[document name]]`, a `manuscript://` URI, a relative path — because
  * the classifier behind the field knows all of them.
  *
+ * Typing in the href field also offers the project's documents, over the same
+ * engine as `[[` and `@` — select text, Mod-K, three letters, Enter. The offer
+ * steps aside the moment the writer unambiguously starts a URL, and a pick
+ * fills the document's canonical URI; the mechanics live in
+ * [`useHrefReferences`](./useHrefReferences.ts).
+ *
  * It hangs at the caret rather than at whatever control opened it: the writer
  * is looking at their own sentence, and the form belongs beside the words it
  * is about (mockup 06 state E).
@@ -20,6 +26,11 @@ import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
 import { type FormEvent, type Ref, useEffect, useId, useRef, useState } from "react";
 
+import {
+  SUGGESTION_MENU_SHELL,
+  SuggestionList,
+  suggestionOptionId,
+} from "@/components/app/SuggestionList";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,6 +42,10 @@ import {
   resolveLinkDraft,
 } from "@/core/editor/links";
 import { EditorPopover } from "@/features/editor/chrome";
+import { cn } from "@/lib/utils";
+
+import { ReferenceRow } from "./reference-rows";
+import { type HrefReferences, useHrefReferences } from "./useHrefReferences";
 
 export function LinkForm({
   editor,
@@ -106,6 +121,16 @@ function LinkFields({
   const textInputRef = useRef<HTMLInputElement>(null);
   const hrefInputRef = useRef<HTMLInputElement>(null);
 
+  const references = useHrefReferences({
+    editor,
+    inputRef: hrefInputRef,
+    onFill: (uri) => {
+      setHref(uri);
+      setInvalid(false);
+    },
+  });
+  const menuId = `${fieldId}-references`;
+
   useEffect(() => {
     // The first empty field is where the writer has something to say.
     const textInput = textInputRef.current;
@@ -136,20 +161,28 @@ function LinkFields({
           onChange={setText}
         />
       ) : null}
-      <LinkField
-        id={`${fieldId}-href`}
-        ref={hrefInputRef}
-        label={t`Link`}
-        value={href}
-        placeholder={t`Paste a link or type [[a document name]]`}
-        inputMode="url"
-        invalid={invalid}
-        describedBy={invalid ? `${fieldId}-error` : undefined}
-        onChange={(next) => {
-          setHref(next);
-          setInvalid(false);
-        }}
-      />
+      <div className="relative">
+        <LinkField
+          id={`${fieldId}-href`}
+          ref={hrefInputRef}
+          label={t`Link`}
+          value={href}
+          placeholder={t`Paste a link or type [[a document name]]`}
+          inputMode="url"
+          invalid={invalid}
+          describedBy={invalid ? `${fieldId}-error` : undefined}
+          onChange={(next) => {
+            setHref(next);
+            setInvalid(false);
+            references.sync(next);
+          }}
+          // A field the writer left has no menu. The rows cancel their own
+          // mousedown, so choosing one never reaches this.
+          onBlur={references.close}
+          listbox={{ id: menuId, references }}
+        />
+        <HrefReferenceMenu id={menuId} references={references} />
+      </div>
       {invalid ? (
         <p id={`${fieldId}-error`} className="text-destructive text-xs" role="alert">
           {t`Try a web address, a document path, or [[a document name]].`}
@@ -182,6 +215,40 @@ function LinkFields({
   );
 }
 
+/**
+ * The rows under the href field. Anchored by layout rather than by a popper:
+ * the field cannot move relative to the form, and a second Radix surface here
+ * would be a portal the form's own dismissal listeners read as outside.
+ */
+function HrefReferenceMenu({ id, references }: { id: string; references: HrefReferences }) {
+  const { menu, snapshot } = references;
+  if (!snapshot.open) return null;
+
+  return (
+    <div
+      className={cn(
+        SUGGESTION_MENU_SHELL,
+        "absolute inset-x-0 top-full z-50 mt-1 rounded-md border bg-popover text-popover-foreground shadow-md",
+      )}
+      // The shell's own cap reads a popper variable that measured the form,
+      // not this dropdown; the list inside caps itself near eight rows.
+      style={{ maxHeight: "20rem" }}
+    >
+      <SuggestionList
+        id={id}
+        label={snapshot.label}
+        activeIndex={snapshot.activeIndex}
+        onActivate={(index) => menu.setActiveIndex(index)}
+        onChoose={(index) => menu.choose(index)}
+        rows={snapshot.items.map((item) => ({
+          key: item.key,
+          content: <ReferenceRow item={item} />,
+        }))}
+      />
+    </div>
+  );
+}
+
 function LinkField({
   id,
   ref,
@@ -192,6 +259,8 @@ function LinkField({
   invalid = false,
   describedBy,
   onChange,
+  onBlur,
+  listbox,
 }: {
   id: string;
   ref: Ref<HTMLInputElement>;
@@ -202,7 +271,11 @@ function LinkField({
   invalid?: boolean;
   describedBy?: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
+  /** The completion offer under this field, when it has one. */
+  listbox?: { id: string; references: HrefReferences };
 }) {
+  const open = listbox?.references.snapshot.open ?? false;
   return (
     <div className="flex flex-col gap-1">
       <label className="text-meta text-muted-foreground" htmlFor={id}>
@@ -218,8 +291,19 @@ function LinkField({
         placeholder={placeholder}
         aria-invalid={invalid}
         aria-describedby={describedBy}
+        aria-expanded={open || undefined}
+        aria-controls={open && listbox ? listbox.id : undefined}
+        aria-activedescendant={listbox ? activeOptionId(listbox.id, listbox.references) : undefined}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
       />
     </div>
   );
+}
+
+/** The highlighted row's option id, for a screen reader to say out loud. */
+function activeOptionId(menuId: string, references: HrefReferences): string | undefined {
+  const { open, items, activeIndex } = references.snapshot;
+  const active = open ? items[activeIndex] : undefined;
+  return active ? suggestionOptionId(menuId, active.key) : undefined;
 }
