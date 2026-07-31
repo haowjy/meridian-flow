@@ -8,7 +8,6 @@ import type { TurnDiffResult } from "../ports/turn-diff-query.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockGroup,
-  type AgentEditBlockRelation,
   modelBlockItem,
   modelConcurrentResult,
   modelResult,
@@ -285,27 +284,19 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
   return { ...base, status: result.status };
 }
 
-function blockGroup(
-  serialized: readonly string[],
-  extent: "full" | "prefix",
-  relation: AgentEditBlockRelation,
-): AgentEditBlockGroup {
-  return { extent, relation, items: serialized.map(modelBlockItem) };
-}
-
 function echoGroups(echo: readonly ApplyEchoHunk[]): AgentEditBlockGroup[] {
-  return echo.flatMap((hunk) => {
+  const groups: AgentEditBlockGroup[] = [];
+  for (const hunk of echo) {
     const serialized = hunk.blocks.filter((block) => block.length > 0);
-    return serialized.length > 0
-      ? [
-          blockGroup(
-            serialized,
-            hunk.mode === "full" ? "full" : "prefix",
-            hunk.mode === "full" ? "changed" : "context",
-          ),
-        ]
-      : [];
-  });
+    if (serialized.length === 0) continue;
+    const items = serialized.map(modelBlockItem);
+    groups.push(
+      hunk.mode === "full"
+        ? { extent: "full", relation: "changed", items }
+        : { extent: "prefix", relation: "context", items },
+    );
+  }
+  return groups;
 }
 
 function formatConcurrent(

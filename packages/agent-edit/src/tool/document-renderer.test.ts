@@ -32,7 +32,7 @@ describe("document renderer", () => {
     const doc = createDoc("# Chapter\n\nAlpha sword.\n\n## Arena\n\nBeta waits.", 100);
     const renderer = createDocumentRenderer({ model, codec });
 
-    const full = renderer.renderBlocks(doc, model.getBlocks(doc));
+    const full = renderFull(renderer, doc, model.getBlocks(doc));
 
     expect(full).toMatch(/^[0-9a-f]{4}\|# Chapter/m);
     expect(full).toContain("|Alpha sword.");
@@ -46,11 +46,11 @@ describe("document renderer", () => {
 
     expect(section).toMatchObject({ ok: true });
     if (!section.ok) throw new Error(section.message);
-    const sectionText = renderer.renderBlocks(doc, section.blocks);
+    const sectionText = renderFull(renderer, doc, section.blocks);
     expect(sectionText).toContain("|## Arena");
     expect(sectionText).toContain("|Beta waits.");
 
-    const outline = renderer.renderOutline(doc, model.getBlocks(doc), "chapter.md");
+    const outline = renderer.renderRead(doc, model.getBlocks(doc), "chapter.md", "outline").text;
     expect(outline).toContain(`write(command="read", file="chapter.md#${headingHash}")`);
   });
 
@@ -68,7 +68,7 @@ describe("document renderer", () => {
     expect(selection).toMatchObject({ ok: true });
     if (!selection.ok) throw new Error(selection.message);
     expect(selection.blocks).toEqual(fixture.candidates.map((candidate) => candidate.block));
-    const rendered = renderer.renderBlocks(doc, selection.blocks);
+    const rendered = renderFull(renderer, doc, selection.blocks);
     for (const candidate of fixture.candidates) {
       expect(rendered).toContain(`${candidate.displayHash}|${model.getText(candidate.block)}`);
     }
@@ -128,7 +128,7 @@ describe("document renderer", () => {
     expect(selection).toMatchObject({ ok: true });
     if (!selection.ok) throw new Error(selection.message);
     expect(selection.blocks).toEqual(blocks);
-    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual(bodies);
+    expect(renderedBlockBodies(renderFull(renderer, doc, selection.blocks))).toEqual(bodies);
   });
 
   it("keeps heading-hash file fragments section scoped", () => {
@@ -144,7 +144,7 @@ describe("document renderer", () => {
 
     expect(selection).toMatchObject({ ok: true });
     if (!selection.ok) throw new Error(selection.message);
-    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual([
+    expect(renderedBlockBodies(renderFull(renderer, doc, selection.blocks))).toEqual([
       "## Two",
       "Beta",
     ]);
@@ -180,7 +180,7 @@ describe("document renderer", () => {
 
     expect(selection).toMatchObject({ ok: true });
     if (!selection.ok) throw new Error(selection.message);
-    expect(renderedBlockBodies(renderer.renderBlocks(doc, selection.blocks))).toEqual([
+    expect(renderedBlockBodies(renderFull(renderer, doc, selection.blocks))).toEqual([
       "# cafe",
       "Scene text",
     ]);
@@ -225,6 +225,14 @@ describe("document renderer", () => {
   });
 });
 
+function renderFull(
+  renderer: ReturnType<typeof createDocumentRenderer>,
+  doc: ReturnType<typeof createDoc>,
+  blocks: ReturnType<typeof model.getBlocks>,
+): string {
+  return renderer.renderRead(doc, blocks, "chapter.md", "full").text;
+}
+
 function selectedReadText(
   renderer: ReturnType<typeof createDocumentRenderer>,
   doc: ReturnType<typeof createDoc>,
@@ -236,7 +244,7 @@ function selectedReadText(
     { filePath: "chapter.md" },
   );
   if (!selection.ok) throw new Error(selection.message);
-  return renderer.renderBlocks(doc, selection.blocks);
+  return renderFull(renderer, doc, selection.blocks);
 }
 
 function numberedBlocks(count: number): string {

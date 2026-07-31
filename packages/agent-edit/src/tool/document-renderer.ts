@@ -3,7 +3,6 @@
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
-import { splitHashline } from "../model/hashline.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
   isHeading,
@@ -11,6 +10,7 @@ import {
   resolveSearchScope,
   type ScopeResult,
 } from "../resolver/scope.js";
+import { modelBlockItem } from "./model-result.js";
 import type { ReadCommand } from "./types.js";
 
 export interface DocumentRenderAddress {
@@ -28,9 +28,7 @@ export interface DocumentRenderer {
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
-  renderBlocks(doc: DocHandle, blocks: readonly BlockRef[]): string;
   renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[];
-  renderOutline(doc: DocHandle, blocks: readonly BlockRef[], filePath: string): string;
   renderRead(
     doc: DocHandle,
     blocks: readonly BlockRef[],
@@ -58,9 +56,7 @@ export function createDocumentRenderer(deps: {
 
   return {
     selectReadBlocks,
-    renderBlocks,
     renderBlockLines,
-    renderOutline,
     renderRead,
     parseForCommand,
   };
@@ -99,20 +95,8 @@ export function createDocumentRenderer(deps: {
     return result;
   }
 
-  function renderBlocks(doc: DocHandle, blocks: readonly BlockRef[]): string {
-    return renderBlockLines(doc, blocks).join("\n");
-  }
-
   function renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[] {
     return model.serializeBlockLines(doc, codec, blocks);
-  }
-
-  function renderOutline(doc: DocHandle, blocks: readonly BlockRef[], filePath: string): string {
-    if (blocks.length === 0) return "";
-    const headingBlocks = blocks.filter((block) => isHeading(model, block));
-    if (headingBlocks.length === 0) return renderBlocks(doc, blocks);
-    const serialized = model.serializeBlockLines(doc, codec, headingBlocks);
-    return outlineFromSerialized(serialized, filePath);
   }
 
   function renderRead(
@@ -125,13 +109,14 @@ export function createDocumentRenderer(deps: {
       format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
     const renderedBlocks = headingBlocks.length > 0 ? headingBlocks : blocks;
     const serialized = model.serializeBlockLines(doc, codec, renderedBlocks);
+    const items = serialized.map(modelBlockItem);
     return {
       text:
         format === "outline" && headingBlocks.length > 0
-          ? outlineFromSerialized(serialized, filePath)
+          ? outlineFromSerialized(serialized, items, filePath)
           : serialized.join("\n"),
       format,
-      blocks: serialized.map(readBlock),
+      blocks: items,
     };
   }
 
@@ -144,20 +129,14 @@ export function createDocumentRenderer(deps: {
   }
 }
 
-function outlineFromSerialized(serialized: readonly string[], filePath: string): string {
+function outlineFromSerialized(
+  serialized: readonly string[],
+  items: readonly { hash: string }[],
+  filePath: string,
+): string {
   return serialized
-    .flatMap((line) => {
-      const hash = splitHashline(line)?.hash ?? line;
-      return [line, `write(command="read", file="${filePath}#${hash}")`];
+    .flatMap((line, index) => {
+      return [line, `write(command="read", file="${filePath}#${items[index]?.hash ?? line}")`];
     })
     .join("\n");
-}
-
-function readBlock(serialized: string): { hash: string; body: string } {
-  const line = splitHashline(serialized);
-  if (!line) return { hash: "", body: serialized };
-  return {
-    hash: line.hash,
-    body: line.body.startsWith("\n") ? line.body.slice(1) : line.body,
-  };
 }

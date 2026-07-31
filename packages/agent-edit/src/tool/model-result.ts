@@ -30,24 +30,24 @@ export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 export type WriteSuccessPhase = "staged" | "committed";
 
 export type AgentEditBlockExtent = "full" | "prefix";
-export type AgentEditBlockRelation =
-  | "document"
-  | "changed"
-  | "context"
-  | "concurrent"
-  | "deleted"
-  | "swept";
+export type AgentEditBlockRelation = "document" | "changed" | "context" | "swept";
 
 export interface AgentEditBlockItem {
   hash: string;
   body: string;
 }
 
-export interface AgentEditBlockGroup {
-  extent: AgentEditBlockExtent;
-  relation: AgentEditBlockRelation;
-  items: AgentEditBlockItem[];
-}
+export type AgentEditBlockGroup =
+  | {
+      extent: "full";
+      relation: "document" | "changed" | "swept";
+      items: AgentEditBlockItem[];
+    }
+  | {
+      extent: "prefix";
+      relation: "context";
+      items: AgentEditBlockItem[];
+    };
 
 export interface AgentEditConcurrentRun {
   origin: "human" | "agent" | "mixed" | "concurrent edits";
