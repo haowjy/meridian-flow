@@ -2618,6 +2618,10 @@ msgstr "The requested passage wasn't specific enough."
 msgid "Theme"
 msgstr "Theme"
 
+#: src/core/editor/images/image-uploads.ts
+msgid "There is nowhere left to put that picture."
+msgstr "There is nowhere left to put that picture."
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"
