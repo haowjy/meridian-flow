@@ -329,7 +329,19 @@ export function jsxAttributesFromProps(props: Record<string, unknown>): MdxJsxAt
 }
 
 export function jsxAttribute(name: string, value: unknown): MdxJsxAttribute {
-  if (typeof value === "string") return { type: "mdxJsxAttribute", name, value };
+  if (typeof value === "string") {
+    if (!needsJsonStringAttribute(value)) {
+      return { type: "mdxJsxAttribute", name, value };
+    }
+    return {
+      type: "mdxJsxAttribute",
+      name,
+      value: {
+        type: "mdxJsxAttributeValueExpression",
+        value: jsonStringLiteral(value),
+      },
+    };
+  }
   if (!isJsonValue(value)) {
     throw new Error(`JSX prop "${name}" is not JSON-serializable`);
   }
@@ -338,6 +350,34 @@ export function jsxAttribute(name: string, value: unknown): MdxJsxAttribute {
     name,
     value: { type: "mdxJsxAttributeValueExpression", value: JSON.stringify(value) },
   };
+}
+
+function needsJsonStringAttribute(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      codePoint === 0x26 ||
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function jsonStringLiteral(value: string): string {
+  let literal = "";
+  for (const character of JSON.stringify(value)) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    literal +=
+      (codePoint >= 0x7f && codePoint <= 0x9f) || codePoint === 0x2028 || codePoint === 0x2029
+        ? `\\u${codePoint.toString(16).padStart(4, "0")}`
+        : character;
+  }
+  return literal;
 }
 
 export function parseComponentProps(

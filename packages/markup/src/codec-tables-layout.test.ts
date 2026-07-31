@@ -494,6 +494,7 @@ describe("tables and Layout round-trip corpus", () => {
     { case: "entities", caption: "North &amp; south & beyond" },
     { case: "braces", caption: "{north} meets }south{" },
     { case: "closing-tag-looking text", caption: "Look </Figure> then <Panel>" },
+    { case: "control characters", caption: "NUL:\u0000 TAB:\t NEXT:\u0085" },
   ])("round-trips Figure caption $case through the delegated carrier", ({ caption }) => {
     const original = oneCellTable(
       schema.node("figure", {
@@ -525,7 +526,7 @@ describe("tables and Layout round-trip corpus", () => {
     const parsed = firstParsedBlock(codec, mismatched);
 
     expect(parsed.type.name).toBe("paragraph");
-    expect(parsed.textContent).toContain('<meridian-block kind="figure"');
+    expect(parsed.textContent).toContain('<meridian-block kind="paragraph"');
   });
 
   it("delegates the generic serializer's malformed-Unicode normalization", () => {
