@@ -280,6 +280,16 @@ Owning resize would have bought nothing and cost a drag implementation, a drop
 of the plugin's spanned-column arithmetic, and a second place widths are
 written.
 
+**A column is sized by its prose, and by a picture only through a fence.** The
+grid is auto layout, which sizes columns from what is inside them — right for
+text, and a trap for a picture, whose box carries a width in pixels that the
+column would grow to before `max-width: 100%` had anything to resolve against.
+A cell holding a picture therefore contains its own size and asks the table for
+one definite 8rem instead, in `features/editor/editor.css`; the reasoning is
+[`core/editor/images/.context/CONTEXT.md`](../../../../../core/editor/images/.context/CONTEXT.md).
+The dragged widths above are unaffected: they are `colwidth` on the cells, which
+the fence never touches.
+
 ## Merging under a one-paragraph cell
 
 `mergeTableCells` runs the filled cells' inline content together into one

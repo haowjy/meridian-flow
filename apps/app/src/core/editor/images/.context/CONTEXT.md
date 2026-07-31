@@ -103,12 +103,28 @@ else. A stored width also wins over a measured upload frame, so a slot resized
 mid-upload lands where the writer put it — the frame's ratio still holds the
 box, which is what keeps the landing from moving a line.
 
+**A table cell has to be given that cap; it cannot compute one.** A cell in an
+auto-layout table is sized by what is inside it, and the picture's box carries a
+width in pixels (the upload's frame, or the stored one). Percentages are dropped
+while a table measures its columns, so `max-width: 100%` there is cyclic — the
+column becomes as wide as the picture before the cap has anything to resolve
+against, and a 1280px screenshot took a 404px table to 1352px with half the
+grips across the scroller. The fence is size containment on the cell's paragraph
+(`features/editor/editor.css`): the line the picture stands in is measured as if
+it were empty and asks for one definite 8rem instead, so the column is decided
+without the picture and the picture then fills whatever it turned out to be. It
+is scoped to cells that hold a picture, so ordinary tables still size their
+columns to their prose.
+
 The gesture:
 
 1. **Press.** `ImageResizeHandles` reads the picture's rendered box, the prose
    line height (the floor: a picture at one line is still a glyph among the
-   words), and the width of the first non-inline ancestor (the ceiling). It takes
-   a `NodeHold` on the picture. Nothing is dispatched.
+   words), and the narrowest box between the picture and the manuscript (the
+   ceiling). The narrowest, not the nearest: a block can be wider than what is
+   visible of it, and reading the block alone let a drag inside a table's
+   scroller push the far grips out of reach. It takes a `NodeHold` on the
+   picture. Nothing is dispatched.
 2. **Move.** `resizedImageWidth` projects the pointer offset onto the picture's
    own diagonal — the closest box to where the pointer actually is, which is what
    makes a corner feel attached to the hand — clamps it, and the element's
