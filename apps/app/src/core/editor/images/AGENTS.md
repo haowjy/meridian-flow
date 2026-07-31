@@ -42,6 +42,7 @@ every door refuses out loud rather than opening onto nothing.
 | `image-ingress-runtime.ts` | The editor's record of what is in flight, and the one way to write to it |
 | `image-upload-presence.ts` | The ephemeral half: this client's tokens out, every other client's in |
 | `image-uploads.ts` | A picture from this machine: picker, insert, Replace, upload, land, Retry, Remove |
+| `image-insertion.ts` | The slot a picture takes in the prose, whoever asked for it |
 | `image-imports.ts` | A picture the clipboard pointed at: fetch, upload, replace the link |
 | `pending-images.ts` | What the document knows about a picture in flight, and how it is drawn |
 | `image-workflow.ts` | Pure answers: what a drop means, what a paste carries, asset paths |
@@ -52,6 +53,15 @@ every door refuses out loud rather than opening onto nothing.
 | `ImageResizeHandles.tsx` | The four grips a selected picture wears |
 
 ## Key rules
+
+- **Where a picture may stand is one answer, in `image-insertion.ts`.** Inline
+  between the words where the schema allows it, a paragraph of its own after the
+  block where it does not, caret after the picture, null when neither is
+  possible. Two doors call it: an upload opens a slot whose bytes are still
+  travelling, and `@` names an asset the project already has (its range consumes
+  the trigger's own `@map.png` in the same transaction, so one undo takes the
+  writer back to their sentence). A second placement path is a second answer to
+  a schema question, and they drift.
 
 - **A picture is a big glyph, and inline means what Docs and Word mean.** Its
   bottom sits on the text baseline, so the words before it and after it stand at

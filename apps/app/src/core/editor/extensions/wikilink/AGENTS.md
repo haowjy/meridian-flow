@@ -1,14 +1,15 @@
 # extensions/wikilink — the `[[` trigger
 
-Two small modules and a spec: where `[[` may open
-([`wikilink-trigger.ts`](wikilink-trigger.ts)), what a choice writes into the
-document ([`wikilink-insertion.ts`](wikilink-insertion.ts)), and the lane spec
-that hands both to the shared mechanism
+One small module and a spec: what a choice writes into the document
+([`wikilink-insertion.ts`](wikilink-insertion.ts)), and the lane spec that hands
+it, the shared envelope, and a scope to the shared mechanism
 ([`WikilinkSuggestionExtension.ts`](WikilinkSuggestionExtension.ts)). What the
 menu may offer and how it ranks is
 [`@/core/references`](../../../references/AGENTS.md); the open menu React reads
 is [`@/core/completion`](../../../completion/AGENTS.md). The composer shares
-both.
+both. Where the trigger may open is
+[`../suggestion/trigger-envelope.ts`](../suggestion/trigger-envelope.ts), which
+`@` reads too.
 The surface that renders it is
 [`features/editor/surfaces/link/`](../../../../features/editor/surfaces/link/AGENTS.md).
 
@@ -18,9 +19,16 @@ The surface that renders it is
 lifecycle, the arrow keys, the catalog fence, and dismissal live once in
 [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts). What this
 directory declares is only what makes `[[` itself: the two characters, spaces
-allowed, the predicate, the scope it asks the catalog with, and the insertion. A behavior that
-should hold for `/` and `@` too belongs in the mechanism, not here — and a change
-here that needs a new field on the spec is telling you the same thing.
+allowed, the scope it asks the catalog with, and the insertion. A behavior that
+should hold for `/` and `@` too belongs in the mechanism or the shared envelope,
+not here — and a change here that needs a new field on the spec is telling you
+the same thing.
+
+**Its envelope is the reference envelope, with nothing added.** `allowsProseTrigger`
+is the whole rule: prose only, never a code fence, never inside a link the writer
+is correcting. Unlike `/` and `@`, `[[` demands no word boundary — two brackets
+are already an unambiguous request, and a wikilink legitimately follows an
+opening quote with nothing between.
 
 **A wikilink is a link, not a node.** What lands in the document is a link mark
 whose href is `[[Name]]` and whose text is `Name` — the shape the codec spells
@@ -42,6 +50,10 @@ disagree with the classifier about what a name means.
   the range a choice replaces has to reach past them — `autoClosedRunLength` is
   how the spec's `choose` asks. A link inserted over the trigger's own range
   alone would leave `]]` stranded behind it.
+- **What a choice writes is shared with `@`.** `insertWikilink` is exported for
+  it, because a document referenced through either door has to land byte for
+  byte the same. The one-shape rule is why: display = title, href = `[[Title]]`,
+  and anything else round-trips as `[text]([[Name]])`, which is not a wikilink.
 - **The create row inserts a link, never a document** (mockup 06 state D).
   "Links now, page later" is the whole point: serial writers link chapters
   before they write them.
@@ -61,6 +73,8 @@ disagree with the classifier about what a name means.
 
 → [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts) — the
   mechanism every lane shares
+→ [`../at-reference/AGENTS.md`](../at-reference/AGENTS.md) — `@`, the other door
+  onto the same link
 → [`../../../references/AGENTS.md`](../../../references/AGENTS.md) — what the rows
   are and how they rank
 → [`../../../completion/AGENTS.md`](../../../completion/AGENTS.md) — the open menu

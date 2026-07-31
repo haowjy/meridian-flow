@@ -82,10 +82,13 @@ change-trail events, not manuscript content.
 
 - **A menu the writer types underneath is a spec, not a plugin.**
   `extensions/suggestion/` holds one mechanism that wires `@tiptap/suggestion`,
-  the kernel keymap, and the catalog fence for every lane; `/` and `[[` each
-  declare a spec (char, envelope predicate, matches, row projection, choice) and
-  nothing else, so a third trigger is a spec rather than a third copy of the
-  lifecycle. The presentation-neutral halves sit outside the editor — the
+  the kernel keymap, and the catalog fence for every lane; `/`, `[[`, and `@`
+  each declare a spec (char, envelope predicate, matches, row projection,
+  choice) and nothing else, so a fourth trigger is a spec rather than a fourth
+  copy of the lifecycle. Where a trigger may open at all is one more shared
+  thing (`trigger-envelope.ts`): what prose is, what a word boundary is, and
+  where a reference may be spelled, so a new block type is one edit rather than
+  three that drift. The presentation-neutral halves sit outside the editor — the
   open-menu store in [`../completion/`](../completion/AGENTS.md), what a
   reference may name and how it ranks in
   [`../references/`](../references/AGENTS.md) — because the chat composer
@@ -163,6 +166,7 @@ and navigation contracts.
 → [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers the editor writes
 → [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
 → [`extensions/wikilink/AGENTS.md`](extensions/wikilink/AGENTS.md) — the `[[` trigger
+→ [`extensions/at-reference/AGENTS.md`](extensions/at-reference/AGENTS.md) — the `@` trigger
 → [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store
 → [`../references/AGENTS.md`](../references/AGENTS.md) — what a reference may name, and how it ranks
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics

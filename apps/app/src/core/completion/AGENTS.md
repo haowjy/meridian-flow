@@ -52,3 +52,5 @@ reference catalog's documents and assets share one machine.
   the TipTap adapter that drives this from a lane spec
 → [`../editor/extensions/wikilink/AGENTS.md`](../editor/extensions/wikilink/AGENTS.md) —
   what `[[` does with a chosen row
+→ [`../editor/extensions/at-reference/AGENTS.md`](../editor/extensions/at-reference/AGENTS.md) —
+  what `@` does with one, which is the same thing for a document

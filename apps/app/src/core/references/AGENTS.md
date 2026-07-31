@@ -53,5 +53,7 @@ asking the tree twice.
   rows are published through
 → [`../editor/extensions/wikilink/AGENTS.md`](../editor/extensions/wikilink/AGENTS.md) —
   the `[[` trigger, and what a choice writes
+→ [`../editor/extensions/at-reference/AGENTS.md`](../editor/extensions/at-reference/AGENTS.md) —
+  the `@` trigger, which asks for both kinds and writes a picture for one
 → [`../../features/editor/surfaces/link/useReferenceCandidates.ts`](../../features/editor/surfaces/link/useReferenceCandidates.ts) —
   where candidates come from today (the context trees the app already caches)
