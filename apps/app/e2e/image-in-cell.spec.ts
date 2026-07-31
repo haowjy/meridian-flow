@@ -129,10 +129,13 @@ async function insertImageThroughCellSlash(
   const cell = page.locator(".ProseMirror table tr").nth(1).locator("td").first();
   await cell.click();
   await page.keyboard.type("/image");
-  await expect(page.getByRole("option", { name: /image/i }).first()).toBeVisible();
+  const imageRow = page.getByRole("option", { name: /image/i }).first();
+  await expect(imageRow).toBeVisible();
 
+  // The row is pressed rather than entered: Enter acts on whatever the menu has
+  // highlighted, which is a race against its own filtering.
   const chooser = page.waitForEvent("filechooser");
-  await page.keyboard.press("Enter");
+  await imageRow.click();
   await (await chooser).setFiles({
     name: "screenshot.png",
     mimeType: "image/png",

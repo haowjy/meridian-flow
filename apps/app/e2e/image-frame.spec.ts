@@ -30,6 +30,9 @@ test.describe("pending image frame", () => {
     let fixture: ProjectFixture | undefined;
 
     try {
+      // Signed in before the fixture is seeded: the seeding calls go through
+      // this browser context, and the context API answers nobody.
+      await login(page);
       fixture = await seedProjectFixture(db, page.request, {
         userId: await findTestUserId(db),
         titlePrefix: "Image frame",
@@ -73,6 +76,9 @@ test.describe("pending image frame", () => {
     let fixture: ProjectFixture | undefined;
 
     try {
+      // Signed in before the fixture is seeded: the seeding calls go through
+      // this browser context, and the context API answers nobody.
+      await login(page);
       fixture = await seedProjectFixture(db, page.request, {
         userId: await findTestUserId(db),
         titlePrefix: "Image frame fallback",
@@ -111,7 +117,6 @@ async function holdUploads(page: Page): Promise<void> {
 }
 
 async function openManuscript(page: Page, fixture: ProjectFixture): Promise<void> {
-  await login(page);
   const search = new URLSearchParams({
     screen: "context",
     thread: fixture.threadId,
