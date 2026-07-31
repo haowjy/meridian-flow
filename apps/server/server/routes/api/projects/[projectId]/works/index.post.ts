@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
       }
       throw error;
     });
+  await app.preferences.setCurrentWorkId(user.userId, projectId, work.id);
 
   event.res.status = 201;
   return serializeTransport(work);

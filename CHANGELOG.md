@@ -3,8 +3,9 @@
 ## [Unreleased]
 
 - `apps/server`: works now have required names, goals, descriptions, and
-  archive state. Projects remember each writer's current work, and titled
-  conversations gain stable human-readable slugs.
+  archive state. Projects remember each writer's current work, newly created
+  works become current, and titled conversations gain stable human-readable
+  slugs.
 - `apps/server`: current Work selection now prefers the writer's saved choice,
   falls back deterministically, and refuses to delete Works that still hold a
   conversation or an unreviewed draft.
