@@ -25,7 +25,7 @@
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type NodeViewProps, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
-import { FileText, Image } from "lucide-react";
+import { File, FileText, Image } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -164,13 +164,13 @@ export const ReferenceTokenNode = Node.create({
 function ReferenceTokenView({ node, selected }: NodeViewProps) {
   const attrs = node.attrs as ReferenceTokenAttributes;
   // The icon says what the token holds, same glyphs as the menu rows: pixels
-  // get the picture, everything else — pages, PDFs, non-image uploads — the
-  // file. A pasted upload reads off its MIME type, an asset off its catalog
+  // get the picture, a page the page, and a non-image asset the plain file it
+  // is. A pasted upload reads off its MIME type, an asset off its catalog
   // file type.
   const pictorial =
     (attrs.kind === "asset" && attrs.fileType === "image") ||
     (attrs.kind === "upload" && (attrs.upload?.mimeType.startsWith("image/") ?? false));
-  const Icon = pictorial ? Image : FileText;
+  const Icon = pictorial ? Image : attrs.kind === "document" ? FileText : File;
   return (
     <NodeViewWrapper
       as="span"
