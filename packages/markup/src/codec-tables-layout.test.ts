@@ -366,7 +366,9 @@ describe("tables and Layout round-trip corpus", () => {
     {
       block: "code block",
       tag: "pre",
-      node: schema.node("code_block", { language: "typescript" }, [t("const rank = 7;")]),
+      node: schema.node("code_block", { language: "typescript" }, [
+        t("const rank = 7;\n\nreturn rank;"),
+      ]),
     },
     { block: "horizontal rule", tag: "hr", node: schema.node("horizontal_rule") },
   ])("round-trips a $block inside an HTML table cell", ({ node, tag }) => {
@@ -384,6 +386,28 @@ describe("tables and Layout round-trip corpus", () => {
     const html = codec.serializeBlock(original);
 
     expect(html.match(/<table>/g)).toHaveLength(2);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips wikilinks and wikilink images inside an HTML table cell", () => {
+    const link = schema.marks.link.create({ href: "[[Chapter 7]]", title: null });
+    const original = oneCellTable(
+      paragraph(
+        t("Chapter 7", [link]),
+        t(" "),
+        schema.node("image", {
+          src: "[[Realm map]]",
+          alt: "Realm map",
+          title: null,
+          width: null,
+        }),
+      ),
+    );
+    const html = codec.serializeBlock(original);
+
+    expect(html).toContain('<a href="[[Chapter 7]]">Chapter 7</a>');
+    expect(html).toContain('<img src="[[Realm map]]" alt="Realm map" />');
     expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
     expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
