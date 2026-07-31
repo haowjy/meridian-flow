@@ -98,17 +98,16 @@ function isMeaningfulBlock(block: PMNode): boolean {
   return !(block.type.name === "paragraph" && block.childCount === 0);
 }
 
-// Block structure cannot live inside a code block or a table cell, so a paste
-// landing in one declines and lets ProseMirror's default plain-text handling
-// run: inserting a closed block slice there splits the surrounding node.
-// ProseMirror already keeps clipboard text literal inside a code block, but the
-// rule is ours, so it is stated here rather than inherited. Pristine
-// literal-text paste inside a cell is a separate stock-editor concern tracked
-// under #92.
+// Block structure cannot live inside a code fence — its content is the literal
+// characters — so a paste landing in one declines and lets ProseMirror's
+// default plain-text handling run. ProseMirror already keeps clipboard text
+// literal inside a code block, but the rule is ours, so it is stated here
+// rather than inherited. Table cells deliberately do not decline: a cell holds
+// any block, so it takes structured paste exactly like prose (a fence inside a
+// cell still refuses, because the rule is the fence's).
 function canHostBlocks($context: ResolvedPos): boolean {
   for (let depth = $context.depth; depth >= 0; depth -= 1) {
-    const spec = $context.node(depth).type.spec;
-    if (spec.code || spec.tableRole) return false;
+    if ($context.node(depth).type.spec.code) return false;
   }
   return true;
 }

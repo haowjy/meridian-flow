@@ -35,6 +35,7 @@ import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
 import { objectSelectedInDecorations } from "../objects";
+import { tableSweepPastePlugin } from "../table-sweep-paste";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -216,6 +217,12 @@ export class MeridianTableView extends TableView {
 export const MeridianTable = Table.extend({
   name: "table",
   content: "table_row+",
+
+  // Before the parent's, so the sweep-replace paste answers ahead of
+  // prosemirror-tables' rectangle overwrite on the same handlePaste ladder.
+  addProseMirrorPlugins() {
+    return [tableSweepPastePlugin(), ...(this.parent?.() ?? [])];
+  },
 
   addAttributes() {
     return {

@@ -13,7 +13,9 @@
  * refusal is not ownership. Every binding here consumes its key, and the only
  * question is what it does with it, deepest owner first:
  *
- * - in a table, Tab walks cells — a grid has no room for indentation;
+ * - in a table, Tab walks cells — a grid has no room for indentation — unless
+ *   the caret stands in a list item or a fence INSIDE a cell, where the walk
+ *   declines and the deeper owner's rung below answers;
  * - in a code fence, it indents, line-wise when something is selected;
  * - in a list, it sinks or lifts the item, refusal included;
  * - anywhere else in prose, it inserts one tab character.
@@ -70,18 +72,57 @@ function consuming(
 }
 
 /**
+ * Runs the walk unless something deeper inside the cell owns the indent key,
+ * in which case the key is DECLINED — handed down the kernel ladder, where the
+ * fence rung (block scope) or the list sink (document scope) answers, and the
+ * unconditional document rung means ownership still never lapses.
+ */
+const walking = (verb: (editor: Editor) => void): ((editor: Editor) => KeymapBinding) => {
+  return (editor) => (state) => {
+    if (cellInteriorOwnsIndent(state)) return false;
+    verb(editor);
+    return true;
+  };
+};
+
+/**
  * Tab in a cell walks to the next one, and grows the table rather than
  * stopping at the last cell — prosemirror-tables has no row to walk into, and
- * a writer filling a table in expects one.
+ * a writer filling a table in expects one. `goToNextCell` and `addRowAfter`
+ * both resolve against the nearest cell, so the innermost table owns the walk
+ * and Tab at a nested table's last cell grows the INNER table.
  */
-const nextCell = consuming((editor) => {
+const nextCell = walking((editor) => {
   if (editor.commands.goToNextCell()) return;
   if (editor.can().addRowAfter()) editor.chain().addRowAfter().goToNextCell().run();
 });
 
-const previousCell = consuming((editor) => {
+const previousCell = walking((editor) => {
   editor.commands.goToPreviousCell();
 });
+
+/**
+ * Is the caret standing in something INSIDE the cell that owns indentation —
+ * a list item Tab should sink (Shift-Tab lift), or a fence it should indent?
+ *
+ * Measured against the innermost cell, so only structure inside that cell
+ * yields the walk: a table sitting in a list item still walks its own cells,
+ * because the list item is outside the grid, not within it.
+ */
+function cellInteriorOwnsIndent(state: EditorState): boolean {
+  const $from = state.selection.$from;
+  let cellDepth = 0;
+  for (let depth = $from.depth; depth > 0 && cellDepth === 0; depth -= 1) {
+    const role = $from.node(depth).type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") cellDepth = depth;
+  }
+  if (cellDepth === 0) return false;
+  for (let depth = $from.depth; depth > cellDepth; depth -= 1) {
+    const node = $from.node(depth);
+    if (node.type.name === "list_item" || isSourceBlock(node)) return true;
+  }
+  return false;
+}
 
 /**
  * Inside a list the key belongs to the list, refusal included: `sinkListItem`
