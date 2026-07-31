@@ -235,7 +235,7 @@ or direct `var(--color-*)` CSS references. Categories:
 - **Composer:** manuscript-tone `composer-surface` plus `composer-border`; it does not borrow chrome or action color
 - **Borders:** `border`, `border-subtle`, `border-focus` — in-pane controls and hairlines only; shell-region separation is tonal, with no seam borders
 - **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`, `shadow-rail-left`
-- **Atmosphere:** `shelf-depth` / `dock-airlight` background-image tokens that do not add another shell material
+- **Atmosphere:** `dock-airlight` lifts the dock floor; the shelf stays flat so scrolled navigation keeps constant contrast
 - **Type scale:** `text-headline-hero`, `text-headline-section`, `text-body`,
   `text-compact` / `text-caption` (secondary-prose roles — bundle a relaxed
   reading line-height), `text-sm` / `text-xs` (UI-control sizes),

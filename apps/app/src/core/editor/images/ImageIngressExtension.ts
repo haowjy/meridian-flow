@@ -38,7 +38,7 @@ import {
   sendIngressMessage,
 } from "./image-ingress-runtime";
 import { createImageIngressStore } from "./image-ingress-store";
-import { insertImageFile } from "./image-uploads";
+import { insertImageFile, pasteImageFile } from "./image-uploads";
 import {
   createEditorAssetPathResolver,
   draggingFiles,
@@ -164,8 +164,12 @@ export const ImageIngressExtension = Extension.create({
             if (!view.editable) return false;
             const file = imageFileFromClipboard(event);
             if (!file) return false;
+            // A file carries no slice, so no handler behind this one — the
+            // table sweep plugin included — could ever answer it. What the
+            // paste MEANS is still not decided here: `pasteImageFile` lands a
+            // sweep through the sweep module's own replace, a caret inline.
             event.preventDefault();
-            insertImageFile(editor, file, view.state.selection.from);
+            pasteImageFile(editor, file);
             return true;
           },
 

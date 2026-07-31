@@ -15,8 +15,8 @@
  * deepest, and the whole shell keeps the one warm grey-gold family (hue 84)
  * so night mode reads as the same room with the lamps low — never a neutral
  * gray app. Inks flip to warm cream (hue ~90); actives LIGHTEN instead of
- * darken; jade brightens to keep its voice on dark ground. Atmosphere
- * gradients thin to moonlight (~×0.25 alpha) per the light-file's note.
+ * darken; jade brightens to keep its voice on dark ground. The dock atmosphere
+ * thins to moonlight (~×0.25 alpha) per the light-file's note.
  */
 :root[data-ui-theme="dark"] {
   /* Surface ladder (dark): shelf .215 < dock-surface .235 < chrome .25 <
@@ -82,19 +82,12 @@
   --color-syntax-builtin: oklch(0.72 0.09 195);
   --color-syntax-punctuation: oklch(0.68 0.008 100);
 
-  /* Atmosphere thins to moonlight: airlight at ~×0.25 alpha; the shelf's
-     shadow pools deeper black instead of grey-gold. */
+  /* Atmosphere thins to moonlight: airlight at ~×0.25 alpha. */
   --background-image-dock-airlight: linear-gradient(
     to top,
     oklch(0.99 0.003 84 / 0.04) 0%,
     oklch(0.99 0.003 84 / 0.02) 26%,
     oklch(0.99 0.002 84 / 0.007) 46%,
     transparent 68%
-  );
-  --background-image-shelf-depth: linear-gradient(
-    to top,
-    oklch(0.1 0.008 84 / 0.5) 0%,
-    oklch(0.1 0.008 84 / 0.22) 30%,
-    transparent 62%
   );
 }

@@ -1,8 +1,8 @@
 /**
  * Where a drop inside a table lands.
  *
- * The only legal landing for dropped content inside a table is INSIDE a cell's
- * paragraph. ProseMirror's own resolution does not know that rule: near a cell
+ * The only legal landing for dropped content inside a table is INSIDE a cell.
+ * ProseMirror's own resolution does not know that rule: near a cell
  * border, `posAtCoords` answers a structural position (a child of the cell,
  * the row, or the table), and `dropPoint`'s wrapping pass then *approves* it by
  * inventing a `table_cell` wrapper — the drop manufactures a new cell, and
@@ -10,7 +10,7 @@
  * turned a 3-column table into 4.
  *
  * So a drop whose raw position is table-structural snaps into the nearest
- * cell's paragraph, or refuses honestly when no cell can host it. The same
+ * cell, or refuses honestly when no cell can host it. The same
  * resolution answers the dropcursor during the drag, so the caret the writer
  * sees is the landing they get (the display is the promise). Follows the
  * pointer-boundary pattern: an impure reading gathers geometry, a pure
@@ -127,19 +127,27 @@ export function resolveTableDrop({ doc, rawPos, x, y, cells }: TableDropInput): 
 }
 
 /**
- * Whether a seam-snapped landing can host this slice at all: inline content,
- * or one textblock's worth of it. A cell holds exactly one paragraph, so a
- * multi-block slice has no landing a snap could honestly promise — the drop
- * refuses instead of letting the fitter improvise structure.
+ * Whether a seam-snapped landing can honestly promise this slice a home.
+ *
+ * The answer is the actual schema fit: a shape-preserving landing transaction
+ * exists, or it does not. Cells hold any block sequence now (§3b), so the
+ * refusals left are structural — content whose every fit would change the
+ * table's grid or spill outside the pressed cell. A null slice is a file
+ * drop, whose payload becomes an inline image and always fits.
  */
-export function seamHostableSlice(slice: Slice | null): boolean {
+export function seamHostableSlice(state: EditorState, pos: number, slice: Slice | null): boolean {
   if (!slice || slice.content.size === 0) return true;
-  let allInline = true;
-  slice.content.forEach((node) => {
-    if (!node.isInline) allInline = false;
-  });
-  if (allInline) return true;
-  return slice.content.childCount === 1 && (slice.content.firstChild?.isTextblock ?? false);
+  return seamDropTransaction(state, pos, slice, { moved: false, node: null }) !== null;
+}
+
+/** Position of the innermost cell holding `pos`, or null outside every cell. */
+function cellPosAt(doc: PMNode, pos: number): number | null {
+  const $pos = doc.resolve(pos);
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    const role = tableRole($pos.node(depth));
+    if (role === "cell" || role === "header_cell") return $pos.before(depth);
+  }
+  return null;
 }
 
 /** Row widths of the table around `pos` — the shape a drop must not change. */
@@ -158,9 +166,11 @@ function tableShapeAt(doc: PMNode, pos: number): { pos: number; rows: number[] }
 /**
  * The transaction one seam-snapped drop dispatches, or null when the drop must
  * refuse. Mirrors ProseMirror's own drop (move-delete, node-vs-slice insert,
- * landing selection), with one addition: the containing table's shape is read
- * back after the insert, and a drop that changed it is refused outright. The
- * column count is invariant under drops, structurally.
+ * landing selection), with two additions read back after the insert: the
+ * containing table's shape must be unchanged — the column count is invariant
+ * under drops, structurally — and everything inserted must stand inside the
+ * pressed cell, because the fitter is free to improvise a landing beyond it
+ * and a landing the dropcursor never promised is a refusal, not a surprise.
  */
 export function seamDropTransaction(
   state: EditorState,
@@ -172,9 +182,10 @@ export function seamDropTransaction(
     node: Selection | null;
   },
 ): Transaction | null {
-  if (!seamHostableSlice(slice)) return null;
   const shapeBefore = tableShapeAt(state.doc, pos);
   if (!shapeBefore) return null;
+  const cellBefore = cellPosAt(state.doc, pos);
+  if (cellBefore === null) return null;
 
   const transaction = state.tr;
   if (source.moved) {
@@ -205,15 +216,22 @@ export function seamDropTransaction(
     return null;
   }
 
+  let end = transaction.mapping.map(pos);
+  const last = transaction.mapping.maps[transaction.mapping.maps.length - 1];
+  last?.forEach((_from, _to, _newFrom, newTo) => {
+    end = newTo;
+  });
+
+  const cellPos = transaction.mapping.map(cellBefore, -1);
+  const cellAfter = transaction.doc.nodeAt(cellPos);
+  const cellRole = cellAfter ? tableRole(cellAfter) : undefined;
+  if (!cellAfter || (cellRole !== "cell" && cellRole !== "header_cell")) return null;
+  if (mapped < cellPos + 1 || end > cellPos + 1 + cellAfter.content.size) return null;
+
   const $landing = transaction.doc.resolve(mapped);
   if (single && NodeSelection.isSelectable(single) && $landing.nodeAfter?.sameMarkup(single)) {
     transaction.setSelection(new NodeSelection($landing));
   } else {
-    let end = transaction.mapping.map(pos);
-    const last = transaction.mapping.maps[transaction.mapping.maps.length - 1];
-    last?.forEach((_from, _to, _newFrom, newTo) => {
-      end = newTo;
-    });
     transaction.setSelection(TextSelection.between($landing, transaction.doc.resolve(end)));
   }
   transaction.setMeta("uiEvent", "drop");

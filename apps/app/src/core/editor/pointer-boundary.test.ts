@@ -443,6 +443,42 @@ describe("a press inside a cell", () => {
     expect(cellLanding(page, pressBelowDocument(page))).toEqual({ kind: "gap", index: 2 });
   });
 
+  it("enters a fence's own band when geometry answers the neighbouring cell", () => {
+    // The S6 probe's repro: a press on the padding beside a code-fence cell,
+    // where `posAtCoords` crosses the border and answers the neighbour's
+    // text. The press is ON the fence's band and the fence's text is on the
+    // page, so the caret enters THAT cell's fence — never the neighbour.
+    const page = cellLayout([fence("typescript", "const a = 1;")]);
+    const neighbourText = page.cellPos + page.container.node.nodeSize + 2;
+
+    expect(cellLanding(page, pressBeside(page, 0, neighbourText))).toEqual({
+      kind: "text",
+      block: "code_block",
+      index: 0,
+    });
+  });
+
+  it("keeps a press below a fence cell's last block inside that cell", () => {
+    // The bottom-padding half of the same repro, with the same betrayal.
+    const page = cellLayout([paragraph("lead"), fence("typescript", "const a = 1;")]);
+    const neighbourText = page.cellPos + page.container.node.nodeSize + 2;
+    const last = page.bands.at(-1);
+    if (!last) throw new Error("no blocks");
+    const decision = resolvePointerBoundary({
+      doc: page.doc,
+      y: last.bottom + 40,
+      bands: page.bands,
+      coordsPos: neighbourText,
+      container: page.container,
+    });
+
+    expect(cellLanding(page, decision)).toEqual({
+      kind: "text",
+      block: "code_block",
+      index: 1,
+    });
+  });
+
   it("declines in a cell whose only child is a rendered diagram", () => {
     // No gap cursor fits beside a fence (its schema still holds typeable
     // text), and the cell offers no prose: declining beats answering with the

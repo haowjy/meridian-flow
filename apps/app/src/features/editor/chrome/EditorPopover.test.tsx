@@ -16,7 +16,7 @@ import { createReactEditorFixture, type ReactEditorFixture } from "@/test-suppor
 
 import { EditorPopover } from "./EditorPopover";
 
-const NOTE = "Table cells hold plain paragraphs.";
+const NOTE = "A note pinned under the caret.";
 
 let page: ReactEditorFixture;
 

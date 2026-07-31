@@ -84,11 +84,14 @@ export function EditorSurfaceFrame({
             ? (event) => {
                 if (event.button !== 0 || event.defaultPrevented || editor.isDestroyed) return;
                 // The hijack covers inert gutter layout only: ProseMirror owns
-                // presses in the prose ([contenteditable]), and interactive or
-                // live-status children ([role], controls) keep native behavior
-                // — including selectable text in upload error messages. The
-                // closest() match only counts INSIDE the scroller: ancestors
-                // (the pane's tabpanel role, etc.) must not veto gutter presses.
+                // presses in the prose ([contenteditable]) — inert space
+                // INSIDE it, a cell's padding and seams, is claimed one level
+                // down by `core/editor/cell-interior-press.ts` on the same
+                // policy — and interactive or live-status children ([role],
+                // controls) keep native behavior, including selectable text
+                // in upload error messages. The closest() match only counts
+                // INSIDE the scroller: ancestors (the pane's tabpanel role,
+                // etc.) must not veto gutter presses.
                 const match = (event.target as Element).closest(
                   "[contenteditable], [role], a, button, input, textarea, select",
                 );

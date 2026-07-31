@@ -57,7 +57,7 @@ borders, no shadows (slice-7 locked shape):
 
 | Slot     | Material |
 |----------|----------|
-| `rail-l` | `shelf-surface` — the grey-gold shelf (chrome one shade darker) + depth atmosphere + scoped role remaps (globals.css) |
+| `rail-l` | `shelf-surface` — the flat grey-gold shelf (chrome one shade darker) + scoped role remaps (globals.css) |
 | `dock`   | `dock-surface` — the chrome material (≡ the tab band) + airlight atmosphere |
 | `center` | `bg-background` |
 

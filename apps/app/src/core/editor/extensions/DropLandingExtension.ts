@@ -2,7 +2,7 @@
  * The drop door and its promise.
  *
  * Two plugins, one resolution (`../table-drop.ts`): a drop whose raw position
- * is table-structural lands inside the nearest cell's paragraph or refuses,
+ * is table-structural lands inside the nearest cell or refuses,
  * and the dropcursor drawn during the drag asks the same question — so the
  * caret the writer sees during a drag over a table is exactly where the
  * content will stand. Everywhere else both plugins defer to ProseMirror's
@@ -81,7 +81,9 @@ function dropCursorTarget(view: EditorView, event: DragEvent): number | null {
   const decision = tableDropDecision(view, { x, y });
   if (decision.kind === "refuse") return null;
   if (decision.kind === "snap") {
-    return seamHostableSlice(slice) ? decision.pos : null;
+    // The hostability probe IS the landing transaction, built and discarded:
+    // the cursor may only promise what the drop can deliver.
+    return seamHostableSlice(view.state, decision.pos, slice) ? decision.pos : null;
   }
   if (!slice) return pos.pos;
   return dropPoint(view.state.doc, pos.pos, slice) ?? pos.pos;

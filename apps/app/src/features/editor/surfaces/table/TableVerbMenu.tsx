@@ -53,7 +53,6 @@ import {
   EditorMenuSubTrigger,
 } from "../../chrome";
 import {
-  mergeJoinsCellText,
   runTableVerbOn,
   selectedColumnAlignment,
   selectedTablePlacement,
@@ -65,7 +64,7 @@ import {
   tableTargetState,
   tableVerbStates,
 } from "./table-commands";
-import { tableBlockedMessage, tableChromeCopy, tableVerbHint, tableVerbLabel } from "./table-copy";
+import { tableBlockedMessage, tableChromeCopy, tableVerbLabel } from "./table-copy";
 
 /** How an item runs its verb: the menu's target, resolved at the moment it runs. */
 export type RunTableVerb = (id: TableVerbId) => void;
@@ -75,8 +74,6 @@ export type VerbProps = {
   states: TableVerbStates;
   alignment: TableAlignment | null;
   placement: TablePlacement;
-  /** Merging here will run two cells' text together; the item says so. */
-  mergeJoinsText: boolean;
 };
 
 function TableVerbItem({
@@ -86,7 +83,6 @@ function TableVerbItem({
   icon,
   shortcut,
   destructive = false,
-  mergeJoinsText = false,
 }: {
   run: RunTableVerb;
   states: TableVerbStates;
@@ -94,13 +90,9 @@ function TableVerbItem({
   icon: ReactNode;
   shortcut?: string;
   destructive?: boolean;
-  mergeJoinsText?: boolean;
 }) {
   const { blockedBy } = states[verb];
   const blockedReason = tableBlockedMessage(verb, blockedBy);
-  // What the verb will make is worth standing under a verb that will run. A
-  // verb that will not run has one thing to say, and says it on demand.
-  const hint = blockedReason ? null : tableVerbHint(verb, { mergeJoinsText });
 
   return (
     <EditorMenuItem
@@ -110,16 +102,13 @@ function TableVerbItem({
       onSelect={() => run(verb)}
     >
       {icon}
-      <span className="flex min-w-0 flex-col">
-        <span>{tableVerbLabel(verb)}</span>
-        {hint ? <span className="text-muted-foreground text-xs">{hint}</span> : null}
-      </span>
+      {tableVerbLabel(verb)}
       {shortcut ? <EditorMenuShortcut>{shortcut}</EditorMenuShortcut> : null}
     </EditorMenuItem>
   );
 }
 
-export function TableRowMenuItems({ run, states, mergeJoinsText, ...table }: VerbProps) {
+export function TableRowMenuItems({ run, states, ...table }: VerbProps) {
   return (
     <>
       <TableVerbItem
@@ -140,7 +129,6 @@ export function TableRowMenuItems({ run, states, mergeJoinsText, ...table }: Ver
         states={states}
         verb="mergeCells"
         icon={<TableCellsMerge aria-hidden />}
-        mergeJoinsText={mergeJoinsText}
       />
       <TableVerbItem
         run={run}
@@ -172,12 +160,12 @@ export function TableRowMenuItems({ run, states, mergeJoinsText, ...table }: Ver
         destructive
       />
       <EditorMenuSeparator />
-      <TableSubmenu run={run} states={states} mergeJoinsText={mergeJoinsText} {...table} />
+      <TableSubmenu run={run} states={states} {...table} />
     </>
   );
 }
 
-export function TableColumnMenuItems({ run, states, mergeJoinsText, ...table }: VerbProps) {
+export function TableColumnMenuItems({ run, states, ...table }: VerbProps) {
   return (
     <>
       <TableVerbItem
@@ -200,7 +188,6 @@ export function TableColumnMenuItems({ run, states, mergeJoinsText, ...table }: 
         states={states}
         verb="mergeCells"
         icon={<TableCellsMerge aria-hidden />}
-        mergeJoinsText={mergeJoinsText}
       />
       <TableVerbItem
         run={run}
@@ -232,7 +219,7 @@ export function TableColumnMenuItems({ run, states, mergeJoinsText, ...table }: 
         destructive
       />
       <EditorMenuSeparator />
-      <TableSubmenu run={run} states={states} mergeJoinsText={mergeJoinsText} {...table} />
+      <TableSubmenu run={run} states={states} {...table} />
     </>
   );
 }
@@ -245,7 +232,7 @@ export function TableColumnMenuItems({ run, states, mergeJoinsText, ...table }: 
  * already have a home on the grips a few pixels away. A third full copy of
  * them here would be three places to keep saying the same thing.
  */
-export function TableCellMenuItems({ run, states, mergeJoinsText, ...table }: VerbProps) {
+export function TableCellMenuItems({ run, states, ...table }: VerbProps) {
   return (
     <>
       <TableVerbItem
@@ -253,7 +240,6 @@ export function TableCellMenuItems({ run, states, mergeJoinsText, ...table }: Ve
         states={states}
         verb="mergeCells"
         icon={<TableCellsMerge aria-hidden />}
-        mergeJoinsText={mergeJoinsText}
       />
       <TableVerbItem
         run={run}
@@ -264,7 +250,7 @@ export function TableCellMenuItems({ run, states, mergeJoinsText, ...table }: Ve
       <EditorMenuSeparator />
       <TableAlignmentItems run={run} alignment={table.alignment} />
       <EditorMenuSeparator />
-      <TableSubmenu run={run} states={states} mergeJoinsText={mergeJoinsText} {...table} />
+      <TableSubmenu run={run} states={states} {...table} />
     </>
   );
 }
@@ -337,7 +323,6 @@ export function tableMenuProps(
     states: tableVerbStates(state, { editable: editor.isEditable }),
     alignment: selectedColumnAlignment(state),
     placement: selectedTablePlacement(state),
-    mergeJoinsText: mergeJoinsCellText(state),
   };
 }
 

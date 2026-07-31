@@ -101,8 +101,10 @@ table; non-HTML MDX blocks use the carrier's entity-escaped `source` attribute
 instead. Neither form duplicates its source. Parsing re-enters the complete
 block codec with a fresh source context, so Figure, registered JSX, nested
 table Layout metadata, and future block codecs do not need a second table-only
-implementation. Positive `colspan` and `rowspan` round-trip. Unknown table
-structure is inert raw text, while invalid PM span/alignment attrs and
+implementation. The carrier declares the expected ProseMirror block kind and
+the parser rejects the whole table as inert source when the delegated spelling
+parses as anything else. Positive `colspan` and `rowspan` round-trip. Unknown
+table structure is inert raw text, while invalid PM span/alignment attrs and
 malformed `Layout` column widths still throw rather than serialize lossily.
 
 `widths` counts GRID columns, and so does `colwidth` (ruling, 2026-07-29). A

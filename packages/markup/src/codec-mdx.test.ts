@@ -7,6 +7,7 @@ import {
   docFrom,
   emptyParagraph,
   expectStable,
+  firstParsedBlock,
   m,
   paragraph,
   parsedDoc,
@@ -64,8 +65,46 @@ describe("mdx prose and component round-trip corpus", () => {
     );
   });
 
+  it("round-trips a Figure with a multiline caption", () => {
+    const figure = schema.node("figure", {
+      src: "uploads://w1/map.png",
+      alt: "Realm map",
+      label: "fig-map",
+      caption: "The northern provinces\nBeyond the pass",
+    });
+    const serialized = codec.serializeBlock(figure);
+
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(figure.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
+  });
+
   it("stabilizes JSX leaf components with nested JSON props", () => {
     expectStable(codec, '<StatBlock value={42} config={{"hp":10,"tags":["a","b"],"ok":true}} />');
+  });
+
+  it.each([
+    {
+      kind: "leaf",
+      node: schema.node("jsx_leaf", { name: "Badge", props: { tone: "A & B\u0085 </span>" } }, [
+        t("child"),
+      ]),
+    },
+    {
+      kind: "container",
+      node: schema.node(
+        "jsx_container",
+        {
+          name: "Panel",
+          props: { title: "A & B\u0085 </span>", meta: { closing: "</span>" } },
+        },
+        [paragraph(t("child"))],
+      ),
+    },
+  ])("round-trips lowercase tag-looking text in registered JSX $kind props", ({ node }) => {
+    const serialized = codec.serializeBlock(node);
+
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(node.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
   });
 
   it("stabilizes JSX leaf components with inline text children", () => {

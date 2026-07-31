@@ -133,9 +133,9 @@
      (L 0.91 vs 0.945, ΔL 0.035 — inside the 0.02–0.04 rail↔canvas band the
      calm-app sampling found), same hue and chroma (84 / ~0.012). The rail
      reads as the same material as the tab band/dock, just in shadow. Ink
-     tiers are generous here: black ink 12.6:1 flat / 10.7:1 pressed /
-     10.6:1 at the gradient foot; muted + hint inks (dark shades of the
-     shelf's own hue — grey on a warm tint reads as ash) 6.5:1; destructive
+     tiers are generous here: black ink 12.6:1 flat / 10.7:1 pressed;
+     muted + hint inks (dark shades of the shelf's own hue — grey on a warm
+     tint reads as ash) 6.5:1; destructive
      5.9:1. Re-verify all tiers ≥4.5:1 before dropping L below ~0.8 or
      raising chroma past ~0.015 (see the KB decision for the measured
      failure map of darker/louder walls). */
@@ -290,17 +290,9 @@
 
   /* Atmosphere 云雾 — part of the palette, not decoration. Light chrome
      breathes AIRLIGHT: near-paper white pooling at the dock's floor,
-     dissolving upward. The shelf breathes SHADOW instead — deeper grey-gold
-     pooling at the rail's floor. Both rails dissolve at the floor and
-     sharpen toward the work. (Dark mode: airlight thins to moonlight ×0.25;
-     see the dark ladder note in the header.) Shadow alphas are capped so
-     black ink still clears 4.5:1 at the gradient foot. */
-  --background-image-shelf-depth: linear-gradient(
-    to top,
-    oklch(0.55 0.012 84 / 0.22) 0%,
-    oklch(0.55 0.012 84 / 0.1) 30%,
-    transparent 62%
-  );
+     dissolving upward. The shelf stays flat so navigation and selection
+     contrast do not change as rows scroll. (Dark mode: airlight thins to
+     moonlight ×0.25; see the dark ladder note in the header.) */
   --background-image-dock-airlight: linear-gradient(
     to top,
     oklch(0.99 0.003 84 / 0.14) 0%,

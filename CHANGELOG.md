@@ -34,7 +34,7 @@
   table cells now hold full block content. Tables serialize as HTML every time
   while pipe-table imports still parse, and Enter in cell prose splits a
   paragraph while Shift-Enter keeps the hard break. The collaboration schema is
-  now `0.5.0`.
+  now `0.5.0`. Multiline Figure captions survive table-cell transport intact.
 - `apps/app`: dragging a picture onto a table's cell border no longer grows
   the table a new column. The drop lands inside the nearest cell's paragraph
   (or refuses when nothing can host it), the drop caret shown during the drag
@@ -152,6 +152,8 @@
   (`0.2`); pending uploads add a transient `uploadToken` attr to images and
   figures (`0.3`); display resize adds a `width` attr to images (`0.4`).
   Clients on an older bundle are fenced and reload.
+- `apps/app`: the left sidebar now keeps one flat shelf tone, so selected and
+  hovered rows retain the same contrast while the file tree scrolls.
 - `apps/app`: chapters now wait briefly for complete local and server state
   before binding, then report schema-normalized prose in a dismissible copyable
   notice without blocking editing; repairs that arrive during live
