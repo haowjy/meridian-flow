@@ -21,15 +21,8 @@ import {
   type SlashCommandGroupId,
   type SlashCommandItem,
 } from "./slash-catalog";
-import { applySlashCommand, type SlashRefusal, slashRefusals } from "./slash-insertion";
+import { applySlashCommand } from "./slash-insertion";
 import { allowsSlashTrigger } from "./slash-trigger";
-
-/**
- * A catalog entry as the menu shows it: what it says, plus why it cannot apply
- * where the caret is. `blocked` is null for a row that works, and the surface
- * greys the rest and renders the reason once (law 5).
- */
-export type SlashMenuEntry = SlashCommandItem & { blocked: SlashRefusal | null };
 
 /**
  * What the menu needs that a row does not carry: the group headings it shows
@@ -37,14 +30,14 @@ export type SlashMenuEntry = SlashCommandItem & { blocked: SlashRefusal | null }
  */
 export type SlashMenuMeta = { groupLabels: Record<SlashCommandGroupId, string> };
 
-export type SlashMenu = SuggestionMenu<SlashMenuEntry, SlashMenuMeta>;
+export type SlashMenu = SuggestionMenu<SlashCommandItem, SlashMenuMeta>;
 
 export type SlashCommandExtensionOptions = SuggestionLaneOptions<SlashCommandCatalog>;
 
 const slashLane = createSuggestionLane<
   SlashCommandCatalog,
   SlashCommandItem,
-  SlashMenuEntry,
+  SlashCommandItem,
   SlashMenuMeta
 >({
   name: "slashCommand",
@@ -53,11 +46,6 @@ const slashLane = createSuggestionLane<
   label: (catalog) => catalog.menuLabel,
   allows: allowsSlashTrigger,
   items: (catalog, query) => filterSlashCommandItems(catalog.items, query),
-  entries: ({ editor, range, items }) => {
-    const refusals = slashRefusals(editor, range, items);
-    return items.map((item) => ({ ...item, blocked: refusals.get(item.id) ?? null }));
-  },
-  choosable: (entry) => entry.blocked === null,
   meta: (catalog) => ({ groupLabels: catalog.groupLabels }),
   choose: ({ editor, catalog, range, entry }) => {
     applySlashCommand(editor, range, entry, catalog);

@@ -1,10 +1,10 @@
 /**
  * The scrap of HTML the wire is allowed to carry, read and written in one place.
  *
- * Two spellings escalate out of Markdown into raw tags — a table that pipes
- * cannot hold, and a picture the writer resized — and both need the same three
- * things: a tolerant reader for the tag soup a document may already contain, an
- * escaper strict enough for MDX, and one list of which tags close themselves.
+ * Tables always use raw HTML, and a resized picture escalates to its own tag.
+ * Both need the same three things: a tolerant reader for the tag soup a
+ * document may already contain, an escaper strict enough for MDX, and one list
+ * of which tags close themselves.
  *
  * The escaper's `{` and `}` are the MDX rule rather than an HTML one: an
  * unescaped brace opens a JSX expression, so a caption or a filename containing
@@ -20,6 +20,8 @@ export interface HtmlElement {
   name: string;
   attributes: ReadonlyMap<string, string | null>;
   children: HtmlNode[];
+  /** Exact body of an element the caller asked the HTML reader not to interpret. */
+  rawContent?: string;
 }
 
 export interface HtmlText {
@@ -53,7 +55,10 @@ export function decodeHtmlAttribute(value: string): string {
 }
 
 /** The one element `source` holds, or null for anything else at all. */
-export function parseHtml(source: string): HtmlElement | null {
+export function parseHtml(
+  source: string,
+  options?: { opaqueElements?: ReadonlySet<string> },
+): HtmlElement | null {
   const root: HtmlElement = {
     type: "element",
     name: "#root",
@@ -91,12 +96,46 @@ export function parseHtml(source: string): HtmlElement | null {
       children: [],
     };
     stack.at(-1)?.children.push(element);
+    if (!parsed.selfClosing && options?.opaqueElements?.has(parsed.name)) {
+      const closing = opaqueElementClosing(source, offset, parsed.name);
+      if (!closing) return null;
+      element.rawContent = source.slice(offset, closing.start);
+      offset = closing.end;
+      continue;
+    }
     if (!parsed.selfClosing && !VOID_ELEMENTS.has(parsed.name)) stack.push(element);
   }
 
   if (stack.length !== 1) return null;
   const children = elementChildren(root);
   return children?.length === 1 ? children[0] : null;
+}
+
+function opaqueElementClosing(
+  source: string,
+  start: number,
+  name: string,
+): { start: number; end: number } | null {
+  let depth = 1;
+  let offset = start;
+  while (offset < source.length) {
+    const tagStart = source.indexOf("<", offset);
+    if (tagStart === -1) return null;
+    const parsed = parseTag(source, tagStart);
+    if (!parsed) {
+      offset = tagStart + 1;
+      continue;
+    }
+    offset = parsed.end;
+    if (parsed.name !== name) continue;
+    if (parsed.closing) {
+      depth -= 1;
+      if (depth === 0) return { start: tagStart, end: parsed.end };
+    } else if (!parsed.selfClosing) {
+      depth += 1;
+    }
+  }
+  return null;
 }
 
 /**
@@ -140,10 +179,10 @@ function parseTag(
     if (source[offset] === ">") {
       return { name, attributes, closing, selfClosing: false, end: offset + 1 };
     }
+    if (closing) return null;
     if (source[offset] === "/" && source[offset + 1] === ">") {
       return { name, attributes, closing, selfClosing: true, end: offset + 2 };
     }
-    if (closing) return null;
 
     const attrStart = offset;
     while (/[A-Za-z0-9:_-]/.test(source[offset] ?? "")) offset++;

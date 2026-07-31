@@ -56,11 +56,8 @@ function escapePreparedMdxIngress(
     }
 
     if (/^[\t ]*(?:(?:>[\t ]*)|(?:[-+*][\t ]+)|(?:\d+[.)][\t ]+))*<table(?:\s|>)/i.test(line)) {
-      const end = lines.findIndex(
-        (candidate, candidateIndex) =>
-          candidateIndex >= index && /<\/table>\s*$/i.test(candidate ?? ""),
-      );
-      if (end >= index) {
+      const end = matchingHtmlTableEnd(lines, index);
+      if (end !== null) {
         htmlTableEnd = end;
         out.push(line);
         continue;
@@ -77,6 +74,16 @@ function escapePreparedMdxIngress(
     out.push(escapeProseSegment(line, lineStarts[index] ?? 0, enclosedDestinationStarts));
   }
   return out.join("\n");
+}
+
+function matchingHtmlTableEnd(lines: readonly string[], start: number): number | null {
+  let depth = 0;
+  for (let index = start; index < lines.length; index++) {
+    const tags = lines[index]?.matchAll(/<\/?table(?:\s[^>]*)?>/gi) ?? [];
+    for (const tag of tags) depth += tag[0].startsWith("</") ? -1 : 1;
+    if (depth === 0) return index;
+  }
+  return null;
 }
 
 function protectRawHtmlLiterals(text: string): string {

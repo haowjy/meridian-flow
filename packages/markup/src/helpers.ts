@@ -60,9 +60,80 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
   const out: MdastBlock[] = [];
   node.forEach((child) => {
     const serialized = runtime.serializeBlock(child, ctx);
-    out.push(...demoteAutolinks(runtime.parseMarkdown(serialized)).children);
+    out.push(
+      ...demoteAutolinks(parseWithOpaqueHtmlTables(serialized, runtime.parseMarkdown)).children,
+    );
   });
   return out;
+}
+
+/**
+ * Keep canonical HTML tables opaque while container codecs reparse their
+ * serialized children into mdast. Interior `<p>`, `<thead>`, and nested table
+ * tags otherwise split one raw-HTML block into several Markdown blocks.
+ */
+function parseWithOpaqueHtmlTables(
+  serialized: string,
+  parseMarkdown: (content: string) => MdastRoot,
+): MdastRoot {
+  if (!serialized.includes("<table>")) return parseMarkdown(serialized);
+
+  const lines = serialized.split("\n");
+  const tables = new Map<string, string>();
+  const protectedLines: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
+    const opening = line.indexOf("<table>");
+    if (opening === -1) {
+      protectedLines.push(line);
+      continue;
+    }
+
+    const prefix = line.slice(0, opening);
+    const tableLines: string[] = [];
+    let depth = 0;
+    let end = index;
+    for (; end < lines.length; end++) {
+      const candidate = lines[end] ?? "";
+      for (const tag of candidate.matchAll(/<\/?table>/g)) {
+        depth += tag[0].startsWith("</") ? -1 : 1;
+      }
+      tableLines.push(candidate.startsWith(prefix) ? candidate.slice(prefix.length) : candidate);
+      if (depth === 0) break;
+    }
+    if (depth !== 0) return parseMarkdown(serialized);
+
+    let tokenIndex = tables.size;
+    let name = `MeridianOpaqueTable${tokenIndex}`;
+    while (serialized.includes(name)) {
+      name = `MeridianOpaqueTable${++tokenIndex}`;
+    }
+    tables.set(name, tableLines.join("\n"));
+    protectedLines.push(`${prefix}<${name} />`);
+    index = end;
+  }
+
+  const root = parseMarkdown(protectedLines.join("\n"));
+  restoreOpaqueTables(root, tables);
+  return root;
+}
+
+function restoreOpaqueTables(node: unknown, tables: ReadonlyMap<string, string>): void {
+  const record = node as { children?: unknown[] };
+  if (!Array.isArray(record.children)) return;
+  record.children = record.children.map((child) => {
+    const value = child as { type?: unknown; name?: unknown; value?: unknown };
+    const htmlName =
+      value.type === "html" && typeof value.value === "string"
+        ? value.value.trim().match(/^<([A-Za-z0-9]+)\s*\/>$/)?.[1]
+        : undefined;
+    const name =
+      value.type === "mdxJsxFlowElement" && typeof value.name === "string" ? value.name : htmlName;
+    const table = name ? tables.get(name) : undefined;
+    if (table !== undefined) return { type: "html", value: table };
+    restoreOpaqueTables(child, tables);
+    return child;
+  });
 }
 
 export function parseBlockChildren(children: readonly MdastBlock[], ctx: ParseContext): PMNode[] {

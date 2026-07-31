@@ -12,7 +12,6 @@ export {
   SlashCommandExtension,
   type SlashCommandExtensionOptions,
   type SlashMenu,
-  type SlashMenuEntry,
   type SlashMenuMeta,
 } from "./SlashCommandExtension";
 export {
@@ -22,4 +21,3 @@ export {
   type SlashCommandId,
   type SlashCommandItem,
 } from "./slash-catalog";
-export type { SlashRefusal } from "./slash-insertion";

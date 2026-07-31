@@ -168,9 +168,15 @@ describe("the destination has the last word", () => {
     expect(paste(aiChunk, inParagraph, true)).toBeUndefined();
   });
 
-  it("declines block structure inside a table cell, which cannot hold it", () => {
-    expect(paste(tableMarkdown, inTableCell)).toBeUndefined();
-    expect(paste("## Heading", inTableCell)).toBeUndefined();
+  // Cells hold any block, so they take structured paste like prose anywhere.
+  it("hosts block structure inside a table cell", () => {
+    const nested = paste(tableMarkdown, inTableCell);
+    if (!nested) throw new Error("expected a markdown slice");
+    expect(blocksFromSlice(nested).map((block) => block.type.name)).toEqual(["table"]);
+
+    const heading = paste("## Heading", inTableCell);
+    if (!heading) throw new Error("expected a markdown slice");
+    expect(blocksFromSlice(heading).map((block) => block.type.name)).toEqual(["heading"]);
   });
 
   it("still marks up inline markdown inside a table cell", () => {

@@ -82,16 +82,33 @@ export function objectBeside(state: EditorState, direction: 1 | -1): ObjectAt | 
     if (siblingIndex < 0 || siblingIndex >= parent.childCount) continue;
 
     const sibling = parent.child(siblingIndex);
-    // The immediate neighbour is what "beside" means. A paragraph next door
-    // ends the walk rather than hiding an object two blocks away behind it.
-    if (!isEditorObject(sibling)) return null;
-
     let pos = $pos.start(depth - 1);
     for (let index = 0; index < siblingIndex; index += 1) pos += parent.child(index).nodeSize;
-    return { node: sibling, pos };
+    // The immediate neighbour is what "beside" means. A paragraph next door
+    // ends the walk rather than hiding an object two blocks away behind it —
+    // but a CONTAINER next door (the next cell, the next row) is entered
+    // through its edge block, and when that block is an object the walk is
+    // standing beside the object (§5b: a cell whose entry block is a rendered
+    // diagram is entered by selecting the diagram, never its hidden source).
+    return entryObject(sibling, pos, direction);
   }
 
   return null;
+}
+
+/**
+ * The object the caret meets first when it walks into `node` from `direction`
+ * (`1` enters through the first block, `-1` through the last), or null when
+ * the entry is prose the caret may simply move into.
+ */
+function entryObject(node: PMNode, pos: number, direction: 1 | -1): ObjectAt | null {
+  if (isEditorObject(node)) return { node, pos };
+  if (node.isTextblock || node.isAtom || !node.isBlock || node.childCount === 0) return null;
+
+  const index = direction === 1 ? 0 : node.childCount - 1;
+  let childPos = pos + 1;
+  for (let child = 0; child < index; child += 1) childPos += node.child(child).nodeSize;
+  return entryObject(node.child(index), childPos, direction);
 }
 
 /**
@@ -212,6 +229,7 @@ export function caretHomeFromObjectTransaction(
   if (!node) return null;
 
   const $after = state.doc.resolve(pos + node.nodeSize);
+  const bound = isolatingBoundAround($after);
 
   // Forward to the first place the writer can type, stepping OVER a leaf that
   // holds no text rather than selecting it. Esc asked to leave object-land, so
@@ -220,7 +238,7 @@ export function caretHomeFromObjectTransaction(
   // object is what made a scene break look like a dead end and sent the caret
   // backward into the block above. A rendered diagram is one more thing with
   // no text to offer, whatever the schema says about its `code_block`.
-  const forwardText = forwardWriterText(state, $after);
+  const forwardText = forwardWriterText(state, $after, bound.end);
   if (forwardText) return state.tr.setSelection(forwardText).scrollIntoView();
 
   // A scene break can also be the LAST thing in the document, and then there
@@ -232,9 +250,29 @@ export function caretHomeFromObjectTransaction(
 
   // Nothing ahead at all: in front of the object beats nowhere.
   const backward = Selection.findFrom(state.doc.resolve(pos), -1, true);
-  if (backward) return state.tr.setSelection(backward).scrollIntoView();
+  if (backward && backward.from >= bound.start) {
+    return state.tr.setSelection(backward).scrollIntoView();
+  }
 
   return paragraphAfterTransaction(state, $after)?.scrollIntoView() ?? null;
+}
+
+/**
+ * The interior of the nearest isolating ancestor of `$pos` — the cell, when
+ * the position is inside one — or the whole document outside every one.
+ *
+ * The walk home never crosses it (§5a): the nearest text forward of a fence
+ * that ends a cell is the NEIGHBOURING cell's, and a landing there reads as
+ * the caret teleporting across a wall the schema says is solid. Positions on
+ * both sides of the bound exist; they are just wrong answers here.
+ */
+function isolatingBoundAround($pos: ResolvedPos): { start: number; end: number } {
+  for (let depth = $pos.depth; depth >= 1; depth -= 1) {
+    if ($pos.node(depth).type.spec.isolating) {
+      return { start: $pos.start(depth), end: $pos.end(depth) };
+    }
+  }
+  return { start: 0, end: $pos.doc.content.size };
 }
 
 /**
@@ -286,7 +324,11 @@ export function typeBesideObjectTransaction(
 
   const $after = state.doc.resolve(pos + node.nodeSize);
   const forward = Selection.findFrom($after, 1, true);
-  const visible = forward && !opaqueObjectAround(forward.$head) ? forward : null;
+  // The same wall Esc's walk respects: the nearest text after an object that
+  // ends its cell is the neighbouring cell's, and the letter must not go there.
+  const bound = isolatingBoundAround($after);
+  const visible =
+    forward && forward.from <= bound.end && !opaqueObjectAround(forward.$head) ? forward : null;
   const transaction = visible
     ? state.tr.setSelection(visible)
     : paragraphAfterTransaction(state, $after);
@@ -308,7 +350,8 @@ export function deleteObjectTransaction(state: EditorState, pos: number): Transa
 }
 
 /**
- * The first text position forward of `$from` the writer can actually see.
+ * The first text position forward of `$from` the writer can actually see, at
+ * or before `limit` — the isolating bound the search must not leave.
  *
  * `Selection.findFrom` with `textOnly` finds a position ProseMirror is willing
  * to put a caret in, which includes the inside of every opaque object with text
@@ -317,11 +360,15 @@ export function deleteObjectTransaction(state: EditorState, pos: number): Transa
  * the far side of it. The skip is the whole object, not the next position
  * along, or the search would walk the source a line at a time.
  */
-function forwardWriterText(state: EditorState, $from: ResolvedPos): Selection | null {
+function forwardWriterText(
+  state: EditorState,
+  $from: ResolvedPos,
+  limit: number,
+): Selection | null {
   let $at = $from;
   for (;;) {
     const found = Selection.findFrom($at, 1, true);
-    if (!found) return null;
+    if (!found || found.from > limit) return null;
 
     const hidden = opaqueObjectAround(found.$head);
     if (!hidden) return found;

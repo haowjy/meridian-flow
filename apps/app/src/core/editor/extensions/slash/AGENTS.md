@@ -46,17 +46,12 @@ block refuses.
 
 **A table cell is never left** (ruling). §5.7 lets `/` open in a cell, but a
 pick that answered by inserting after the whole table would yank the caret out
-of the structure the writer is standing in — the deepest owner, law 4. A
-Meridian cell holds one plain paragraph, so every block entry has nowhere to go
-there: they grey, and the menu says why in the toolbar's own words. Nothing
-inserts outside a cell from inside one.
-
-**The picture is the cell's one legal act.** An image is an inline atom, and a
-cell's paragraph holds one exactly as any other paragraph does, so the Image row
-stays live in a cell and lands the picture IN it. A menu whose every row is dead
-is not a menu; that was the overreach in the first answer to the teleport bug,
-and the fix is a truthful availability question rather than a special case for
-tables.
+of the structure the writer is standing in — the deepest owner, law 4. A cell
+holds any block (`block+`), so the ceiling costs nothing: every entry lands IN
+the cell, the menu in a cell reads exactly as it reads in a paragraph, and
+nothing but `canReplaceWith` is consulted — the menu cannot drift from the
+schema. The picture is inline and lands in the cell's own paragraph like any
+other.
 
 ## Key rules
 
@@ -71,10 +66,6 @@ tables.
   read the selection when the file comes back — the picker resolves the anchor,
   checks the place still takes a picture, and refuses out loud otherwise
   ([`../../images/AGENTS.md`](../../images/AGENTS.md)).
-- **A refusal is a code here and copy there.** `slashRefusals` answers for
-  every visible row at once, in the toolbar's vocabulary (`"table-cell"`); the
-  surface renders it through `blockTypeReasonMessage`, so a writer meets one
-  wording of the rule wherever they meet it. Core holds no writer-facing string.
 - **The lifecycle is not this lane's.** Escape, the catalog fence, the arrow
   keys' timing, dismissal, and the refusal to gate on transaction origin are one
   mechanism's contracts, reasoned about in

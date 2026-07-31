@@ -74,31 +74,25 @@ describe("document dialect card codec gate", () => {
     }
   });
 
-  it("keeps representable tables in pipes and preserves pipe-cell hard breaks", () => {
-    const [plain] = expectWireFixpoint(DOCUMENT_DIALECT_CONTRACT.pipeTable.wire);
-    expect(plain?.type.name).toBe("table");
-    expect(codec.serializeBlock(requiredBlock(plain))).not.toContain("<table>");
+  it("understands pipe ingress but echoes only HTML", () => {
+    const pipes = "| Skill | Rank |\n| - | -: |\n| Iron Body | 7 |";
+    const pipeBreak = "| Detail |\n| - |\n| one\\\ntwo |";
+    const [plain] = codec.parse(pipes).blocks;
+    const hardBreak = codec.parse(pipeBreak).blocks;
+    const serialized = codec.serializeBlock(requiredBlock(plain));
 
-    const hardBreak = expectWireFixpoint(DOCUMENT_DIALECT_CONTRACT.pipeTable.hardBreakWire);
+    expect(plain?.type.name).toBe("table");
+    expect(serialized).toContain("<table>");
+    expect(serialized).not.toContain("| Skill");
+    expect(codec.serializeBlock(requiredBlock(codec.parse(serialized).blocks[0]))).toBe(serialized);
     expect(descendantsOfType(hardBreak, "hard_break")).toHaveLength(1);
   });
 
-  it("maps every claimed HTML escalation to the table node", () => {
-    for (const spelling of DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations) {
-      const [table] = expectWireFixpoint(spelling.wire);
-      expect(table?.type.name, spelling.reason).toBe("table");
-      expect(
-        codec.serializeBlock(requiredBlock(table)).startsWith("<table>"),
-        spelling.reason,
-      ).toBe(true);
-    }
-
-    const multiline = codec.parse(DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations[1].wire).blocks;
-    const headerlessWithBreak = codec.parse(
-      DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations[2].wire,
-    ).blocks;
-    expect(multiline[0]?.textContent).toContain("line one\nline two");
-    expect(descendantsOfType(headerlessWithBreak, "hard_break")).toHaveLength(1);
+  it("maps the claimed HTML table and its block cell children", () => {
+    const [table] = expectWireFixpoint(DOCUMENT_DIALECT_CONTRACT.table.wire);
+    expect(table?.type.name).toBe("table");
+    expect(descendantsOfType([requiredBlock(table)], "paragraph")).toHaveLength(4);
+    expect(descendantsOfType([requiredBlock(table)], "bullet_list")).toHaveLength(1);
   });
 
   it("maps every claimed Layout form to block attributes", () => {
@@ -144,9 +138,6 @@ describe("document dialect card codec gate", () => {
   });
 
   it("ships only spellings represented by the codec contract", () => {
-    for (const { reason } of DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations) {
-      expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(reason);
-    }
     for (const { opening } of DOCUMENT_DIALECT_CONTRACT.layouts.slice(0, 2)) {
       expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(opening);
     }
@@ -160,7 +151,6 @@ describe("document dialect card codec gate", () => {
     for (const spelling of [
       DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening,
       DOCUMENT_DIALECT_CONTRACT.codeFences[1].opening,
-      DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak,
       DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open,
       DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline,
       DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak,
@@ -171,5 +161,9 @@ describe("document dialect card codec gate", () => {
     ]) {
       expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(spelling);
     }
+    expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(
+      DOCUMENT_DIALECT_CONTRACT.table.ingressNote,
+    );
+    expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(DOCUMENT_DIALECT_CONTRACT.table.wire);
   });
 });

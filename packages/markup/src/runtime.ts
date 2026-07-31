@@ -30,6 +30,7 @@ export interface CodecRuntime {
   blockMap: ReadonlyMap<string, BlockCodec>;
   markMap: ReadonlyMap<string, MarkCodec>;
   parseMarkdown(content: string): MdastRoot;
+  parseBlocks(content: string, ctx: ParseContext): PMNode[];
   stringifyMarkdown(root: MdastRoot): string;
   serializeBlock(node: PMNode, ctx: SerializeContext): string;
 }

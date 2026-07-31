@@ -1,13 +1,12 @@
-import type { Node as PMNode } from "prosemirror-model";
+/** Liberal GFM-table ingress and the canonical HTML table serializer. */
+
 import {
-  inlineContentToMdast,
   type MdastInline,
   type MdastTable,
   type MdastTableCell,
   parseInlineChildren,
-  stringifyBlock,
 } from "../../helpers.js";
-import type { BlockCodec, SerializeContext } from "../../types.js";
+import type { BlockCodec } from "../../types.js";
 import {
   closesFence,
   isContainerBlockPrefix,
@@ -16,9 +15,12 @@ import {
 } from "../container.js";
 import { parseHtmlTable, serializeHtmlTable } from "./table-html.js";
 
-type TableAlignment = MdastTable["align"][number];
 const GFM_INGRESS_HARD_BREAK = "<br/>";
 
+/**
+ * Remark cannot recognize a pipe-table row continued by a Markdown hard break.
+ * Fold that ingress-only spelling before parsing; serialization never emits it.
+ */
 export function normalizeGfmTableHardBreaks(source: string): string {
   const lines = source.split("\n");
   const out: string[] = [];
@@ -63,52 +65,11 @@ export function normalizeGfmTableHardBreaks(source: string): string {
   return out.join("\n");
 }
 
-export function canonicalizeGfmTableHardBreaks(serialized: string): string {
-  const lines = serialized.split("\n");
-  const out: string[] = [];
-  let fence: { marker: string; length: number } | null = null;
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index] ?? "";
-    if (fence) {
-      out.push(line);
-      if (closesFence(lines, index, fence)) fence = null;
-      continue;
-    }
-
-    const openingFence = openingFenceAt(lines, index);
-    if (openingFence) {
-      fence = openingFence;
-      out.push(line);
-      continue;
-    }
-
-    out.push(...canonicalTableLine(lines, index, line));
-  }
-  return out.join("\n");
-}
-
 export const tableCodec: BlockCodec<MdastTable> = {
   name: "table",
 
   serialize(node, ctx) {
-    if (!isGfmRepresentable(node)) return serializeHtmlTable(node, ctx);
-    const align = alignmentFromFirstRow(node);
-    const table: MdastTable = { type: "table", align, children: [] };
-    const hardBreakMarker = uniqueHardBreakMarker(node);
-
-    node.forEach((row) => {
-      const cells: MdastTableCell[] = [];
-      row.forEach((cell) => {
-        cells.push({
-          type: "tableCell",
-          children: hardBreaksForGfm(cellInlineChildren(cell, ctx), hardBreakMarker),
-        });
-      });
-      table.children.push({ type: "tableRow", children: cells });
-    });
-
-    return stringifyBlock(ctx, table).replaceAll(hardBreakMarker, "\\\n");
+    return serializeHtmlTable(node, ctx);
   },
 
   parse(ast, ctx) {
@@ -142,76 +103,6 @@ export const tableCodec: BlockCodec<MdastTable> = {
   },
 };
 
-function isGfmRepresentable(table: PMNode): boolean {
-  const firstRow = table.firstChild;
-  if (!firstRow || firstRow.childCount === 0) return false;
-  if (!firstRow.content.content.every((cell) => cell.type.name === "table_header")) return false;
-
-  const columnCount = firstRow.childCount;
-  const alignment = alignmentFromFirstRow(table);
-  let representable = true;
-  table.forEach((row) => {
-    if (row.childCount !== columnCount) representable = false;
-    row.forEach((cell) => {
-      const expectedType = row === firstRow ? "table_header" : "table_cell";
-      if (cell.type.name !== expectedType) representable = false;
-      if (!validUnitSpan(cell.attrs.colspan) || !validUnitSpan(cell.attrs.rowspan)) {
-        representable = false;
-      }
-      if (!validAlignment(cell.attrs.alignment)) representable = false;
-      const paragraph = cell.firstChild;
-      if (!paragraph || (paragraph.childCount > 0 && /[\r\n]/.test(paragraph.textContent))) {
-        representable = false;
-      }
-    });
-  });
-
-  table.forEach((row) => {
-    row.forEach((cell, _offset, columnIndex) => {
-      if (tableAlignment(cell.attrs.alignment) !== alignment[columnIndex]) representable = false;
-    });
-  });
-  return representable;
-}
-
-function validUnitSpan(value: unknown): boolean {
-  return value === undefined || value === 1;
-}
-
-function alignmentFromFirstRow(node: PMNode): TableAlignment[] {
-  const firstRow = node.firstChild;
-  if (!firstRow) return [];
-
-  const align: TableAlignment[] = [];
-  firstRow.forEach((cell) => {
-    align.push(tableAlignment(cell.attrs.alignment));
-  });
-  return align;
-}
-
-function cellInlineChildren(cell: PMNode, ctx: SerializeContext): MdastTableCell["children"] {
-  const paragraph = cell.firstChild;
-  if (!paragraph) return [];
-  return inlineContentToMdast(paragraph, ctx);
-}
-
-function tableAlignment(value: unknown): TableAlignment {
-  return value === "left" || value === "center" || value === "right" ? value : null;
-}
-
-function validAlignment(value: unknown): boolean {
-  return value === null || value === undefined || tableAlignment(value) !== null;
-}
-
-function hardBreaksForGfm(
-  children: MdastTableCell["children"],
-  marker: string,
-): MdastTableCell["children"] {
-  return replaceHardBreaks(children, (node) =>
-    node.type === "break" ? ({ type: "html", value: marker } as MdastInline) : node,
-  );
-}
-
 function hardBreaksFromGfm(children: MdastTableCell["children"]): MdastTableCell["children"] {
   return replaceHardBreaks(children, (node) => {
     if (node.type === "html" && node.value === GFM_INGRESS_HARD_BREAK) return { type: "break" };
@@ -227,16 +118,6 @@ function hardBreaksFromGfm(children: MdastTableCell["children"]): MdastTableCell
     }
     return node;
   });
-}
-
-function uniqueHardBreakMarker(table: PMNode): string {
-  const serialized = JSON.stringify(table.toJSON());
-  let suffix = 0;
-  while (true) {
-    const marker = `\uFDD0${suffix}\uFDEF`;
-    if (!serialized.includes(marker)) return marker;
-    suffix++;
-  }
 }
 
 function replaceHardBreaks(
@@ -283,41 +164,6 @@ function isDelimiterRow(value: string): boolean {
     .replace(/\|$/, "")
     .split("|");
   return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()));
-}
-
-function canonicalTableLine(lines: readonly string[], index: number, line: string): string[] {
-  const structuralPrefix = tableLinePrefix(lines, index);
-  if (structuralPrefix === null || !line.includes("<br")) return [line];
-
-  const prefix = continuationPrefix(structuralPrefix);
-  const out: string[] = [""];
-  let codeFenceLength = 0;
-  let offset = 0;
-
-  while (offset < line.length) {
-    if (line[offset] === "`") {
-      let runLength = 1;
-      while (line[offset + runLength] === "`") runLength++;
-      if (codeFenceLength === 0) codeFenceLength = runLength;
-      else if (codeFenceLength === runLength) codeFenceLength = 0;
-      out[out.length - 1] += line.slice(offset, offset + runLength);
-      offset += runLength;
-      continue;
-    }
-
-    const hardBreak = line.slice(offset).match(/^<br\s*\/>/i)?.[0];
-    if (codeFenceLength === 0 && hardBreak && line[offset - 1] !== "\\") {
-      out[out.length - 1] += "\\";
-      out.push(prefix);
-      offset += hardBreak.length;
-      continue;
-    }
-
-    out[out.length - 1] += line[offset];
-    offset++;
-  }
-
-  return out;
 }
 
 function continuationPrefix(prefix: string): string {

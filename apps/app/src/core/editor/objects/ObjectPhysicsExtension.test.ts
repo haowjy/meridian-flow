@@ -313,6 +313,68 @@ describe("arrow walking", () => {
   });
 });
 
+/**
+ * §5b of the cell addendum: object physics inside cells are just object
+ * physics. A cell whose entry block is opaque is entered by SELECTING that
+ * block — the caret must never cross into text the page is not showing.
+ */
+describe("arrow walking into a cell", () => {
+  const cellOf = (...content: JSONContent[]): JSONContent => ({
+    type: "table_cell",
+    content,
+  });
+  const tableOf = (...cells: JSONContent[]): JSONContent => ({
+    type: "table",
+    content: [{ type: "table_row", content: cells }],
+  });
+
+  function caretBesideText(instance: Editor, text: string, side: "start" | "end"): void {
+    let at: number | null = null;
+    instance.state.doc.descendants((node, pos) => {
+      if (at === null && node.isText && node.text === text) {
+        at = side === "end" ? pos + text.length : pos;
+      }
+      return at === null;
+    });
+    if (at === null) throw new Error(`no "${text}" in the fixture`);
+    instance.commands.setTextSelection(at);
+  }
+
+  it("selects a diagram opening the next cell, then passes beyond it", () => {
+    const instance = mount([tableOf(cellOf(paragraph("go")), cellOf(mermaid, paragraph("tail")))]);
+    caretBesideText(instance, "go", "end");
+
+    // First press: onto the object, exactly as crossing one in open prose —
+    // never into the mermaid source the cell is not showing.
+    expect(press(instance, { key: "ArrowRight" })).toBe(true);
+    expect(selectedObject(instance.state)?.node.type.name).toBe("code_block");
+    expect(instance.state.selection).toBeInstanceOf(NodeSelection);
+
+    // Second press: past it, into the cell's own prose.
+    expect(press(instance, { key: "ArrowRight" })).toBe(true);
+    expect(instance.state.selection.$head.parent.textContent).toBe("tail");
+  });
+
+  it("selects a diagram ending the cell behind when walking back", () => {
+    const instance = mount([tableOf(cellOf(paragraph("lead"), mermaid), cellOf(paragraph("go")))]);
+    caretBesideText(instance, "go", "start");
+
+    expect(press(instance, { key: "ArrowLeft" })).toBe(true);
+    expect(selectedObject(instance.state)?.node.type.name).toBe("code_block");
+  });
+
+  it("crosses into a prose cell in document order, selecting nothing", () => {
+    // Document order across the boundary is ProseMirror's own walk; the
+    // physics only steps in when the entry block is an object.
+    const instance = mount([tableOf(cellOf(paragraph("go")), cellOf(paragraph("tail")))]);
+    caretBesideText(instance, "go", "end");
+
+    press(instance, { key: "ArrowRight" });
+    expect(selectedObject(instance.state)).toBeNull();
+    expect(instance.state.selection.$head.parent.textContent).toBe("tail");
+  });
+});
+
 describe("per-type keymap contributions", () => {
   it("fires only while that type is the selected object", () => {
     const instance = mount([paragraph("before"), mermaid, { type: "horizontal_rule" }]);

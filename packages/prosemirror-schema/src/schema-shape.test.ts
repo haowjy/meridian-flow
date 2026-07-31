@@ -33,6 +33,7 @@ type SchemaSurface = {
 
 type SchemaShapeHistoryEntry = {
   version: CollabSchemaVersion;
+  compatibilityNote?: string;
   surface: SchemaSurface;
 };
 
@@ -238,6 +239,16 @@ describe("collaboration schema shape", () => {
       const current = history[index];
       const bump = classifySurfaceChange(previous.surface, current.surface);
       validateBump(previous.version, current.version, bump);
+      const isMinorMutation =
+        bump === "mutation" &&
+        current.version.major === previous.version.major &&
+        current.version.minor === previous.version.minor + 1;
+      if (isMinorMutation) {
+        expect(
+          current.compatibilityNote,
+          "A minor content/default mutation needs the compatibility review required by the bump policy.",
+        ).toBeTruthy();
+      }
     }
   });
 

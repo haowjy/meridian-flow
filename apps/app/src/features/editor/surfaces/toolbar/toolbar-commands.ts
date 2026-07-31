@@ -27,6 +27,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Level } from "@tiptap/extension-heading";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 
 import { type ChromeContext, chromeContextAt, resolveChromeContext } from "@/core/editor/chrome";
 import { linkAttributesAtSelection } from "@/core/editor/links";
@@ -58,7 +59,6 @@ export type ToolbarBlockedReason =
   | "code-block"
   | "embedded-block"
   | "mixed-selection"
-  | "table-cell"
   | "inline-code"
   | "no-alignable-block"
   | "empty-history"
@@ -73,7 +73,7 @@ export type ToolbarBlockedReason =
  */
 export type BlockTypeRefusalReason = Extract<
   ToolbarBlockedReason,
-  "object-selection" | "code-block" | "embedded-block" | "mixed-selection" | "table-cell"
+  "object-selection" | "code-block" | "embedded-block" | "mixed-selection"
 >;
 
 export type ToolbarControlState = {
@@ -279,6 +279,13 @@ function headingLevel(id: BlockTypeId): Level | null {
 export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
   if (!canWrite(editor) || blockTypeStates(editor)[id].blockedBy) return false;
 
+  const { selection } = editor.state;
+  if (selection instanceof CellSelection) return turnIntoSweptCells(editor, id, selection);
+  return applyBlockType(editor, id);
+}
+
+/** The conversion behind Turn into for one selection, toggle semantics intact. */
+function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
   const level = headingLevel(id);
   if (level) return editor.chain().focus().toggleHeading({ level }).run();
 
@@ -293,6 +300,67 @@ export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
       return editor.chain().focus().toggleBlockquote().run();
     default:
       return editor.chain().focus().toggleCodeBlock().run();
+  }
+}
+
+/**
+ * Per-block application across a swept rectangle (§10) — the shape marks
+ * already have. A `CellSelection` reports only its FIRST cell as `from`..`to`,
+ * so the toggles above reach one cell and advertise the rest; this walks
+ * `selection.ranges` exactly as `spannedRefusals` does, for the same reason.
+ *
+ * The toggle's direction is decided ONCE for the whole sweep, the way a mark
+ * lands across ranges: only a rectangle whose every block is already `id`
+ * reads as active and toggles back. Each cell is then brought TO that answer —
+ * toggling blindly per cell would trade types in a mixed rectangle instead of
+ * converging it. The sweep itself is restored afterwards: the writer selected
+ * a rectangle, and the conversion must not eat it.
+ */
+function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSelection): boolean {
+  const undoes = activeBlockTypeId(editor) === id;
+  const cells = selection.ranges.map((range) => ({ from: range.$from.pos, to: range.$to.pos }));
+  let anchor = selection.$anchorCell.pos;
+  let head = selection.$headCell.pos;
+
+  // Every conversion moves the positions after it; the walk follows the
+  // document the same way `toggleListBlock` does.
+  const followDocument = ({ transaction }: { transaction: Transaction }) => {
+    if (!transaction.docChanged) return;
+    for (const cell of cells) {
+      cell.from = transaction.mapping.map(cell.from, 1);
+      cell.to = transaction.mapping.map(cell.to, -1);
+    }
+    anchor = transaction.mapping.map(anchor);
+    head = transaction.mapping.map(head);
+  };
+  editor.on("transaction", followDocument);
+
+  try {
+    let applied = false;
+    for (const cell of cells) {
+      const selected = editor.commands.command(({ tr, dispatch }) => {
+        if (dispatch) {
+          tr.setSelection(
+            TextSelection.between(tr.doc.resolve(cell.from), tr.doc.resolve(cell.to)),
+          );
+        }
+        return true;
+      });
+      if (!selected) continue;
+      // Already what the sweep converges on: applying the toggle would undo it.
+      if (!undoes && activeBlockTypeId(editor) === id) continue;
+      if (applyBlockType(editor, id)) applied = true;
+    }
+
+    editor.commands.command(({ tr, dispatch }) => {
+      if (dispatch) {
+        tr.setSelection(new CellSelection(tr.doc.resolve(anchor), tr.doc.resolve(head)));
+      }
+      return true;
+    });
+    return applied;
+  } finally {
+    editor.off("transaction", followDocument);
   }
 }
 
@@ -312,20 +380,17 @@ export function blockedFirst<Outranking, Reason>(
 
 /** True toggle: pressing on an H1 returns the block to a paragraph (law 6). */
 export function toggleHeadingBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || blockTypeRefusal(editor)) return false;
-  return editor.chain().focus().toggleHeading({ level: TOOLBAR_HEADING_LEVEL }).run();
+  return turnIntoBlockType(editor, "heading1");
 }
 
 /** True toggle: one press fences the block, one press returns it to prose. */
 export function toggleCodeBlockBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || codeBlockRefusal(editor)) return false;
-  return editor.chain().focus().toggleCodeBlock().run();
+  return turnIntoBlockType(editor, "codeBlock");
 }
 
 /** True toggle: one press lists, one press un-lists, however deep (law 6). */
 export function toggleBulletListBlock(editor: Editor): boolean {
-  if (!canWrite(editor) || blockTypeRefusal(editor)) return false;
-  return toggleListBlock(editor, "bullet_list");
+  return turnIntoBlockType(editor, "bulletList");
 }
 
 export function toggleTextMark(editor: Editor, mark: ToolbarMarkName): boolean {
@@ -506,11 +571,11 @@ function chromeContextRefusal(context: ChromeContext): BlockTypeRefusalReason | 
       return context.nodeType === "code_block" ? "embedded-block" : "object-selection";
     case "source-block":
       return context.nodeType === "code_block" ? "code-block" : "embedded-block";
-    // A table never owns the context without a cell owning it more deeply, and
-    // the answer would be the same either way: neither is a conversion target.
+    // A cell holds any block, so the cell itself refuses nothing: anything in
+    // it that does (a rendered fence, a component) owns the context more
+    // deeply and answered above. The table arm is the same story one level up.
     case "table":
     case "table-cell":
-      return "table-cell";
     case "document":
       return null;
   }
@@ -582,12 +647,8 @@ function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlo
 /**
  * Why the selection holds no prose a mark could land on, or null when it holds
  * some: marks land per node, so a mixed selection formats the prose it reaches
- * and leaves the rest alone.
- *
- * A table cell IS prose (§5.4), which is the one place marks part ways with
- * the block-type fence — a cell refuses to become a heading and takes bold in
- * the same breath. It matters most for a selected table, whose cells hold
- * every word in it.
+ * and leaves the rest alone. It matters most for a selected table, whose
+ * cells hold every word in it — a table selected whole still takes bold.
  */
 function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
   const { state } = editor;
@@ -596,7 +657,7 @@ function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
   if (refusals.length === 0) {
     return chromeContextRefusal(resolveChromeContext(state)) ?? "object-selection";
   }
-  if (refusals.some((reason) => reason === null || reason === "table-cell")) return null;
+  if (refusals.some((reason) => reason === null)) return null;
   return refusals[0] ?? null;
 }
 

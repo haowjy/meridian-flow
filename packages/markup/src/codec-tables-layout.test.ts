@@ -12,18 +12,23 @@ import {
   t,
 } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec } from "./index.js";
-import {
-  canonicalizeGfmTableHardBreaks,
-  normalizeGfmTableHardBreaks,
-} from "./markdown/blocks/table.js";
+import { normalizeGfmTableHardBreaks } from "./markdown/blocks/table.js";
 
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
 
+function oneCellTable(...blocks: PMNode[]): PMNode {
+  return schema.node("table", null, [
+    schema.node("table_row", null, [schema.node("table_cell", null, blocks)]),
+  ]);
+}
+
 describe("tables and Layout round-trip corpus", () => {
-  it("keeps unstyled alignable blocks in byte-identical plain markdown", () => {
+  it("keeps unstyled prose in Markdown while canonicalizing its table to HTML", () => {
     const plain = "Plain prose.\n\n## Heading\n\n| A | B |\n| - | - |\n| 1 | 2 |\n";
-    expect(codec.serialize(codec.parse(plain).blocks)).toBe(plain);
-    expect(codec.serialize(codec.parse(plain).blocks)).not.toContain("<Layout");
+    const serialized = codec.serialize(codec.parse(plain).blocks);
+    expect(serialized).toMatch(/^Plain prose\.\n\n## Heading\n\n<table>/);
+    expect(serialized).not.toContain("<Layout");
+    expect(codec.serialize(codec.parse(serialized).blocks)).toBe(serialized);
   });
 
   it("emits canonical Layout wrappers for styled paragraphs, headings, and tables", () => {
@@ -52,9 +57,10 @@ describe("tables and Layout round-trip corpus", () => {
     expect(
       codec.serializeBlock(schema.node("heading", { level: 2, align: "right" }, [t("Dateline")])),
     ).toBe('<Layout align="right">\n  ## Dateline\n</Layout>');
-    expect(codec.serializeBlock(styledTable)).toBe(
-      '<Layout align="center" widths="120,,80">\n  | Stat | Description | Value |\n  | ---- | ----------- | ----: |\n  | STR  | Raw power   |    15 |\n</Layout>',
-    );
+    const serializedTable = codec.serializeBlock(styledTable);
+    expect(serializedTable).toContain('<Layout align="center" widths="120,,80">');
+    expect(serializedTable).toContain("<table>");
+    expect(firstParsedBlock(codec, serializedTable).toJSON()).toEqual(styledTable.toJSON());
   });
 
   it("reaches a parse-serialize-parse fixpoint for every Layout form", () => {
@@ -63,7 +69,8 @@ describe("tables and Layout round-trip corpus", () => {
       '<Layout align="right">\n  ## Dateline\n</Layout>',
       '<Layout align="center" widths="120,,80">\n  | Stat | Description | Value |\n  | ---- | ----------- | ----: |\n  | STR  | Raw power   |    15 |\n</Layout>',
     ]) {
-      expectStable(codec, input);
+      const canonical = codec.serializeBlock(firstParsedBlock(codec, input));
+      expectStable(codec, canonical);
     }
   });
 
@@ -155,13 +162,19 @@ describe("tables and Layout round-trip corpus", () => {
       "<table>",
       "  <thead>",
       "    <tr>",
-      '      <th colspan="2">A</th>',
+      '      <th colspan="2">',
+      "        <p>A</p>",
+      "      </th>",
       "    </tr>",
       "  </thead>",
       "  <tbody>",
       "    <tr>",
-      "      <td>1</td>",
-      "      <td>2</td>",
+      "      <td>",
+      "        <p>1</p>",
+      "      </td>",
+      "      <td>",
+      "        <p>2</p>",
+      "      </td>",
       "    </tr>",
       "  </tbody>",
       "</table>",
@@ -185,12 +198,16 @@ describe("tables and Layout round-trip corpus", () => {
       "<table>",
       "  <thead>",
       "    <tr>",
-      "      <th>A</th>",
+      "      <th>",
+      "        <p>A</p>",
+      "      </th>",
       "    </tr>",
       "  </thead>",
       "  <tbody>",
       "    <tr>",
-      "      <td>one&#10;and two</td>",
+      "      <td>",
+      "        <p>one&#10;and two</p>",
+      "      </td>",
       "    </tr>",
       "  </tbody>",
       "</table>",
@@ -220,8 +237,10 @@ describe("tables and Layout round-trip corpus", () => {
 
     expect(table.child(0).child(0).type.name).toBe("table_cell");
     expect(table.child(0).child(1).attrs.alignment).toBe("right");
-    expect(codec.serializeBlock(table)).toBe(html);
-    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+    const canonical = codec.serializeBlock(table);
+    expect(canonical).toContain('<td align="left">');
+    expect(canonical).toContain("<p>Iron Body</p>");
+    expect(codec.serializeBlock(firstParsedBlock(codec, canonical))).toBe(canonical);
   });
 
   it("preserves inline formatting on the HTML table path", () => {
@@ -240,7 +259,11 @@ describe("tables and Layout round-trip corpus", () => {
     expect(paragraph.child(0).marks[0]?.type.name).toBe("strong");
     expect(paragraph.child(2).marks[0]?.type.name).toBe("link");
     expect(paragraph.child(3).type.name).toBe("hard_break");
-    expect(codec.serializeBlock(table)).toBe(html);
+    const canonical = codec.serializeBlock(table);
+    expect(canonical).toContain(
+      '<p><strong>Iron</strong> <a href="chapter-7.md">Body</a><br />Rank 7</p>',
+    );
+    expect(codec.serializeBlock(firstParsedBlock(codec, canonical))).toBe(canonical);
   });
 
   it("entity-escapes MDX-significant braces on the HTML table path", () => {
@@ -256,8 +279,9 @@ describe("tables and Layout round-trip corpus", () => {
     const table = firstParsedBlock(codec, html);
 
     expect(table.textContent).toBe("a { brace and }");
-    expect(codec.serializeBlock(table)).toBe(html);
-    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+    const canonical = codec.serializeBlock(table);
+    expect(canonical).toContain("<p>a &#123; brace and <code>&#125;</code></p>");
+    expect(codec.serializeBlock(firstParsedBlock(codec, canonical))).toBe(canonical);
   });
 
   it("round-trips Layout around an HTML-spelled table", () => {
@@ -272,24 +296,29 @@ describe("tables and Layout round-trip corpus", () => {
     ].join("\n");
     const table = firstParsedBlock(codec, html);
     const aligned = table.type.create({ align: "center" }, table.content);
-    const wrapped = [
+    const legacyWrapped = [
       '<Layout align="center">',
       ...html.split("\n").map((line) => `  ${line}`),
       "</Layout>",
     ].join("\n");
+    const wrapped = codec.serializeBlock(aligned);
 
-    expect(codec.serializeBlock(aligned)).toBe(wrapped);
+    expect(wrapped).toContain("<p>Section</p>");
+    expect(firstParsedBlock(codec, legacyWrapped).toJSON()).toEqual(aligned.toJSON());
     expect(firstParsedBlock(codec, wrapped).toJSON()).toEqual(aligned.toJSON());
     expect(codec.serializeBlock(firstParsedBlock(codec, wrapped))).toBe(wrapped);
   });
 
-  it("keeps aligned GFM tables in pipes", () => {
+  it("canonicalizes aligned GFM tables to HTML in one pass", () => {
     const gfm = "| Skill     | Rank |\n| :-------- | ---: |\n| Iron Body |    7 |\n";
-    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(gfm);
-    expect(codec.serialize(codec.parse(gfm).blocks)).not.toContain("<table>");
+    const html = codec.serialize(codec.parse(gfm).blocks);
+
+    expect(html).toContain("<table>");
+    expect(html).not.toContain("| Skill");
+    expect(codec.serialize(codec.parse(html).blocks)).toBe(html);
   });
 
-  it("round-trips hard breaks inside pipe cells as backslash-newline", () => {
+  it("canonicalizes pipe-cell hard breaks to HTML and reaches a fixpoint", () => {
     const table = firstParsedBlock(codec, "| Detail |\n| - |\n| one |");
     const bodyRow = table.child(1);
     const bodyCell = bodyRow.child(0);
@@ -300,11 +329,193 @@ describe("tables and Layout round-trip corpus", () => {
       table.child(0),
       bodyRow.type.create(bodyRow.attrs, [breakCell]),
     ]);
-    const gfm = "| Detail    |\n| --------- |\n| one\\\ntwo |\n";
+    const html = codec.serializeBlock(changedTable);
 
-    expect(codec.serializeBlock(changedTable)).toBe(gfm.trimEnd());
-    expect(firstParsedBlock(codec, gfm).toJSON()).toEqual(changedTable.toJSON());
-    expect(codec.serializeBlock(firstParsedBlock(codec, gfm))).toBe(gfm.trimEnd());
+    expect(html).toContain("<table>");
+    expect(html).toContain("<br />");
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(changedTable.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it.each([
+    { block: "paragraph", tag: "p", node: paragraph(t("Prose")) },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      block: `heading ${index + 1}`,
+      tag: `h${index + 1}`,
+      node: schema.node("heading", { level: index + 1 }, [t(`Heading ${index + 1}`)]),
+    })),
+    {
+      block: "bullet list",
+      tag: "ul",
+      node: schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [paragraph(t("Bullet"))]),
+      ]),
+    },
+    {
+      block: "ordered list",
+      tag: "ol",
+      node: schema.node("ordered_list", { order: 3, tight: false }, [
+        schema.node("list_item", null, [paragraph(t("Third"))]),
+      ]),
+    },
+    {
+      block: "blockquote",
+      tag: "blockquote",
+      node: schema.node("blockquote", null, [paragraph(t("Quoted"))]),
+    },
+    {
+      block: "code block",
+      tag: "pre",
+      node: schema.node("code_block", { language: "typescript" }, [
+        t("const rank = 7;\n\nreturn rank;"),
+      ]),
+    },
+    { block: "horizontal rule", tag: "hr", node: schema.node("horizontal_rule") },
+  ])("round-trips a $block inside an HTML table cell", ({ node, tag }) => {
+    const original = oneCellTable(node);
+    const html = codec.serializeBlock(original);
+
+    expect(html).toContain(`<${tag}`);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips a nested table inside an HTML table cell", () => {
+    const nested = oneCellTable(paragraph(t("Inner")));
+    const original = oneCellTable(nested);
+    const html = codec.serializeBlock(original);
+
+    expect(html.match(/<table>/g)).toHaveLength(2);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips nested table alignment and column widths", () => {
+    const nested = oneCellTable(paragraph(t("Inner")));
+    const row = nested.firstChild;
+    const cell = row?.firstChild;
+    if (!row || !cell) throw new Error("expected nested table cell");
+    const sizedCell = cell.type.create({ ...cell.attrs, colwidth: [144] }, cell.content);
+    const styledNested = nested.type.create(
+      { align: "right" },
+      row.type.create(row.attrs, [sizedCell]),
+    );
+    const original = oneCellTable(styledNested);
+    const html = codec.serializeBlock(original);
+
+    expect(html).toContain('<Layout align="right" widths="144">');
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("treats the visible delegated block body as its only source of truth", () => {
+    const original = oneCellTable(oneCellTable(paragraph(t("Inner"))));
+    const edited = codec.serializeBlock(original).replace("<p>Inner</p>", "<p>Edited</p>");
+    const parsed = firstParsedBlock(codec, edited);
+
+    expect(parsed.textContent).toBe("Edited");
+    expect(codec.serializeBlock(parsed)).toContain("<p>Edited</p>");
+    expect(codec.serializeBlock(parsed)).not.toContain("Inner");
+  });
+
+  it("keeps deeply nested table wire growth linear", () => {
+    let nested: PMNode = paragraph(t("Core"));
+    for (let depth = 0; depth < 10; depth += 1) nested = oneCellTable(nested);
+    const html = codec.serializeBlock(nested);
+
+    expect(html.length).toBeLessThan(50_000);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(nested.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it.each([
+    "</meridian-block junk>",
+    "</meridian-block/>",
+  ])("rejects the malformed delegated-block closer %s", (closer) => {
+    const activeCodec = markdownCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    });
+    const input = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>",
+      "        <meridian-block>",
+      "<table><tbody><tr><td><p>Inner</p></td></tr></tbody></table>",
+      `        ${closer}`,
+      "      </td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const parsed = firstParsedBlock(activeCodec, input);
+
+    expect(parsed.type.name).toBe("paragraph");
+    expect(parsed.textContent).toContain(closer);
+  });
+
+  it.each([
+    {
+      block: "figure",
+      node: schema.node("figure", {
+        src: "asset:portrait",
+        alt: "The Warden",
+        label: "Figure 7",
+        caption: "At the gate",
+      }),
+    },
+    {
+      block: "JSX leaf",
+      node: schema.node("jsx_leaf", { name: "Badge", props: { tone: "warning" } }, [
+        t("Low essence"),
+      ]),
+    },
+    {
+      block: "JSX container",
+      node: schema.node(
+        "jsx_container",
+        { name: "Panel", props: { title: "Stats", meta: { rank: 7 } } },
+        [paragraph(t("Strength 128"))],
+      ),
+    },
+  ])("round-trips a $block through the generic cell-block codec", ({ node }) => {
+    const original = oneCellTable(node);
+    const html = codec.serializeBlock(original);
+
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("delegates the generic serializer's malformed-Unicode normalization", () => {
+    const original = oneCellTable(
+      schema.node("jsx_leaf", { name: "Badge", props: { tone: "warning" } }, [t("\ud800")]),
+    );
+    const html = codec.serializeBlock(original);
+
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips wikilinks and wikilink images inside an HTML table cell", () => {
+    const link = schema.marks.link.create({ href: "[[Chapter 7]]", title: null });
+    const original = oneCellTable(
+      paragraph(
+        t("Chapter 7", [link]),
+        t(" "),
+        schema.node("image", {
+          src: "[[Realm map]]",
+          alt: "Realm map",
+          title: null,
+          width: null,
+        }),
+      ),
+    );
+    const html = codec.serializeBlock(original);
+
+    expect(html).toContain('<a href="[[Chapter 7]]">Chapter 7</a>');
+    expect(html).toContain('<img src="[[Realm map]]" alt="Realm map" />');
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
 
   it("does not confuse literal br syntax with a pipe-cell hard break", () => {
@@ -377,7 +588,6 @@ describe("tables and Layout round-trip corpus", () => {
         );
       }
     }
-    expect(canonicalizeGfmTableHardBreaks(nested)).toBe(nested);
   });
 
   it("does not normalize table-looking text inside indented code", () => {
@@ -478,20 +688,14 @@ describe("tables and Layout round-trip corpus", () => {
       codec,
     ]) {
       const table = firstParsedBlock(activeCodec, html);
-      expect(activeCodec.serializeBlock(table)).toBe(html);
+      const canonical = activeCodec.serializeBlock(table);
+      expect(canonical).toContain("<p>left | right<br />down</p>");
+      expect(activeCodec.serializeBlock(firstParsedBlock(activeCodec, canonical))).toBe(canonical);
       expect(firstParsedBlock(activeCodec, html).toJSON()).toEqual(table.toJSON());
     }
   });
 
-  /**
-   * A pipe table whose cells carry hard breaks, and the containers a writer can
-   * nest one inside.
-   *
-   * One corpus rather than a fixture per container: the rule is the same
-   * wherever the table sits — `\` at the end of the line, never `<br>`, and a
-   * round trip that lands on the same document — so a container is a row and a
-   * cell shape is a row, and both codecs run every combination.
-   */
+  /** Hard-break cells and every container a writer can nest their table inside. */
   type BrokenCellMarks = readonly (readonly ReturnType<typeof m>[])[];
 
   /** Marks on the broken cell text; one entry breaks the body row alone. */
@@ -550,7 +754,7 @@ describe("tables and Layout round-trip corpus", () => {
           ]),
         ]),
     },
-  ])("keeps pipe-cell hard breaks canonical inside $container", ({ wrap }) => {
+  ])("keeps HTML cell hard breaks canonical inside $container", ({ wrap }) => {
     for (const { shape, rowMarks } of BROKEN_CELL_SHAPES) {
       const original = wrap(tableWithBrokenCells(rowMarks));
 
@@ -559,8 +763,9 @@ describe("tables and Layout round-trip corpus", () => {
         codec,
       ]) {
         const serialized = activeCodec.serializeBlock(original);
-        expect(serialized, shape).toContain("\\\n");
-        expect(serialized, shape).not.toContain("<br");
+        expect(serialized, shape).toContain("<table>");
+        expect(serialized, shape).toContain("<br />");
+        expect(serialized, shape).not.toContain("\\\n");
         expect(firstParsedBlock(activeCodec, serialized).toJSON(), shape).toEqual(
           original.toJSON(),
         );
@@ -568,13 +773,7 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  /**
-   * The one container that is not a wrapper around the serialized block but a
-   * re-stringification of it: `Layout` re-parses the table it is wrapping and
-   * spells a cell's break `<br />` on the way out, which MDX ingress then
-   * escapes — a broken line came back as the literal text `head<br />down`.
-   */
-  it("keeps pipe-cell hard breaks canonical inside a Layout wrapper", () => {
+  it("keeps HTML cell hard breaks canonical inside a Layout wrapper", () => {
     const plain = tableWithBrokenCells([[], []]);
     const rows: PMNode[] = [];
     plain.forEach((row) => {
@@ -588,10 +787,10 @@ describe("tables and Layout round-trip corpus", () => {
     const styled = plain.type.create({ align: "center" }, rows);
     const serialized = codec.serializeBlock(styled);
 
-    expect(serialized).toBe(
-      '<Layout align="center" widths="120">\n  | head\\\n  down |\n  | -------------- |\n  | body\\\n  down |\n</Layout>',
-    );
-    expect(serialized).not.toContain("<br");
+    expect(serialized).toContain('<Layout align="center" widths="120">');
+    expect(serialized).toContain("<table>");
+    expect(serialized).toContain("<br />");
+    expect(serialized).not.toContain("\\\n");
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(styled.toJSON());
     expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
   });
@@ -611,12 +810,8 @@ describe("tables and Layout round-trip corpus", () => {
     const styled = plain.type.create({ align: "center" }, plain.content);
     const serialized = codec.serializeBlock(styled);
 
-    expect(serialized).toBe(
-      `<Layout align="center">\n${html
-        .split("\n")
-        .map((line) => `  ${line}`)
-        .join("\n")}\n</Layout>`,
-    );
+    expect(serialized).toContain('<Layout align="center">');
+    expect(serialized).toContain("<p>left | right<br />down</p>");
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(styled.toJSON());
   });
 
@@ -630,7 +825,7 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  it("keeps a plain-GFM LitRPG status screen in pipes", () => {
+  it("canonicalizes a plain-GFM LitRPG status screen to HTML in one pass", () => {
     const gfm = [
       "| Stat | Value |",
       "| ---- | ----: |",
@@ -640,16 +835,10 @@ describe("tables and Layout round-trip corpus", () => {
       "",
     ].join("\n");
 
-    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(
-      [
-        "| Stat   | Value |",
-        "| ------ | ----: |",
-        "| Level  |    42 |",
-        "| Health |   810 |",
-        "| Mana   |   275 |",
-        "",
-      ].join("\n"),
-    );
+    const html = codec.serialize(codec.parse(gfm).blocks);
+    expect(html).toContain("<table>");
+    expect(html).not.toContain("| Stat");
+    expect(codec.serialize(codec.parse(html).blocks)).toBe(html);
   });
 
   it("throws rather than silently dropping malformed column widths", () => {

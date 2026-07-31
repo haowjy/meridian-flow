@@ -17,7 +17,7 @@ import {
   paragraphCodec,
   tableCodec,
 } from "./blocks/index.js";
-import { canonicalizeGfmTableHardBreaks, normalizeGfmTableHardBreaks } from "./blocks/table.js";
+import { normalizeGfmTableHardBreaks } from "./blocks/table.js";
 import {
   codeMarkCodec,
   emMarkCodec,
@@ -59,7 +59,6 @@ export function markdown(): MarkupPlugin {
     remarkPlugins: [remarkWikiLink],
     preprocess: normalizeGfmTableHardBreaks,
     postParse: demoteAutolinks,
-    postSerializeBlock: (_node, serialized) => canonicalizeGfmTableHardBreaks(serialized),
   };
 }
 

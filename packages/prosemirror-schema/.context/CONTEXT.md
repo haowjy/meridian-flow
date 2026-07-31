@@ -51,7 +51,7 @@ Nodes:
 |---|---|
 | `doc`, `blockquote`, `text`, `hard_break` | Basic ProseMirror nodes, structural fields only. |
 | `paragraph`, `heading` | Basic nodes plus the `align` attr. |
-| `table`, `table_row`, `table_header`, `table_cell` | GFM table structure. `table` carries `align`; cells carry `alignment`, `colspan`, `rowspan`, and `colwidth` for prosemirror-tables editing. |
+| `table`, `table_row`, `table_header`, `table_cell` | Table structure. `table` carries `align`; cells contain `block+` and carry `alignment`, `colspan`, `rowspan`, and `colwidth` for prosemirror-tables editing. |
 | `code_block` | Adds nullable `language` attr so fenced code survives markdown projection. |
 | `image` | Inline image with `src`, `alt`, `title`, `uploadToken`, and `width` attrs. `src` defaults to an empty string. `uploadToken` (nullable, 0.3.0) is the ephemeral upload identity; `width` (nullable, 0.4.0) is the writer-chosen display width in CSS pixels. |
 | `bullet_list`, `ordered_list`, `list_item` | List structure with `tight`/`order` attrs for markdown round-tripping. |

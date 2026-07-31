@@ -106,6 +106,14 @@ function cellShape(instance: Editor, index = 0): string[] {
   return shape;
 }
 
+function cellBlockShape(instance: Editor, index = 0): Array<{ type: string; text: string }> {
+  const { node } = nodeAt(instance, "table_cell", index);
+  return [...node.content.content].map((child) => ({
+    type: child.type.name,
+    text: child.textContent,
+  }));
+}
+
 function nodeAt(instance: Editor, type: string, index: number): { node: PMNode; pos: number } {
   let seen = 0;
   let found: { node: PMNode; pos: number } | null = null;
@@ -125,28 +133,32 @@ async function type(instance: Editor, text: string) {
 }
 
 describe("Enter in a table cell", () => {
-  it("breaks the line where the caret stands", () => {
+  it("splits the paragraph where the caret stands", () => {
     const instance = mount([paragraph("above"), table]);
     // After "Terrace".
     caretAt(instance, insideNode(instance, "table_cell") + 1 + "Terrace".length);
 
     expect(pressEnter(instance)).toBe(true);
-    expect(cellShape(instance)).toEqual(["Terrace", "break"]);
-    // The caret is past the break, on the new line, ready to type it.
-    expect(instance.state.selection.$head.nodeBefore?.type.name).toBe("hard_break");
+    expect(cellBlockShape(instance)).toEqual([
+      { type: "paragraph", text: "Terrace" },
+      { type: "paragraph", text: "" },
+    ]);
     expect(instance.state.selection.$head.parent.type.name).toBe("paragraph");
   });
 
-  it("leaves the cell one paragraph", () => {
+  it("starts a second paragraph at the beginning of the cell", () => {
     const instance = mount([table]);
     caretAt(instance, insideNode(instance, "table_cell") + 1);
 
     pressEnter(instance);
-    expect(nodeAt(instance, "table_cell", 0).node.childCount).toBe(1);
+    expect(cellBlockShape(instance)).toEqual([
+      { type: "paragraph", text: "" },
+      { type: "paragraph", text: "Terrace" },
+    ]);
     expect(instance.state.doc.child(0).childCount).toBe(2);
   });
 
-  it("replaces a selected range with the break", () => {
+  it("deletes a selected range and splits the paragraph", () => {
     const instance = mount([table]);
     const start = insideNode(instance, "table_cell") + 1;
     instance.view.dispatch(
@@ -156,22 +168,28 @@ describe("Enter in a table cell", () => {
     );
 
     expect(pressEnter(instance)).toBe(true);
-    expect(cellShape(instance)).toEqual(["Ter", "break"]);
+    expect(cellBlockShape(instance)).toEqual([
+      { type: "paragraph", text: "Ter" },
+      { type: "paragraph", text: "" },
+    ]);
   });
 
-  it("agrees with Shift-Enter, which was the only way to break a cell line", () => {
+  it("keeps Shift-Enter as a hard break while Enter splits", () => {
     const withEnter = mount([table]);
     caretAt(withEnter, insideNode(withEnter, "table_cell") + 4);
     pressEnter(withEnter);
-    const enterShape = cellShape(withEnter);
+    const enterShape = cellBlockShape(withEnter);
     withEnter.destroy();
 
     const withShift = mount([table]);
     caretAt(withShift, insideNode(withShift, "table_cell") + 4);
     pressEnter(withShift, true);
 
-    expect(enterShape).toEqual(["Ter", "break", "race"]);
-    expect(cellShape(withShift)).toEqual(enterShape);
+    expect(enterShape).toEqual([
+      { type: "paragraph", text: "Ter" },
+      { type: "paragraph", text: "race" },
+    ]);
+    expect(cellShape(withShift)).toEqual(["Ter", "break", "race"]);
   });
 
   it("keeps the key, and the cells, when a rectangle of them is swept", () => {
