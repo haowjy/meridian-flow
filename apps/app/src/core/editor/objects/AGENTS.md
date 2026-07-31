@@ -67,7 +67,11 @@ of one node type register apart.
   `inline-drag` leaves the press to ProseMirror's own drag, which carries the
   node as an inline slice and lands it anywhere a caret can go — between two
   words, with the dropcursor drawing the caret there (human ruling, 2026-07-29: a
-  picture drags in between text). Landing there is only half of it: a picture as
+  picture drags in between text). One place ProseMirror's own landing is
+  overruled: inside a table, a drop near a cell border resolves INTO the
+  nearest cell's paragraph rather than between cells
+  ([`../table-drop.ts`](../table-drop.ts)) — the stock resolution invented a
+  new cell there, and a new column with it. Landing there is only half of it: a picture as
   wide as the prose column fills the line box it landed in, so what stands in a
   line has to be sized for one
   ([`../images/AGENTS.md`](../images/AGENTS.md), human ruling, 2026-07-30). The

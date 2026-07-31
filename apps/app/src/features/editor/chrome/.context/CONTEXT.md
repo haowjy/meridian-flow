@@ -85,7 +85,7 @@ its own answer without losing the guards: it runs only when no other layer took
 this surface's place and the manuscript is not behind a scrim. A lane's own
 `requestAnimationFrame` cannot do that — it fires before Radix's teardown and the
 layer's hand-back overwrites it a frame later.
-| `EditorDialog` | centered lightbox over the still-mounted page | Radix's | yes, with the scrim |
+| `EditorDialog` | centered lightbox over the still-mounted page, at one of two `size`s | Radix's | yes, with the scrim |
 
 `EditorPopover`'s two anchors are one mechanism — a virtual reference
 floating-ui measures — and the difference between them is whether the anchor

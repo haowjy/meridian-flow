@@ -568,6 +568,58 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
+  /**
+   * The one container that is not a wrapper around the serialized block but a
+   * re-stringification of it: `Layout` re-parses the table it is wrapping and
+   * spells a cell's break `<br />` on the way out, which MDX ingress then
+   * escapes — a broken line came back as the literal text `head<br />down`.
+   */
+  it("keeps pipe-cell hard breaks canonical inside a Layout wrapper", () => {
+    const plain = tableWithBrokenCells([[], []]);
+    const rows: PMNode[] = [];
+    plain.forEach((row) => {
+      const cell = row.child(0);
+      rows.push(
+        row.type.create(row.attrs, [
+          cell.type.create({ ...cell.attrs, colwidth: [120] }, cell.content),
+        ]),
+      );
+    });
+    const styled = plain.type.create({ align: "center" }, rows);
+    const serialized = codec.serializeBlock(styled);
+
+    expect(serialized).toBe(
+      '<Layout align="center" widths="120">\n  | head\\\n  down |\n  | -------------- |\n  | body\\\n  down |\n</Layout>',
+    );
+    expect(serialized).not.toContain("<br");
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(styled.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
+  });
+
+  /** A spanned table is HTML, where `<br />` IS the spelling and stays one. */
+  it("round-trips a hard break in a spanned cell inside a Layout wrapper", () => {
+    const html = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      '      <td colspan="2">left | right<br />down</td>',
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const plain = firstParsedBlock(codec, html);
+    const styled = plain.type.create({ align: "center" }, plain.content);
+    const serialized = codec.serializeBlock(styled);
+
+    expect(serialized).toBe(
+      `<Layout align="center">\n${html
+        .split("\n")
+        .map((line) => `  ${line}`)
+        .join("\n")}\n</Layout>`,
+    );
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(styled.toJSON());
+  });
+
   it("declines unsupported or conflicting HTML alignment styles", () => {
     for (const cell of [
       '<td style="color:red">A</td>',

@@ -65,6 +65,9 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
 - **The kernel enforces keymap scope.** A `table`-scope binding only runs with
   a table in the context chain, so a lane guard re-asking the same question is
   a second answer waiting to drift.
+  The keys a writer presses while typing IN a cell are the editor's, at that
+  same scope: Tab walks cells and Enter breaks the line
+  (`core/editor/extensions/`), and neither belongs to chrome.
 - **Four menus, four things to act on**: a row, a column, the table, and a
   rectangle of cells the writer swept. The first three hang off chrome; the
   fourth is a right-click, because no grip can make an arbitrary rectangle and

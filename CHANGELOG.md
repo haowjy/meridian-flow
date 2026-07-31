@@ -14,6 +14,16 @@
   request-time image parts; other models and deleted assets keep the
   surrounding text without failing the turn. Thread snapshots now expose the
   resolved model capability list.
+- `apps/app`: dragging a picture onto a table's cell border no longer grows
+  the table a new column. The drop lands inside the nearest cell's paragraph
+  (or refuses when nothing can host it), the drop caret shown during the drag
+  is the landing the release keeps, and dropped files and in-cell pastes
+  follow the same rule. Column count cannot change under a drop.
+- `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
+  (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at
+  the size the screen can actually give it. At phone widths the source pane
+  stacks above the picture instead of squeezing the canvas into a gutter.
+
 - `packages/markup`: sized image HTML now decodes attribute entities once, so
   repeated saves preserve image paths, alt text, titles, and stable project
   asset identity, including inside spanned tables.
@@ -461,9 +471,9 @@
   missing tmux server counts as no live dev sessions.
 - `apps/server`: structured event writes under `logs/` no longer trigger Nitro
   dev rebuilds or restart in-flight turns.
-- `tools/dev`: restart now terminates only its owned tmux session, waits for
-  fixed ports to become bindable, and refuses non-owned or uninspectable
-  listeners instead of killing processes discovered by port.
+- `tools/dev`: restart now owns its configured fixed ports after tmux teardown,
+  logs and sends SIGTERM to every discovered holder, then SIGKILLs stragglers;
+  uninspectable bound ports still abort startup.
 - `tools/dev`: the app dev-transform smoke now uses an OS-assigned port reported
   by its child, requires the child to remain alive, and enforces `/` 307 plus
   `/login` 200 with Meridian's login-page marker.
@@ -471,8 +481,7 @@
   the generated Nitro server, and enforces the same exact public-route contract.
 - `tools/dev`: destructive and gate-critical scripts now compile under one
   strict Nx typecheck target included in root `pnpm typecheck`.
-- `tools/dev`: startup failures now print the concrete portless log path, while
-  pre-launch port refusals identify the non-owned holder by PID and command.
+- `tools/dev`: startup failures now print the concrete portless log path.
 - `apps/app`: edit cards now ignore draft-scoped lineage and record only changes to the live manuscript.
 
 - `apps/server`: durable change trails now compute additions and removals from

@@ -73,6 +73,9 @@ export function ObjectLightbox({
       open={open}
       onOpenChange={onOpenChange}
       title={provider ? t`Diagram` : t`Image`}
+      // The canvas is the reason this dialog exists, so it takes the screen a
+      // viewer needs and the shell owns how much that is (`DIALOG_SIZES`).
+      size="workspace"
       className="meridian-object-lightbox"
       // Ctrl+Enter is the escape hatch's keyboard twin (§4), inside the dialog
       // as well as on the selected block. It rides the dialog's layer rather

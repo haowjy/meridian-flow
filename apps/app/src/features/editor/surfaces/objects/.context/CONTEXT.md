@@ -207,6 +207,11 @@ Step 2 needs the object *selected*, so closing the dialog dispatches the
 selection — hover-opening skipped that step deliberately (§5.2: one click on
 fullscreen, no selection first), and the walk home needs its middle stair back.
 
+The frame is the dialog shell's `size="workspace"` — near-fullscreen, viewport
+capped — and nothing here spells a width or a height. Everything under the
+header is canvas, so the viewer refits whenever the frame changes: opening, the
+source pane sliding in beside it, a re-render that made the diagram taller.
+
 Source edits land as minimal patches (`minimalTextPatch`): common prefix and
 suffix, so Yjs sees what the writer did instead of a delete-and-reinsert of the
 whole diagram per keystroke, and a peer's caret inside it survives. The preview

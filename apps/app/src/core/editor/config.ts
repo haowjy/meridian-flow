@@ -22,6 +22,7 @@ import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
+import { DropLandingExtension } from "./extensions/DropLandingExtension";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
@@ -51,6 +52,7 @@ import { PassageHighlightExtension } from "./extensions/PassageHighlightExtensio
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
+import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
@@ -132,9 +134,10 @@ const lowlight = createLowlight(common);
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,
   ObjectPhysicsExtension,
-  // Not a lane: the editor's own Tab. It needs the kernel's registry to sit
-  // at two scopes at once, so it mounts exactly where the kernel does.
+  // Not lanes: the editor's own Tab and the cell's own Enter. Both need the
+  // kernel's registry to reach a scope, so they mount exactly where it does.
   TabKeymapExtension,
+  TableEnterKeymapExtension,
   // L-A formatting menu (M4)
   // L-B object controls + diagram (M5)
   // L-C table chrome (M6)
@@ -166,11 +169,12 @@ function pickCursorColor(peers: PeerAwareness): string {
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
-  // Dropcursor is display-only, like gapcursor below: it draws where dragged
-  // text will land and touches neither schema nor wire. It had been swept
-  // into this list with the real Yjs exclusions, which left a text drag with
-  // no landing indicator at all. Jade, matching the block drag's drop line.
-  dropcursor: { color: "var(--color-primary)", width: 2 },
+  // Off for a different reason than the rest of this list: the stock
+  // dropcursor computes its own landing, which near a cell border promises a
+  // position that would manufacture a table column. `DropLandingExtension`
+  // carries the same cursor (jade, matching the block drag's drop line) with
+  // the landing and the display resolved by one function (`table-drop.ts`).
+  dropcursor: false,
   // Gapcursor is deliberately ABSENT from this list (absent = enabled): it is
   // display-only (no schema or wire impact) and it is the caret's only way
   // BELOW a trailing table — without it a writer can reach the document end
@@ -329,6 +333,9 @@ export function createStandaloneEditorExtensions({
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
       AutoPairExtension,
+      // No tables here, so this is just the dropcursor for dragged text —
+      // the same one the document schema shows.
+      DropLandingExtension,
     ];
   }
   return [
@@ -369,6 +376,9 @@ export function createStandaloneEditorExtensions({
     // which is why the markdown text parser is its prop rather than a
     // view-level default here (a view prop would shadow the plugin's).
     ImageIngressExtension,
+    // Where dragged content lands, and the dropcursor that promises it:
+    // inside a table both resolve into a cell, never a new column.
+    DropLandingExtension,
     // Chrome mounts only on the document schema: a code file is one code
     // block with no objects and no surfaces to own.
     ...EDITOR_CHROME_EXTENSIONS,

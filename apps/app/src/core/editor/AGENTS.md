@@ -118,6 +118,22 @@ change-trail events, not manuscript content.
   ([`objects/AGENTS.md`](objects/AGENTS.md)), so no input device can put a
   caret in a body the page is not showing.
 
+- **A drop inside a table lands INSIDE a cell, never between two.** Near a
+  cell border, `posAtCoords` answers a structural position and ProseMirror's
+  `dropPoint` *approves* it by inventing a `table_cell` wrapper — that is how a
+  dragged picture manufactured a fourth column (`fixTables` then pads every
+  row). [`table-drop.ts`](table-drop.ts) is the one answer, pointer-boundary
+  style (impure geometry reading, pure decision): a table-structural drop
+  position snaps into the nearest cell's paragraph or refuses, and the
+  transaction reads the table's shape back after the insert so the column
+  count is invariant under drops. Both consumers go through it —
+  `extensions/DropLandingExtension.ts` carries the drop handler AND the
+  dropcursor (the vendor view, carried because its target arithmetic is not
+  pluggable), so the caret shown during the drag is the landing the release
+  keeps. The OS-file drop (`images/ImageIngressExtension.ts`) resolves through
+  the same function. Never re-enable StarterKit's dropcursor: two landings
+  answering one drag is the bug this replaced.
+
 - **A node view that hides its own text derives that face from the selection,
   and never restructures around it.** A selection inside a rendered diagram
   fence implies a visible, connected source content DOM; rendering that
@@ -139,6 +155,16 @@ change-trail events, not manuscript content.
   question as much as an editor one (law 9) — a LEADING tab parses back as an
   indented code block, so the codec writes it `&#x9;`, and `packages/markup`'s
   codec test is what keeps the key safe to press.
+
+- **Enter in a cell breaks the line** (`TableEnterKeymapExtension`, human
+  ruling, 2026-07-30) — Docs and Word both grow the cell a line, and a Meridian
+  cell holds exactly one paragraph, so every rung of ProseMirror's base Enter
+  chain declines in one and the press used to reach the browser unhandled. It
+  is a hard break rather than a split for the same reason it is not a paragraph
+  gap: the cell stays one paragraph, and a GFM pipe cell cannot hold a raw
+  newline while an inline break already has a wire spelling there. Enter runs
+  the very command Shift-Enter runs, so the two cannot drift, and the break
+  renders at the cell's own line-height with nothing styling it specially.
 
 - What an href means is `links/`, once. A link is four kinds — wikilink,
   scheme, relative, external — and every consumer (the click, the hover hint,

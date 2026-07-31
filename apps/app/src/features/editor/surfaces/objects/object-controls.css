@@ -50,12 +50,16 @@
 }
 
 /* The lightbox is a viewer, so it gives the whole frame to the canvas: no
-   dialog padding, no gaps, and the header is the only chrome above it. */
+   dialog padding, no gaps, and the header is the only chrome above it.
+
+   How big the frame itself is belongs to the dialog shell's `workspace` size
+   (`chrome/EditorDialog.tsx`), not to this file — a max-width here would win
+   over the shell's utility class (unlayered CSS beats Tailwind's layer) and
+   split one number across two owners. */
 .meridian-object-lightbox {
   display: flex;
   flex-direction: column;
   gap: 0;
-  max-width: min(60rem, 92vw);
   padding: 0;
   overflow: hidden;
 }
@@ -69,14 +73,20 @@
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.meridian-lightbox-body {
-  height: min(70vh, 30rem);
+/* Everything under the header is canvas, however tall the dialog turns out to
+   be: the viewport is the ceiling, so no height is spelled here. `min-height:
+   0` is what lets a flex child be shorter than the diagram inside it. */
+.meridian-lightbox-body,
+.meridian-lightbox-split {
+  flex: 1;
+  min-height: 0;
 }
 
+/* The source column stays at a reading width and the canvas takes the rest,
+   which is the whole reason the dialog grew. */
 .meridian-lightbox-split {
   display: grid;
-  grid-template-columns: minmax(16rem, 21rem) 1fr;
-  height: min(70vh, 30rem);
+  grid-template-columns: minmax(16rem, 21rem) minmax(0, 1fr);
 }
 
 .meridian-lightbox-source {
@@ -100,6 +110,21 @@
   outline: none;
   white-space: pre;
   overflow: auto;
+}
+
+/* A phone has no width to split — 16rem of source out of 22rem of dialog
+   leaves the canvas a gutter — so the pane stacks above the picture and the
+   near-fullscreen height pays for both. */
+@media (max-width: 40rem) {
+  .meridian-lightbox-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  }
+
+  .meridian-lightbox-source {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-code-border);
+  }
 }
 
 /* What a diagram says when its source stopped parsing. The same note in the
