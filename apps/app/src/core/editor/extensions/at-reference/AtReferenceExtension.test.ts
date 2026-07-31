@@ -43,6 +43,7 @@ const CATALOG: AtReferenceCatalog = {
       assetDocumentId: "asset-third-gate",
       path: "/assets/third-gate.png",
       fileType: "image",
+      uri: "manuscript://assets/third-gate.png",
     },
     {
       kind: "asset",
@@ -51,6 +52,7 @@ const CATALOG: AtReferenceCatalog = {
       assetDocumentId: "asset-plans",
       path: "/assets/gate-plans.pdf",
       fileType: "pdf",
+      uri: "manuscript://assets/gate-plans.pdf",
     },
   ],
 };

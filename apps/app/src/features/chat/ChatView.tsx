@@ -16,7 +16,14 @@
  * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
-import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
+import type {
+  Thread,
+  ThreadLiveState,
+  ThreadSnapshotResponse,
+  Turn,
+  Work,
+} from "@meridian/contracts/protocol";
+import type { UserMessageBlock } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
@@ -48,6 +55,8 @@ export type ChatViewProps = {
   activeWork?: Work | null;
   snapshotLiveState?: ThreadLiveState | null;
   snapshotNextSeq?: string | null;
+  /** Resolved gateway model + capabilities, for the composer's vision hint. */
+  snapshotModel?: ThreadSnapshotResponse["model"] | null;
   /**
    * Whether the thread snapshot request has resolved. Feeds the transcript's
    * conversation-reveal ownership: only a settled history can say a named turn
@@ -63,6 +72,7 @@ export function ChatView({
   activeWork = null,
   snapshotLiveState = null,
   snapshotNextSeq = null,
+  snapshotModel = null,
   historySettled,
 }: ChatViewProps) {
   const actions = useThreadActions();
@@ -111,12 +121,15 @@ export function ChatView({
   const generating = isStreaming && draftMode;
   const dock = useDraftDock({ generating });
 
-  async function handleSubmit(text: string) {
+  async function handleSubmit(text: string, blocks?: UserMessageBlock[]) {
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
 
     try {
-      await controller.submit(threadId, text, { optimisticUserTurnId: optimisticUserTurn.id });
+      await controller.submit(threadId, text, {
+        optimisticUserTurnId: optimisticUserTurn.id,
+        blocks,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit message";
       announceError(message);
@@ -158,6 +171,11 @@ export function ChatView({
             onStop={handleStop}
             projectId={projectId}
             workId={activeWork?.id ?? null}
+            // Unknown until the snapshot resolves a model; the hint stays
+            // quiet rather than guessing about a model nobody named yet.
+            modelSupportsImageInput={
+              snapshotModel?.id ? snapshotModel.capabilities.includes("image_input") : null
+            }
             toolbarLeft={
               <>
                 {threadStarted ? (

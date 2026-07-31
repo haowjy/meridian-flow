@@ -7,8 +7,8 @@
  * What a query means stays [`@/core/references`](../../../core/references/index.ts),
  * what an open menu does with a key stays
  * [`@/core/completion`](../../../core/completion/index.ts); this file declares
- * only the composer's own answers: documents alone, no create row, and a pick
- * that inserts an atomic reference token rather than splicing text.
+ * only the composer's own answers: documents and pictures, no create row, and
+ * a pick that inserts an atomic reference token rather than splicing text.
  *
  * **Not the editor's suggestion lane**, deliberately. `createSuggestionLane`
  * binds its keys through the editor chrome kernel, which the composer does not
@@ -42,6 +42,8 @@ import {
 import { allowsProseTrigger, atWordBoundary } from "@/core/editor/extensions/suggestion";
 import {
   filterReferenceItems,
+  type ReferenceAssetItem,
+  type ReferenceCandidate,
   type ReferenceCatalog,
   type ReferenceDocumentItem,
   referenceSpelling,
@@ -54,8 +56,22 @@ const EXTENSION_NAME = "composerReferenceSuggestion";
 const pluginKey = new PluginKey(EXTENSION_NAME);
 const catalogFencePluginKey = new PluginKey(`${EXTENSION_NAME}CatalogFence`);
 
-/** Documents alone: the composer's `@` names pages, not pictures (yet). */
-const DOCUMENT_SCOPE = ["document"] as const;
+/** The editor `@`'s scope: a page to name, or a picture to send along. */
+const COMPOSER_SCOPE = ["document", "asset"] as const;
+
+/** A row the composer offers: never the create row (declined below). */
+export type ComposerReferenceItem = ReferenceDocumentItem | ReferenceAssetItem;
+
+/**
+ * Pictures, not the PDFs beside them. A picture is the one asset a message
+ * can carry to the model today (the image block); every other file waits on
+ * the attachments slice, and a row that attaches nothing is worse than a row
+ * that was never offered. Same line the editor's `@` draws
+ * (`at-reference-catalog.ts`).
+ */
+function offerable(candidate: ReferenceCandidate): boolean {
+  return candidate.kind !== "asset" || candidate.fileType === "image";
+}
 
 /**
  * A query that opens with a space is not a name — "meet @ noon" is the writer's
@@ -69,15 +85,15 @@ export type ComposerReferenceOptions = {
 };
 
 type ComposerReferenceStorage = {
-  menu: SuggestionMenu<ReferenceDocumentItem>;
+  menu: SuggestionMenu<ComposerReferenceItem>;
   /** @internal driven by this extension's plugin and blur handling only. */
-  controller: SuggestionMenuController<ReferenceDocumentItem>;
+  controller: SuggestionMenuController<ComposerReferenceItem>;
 };
 
-function composerReferenceItems(catalog: ReferenceCatalog, query: string): ReferenceDocumentItem[] {
+function composerReferenceItems(catalog: ReferenceCatalog, query: string): ComposerReferenceItem[] {
   if (NOT_A_NAME.test(query)) return [];
-  return filterReferenceItems(catalog.candidates, DOCUMENT_SCOPE, query).filter(
-    (item): item is ReferenceDocumentItem => item.kind === "document",
+  return filterReferenceItems(catalog.candidates.filter(offerable), COMPOSER_SCOPE, query).filter(
+    (item): item is ComposerReferenceItem => item.kind !== "create",
   );
 }
 
@@ -90,11 +106,11 @@ function composerReferenceItems(catalog: ReferenceCatalog, query: string): Refer
 export function insertComposerReference(
   editor: Editor,
   range: Range,
-  item: ReferenceDocumentItem,
+  item: ComposerReferenceItem,
 ): boolean {
   const attrs: ReferenceTokenAttributes = {
-    kind: "document",
-    documentId: item.documentId,
+    kind: item.kind,
+    documentId: item.kind === "asset" ? item.assetDocumentId : item.documentId,
     uri: item.uri,
     label: item.name,
     spelling: referenceSpelling(item),
@@ -124,7 +140,7 @@ export const ComposerReferenceExtension = Extension.create<
   },
 
   addStorage() {
-    return createSuggestionMenu<ReferenceDocumentItem>();
+    return createSuggestionMenu<ComposerReferenceItem>();
   },
 
   // A composer nobody is typing in has no menu. Closed rather than dismissed:
@@ -141,8 +157,8 @@ export const ComposerReferenceExtension = Extension.create<
     const { controller } = this.storage;
 
     const sessionFrom = (
-      props: SuggestionProps<ReferenceDocumentItem>,
-    ): SuggestionMenuSession<ReferenceDocumentItem> | null => {
+      props: SuggestionProps<ComposerReferenceItem>,
+    ): SuggestionMenuSession<ComposerReferenceItem> | null => {
       const catalog = options.catalog();
       if (!catalog) return null;
       return {
@@ -157,7 +173,7 @@ export const ComposerReferenceExtension = Extension.create<
     };
 
     return [
-      Suggestion<ReferenceDocumentItem>({
+      Suggestion<ComposerReferenceItem>({
         editor,
         pluginKey,
         char: "@",
@@ -218,17 +234,17 @@ export const ComposerReferenceExtension = Extension.create<
   },
 });
 
-const CLOSED = closedSuggestionMenu<ReferenceDocumentItem>();
+const CLOSED = closedSuggestionMenu<ComposerReferenceItem>();
 
 /** The composer's open menu, or a closed reading before the editor exists. */
 export function getComposerReferenceMenu(
   editor: Editor | null | undefined,
-): SuggestionMenu<ReferenceDocumentItem> | null {
+): SuggestionMenu<ComposerReferenceItem> | null {
   if (!editor || editor.isDestroyed) return null;
   const storage = editor.storage as unknown as Record<string, ComposerReferenceStorage | undefined>;
   return storage[EXTENSION_NAME]?.menu ?? null;
 }
 
-export function closedComposerReferenceMenu(): SuggestionMenuSnapshot<ReferenceDocumentItem> {
+export function closedComposerReferenceMenu(): SuggestionMenuSnapshot<ComposerReferenceItem> {
   return CLOSED;
 }

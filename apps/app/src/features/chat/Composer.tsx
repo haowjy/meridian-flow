@@ -15,6 +15,7 @@
  * and it is one call, at the top, rather than a condition on each branch.
  */
 import { t } from "@lingui/core/macro";
+import type { UserMessageBlock } from "@meridian/contracts/threads";
 import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { ArrowUp } from "lucide-react";
@@ -37,6 +38,7 @@ import { cn } from "@/lib/utils";
 import {
   ComposerReferenceMenu,
   closedComposerReferenceMenu,
+  composerImageBlocks,
   createComposerExtensions,
   getComposerReferenceMenu,
   serializeComposerText,
@@ -45,8 +47,13 @@ import "./composer-input/composer-input.css";
 import { useComposerPlaceholder } from "./placeholders";
 
 export type ComposerProps = {
-  /** Called with the trimmed message text when the user submits a non-empty draft. */
-  onSubmit: (text: string) => void;
+  /**
+   * Called with the trimmed message text when the user submits a non-empty
+   * draft. When the draft carries picture tokens, `blocks` arrives beside it:
+   * the same text as one text block, plus one image block per distinct
+   * picture. Undefined otherwise, so a plain message stays a plain string.
+   */
+  onSubmit: (text: string, blocks?: UserMessageBlock[]) => void;
   /** Called when the user clicks the stop control while a turn is running. */
   onStop?: () => void;
   /**
@@ -74,6 +81,14 @@ export type ComposerProps = {
    */
   projectId?: string | null;
   workId?: string | null;
+  /**
+   * Whether the thread's model can view pictures (the `image_input`
+   * capability, read off the thread snapshot). False shows a quiet hint under
+   * a draft carrying picture tokens — informational only, never a gate: the
+   * server degrades the same way, dropping the image and keeping the text.
+   * Null or undefined means unknown (no thread yet), which shows nothing.
+   */
+  modelSupportsImageInput?: boolean | null;
 };
 
 /** Imperative handle exposed by ref so hosts can reach the input. */
@@ -96,7 +111,7 @@ type ComposerRuntime = {
   catalog: ReferenceCatalog | null;
   placeholder: string;
   streaming: boolean;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, blocks?: UserMessageBlock[]) => void;
   onStop: (() => void) | undefined;
 };
 
@@ -120,6 +135,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     toolbarLeft,
     projectId = null,
     workId = null,
+    modelSupportsImageInput = null,
   },
   ref,
 ) {
@@ -128,6 +144,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const { candidates } = useReferenceCandidates({ projectId, workId });
   const frameRef = useRef<HTMLDivElement>(null);
   const [canSend, setCanSend] = useState(false);
+  const [draftHasPictures, setDraftHasPictures] = useState(false);
 
   // The editor's callbacks are created once and live for the mount; this ref
   // is how they read the render they are actually running in.
@@ -209,6 +226,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       onUpdate: ({ editor: updated }) => {
         setCanSend(serializeComposerText(updated.state.doc).trim().length > 0);
+        setDraftHasPictures(composerImageBlocks(updated.state.doc).length > 0);
       },
     },
     [],
@@ -266,6 +284,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         editor={editor}
         className={cn("composer-editor", variant === "hero" ? "min-h-[52px]" : "min-h-[40px]")}
       />
+
+      {/* Informational only — send stays live, matching the server's own
+          quiet degrade (the image is dropped, the text reference stays). */}
+      {draftHasPictures && modelSupportsImageInput === false ? (
+        <p role="status" className="mt-1 px-1.5 text-ink-subtle text-xs">
+          {t`This model can't view pictures, so picture references are sent as text.`}
+        </p>
+      ) : null}
 
       <ComposerReferenceMenu id={MENU_ID} menu={menu} snapshot={snapshot} frameRef={frameRef} />
 
@@ -330,6 +356,10 @@ function submit(runtime: ComposerRuntime) {
   if (!editor || editor.isDestroyed) return;
   const text = serializeComposerText(editor.state.doc).trim();
   if (!text) return;
-  runtime.onSubmit(text);
+  // The trim never reaches a picture's URI (edge whitespace only), so the
+  // server's every-image-URI-appears-in-text check holds by construction.
+  const images = composerImageBlocks(editor.state.doc);
+  if (images.length > 0) runtime.onSubmit(text, [{ type: "text", text }, ...images]);
+  else runtime.onSubmit(text);
   editor.chain().clearContent(true).focus().run();
 }

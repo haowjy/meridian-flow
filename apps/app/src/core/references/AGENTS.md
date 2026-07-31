@@ -32,7 +32,9 @@ asking the tree twice.
 [`reference-spelling.ts`](reference-spelling.ts) is the one answer for every
 surface that writes a picked document as a string — the manuscript's wikilink
 and the composer's reference token alike: `[[Title]]` normally, the canonical
-URI when the title is ambiguous or the wire format cannot carry it.
+URI when the title is ambiguous or the wire format cannot carry it. A picked
+asset is always its canonical URI, because assets resolve by id, never by
+name.
 
 ## Key rules
 

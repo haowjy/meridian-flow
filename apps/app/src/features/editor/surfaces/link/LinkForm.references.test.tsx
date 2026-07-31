@@ -46,6 +46,7 @@ vi.mock("@/features/project/context/useReferenceCandidates", () => ({
         assetDocumentId: "doc-map",
         path: "/book-one/second-map.png",
         fileType: "image/png",
+        uri: "manuscript://assets/book-one/second-map.png",
       },
     ],
     revision: "fixture",

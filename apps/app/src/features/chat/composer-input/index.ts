@@ -7,12 +7,18 @@
 export { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 export { type ComposerExtensionsOptions, createComposerExtensions } from "./composer-extensions";
 export {
+  type ComposerReferenceItem,
   type ComposerReferenceOptions,
   closedComposerReferenceMenu,
   getComposerReferenceMenu,
   insertComposerReference,
 } from "./composer-reference-suggestion";
-export { serializeComposerFragment, serializeComposerText } from "./composer-serialization";
+export {
+  type ComposerImageBlock,
+  composerImageBlocks,
+  serializeComposerFragment,
+  serializeComposerText,
+} from "./composer-serialization";
 export {
   composerReferenceTokens,
   REFERENCE_TOKEN_NODE,

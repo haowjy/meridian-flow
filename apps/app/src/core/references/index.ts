@@ -30,6 +30,7 @@ export {
   type ReferenceKind,
 } from "./reference-catalog";
 export {
+  type ReferenceAssetItem,
   type ReferenceDocumentItem,
   type ReferenceLinkSpelling,
   referenceLinkSpelling,

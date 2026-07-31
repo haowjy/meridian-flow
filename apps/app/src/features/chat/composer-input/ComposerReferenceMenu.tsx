@@ -1,5 +1,5 @@
 /**
- * The documents `@` offers in the chat composer.
+ * The documents and pictures `@` offers in the chat composer.
  *
  * The rows are [`SuggestionList`](../../../components/app/SuggestionList.tsx),
  * the same list the manuscript's `/` and `[[` render, so a writer meets all
@@ -25,14 +25,15 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { FileText } from "lucide-react";
+import { FileText, Image } from "lucide-react";
 import { type CSSProperties, type RefObject, useEffect, useReducer } from "react";
 import { createPortal } from "react-dom";
 
 import { SUGGESTION_MENU_SHELL, SuggestionList } from "@/components/app/SuggestionList";
 import type { SuggestionMenu, SuggestionMenuSnapshot } from "@/core/completion";
-import type { ReferenceDocumentItem } from "@/core/references";
 import { cn } from "@/lib/utils";
+
+import type { ComposerReferenceItem } from "./composer-reference-suggestion";
 
 /** Between the caret's line and the menu's edge, so neither sits on the other. */
 const GAP = 6;
@@ -55,8 +56,8 @@ export function ComposerReferenceMenu({
   /** Listbox id, and what a probe looks for. */
   id: string;
   /** Null before the editor mounts, when the snapshot is closed anyway. */
-  menu: SuggestionMenu<ReferenceDocumentItem> | null;
-  snapshot: SuggestionMenuSnapshot<ReferenceDocumentItem>;
+  menu: SuggestionMenu<ComposerReferenceItem> | null;
+  snapshot: SuggestionMenuSnapshot<ComposerReferenceItem>;
   /** The composer's own box, for the anchor of last resort. */
   frameRef: RefObject<HTMLElement | null>;
 }) {
@@ -108,8 +109,9 @@ export function ComposerReferenceMenu({
         activeIndex={snapshot.activeIndex}
         onActivate={(index) => menu.setActiveIndex(index)}
         onChoose={(index) => menu.choose(index)}
-        rows={snapshot.items.map((item) => ({
+        rows={snapshot.items.map((item, index) => ({
           key: item.key,
+          before: groupHeading(snapshot.items, index, snapshot.query),
           content: <ReferenceRow item={item} />,
         }))}
       />
@@ -118,7 +120,34 @@ export function ComposerReferenceMenu({
   );
 }
 
-function ReferenceRow({ item }: { item: ReferenceDocumentItem }) {
+/**
+ * The kinds are named out loud only while the writer is browsing — the same
+ * answer the editor's `@` gives (`AtReferenceMenu.tsx`): an empty query hands
+ * the kinds over already gathered, so a heading over each run says what `@`
+ * can do; a typed query ranks by fit, kind-blind, and the icon carries the
+ * kind from there.
+ */
+function groupHeading(items: readonly ComposerReferenceItem[], index: number, query: string) {
+  const item = items[index];
+  if (query !== "" || !item || item.kind === items[index - 1]?.kind) return undefined;
+  return (
+    <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
+      {item.kind === "asset" ? t`Pictures` : t`Documents`}
+    </div>
+  );
+}
+
+function ReferenceRow({ item }: { item: ComposerReferenceItem }) {
+  if (item.kind === "asset") {
+    return (
+      <>
+        <Image aria-hidden />
+        <span className="truncate">{item.name}</span>
+        <span className="sr-only">{t`picture`}</span>
+        <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">{item.location}</span>
+      </>
+    );
+  }
   return (
     <>
       <FileText aria-hidden />

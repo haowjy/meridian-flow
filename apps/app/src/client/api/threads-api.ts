@@ -28,6 +28,7 @@ import {
   type ThreadUploadDocumentItem,
   type TurnContextPreview,
 } from "@meridian/contracts/protocol";
+import type { UserMessageBlock } from "@meridian/contracts/threads";
 
 import { deleteRequest, getJson, postJson } from "./http-client";
 
@@ -42,6 +43,8 @@ type CreateThreadInput = {
 export type AppendUserMessageInput = {
   threadId: string;
   text: string;
+  /** Ordered message content (text + image references); omitted for plain text. */
+  blocks?: UserMessageBlock[];
   connectionToken?: string;
 };
 

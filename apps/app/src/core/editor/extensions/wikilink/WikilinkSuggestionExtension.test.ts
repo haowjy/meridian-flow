@@ -36,6 +36,7 @@ const CATALOG: ReferenceCatalog = {
       assetDocumentId: "asset-third-gate",
       path: "/assets/third-gate.png",
       fileType: "image",
+      uri: "manuscript://assets/third-gate.png",
     },
   ],
 };
