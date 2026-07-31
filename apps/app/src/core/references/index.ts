@@ -32,8 +32,10 @@ export {
 export {
   findReferenceToken,
   type ReferenceDocumentItem,
+  type ReferenceLinkSpelling,
   type ReferenceSplice,
   type ReferenceToken,
+  referenceLinkSpelling,
   referenceSpelling,
   spliceReference,
 } from "./reference-trigger";

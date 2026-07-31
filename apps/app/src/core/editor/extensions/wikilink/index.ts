@@ -21,4 +21,4 @@ export {
   type WikilinkMenu,
   WikilinkSuggestionExtension,
 } from "./WikilinkSuggestionExtension";
-export { insertWikilink } from "./wikilink-insertion";
+export { insertDocumentReference, insertWikilink } from "./wikilink-insertion";
