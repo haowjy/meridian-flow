@@ -61,6 +61,16 @@ export type HoverAnchorLane<T> = {
    * belong to the reveal, and they are not on any cell.
    */
   holds?: (value: T, at: HoverProbe) => boolean;
+  /**
+   * The lane hit something fresh while still holding something else — two
+   * subtargets of ONE owner, which happens when targets nest. A table in a
+   * table's cell shares its top-level block with it, and the gap beside the
+   * inner frame hit-tests to the outer cell, so a fresh hit there is not a
+   * move: only the lane can tell an ancestor conceding the approach from the
+   * pointer genuinely arriving somewhere new. It answers which value the
+   * reveal follows. Absent, the fresh hit wins.
+   */
+  reconcile?: (held: T, hit: T, at: HoverProbe) => T;
   /** This lane's share of the settled owner, or null once it has none. */
   onSettle: (value: T | null) => void;
 };
@@ -172,12 +182,19 @@ export function createHoverAnchors(
 
     // A lane whose reveal still holds the pointer keeps its target even though
     // the point itself is off it: the gap beside a table's frame is where the
-    // writer travels to reach the grip drawn there.
+    // writer travels to reach the grip drawn there. And a lane that freshly
+    // HIT while holding may have hit the outer half of a nested pair — that
+    // same gap, beside an inner table, is on the outer table's cell — so which
+    // of the two the reveal follows is the lane's call (`reconcile`).
     if (found === owner) {
       for (const lane of lanes) {
-        if (hits.has(lane)) continue;
         const held = values.get(lane);
-        if (held !== undefined && lane.holds?.(held, probe)) hits.set(lane, held);
+        if (held === undefined) continue;
+        if (!hits.has(lane)) {
+          if (lane.holds?.(held, probe)) hits.set(lane, held);
+        } else if (lane.reconcile) {
+          hits.set(lane, lane.reconcile(held, hits.get(lane), probe));
+        }
       }
     }
 

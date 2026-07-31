@@ -13,6 +13,12 @@
   the same extent and relation travel as one group, and full reads build text
   and typed items in one batch pass. Hashes remain tool-internal targeting
   tokens rather than writer-facing prose labels.
+- `apps/app`: a table nested in another table's cell now keeps its grip
+  chrome while the pointer travels to a grip. The gap beside the inner frame
+  no longer re-anchors hover to the outer table, so the inner table's row
+  menu, column menu, and add-column tab are clickable at any nesting depth.
+  Grips still follow the pointer cell to cell, and the outer table takes
+  over once the pointer leaves the inner table's hover zone.
 - `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
   table cells now hold full block content. Tables serialize as HTML every time
   while pipe-table imports still parse, and Enter in cell prose splits a

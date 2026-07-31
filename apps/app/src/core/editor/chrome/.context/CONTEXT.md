@@ -487,6 +487,13 @@ chrome.registerHoverAnchor<HTMLElement>({
 - **`holds` covers the pixels between.** A table's grips live outside the
   frame, and the gap the writer crosses to reach one is on no cell and on no
   chrome.
+- **`reconcile` arbitrates nested subtargets of one owner.** When targets
+  nest — a table in a table's cell shares its top-level block — the gap
+  beside the inner frame hit-tests to the OUTER cell, so the lane freshly
+  hits one thing while holding another and `holds` never gets a vote. The
+  kernel calls `reconcile(held, hit, probe)` in that case and follows the
+  lane's answer; absent the hook, the fresh hit wins. Only the lane can tell
+  an ancestor conceding the approach from the pointer arriving somewhere new.
 - **A lane with `holds` must hand over identity, not position.** The
   coordinator caches the lane's last value and re-delivers it through `holds`
   whenever the manuscript moves, so a raw document position in that value goes

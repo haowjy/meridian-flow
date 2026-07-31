@@ -2,6 +2,12 @@
   has two homes already (menu, Alt+Arrows), so the drag is the gesture half of
   law 8, not a missing capability. Wait for M9's drop-line plugin rather than
   building a second one.
+- surfaces/table: while the pointer is inside a nested table's hover zone the
+  outer table shows no chrome at all — one hover owner, and the inner reveal
+  holds it (`nestedCellKeepsReveal`, PR #495, load-bearing at every depth).
+  If writers want outer-row verbs reachable without first leaving the inner
+  zone, that is a design change to the one-owner model and needs a human
+  ruling before any code.
 - surfaces/table: the table's own verbs (header row, placement, reset widths)
   have no keyboard twin. §4 gives the table Tab, Alt+Arrows, Enter, and Esc and
   no door to its menu; a twin needs a design call, not an invented binding.

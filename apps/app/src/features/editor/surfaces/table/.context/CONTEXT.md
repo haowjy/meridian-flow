@@ -216,8 +216,10 @@ the same split from the other side; change one and the other is wrong.
 The approach is the kernel's, through one `registerHoverAnchor` lane
 (`core/editor/chrome/hover-anchor.ts`). This lane answers one question — which
 cell of this table is at this point — and gets back its share of whichever
-block currently owns hover chrome, keyed on the cell ELEMENT so an unchanged
-cell settles once rather than on every pointer move.
+block currently owns hover chrome. The reading it hands over is a `NodeHold`
+(the cell's identity, not its element or position), so an unchanged cell
+settles once rather than on every pointer move and a peer's inserted row
+cannot leave the grips on the wrong cell.
 
 **No pointer listener here.** The grips are portalled OUTSIDE the editor, so a
 listener bound to the prose watches the pointer leave and never watches it
@@ -237,6 +239,21 @@ the kernel cannot know. The kernel's own re-entry is what cancels the grace the
 frame's edge scheduled — left running, it fades the grip out from under a
 pointer already resting on it, after which the closed chrome takes no pointer
 events and `elementFromPoint` over the grip answers the prose underneath.
+
+**Nesting turns the gap into a competing hit, and that judgment is this
+lane's too.** A table nested in another table's cell shares its top-level
+hover owner with it, and the gap beside the inner frame sits on the OUTER
+table's cell — so instead of the probe missing (which is what lets `holds`
+vote), the lane freshly hits the outer cell and the reveal re-anchored to the
+outer table before the pointer reached the inner grip. The lane's `reconcile`
+hook arbitrates the held cell against the fresh one: the held cell wins while
+the fresh cell's table `contains` the held cell's table and the pointer is
+still inside the held table's `tableHoverZone` (`nestedCellKeepsReveal` in
+[`table-anchors.ts`](../table-anchors.ts)). Ancestry is containment, never a
+depth count, so a depth-3 hold outranks a depth-2 and a depth-1 hit alike;
+any other fresh cell — same table, deeper table, sibling table — wins, which
+is what keeps grips following the pointer cell to cell and moves the reveal
+inward when the writer hovers the nested table itself.
 
 While a menu is open the anchor is frozen: a stray hover would slide the grips
 out from under the menu and leave it pointing at another row. The approach
