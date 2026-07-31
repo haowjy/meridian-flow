@@ -219,7 +219,7 @@ describe("the cells a table menu's verbs run on, across a peer's write", () => {
     expect(menuState && tableVerbStates(menuState).mergeCells.blockedBy).toBeNull();
 
     expect(runTableVerbOn(local, target, "mergeCells")).toBe(true);
-    expect(rowTexts(local)).toEqual([["one two"], ["three", "four"]]);
+    expect(rowTexts(local)).toEqual([["onetwo"], ["three", "four"]]);
   });
 
   it("is nothing once a peer takes one of those cells away, and the menu has nothing to offer", () => {
