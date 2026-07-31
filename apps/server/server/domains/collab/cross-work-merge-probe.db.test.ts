@@ -72,7 +72,8 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     );
     const receipt = JSON.stringify(result.echo);
     expect(receipt).toContain("Work B stale replacement.");
-    expect(receipt).not.toContain("Writer-approved Work A text.");
+    expect(receipt).toContain("Writer-approved Work A text.");
+    expect(receipt).toContain('"relation":"concurrent"');
     harness.destroyWarmState();
   });
 });
