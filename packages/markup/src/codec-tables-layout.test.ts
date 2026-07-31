@@ -12,10 +12,7 @@ import {
   t,
 } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec } from "./index.js";
-import {
-  canonicalizeGfmTableHardBreaks,
-  normalizeGfmTableHardBreaks,
-} from "./markdown/blocks/table.js";
+import { normalizeGfmTableHardBreaks } from "./markdown/blocks/table.js";
 
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
 
@@ -26,10 +23,12 @@ function oneCellTable(...blocks: PMNode[]): PMNode {
 }
 
 describe("tables and Layout round-trip corpus", () => {
-  it("keeps unstyled alignable blocks in byte-identical plain markdown", () => {
+  it("keeps unstyled prose in Markdown while canonicalizing its table to HTML", () => {
     const plain = "Plain prose.\n\n## Heading\n\n| A | B |\n| - | - |\n| 1 | 2 |\n";
-    expect(codec.serialize(codec.parse(plain).blocks)).toBe(plain);
-    expect(codec.serialize(codec.parse(plain).blocks)).not.toContain("<Layout");
+    const serialized = codec.serialize(codec.parse(plain).blocks);
+    expect(serialized).toMatch(/^Plain prose\.\n\n## Heading\n\n<table>/);
+    expect(serialized).not.toContain("<Layout");
+    expect(codec.serialize(codec.parse(serialized).blocks)).toBe(serialized);
   });
 
   it("emits canonical Layout wrappers for styled paragraphs, headings, and tables", () => {
@@ -58,9 +57,10 @@ describe("tables and Layout round-trip corpus", () => {
     expect(
       codec.serializeBlock(schema.node("heading", { level: 2, align: "right" }, [t("Dateline")])),
     ).toBe('<Layout align="right">\n  ## Dateline\n</Layout>');
-    expect(codec.serializeBlock(styledTable)).toBe(
-      '<Layout align="center" widths="120,,80">\n  | Stat | Description | Value |\n  | ---- | ----------- | ----: |\n  | STR  | Raw power   |    15 |\n</Layout>',
-    );
+    const serializedTable = codec.serializeBlock(styledTable);
+    expect(serializedTable).toContain('<Layout align="center" widths="120,,80">');
+    expect(serializedTable).toContain("<table>");
+    expect(firstParsedBlock(codec, serializedTable).toJSON()).toEqual(styledTable.toJSON());
   });
 
   it("reaches a parse-serialize-parse fixpoint for every Layout form", () => {
@@ -69,7 +69,8 @@ describe("tables and Layout round-trip corpus", () => {
       '<Layout align="right">\n  ## Dateline\n</Layout>',
       '<Layout align="center" widths="120,,80">\n  | Stat | Description | Value |\n  | ---- | ----------- | ----: |\n  | STR  | Raw power   |    15 |\n</Layout>',
     ]) {
-      expectStable(codec, input);
+      const canonical = codec.serializeBlock(firstParsedBlock(codec, input));
+      expectStable(codec, canonical);
     }
   });
 
@@ -161,13 +162,19 @@ describe("tables and Layout round-trip corpus", () => {
       "<table>",
       "  <thead>",
       "    <tr>",
-      '      <th colspan="2">A</th>',
+      '      <th colspan="2">',
+      "        <p>A</p>",
+      "      </th>",
       "    </tr>",
       "  </thead>",
       "  <tbody>",
       "    <tr>",
-      "      <td>1</td>",
-      "      <td>2</td>",
+      "      <td>",
+      "        <p>1</p>",
+      "      </td>",
+      "      <td>",
+      "        <p>2</p>",
+      "      </td>",
       "    </tr>",
       "  </tbody>",
       "</table>",
@@ -191,12 +198,16 @@ describe("tables and Layout round-trip corpus", () => {
       "<table>",
       "  <thead>",
       "    <tr>",
-      "      <th>A</th>",
+      "      <th>",
+      "        <p>A</p>",
+      "      </th>",
       "    </tr>",
       "  </thead>",
       "  <tbody>",
       "    <tr>",
-      "      <td>one&#10;and two</td>",
+      "      <td>",
+      "        <p>one&#10;and two</p>",
+      "      </td>",
       "    </tr>",
       "  </tbody>",
       "</table>",
@@ -226,8 +237,10 @@ describe("tables and Layout round-trip corpus", () => {
 
     expect(table.child(0).child(0).type.name).toBe("table_cell");
     expect(table.child(0).child(1).attrs.alignment).toBe("right");
-    expect(codec.serializeBlock(table)).toBe(html);
-    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+    const canonical = codec.serializeBlock(table);
+    expect(canonical).toContain('<td align="left">');
+    expect(canonical).toContain("<p>Iron Body</p>");
+    expect(codec.serializeBlock(firstParsedBlock(codec, canonical))).toBe(canonical);
   });
 
   it("preserves inline formatting on the HTML table path", () => {
@@ -246,7 +259,11 @@ describe("tables and Layout round-trip corpus", () => {
     expect(paragraph.child(0).marks[0]?.type.name).toBe("strong");
     expect(paragraph.child(2).marks[0]?.type.name).toBe("link");
     expect(paragraph.child(3).type.name).toBe("hard_break");
-    expect(codec.serializeBlock(table)).toBe(html);
+    const canonical = codec.serializeBlock(table);
+    expect(canonical).toContain(
+      '<p><strong>Iron</strong> <a href="chapter-7.md">Body</a><br />Rank 7</p>',
+    );
+    expect(codec.serializeBlock(firstParsedBlock(codec, canonical))).toBe(canonical);
   });
 
   it("entity-escapes MDX-significant braces on the HTML table path", () => {
@@ -262,8 +279,9 @@ describe("tables and Layout round-trip corpus", () => {
     const table = firstParsedBlock(codec, html);
 
     expect(table.textContent).toBe("a { brace and }");
-    expect(codec.serializeBlock(table)).toBe(html);
-    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+    const canonical = codec.serializeBlock(table);
+    expect(canonical).toContain("<p>a &#123; brace and <code>&#125;</code></p>");
+    expect(codec.serializeBlock(firstParsedBlock(codec, canonical))).toBe(canonical);
   });
 
   it("round-trips Layout around an HTML-spelled table", () => {
@@ -278,13 +296,15 @@ describe("tables and Layout round-trip corpus", () => {
     ].join("\n");
     const table = firstParsedBlock(codec, html);
     const aligned = table.type.create({ align: "center" }, table.content);
-    const wrapped = [
+    const legacyWrapped = [
       '<Layout align="center">',
       ...html.split("\n").map((line) => `  ${line}`),
       "</Layout>",
     ].join("\n");
+    const wrapped = codec.serializeBlock(aligned);
 
-    expect(codec.serializeBlock(aligned)).toBe(wrapped);
+    expect(wrapped).toContain("<p>Section</p>");
+    expect(firstParsedBlock(codec, legacyWrapped).toJSON()).toEqual(aligned.toJSON());
     expect(firstParsedBlock(codec, wrapped).toJSON()).toEqual(aligned.toJSON());
     expect(codec.serializeBlock(firstParsedBlock(codec, wrapped))).toBe(wrapped);
   });
@@ -438,7 +458,6 @@ describe("tables and Layout round-trip corpus", () => {
         );
       }
     }
-    expect(canonicalizeGfmTableHardBreaks(nested)).toBe(nested);
   });
 
   it("does not normalize table-looking text inside indented code", () => {
@@ -539,7 +558,9 @@ describe("tables and Layout round-trip corpus", () => {
       codec,
     ]) {
       const table = firstParsedBlock(activeCodec, html);
-      expect(activeCodec.serializeBlock(table)).toBe(html);
+      const canonical = activeCodec.serializeBlock(table);
+      expect(canonical).toContain("<p>left | right<br />down</p>");
+      expect(activeCodec.serializeBlock(firstParsedBlock(activeCodec, canonical))).toBe(canonical);
       expect(firstParsedBlock(activeCodec, html).toJSON()).toEqual(table.toJSON());
     }
   });
@@ -659,12 +680,8 @@ describe("tables and Layout round-trip corpus", () => {
     const styled = plain.type.create({ align: "center" }, plain.content);
     const serialized = codec.serializeBlock(styled);
 
-    expect(serialized).toBe(
-      `<Layout align="center">\n${html
-        .split("\n")
-        .map((line) => `  ${line}`)
-        .join("\n")}\n</Layout>`,
-    );
+    expect(serialized).toContain('<Layout align="center">');
+    expect(serialized).toContain("<p>left | right<br />down</p>");
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(styled.toJSON());
   });
 

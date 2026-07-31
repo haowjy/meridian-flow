@@ -39,16 +39,23 @@ function image(attrs: Record<string, unknown>) {
   return schema.node("image", { src: "asset:asset-1", alt: "World map", title: null, ...attrs });
 }
 
-function spannedTable(imageWire: string): string {
+function spannedTable(imageWire: string, canonical = false): string {
+  const cell = (content: string) =>
+    canonical
+      ? [`      <td>`, `        <p>${content}</p>`, "      </td>"]
+      : [`      <td>${content}</td>`];
+  const spannedCell = canonical
+    ? ['      <td rowspan="2">', `        <p>${imageWire}</p>`, "      </td>"]
+    : [`      <td rowspan="2">${imageWire}</td>`];
   return [
     "<table>",
     "  <tbody>",
     "    <tr>",
-    `      <td rowspan="2">${imageWire}</td>`,
-    "      <td>Upper</td>",
+    ...spannedCell,
+    ...cell("Upper"),
     "    </tr>",
     "    <tr>",
-    "      <td>Lower</td>",
+    ...cell("Lower"),
     "    </tr>",
     "  </tbody>",
     "</table>",
@@ -112,7 +119,7 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     const second = codec.serialize(codec.parse(first).blocks);
     const tableImage = codec.parse(wire).blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild;
 
-    expect(first).toBe(`${wire}\n`);
+    expect(first).toBe(`${spannedTable(ENTITY_SIZED, true)}\n`);
     expect(second).toBe(first);
     expect(tableImage?.attrs).toMatchObject({
       src: "asset:asset-entity",
@@ -132,7 +139,7 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     {
       name: "inside a spanned table",
       wire: spannedTable(NAMED_ENTITY_SIZED),
-      canonical: spannedTable(NAMED_ENTITY_CANONICAL),
+      canonical: spannedTable(NAMED_ENTITY_CANONICAL, true),
       imageAt: (blocks: readonly PMNode[]) =>
         blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild,
     },
@@ -155,20 +162,22 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     {
       name: "standalone",
       wire: LITERAL_ENTITY_SIZED,
+      canonical: LITERAL_ENTITY_SIZED,
       imageAt: (blocks: readonly PMNode[]) => blocks[0]?.firstChild,
     },
     {
       name: "inside a spanned table",
       wire: spannedTable(LITERAL_ENTITY_SIZED),
+      canonical: spannedTable(LITERAL_ENTITY_SIZED, true),
       imageAt: (blocks: readonly PMNode[]) =>
         blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild,
     },
-  ])("does not decode entity-looking data twice $name", ({ wire, imageAt }) => {
+  ])("does not decode entity-looking data twice $name", ({ wire, canonical, imageAt }) => {
     const first = codec.serialize(codec.parse(wire).blocks);
     const second = codec.serialize(codec.parse(first).blocks);
     const parsedImage = imageAt(codec.parse(wire).blocks);
 
-    expect(first).toBe(`${wire}\n`);
+    expect(first).toBe(`${canonical}\n`);
     expect(second).toBe(first);
     expect(parsedImage?.attrs).toMatchObject({
       src: "asset:asset-literal",
@@ -219,7 +228,19 @@ describe("sized pictures in the other spellings", () => {
       "</table>",
     ].join("\n");
     const blocks = codec.parse(wire).blocks;
-    expect(codec.serialize(blocks)).toBe(`${wire}\n`);
+    expect(codec.serialize(blocks)).toBe(
+      `${[
+        "<table>",
+        "  <tbody>",
+        "    <tr>",
+        "      <td>",
+        `        <p>${SIZED}</p>`,
+        "      </td>",
+        "    </tr>",
+        "  </tbody>",
+        "</table>",
+      ].join("\n")}\n`,
+    );
     const cell = blocks[0]?.firstChild?.firstChild?.firstChild;
     expect(cell?.firstChild?.attrs.width).toBe(240);
   });

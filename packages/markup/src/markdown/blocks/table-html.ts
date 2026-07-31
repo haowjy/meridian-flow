@@ -1,4 +1,4 @@
-/** Canonical raw-HTML spelling for tables that GFM pipes cannot carry. */
+/** Canonical HTML spelling for every table, including block-capable cells. */
 
 import type { Mark, Node as PMNode } from "prosemirror-model";
 
@@ -18,27 +18,24 @@ import { imageNodeFromAttributes } from "./image.js";
 import { imageHtmlTag, parseRawImageHtmlAttributes } from "./image-html.js";
 
 const ALIGNMENTS = new Set(["left", "center", "right"]);
+const BLOCK_ELEMENTS = new Set([
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "ul",
+  "ol",
+  "blockquote",
+  "pre",
+  "hr",
+  "table",
+]);
 
 export function serializeHtmlTable(table: PMNode, ctx: SerializeContext): string {
-  const rows = [...table.content.content];
-  const hasHeader = rows[0]?.content.content.every((cell) => cell.type.name === "table_header");
-  const lines = ["<table>"];
-
-  if (hasHeader && rows[0]) {
-    lines.push("  <thead>");
-    lines.push(...serializeRow(rows[0], ctx, "    "));
-    lines.push("  </thead>");
-  }
-
-  const bodyRows = hasHeader ? rows.slice(1) : rows;
-  if (bodyRows.length > 0) {
-    lines.push("  <tbody>");
-    for (const row of bodyRows) lines.push(...serializeRow(row, ctx, "    "));
-    lines.push("  </tbody>");
-  }
-
-  lines.push("</table>");
-  return lines.join("\n");
+  return serializeTableLines(table, ctx, "").join("\n");
 }
 
 export function parseHtmlTable(ast: unknown, ctx: ParseContext): PMNode | null {
@@ -48,9 +45,149 @@ export function parseHtmlTable(ast: unknown, ctx: ParseContext): PMNode | null {
   const source = htmlSource(ast, ctx);
   if (!/^<table(?:\s|>)/i.test(source)) return null;
   const root = parseHtml(source);
-  if (root?.name !== "table" || root.attributes.size !== 0) return null;
+  return root?.name === "table" ? parseTableElement(root, ctx) : null;
+}
 
-  const rowElements = tableRows(root);
+function serializeTableLines(table: PMNode, ctx: SerializeContext, indent: string): string[] {
+  const rows = [...table.content.content];
+  const hasHeader = rows[0]?.content.content.every((cell) => cell.type.name === "table_header");
+  const lines = [`${indent}<table>`];
+
+  if (hasHeader && rows[0]) {
+    lines.push(`${indent}  <thead>`);
+    lines.push(...serializeRow(rows[0], ctx, `${indent}    `));
+    lines.push(`${indent}  </thead>`);
+  }
+
+  const bodyRows = hasHeader ? rows.slice(1) : rows;
+  if (bodyRows.length > 0) {
+    lines.push(`${indent}  <tbody>`);
+    for (const row of bodyRows) lines.push(...serializeRow(row, ctx, `${indent}    `));
+    lines.push(`${indent}  </tbody>`);
+  }
+
+  lines.push(`${indent}</table>`);
+  return lines;
+}
+
+function serializeRow(row: PMNode, ctx: SerializeContext, indent: string): string[] {
+  const lines = [`${indent}<tr>`];
+  row.forEach((cell) => {
+    const tag = cell.type.name === "table_header" ? "th" : "td";
+    const cellIndent = `${indent}  `;
+    lines.push(`${cellIndent}<${tag}${serializeCellAttrs(cell)}>`);
+    cell.forEach((block) => {
+      lines.push(...serializeCellBlock(block, ctx, `${cellIndent}  `));
+    });
+    lines.push(`${cellIndent}</${tag}>`);
+  });
+  lines.push(`${indent}</tr>`);
+  return lines;
+}
+
+function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string): string[] {
+  switch (block.type.name) {
+    case "paragraph":
+      return [
+        `${indent}<p${serializeBlockAlignment(block)}>${inlineToHtml(
+          inlineContentToMdast(block, ctx),
+        )}</p>`,
+      ];
+    case "heading": {
+      const level = Number(block.attrs.level);
+      if (!Number.isInteger(level) || level < 1 || level > 6) {
+        throw new Error(
+          `pm->html: invalid table-cell heading level "${String(block.attrs.level)}"`,
+        );
+      }
+      return [
+        `${indent}<h${level}${serializeBlockAlignment(block)}>${inlineToHtml(
+          inlineContentToMdast(block, ctx),
+        )}</h${level}>`,
+      ];
+    }
+    case "bullet_list":
+      return serializeList(block, ctx, indent, "ul");
+    case "ordered_list":
+      return serializeList(block, ctx, indent, "ol");
+    case "blockquote": {
+      const lines = [`${indent}<blockquote>`];
+      block.forEach((child) => {
+        lines.push(...serializeCellBlock(child, ctx, `${indent}  `));
+      });
+      lines.push(`${indent}</blockquote>`);
+      return lines;
+    }
+    case "code_block": {
+      const language = block.attrs.language;
+      if (language !== null && typeof language !== "string") {
+        throw new Error("pm->html: table-cell code language must be a string or null");
+      }
+      const className =
+        typeof language === "string" ? ` class="language-${escapeHtmlAttribute(language)}"` : "";
+      return [`${indent}<pre><code${className}>${escapeCodeText(block.textContent)}</code></pre>`];
+    }
+    case "horizontal_rule":
+      return [`${indent}<hr />`];
+    case "table":
+      return serializeTableLines(block, ctx, indent);
+    default:
+      throw new Error(`pm->html: unsupported table cell block "${block.type.name}"`);
+  }
+}
+
+function serializeList(
+  list: PMNode,
+  ctx: SerializeContext,
+  indent: string,
+  tag: "ul" | "ol",
+): string[] {
+  const tight = list.attrs.tight;
+  if (typeof tight !== "boolean") {
+    throw new Error("pm->html: table-cell list tight must be a boolean");
+  }
+  const attrs = [`data-tight="${String(tight)}"`];
+  if (tag === "ol") {
+    const order = list.attrs.order;
+    if (!Number.isSafeInteger(order) || order < 1) {
+      throw new Error("pm->html: table-cell ordered-list order must be a positive integer");
+    }
+    if (order !== 1) attrs.unshift(`start="${order}"`);
+  }
+
+  const lines = [`${indent}<${tag} ${attrs.join(" ")}>`];
+  list.forEach((item) => {
+    const checked = item.attrs.checked;
+    if (checked !== null && typeof checked !== "boolean") {
+      throw new Error("pm->html: table-cell list-item checked must be a boolean or null");
+    }
+    const checkedAttr = typeof checked === "boolean" ? ` data-checked="${String(checked)}"` : "";
+    lines.push(`${indent}  <li${checkedAttr}>`);
+    item.forEach((child) => {
+      lines.push(...serializeCellBlock(child, ctx, `${indent}    `));
+    });
+    lines.push(`${indent}  </li>`);
+  });
+  lines.push(`${indent}</${tag}>`);
+  return lines;
+}
+
+function serializeBlockAlignment(block: PMNode): string {
+  const alignment = block.attrs.align;
+  if (alignment === null || alignment === undefined) return "";
+  if (alignment !== "center" && alignment !== "right") {
+    throw new Error(`pm->html: invalid table-cell block alignment "${String(alignment)}"`);
+  }
+  return ` align="${alignment}"`;
+}
+
+function escapeCodeText(value: string): string {
+  return escapeHtmlText(value).replaceAll("&#13;", "\r").replaceAll("&#10;", "\n");
+}
+
+function parseTableElement(table: HtmlElement, ctx: ParseContext): PMNode | null {
+  if (table.attributes.size !== 0) return null;
+  const rowElements = tableRows(table);
   if (!rowElements || rowElements.length === 0) return null;
 
   const rows: PMNode[] = [];
@@ -67,13 +204,10 @@ export function parseHtmlTable(ast: unknown, ctx: ParseContext): PMNode | null {
     const cells: PMNode[] = [];
     for (const cellElement of cellElements) {
       const attrs = cellAttrs(cellElement);
-      if (!attrs) return null;
-      const inline = parseInlineNodes(cellElement.children, ctx, []);
-      if (!inline) return null;
+      const blocks = parseCellBlocks(cellElement, ctx);
+      if (!attrs || !blocks) return null;
       cells.push(
-        ctx.schema.node(cellElement.name === "th" ? "table_header" : "table_cell", attrs, [
-          ctx.schema.node("paragraph", null, inline),
-        ]),
+        ctx.schema.node(cellElement.name === "th" ? "table_header" : "table_cell", attrs, blocks),
       );
     }
     rows.push(ctx.schema.node("table_row", null, cells));
@@ -82,17 +216,153 @@ export function parseHtmlTable(ast: unknown, ctx: ParseContext): PMNode | null {
   return ctx.schema.node("table", null, rows);
 }
 
-function serializeRow(row: PMNode, ctx: SerializeContext, indent: string): string[] {
-  const lines = [`${indent}<tr>`];
-  row.forEach((cell) => {
-    const tag = cell.type.name === "table_header" ? "th" : "td";
-    const attributes = serializeCellAttrs(cell);
-    const paragraph = cell.firstChild;
-    const content = paragraph ? inlineToHtml(inlineContentToMdast(paragraph, ctx)) : "";
-    lines.push(`${indent}  <${tag}${attributes}>${content}</${tag}>`);
-  });
-  lines.push(`${indent}</tr>`);
-  return lines;
+function parseCellBlocks(cell: HtmlElement, ctx: ParseContext): PMNode[] | null {
+  const hasBlock = cell.children.some(
+    (child) => child.type === "element" && BLOCK_ELEMENTS.has(child.name),
+  );
+  if (!hasBlock) {
+    const inline = parseInlineNodes(cell.children, ctx, []);
+    return inline ? [ctx.schema.node("paragraph", null, inline)] : null;
+  }
+
+  const elements = elementChildren(cell);
+  if (!elements) return null;
+  const blocks: PMNode[] = [];
+  for (const element of elements) {
+    const block = parseCellBlock(element, ctx);
+    if (!block) return null;
+    blocks.push(block);
+  }
+  return blocks.length > 0 ? blocks : null;
+}
+
+function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
+  if (element.name === "p") {
+    const align = blockAlignment(element);
+    const inline = align === undefined ? null : parseInlineNodes(element.children, ctx, []);
+    return inline ? ctx.schema.node("paragraph", { align }, inline) : null;
+  }
+  if (/^h[1-6]$/.test(element.name)) {
+    const align = blockAlignment(element);
+    const inline = align === undefined ? null : parseInlineNodes(element.children, ctx, []);
+    return inline
+      ? ctx.schema.node("heading", { level: Number(element.name[1]), align }, inline)
+      : null;
+  }
+  if (element.name === "ul" || element.name === "ol") return parseList(element, ctx);
+  if (element.name === "blockquote") {
+    if (element.attributes.size !== 0) return null;
+    const children = parseBlockContainer(element, ctx);
+    return children ? ctx.schema.node("blockquote", null, children) : null;
+  }
+  if (element.name === "pre") return parseCodeBlock(element, ctx);
+  if (element.name === "hr") {
+    return element.attributes.size === 0 && element.children.length === 0
+      ? ctx.schema.node("horizontal_rule")
+      : null;
+  }
+  if (element.name === "table") return parseTableElement(element, ctx);
+  return null;
+}
+
+function parseBlockContainer(element: HtmlElement, ctx: ParseContext): PMNode[] | null {
+  const hasBlock = element.children.some(
+    (child) => child.type === "element" && BLOCK_ELEMENTS.has(child.name),
+  );
+  if (!hasBlock) {
+    const inline = parseInlineNodes(element.children, ctx, []);
+    return inline ? [ctx.schema.node("paragraph", null, inline)] : null;
+  }
+  const elements = elementChildren(element);
+  if (!elements) return null;
+  const blocks = elements.map((child) => parseCellBlock(child, ctx));
+  return blocks.every((block): block is PMNode => block !== null) ? blocks : null;
+}
+
+function parseList(element: HtmlElement, ctx: ParseContext): PMNode | null {
+  const ordered = element.name === "ol";
+  const allowed = new Set(ordered ? ["start", "data-tight"] : ["data-tight"]);
+  if ([...element.attributes.keys()].some((name) => !allowed.has(name))) return null;
+  const tight = booleanAttribute(element.attributes.get("data-tight"), false);
+  if (tight === null) return null;
+
+  let order = 1;
+  if (ordered && element.attributes.has("start")) {
+    const raw = element.attributes.get("start");
+    if (typeof raw !== "string" || !/^\d+$/.test(raw)) return null;
+    order = Number(raw);
+    if (!Number.isSafeInteger(order) || order < 1) return null;
+  }
+
+  const itemElements = elementChildren(element);
+  if (
+    !itemElements ||
+    itemElements.length === 0 ||
+    itemElements.some((item) => item.name !== "li")
+  ) {
+    return null;
+  }
+  const items: PMNode[] = [];
+  for (const itemElement of itemElements) {
+    const checked = checkedAttribute(itemElement);
+    const children = checked === undefined ? null : parseBlockContainer(itemElement, ctx);
+    if (!children) return null;
+    const content =
+      children[0]?.type.name === "paragraph"
+        ? children
+        : [ctx.schema.node("paragraph"), ...children];
+    items.push(ctx.schema.node("list_item", { checked }, content));
+  }
+  return ctx.schema.node(ordered ? "ordered_list" : "bullet_list", { order, tight }, items);
+}
+
+function checkedAttribute(element: HtmlElement): boolean | null | undefined {
+  if ([...element.attributes.keys()].some((name) => name !== "data-checked")) return undefined;
+  return booleanAttribute(element.attributes.get("data-checked"), null);
+}
+
+function booleanAttribute(
+  value: string | null | undefined,
+  fallback: boolean | null,
+): boolean | null {
+  if (value === undefined) return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
+
+function parseCodeBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
+  if (element.attributes.size !== 0) return null;
+  const children = elementChildren(element);
+  if (children?.length !== 1 || children[0]?.name !== "code") return null;
+  const code = children[0];
+  if (code.children.some((child) => child.type !== "text")) return null;
+  const allowed = new Set(["class"]);
+  if ([...code.attributes.keys()].some((name) => !allowed.has(name))) return null;
+  const className = code.attributes.get("class");
+  if (className === null) return null;
+  const language =
+    className === undefined
+      ? null
+      : decodeHtmlAttribute(className).startsWith("language-")
+        ? decodeHtmlAttribute(className).slice("language-".length)
+        : undefined;
+  if (language === undefined) return null;
+  const value = code.children
+    .map((child) => (child.type === "text" ? decodeHtml(child.value) : ""))
+    .join("");
+  return ctx.schema.node(
+    "code_block",
+    { language },
+    value.length > 0 ? [ctx.schema.text(value)] : [],
+  );
+}
+
+function blockAlignment(element: HtmlElement): "center" | "right" | null | undefined {
+  if ([...element.attributes.keys()].some((name) => name !== "align")) return undefined;
+  const align = element.attributes.get("align");
+  if (align === undefined) return null;
+  return align === "center" || align === "right" ? align : undefined;
 }
 
 function serializeCellAttrs(cell: PMNode): string {
@@ -124,26 +394,18 @@ function inlineToHtml(children: readonly MdastInline[]): string {
 
 function inlineNodeToHtml(node: MdastInline): string {
   switch (node.type) {
-    case "text": {
-      const value = inlineValue(node);
-      return escapeHtmlText(value);
-    }
+    case "text":
+      return escapeHtmlText(inlineValue(node));
     case "strong":
       return `<strong>${inlineToHtml(inlineChildren(node))}</strong>`;
     case "emphasis":
       return `<em>${inlineToHtml(inlineChildren(node))}</em>`;
     case "delete":
       return `<del>${inlineToHtml(inlineChildren(node))}</del>`;
-    case "inlineCode": {
-      const value = inlineValue(node);
-      return `<code>${escapeHtmlText(value)}</code>`;
-    }
+    case "inlineCode":
+      return `<code>${escapeHtmlText(inlineValue(node))}</code>`;
     case "link": {
-      const link = node as {
-        url: string;
-        title: string | null;
-        children: MdastInline[];
-      };
+      const link = node as { url: string; title: string | null; children: MdastInline[] };
       const title = link.title === null ? "" : ` title="${escapeHtmlAttribute(link.title)}"`;
       return `<a href="${escapeHtmlAttribute(link.url)}"${title}>${inlineToHtml(link.children)}</a>`;
     }
@@ -153,8 +415,7 @@ function inlineNodeToHtml(node: MdastInline): string {
       const image = node as { url: string; alt: string | null; title: string | null };
       return imageHtmlTag({ ...image, width: null });
     }
-    // A picture that already escalated to its own tag (a display size) arrives
-    // written, and an HTML cell is the one place raw tags need no escaping.
+    // Sized pictures have already escalated to their own HTML tag.
     case "html":
       return String((node as { value?: unknown }).value ?? "");
     default:
@@ -213,12 +474,7 @@ function cellAttrs(element: HtmlElement): Record<string, unknown> | null {
   const alignment = directAlignment ?? styleAlignment;
   if (alignment !== undefined && alignment !== null && !ALIGNMENTS.has(alignment)) return null;
 
-  return {
-    alignment: alignment ?? null,
-    colspan,
-    rowspan,
-    colwidth: null,
-  };
+  return { alignment: alignment ?? null, colspan, rowspan, colwidth: null };
 }
 
 function parseSpanAttribute(value: string | null | undefined): number | null {
@@ -251,19 +507,16 @@ function parseInlineNodes(
       if (value.length > 0) out.push(ctx.schema.text(value, marks));
       continue;
     }
-
     if (node.name === "br" && node.attributes.size === 0 && node.children.length === 0) {
       out.push(ctx.schema.node("hard_break"));
       continue;
     }
-
     if (node.name === "img" && node.children.length === 0) {
       const image = parseImage(node, ctx);
       if (!image) return null;
       out.push(image.mark(marks));
       continue;
     }
-
     const mark = inlineMark(node, ctx);
     if (!mark) return null;
     const children = parseInlineNodes(node.children, ctx, [...marks, mark]);
@@ -302,8 +555,7 @@ function inlineMark(element: HtmlElement, ctx: ParseContext): Mark | null {
 
 function parseImage(element: HtmlElement, ctx: ParseContext): PMNode | null {
   const tag = parseRawImageHtmlAttributes(element.attributes);
-  if (!tag) return null;
-  return imageNodeFromAttributes(ctx, tag);
+  return tag ? imageNodeFromAttributes(ctx, tag) : null;
 }
 
 function htmlSource(ast: unknown, ctx: ParseContext): string {

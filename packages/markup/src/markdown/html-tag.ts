@@ -1,10 +1,10 @@
 /**
  * The scrap of HTML the wire is allowed to carry, read and written in one place.
  *
- * Two spellings escalate out of Markdown into raw tags — a table that pipes
- * cannot hold, and a picture the writer resized — and both need the same three
- * things: a tolerant reader for the tag soup a document may already contain, an
- * escaper strict enough for MDX, and one list of which tags close themselves.
+ * Tables always use raw HTML, and a resized picture escalates to its own tag.
+ * Both need the same three things: a tolerant reader for the tag soup a
+ * document may already contain, an escaper strict enough for MDX, and one list
+ * of which tags close themselves.
  *
  * The escaper's `{` and `}` are the MDX rule rather than an HTML one: an
  * unescaped brace opens a JSX expression, so a caption or a filename containing
