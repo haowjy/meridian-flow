@@ -9,7 +9,8 @@
 - `packages/agent-edit`, `apps/server`: every model-facing edit result now uses
   the versioned `meridian.agent-edit.v1` JSON envelope. Logical block bodies,
   hashes, exact-prefix context, concurrent edits, diffs, and reversal metadata
-  stay typed instead of sharing an ambiguous multiline text stream.
+  stay typed instead of sharing an ambiguous multiline text stream. Hashes
+  remain tool-internal targeting tokens rather than writer-facing prose labels.
 - `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
   table cells now hold full block content. Tables serialize as HTML every time
   while pipe-table imports still parse, and Enter in cell prose splits a

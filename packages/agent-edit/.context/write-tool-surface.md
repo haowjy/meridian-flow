@@ -8,7 +8,9 @@
 representation sent to the LLM. `text` is host-facing diagnostic text, not a
 second model protocol. Block records carry `{ hash, body, extent, relation }`,
 so multiline bodies cannot collide with adjacent blocks and truncated context
-is explicitly an exact prefix.
+is explicitly an exact prefix. Hashes are model/tool targeting tokens: expose
+them in tool arguments and results, never as labels or quoted prefixes in
+writer-facing prose unless the writer asks for protocol detail.
 `idempotency` is provided by `tool_use_id`, but provider tool ids are
 response-local: cache and durable attempt ids scope them by `responseId`, or by
 `turnId` when no response id exists. Same-response retries return the cached
@@ -118,9 +120,11 @@ paths so accidental UUID interpolation fails loudly.
 
 ## v1 simplifications (deferred, documented for discoverability)
 
-- **Tool versioning** deferred (GH issue #68). Seam kept clean — pure
-  resolvers, stable `ResolvedEdit`, version-agnostic apply layer. No version
-  pinning until a v2 exists.
+- **Command-contract version selection and thread pinning** deferred (GH
+  issue #68). This is distinct from the shipped `meridian.agent-edit.v1` result
+  envelope. The seam stays clean through pure resolvers, stable `ResolvedEdit`,
+  and a version-agnostic apply layer; no command-contract pinning is needed until
+  a second command version exists.
 - **Read auto-budget/truncation** deferred. Current `read` returns full
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
@@ -139,7 +143,10 @@ commit/recovery, and create lifecycle.
 
 ### Write handles and selective reversal
 
-Every successful mutating write returns a short handle line (`write id: w<N>`) in the metadata block. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
+Every successful mutating result carries `write: { id: "w<N>" }`. The ordinal
+is allocated per `(document, thread)`, persisted on the mutation row, and never
+reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable
+idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 
 Undo/redo use the same versioned result envelope as writes, with typed reversal
 metadata and block records.
