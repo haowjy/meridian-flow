@@ -10,6 +10,10 @@ as upstream. Pushing computes a Yjs update from branch to live, records push
 lineage, marks source journal rows reviewed, and resets/advances branch
 generation where needed.
 
+Thread-peer resolution is primary-Work-aware. After conversation reassignment,
+the old peer is no longer resolvable; provisioning closes it and seeds a new
+peer from the new primary Work draft while holding the conversation row lock.
+
 The review list therefore emits one active item per document and folds all
 contributing journal rows into that item. `lastActorTurnId` is representative
 metadata, not review identity. `draftId` is the only application and wire
