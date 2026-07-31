@@ -38,7 +38,6 @@ interface HeldPort {
 }
 
 interface PortReleaseOptions {
-  readonly timeoutMs?: number;
   readonly intervalMs?: number;
   readonly terminateTimeoutMs?: number;
   readonly forceTimeoutMs?: number;
@@ -112,18 +111,32 @@ async function filterHeld(ports: readonly number[]): Promise<number[]> {
   return results.filter((entry) => !entry.free).map((entry) => entry.port);
 }
 
-function inspectHeldPorts(
+async function inspectHeldPorts(
   ports: readonly number[],
   discoverHolders: (port: number) => PortHolderDiscovery,
-): { held: HeldPort[]; errors: { port: number; error: string }[] } {
+): Promise<{ held: HeldPort[]; errors: { port: number; error: string }[] }> {
   const held: HeldPort[] = [];
   const errors: { port: number; error: string }[] = [];
   for (const port of ports) {
     const discovery = discoverHolders(port);
     if (discovery.ok) held.push({ port, holders: discovery.holders });
-    else errors.push({ port, error: discovery.error });
+    else if (!(await isLocalPortFree(port))) errors.push({ port, error: discovery.error });
   }
   return { held, errors };
+}
+
+function selectHolders(
+  held: readonly HeldPort[],
+  predicate: (holder: PortHolder) => boolean,
+): HeldPort[] {
+  return held.flatMap((entry) => {
+    const holders = entry.holders.filter(predicate);
+    return holders.length > 0 ? [{ port: entry.port, holders }] : [];
+  });
+}
+
+function heldPorts(held: readonly HeldPort[]): number[] {
+  return [...new Set(held.map((entry) => entry.port))];
 }
 
 function signalHolders({
@@ -174,52 +187,64 @@ export async function releaseFixedPorts(
   options: PortReleaseOptions = {},
 ): Promise<PortReleaseResult> {
   const unique = [...new Set(ports)];
-  const stillHeld = await waitForPortsFree(unique, options);
+  let stillHeld = await filterHeld(unique);
   if (stillHeld.length === 0) return { status: "released", ports: unique };
 
   const discoverHolders = options.discoverHolders ?? discoverPortHolders;
   const killProcess = options.killProcess ?? ((pid, signal) => process.kill(pid, signal));
   const announcedPids = new Set<number>();
-  const inspection = inspectHeldPorts(stillHeld, discoverHolders);
-  if (inspection.errors.length > 0) {
-    return { status: "discoveryError", errors: inspection.errors };
+  const terminatedPids = new Set<number>();
+
+  while (stillHeld.length > 0) {
+    const inspection = await inspectHeldPorts(stillHeld, discoverHolders);
+    if (inspection.errors.length > 0) {
+      return { status: "discoveryError", errors: inspection.errors };
+    }
+    if (inspection.held.length === 0) return { status: "released", ports: unique };
+
+    const ungraced = selectHolders(inspection.held, (holder) => !terminatedPids.has(holder.pid));
+    if (ungraced.length > 0) {
+      signalHolders({
+        held: ungraced,
+        signal: "SIGTERM",
+        killProcess,
+        onKill: options.onKill,
+        announcedPids,
+      });
+      for (const entry of ungraced) {
+        for (const holder of entry.holders) terminatedPids.add(holder.pid);
+      }
+      stillHeld = await waitForPortsFree(heldPorts(inspection.held), {
+        timeoutMs: options.terminateTimeoutMs ?? TERMINATE_TIMEOUT_MS,
+        intervalMs: options.intervalMs,
+      });
+      continue;
+    }
+
+    signalHolders({
+      held: inspection.held,
+      signal: "SIGKILL",
+      killProcess,
+      onKill: options.onKill,
+      announcedPids,
+    });
+    const afterForce = await waitForPortsFree(heldPorts(inspection.held), {
+      timeoutMs: options.forceTimeoutMs ?? FORCE_TIMEOUT_MS,
+      intervalMs: options.intervalMs,
+    });
+    if (afterForce.length === 0) return { status: "released", ports: unique };
+
+    const survivors = await inspectHeldPorts(afterForce, discoverHolders);
+    if (survivors.errors.length > 0) {
+      return { status: "discoveryError", errors: survivors.errors };
+    }
+    if (survivors.held.length === 0) return { status: "released", ports: unique };
+    if (survivors.held.some((entry) => entry.holders.some((h) => !terminatedPids.has(h.pid)))) {
+      stillHeld = heldPorts(survivors.held);
+      continue;
+    }
+    return { status: "stillHeld", held: survivors.held };
   }
 
-  signalHolders({
-    held: inspection.held,
-    signal: "SIGTERM",
-    killProcess,
-    onKill: options.onKill,
-    announcedPids,
-  });
-
-  const afterTerminate = await waitForPortsFree(stillHeld, {
-    timeoutMs: options.terminateTimeoutMs ?? TERMINATE_TIMEOUT_MS,
-    intervalMs: options.intervalMs,
-  });
-  if (afterTerminate.length === 0) return { status: "released", ports: unique };
-
-  const stragglers = inspectHeldPorts(afterTerminate, discoverHolders);
-  if (stragglers.errors.length > 0) {
-    return { status: "discoveryError", errors: stragglers.errors };
-  }
-  signalHolders({
-    held: stragglers.held,
-    signal: "SIGKILL",
-    killProcess,
-    onKill: options.onKill,
-    announcedPids,
-  });
-
-  const afterForce = await waitForPortsFree(afterTerminate, {
-    timeoutMs: options.forceTimeoutMs ?? FORCE_TIMEOUT_MS,
-    intervalMs: options.intervalMs,
-  });
-  if (afterForce.length === 0) return { status: "released", ports: unique };
-
-  const survivors = inspectHeldPorts(afterForce, discoverHolders);
-  if (survivors.errors.length > 0) {
-    return { status: "discoveryError", errors: survivors.errors };
-  }
-  return { status: "stillHeld", held: survivors.held };
+  return { status: "released", ports: unique };
 }
