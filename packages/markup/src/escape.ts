@@ -124,6 +124,20 @@ function isPreservedMarkupSyntax(value: string): boolean {
   );
 }
 
+/**
+ * Which raw tag names survive MDX ingress unescaped.
+ *
+ * Every component the writer or a model can name is PascalCase, so the rule is
+ * mostly "looks like a component". `img` is the one lowercase exception: it is
+ * the escalated spelling of a picture that carries a display size
+ * (`markdown/blocks/image-html.ts`), and MDX reads a lowercase name as an
+ * intrinsic element, so the tag needs no protection beyond being left alone.
+ * Encoding it instead turned every resized picture into literal text.
+ */
+function isPreservedTagName(name: string): boolean {
+  return /^[A-Z][A-Za-z0-9]*$/.test(name) || name === "img";
+}
+
 function encodeRawHtmlSource(source: string, value: string): string | null {
   const sourceLines = splitLines(source);
   const valueLines = splitLines(value);
@@ -179,10 +193,6 @@ interface MarkdownNode {
   };
 }
 
-function isPascalCaseComponentName(name: string): boolean {
-  return /^[A-Z][A-Za-z0-9]*$/.test(name);
-}
-
 function skipBalanced(text: string, start: number, open: string, close: string): number | null {
   if (text[start] !== open) return null;
   let depth = 0;
@@ -207,10 +217,9 @@ function tryConsumeJsxTag(text: string, start: number): number | null {
   if (closing) i++;
 
   const nameStart = i;
-  if (!/[A-Z]/.test(text[i] ?? "")) return null;
   while (i < text.length && /[A-Za-z0-9]/.test(text[i] ?? "")) i++;
   const name = text.slice(nameStart, i);
-  if (!isPascalCaseComponentName(name)) return null;
+  if (!isPreservedTagName(name)) return null;
 
   if (closing) {
     while (i < text.length && /\s/.test(text[i] ?? "")) i++;

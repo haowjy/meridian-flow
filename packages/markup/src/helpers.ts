@@ -23,6 +23,7 @@ import {
   type ComponentSpec,
   type PropSpec,
 } from "./components.js";
+import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
 import { wikilinkTarget } from "./markdown/wikilink-target.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
@@ -75,9 +76,22 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
   const runtime = getRuntime(ctx);
   for (const codec of runtime.blocks) {
     const parsed = codec.parse(ast, ctx);
-    if (parsed) return parsed;
+    if (parsed) return asBlockNode(parsed, ctx);
   }
   return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
+}
+
+/**
+ * A block parse yields a block, whatever its codec answered with.
+ *
+ * One node is both: a picture is inline by schema, and a picture alone on its
+ * own line is a whole block of the document. The wrapping belongs here rather
+ * than in the image codec because the codec has no way to tell which of the two
+ * it is looking at — pure Markdown reports a raw tag as the same `html` node
+ * either way.
+ */
+function asBlockNode(node: PMNode, ctx: ParseContext): PMNode {
+  return node.isInline ? ctx.schema.node("paragraph", null, [node]) : node;
 }
 
 /** Parse only through an explicitly registered codec, without raw-text recovery. */
@@ -90,7 +104,7 @@ export function parseRecognizedBlockAst(
   for (const codec of runtime.blocks) {
     if (excludedCodecNames.has(codec.name)) continue;
     const parsed = codec.parse(ast, ctx);
-    if (parsed) return parsed;
+    if (parsed) return asBlockNode(parsed, ctx);
   }
   return null;
 }
@@ -107,17 +121,20 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
         break;
       case "image": {
         ensureBlockCodecRegistered("image", ctx);
-        const src = String(child.attrs.src ?? "");
-        const url = src.startsWith("asset:")
-          ? ctx.assetPathResolver.pathForAsset(src.slice("asset:".length))
-          : src;
-        const target = wikilinkTarget(url);
+        const image = imageWireAttributes(child, ctx);
+        // A picture the writer resized has a size Markdown cannot spell, so it
+        // escalates to the raw tag right here among the words it stands in.
+        if (image.width !== null) {
+          tokens.push({ type: "html", value: imageHtmlTag(image), marks: child.marks });
+          break;
+        }
+        const target = wikilinkTarget(image.url);
         tokens.push({
           ...(target === null
-            ? { type: "image" as const, url }
+            ? { type: "image" as const, url: image.url }
             : { type: "wikiLinkImage" as const, target }),
-          alt: attrStringOrNull(child.attrs.alt),
-          title: attrStringOrNull(child.attrs.title),
+          alt: image.alt,
+          title: image.title,
           marks: child.marks,
         });
         break;
@@ -147,13 +164,18 @@ export function parseInlineChildren(
         break;
       case "image":
       case "wikiLinkImage": {
-        const imageCodec = getRuntime(ctx).blockMap.get("image");
-        if (!imageCodec) throw new Error('mdast->pm: missing "image" codec');
-        const image = imageCodec.parse(child, ctx);
+        const image = parseInlineImage(child, ctx);
         if (image) out.push(image);
         break;
       }
       default: {
+        // A raw `<img>` tag: pure Markdown hands it over as `html`, MDX as a
+        // parsed JSX element, and the image codec reads both.
+        const image = parseInlineImage(child, ctx);
+        if (image) {
+          out.push(image);
+          break;
+        }
         const marked = addRegisteredMark(activeMarks, child, ctx);
         if (marked) {
           const value = inlineCodeValue(child);
@@ -354,7 +376,9 @@ type InlineToken =
   | (MdastText & { marks: readonly Mark[] })
   | (MdastBreak & { marks: readonly Mark[] })
   | (MdastImage & { marks: readonly Mark[] })
-  | (MdastWikiLinkImage & { marks: readonly Mark[] });
+  | (MdastWikiLinkImage & { marks: readonly Mark[] })
+  /** A raw tag standing among the words: the escalated spelling of a sized picture. */
+  | { type: "html"; value: string; marks: readonly Mark[] };
 
 function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeContext): MdastInline[] {
   const out: MdastInline[] = [];
@@ -432,6 +456,8 @@ function plainText(tokens: readonly InlineToken[]): string {
         case "image":
         case "wikiLinkImage":
           return token.alt ?? "";
+        case "html":
+          return token.value;
         default:
           return "";
       }
@@ -455,14 +481,21 @@ function addRegisteredMark(
   return null;
 }
 
+/**
+ * The picture an inline AST node means, through the one registered image codec:
+ * `![alt](src)`, a wikilink picture, and the raw `<img>` tag a sized picture
+ * escalates to, in whichever shape this dialect's parser reports it.
+ */
+function parseInlineImage(ast: unknown, ctx: ParseContext): PMNode | null {
+  const imageCodec = getRuntime(ctx).blockMap.get("image");
+  if (!imageCodec) throw new Error('mdast->pm: missing "image" codec');
+  return imageCodec.parse(ast, ctx);
+}
+
 function ensureBlockCodecRegistered(name: string, ctx: SerializeContext): void {
   if (!getRuntime(ctx).blockMap.has(name)) {
     throw new Error(`pm->mdast: missing block codec "${name}"`);
   }
-}
-
-function attrStringOrNull(value: unknown): string | null {
-  return value === null || value === undefined ? null : String(value);
 }
 
 function inlineCodeValue(ast: unknown): string | null {

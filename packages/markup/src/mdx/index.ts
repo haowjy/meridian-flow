@@ -7,7 +7,7 @@ import { createMarkupCodec } from "../codec.js";
 import type { ComponentRegistry } from "../components.js";
 import { escapeProseForMdxIngress } from "../escape.js";
 import { demoteAutolinks } from "../helpers.js";
-import { tableCodec } from "../markdown/blocks/index.js";
+import { imageCodec, tableCodec } from "../markdown/blocks/index.js";
 import {
   canonicalizeGfmTableHardBreaks,
   normalizeGfmTableHardBreaks,
@@ -23,14 +23,21 @@ import {
   serializeLayoutBlock,
 } from "./blocks/index.js";
 
+/**
+ * The MDX block chain. The two codecs hoisted above the JSX ones own raw tags
+ * MDX would otherwise hand to a component that does not exist: a `<table>` too
+ * shaped for pipes, and the `<img>` a picture with a display size escalates to.
+ */
 export function mdxBlockCodecs(components?: ComponentRegistry): readonly BlockCodec[] {
+  const hoisted = new Set([tableCodec.name, imageCodec.name]);
   return [
     createLayoutCodec(),
     createFigureCodec(),
     tableCodec,
+    imageCodec,
     createJsxContainerCodec(components),
     createJsxLeafCodec(components),
-    ...markdownBlockCodecs.filter((codec) => codec.name !== "table"),
+    ...markdownBlockCodecs.filter((codec) => !hoisted.has(codec.name)),
   ];
 }
 
