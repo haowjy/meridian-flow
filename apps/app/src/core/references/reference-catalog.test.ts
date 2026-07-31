@@ -190,6 +190,20 @@ describe("filterReferenceItems scope", () => {
     ]);
   });
 
+  it("carries the document's identity onto its row", () => {
+    // The composer picks a row and has to be able to name the exact document
+    // when the title is shared; asking the tree a second time to find out
+    // which one is what this field spares it.
+    const [item] = filterReferenceItems([document("Map of the Pale")], DOCUMENTS, "map");
+
+    expect(item).toMatchObject({
+      kind: "document",
+      name: "Map of the Pale",
+      documentId: "document-Map of the Pale",
+      uri: "manuscript://Map of the Pale.md",
+    });
+  });
+
   it("carries the asset's identity onto its row", () => {
     const [item] = filterReferenceItems([asset("map.png")], EVERYTHING, "map");
 
