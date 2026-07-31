@@ -27,6 +27,7 @@ import type {
   MarkdownDocumentStore,
 } from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import type { ThreadRepository } from "../threads/index.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
@@ -87,6 +88,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
+  threads: Pick<ThreadRepository, "create">;
 }): ProjectBootstrapRepository {
   const { db } = deps;
   const repairedReadyUsers = new Set<UserId>();
@@ -331,17 +333,13 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .limit(1);
     if (linked) return linked.id;
 
-    const [thread] = await tx
-      .insert(threads)
-      .values({
-        projectId: input.projectId,
-        createdByUserId: input.userId,
-        title: "Chapter 1",
-        kind: "primary",
-        currentAgentId: input.agentSlug ?? "writer",
-      })
-      .returning({ id: threads.id });
-    if (!thread) throw new Error("Failed to create primary thread");
+    const thread = await deps.threads.create({
+      projectId: input.projectId,
+      userId: input.userId,
+      title: "Chapter 1",
+      kind: "primary",
+      currentAgent: input.agentSlug ?? "writer",
+    });
 
     await tx.insert(threadWorks).values({
       threadId: thread.id,

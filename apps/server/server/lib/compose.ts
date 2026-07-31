@@ -364,7 +364,11 @@ export async function createProductionAppPorts(input: {
     config: defaultPackageSeedConfigFromEnv(environment),
   });
   const users = createDrizzleUserRepository({ db });
-  const projects = createDrizzleProjectBootstrapRepository({ db, documents: documentSync });
+  const projects = createDrizzleProjectBootstrapRepository({
+    db,
+    documents: documentSync,
+    threads: threadRepos.threads,
+  });
   const workRepo = createDrizzleProjectWorkRepository({
     db,
     hasUnreviewedDraft: async (workId) => (await documentSync.countUnpushedRowsForWork(workId)) > 0,

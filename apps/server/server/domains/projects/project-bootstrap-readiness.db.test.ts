@@ -18,6 +18,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectBootstrapRepository } = await import("./index.js");
+    const { createDrizzleRepositories } = await import("../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
     const { default: postgres } = await import("postgres");
@@ -55,6 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let seedCalls = 0;
       const coldRepository = createDrizzleProjectBootstrapRepository({
         db,
+        threads: createDrizzleRepositories(db).threads,
         documents: {
           ...collab,
           async seedFromMarkdown(...args: Parameters<typeof collab.seedFromMarkdown>) {
@@ -108,6 +110,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
+        threads: createDrizzleRepositories(db).threads,
         documents: {
           ...collab,
           async seedFromMarkdown() {
@@ -122,6 +125,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const repaired = createDrizzleProjectBootstrapRepository({
         db,
+        threads: createDrizzleRepositories(db).threads,
         documents: collab,
       });
       await expect(repaired.ensureDefaultBootstrapReady(USER_ID as never)).resolves.toBe(true);
