@@ -66,5 +66,5 @@ them, and an empty list closes rather than fences.
   rows are published through
 → [`../editor/extensions/wikilink/AGENTS.md`](../editor/extensions/wikilink/AGENTS.md) —
   the `[[` trigger, and what a choice writes
-→ [`../../features/editor/surfaces/link/useReferenceCandidates.ts`](../../features/editor/surfaces/link/useReferenceCandidates.ts) —
+→ [`../../features/project/context/useReferenceCandidates.ts`](../../features/project/context/useReferenceCandidates.ts) —
   where candidates come from today (the context trees the app already caches)

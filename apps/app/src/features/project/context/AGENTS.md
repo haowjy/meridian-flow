@@ -27,6 +27,12 @@ Shared across both shells:
   specification. Add an action once; both primitive-specific renderers inherit it.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
+- **Reference candidates** (`useReferenceCandidates.ts`): the same trees,
+  projected into everything a `[[` or `@` menu can name. It lives here rather
+  than in the editor because the chat composer asks the identical question, and
+  a textarea reaching into an editor surface for it would be a layering smell.
+  Assets ride along beside documents; a document candidate carries the
+  `documentId` and canonical `uri` a pick needs when a title is shared.
 
 ## Rules
 

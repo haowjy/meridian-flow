@@ -42,9 +42,8 @@ import {
 } from "@/core/editor/links";
 import { documentLinkTarget, type LinkTarget, linkTargetHref } from "@/core/links";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-
+import { useReferenceCandidates } from "@/features/project/context/useReferenceCandidates";
 import { useEditorScope } from "../../editor-scope";
-import { useReferenceCandidates } from "./useReferenceCandidates";
 
 /**
  * How long a follow waits before admitting it is still asking. Under this, the
