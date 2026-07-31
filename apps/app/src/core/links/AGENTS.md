@@ -7,11 +7,15 @@ live in the lane that asked first.
 
 ## Mental model
 
-**One vocabulary, two directions.** `classifyLinkTarget` reads an href already
+**One vocabulary, three readings.** `classifyLinkTarget` reads an href already
 written — by the parser, by an LLM, by a pick — and says which of the four
 spellings it is. `normalizeLinkHref` reads what a writer typed and says what to
-store. They share the scheme fence, which is why a scheme is added in one place
-and the two answers cannot drift.
+store. `looksExplicitlyExternal` reads what a writer is mid-typing and says
+whether they have unambiguously started a URL — the completion offer's
+step-aside test, which must NOT be the commit-time reading (the https://
+upgrade would call `Cha` external and close the menu on the third letter of
+"Chapter"). All three share the scheme sets, which is why a scheme is added in
+one place and the answers cannot drift.
 
 **Resolution is per-request and never persisted.** `[[The Second Gate]]` names
 a document or it does not, and that is a fact about the project this minute

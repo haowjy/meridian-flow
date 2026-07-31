@@ -23,7 +23,16 @@ Three summoned components, three physics, one store.
   every one acts on the range the pointer hit rather than on the caret.
 - **`LinkForm`** — one surface behind three doors: Ctrl+K, the toolbar's Link
   button, and the menu's Edit link. It hangs at the caret, because the writer
-  is looking at their own sentence.
+  is looking at their own sentence. Typing in its href field offers the
+  project's documents over the same engine as `[[` and `@`
+  (`useHrefReferences`): location-triggered, documents only, no create row,
+  and a pick fills the candidate's canonical URI rather than `[[Title]]`. The
+  offer steps aside — never gates — on `looksExplicitlyExternal` (the
+  classifier's intent predicate, not `normalizeLinkHref`'s commit-time
+  upgrade) and over an empty field, where Enter means remove the link. The
+  open menu is its own chrome layer nested in the form's: that is how it owns
+  ArrowUp/ArrowDown/Enter and how Escape closes the menu without the form,
+  while a closed menu claims nothing.
 
 Beside them, three things that are not summoned surfaces:
 
