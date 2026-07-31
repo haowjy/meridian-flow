@@ -19,6 +19,13 @@
  *    seam belongs to neither block, so a fence does not volunteer for it. A
  *    press ON a fence's own band (the gutter beside it) still enters it —
  *    that text is visible, and the writer is pointing at it.
+ *
+ * Both policies are geometry-independent, and cells hold any block now (§4 of
+ * the cell addendum), so the same walk answers one level down: the bands may
+ * be a CELL's children instead of the document's, and then a third rule joins
+ * the two — a press inside a cell resolves inside that cell, never a
+ * neighbouring cell and never the document. The cell is isolating; an answer
+ * that leaves it is a wrong answer, not a nearest one.
  */
 
 import { GapCursor } from "@tiptap/pm/gapcursor";
@@ -28,7 +35,7 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import { gapCursorFits, isOpaqueObject, isSourceBlock, opaqueObjectAround } from "./objects";
 
-/** A top-level block's vertical extent in viewport coordinates. */
+/** A block's vertical extent in viewport coordinates. */
 export type BlockBand = {
   /** Document position of the block itself. */
   pos: number;
@@ -36,19 +43,34 @@ export type BlockBand = {
   bottom: number;
 };
 
+/**
+ * The block container whose children the bands are — a table cell, when the
+ * press is inside one. The container is isolating, so every answer must stay
+ * inside it: a press inside a cell never resolves to a neighbouring cell or
+ * to the document (§4's cell-flavoured cousin of the no-row-children rule).
+ */
+export type PointerBoundaryContainer = {
+  node: PMNode;
+  /** Document position of the container node itself. */
+  pos: number;
+};
+
 export type PointerBoundaryInput = {
   doc: PMNode;
   /** Viewport y of the press, unclamped — how far outside is the question. */
   y: number;
   /**
-   * The bands of the top-level blocks nearest the press, in document order.
-   * They must bracket the press or the press lies past the document's end;
+   * The bands of the blocks nearest the press, in document order — top-level
+   * blocks, or the pressed cell's children when `container` names one. They
+   * must bracket the press or the press lies past the container's end;
    * `blockBandsNear` guarantees that by centring the window on the block
    * `posAtCoords` answered with.
    */
   bands: readonly BlockBand[];
   /** What `posAtCoords` answered for the press clamped into the prose column. */
   coordsPos: number | null;
+  /** Absent, the document itself is the container. */
+  container?: PointerBoundaryContainer;
 };
 
 /**
@@ -89,25 +111,69 @@ export function pointerBoundaryDecision(
     left: Math.min(Math.max(clientX, prose.left + 1), prose.right - 1),
     top: Math.min(Math.max(clientY, prose.top + 1), prose.bottom - 1),
   });
+  const container = cellUnderPress(view, clientX, clientY, coords?.pos ?? null);
   return resolvePointerBoundary({
     doc: view.state.doc,
     y: clientY,
-    bands: blockBandsNear(view, coords?.pos ?? 0),
+    bands: blockBandsNear(view, coords?.pos ?? 0, container),
     coordsPos: coords?.pos ?? null,
+    container: container ?? undefined,
   });
 }
 
-/** The rectangles of the top-level blocks around `nearPos`, in document order. */
-function blockBandsNear(view: EditorView, nearPos: number): BlockBand[] {
+/**
+ * The deepest cell the press itself is inside, or null for a top-level press.
+ *
+ * Both readings have to agree before a cell scopes the answer: `posAtCoords`
+ * says the press's document neighbourhood is in the cell, and the cell's own
+ * rectangle holds the pointer. A gutter press beside a table resolves to a
+ * position inside a cell too, and scoping THAT press to the cell would trap a
+ * page-margin click inside a grid the writer never touched.
+ */
+function cellUnderPress(
+  view: EditorView,
+  clientX: number,
+  clientY: number,
+  coordsPos: number | null,
+): PointerBoundaryContainer | null {
+  if (coordsPos === null) return null;
   const { doc } = view.state;
-  if (doc.childCount === 0) return [];
+  const $pos = doc.resolve(Math.min(Math.max(coordsPos, 0), doc.content.size));
 
-  const centre = topLevelIndex(doc, nearPos);
+  for (let depth = $pos.depth; depth >= 1; depth -= 1) {
+    const node = $pos.node(depth);
+    const role = node.type.spec.tableRole;
+    if (role !== "cell" && role !== "header_cell") continue;
+    const dom = view.nodeDOM($pos.before(depth));
+    if (!(dom instanceof Element)) continue;
+    const rect = dom.getBoundingClientRect();
+    const inside =
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom;
+    // An outer cell can still hold a press its nested table's cell does not.
+    if (inside) return { node, pos: $pos.before(depth) };
+  }
+  return null;
+}
+
+/** The rectangles of the container's blocks around `nearPos`, in document order. */
+function blockBandsNear(
+  view: EditorView,
+  nearPos: number,
+  container: PointerBoundaryContainer | null,
+): BlockBand[] {
+  const { doc } = view.state;
+  const scope = boundaryScope(doc, container ?? undefined);
+  if (scope.node.childCount === 0) return [];
+
+  const centre = scopeChildIndex(doc, scope, nearPos);
   const first = Math.max(0, centre - BAND_WINDOW);
-  const last = Math.min(doc.childCount - 1, centre + BAND_WINDOW);
+  const last = Math.min(scope.node.childCount - 1, centre + BAND_WINDOW);
 
   const bands: BlockBand[] = [];
-  let pos = 0;
+  let pos = scope.start;
   for (let index = 0; index <= last; index += 1) {
     if (index >= first) {
       const dom = view.nodeDOM(pos);
@@ -116,30 +182,45 @@ function blockBandsNear(view: EditorView, nearPos: number): BlockBand[] {
         bands.push({ pos, top: rect.top, bottom: rect.bottom });
       }
     }
-    pos += doc.child(index).nodeSize;
+    pos += scope.node.child(index).nodeSize;
   }
   return bands;
 }
 
-function topLevelIndex(doc: PMNode, pos: number): number {
-  const $pos = doc.resolve(Math.min(Math.max(pos, 0), doc.content.size));
-  return Math.min($pos.index(0), doc.childCount - 1);
+function scopeChildIndex(doc: PMNode, scope: Scope, pos: number): number {
+  const $pos = doc.resolve(Math.min(Math.max(pos, scope.start), scope.end));
+  const depth = doc.resolve(scope.start).depth;
+  return Math.min($pos.index(depth), scope.node.childCount - 1);
+}
+
+/**
+ * The container's interior, resolved once: which node's children the bands
+ * are, and the position range no answer may leave.
+ */
+type Scope = { node: PMNode; start: number; end: number };
+
+function boundaryScope(doc: PMNode, container?: PointerBoundaryContainer): Scope {
+  if (!container) return { node: doc, start: 0, end: doc.content.size };
+  const start = container.pos + 1;
+  return { node: container.node, start, end: start + container.node.content.size };
 }
 
 /**
  * The pointer-boundary policy itself, over geometry and the document alone.
  *
  * Three sites, two policies. A press whose y falls inside a block's band — or
- * past the first/last band, which is the page gutter above or below the
- * document — is a press ON that block. A press in the vertical margin between
- * two bands is a seam, and belongs to neither.
+ * past the first/last band, which is the gutter above or below the container
+ * — is a press ON that block. A press in the vertical margin between two
+ * bands is a seam, and belongs to neither.
  */
 export function resolvePointerBoundary({
   doc,
   y,
   bands,
   coordsPos,
+  container,
 }: PointerBoundaryInput): PointerBoundaryDecision {
+  const scope = boundaryScope(doc, container);
   const first = bands[0];
   const last = bands.at(-1);
   if (!first || !last) return { kind: "decline", reason: "no-blocks" };
@@ -147,12 +228,12 @@ export function resolvePointerBoundary({
   const held =
     bands.find((band) => y >= band.top && y <= band.bottom) ??
     (y < first.top ? first : y > last.bottom ? last : null);
-  if (held) return pressOnBlock(doc, bands, held, y, coordsPos);
+  if (held) return pressOnBlock(doc, scope, bands, held, y, coordsPos);
 
   const above = bands.filter((band) => band.bottom < y);
   const before = above.at(-1) ?? null;
   const after = bands.find((band) => band.top > y) ?? null;
-  return seamDecision(doc, before?.pos ?? null, after?.pos ?? null);
+  return seamDecision(doc, scope, before?.pos ?? null, after?.pos ?? null);
 }
 
 /**
@@ -165,6 +246,7 @@ export function resolvePointerBoundary({
  */
 function pressOnBlock(
   doc: PMNode,
+  scope: Scope,
   bands: readonly BlockBand[],
   band: BlockBand,
   y: number,
@@ -173,7 +255,11 @@ function pressOnBlock(
   if (coordsPos !== null) {
     const at = doc.resolve(Math.min(Math.max(coordsPos, 0), doc.content.size));
     const near = TextSelection.near(at);
-    if (near instanceof TextSelection && !opaqueObjectAround(near.$head)) {
+    // `near` reads the schema, not the scope: from the edge of a cell's last
+    // block it happily answers with the NEXT cell's text, so a landing that
+    // left the container is a wrong answer, not a nearest one.
+    const inScope = near.from >= scope.start && near.from <= scope.end;
+    if (near instanceof TextSelection && inScope && !opaqueObjectAround(near.$head)) {
       return { kind: "place", selection: near };
     }
   }
@@ -182,7 +268,7 @@ function pressOnBlock(
   const pastMiddle = y >= (band.top + band.bottom) / 2;
   const before = pastMiddle ? band : (bands[index - 1] ?? null);
   const after = pastMiddle ? (bands[index + 1] ?? null) : band;
-  return seamDecision(doc, before?.pos ?? null, after?.pos ?? null);
+  return seamDecision(doc, scope, before?.pos ?? null, after?.pos ?? null);
 }
 
 /**
@@ -195,6 +281,7 @@ function pressOnBlock(
  */
 function seamDecision(
   doc: PMNode,
+  scope: Scope,
   beforePos: number | null,
   afterPos: number | null,
 ): PointerBoundaryDecision {
@@ -217,8 +304,10 @@ function seamDecision(
 
   // Both neighbours are source or opaque and no gap belongs between them. The
   // press still asked for a caret, so it gets the nearest one there IS —
-  // forward first, matching the seam's own bias.
-  const outward = nearestWriterText(doc, boundary, 1) ?? nearestWriterText(doc, boundary, -1);
+  // forward first, matching the seam's own bias, and never past the scope: a
+  // container with no visible caret anywhere declines rather than answering
+  // with a neighbouring cell's text.
+  const outward = nearestWriterText(scope, boundary, 1) ?? nearestWriterText(scope, boundary, -1);
   return outward === null ? { kind: "decline", reason: "no-writer-text" } : placeText(doc, outward);
 }
 
@@ -260,12 +349,12 @@ function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | 
   return null;
 }
 
-/** The nearest writer text at or beyond `boundary`, scanning top-level blocks. */
-function nearestWriterText(doc: PMNode, boundary: number, direction: 1 | -1): number | null {
+/** The nearest writer text at or beyond `boundary`, scanning the scope's blocks. */
+function nearestWriterText(scope: Scope, boundary: number, direction: 1 | -1): number | null {
   const blocks: { node: PMNode; pos: number }[] = [];
-  let pos = 0;
-  for (let index = 0; index < doc.childCount; index += 1) {
-    const child = doc.child(index);
+  let pos = scope.start;
+  for (let index = 0; index < scope.node.childCount; index += 1) {
+    const child = scope.node.child(index);
     if (direction === 1 ? pos >= boundary : pos < boundary) blocks.push({ node: child, pos });
     pos += child.nodeSize;
   }
