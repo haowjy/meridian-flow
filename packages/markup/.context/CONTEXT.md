@@ -98,7 +98,12 @@ breaks remain GFM-expressible through the canonical backslash-newline spelling;
 pipe-table ingress folds that continuation before remark parsing and restores
 the `hard_break` node. Nested block serializers canonicalize remark's interim
 `<br />` form back to backslash-newline with the surrounding quote/list prefix,
-so container composition does not change the table dialect.
+so container composition does not change the table dialect. `Layout` is one of
+those serializers and the last one to run: it re-parses the block it wraps and
+stringifies it as MDX, where mdast spells a cell's break `<br />` again, so
+canonicalization runs on the wrapper's output rather than its input. The other
+order let the wrapper undo it, and MDX ingress escapes that `<` — a broken line
+in a centered or width-set table came back as the literal text `head<br />down`.
 
 The HTML table path accepts positive `colspan` and `rowspan`, inline marks,
 links, images, and `<br>` while declining unknown table structure as inert raw
