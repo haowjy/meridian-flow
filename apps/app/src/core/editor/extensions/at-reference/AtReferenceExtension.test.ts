@@ -42,6 +42,14 @@ const CATALOG: AtReferenceCatalog = {
       path: "/assets/third-gate.png",
       fileType: "image",
     },
+    {
+      kind: "asset",
+      name: "gate-plans.pdf",
+      location: "Assets",
+      assetDocumentId: "asset-plans",
+      path: "/assets/gate-plans.pdf",
+      fileType: "pdf",
+    },
   ],
 };
 
@@ -202,6 +210,13 @@ describe("what the `@` menu offers", () => {
     await type(editor, "@thi");
 
     expect(menu(editor)?.snapshot().label).toBe("Reference a document or picture");
+  });
+
+  it("withholds an asset the prose has no object for", () => {
+    // The composer's `@` will name a PDF happily; in a chapter there is nothing
+    // to insert for one, so this menu does not offer it. The create row is all
+    // that is left, because a document by that name could still be written.
+    expect(atReferenceItems(CATALOG, "plans").map(label)).toEqual(["create:plans"]);
   });
 
   it("offers no way to create a picture from a name", () => {

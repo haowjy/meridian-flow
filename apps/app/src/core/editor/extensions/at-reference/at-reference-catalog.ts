@@ -13,6 +13,7 @@
 
 import {
   filterReferenceItems,
+  type ReferenceCandidate,
   type ReferenceCatalog,
   type ReferenceItemOf,
   type ReferenceKind,
@@ -43,10 +44,26 @@ export type AtReferenceCatalog = ReferenceCatalog & AtReferenceMeta;
  */
 const NOT_A_NAME = /^\s/u;
 
+/**
+ * A picture, or a page. Not the PDF beside them.
+ *
+ * The catalog carries every asset the project holds, because the composer's `@`
+ * will name any of them as text. In prose there is nothing to insert for a PDF:
+ * the one asset object this document format has is the inline image, and a row
+ * that lands nothing is worse than a row that was never offered.
+ */
+function placeableInProse(candidate: ReferenceCandidate): boolean {
+  return candidate.kind !== "asset" || candidate.fileType === "image";
+}
+
 export function atReferenceItems(
   catalog: AtReferenceCatalog,
   query: string,
 ): readonly AtReferenceItem[] {
   if (NOT_A_NAME.test(query)) return [];
-  return filterReferenceItems(catalog.candidates, AT_REFERENCE_SCOPE, query);
+  return filterReferenceItems(
+    catalog.candidates.filter(placeableInProse),
+    AT_REFERENCE_SCOPE,
+    query,
+  );
 }

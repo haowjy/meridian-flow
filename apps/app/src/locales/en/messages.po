@@ -63,7 +63,7 @@ msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
 #. placeholder {0}: item.matchedAlias
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "(also {0})"
 msgstr "(also {0})"
 
@@ -801,7 +801,7 @@ msgid "Couldn't write"
 msgstr "Couldn't write"
 
 #. placeholder {0}: item.name
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "Create “{0}”"
 msgstr "Create “{0}”"
 
@@ -932,6 +932,10 @@ msgstr "Divider"
 msgid "Dock view"
 msgstr "Dock view"
 
+#: src/features/editor/surfaces/link/reference-rows.tsx
+msgid "document"
+msgstr "document"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Document"
 msgstr "Document"
@@ -939,6 +943,10 @@ msgstr "Document"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Document name and location"
 msgstr "Document name and location"
+
+#: src/features/editor/EditorView.tsx
+msgid "Documents"
+msgstr "Documents"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
@@ -1424,7 +1432,7 @@ msgstr "Link a document"
 msgid "Link text"
 msgstr "Link text"
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "links now, page later"
 msgstr "links now, page later"
 
@@ -1946,9 +1954,14 @@ msgstr "Paste a link or type [[a document name]]"
 msgid "photo"
 msgstr "photo"
 
+#: src/features/editor/surfaces/link/reference-rows.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
 msgstr "picture"
+
+#: src/features/editor/EditorView.tsx
+msgid "Pictures"
+msgstr "Pictures"
 
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Plain text"
@@ -2077,6 +2090,10 @@ msgstr "Redo is no longer available because the manuscript changed."
 #: src/features/chat/command-descriptor.ts
 msgid "Redoing…"
 msgstr "Redoing…"
+
+#: src/features/editor/EditorView.tsx
+msgid "Reference a document or picture"
+msgstr "Reference a document or picture"
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
@@ -2849,7 +2866,7 @@ msgstr "Try again, or return to the live document."
 msgid "Turn into"
 msgstr "Turn into"
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/reference-rows.tsx
 msgid "two documents share this name"
 msgstr "two documents share this name"
 
