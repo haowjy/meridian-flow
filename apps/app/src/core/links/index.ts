@@ -37,5 +37,6 @@ export {
   isInternalLinkTarget,
   type LinkTarget,
   linkTargetHref,
+  looksExplicitlyExternal,
   normalizeLinkHref,
 } from "./link-target";

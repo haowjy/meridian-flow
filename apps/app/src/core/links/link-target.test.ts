@@ -4,6 +4,7 @@ import {
   classifyLinkTarget,
   documentLinkTarget,
   linkTargetHref,
+  looksExplicitlyExternal,
   normalizeLinkHref,
 } from "./link-target";
 
@@ -51,6 +52,56 @@ describe("classifyLinkTarget", () => {
     // The markdown parser never adds a scheme, so `example.com` in a document
     // is a path. The https:// convenience belongs to normalizeLinkHref alone.
     expect(classifyLinkTarget("example.com")).toEqual({ kind: "relative", path: "example.com" });
+  });
+});
+
+describe("looksExplicitlyExternal", () => {
+  it.each([
+    // The design's own boundary case: a menu that closed on the third letter
+    // of "Chapter" would be normalizeLinkHref's answer, not this one.
+    "Cha",
+    "Chapter 3 The Gathering",
+    "The Second Gate",
+    "[[Second",
+    "[[The Second Gate]]",
+    "manuscript://appendix/vault-charter",
+    "work://a1b2/notes.md",
+    "kb://characters/kael.md",
+    "scratch://notes.md",
+    "chapter-213.md",
+    "../notes/kael.md",
+    "example.com",
+    // The www prefix is only explicit once the dot lands.
+    "w",
+    "www",
+    "wwwards of the gate",
+    "",
+  ])("stays out of the way of %s", (input) => {
+    expect(looksExplicitlyExternal(input)).toBe(false);
+  });
+
+  it.each([
+    "http://",
+    "https://e",
+    "https://example.com/threads/pacing",
+    "mailto:writer@example.com",
+    "//x",
+    "//example.com/path",
+    "www.",
+    "www.example.com",
+    "WWW.EXAMPLE.COM",
+    // Unknown schemes read as external: an explicit `scheme:` is a URI being
+    // spelled, whatever the scheme, and only INTERNAL_SCHEMES membership makes
+    // one internal.
+    "ftp://example.com",
+    "person://kael",
+    "javascript:alert(1)",
+  ])("steps aside for %s", (input) => {
+    expect(looksExplicitlyExternal(input)).toBe(true);
+  });
+
+  it("reads a leading colon'd word as a scheme, which the design accepts", () => {
+    expect(looksExplicitlyExternal("Notes: The Gathering")).toBe(true);
   });
 });
 

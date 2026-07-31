@@ -143,6 +143,33 @@ export function normalizeLinkHref(input: string): string | null {
 }
 
 /**
+ * Has the writer unambiguously started a URL? True only for an explicit scheme
+ * prefix whose scheme is outside the internal set, a `//` prefix, or a `www.`
+ * prefix.
+ *
+ * This is the completion menu's step-aside test, and it is deliberately NOT
+ * `normalizeLinkHref`'s commit-time reading: that function's https:// upgrade
+ * would call `Cha` external and close the menu on the third letter of
+ * "Chapter". The two answer different questions — "has the writer started a
+ * URL?" here, "what should we store?" there — but they share one scheme
+ * vocabulary, so neither can drift.
+ *
+ * A scheme this app does not know (`ftp:`, `person:` today) reads as external:
+ * any explicit `scheme:` is a writer spelling a URI rather than a document
+ * title, so the menu steps aside either way, and a scheme that later joins
+ * `INTERNAL_SCHEMES` changes this answer in the same edit. The cost is a title
+ * whose first word ends in a colon (`Notes: The Gathering`), which reads as a
+ * scheme the moment the colon lands; the design accepts that trade.
+ */
+export function looksExplicitlyExternal(input: string): boolean {
+  const value = input.trimStart();
+  if (value.startsWith("//")) return true;
+  if (/^www\./i.test(value)) return true;
+  const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
+  return scheme !== undefined && !INTERNAL_SCHEMES.has(scheme);
+}
+
+/**
  * The href a classified target actually addresses — what a link renders and
  * what the hover hint shows.
  *
