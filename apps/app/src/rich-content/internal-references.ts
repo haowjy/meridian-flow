@@ -110,7 +110,7 @@ function transform(node: MdastNode): void {
 function internalLinkReference(node: MdastNode): MdastNode | null {
   const url = node.url ?? "";
   const target = url ? classifyLinkTarget(url) : null;
-  if (!target || target.kind !== "scheme") return null;
+  if (target?.kind !== "scheme") return null;
   const text = flattenedText(node);
   return reference(linkTargetHref(target), text || url);
 }
