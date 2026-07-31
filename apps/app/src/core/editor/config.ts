@@ -21,6 +21,7 @@ import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { AutoPairExtension } from "./extensions/auto-pair";
+import { DropLandingExtension } from "./extensions/DropLandingExtension";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
@@ -165,11 +166,12 @@ function pickCursorColor(peers: PeerAwareness): string {
 }
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
-  // Dropcursor is display-only, like gapcursor below: it draws where dragged
-  // text will land and touches neither schema nor wire. It had been swept
-  // into this list with the real Yjs exclusions, which left a text drag with
-  // no landing indicator at all. Jade, matching the block drag's drop line.
-  dropcursor: { color: "var(--color-primary)", width: 2 },
+  // Off for a different reason than the rest of this list: the stock
+  // dropcursor computes its own landing, which near a cell border promises a
+  // position that would manufacture a table column. `DropLandingExtension`
+  // carries the same cursor (jade, matching the block drag's drop line) with
+  // the landing and the display resolved by one function (`table-drop.ts`).
+  dropcursor: false,
   // Gapcursor is deliberately ABSENT from this list (absent = enabled): it is
   // display-only (no schema or wire impact) and it is the caret's only way
   // BELOW a trailing table — without it a writer can reach the document end
@@ -325,6 +327,9 @@ export function createStandaloneEditorExtensions({
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
       AutoPairExtension,
+      // No tables here, so this is just the dropcursor for dragged text —
+      // the same one the document schema shows.
+      DropLandingExtension,
     ];
   }
   return [
@@ -364,6 +369,9 @@ export function createStandaloneEditorExtensions({
     // which is why the markdown text parser is its prop rather than a
     // view-level default here (a view prop would shadow the plugin's).
     ImageIngressExtension,
+    // Where dragged content lands, and the dropcursor that promises it:
+    // inside a table both resolve into a cell, never a new column.
+    DropLandingExtension,
     // Chrome mounts only on the document schema: a code file is one code
     // block with no objects and no surfaces to own.
     ...EDITOR_CHROME_EXTENSIONS,

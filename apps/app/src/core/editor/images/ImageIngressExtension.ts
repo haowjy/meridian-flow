@@ -23,6 +23,7 @@ import type { DecorationSet } from "@tiptap/pm/view";
 
 import { resolveAnchorIn } from "../anchors";
 import { markdownClipboardParser } from "../markdown-paste";
+import { tableDropDecision } from "../table-drop";
 import { startImageImport } from "./image-imports";
 import {
   applyIngressMessage,
@@ -183,7 +184,18 @@ export const ImageIngressExtension = Extension.create({
               );
               return true;
             }
-            const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+            // The same resolution the dropcursor promised during the drag
+            // (`../table-drop.ts`): near a cell border the file lands inside
+            // the nearest cell's paragraph, never as a manufactured column.
+            const decision = tableDropDecision(view, { x: event.clientX, y: event.clientY });
+            if (decision.kind === "refuse") {
+              status.refuse(t`A picture cannot go there.`);
+              return true;
+            }
+            const pos =
+              decision.kind === "snap"
+                ? decision.pos
+                : view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
             insertImageFile(editor, intent.file, pos);
             return true;
           },
