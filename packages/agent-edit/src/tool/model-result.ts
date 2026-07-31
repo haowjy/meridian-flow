@@ -29,9 +29,6 @@ export type UndoRedoOutcome =
 export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 export type WriteSuccessPhase = "staged" | "committed";
 
-export type AgentEditBlockExtent = "full" | "prefix";
-export type AgentEditBlockRelation = "document" | "changed" | "context" | "swept";
-
 export interface AgentEditBlockItem {
   hash: string;
   body: string;

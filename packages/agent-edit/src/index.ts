@@ -59,10 +59,8 @@ export {
   writeCommandName,
 } from "./tool/command-schema.js";
 export type {
-  AgentEditBlockExtent,
   AgentEditBlockGroup,
   AgentEditBlockItem,
-  AgentEditBlockRelation,
   AgentEditConcurrentRun,
   AgentEditResultCommand,
   AgentEditResultV1,
