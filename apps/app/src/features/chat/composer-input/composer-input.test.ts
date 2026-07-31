@@ -284,6 +284,20 @@ describe("pictures through @", () => {
     expect(rows(editor)).toEqual(["gate.png"]);
   });
 
+  it("derives a block from a picture at any manuscript path, not only assets/", async () => {
+    // Real assets live wherever the tree put them; the block rides on what the
+    // token IS (an asset pick), never on a URI path convention.
+    const { editor } = mount([
+      picture("pic-1.png", { uri: "manuscript://pictures/pic-1.png", path: "/pictures/pic-1.png" }),
+    ]);
+    await type(editor, "Look at @pic");
+    menu(editor).chooseActive();
+
+    expect(composerImageBlocks(editor.state.doc)).toEqual([
+      { type: "image", documentId: "asset-pic-1.png", uri: "manuscript://pictures/pic-1.png" },
+    ]);
+  });
+
   it("derives one image block per distinct picture, repeats collapsed", async () => {
     const { editor } = mount([picture("map.png")]);
     await type(editor, "Compare @map");
