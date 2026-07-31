@@ -170,6 +170,15 @@ function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): 
   insertImageFile(editor, file, at.from);
 }
 
+/**
+ * Another picture for a slot the writer already placed (§5.6's Replace verb).
+ *
+ * The node stays exactly where it is and keeps everything the writer wrote about
+ * it — its alt text, and a figure's caption and label. The ordinary upload
+ * lifecycle then runs over that slot: same entry, same progress, same failure.
+ * So nothing is inserted, nothing is removed, the manuscript does not move, and
+ * one undo puts the old picture back (`landUpload`).
+ */
 function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): void {
   const storage = imageIngressStorage(editor);
   const host = ingressHost(editor);
