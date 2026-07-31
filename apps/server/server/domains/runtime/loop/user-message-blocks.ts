@@ -66,13 +66,11 @@ export function parseUserMessageBlocks(value: unknown, fallbackText: string): Us
       if (
         !candidate.uri.includes("://") ||
         !parsedUri.ok ||
-        (parsedUri.value.scheme === "manuscript"
-          ? !parsedUri.value.path.startsWith("assets/")
-          : parsedUri.value.scheme !== "uploads") ||
+        (parsedUri.value.scheme !== "manuscript" && parsedUri.value.scheme !== "uploads") ||
         parsedUri.value.path.length === 0
       ) {
         throw new InvalidUserMessageBlocksError(
-          `blocks[${index}].uri must name a manuscript asset or thread upload`,
+          `blocks[${index}].uri must use the manuscript or uploads scheme`,
         );
       }
       return { type, documentId, uri: parsedUri.value.canonical };

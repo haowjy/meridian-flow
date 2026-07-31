@@ -62,6 +62,22 @@ describe("user message blocks", () => {
     ]);
   });
 
+  it("accepts manuscript image references outside an assets folder", () => {
+    const pictureUri = "manuscript://pictures/pic-1.png";
+    expect(
+      parseUserMessageBlocks(
+        [
+          { type: "text", text: `Look at ${pictureUri}` },
+          { type: "image", documentId, uri: pictureUri },
+        ],
+        `Look at ${pictureUri}`,
+      ),
+    ).toEqual([
+      { type: "text", text: `Look at ${pictureUri}` },
+      { type: "image", documentId, uri: pictureUri },
+    ]);
+  });
+
   it.each([
     [[{ type: "image", documentId, uri }], `Look at ${uri}`],
     [

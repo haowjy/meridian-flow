@@ -41,7 +41,7 @@ async function findImageStorage(
   const parsed = parseContextUri(reference.uri);
   if (!parsed.ok) return null;
 
-  if (parsed.value.scheme === "manuscript" && parsed.value.path.startsWith("assets/")) {
+  if (parsed.value.scheme === "manuscript") {
     const document = await deps.figures.findManuscriptAssetForProject(
       context.projectId,
       reference.documentId,

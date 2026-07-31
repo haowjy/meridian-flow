@@ -67,6 +67,31 @@ describe("context image asset adapter", () => {
     );
   });
 
+  it("resolves a manuscript image outside an assets folder", async () => {
+    const stubs = deps();
+    stubs.figures.findManuscriptAssetForProject.mockResolvedValue({
+      assetDocumentId: documentId,
+      assetPath: "pictures/pic-1.png",
+      storageUrl: "object://meridian/figures/pic-1.png",
+      mimeType: "image/png",
+      fileType: "image",
+      sizeBytes: 123,
+    });
+    const adapter = createContextImageAssetAdapter(stubs as never);
+    const reference = {
+      type: "image_reference" as const,
+      documentId,
+      uri: "manuscript://pictures/pic-1.png",
+    };
+
+    await expect(adapter.isValidReference(context, reference)).resolves.toBe(true);
+    await expect(adapter.resolve(context, reference, { maxBytes: 1024 })).resolves.toEqual({
+      mediaType: "image/png",
+      data: "AQID",
+      sizeBytes: 3,
+    });
+  });
+
   it("does not let an upload masquerade as a project manuscript asset", async () => {
     const stubs = deps();
     stubs.figures.findManuscriptAssetForProject.mockResolvedValue(null);
