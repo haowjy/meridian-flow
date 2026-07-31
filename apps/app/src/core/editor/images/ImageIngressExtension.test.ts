@@ -15,6 +15,8 @@
  * history.
  */
 import type { Editor, JSONContent } from "@tiptap/core";
+import { history, undo } from "@tiptap/pm/history";
+import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
@@ -145,8 +147,10 @@ afterEach(() => {
 });
 
 /** One writer, with both of the lane's ports held open. */
-function mount(text = "The gate opened."): Ingress {
-  const standalone = createStandaloneEditor({ content: documentSaying(text) });
+function mount(document: string | JSONContent = "The gate opened."): Ingress {
+  const standalone = createStandaloneEditor({
+    content: typeof document === "string" ? documentSaying(document) : document,
+  });
   close = standalone.destroy;
   return withHeldPorts(standalone.editor);
 }
@@ -646,6 +650,119 @@ describe("a new picture lands where the writer asked for it", () => {
     expect(imageIngressStatus(editor)?.getSnapshot().notice?.message).toBe(
       "There is nowhere left to put that picture.",
     );
+  });
+});
+
+/** A 2x2 stat table alone in the document, so a whole-table sweep is cheap. */
+function tableDocument2x2(): JSONContent {
+  const cell = (text: string): JSONContent => ({
+    type: "table_cell",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  });
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          { type: "table_row", content: [cell("a1"), cell("a2")] },
+          { type: "table_row", content: [cell("b1"), cell("b2")] },
+        ],
+      },
+    ],
+  };
+}
+
+/** Sweep a `CellSelection` between two cells, by row-major index. */
+function sweepCells(editor: Editor, anchorIndex: number, headIndex: number): void {
+  const cells: number[] = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.spec.tableRole === "cell") cells.push(pos);
+    return true;
+  });
+  const selection = CellSelection.create(editor.state.doc, cells[anchorIndex], cells[headIndex]);
+  editor.view.dispatch(editor.state.tr.setSelection(selection));
+}
+
+/** Each cell's child block types and flattened text, in document order. */
+function cellStates(editor: Editor): { blocks: string[]; text: string }[] {
+  const cells: { blocks: string[]; text: string }[] = [];
+  editor.state.doc.descendants((node) => {
+    if (node.type.spec.tableRole === "cell") {
+      const blocks: string[] = [];
+      node.forEach((child) => {
+        blocks.push(child.type.name);
+      });
+      cells.push({ blocks, text: node.textContent });
+    }
+    return true;
+  });
+  return cells;
+}
+
+/** A real paste of an image file, through the view's own paste pipeline. */
+function pasteFile(editor: Editor, file: File): void {
+  const event = new ClipboardEvent("paste", { cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      items: [{ kind: "file", type: file.type, getAsFile: () => file }],
+      getData: () => "",
+    },
+  });
+  editor.view.dom.dispatchEvent(event);
+}
+
+/**
+ * A pasted file is still a paste: over a swept rectangle of cells it means what
+ * every paste over a sweep means (`../table-sweep-paste.ts`) — the sweep is
+ * replaced, the picture lands in the top-left cell — and at a caret it is the
+ * picture landing inline, exactly as before.
+ */
+describe("an image file pasted over a sweep replaces the sweep", () => {
+  it("empties the swept cells and lands the picture's paragraph in the top-left cell", async () => {
+    const { editor, held } = mount(tableDocument2x2());
+    sweepCells(editor, 0, 3);
+
+    pasteFile(editor, imageFile());
+    await settle();
+
+    expect(held).toHaveLength(1);
+    expect(cellStates(editor)).toEqual([
+      { blocks: ["paragraph"], text: "" },
+      { blocks: ["paragraph"], text: "" },
+      { blocks: ["paragraph"], text: "" },
+      { blocks: ["paragraph"], text: "" },
+    ]);
+    // The picture stands in the top-left cell's own paragraph, in flight.
+    expect(imageNodes(editor)).toHaveLength(1);
+    expect(pictureHome(editor, "cover art")).toEqual({ text: "", role: "cell" });
+    // The caret follows it into the cell, ready to keep writing beside it.
+    expect(editor.state.selection.$from.node(-1).type.spec.tableRole).toBe("cell");
+  });
+
+  it("is one undo step: the swept cells and their text come back together", async () => {
+    const { editor } = mount(tableDocument2x2());
+    editor.registerPlugin(history());
+    const before = editor.state.doc.toJSON();
+    sweepCells(editor, 0, 3);
+
+    pasteFile(editor, imageFile());
+    await settle();
+    expect(imageNodes(editor)).toHaveLength(1);
+
+    undo(editor.view.state, editor.view.dispatch);
+    expect(editor.state.doc.toJSON()).toEqual(before);
+  });
+
+  it("still lands a caret paste inline where the caret is", async () => {
+    const { editor, held } = mount();
+    editor.commands.setTextSelection(5);
+
+    pasteFile(editor, imageFile());
+    await settle();
+
+    expect(held).toHaveLength(1);
+    expect(imageNodes(editor)).toEqual([{ pos: 5, src: "", alt: "cover art" }]);
   });
 });
 
