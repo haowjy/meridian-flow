@@ -116,15 +116,22 @@ function opaqueElementClosing(
   start: number,
   name: string,
 ): { start: number; end: number } | null {
-  const tags = new RegExp(`<\\/?${name}(?:\\s[^<>]*?)?\\s*\\/?>`, "gi");
-  tags.lastIndex = start;
   let depth = 1;
-  for (let match = tags.exec(source); match; match = tags.exec(source)) {
-    const tag = match[0];
-    if (tag.startsWith("</")) {
+  let offset = start;
+  while (offset < source.length) {
+    const tagStart = source.indexOf("<", offset);
+    if (tagStart === -1) return null;
+    const parsed = parseTag(source, tagStart);
+    if (!parsed) {
+      offset = tagStart + 1;
+      continue;
+    }
+    offset = parsed.end;
+    if (parsed.name !== name) continue;
+    if (parsed.closing) {
       depth -= 1;
-      if (depth === 0) return { start: match.index, end: tags.lastIndex };
-    } else if (!tag.endsWith("/>")) {
+      if (depth === 0) return { start: tagStart, end: parsed.end };
+    } else if (!parsed.selfClosing) {
       depth += 1;
     }
   }
@@ -172,10 +179,10 @@ function parseTag(
     if (source[offset] === ">") {
       return { name, attributes, closing, selfClosing: false, end: offset + 1 };
     }
+    if (closing) return null;
     if (source[offset] === "/" && source[offset + 1] === ">") {
       return { name, attributes, closing, selfClosing: true, end: offset + 2 };
     }
-    if (closing) return null;
 
     const attrStart = offset;
     while (/[A-Za-z0-9:_-]/.test(source[offset] ?? "")) offset++;

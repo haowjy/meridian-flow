@@ -429,6 +429,33 @@ describe("tables and Layout round-trip corpus", () => {
   });
 
   it.each([
+    "</meridian-block junk>",
+    "</meridian-block/>",
+  ])("rejects the malformed delegated-block closer %s", (closer) => {
+    const activeCodec = markdownCodec({
+      schema,
+      assetPathResolver: unresolvedAssetPathResolver,
+    });
+    const input = [
+      "<table>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>",
+      "        <meridian-block>",
+      "<table><tbody><tr><td><p>Inner</p></td></tr></tbody></table>",
+      `        ${closer}`,
+      "      </td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n");
+    const parsed = firstParsedBlock(activeCodec, input);
+
+    expect(parsed.type.name).toBe("paragraph");
+    expect(parsed.textContent).toContain(closer);
+  });
+
+  it.each([
     {
       block: "figure",
       node: schema.node("figure", {
