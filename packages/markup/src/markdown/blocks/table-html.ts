@@ -3,6 +3,7 @@
 import type { Mark, Node as PMNode } from "prosemirror-model";
 
 import { inlineContentToMdast, type MdastInline, rawTextForAst } from "../../helpers.js";
+import { getRuntime } from "../../runtime.js";
 import type { ParseContext, SerializeContext } from "../../types.js";
 import {
   decodeHtml,
@@ -18,7 +19,9 @@ import { imageNodeFromAttributes } from "./image.js";
 import { imageHtmlTag, parseRawImageHtmlAttributes } from "./image-html.js";
 
 const ALIGNMENTS = new Set(["left", "center", "right"]);
+const DELEGATED_BLOCK_ATTRIBUTE = "data-meridian-block";
 const BLOCK_ELEMENTS = new Set([
+  "div",
   "p",
   "h1",
   "h2",
@@ -130,10 +133,33 @@ function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string
     case "horizontal_rule":
       return [`${indent}<hr />`];
     case "table":
-      return serializeTableLines(block, ctx, indent);
+      return serializeDelegatedCellBlock(block, ctx, indent);
     default:
-      throw new Error(`pm->html: unsupported table cell block "${block.type.name}"`);
+      return serializeDelegatedCellBlock(block, ctx, indent);
   }
+}
+
+/**
+ * Raw HTML does not re-enter the Markdown/MDX parser for its children. Carry
+ * the ordinary top-level spelling in an HTML attribute so the same registered
+ * block codec owns both directions, including block kinds added later.
+ */
+function serializeDelegatedCellBlock(
+  block: PMNode,
+  ctx: SerializeContext,
+  indent: string,
+): string[] {
+  const source = getRuntime(ctx).serializeBlock(block, ctx).replace(/\n+$/, "");
+  const lines = [`${indent}<div ${DELEGATED_BLOCK_ATTRIBUTE}="${encodeURIComponent(source)}">`];
+
+  if (block.type.name === "table") {
+    lines.push(...source.split("\n").map((line) => `${indent}  ${line}`));
+  } else {
+    lines.push(`${indent}  <pre><code>${escapeHtmlText(source)}</code></pre>`);
+  }
+
+  lines.push(`${indent}</div>`);
+  return lines;
 }
 
 function serializeList(
@@ -233,6 +259,7 @@ function parseCellBlocks(cell: HtmlElement, ctx: ParseContext): PMNode[] | null 
 }
 
 function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
+  if (element.name === "div") return parseDelegatedCellBlock(element, ctx);
   if (element.name === "p") {
     const align = blockAlignment(element);
     const inline = align === undefined ? null : parseInlineNodes(element.children, ctx, []);
@@ -259,6 +286,24 @@ function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null 
   }
   if (element.name === "table") return parseTableElement(element, ctx);
   return null;
+}
+
+function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
+  if (element.attributes.size !== 1 || !element.attributes.has(DELEGATED_BLOCK_ATTRIBUTE)) {
+    return null;
+  }
+  const encoded = element.attributes.get(DELEGATED_BLOCK_ATTRIBUTE);
+  if (typeof encoded !== "string") return null;
+  let source: string;
+  try {
+    source = decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+  const blocks = getRuntime(ctx).parseBlocks(source, ctx);
+  if (blocks.length !== 1) return null;
+  const block = blocks[0];
+  return block?.isBlock ? block : null;
 }
 
 function parseBlockContainer(element: HtmlElement, ctx: ParseContext): PMNode[] | null {
