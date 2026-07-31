@@ -64,6 +64,10 @@ with a single unified `ContextPort` that resolves durable project schemes
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
   vocabulary, routing, and work-scope membership gating for work-scoped schemes.
+- **Thread attachment import** (`uploads/`) — resolves the thread's primary Work
+  and creates the attachment through the same `uploads://` ContextPort the agent
+  lists. `thread_documents` remains the provenance/rail index; it is not a
+  second storage location.
 
 ## Contracts
 
@@ -84,6 +88,14 @@ with a single unified `ContextPort` that resolves durable project schemes
 - Work-scoped schemes (`scratch://`, `uploads://`) carry a `<workId>` authority.
   Omitted authority resolves to the thread's primary Work. `manuscript://`,
   `kb://`, `user://` carry no work authority.
+- Thread imports allocate at the `uploads://` root. The writer's filename wins
+  when free; collisions advance deterministically to `name-2.ext`,
+  `name-3.ext`, and so on. The rail continues to project `thread_documents`
+  attachments without changing its public item shape.
+- Thread upload deletion accepts the attached document ID, resolves its current
+  authoritative `uploads://<workId>/path`, and calls `ContextPort.delete`.
+  Context soft-delete and manifest cleanup therefore remain the single deletion
+  mechanism even after a file has been renamed or moved.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Wikilink title/alias matching is case-insensitive and trims outer whitespace.
   Scheme and relative paths are exact (an omitted final extension may match);
@@ -184,6 +196,8 @@ with a single unified `ContextPort` that resolves durable project schemes
 - **`scratch://.results`** — promotion cruft, removed. Results → `scratch://<workId>/results/…`.
 - **`LegacyThreadContextPort`** / `manuscriptContextPort` / `REQUIRED_MANUSCRIPT_URI` — deleted.
 - **Corpus-import domain ceremony** — folded into `kb://imports/…` ingest.
+- **Project-internal `thread_uploads` source and backing store** — deleted.
+  Thread attachments use the primary Work's ordinary `uploads` source.
 
 ## Negative space
 

@@ -31,6 +31,34 @@ describe("context router listings", () => {
       value: [{ documentId: "document-1", provisionalName: true }],
     });
   });
+
+  it("returns the primary Work authority when a Work-scoped URI omits it", async () => {
+    const adapter = {
+      name: "uploads",
+      capabilities: { writable: true, searchable: true },
+      list: async () =>
+        Ok([
+          {
+            path: "map.png",
+            kind: "file" as const,
+            documentId: "document-1",
+            editable: false as const,
+            fileType: "image" as const,
+          },
+        ]),
+    } as unknown as ContextSchemeAdapter;
+    const port = createContextPortRouter({
+      adapters: new Map([["uploads", adapter]]),
+      adapterAuthorities: new Map([["uploads", "work-1"]]),
+      primaryWorkId: "work-1",
+      allowedAuthorities: new Set(["work-1"]),
+    });
+
+    await expect(port.list("uploads://")).resolves.toMatchObject({
+      ok: true,
+      value: [{ uri: "uploads://work-1/map.png" }],
+    });
+  });
 });
 
 describe("context router untitled identity recovery", () => {

@@ -2,7 +2,14 @@
 
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
+import {
+  contextSources,
+  documents,
+  folders,
+  projects,
+  users,
+  works,
+} from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
@@ -29,6 +36,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const ASSET_KEY_ID = "00000000-0000-4000-8000-000000000a05";
     const UPLOAD_SOURCE_ID = "00000000-0000-4000-8000-000000000a06";
     const UPLOAD_DOCUMENT_ID = "00000000-0000-4000-8000-000000000a07";
+    const WORK_ID = "00000000-0000-4000-8000-000000000a08";
     const db = createDb(DATABASE_URL, { max: 4 });
     const storedObjects = new Map<string, { bytes: Uint8Array; mimeType: string }>();
     const objectStore: ObjectStorePort = {
@@ -88,13 +96,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => db.$client.end());
 
-    it("does not classify project-scoped thread uploads as manuscript assets", async () => {
+    it("does not classify work-scoped uploads as manuscript assets", async () => {
+      await db.insert(works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Figure upload scope",
+      });
       await db.insert(contextSources).values({
         id: UPLOAD_SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Thread Uploads",
-        slug: "thread_uploads",
-        scope: "project",
+        workId: WORK_ID,
+        name: "Uploads",
+        slug: "uploads",
+        scope: "work",
       });
       await db.insert(documents).values({
         id: UPLOAD_DOCUMENT_ID,
