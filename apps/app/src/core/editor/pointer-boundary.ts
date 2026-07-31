@@ -100,18 +100,24 @@ const BAND_WINDOW = 2;
  * The one impure step: it reads the prose rectangle and the neighbouring block
  * rectangles, then hands pure data to `resolvePointerBoundary`. Callers
  * dispatch the selection; nothing here touches editor state.
+ *
+ * `known` is the pressed cell when the caller already holds it from the DOM
+ * (`cell-interior-press.ts`, whose event target IS the cell element). It
+ * outranks the geometric reading below, which depends on `posAtCoords` — the
+ * very reading a border press cannot trust.
  */
 export function pointerBoundaryDecision(
   view: EditorView,
   clientX: number,
   clientY: number,
+  known?: PointerBoundaryContainer,
 ): PointerBoundaryDecision {
   const prose = view.dom.getBoundingClientRect();
   const coords = view.posAtCoords({
     left: Math.min(Math.max(clientX, prose.left + 1), prose.right - 1),
     top: Math.min(Math.max(clientY, prose.top + 1), prose.bottom - 1),
   });
-  const container = cellUnderPress(view, clientX, clientY, coords?.pos ?? null);
+  const container = known ?? cellUnderPress(view, clientX, clientY, coords?.pos ?? null);
   return resolvePointerBoundary({
     doc: view.state.doc,
     y: clientY,

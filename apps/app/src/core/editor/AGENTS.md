@@ -112,7 +112,11 @@ change-trail events, not manuscript content.
   registration. The keyboard obeys the first rule too, through the same
   reading: an arrow walk lands ON an opaque object and Esc steps over it
   ([`objects/AGENTS.md`](objects/AGENTS.md)), so no input device can put a
-  caret in a body the page is not showing.
+  caret in a body the page is not showing. The same walk answers one level
+  down: a press on a cell's own inert surface (its padding, the seam between
+  two of its blocks) is claimed by
+  [`cell-interior-press.ts`](cell-interior-press.ts) and resolves inside THAT
+  cell — never a neighbouring cell, never the document (§4).
 
 - **A drop inside a table lands INSIDE a cell, never between two.** Near a
   cell border, `posAtCoords` answers a structural position and ProseMirror's

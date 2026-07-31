@@ -507,7 +507,13 @@ describe("a press on an object body", () => {
     const cell = instance.view.dom.querySelector("td");
     if (!cell) throw new Error("expected a cell");
 
-    expect(mouseDown(cell)).toBe(false);
+    // The press is claimed — by the cell-interior router
+    // (`../cell-interior-press.ts`), whose answer is a caret INSIDE the cell.
+    // What this rule must keep its hands off is the selection: a cell press
+    // never selects an object.
+    mouseDown(cell);
+    expect(instance.state.selection).not.toBeInstanceOf(NodeSelection);
+    expect(instance.state.selection.$from.node(-1).type.name).toBe("table_cell");
   });
 });
 

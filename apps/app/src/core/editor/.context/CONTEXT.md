@@ -252,7 +252,14 @@ Yjs document session. It must stay structurally aligned with
   is a discriminated union so the last case, a document with no visible caret
   anywhere, declines out loud instead of falling through to
   `TextSelection.near`. The decision table in `pointer-boundary.test.ts` is the
-  contract; `EditorSurfaceFrame` only dispatches what it returns.
+  contract; the two doors only dispatch what it returns —
+  `EditorSurfaceFrame` for a press outside the prose, and
+  [`cell-interior-press.ts`](../cell-interior-press.ts) for a press on a
+  cell's own inert surface (the event target IS the cell element), which
+  rides `handleDOMEvents.mousedown` after prosemirror-tables' resize and
+  sweep handlers and hands the policy the pressed cell straight from the
+  DOM, because a border press cannot trust `posAtCoords` to name its own
+  cell.
 - Enter on a whole-block selection is object physics', not the base keymap's
   (§4). What it means comes from the block: a registered object with a
   `surface` intent opens its lane's surface, a table takes the caret into its
