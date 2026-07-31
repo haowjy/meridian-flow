@@ -24,6 +24,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { and, eq } = await import("drizzle-orm");
+    const { PendingDraftWorkReassignmentError, reassignThreadPrimaryWork } = await import(
+      "../../domain/work-reassignment.js"
+    );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositories } = await import("./repositories.js");
 
@@ -188,6 +191,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           DROP FUNCTION IF EXISTS test_block_work_reassignment();
         `);
       }
+    });
+
+    it("rechecks the intermediate Work draft after a concurrent reassignment", async () => {
+      let releaseOldDraftCheck: (() => void) | undefined;
+      const oldDraftCheckBlocked = new Promise<void>((resolve) => {
+        releaseOldDraftCheck = resolve;
+      });
+      let markOldDraftCheckStarted: (() => void) | undefined;
+      const oldDraftCheckStarted = new Promise<void>((resolve) => {
+        markOldDraftCheckStarted = resolve;
+      });
+      let oldChecks = 0;
+      const works = {
+        async findById(workId: string) {
+          return { id: workId, projectId: PROJECT_ID, deletedAt: null };
+        },
+        async hasUnreviewedDraft(workId: string) {
+          if (workId === OLD_WORK_ID && oldChecks++ === 0) {
+            markOldDraftCheckStarted?.();
+            await oldDraftCheckBlocked;
+            return false;
+          }
+          return workId === FIRST_WORK_ID;
+        },
+      };
+
+      const first = reassignThreadPrimaryWork(
+        { works: works as never, threadWorks },
+        { threadId: THREAD_ID, projectId: PROJECT_ID, workId: FIRST_WORK_ID },
+      );
+      await oldDraftCheckStarted;
+      const second = reassignThreadPrimaryWork(
+        { works: works as never, threadWorks },
+        { threadId: THREAD_ID, projectId: PROJECT_ID, workId: SECOND_WORK_ID },
+      );
+      try {
+        await waitForLock("transactionid");
+      } finally {
+        releaseOldDraftCheck?.();
+      }
+      await expect(first).resolves.toEqual({ workId: FIRST_WORK_ID });
+      await expect(second).rejects.toBeInstanceOf(PendingDraftWorkReassignmentError);
+      await expect(threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: FIRST_WORK_ID,
+      });
     });
   });
 }

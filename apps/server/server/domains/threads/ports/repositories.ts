@@ -237,6 +237,11 @@ export interface ThreadDocumentRepository {
 }
 
 export interface ThreadWorksRepository {
+  /** Holds the thread row lock through primary-dependent validation and mutation. */
+  withPrimaryWorkLock<T>(
+    threadId: ThreadId,
+    operation: (primary: { workId: WorkId } | null) => Promise<T>,
+  ): Promise<T>;
   /** When primary, demotes the old primary and upserts this membership atomically. */
   addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;

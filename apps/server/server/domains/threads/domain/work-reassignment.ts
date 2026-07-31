@@ -40,16 +40,15 @@ export async function reassignThreadPrimaryWork(
     throw new InvalidThreadWorkTargetError();
   }
 
-  const current = await deps.threadWorks.findPrimary(input.threadId);
-  if (!current) throw new InvalidThreadWorkTargetError();
-  if (current.workId === input.workId) return { workId: input.workId };
+  return deps.threadWorks.withPrimaryWorkLock(input.threadId, async (current) => {
+    if (!current) throw new InvalidThreadWorkTargetError();
+    if (current.workId === input.workId) return { workId: input.workId };
 
-  if (await deps.works.hasUnreviewedDraft(current.workId)) {
-    throw new PendingDraftWorkReassignmentError();
-  }
+    if (await deps.works.hasUnreviewedDraft(current.workId)) {
+      throw new PendingDraftWorkReassignmentError();
+    }
 
-  // addMembership's primary path demotes the old primary and upserts the new
-  // one in a single repository transaction.
-  await deps.threadWorks.addMembership(input.threadId, input.workId, true);
-  return { workId: input.workId };
+    await deps.threadWorks.addMembership(input.threadId, input.workId, true);
+    return { workId: input.workId };
+  });
 }

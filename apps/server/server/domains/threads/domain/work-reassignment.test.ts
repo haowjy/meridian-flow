@@ -16,6 +16,10 @@ const target = {
   projectId: PROJECT_ID,
   deletedAt: null,
 } as Work;
+const withOldPrimaryLock = async <T>(
+  _threadId: string,
+  operation: (primary: { workId: WorkId } | null) => Promise<T>,
+): Promise<T> => operation({ workId: OLD_WORK_ID });
 
 describe("reassignThreadPrimaryWork", () => {
   it("explains that the pending draft belongs to the conversation's Work", () => {
@@ -35,7 +39,7 @@ describe("reassignThreadPrimaryWork", () => {
             hasUnreviewedDraft: async () => true,
           },
           threadWorks: {
-            findPrimary: async () => ({ workId: OLD_WORK_ID }),
+            withPrimaryWorkLock: withOldPrimaryLock,
             addMembership,
           } as never,
         },
@@ -56,7 +60,7 @@ describe("reassignThreadPrimaryWork", () => {
             hasUnreviewedDraft: async () => false,
           },
           threadWorks: {
-            findPrimary: async () => ({ workId: OLD_WORK_ID }),
+            withPrimaryWorkLock: withOldPrimaryLock,
             addMembership,
           } as never,
         },
