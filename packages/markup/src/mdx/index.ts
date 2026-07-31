@@ -48,8 +48,15 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
     remarkPlugins: [remarkMdx, remarkWikiLink],
     preprocess: (text) => escapeProseForMdxIngress(normalizeGfmTableHardBreaks(text)),
     postParse: demoteAutolinks,
+    // Canonical AFTER the wrapper, not before it. `serializeLayoutBlock`
+    // re-parses the block it is wrapping and stringifies it inside a JSX
+    // element, and mdast spells a break in a table cell `<br />` — so
+    // canonicalizing first left the wrapper free to undo it, and MDX ingress
+    // escapes that `<`, which read a broken line back as the literal text
+    // `head<br />down`. A pipe cell's break is `\` at the end of the line
+    // wherever the table sits, Layout included.
     postSerializeBlock: (node, serialized, ctx) =>
-      serializeLayoutBlock(node, canonicalizeGfmTableHardBreaks(serialized), ctx),
+      canonicalizeGfmTableHardBreaks(serializeLayoutBlock(node, serialized, ctx)),
   };
 }
 

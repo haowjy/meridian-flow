@@ -50,6 +50,7 @@ import { PassageHighlightExtension } from "./extensions/PassageHighlightExtensio
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
+import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
@@ -129,9 +130,10 @@ const lowlight = createLowlight(common);
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,
   ObjectPhysicsExtension,
-  // Not a lane: the editor's own Tab. It needs the kernel's registry to sit
-  // at two scopes at once, so it mounts exactly where the kernel does.
+  // Not lanes: the editor's own Tab and the cell's own Enter. Both need the
+  // kernel's registry to reach a scope, so they mount exactly where it does.
   TabKeymapExtension,
+  TableEnterKeymapExtension,
   // L-A formatting menu (M4)
   // L-B object controls + diagram (M5)
   // L-C table chrome (M6)
