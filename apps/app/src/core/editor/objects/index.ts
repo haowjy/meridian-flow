@@ -12,6 +12,7 @@ export {
   type ObjectOpening,
   ObjectPhysicsExtension,
   objectPhysicsPluginKey,
+  objectSelectedInDecorations,
   registerObjectEngagement,
   registerObjectKeymap,
 } from "./ObjectPhysicsExtension";

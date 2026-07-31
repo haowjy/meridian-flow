@@ -209,6 +209,72 @@
   display: block;
 }
 
+/* A picture the writer dragged to a size. The stored width lives on the wrapper
+   (the box the line is built out of), and the picture fills it — without this
+   the `<img>` would keep its own intrinsic width inside a box that changed
+   around it. `height: auto` is what keeps the ratio; the drag preserves it too,
+   and this is what holds it after a reload. The column still wins: `max-width`
+   above bounds a stored width exactly as it bounds a natural one. */
+.meridian-editor .ProseMirror .meridian-image-node--sized > img {
+  width: 100%;
+  height: auto;
+}
+
+/* The four grips a selected picture wears (§5.2's ring, made draggable).
+
+   Rendered inside the picture's own node view, which is the object overlay's
+   own default: chrome in the element it decorates scrolls and reflows with the
+   manuscript for free, so there is no rect to chase and no way to strand a grip
+   beside the paragraph that took the picture's place.
+
+   Just INSIDE the bounds, like every other object control (mockup 03b) — a grip
+   hanging outside them would be the first thing a picture at the column edge
+   lost to the clip. Nothing here reserves space: the layer is absolute over a
+   box the manuscript already sized. */
+.meridian-image-resize {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.meridian-image-resize__grip {
+  position: absolute;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 0.125rem solid var(--color-background);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  pointer-events: auto;
+  /* A grip is a control, not prose: pressing one must not sweep a selection
+     through the paragraph the picture stands in. */
+  user-select: none;
+  touch-action: none;
+}
+
+.meridian-image-resize__grip--top-left {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.meridian-image-resize__grip--top-right {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.meridian-image-resize__grip--bottom-left {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.meridian-image-resize__grip--bottom-right {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
 .meridian-image-node__placeholder {
   display: flex;
   align-items: center;
