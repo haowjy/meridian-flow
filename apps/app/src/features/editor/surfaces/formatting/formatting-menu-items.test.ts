@@ -106,14 +106,14 @@ describe("what the formatting menu offers", () => {
     expect(model.marks.code.blockedBy).toBeNull();
   });
 
-  it("greys Turn into as a whole inside a table cell rather than opening dead rows", () => {
+  it("opens Turn into inside a table cell: a cell holds any block now", () => {
     const target = editorWith(TABLE_DOC);
     const cell = posInsideType(target, "table_cell");
     target.commands.setTextSelection({ from: cell + 1, to: cell + 4 });
 
     const model = modelFor(target);
-    expect(model.turnIntoBlockedBy).toBe("table-cell");
-    // Cells are prose: the marks belong there.
+    expect(model.turnIntoBlockedBy).toBeNull();
+    expect(model.turnInto.heading2.blockedBy).toBeNull();
     expect(model.marks.bold.blockedBy).toBeNull();
     expect(model.link.blockedBy).toBeNull();
   });
