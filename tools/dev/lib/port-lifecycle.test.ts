@@ -1,6 +1,6 @@
 /** Local port liveness + wait-for-free coverage for deterministic restarts (issue #331). */
 import net from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isLocalPortFree, releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
 
 const servers: net.Server[] = [];
@@ -56,21 +56,61 @@ describe("waitForPortsFree", () => {
 });
 
 describe("releaseFixedPorts", () => {
-  it("reports a non-owned holder without killing it", async () => {
+  it("kills a surviving holder", async () => {
     const port = await listenOnEphemeralPort();
+    const holder = { pid: 1234, command: "vite" };
+    const onKill = vi.fn();
+    const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
+      if (signal === "SIGTERM") {
+        void closeServer(servers.pop() as net.Server);
+      }
+    });
     const result = await releaseFixedPorts([port], {
       timeoutMs: 0,
+      intervalMs: 10,
+      terminateTimeoutMs: 2_000,
       discoverHolders: () => ({
         ok: true,
-        holders: [{ pid: process.pid, command: "vitest" }],
+        holders: [holder],
       }),
+      killProcess,
+      onKill,
     });
 
     expect(result).toEqual({
-      status: "stillHeld",
-      held: [{ port, holders: [{ pid: process.pid, command: "vitest" }] }],
+      status: "released",
+      ports: [port],
     });
-    expect(await isLocalPortFree(port)).toBe(false);
+    expect(killProcess).toHaveBeenCalledWith(holder.pid, "SIGTERM");
+    expect(onKill).toHaveBeenCalledOnce();
+    expect(onKill).toHaveBeenCalledWith({ port, holder });
+    expect(await isLocalPortFree(port)).toBe(true);
+  });
+
+  it("force-kills a holder that survives SIGTERM", async () => {
+    const port = await listenOnEphemeralPort();
+    const holder = { pid: 1234, command: "vite" };
+    const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
+      if (signal === "SIGKILL") {
+        void closeServer(servers.pop() as net.Server);
+      }
+    });
+
+    await expect(
+      releaseFixedPorts([port], {
+        timeoutMs: 0,
+        intervalMs: 10,
+        terminateTimeoutMs: 0,
+        forceTimeoutMs: 2_000,
+        discoverHolders: () => ({ ok: true, holders: [holder] }),
+        killProcess,
+      }),
+    ).resolves.toEqual({ status: "released", ports: [port] });
+
+    expect(killProcess.mock.calls).toEqual([
+      [holder.pid, "SIGTERM"],
+      [holder.pid, "SIGKILL"],
+    ]);
   });
 
   it("reports discovery failure instead of treating an uninspectable holder as released", async () => {

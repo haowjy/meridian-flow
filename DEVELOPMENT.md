@@ -178,9 +178,10 @@ pnpm dev --restart        # stop + restart (preserves mode unless --no-tailscale
 pnpm portless:list        # live localhost HTTPS URLs
 ```
 
-Restart terminates only this worktree's owned tmux session. If a fixed port
-remains held or its holder cannot be inspected, startup refuses with diagnostics;
-port discovery never authorizes killing the holder.
+Restart terminates this worktree's owned tmux session, then owns its configured
+fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,
+waits briefly, and sends SIGKILL to stragglers. An uninspectable bound port still
+aborts startup with diagnostics.
 
 ## Workstation: memory-safe ripgrep
 

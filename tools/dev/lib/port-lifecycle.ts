@@ -1,14 +1,16 @@
 /**
- * Safe fixed-port release checks for deterministic dev restarts.
+ * Fixed-port release for deterministic dev restarts.
  *
- * Restart owns the old tmux session, not arbitrary listeners. After tmux
- * teardown this module waits for its ports to become bindable, then reports any
- * remaining holder as non-owned. It never signals a process discovered by port.
+ * The configured backend ports belong to the dev stack. After tmux teardown,
+ * anything still listening on them is stale: ask it to terminate, then
+ * force-kill any straggler before startup continues.
  */
 import { spawnSync } from "node:child_process";
 import net from "node:net";
 
 const LOOPBACK_HOST = "127.0.0.1";
+const TERMINATE_TIMEOUT_MS = 1_000;
+const FORCE_TIMEOUT_MS = 1_000;
 
 export interface PortHolder {
   readonly pid: number;
@@ -29,6 +31,21 @@ export type PortReleaseResult =
       readonly status: "discoveryError";
       readonly errors: readonly { readonly port: number; readonly error: string }[];
     };
+
+interface HeldPort {
+  readonly port: number;
+  readonly holders: readonly PortHolder[];
+}
+
+interface PortReleaseOptions {
+  readonly timeoutMs?: number;
+  readonly intervalMs?: number;
+  readonly terminateTimeoutMs?: number;
+  readonly forceTimeoutMs?: number;
+  readonly discoverHolders?: (port: number) => PortHolderDiscovery;
+  readonly killProcess?: (pid: number, signal: NodeJS.Signals) => void;
+  readonly onKill?: (entry: { readonly port: number; readonly holder: PortHolder }) => void;
+}
 
 export function isLocalPortFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -95,26 +112,114 @@ async function filterHeld(ports: readonly number[]): Promise<number[]> {
   return results.filter((entry) => !entry.free).map((entry) => entry.port);
 }
 
+function inspectHeldPorts(
+  ports: readonly number[],
+  discoverHolders: (port: number) => PortHolderDiscovery,
+): { held: HeldPort[]; errors: { port: number; error: string }[] } {
+  const held: HeldPort[] = [];
+  const errors: { port: number; error: string }[] = [];
+  for (const port of ports) {
+    const discovery = discoverHolders(port);
+    if (discovery.ok) held.push({ port, holders: discovery.holders });
+    else errors.push({ port, error: discovery.error });
+  }
+  return { held, errors };
+}
+
+function signalHolders({
+  held,
+  signal,
+  killProcess,
+  onKill,
+  announcedPids,
+}: {
+  readonly held: readonly HeldPort[];
+  readonly signal: NodeJS.Signals;
+  readonly killProcess: (pid: number, signal: NodeJS.Signals) => void;
+  readonly onKill?: PortReleaseOptions["onKill"];
+  readonly announcedPids: Set<number>;
+}): void {
+  const uniqueHolders = new Map<number, { port: number; holder: PortHolder }>();
+  for (const entry of held) {
+    for (const holder of entry.holders) {
+      if (!uniqueHolders.has(holder.pid)) {
+        uniqueHolders.set(holder.pid, { port: entry.port, holder });
+      }
+    }
+  }
+
+  for (const entry of uniqueHolders.values()) {
+    if (!announcedPids.has(entry.holder.pid)) {
+      announcedPids.add(entry.holder.pid);
+      onKill?.(entry);
+    }
+    try {
+      killProcess(entry.holder.pid, signal);
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "ESRCH"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 export async function releaseFixedPorts(
   ports: readonly number[],
-  options: {
-    readonly timeoutMs?: number;
-    readonly intervalMs?: number;
-    readonly discoverHolders?: (port: number) => PortHolderDiscovery;
-  } = {},
+  options: PortReleaseOptions = {},
 ): Promise<PortReleaseResult> {
   const unique = [...new Set(ports)];
   const stillHeld = await waitForPortsFree(unique, options);
   if (stillHeld.length === 0) return { status: "released", ports: unique };
 
   const discoverHolders = options.discoverHolders ?? discoverPortHolders;
-  const held: { port: number; holders: readonly PortHolder[] }[] = [];
-  const errors: { port: number; error: string }[] = [];
-  for (const port of stillHeld) {
-    const discovery = discoverHolders(port);
-    if (discovery.ok) held.push({ port, holders: discovery.holders });
-    else errors.push({ port, error: discovery.error });
+  const killProcess = options.killProcess ?? ((pid, signal) => process.kill(pid, signal));
+  const announcedPids = new Set<number>();
+  const inspection = inspectHeldPorts(stillHeld, discoverHolders);
+  if (inspection.errors.length > 0) {
+    return { status: "discoveryError", errors: inspection.errors };
   }
-  if (errors.length > 0) return { status: "discoveryError", errors };
-  return { status: "stillHeld", held };
+
+  signalHolders({
+    held: inspection.held,
+    signal: "SIGTERM",
+    killProcess,
+    onKill: options.onKill,
+    announcedPids,
+  });
+
+  const afterTerminate = await waitForPortsFree(stillHeld, {
+    timeoutMs: options.terminateTimeoutMs ?? TERMINATE_TIMEOUT_MS,
+    intervalMs: options.intervalMs,
+  });
+  if (afterTerminate.length === 0) return { status: "released", ports: unique };
+
+  const stragglers = inspectHeldPorts(afterTerminate, discoverHolders);
+  if (stragglers.errors.length > 0) {
+    return { status: "discoveryError", errors: stragglers.errors };
+  }
+  signalHolders({
+    held: stragglers.held,
+    signal: "SIGKILL",
+    killProcess,
+    onKill: options.onKill,
+    announcedPids,
+  });
+
+  const afterForce = await waitForPortsFree(afterTerminate, {
+    timeoutMs: options.forceTimeoutMs ?? FORCE_TIMEOUT_MS,
+    intervalMs: options.intervalMs,
+  });
+  if (afterForce.length === 0) return { status: "released", ports: unique };
+
+  const survivors = inspectHeldPorts(afterForce, discoverHolders);
+  if (survivors.errors.length > 0) {
+    return { status: "discoveryError", errors: survivors.errors };
+  }
+  return { status: "stillHeld", held: survivors.held };
 }

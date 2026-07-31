@@ -336,15 +336,16 @@ async function releaseFixedBackendPorts(
   sharedPorts: ReadonlyArray<SharedDevServicePorts>,
 ): Promise<void> {
   const ports = sharedPorts.map((entry) => entry.appBackendPort);
-  const result = await releaseFixedPorts(ports);
+  const result = await releaseFixedPorts(ports, {
+    onKill: ({ port, holder }) => {
+      console.log(`killing port ${port} holder PID ${holder.pid} (${holder.command})`);
+    },
+  });
   if (result.status === "released") return;
   if (result.status === "discoveryError") {
     throw new Error(
       result.errors
-        .map(
-          ({ port, error }) =>
-            `port ${port} is still held, but its non-owned listener could not be inspected: ${error}`,
-        )
+        .map(({ port, error }) => `port ${port} is still held but could not be inspected: ${error}`)
         .join("; "),
     );
   }
@@ -354,7 +355,7 @@ async function releaseFixedBackendPorts(
         ({ port, holders }) =>
           `port ${port} held by ${holders
             .map(({ pid, command }) => `PID ${pid} (${command})`)
-            .join(", ")}; refusing to kill a non-owned process`,
+            .join(", ")} after SIGKILL`,
       )
       .join("; "),
   );
