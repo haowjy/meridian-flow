@@ -693,6 +693,9 @@ importers:
       micromark-util-types:
         specifier: ^2.0.2
         version: 2.0.2
+      parse-entities:
+        specifier: ^4.0.2
+        version: 4.0.2
       prosemirror-model:
         specifier: ^1.25.9
         version: 1.25.9

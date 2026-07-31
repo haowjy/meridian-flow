@@ -11,6 +11,8 @@
  * one would take the rest of the document with it.
  */
 
+import { parseEntities } from "parse-entities";
+
 export type HtmlNode = HtmlElement | HtmlText;
 
 export interface HtmlElement {
@@ -43,20 +45,11 @@ export function escapeHtmlAttribute(value: string): string {
 }
 
 export function decodeHtml(value: string): string {
-  return value.replace(/&(#(?:x[0-9a-f]+|\d+)|amp|lt|gt|quot|apos);/gi, (entity, body: string) => {
-    const normalized = body.toLowerCase();
-    if (normalized === "amp") return "&";
-    if (normalized === "lt") return "<";
-    if (normalized === "gt") return ">";
-    if (normalized === "quot") return '"';
-    if (normalized === "apos") return "'";
-    const codePoint = normalized.startsWith("#x")
-      ? Number.parseInt(normalized.slice(2), 16)
-      : Number.parseInt(normalized.slice(1), 10);
-    return Number.isSafeInteger(codePoint) && codePoint <= 0x10ffff
-      ? String.fromCodePoint(codePoint)
-      : entity;
-  });
+  return parseEntities(value);
+}
+
+export function decodeHtmlAttribute(value: string): string {
+  return parseEntities(value, { attribute: true });
 }
 
 /** The one element `source` holds, or null for anything else at all. */

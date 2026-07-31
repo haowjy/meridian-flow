@@ -17,7 +17,7 @@
 
 import type { MdastJsxFlow, MdastJsxText, MdxJsxAttribute } from "../../ast.js";
 import type { PMNode, SerializeContext } from "../../types.js";
-import { decodeHtml, escapeHtmlAttribute, parseHtml } from "../html-tag.js";
+import { decodeHtmlAttribute, escapeHtmlAttribute, parseHtml } from "../html-tag.js";
 
 /** The picture's wire facts, whichever dialect spelled them. */
 export type ImageHtmlAttributes = {
@@ -99,7 +99,7 @@ export function parseRawImageHtmlAttributes(
     new Map(
       [...attributes].map(([name, value]) => [
         name,
-        typeof value === "string" ? decodeHtml(value) : value,
+        typeof value === "string" ? decodeHtmlAttribute(value) : value,
       ]),
     ),
   );

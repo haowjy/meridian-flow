@@ -7,6 +7,7 @@
  * `asset:` identity.
  */
 
+import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 
 import { createAssetPathResolver } from "./asset-path-resolver.js";
@@ -16,6 +17,8 @@ import { markdownCodec, mdxCodec } from "./index.js";
 const assetPathResolver = createAssetPathResolver([
   ["asset-1", "assets/map.png"],
   ["asset-entity", 'assets/realm&"map".png'],
+  ["asset-literal", "assets/literal&amp;map.png"],
+  ["asset-named", "assets/café©.png"],
 ]);
 const dialects = [
   { name: "markdown", codec: markdownCodec({ schema, assetPathResolver }) },
@@ -26,9 +29,30 @@ const PLAIN = "![World map](assets/map.png)";
 const SIZED = '<img src="assets/map.png" alt="World map" width="240" />';
 const ENTITY_SIZED =
   '<img src="assets/realm&amp;&quot;map&quot;.png" alt="Realm &amp; &quot;map&quot;" title="The &quot;realm&quot; &amp; beyond" width="240" />';
+const LITERAL_ENTITY_SIZED =
+  '<img src="assets/literal&amp;amp;map.png" alt="Literal &amp;amp; map" title="Literal &amp;quot; token" width="241" />';
+const NAMED_ENTITY_SIZED =
+  '<img src="assets/caf&eacute;&copy;.png" alt="caf&eacute; &copy;" title="&copy;" width="242" />';
+const NAMED_ENTITY_CANONICAL = '<img src="assets/café©.png" alt="café ©" title="©" width="242" />';
 
 function image(attrs: Record<string, unknown>) {
   return schema.node("image", { src: "asset:asset-1", alt: "World map", title: null, ...attrs });
+}
+
+function spannedTable(imageWire: string): string {
+  return [
+    "<table>",
+    "  <tbody>",
+    "    <tr>",
+    `      <td rowspan="2">${imageWire}</td>`,
+    "      <td>Upper</td>",
+    "    </tr>",
+    "    <tr>",
+    "      <td>Lower</td>",
+    "    </tr>",
+    "  </tbody>",
+    "</table>",
+  ].join("\n");
 }
 
 describe.each(dialects)("$name image sizes", ({ codec }) => {
@@ -83,19 +107,7 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
   });
 
   it("decodes a sized picture in a spanned HTML table once across saves", () => {
-    const wire = [
-      "<table>",
-      "  <tbody>",
-      "    <tr>",
-      `      <td rowspan="2">${ENTITY_SIZED}</td>`,
-      "      <td>Upper</td>",
-      "    </tr>",
-      "    <tr>",
-      "      <td>Lower</td>",
-      "    </tr>",
-      "  </tbody>",
-      "</table>",
-    ].join("\n");
+    const wire = spannedTable(ENTITY_SIZED);
     const first = codec.serialize(codec.parse(wire).blocks);
     const second = codec.serialize(codec.parse(first).blocks);
     const tableImage = codec.parse(wire).blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild;
@@ -107,6 +119,62 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
       alt: 'Realm & "map"',
       title: 'The "realm" & beyond',
       width: 240,
+    });
+  });
+
+  it.each([
+    {
+      name: "standalone",
+      wire: NAMED_ENTITY_SIZED,
+      canonical: NAMED_ENTITY_CANONICAL,
+      imageAt: (blocks: readonly PMNode[]) => blocks[0]?.firstChild,
+    },
+    {
+      name: "inside a spanned table",
+      wire: spannedTable(NAMED_ENTITY_SIZED),
+      canonical: spannedTable(NAMED_ENTITY_CANONICAL),
+      imageAt: (blocks: readonly PMNode[]) =>
+        blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild,
+    },
+  ])("decodes named HTML references $name", ({ wire, canonical, imageAt }) => {
+    const first = codec.serialize(codec.parse(wire).blocks);
+    const second = codec.serialize(codec.parse(first).blocks);
+    const parsedImage = imageAt(codec.parse(wire).blocks);
+
+    expect(first).toBe(`${canonical}\n`);
+    expect(second).toBe(first);
+    expect(parsedImage?.attrs).toMatchObject({
+      src: "asset:asset-named",
+      alt: "café ©",
+      title: "©",
+      width: 242,
+    });
+  });
+
+  it.each([
+    {
+      name: "standalone",
+      wire: LITERAL_ENTITY_SIZED,
+      imageAt: (blocks: readonly PMNode[]) => blocks[0]?.firstChild,
+    },
+    {
+      name: "inside a spanned table",
+      wire: spannedTable(LITERAL_ENTITY_SIZED),
+      imageAt: (blocks: readonly PMNode[]) =>
+        blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild,
+    },
+  ])("does not decode entity-looking data twice $name", ({ wire, imageAt }) => {
+    const first = codec.serialize(codec.parse(wire).blocks);
+    const second = codec.serialize(codec.parse(first).blocks);
+    const parsedImage = imageAt(codec.parse(wire).blocks);
+
+    expect(first).toBe(`${wire}\n`);
+    expect(second).toBe(first);
+    expect(parsedImage?.attrs).toMatchObject({
+      src: "asset:asset-literal",
+      alt: "Literal &amp; map",
+      title: "Literal &quot; token",
+      width: 241,
     });
   });
 

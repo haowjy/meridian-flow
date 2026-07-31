@@ -6,6 +6,7 @@ import { inlineContentToMdast, type MdastInline, rawTextForAst } from "../../hel
 import type { ParseContext, SerializeContext } from "../../types.js";
 import {
   decodeHtml,
+  decodeHtmlAttribute,
   elementChildren,
   escapeHtmlAttribute,
   escapeHtmlText,
@@ -294,8 +295,8 @@ function inlineMark(element: HtmlElement, ctx: ParseContext): Mark | null {
   const title = element.attributes.get("title");
   if (title === null) return null;
   return ctx.schema.marks.link.create({
-    href: decodeHtml(href),
-    title: title ? decodeHtml(title) : null,
+    href: decodeHtmlAttribute(href),
+    title: title ? decodeHtmlAttribute(title) : null,
   });
 }
 
