@@ -13,6 +13,32 @@ function work(id: string, status: Work["status"] = "active"): Work {
 }
 
 describe("resolveCurrentWork", () => {
+  it("materializes an implicit choice so archiving it does not change the current Work", async () => {
+    const older = work("older");
+    const newer = work("newer");
+    let currentWorkId: string | null = null;
+    const rows = [newer, older];
+    const deps = {
+      preferences: {
+        getCurrentWorkId: async () => currentWorkId,
+        setCurrentWorkId: async (_userId: string, _projectId: string, workId: string) => {
+          currentWorkId = workId;
+        },
+      },
+      works: {
+        findById: async (id: string) => rows.find((candidate) => candidate.id === id) ?? null,
+        listByProject: async (_projectId: string, options?: { status?: Work["status"] }) =>
+          rows.filter((candidate) => candidate.status === options?.status),
+      },
+    } as never;
+
+    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(newer);
+    expect(currentWorkId).toBe(newer.id);
+
+    newer.status = "archived";
+    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(newer);
+  });
+
   it("keeps an archived preference current", async () => {
     const preferred = work("preferred", "archived");
     const listByProject = vi.fn();
@@ -39,7 +65,10 @@ describe("resolveCurrentWork", () => {
     await expect(
       resolveCurrentWork(
         {
-          preferences: { getCurrentWorkId: async () => "deleted" } as never,
+          preferences: {
+            getCurrentWorkId: async () => "deleted",
+            setCurrentWorkId: async () => {},
+          } as never,
           works: { findById: async () => null, listByProject } as never,
         },
         { userId: USER_ID },
@@ -58,7 +87,10 @@ describe("resolveCurrentWork", () => {
     await expect(
       resolveCurrentWork(
         {
-          preferences: { getCurrentWorkId: async () => null } as never,
+          preferences: {
+            getCurrentWorkId: async () => null,
+            setCurrentWorkId: async () => {},
+          } as never,
           works: { listByProject } as never,
         },
         { userId: USER_ID },
@@ -74,7 +106,10 @@ describe("resolveCurrentWork", () => {
     await expect(
       resolveCurrentWork(
         {
-          preferences: { getCurrentWorkId: async () => null } as never,
+          preferences: {
+            getCurrentWorkId: async () => null,
+            setCurrentWorkId: async () => {},
+          } as never,
           works: {
             listByProject: async () => [],
             ensureDefaultForProject,

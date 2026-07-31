@@ -26,10 +26,18 @@ export async function resolveCurrentWork(
   }
 
   const [active] = await deps.works.listByProject(project.id, { status: "active" });
-  if (active) return active;
+  if (active) {
+    await deps.preferences.setCurrentWorkId(user.userId, project.id, active.id);
+    return active;
+  }
 
   const [archived] = await deps.works.listByProject(project.id, { status: "archived" });
-  if (archived) return archived;
+  if (archived) {
+    await deps.preferences.setCurrentWorkId(user.userId, project.id, archived.id);
+    return archived;
+  }
 
-  return deps.works.ensureDefaultForProject(project.id, project.name);
+  const created = await deps.works.ensureDefaultForProject(project.id, project.name);
+  await deps.preferences.setCurrentWorkId(user.userId, project.id, created.id);
+  return created;
 }
