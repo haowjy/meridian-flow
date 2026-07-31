@@ -56,6 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: createBoundCollab(),
       }).ensureDefaultBootstrap(USER_ID as never);
     }

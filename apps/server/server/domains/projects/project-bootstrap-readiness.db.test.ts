@@ -1,5 +1,6 @@
 /** Postgres coverage for the default-workspace readiness fast and repair paths. */
 
+import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -17,15 +18,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
-    const { createDrizzleProjectBootstrapRepository } = await import("./index.js");
+    const { createInMemoryEventSink } = await import("../observability/index.js");
+    const { createDrizzleProjectPreferencesRepository } = await import("../preferences/index.js");
+    const {
+      createDrizzleProjectBootstrapRepository,
+      createDrizzleProjectRepository,
+      createDrizzleProjectWorkRepository,
+    } = await import("./index.js");
     const { createDrizzleRepositories } = await import("../threads/adapters/drizzle/index.js");
+    const { createThreadForProject } = await import("../../lib/thread-creation.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
     const { default: postgres } = await import("postgres");
 
     const USER_ID = "00000000-0000-4000-8000-000000000358";
+    const INSERT_BARRIER_KEY = 748_210_358;
     const db = createDb(DATABASE_URL, { max: 4 });
     const lockClient = postgres(DATABASE_URL, { max: 1 });
+    const observer = postgres(DATABASE_URL, { max: 1 });
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -35,7 +45,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => {
       await db.$client.end();
       await lockClient.end();
+      await observer.end();
     });
+
+    async function waitForAdvisoryWait(queryPattern: string): Promise<void> {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const [row] = await observer<{ count: string }[]>`
+          SELECT count(*)::text AS count
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event = 'advisory'
+            AND query ILIKE ${`%${queryPattern}%`}
+        `;
+        if (Number(row?.count ?? 0) > 0) return;
+        await delay(10);
+      }
+      throw new Error(`Timed out waiting for advisory lock in query matching ${queryPattern}`);
+    }
 
     function createBoundCollab() {
       const collab = createCollabDomain({
@@ -57,6 +83,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const coldRepository = createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: {
           ...collab,
           async seedFromMarkdown(...args: Parameters<typeof collab.seedFromMarkdown>) {
@@ -111,6 +138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: {
           ...collab,
           async seedFromMarkdown() {
@@ -126,6 +154,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const repaired = createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       });
       await expect(repaired.ensureDefaultBootstrapReady(USER_ID as never)).resolves.toBe(true);
@@ -142,6 +171,100 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: "# Chapter 1\n",
       });
+    });
+
+    it("concurrently repairs bootstrap and creates conversations without deadlocking", async () => {
+      const collab = createBoundCollab();
+      const threadRepos = createDrizzleRepositories(db);
+      const bootstrapRepository = createDrizzleProjectBootstrapRepository({
+        db,
+        threads: threadRepos.threads,
+        threadWorks: threadRepos.threadWorks,
+        documents: collab,
+      });
+      let bootstrap = await bootstrapRepository.ensureDefaultBootstrap(USER_ID as never);
+      const workRepo = createDrizzleProjectWorkRepository({
+        db,
+        hasUnreviewedDraft: async () => false,
+      });
+      const createConversation = (iteration: number) =>
+        createThreadForProject(
+          {
+            projects: createDrizzleProjectRepository({ db }),
+            workRepo,
+            preferences: createDrizzleProjectPreferencesRepository({ db }),
+            threads: threadRepos.threads,
+            threadWorks: threadRepos.threadWorks,
+            transaction: threadRepos.transaction,
+            eventSink: createInMemoryEventSink(),
+          },
+          {
+            projectId: bootstrap.projectId,
+            userId: USER_ID,
+            workId: bootstrap.workId,
+            title: `Concurrent conversation ${iteration}`,
+          },
+        );
+
+      await lockClient.unsafe(`
+        CREATE FUNCTION test_block_bootstrap_thread_insert() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${INSERT_BARRIER_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_bootstrap_thread_insert
+        BEFORE INSERT ON threads
+        FOR EACH ROW EXECUTE FUNCTION test_block_bootstrap_thread_insert();
+      `);
+
+      try {
+        for (let iteration = 0; iteration < 8; iteration += 1) {
+          await db.delete(schema.threads).where(eq(schema.threads.id, bootstrap.threadId));
+          await lockClient`SELECT pg_advisory_lock(${INSERT_BARRIER_KEY})`;
+          let insertBarrierHeld = true;
+
+          try {
+            const conversation = createConversation(iteration);
+            await waitForAdvisoryWait('insert into "threads"');
+
+            const repair = bootstrapRepository.ensureDefaultBootstrap(USER_ID as never);
+            await waitForAdvisoryWait("hashtextextended");
+
+            await lockClient`SELECT pg_advisory_unlock(${INSERT_BARRIER_KEY})`;
+            insertBarrierHeld = false;
+
+            const [conversationResult, repairResult] = await Promise.allSettled([
+              conversation,
+              repair,
+            ]);
+            expect(conversationResult.status).toBe("fulfilled");
+            expect(repairResult.status).toBe("fulfilled");
+            if (conversationResult.status === "fulfilled") {
+              expect(conversationResult.value.workId).toBe(bootstrap.workId);
+              await expect(
+                threadRepos.threadWorks.findPrimary(conversationResult.value.id as never),
+              ).resolves.toEqual({ workId: bootstrap.workId });
+            }
+            if (repairResult.status === "fulfilled") {
+              bootstrap = repairResult.value;
+              await expect(
+                threadRepos.threadWorks.findPrimary(bootstrap.threadId),
+              ).resolves.toEqual({ workId: bootstrap.workId });
+            }
+          } finally {
+            if (insertBarrierHeld) {
+              await lockClient`SELECT pg_advisory_unlock(${INSERT_BARRIER_KEY})`;
+            }
+          }
+        }
+      } finally {
+        await lockClient.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_bootstrap_thread_insert ON threads;
+          DROP FUNCTION IF EXISTS test_block_bootstrap_thread_insert();
+        `);
+      }
     });
   });
 }

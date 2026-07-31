@@ -27,7 +27,7 @@ import type {
   MarkdownDocumentStore,
 } from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
-import type { ThreadRepository } from "../threads/index.js";
+import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
@@ -89,6 +89,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
   threads: Pick<ThreadRepository, "create">;
+  threadWorks: Pick<ThreadWorksRepository, "addMembership">;
 }): ProjectBootstrapRepository {
   const { db } = deps;
   const repairedReadyUsers = new Set<UserId>();
@@ -173,8 +174,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     projectId: ProjectId,
     userId: UserId,
   ): Promise<WorkId> {
-    // Bootstrap inserts its membership directly later in this transaction, so
-    // this lock must share the deletion gate used by ThreadWorksRepository.
     const [existing] = await tx
       .select({ id: works.id })
       .from(works)
@@ -185,8 +184,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
           isNull(works.deletedAt),
         ),
       )
-      .limit(1)
-      .for("update");
+      .limit(1);
     if (existing) return existing.id;
 
     const [work] = await tx
@@ -341,12 +339,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       currentAgent: input.agentSlug ?? "writer",
     });
 
-    await tx.insert(threadWorks).values({
-      threadId: thread.id,
-      workId: input.workId,
-      projectId: input.projectId,
-      isPrimary: true,
-    });
+    await deps.threadWorks.addMembership(thread.id, input.workId, true);
 
     await tx.insert(threadDocuments).values({
       threadId: thread.id,

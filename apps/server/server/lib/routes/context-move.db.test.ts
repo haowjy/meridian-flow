@@ -104,6 +104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId } = await createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
       const contextPorts = createProductionUnifiedContextPortFactory({

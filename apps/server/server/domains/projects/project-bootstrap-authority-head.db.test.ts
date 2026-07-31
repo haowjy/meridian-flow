@@ -59,6 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         documents: collab,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
       });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       await collab.writeDocument({
@@ -95,6 +96,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const bootstrap = await createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
       const contextPorts = createProductionUnifiedContextPortFactory({
@@ -135,6 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: {
           ...collab,
           createDocumentAtomically: (input) => {
@@ -166,6 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const repaired = await createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
 
@@ -180,6 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = await createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
       await collab.writeDocument({
@@ -197,6 +202,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
 
@@ -214,6 +220,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const bootstrap = await createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
       const view = {
@@ -283,6 +290,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const bootstrap = await createDrizzleProjectBootstrapRepository({
         db,
         threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: {
           ...collab,
           async seedFromMarkdown(documentId, markdown, origin) {

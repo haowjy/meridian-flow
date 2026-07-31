@@ -368,6 +368,7 @@ export async function createProductionAppPorts(input: {
     db,
     documents: documentSync,
     threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
   });
   const workRepo = createDrizzleProjectWorkRepository({
     db,
