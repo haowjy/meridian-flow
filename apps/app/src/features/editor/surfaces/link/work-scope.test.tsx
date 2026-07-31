@@ -311,6 +311,7 @@ function resolvedLink(documentId: string) {
   return {
     documentId,
     title: "Notes",
+    fileType: "markdown",
     scheme: "work" as const,
     path: "notes.md",
     uri: "work://notes.md",

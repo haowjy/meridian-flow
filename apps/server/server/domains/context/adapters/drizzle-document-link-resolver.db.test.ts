@@ -104,6 +104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             folderId: parentId,
             name,
             extension,
+            fileType: candidate.fileType,
             metadata: { aliases: candidate.aliases ?? [] },
           });
         },

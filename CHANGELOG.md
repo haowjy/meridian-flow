@@ -62,8 +62,8 @@
   corruption.
 - `apps/server`: project links now resolve through one owner-gated endpoint.
   Wikilink titles and aliases, manuscript and Work locations, and relative
-  paths all return one canonical document or an ordinary unresolved result;
-  ambiguous names are never guessed.
+  paths all return one canonical document with its classified file type or an
+  ordinary unresolved result; ambiguous names are never guessed.
 - `apps/app`, `packages/markup`, `packages/prosemirror-schema`: chapters now
   carry tables, diagrams, and block alignment, with full writer-facing
   controls. A ```mermaid fence renders as a diagram with a pan/zoom

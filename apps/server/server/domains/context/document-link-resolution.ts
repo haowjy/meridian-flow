@@ -11,6 +11,7 @@ export interface DocumentLinkCandidate {
   documentId: string;
   title: string;
   aliases?: readonly string[];
+  fileType: string;
   scheme: "manuscript" | "work";
   path: string;
   workId: string | null;
@@ -28,6 +29,7 @@ export function resolveDocumentLink(
   return {
     documentId: match.documentId,
     title: match.title,
+    fileType: match.fileType,
     scheme: match.scheme,
     path: match.path,
     uri:

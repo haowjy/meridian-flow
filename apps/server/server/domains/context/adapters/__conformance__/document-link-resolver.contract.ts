@@ -36,6 +36,7 @@ export function registerDocumentLinkResolverContract(
       ).resolves.toMatchObject({
         documentId: DOCUMENT_LINK_CONTRACT_IDS.chapter,
         title: "Chapter 213",
+        fileType: "markdown",
         uri: "manuscript://chapters/Chapter 213.md",
       });
       await expect(
@@ -45,6 +46,7 @@ export function registerDocumentLinkResolverContract(
         }),
       ).resolves.toMatchObject({
         documentId: DOCUMENT_LINK_CONTRACT_IDS.character,
+        fileType: "image",
         uri: "manuscript://characters/Kael.md",
       });
     });
@@ -152,6 +154,7 @@ function chapter(): DocumentLinkCandidate {
     documentId: DOCUMENT_LINK_CONTRACT_IDS.chapter,
     title: "Chapter 213",
     aliases: ["The Trial"],
+    fileType: "markdown",
     scheme: "manuscript",
     path: "chapters/Chapter 213.md",
     workId: null,
@@ -164,6 +167,7 @@ function character(): DocumentLinkCandidate {
     documentId: DOCUMENT_LINK_CONTRACT_IDS.character,
     title: "Kael",
     aliases: ["The Stormblade"],
+    fileType: "image",
     scheme: "manuscript",
     path: "characters/Kael.md",
     workId: null,
@@ -175,6 +179,7 @@ function workNote(): DocumentLinkCandidate {
     projectId: DOCUMENT_LINK_CONTRACT_IDS.project,
     documentId: DOCUMENT_LINK_CONTRACT_IDS.workNote,
     title: "Pacing",
+    fileType: "markdown",
     scheme: "work",
     path: "notes/Pacing.md",
     workId: DOCUMENT_LINK_CONTRACT_IDS.work,

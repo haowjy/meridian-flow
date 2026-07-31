@@ -16,6 +16,7 @@ import { createLinkResolution } from "./link-resolution";
 const found: ResolvedDocumentLink = {
   documentId: "document-1",
   title: "The Second Gate",
+  fileType: "markdown",
   scheme: "manuscript",
   path: "/the-second-gate.md",
   uri: "manuscript://the-second-gate.md",

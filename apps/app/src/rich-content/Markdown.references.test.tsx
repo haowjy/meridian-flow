@@ -24,6 +24,7 @@ import { Markdown } from "./Markdown";
 const found: ResolvedDocumentLink = {
   documentId: "document-1",
   title: "The Third Gate",
+  fileType: "markdown",
   scheme: "manuscript",
   path: "/chapters/the-third-gate.md",
   uri: "manuscript://chapters/the-third-gate.md",

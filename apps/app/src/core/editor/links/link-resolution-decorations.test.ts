@@ -31,6 +31,7 @@ afterEach(() => {
 const SECOND_GATE: ResolvedDocumentLink = {
   documentId: "doc-1",
   title: "The Second Gate",
+  fileType: "markdown",
   scheme: "manuscript",
   path: "chapters/the-second-gate.md",
   uri: "manuscript://chapters/the-second-gate.md",
