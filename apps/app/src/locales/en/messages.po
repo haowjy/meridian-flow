@@ -2093,6 +2093,7 @@ msgid "Redoing…"
 msgstr "Redoing…"
 
 #: src/features/chat/composer-references/useComposerReferences.ts
+#: src/features/editor/surfaces/link/useHrefReferences.ts
 msgid "Reference a document"
 msgstr "Reference a document"
 
