@@ -142,6 +142,41 @@ describe("releaseFixedPorts", () => {
     ]);
   });
 
+  it("signals a holder discovered after SIGKILL before inspecting the port again", async () => {
+    const port = await listenOnEphemeralPort();
+    const firstHolder = { pid: 1234, command: "vite-old" };
+    const postKillHolder = { pid: 5678, command: "vite-post-kill" };
+    const nextHolder = { pid: 9012, command: "vite-next" };
+    const discoveries = [firstHolder, firstHolder, postKillHolder];
+    let discoveryCount = 0;
+    const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
+      if (_pid === nextHolder.pid && signal === "SIGKILL") {
+        void closeServer(servers.pop() as net.Server);
+      }
+    });
+
+    await expect(
+      releaseFixedPorts([port], {
+        intervalMs: 10,
+        terminateTimeoutMs: 0,
+        forceTimeoutMs: 100,
+        discoverHolders: () => ({
+          ok: true,
+          holders: [discoveries[discoveryCount++] ?? nextHolder],
+        }),
+        killProcess,
+      }),
+    ).resolves.toEqual({ status: "released", ports: [port] });
+
+    expect(killProcess.mock.calls).toEqual([
+      [firstHolder.pid, "SIGTERM"],
+      [firstHolder.pid, "SIGKILL"],
+      [postKillHolder.pid, "SIGTERM"],
+      [nextHolder.pid, "SIGTERM"],
+      [nextHolder.pid, "SIGKILL"],
+    ]);
+  });
+
   it("reports discovery failure instead of treating an uninspectable holder as released", async () => {
     const port = await listenOnEphemeralPort();
     const result = await releaseFixedPorts([port], {

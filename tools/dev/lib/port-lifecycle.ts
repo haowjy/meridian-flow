@@ -187,16 +187,16 @@ export async function releaseFixedPorts(
   options: PortReleaseOptions = {},
 ): Promise<PortReleaseResult> {
   const unique = [...new Set(ports)];
-  let stillHeld = await filterHeld(unique);
-  if (stillHeld.length === 0) return { status: "released", ports: unique };
+  const initiallyHeld = await filterHeld(unique);
+  if (initiallyHeld.length === 0) return { status: "released", ports: unique };
 
   const discoverHolders = options.discoverHolders ?? discoverPortHolders;
   const killProcess = options.killProcess ?? ((pid, signal) => process.kill(pid, signal));
   const announcedPids = new Set<number>();
   const terminatedPids = new Set<number>();
+  let inspection = await inspectHeldPorts(initiallyHeld, discoverHolders);
 
-  while (stillHeld.length > 0) {
-    const inspection = await inspectHeldPorts(stillHeld, discoverHolders);
+  while (true) {
     if (inspection.errors.length > 0) {
       return { status: "discoveryError", errors: inspection.errors };
     }
@@ -214,10 +214,11 @@ export async function releaseFixedPorts(
       for (const entry of ungraced) {
         for (const holder of entry.holders) terminatedPids.add(holder.pid);
       }
-      stillHeld = await waitForPortsFree(heldPorts(inspection.held), {
+      const afterTerminate = await waitForPortsFree(heldPorts(inspection.held), {
         timeoutMs: options.terminateTimeoutMs ?? TERMINATE_TIMEOUT_MS,
         intervalMs: options.intervalMs,
       });
+      inspection = await inspectHeldPorts(afterTerminate, discoverHolders);
       continue;
     }
 
@@ -234,17 +235,14 @@ export async function releaseFixedPorts(
     });
     if (afterForce.length === 0) return { status: "released", ports: unique };
 
-    const survivors = await inspectHeldPorts(afterForce, discoverHolders);
-    if (survivors.errors.length > 0) {
-      return { status: "discoveryError", errors: survivors.errors };
+    inspection = await inspectHeldPorts(afterForce, discoverHolders);
+    if (inspection.errors.length > 0) {
+      return { status: "discoveryError", errors: inspection.errors };
     }
-    if (survivors.held.length === 0) return { status: "released", ports: unique };
-    if (survivors.held.some((entry) => entry.holders.some((h) => !terminatedPids.has(h.pid)))) {
-      stillHeld = heldPorts(survivors.held);
+    if (inspection.held.length === 0) return { status: "released", ports: unique };
+    if (inspection.held.some((entry) => entry.holders.some((h) => !terminatedPids.has(h.pid)))) {
       continue;
     }
-    return { status: "stillHeld", held: survivors.held };
+    return { status: "stillHeld", held: inspection.held };
   }
-
-  return { status: "released", ports: unique };
 }
