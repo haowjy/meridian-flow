@@ -21,8 +21,10 @@ This domain is not the full project CRUD surface; that lives in
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
-| `WorkRepository` | Create/list/update/archive/unarchive/delete Works; delete is guarded by live thread memberships and unreviewed drafts. |
-| `resolveCurrentWork(user, project)` | Preference first, then newest active Work, newest archived Work, then concrete default creation. |
+| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes Works; delete is guarded by live thread memberships and unreviewed drafts. Its `transaction` boundary keeps compound Work commands atomic. |
+| `createWork(user, input)` | Creates a Work and selects it as that writer’s current Work in the same transaction. |
+| `updateWork(workId, input)` | Applies metadata edits and an optional archive/unarchive lifecycle transition in one transaction. |
+| `resolveCurrentWork(user, project)` | Reads the saved preference. Only a null or dangling selection falls back to newest active Work, newest archived Work, then concrete default creation; it persists that fallback with CAS and retries if another selection won. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 
 ## Invariants
@@ -31,9 +33,9 @@ This domain is not the full project CRUD surface; that lives in
   so concurrent first-load requests converge.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
-- The default agent slug is `writer`; the default work name is `Book 1`; the
-  initial thread is `kind = "primary"` and linked to the chapter document with
-  `relationship = "editing"`.
+- The default agent slug is `writer`; the default Work name is `Book 1`; the
+  initial primary thread is titled `Chapter 1`, so its stable thread slug is
+  `chapter-1`, and it links to the chapter document with `relationship = "editing"`.
 - Re-running bootstrap must return the same logical bundle instead of creating a
   second personal project, manuscript source, chapter document, or editing
   thread.
@@ -50,6 +52,9 @@ This domain is not the full project CRUD surface; that lives in
   advisory lock and never enter collab.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
+- Current Work is sticky per `(userId, projectId)`: an archived selection remains
+  valid and the works list includes it even when the requested lifecycle filter
+  would otherwise omit it.
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`.
 

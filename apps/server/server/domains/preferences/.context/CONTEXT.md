@@ -7,8 +7,8 @@ keep in-memory and Drizzle adapters behaviorally identical.
 ## What it owns
 
 - **`ProjectPreferencesRepository` port** — `read` / `upsert` with
-  `defaultProjectPreferences()` fallback, plus `getCurrentWorkId` /
-  `setCurrentWorkId`.
+  `defaultProjectPreferences()` fallback, plus current-Work get/set and
+  compare-and-swap (`setCurrentWorkIdIfUnchanged`).
 - **Domain helpers** — `copyProjectPreferences` (defensive copy),
   `mergeProjectPreferences` (patch application),
   `defaultProjectPreferences` (canonical defaults).
@@ -19,7 +19,7 @@ keep in-memory and Drizzle adapters behaviorally identical.
 
 | Port | Surface |
 |---|---|
-| `ProjectPreferencesRepository` | Read/upsert UI preferences and get/set the writer's current Work for one project. |
+| `ProjectPreferencesRepository` | Reads/upserts UI preferences and gets/sets the writer’s current Work for one project; compare-and-swap protects fallback repair from overwriting a concurrent selection. |
 
 ## Adapters
 
@@ -43,7 +43,9 @@ hermetic tests and local reference behavior.
   via `UpdateProjectPreferencesRequest`.
 - **Persistence.** Production preferences survive server restart through Drizzle/Postgres.
 - **Current Work is an identity, not UI state.** It stays on the same
-  `(userId, projectId)` row, and archive does not clear it.
+  `(userId, projectId)` row, and archive does not clear it. A resolver may
+  repair only a null or dangling value; that write is compare-and-swap against
+  the value it read, then retries on contention.
 
 ## Cross-domain dependencies
 
