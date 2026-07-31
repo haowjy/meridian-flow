@@ -20,7 +20,17 @@ import { imageHtmlTag, parseRawImageHtmlAttributes } from "./image-html.js";
 
 const ALIGNMENTS = new Set(["left", "center", "right"]);
 const DELEGATED_BLOCK_ELEMENT = "meridian-block";
+const DELEGATED_BLOCK_KIND_ATTRIBUTE = "kind";
 const DELEGATED_BLOCK_SOURCE_ATTRIBUTE = "source";
+const NATIVE_CELL_BLOCK_KINDS = new Set([
+  "paragraph",
+  "heading",
+  "bullet_list",
+  "ordered_list",
+  "blockquote",
+  "code_block",
+  "horizontal_rule",
+]);
 const BLOCK_ELEMENTS = new Set([
   DELEGATED_BLOCK_ELEMENT,
   "p",
@@ -90,6 +100,10 @@ function serializeRow(row: PMNode, ctx: SerializeContext, indent: string): strin
 }
 
 function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string): string[] {
+  if (!NATIVE_CELL_BLOCK_KINDS.has(block.type.name)) {
+    return serializeDelegatedCellBlock(block, ctx, indent);
+  }
+
   switch (block.type.name) {
     case "paragraph":
       return [
@@ -133,10 +147,8 @@ function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string
     }
     case "horizontal_rule":
       return [`${indent}<hr />`];
-    case "table":
-      return serializeDelegatedCellBlock(block, ctx, indent);
     default:
-      return serializeDelegatedCellBlock(block, ctx, indent);
+      throw new Error(`pm->html: unsupported native table-cell block "${block.type.name}"`);
   }
 }
 
@@ -151,13 +163,14 @@ function serializeDelegatedCellBlock(
   indent: string,
 ): string[] {
   const source = getRuntime(ctx).serializeBlock(block, ctx).replace(/\n+$/, "");
+  const kind = escapeHtmlAttribute(block.type.name);
   if (block.type.name !== "table") {
     return [
-      `${indent}<${DELEGATED_BLOCK_ELEMENT} ${DELEGATED_BLOCK_SOURCE_ATTRIBUTE}="${escapeHtmlAttribute(source)}" />`,
+      `${indent}<${DELEGATED_BLOCK_ELEMENT} ${DELEGATED_BLOCK_KIND_ATTRIBUTE}="${kind}" ${DELEGATED_BLOCK_SOURCE_ATTRIBUTE}="${escapeHtmlAttribute(source)}" />`,
     ];
   }
   return [
-    `${indent}<${DELEGATED_BLOCK_ELEMENT}>`,
+    `${indent}<${DELEGATED_BLOCK_ELEMENT} ${DELEGATED_BLOCK_KIND_ATTRIBUTE}="${kind}">`,
     source,
     `${indent}</${DELEGATED_BLOCK_ELEMENT}>`,
   ];
@@ -290,11 +303,16 @@ function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null 
 }
 
 function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
+  const encodedKind = element.attributes.get(DELEGATED_BLOCK_KIND_ATTRIBUTE);
+  if (typeof encodedKind !== "string") return null;
+  const kind = decodeHtmlAttribute(encodedKind);
+  if (NATIVE_CELL_BLOCK_KINDS.has(kind)) return null;
+
   let source: string;
-  if (element.attributes.size === 0 && element.rawContent !== undefined) {
+  if (element.attributes.size === 1 && element.rawContent !== undefined) {
     source = element.rawContent.replace(/^\n/, "").replace(/\n$/, "");
   } else if (
-    element.attributes.size === 1 &&
+    element.attributes.size === 2 &&
     element.rawContent === undefined &&
     element.attributes.has(DELEGATED_BLOCK_SOURCE_ATTRIBUTE)
   ) {
@@ -307,7 +325,7 @@ function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNod
   const blocks = getRuntime(ctx).parseBlocks(source, ctx);
   if (blocks.length !== 1) return null;
   const block = blocks[0];
-  return block?.isBlock ? block : null;
+  return block?.isBlock && block.type.name === kind ? block : null;
 }
 
 function parseBlockContainer(element: HtmlElement, ctx: ParseContext): PMNode[] | null {
