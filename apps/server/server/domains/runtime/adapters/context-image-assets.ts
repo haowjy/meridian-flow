@@ -55,7 +55,10 @@ async function findImageStorage(
   if (!attached) return null;
   const document = await deps.uploads.getDocument(reference.documentId);
   const mediaType = imageMediaType(document?.mimeType);
-  return document?.storageUrl && mediaType
+  return document?.projectId === context.projectId &&
+    document.uploadUri === parsed.value.canonical &&
+    document.storageUrl &&
+    mediaType
     ? {
         mediaType,
         storageUrl: document.storageUrl,

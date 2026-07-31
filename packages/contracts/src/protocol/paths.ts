@@ -180,6 +180,10 @@ export function apiThreadUploadsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/uploads`;
 }
 
+export function apiThreadUploadPath(threadId: string, documentId: string): string {
+  return `${apiThreadUploadsPath(threadId)}/${documentId}`;
+}
+
 export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: number }): string {
   const search = new URLSearchParams();
   if (opts?.limit != null) {

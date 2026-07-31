@@ -6,7 +6,9 @@
   `uploads://` source with their writer-facing filename, using deterministic
   `-2`, `-3` suffixes on collisions. The hidden project-level
   `thread_uploads` store is gone; the thread rail reads attached context
-  documents directly.
+  documents directly, and its document-ID delete route soft-deletes through
+  the context tree. Runtime image resolution now requires the reference to
+  match that document's authoritative Work URI.
 - `apps/server`, `packages/contracts`: thread messages can carry ordered image
   references to manuscript assets and thread uploads. Vision models receive
   request-time image parts; other models and deleted assets keep the

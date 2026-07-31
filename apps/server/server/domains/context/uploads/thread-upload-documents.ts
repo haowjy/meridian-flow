@@ -15,6 +15,7 @@ import {
   contextSources,
   documents,
   folders,
+  works,
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -35,6 +36,7 @@ export interface UploadDocumentRecord {
   storageUrl: string | null;
   markdownProjection: string;
   updatedAt: string;
+  projectId: string | null;
   /** Canonical URI when the document belongs to the work-scoped uploads source. */
   uploadUri: string | null;
 }
@@ -139,9 +141,12 @@ export function createDrizzleThreadUploadDocumentStore(
         document: documents,
         sourceSlug: contextSources.slug,
         sourceWorkId: contextSources.workId,
+        sourceProjectId: contextSources.projectId,
+        workProjectId: works.projectId,
       })
       .from(documents)
       .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .leftJoin(works, eq(works.id, contextSources.workId))
       .where(
         and(
           inArray(documents.id, documentIds),
@@ -152,7 +157,7 @@ export function createDrizzleThreadUploadDocumentStore(
       );
 
     return Promise.all(
-      rows.map(async ({ document, sourceSlug, sourceWorkId }) => {
+      rows.map(async ({ document, sourceSlug, sourceWorkId, sourceProjectId, workProjectId }) => {
         const storedType = document.fileType as Filetype | DocumentFileType;
         const binary =
           BINARY_FILE_TYPES.has(storedType as DocumentFileType) || document.storageUrl !== null;
@@ -176,6 +181,7 @@ export function createDrizzleThreadUploadDocumentStore(
           storageUrl: document.storageUrl,
           markdownProjection: document.markdownProjection,
           updatedAt: document.updatedAt.toISOString(),
+          projectId: sourceProjectId ?? workProjectId,
           uploadUri: path ? toCanonical("uploads", path, sourceWorkId) : null,
         };
       }),

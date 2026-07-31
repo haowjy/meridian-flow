@@ -99,10 +99,14 @@ describe("context image asset adapter", () => {
       .mockResolvedValueOnce({
         storageUrl: "object://meridian/uploads/map.png",
         mimeType: "image/webp",
+        projectId: "project-1",
+        uploadUri: "uploads://22222222-2222-4222-8222-222222222222/map.webp",
       })
       .mockResolvedValueOnce({
         storageUrl: "object://meridian/uploads/notes.pdf",
         mimeType: "application/pdf",
+        projectId: "project-1",
+        uploadUri: "uploads://22222222-2222-4222-8222-222222222222/map.webp",
       });
     const adapter = createContextImageAssetAdapter(stubs as never);
     const reference = {
@@ -113,6 +117,26 @@ describe("context image asset adapter", () => {
 
     await expect(adapter.isValidReference(context, reference)).resolves.toBe(true);
     await expect(adapter.isValidReference(context, reference)).resolves.toBe(false);
+  });
+
+  it("requires an upload reference to spell the document's authoritative Work URI", async () => {
+    const stubs = deps();
+    stubs.uploads.getUpload.mockResolvedValue({ documentId });
+    stubs.uploads.getDocument.mockResolvedValue({
+      storageUrl: "object://meridian/uploads/map.png",
+      mimeType: "image/png",
+      projectId: "project-1",
+      uploadUri: "uploads://33333333-3333-4333-8333-333333333333/map.png",
+    });
+    const adapter = createContextImageAssetAdapter(stubs as never);
+
+    await expect(
+      adapter.isValidReference(context, {
+        type: "image_reference",
+        documentId,
+        uri: "uploads://22222222-2222-4222-8222-222222222222/map.png",
+      }),
+    ).resolves.toBe(false);
   });
 
   it("resolves bytes from the real local object store", async () => {
