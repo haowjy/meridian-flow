@@ -178,6 +178,32 @@
   font-weight: 650;
 }
 
+/* A cell holding a picture is measured by the table, never by the picture.
+
+   An auto-layout table sizes its columns from what is inside them, and a
+   measured picture carries its own width in pixels (the upload's frame, or the
+   width the writer dragged to). Percentages are dropped while that measuring
+   happens, so `max-width: 100%` cannot cap what it is being asked to widen: a
+   1280px screenshot dropped into a cell at a 500px viewport took the column to
+   1301px, the table to 1352px, and left half of the picture's resize grips on
+   the far side of the wrapper's horizontal scroller.
+
+   Size containment is the fence. The line the picture stands in is sized as if
+   it were empty, so nothing inside it can reach the column's arithmetic; the
+   room it asks for instead is one definite number, the same 8rem the unmeasured
+   placeholder box is built on — a thumbnail's worth, which a table can afford in
+   any layout. The cell is then definite, `max-width: 100%` finally has a box to
+   answer against, and the picture fills whatever the column turned out to be:
+   8rem of it in a narrow table, all of it in a wide one.
+
+   Scoped to the cells that hold a picture, so an ordinary table still sizes its
+   columns to its prose. A cell holds exactly one paragraph
+   (`MeridianTableCell`), so this is that paragraph. */
+.meridian-editor .ProseMirror :is(td, th) > p:has(.meridian-image-node) {
+  contain: inline-size;
+  contain-intrinsic-inline-size: 8rem;
+}
+
 .meridian-editor .ProseMirror img {
   max-width: 100%;
   border-radius: var(--radius-md);
