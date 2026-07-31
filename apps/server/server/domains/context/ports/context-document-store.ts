@@ -90,6 +90,8 @@ export interface ContextDocumentStore {
    * Yjs initialization and manifest membership around this operation.
    */
   createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null>;
+  /** Claim a binary path without replacing a concurrent winner. */
+  createBinaryDocumentIfAbsent(input: CreateBinaryDocumentInput): Promise<ContextDocument | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
   listFolders(parentId: string | null): Promise<ContextFolder[]>;

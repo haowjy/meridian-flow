@@ -100,8 +100,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         mimeType: "image/png",
       };
 
-      const first = await imports.importUpload(input);
-      const second = await imports.importUpload(input);
+      const results = await Promise.all([imports.importUpload(input), imports.importUpload(input)]);
+      const successful = results.flatMap((result) => (result.ok ? [result] : []));
+      const first = successful.find((result) => result.value.name === "image");
+      const second = successful.find((result) => result.value.name === "image-2");
       expect(first).toMatchObject({
         ok: true,
         value: { name: "image", extension: "png", fileType: "image" },
@@ -110,7 +112,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: { name: "image-2", extension: "png", fileType: "image" },
       });
-      if (!first.ok || !second.ok) throw new Error("upload import failed");
+      if (!first || !second) throw new Error("upload import failed");
 
       const context = contextPorts.forWork(
         WORK_ID,
