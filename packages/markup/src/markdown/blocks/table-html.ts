@@ -22,6 +22,15 @@ const ALIGNMENTS = new Set(["left", "center", "right"]);
 const DELEGATED_BLOCK_ELEMENT = "meridian-block";
 const DELEGATED_BLOCK_KIND_ATTRIBUTE = "kind";
 const DELEGATED_BLOCK_SOURCE_ATTRIBUTE = "source";
+const NATIVE_CELL_BLOCK_KINDS = new Set([
+  "paragraph",
+  "heading",
+  "bullet_list",
+  "ordered_list",
+  "blockquote",
+  "code_block",
+  "horizontal_rule",
+]);
 const BLOCK_ELEMENTS = new Set([
   DELEGATED_BLOCK_ELEMENT,
   "p",
@@ -91,6 +100,10 @@ function serializeRow(row: PMNode, ctx: SerializeContext, indent: string): strin
 }
 
 function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string): string[] {
+  if (!NATIVE_CELL_BLOCK_KINDS.has(block.type.name)) {
+    return serializeDelegatedCellBlock(block, ctx, indent);
+  }
+
   switch (block.type.name) {
     case "paragraph":
       return [
@@ -134,10 +147,8 @@ function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string
     }
     case "horizontal_rule":
       return [`${indent}<hr />`];
-    case "table":
-      return serializeDelegatedCellBlock(block, ctx, indent);
     default:
-      return serializeDelegatedCellBlock(block, ctx, indent);
+      throw new Error(`pm->html: unsupported native table-cell block "${block.type.name}"`);
   }
 }
 
@@ -295,6 +306,7 @@ function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNod
   const encodedKind = element.attributes.get(DELEGATED_BLOCK_KIND_ATTRIBUTE);
   if (typeof encodedKind !== "string") return null;
   const kind = decodeHtmlAttribute(encodedKind);
+  if (NATIVE_CELL_BLOCK_KINDS.has(kind)) return null;
 
   let source: string;
   if (element.attributes.size === 1 && element.rawContent !== undefined) {

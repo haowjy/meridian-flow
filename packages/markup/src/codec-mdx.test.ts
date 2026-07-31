@@ -82,6 +82,31 @@ describe("mdx prose and component round-trip corpus", () => {
     expectStable(codec, '<StatBlock value={42} config={{"hp":10,"tags":["a","b"],"ok":true}} />');
   });
 
+  it.each([
+    {
+      kind: "leaf",
+      node: schema.node("jsx_leaf", { name: "Badge", props: { tone: "A & B\u0085 </span>" } }, [
+        t("child"),
+      ]),
+    },
+    {
+      kind: "container",
+      node: schema.node(
+        "jsx_container",
+        {
+          name: "Panel",
+          props: { title: "A & B\u0085 </span>", meta: { closing: "</span>" } },
+        },
+        [paragraph(t("child"))],
+      ),
+    },
+  ])("round-trips lowercase tag-looking text in registered JSX $kind props", ({ node }) => {
+    const serialized = codec.serializeBlock(node);
+
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(node.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
+  });
+
   it("stabilizes JSX leaf components with inline text children", () => {
     expectStable(codec, '<Badge tone="warn">caution **marked**</Badge>');
   });

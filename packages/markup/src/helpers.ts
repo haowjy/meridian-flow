@@ -338,7 +338,7 @@ export function jsxAttribute(name: string, value: unknown): MdxJsxAttribute {
       name,
       value: {
         type: "mdxJsxAttributeValueExpression",
-        value: jsonStringLiteral(value),
+        value: jsonLiteral(value),
       },
     };
   }
@@ -348,7 +348,7 @@ export function jsxAttribute(name: string, value: unknown): MdxJsxAttribute {
   return {
     type: "mdxJsxAttribute",
     name,
-    value: { type: "mdxJsxAttributeValueExpression", value: JSON.stringify(value) },
+    value: { type: "mdxJsxAttributeValueExpression", value: jsonLiteral(value) },
   };
 }
 
@@ -368,12 +368,18 @@ function needsJsonStringAttribute(value: string): boolean {
   return false;
 }
 
-function jsonStringLiteral(value: string): string {
+function jsonLiteral(value: JsonValue): string {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new Error("JSON value did not serialize");
+
   let literal = "";
-  for (const character of JSON.stringify(value)) {
+  for (const character of serialized) {
     const codePoint = character.codePointAt(0) ?? 0;
     literal +=
-      (codePoint >= 0x7f && codePoint <= 0x9f) || codePoint === 0x2028 || codePoint === 0x2029
+      codePoint === 0x3c ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
         ? `\\u${codePoint.toString(16).padStart(4, "0")}`
         : character;
   }
