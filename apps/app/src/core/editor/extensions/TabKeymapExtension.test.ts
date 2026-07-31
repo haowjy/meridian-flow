@@ -27,10 +27,12 @@ const listItem = (text: string): JSONContent => ({
   content: [paragraph(text)],
 });
 
-const cell = (text: string): JSONContent => ({
+const cellOf = (...blocks: JSONContent[]): JSONContent => ({
   type: "table_cell",
-  content: [paragraph(text)],
+  content: blocks,
 });
+
+const cell = (text: string): JSONContent => cellOf(paragraph(text));
 
 const fence = (code: string): JSONContent => ({
   type: "code_block",
@@ -264,5 +266,166 @@ describe("Tab where indenting is meaningful", () => {
 
     expect(pressTab(instance)).toBe(true);
     expect(instance.state.selection.$from.node(-1).textContent).toBe("Question");
+  });
+
+  // Docs parity, pinned by the S0 probe: the walk selects everything the cell
+  // holds, so one keystroke replaces it all and undo restores it. A
+  // caret-instead-of-select variant would be a ruling, not a drive-by change.
+  it("selects the whole content of a multi-block cell it walks into", () => {
+    const instance = mount([
+      {
+        type: "table",
+        content: [
+          {
+            type: "table_row",
+            content: [cell("First"), cellOf(paragraph("one"), paragraph("two"))],
+          },
+        ],
+      },
+    ]);
+    caretAt(instance, caretInside(instance, "table_cell") + 1);
+
+    expect(pressTab(instance)).toBe(true);
+    const { from, to } = instance.state.selection;
+    expect(instance.state.doc.textBetween(from, to, " ")).toBe("one two");
+  });
+});
+
+describe("the cell walk yields to the list and the fence", () => {
+  const listInCell: JSONContent = {
+    type: "table",
+    content: [
+      {
+        type: "table_row",
+        content: [
+          cellOf({
+            type: "bullet_list",
+            content: [listItem("a copper needle"), listItem("a folded map")],
+          }),
+          cell("Question"),
+        ],
+      },
+    ],
+  };
+
+  it("sinks a later list item inside a cell instead of walking", () => {
+    const instance = mount([listInCell]);
+    caretAt(instance, caretInside(instance, "list_item", 1) + 1);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(listShape(instance)).toEqual(["bullet_list", "list_item", "bullet_list", "list_item"]);
+  });
+
+  it("lifts the nested item back out on Shift-Tab", () => {
+    const instance = mount([listInCell]);
+    caretAt(instance, caretInside(instance, "list_item", 1) + 1);
+    pressTab(instance);
+    caretAt(instance, caretInside(instance, "list_item", 1) + 1);
+
+    expect(pressTab(instance, true)).toBe(true);
+    expect(listShape(instance)).toEqual(["bullet_list", "list_item", "list_item"]);
+  });
+
+  it("keeps the key on the first list item in a cell, which has nothing to sink under", () => {
+    const instance = mount([listInCell]);
+    caretAt(instance, caretInside(instance, "list_item") + 1);
+
+    const before = listShape(instance);
+    expect(pressTab(instance)).toBe(true);
+    expect(listShape(instance)).toEqual(before);
+    expect(instance.state.doc.textContent).toBe("a copper needlea folded mapQuestion");
+  });
+
+  const fenceInCell: JSONContent = {
+    type: "table",
+    content: [{ type: "table_row", content: [cellOf(fence("qi = 1")), cell("Question")] }],
+  };
+
+  it("indents a fence inside a cell instead of walking", () => {
+    const instance = mount([fenceInCell]);
+    caretAt(instance, caretInside(instance, "code_block") + 2);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.selection.$from.parent.type.name).toBe("code_block");
+    expect(instance.state.doc.textContent).toBe("qi\t = 1Question");
+  });
+
+  it("takes the fence indentation back on Shift-Tab", () => {
+    const instance = mount([
+      {
+        type: "table",
+        content: [{ type: "table_row", content: [cellOf(fence("\tqi = 1")), cell("Question")] }],
+      },
+    ]);
+    caretAt(instance, caretInside(instance, "code_block") + 2);
+
+    expect(pressTab(instance, true)).toBe(true);
+    expect(instance.state.doc.textContent).toBe("qi = 1Question");
+  });
+
+  it("still walks from a plain paragraph beside them", () => {
+    const instance = mount([listInCell]);
+    caretAt(instance, caretInside(instance, "table_cell", 1) + 1);
+
+    // The last cell, so the walk answers by growing the table a row.
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.doc.child(0).childCount).toBe(2);
+  });
+});
+
+describe("the innermost table owns Tab", () => {
+  const innerTable: JSONContent = {
+    type: "table",
+    content: [{ type: "table_row", content: [cell("i-a"), cell("i-b")] }],
+  };
+
+  it("walks the inner table's cells, not the outer row", () => {
+    const instance = mount([
+      {
+        type: "table",
+        content: [{ type: "table_row", content: [cellOf(innerTable), cell("o-b")] }],
+      },
+    ]);
+    caretAt(instance, caretInside(instance, "table_cell", 1) + 1);
+
+    expect(pressTab(instance)).toBe(true);
+    expect(instance.state.selection.$from.node(-1).textContent).toBe("i-b");
+  });
+
+  it("grows the inner table at its last cell, leaving the outer alone", () => {
+    const instance = mount([
+      {
+        type: "table",
+        content: [{ type: "table_row", content: [cellOf(innerTable), cell("o-b")] }],
+      },
+    ]);
+    caretAt(instance, caretInside(instance, "table_cell", 2) + 1);
+
+    expect(pressTab(instance)).toBe(true);
+    const outer = instance.state.doc.child(0);
+    const inner = outer.child(0).child(0).child(0);
+    expect(inner.type.name).toBe("table");
+    expect(inner.childCount).toBe(2);
+    expect(outer.childCount).toBe(1);
+  });
+
+  // S0 probe wart, pinned as accepted: walking INTO a cell whose first block
+  // is a table lands the selection in the inner table (Esc twice recovers).
+  it("drops the walk into an inner table that opens the next cell", () => {
+    const instance = mount([
+      {
+        type: "table",
+        content: [{ type: "table_row", content: [cell("o-a"), cellOf(innerTable)] }],
+      },
+    ]);
+    caretAt(instance, caretInside(instance, "table_cell") + 1);
+
+    expect(pressTab(instance)).toBe(true);
+    const $from = instance.state.selection.$from;
+    let tables = 0;
+    for (let depth = 1; depth <= $from.depth; depth += 1) {
+      if ($from.node(depth).type.name === "table") tables += 1;
+    }
+    expect(tables).toBe(2);
   });
 });

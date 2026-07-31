@@ -27,6 +27,7 @@ import TableRow from "@tiptap/extension-table-row";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
+import { cellInteriorPressPlugin } from "../cell-interior-press";
 import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
@@ -35,6 +36,7 @@ import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
 import { objectSelectedInDecorations } from "../objects";
+import { tableSweepPastePlugin } from "../table-sweep-paste";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -217,6 +219,15 @@ export const MeridianTable = Table.extend({
   name: "table",
   content: "table_row+",
 
+  // Before the parent's, so the sweep-replace paste answers ahead of
+  // prosemirror-tables' rectangle overwrite on the same handlePaste ladder.
+  // The cell press router rides AFTER the parent's for the mirrored reason:
+  // a column-resize press must claim first, and the cell-sweep drag must arm
+  // its listeners before the router claims an inert padding press.
+  addProseMirrorPlugins() {
+    return [tableSweepPastePlugin(), ...(this.parent?.() ?? []), cellInteriorPressPlugin()];
+  },
+
   addAttributes() {
     return {
       align: {
@@ -246,7 +257,7 @@ export const MeridianTableRow = TableRow.extend({
 
 export const MeridianTableHeader = TableHeader.extend({
   name: "table_header",
-  content: "paragraph",
+  content: "block+",
 
   addAttributes() {
     return tableCellAttributes(this.parent);
@@ -255,7 +266,7 @@ export const MeridianTableHeader = TableHeader.extend({
 
 export const MeridianTableCell = TableCell.extend({
   name: "table_cell",
-  content: "paragraph",
+  content: "block+",
 
   addAttributes() {
     return tableCellAttributes(this.parent);

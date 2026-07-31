@@ -38,7 +38,6 @@ import {
   alignTableColumn,
   hasHeaderRow,
   mergeCrossesHeader,
-  mergeJoinsCellText,
   mergeTableCells,
   moveTableColumn,
   moveTableRow,
@@ -166,8 +165,6 @@ export function selectedColumnAlignment(state: EditorState): TableAlignment | nu
 
   return shared === "left" || shared === "center" || shared === "right" ? shared : null;
 }
-
-export { mergeJoinsCellText };
 
 export function selectedTablePlacement(state: EditorState): TablePlacement {
   const align = tableSelection(state)?.table.attrs.align;

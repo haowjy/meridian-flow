@@ -326,6 +326,103 @@ describe("selecting and leaving an object", () => {
 });
 
 /**
+ * A cell is isolating, and every landing these transactions compute has to
+ * respect that (§5a of the cell addendum): the position after a block that
+ * ends a cell exists, but the nearest text FORWARD of it is the neighbouring
+ * cell's — which is never the answer.
+ */
+describe("leaving a block that ends its cell", () => {
+  const fenceTs: JSONContent = {
+    type: "code_block",
+    attrs: { language: "ts" },
+    content: [{ type: "text", text: "const gate = 3;" }],
+  };
+  const diagram: JSONContent = {
+    type: "code_block",
+    attrs: { language: "mermaid" },
+    content: [{ type: "text", text: "graph TD;" }],
+  };
+  const twoCells = (first: JSONContent[], second: JSONContent[]): JSONContent => ({
+    type: "table",
+    content: [
+      {
+        type: "table_row",
+        content: [
+          { type: "table_cell", content: first },
+          { type: "table_cell", content: second },
+        ],
+      },
+    ],
+  });
+
+  function firstCellRange(instance: Editor): { start: number; end: number } {
+    let found: { start: number; end: number } | null = null;
+    instance.state.doc.descendants((node, pos) => {
+      if (found === null && node.type.name === "table_cell") {
+        found = { start: pos + 1, end: pos + 1 + node.content.size };
+      }
+      return found === null;
+    });
+    if (!found) throw new Error("no cell in the fixture");
+    return found;
+  }
+
+  it("lands in the cell's own prose when a fence ends the cell", () => {
+    const instance = mount([
+      paragraph("before"),
+      twoCells([paragraph("lead"), fenceTs], [paragraph("neighbour")]),
+      paragraph("after"),
+    ]);
+    const pos = positionOf(instance, "code_block");
+
+    const transaction = caretHomeFromObjectTransaction(instance.state, pos);
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+
+    expect(instance.state.selection.$head.parent.textContent).toBe("lead");
+  });
+
+  it("makes a home inside a cell whose only child is a fence", () => {
+    const instance = mount([
+      paragraph("before"),
+      twoCells([fenceTs], [paragraph("neighbour")]),
+      paragraph("after"),
+    ]);
+    const pos = positionOf(instance, "code_block");
+
+    const transaction = caretHomeFromObjectTransaction(instance.state, pos);
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+
+    // No prose either side inside the cell: one paragraph is made there, the
+    // same answer a lone fence gets at the top level — and the neighbouring
+    // cell is untouched.
+    const cell = firstCellRange(instance);
+    expect(instance.state.selection.from).toBeGreaterThanOrEqual(cell.start);
+    expect(instance.state.selection.from).toBeLessThanOrEqual(cell.end);
+    expect(instance.state.selection.$head.parent.type.name).toBe("paragraph");
+  });
+
+  it("types beside a selected diagram into its own cell, never the neighbour's", () => {
+    const instance = mount([
+      paragraph("before"),
+      twoCells([diagram], [paragraph("neighbour")]),
+      paragraph("after"),
+    ]);
+    const pos = positionOf(instance, "code_block");
+
+    const transaction = typeBesideObjectTransaction(instance.state, pos, "Q");
+    expect(transaction).not.toBeNull();
+    if (transaction) instance.view.dispatch(transaction);
+
+    const cell = firstCellRange(instance);
+    expect(instance.state.selection.from).toBeGreaterThanOrEqual(cell.start);
+    expect(instance.state.selection.from).toBeLessThanOrEqual(cell.end);
+    expect(instance.state.selection.$head.parent.textContent).toBe("Q");
+  });
+});
+
+/**
  * The walk crosses a rendered diagram as ONE thing (human ruling, 2026-07-30:
  * "it should just select the svg, never reveal").
  *

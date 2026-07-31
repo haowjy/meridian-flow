@@ -18,6 +18,16 @@
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.
 
+- `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
+  table cells now hold full block content. Tables serialize as HTML every time
+  while pipe-table imports still parse, and Enter in cell prose splits a
+  paragraph while Shift-Enter keeps the hard break. The collaboration schema is
+  now `0.5.0`. Multiline Figure captions survive table-cell transport intact.
+- `apps/app`: dragging a picture onto a table's cell border no longer grows
+  the table a new column. The drop lands inside the nearest cell's paragraph
+  (or refuses when nothing can host it), the drop caret shown during the drag
+  is the landing the release keeps, and dropped files and in-cell pastes
+  follow the same rule. Column count cannot change under a drop.
 - `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
   (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at
   the size the screen can actually give it. At phone widths the source pane
@@ -94,11 +104,10 @@
   selected object starts a paragraph where the writer is looking
   instead of editing into hidden diagram code.
 - `apps/app`: `/` in a table cell works again. Image is choosable (a
-  picture is an oversized word, and a cell paragraph holds words); block
-  commands stay visible but grey with their reason. The chosen image
-  lands in the asked-from cell even if collaborators edit while the file
-  chooser is open, and refuses honestly if that cell is gone when the
-  chooser returns.
+  picture is an oversized word, and a cell paragraph holds words), and block
+  commands insert inside the cell without escaping it. The chosen image lands
+  in the asked-from cell even if collaborators edit while the file chooser is
+  open, and refuses honestly if that cell is gone when the chooser returns.
 - `apps/app`: the slash and `[[` menus' scroll fade now lives on the list
   that actually scrolls. Top fade only when scrolled down, bottom fade
   only when more items remain, no fade when everything fits, and pinned
@@ -131,6 +140,8 @@
   (`0.2`); pending uploads add a transient `uploadToken` attr to images and
   figures (`0.3`); display resize adds a `width` attr to images (`0.4`).
   Clients on an older bundle are fenced and reload.
+- `apps/app`: the left sidebar now keeps one flat shelf tone, so selected and
+  hovered rows retain the same contrast while the file tree scrolls.
 - `apps/app`: chapters now wait briefly for complete local and server state
   before binding, then report schema-normalized prose in a dismissible copyable
   notice without blocking editing; repairs that arrive during live

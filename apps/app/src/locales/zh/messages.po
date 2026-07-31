@@ -147,10 +147,6 @@ msgstr ""
 msgid "{filename} did not import. It stayed a link."
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "{filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
-#~ msgstr ""
-
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
@@ -193,10 +189,6 @@ msgstr ""
 msgid "3 by 3, header row"
 msgstr ""
 
-#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-#~ msgid "A figure is uploading."
-#~ msgstr ""
-
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "A file named {0} already exists in this location."
@@ -216,12 +208,9 @@ msgid "A folder named {trimmed} already exists in this location."
 msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
+#: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
 msgstr ""
-
-#: src/features/editor/EditorView.tsx
-#~ msgid "A project is required before images can be uploaded."
-#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
@@ -256,10 +245,6 @@ msgstr ""
 #: src/features/chat/placeholders.ts
 msgid "Actually…"
 msgstr "其实…"
-
-#: src/core/editor/FigureNodeView.tsx
-#~ msgid "Add a caption for this figure."
-#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add column"
@@ -323,10 +308,6 @@ msgstr ""
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr ""
-
-#: src/core/editor/FigureNodeView.tsx
-#~ msgid "Alt: {altSummary}"
-#~ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Another chat needs attention"
@@ -529,10 +510,6 @@ msgstr ""
 msgid "Choose a listed option"
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "Choose an image file."
-#~ msgstr ""
-
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
 msgstr ""
@@ -666,11 +643,6 @@ msgstr ""
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Copy link address"
 msgstr ""
-
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
-#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-#~ msgid "Copy Mermaid source"
-#~ msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
@@ -884,10 +856,6 @@ msgstr ""
 #: src/rich-content/ImageBlock.tsx
 msgid "Demo image"
 msgstr "演示图片"
-
-#: src/core/editor/FigureNodeView.tsx
-#~ msgid "Describe the image for accessibility"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "Describe the picture for a reader who cannot see it"
@@ -1126,10 +1094,6 @@ msgstr "图片加载失败"
 msgid "fence"
 msgstr ""
 
-#: src/core/editor/FigureNodeView.tsx
-#~ msgid "fig:result"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "fig:terrace"
 msgstr ""
@@ -1276,10 +1240,6 @@ msgstr ""
 msgid "Image downloaded"
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "Image upload failed."
-#~ msgstr ""
-
 #: src/core/editor/images/image-uploads.ts
 msgid "Images need a project before they can be uploaded."
 msgstr ""
@@ -1323,11 +1283,6 @@ msgstr ""
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Insert row below"
 msgstr ""
-
-#. placeholder {0}: state.filename
-#: src/features/editor/EditorView.tsx
-#~ msgid "Inserted {0}."
-#~ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Installed"
@@ -1549,23 +1504,6 @@ msgstr ""
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 msgstr ""
 
-#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
-#~ msgid "mermaid"
-#~ msgstr ""
-
-#: src/features/editor/surfaces/slash/slash-catalog-copy.ts
-#~ msgid "Mermaid"
-#~ msgstr ""
-
-#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-#~ msgid "Mermaid source"
-#~ msgstr ""
-
-#: src/features/editor/surfaces/objects/ObjectControls.tsx
-#: src/features/editor/surfaces/objects/ObjectLightbox.tsx
-#~ msgid "Mermaid source copied"
-#~ msgstr ""
-
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Minimum is {0}."
@@ -1701,10 +1639,6 @@ msgstr ""
 msgid "No agents available."
 msgstr ""
 
-#: src/core/editor/FigureNodeView.tsx
-#~ msgid "No alt text yet"
-#~ msgstr ""
-
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
@@ -1814,10 +1748,6 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "Older"
 msgstr "更早"
-
-#: src/features/editor/surfaces/table/table-copy.ts
-msgid "One cell across the selection"
-msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
@@ -2220,10 +2150,6 @@ msgstr ""
 msgid "Running"
 msgstr "运行中"
 
-#: src/features/editor/surfaces/table/table-copy.ts
-msgid "Runs the text together in one cell"
-msgstr ""
-
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr ""
@@ -2444,10 +2370,6 @@ msgstr ""
 msgid "Suggested: {0}"
 msgstr ""
 
-#: src/core/editor/FigureNodeView.tsx
-#~ msgid "Summarize what this figure shows"
-#~ msgstr ""
-
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens or manage your account."
 msgstr ""
@@ -2459,10 +2381,6 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
-msgstr ""
-
-#: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-msgid "Table cells hold plain paragraphs."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -2590,14 +2508,6 @@ msgstr ""
 msgid "The header row stays first."
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "The image imported, but the editor could not insert it."
-#~ msgstr ""
-
-#: src/features/editor/EditorView.tsx
-#~ msgid "The image uploaded, but the editor could not insert it."
-#~ msgstr ""
-
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr ""
@@ -2642,10 +2552,6 @@ msgstr ""
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "This browser will not export this diagram as an image. Copy the diagram source instead."
 msgstr ""
-
-#: src/features/editor/surfaces/objects/verb-feedback.tsx
-#~ msgid "This browser will not export this diagram as an image. Copy the Mermaid source instead."
-#~ msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
@@ -2918,12 +2824,6 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Upload or paste"
 msgstr ""
-
-#. placeholder {0}: state.filename
-#. placeholder {1}: state.percent
-#: src/features/editor/EditorView.tsx
-#~ msgid "Uploading {0} ({1}%)"
-#~ msgstr ""
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/ImageNodeView.tsx

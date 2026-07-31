@@ -230,7 +230,7 @@ Yjs document session. It must stay structurally aligned with
 - `table-operations.ts` owns the table transforms prosemirror-tables omits (row
   and column moves, whole-column alignment, layout reset). All of them refuse a
   table containing spans — not for the wire (spans serialize fine since the
-  codec's GFM-to-HTML escalation) but because row/column moves over merged
+  codec's HTML table serialization) but because row/column moves over merged
   cells would break prosemirror-tables' rectangular invariants. Row zero is
   the structural GFM header and never moves.
 - The slash trigger lives under `extensions/slash/` and is summarized below.
@@ -252,7 +252,14 @@ Yjs document session. It must stay structurally aligned with
   is a discriminated union so the last case, a document with no visible caret
   anywhere, declines out loud instead of falling through to
   `TextSelection.near`. The decision table in `pointer-boundary.test.ts` is the
-  contract; `EditorSurfaceFrame` only dispatches what it returns.
+  contract; the two doors only dispatch what it returns —
+  `EditorSurfaceFrame` for a press outside the prose, and
+  [`cell-interior-press.ts`](../cell-interior-press.ts) for a press on a
+  cell's own inert surface (the event target IS the cell element), which
+  rides `handleDOMEvents.mousedown` after prosemirror-tables' resize and
+  sweep handlers and hands the policy the pressed cell straight from the
+  DOM, because a border press cannot trust `posAtCoords` to name its own
+  cell.
 - Enter on a whole-block selection is object physics', not the base keymap's
   (§4). What it means comes from the block: a registered object with a
   `surface` intent opens its lane's surface, a table takes the caret into its
@@ -317,9 +324,9 @@ Yjs document session. It must stay structurally aligned with
   as themselves and nothing in the app has to know what markdown looks like.
   `markdownCodec` rather than `mdxCodec`: clipboard text comes from anywhere and
   MDX reads `<` and `{` as syntax, which fiction contains.
-  Four refusals bound it, and each is a behaviour, not an implementation detail:
-  paste-without-formatting yields characters; a caret inside a code block or a
-  table cell yields characters, because block structure cannot live there; and
+  Three refusals bound it, and each is a behaviour, not an implementation detail:
+  paste-without-formatting yields characters; a caret inside a code block
+  yields characters, because block structure cannot live there; and
   `markdownPasteAddsStructure` declines any parse that amounts to the paragraphs
   the default paste would have produced anyway. That last one is the
   false-positive guard, and it is decided on the parsed blocks rather than on a
@@ -470,10 +477,10 @@ through are `core/completion/`. Two contracts cross this boundary:
   to decide what the menu shows. It may be null on an editor without the
   extension.
 - **A pick never leaves a table cell.** The insertion walk stops at the cell
-  the caret is in; entries that cannot live there are refused with a reason the
-  menu renders, rather than landing after the table. Lists are the other rule:
-  a bullet's table lands after the whole list, because a list item is only part
-  of its list.
+  the caret is in. Under block-capable cells all entries are enabled with
+  nothing greyed — the menu is schema-driven and `canReplaceWith` is the only
+  authority. Lists are the other rule: a bullet's target lands after the whole
+  list, because a list item is only part of its list.
 - **A new object opens through `engageObject`.** The slash lane does not know
   what a diagram dialog is; it hands the node it just made to the object lane,
   which resolves the surface a type registered. Enter on a selected object

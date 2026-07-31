@@ -290,37 +290,29 @@ one definite 8rem instead, in `features/editor/editor.css`; the reasoning is
 The dragged widths above are unaffected: they are `colwidth` on the cells, which
 the fence never touches.
 
-## Merging under a one-paragraph cell
+## Merging block-capable cells
 
-`mergeTableCells` runs the filled cells' inline content together into one
-paragraph before handing the selection to prosemirror-tables. Three things it
-has to get exactly right, each of which was a defect first:
+`mergeTableCells` is prosemirror-tables' `mergeCells` behind one fence:
 
-- **Emptiness is structural**, and it is the library's own test: one childless
-  text block. `textContent` disagrees about a cell holding only a hard break or
-  only an inline image, and a cell the two disagree about is one whose content
-  the join leaves behind and the merge then appends as a second paragraph —
-  which the schema fit ejects out of the table entirely.
-- **Every block of every cell**, in reading order, and each cell's WHOLE
-  content is replaced. Reading only `firstChild` loses the rest the moment a
-  cell can hold more than one paragraph.
 - **The header row does not merge into the body** (`mergeCrossesHeader`).
   Upstream merges any rectangle and keeps the first cell's type, so a
   whole-column merge on a headed table yields one header cell spanning every
   row. The fence is in the command as well as the menu. Merging the header row
   across itself stays allowed: that is a title row.
 
-When cells hold several paragraphs on the wire, loosen
-`table_cell`/`table_header` to `paragraph+` (a minor collab-schema bump: the
-change only loosens) and delete the join; `mergeCells` then stands alone.
+Cells hold `block+`, so upstream's append of every filled cell's blocks into
+the merged cell is schema-legal as it stands — lists, headings, and fences
+land whole, in reading order. Upstream's emptiness test is structural (one
+childless text block), so a cell holding only a hard break or an inline image
+counts as filled and merges in rather than being skipped.
 
-## What the wire cannot carry yet
+## What the wire carries now
 
-**Spans** are on the wire now (the codec escalates a spanned table to raw
+**Spans** are on the wire (the codec escalates a spanned table to raw
 HTML), and so are span-sized `colwidth` arrays — see the widths ruling in
 [`packages/markup/.context/CONTEXT.md`](../../../../../../../../packages/markup/.context/CONTEXT.md).
-What remains absent is **multi-paragraph cells**, which is why the merge joins
-text rather than stacking paragraphs.
+Cells carrying several blocks, or blocks beyond a paragraph, travel the same
+way: the codec escalates them too.
 
 ## Where the lane touched shared code
 

@@ -89,26 +89,23 @@ markdown; only a styled block gains a wrapper. Parsing goes through
 `parseRecognizedBlockAst()` and falls back to inert raw text when the wrapper is
 malformed. `layout` is therefore excluded from `mdxRequiredBlockNames`.
 
-Tables use the minimal wire spelling that preserves their structure. A table
-with one header row, unit spans, single-line cell text, and consistent
-per-column alignment stays in GFM pipes. Spans, headerless or mixed-header
-rows, literal newlines, ragged rows, and per-cell alignment overrides escalate
-to canonical raw HTML. Both spellings parse to the same `table` node. Hard
-breaks remain GFM-expressible through the canonical backslash-newline spelling;
-pipe-table ingress folds that continuation before remark parsing and restores
-the `hard_break` node. Nested block serializers canonicalize remark's interim
-`<br />` form back to backslash-newline with the surrounding quote/list prefix,
-so container composition does not change the table dialect. `Layout` is one of
-those serializers and the last one to run: it re-parses the block it wraps and
-stringifies it as MDX, where mdast spells a cell's break `<br />` again, so
-canonicalization runs on the wrapper's output rather than its input. The other
-order let the wrapper undo it, and MDX ingress escapes that `<` — a broken line
-in a centered or width-set table came back as the literal text `head<br />down`.
-
-The HTML table path accepts positive `colspan` and `rowspan`, inline marks,
-links, images, and `<br>` while declining unknown table structure as inert raw
-text. Invalid PM span/alignment attrs and malformed `Layout` column widths
-still throw rather than serialize lossily.
+Tables serialize as canonical raw HTML unconditionally. GFM pipes remain
+liberal ingress and normalize to HTML in one parse-serialize pass, including
+the backslash-newline hard-break spelling. HTML cells carry paragraphs,
+headings, lists, blockquotes, fenced-code content, horizontal rules, and nested
+tables; inline marks, links, images, and `<br>` remain legal inside their text
+blocks. Block kinds without a native cell HTML spelling use one
+`<meridian-block>` envelope carrying their ordinary top-level wire form. A
+nested table's visible body is the source of truth, so it still renders as a
+table; non-HTML MDX blocks use the carrier's entity-escaped `source` attribute
+instead. Neither form duplicates its source. Parsing re-enters the complete
+block codec with a fresh source context, so Figure, registered JSX, nested
+table Layout metadata, and future block codecs do not need a second table-only
+implementation. The carrier declares the expected ProseMirror block kind and
+the parser rejects the whole table as inert source when the delegated spelling
+parses as anything else. Positive `colspan` and `rowspan` round-trip. Unknown
+table structure is inert raw text, while invalid PM span/alignment attrs and
+malformed `Layout` column widths still throw rather than serialize lossily.
 
 `widths` counts GRID columns, and so does `colwidth` (ruling, 2026-07-29). A
 cell's index among its row's children stops being its column the moment

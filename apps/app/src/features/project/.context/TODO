@@ -6,10 +6,3 @@
   when a tab is explicitly removed from the tab store; a missing node in the
   refreshed tree does not remove it. Applies to viewer, tracked, and provisional
   documents and needs one deletion-to-tab lifecycle contract across tree/store/route.
-
-- Move the AI write mode control (Draft | Auto-apply,
-  shell/AiWriteModeControl.tsx) OUT of the left sidebar and into the
-  chat/thread surface (user call, 2026-07-15: "shouldn't even be there").
-  It is the loudest object on the shelf and is thread-adjacent
-  behavior, not navigation. Placement/interaction design goes through
-  design-lead/tech-lead (new behavior); the sidebar slot just gets deleted.

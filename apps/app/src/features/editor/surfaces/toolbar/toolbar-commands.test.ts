@@ -243,15 +243,16 @@ describe("toolbar enablement matrix", () => {
     expect(controls.bold.blockedBy).toBe("embedded-block");
   });
 
-  it("greys block-type verbs inside a table cell", () => {
+  it("enables block-type verbs inside a table cell", () => {
     const target = editorWith(TABLE_DOC);
     target.commands.setTextSelection(posInsideType(target, "table_cell") + 1);
 
+    // A cell holds any block now, so the cell itself refuses nothing: the
+    // controls convert the block under the caret, inside the cell.
     const controls = controlsFor(target);
-    expect(controls.heading.blockedBy).toBe("table-cell");
-    expect(controls.bulletList.blockedBy).toBe("table-cell");
-    expect(controls.codeBlock.blockedBy).toBe("table-cell");
-    // Cells are prose: marks and links belong there.
+    expect(controls.heading.blockedBy).toBeNull();
+    expect(controls.bulletList.blockedBy).toBeNull();
+    expect(controls.codeBlock.blockedBy).toBeNull();
     expect(controls.bold.blockedBy).toBeNull();
     expect(controls.link.blockedBy).toBeNull();
   });
@@ -382,14 +383,15 @@ describe("block-type commands refuse non-text targets", () => {
     expect(component?.attrs.name).toBe("StatBlock");
   });
 
-  it("never converts the paragraph a table cell is built from", () => {
+  it("converts the block under a caret in a cell, inside the cell", () => {
     const target = editorWith(TABLE_DOC);
     target.commands.setTextSelection(posInsideType(target, "table_cell") + 1);
 
-    expect(toggleHeadingBlock(target)).toBe(false);
-    expect(toggleBulletListBlock(target)).toBe(false);
-    expect(toggleCodeBlockBlock(target)).toBe(false);
+    expect(toggleHeadingBlock(target)).toBe(true);
     expect(target.state.doc.firstChild?.type.name).toBe("table");
+    const converted = target.state.doc.nodeAt(posInsideType(target, "table_cell") - 1);
+    expect(converted?.firstChild?.type.name).toBe("heading");
+    expect(converted?.firstChild?.textContent).toBe("Kael");
   });
 
   it("refuses a mark that inline code excludes", () => {
@@ -642,16 +644,18 @@ describe("the block types Turn into offers", () => {
     expect(fence.attrs.language).toBe("mermaid");
   });
 
-  it("refuses every conversion inside a table cell", () => {
+  it("offers every conversion inside a table cell and converts in place", () => {
     const target = editorWith(TABLE_DOC);
     target.commands.setTextSelection(posInsideType(target, "table_cell") + 1);
 
     const blocked = blockedFor(target);
     for (const [id, reason] of Object.entries(blocked)) {
-      expect(reason, id).toBe("table-cell");
+      expect(reason, id).toBeNull();
     }
-    expect(turnIntoBlockType(target, "heading1")).toBe(false);
+    expect(turnIntoBlockType(target, "heading1")).toBe(true);
     expect(target.state.doc.firstChild?.type.name).toBe("table");
+    const cell = target.state.doc.nodeAt(posInsideType(target, "table_cell") - 1);
+    expect(cell?.firstChild?.type.name).toBe("heading");
   });
 
   it("refuses the whole conversion when a select-all catches a fence", () => {
@@ -761,5 +765,140 @@ describe("the deepest context under the selection decides the reason", () => {
     target.commands.selectAll();
 
     expect(controlsFor(target).heading.blockedBy).toBe("mixed-selection");
+  });
+});
+
+/**
+ * Turn into over a swept rectangle applies per block (§10) — the same shape
+ * marks already have. A CellSelection reports only its FIRST cell as
+ * `from`..`to`, so the command layer walks `selection.ranges` exactly as the
+ * refusal reader does; anything else converts one cell and advertises all.
+ *
+ * Every sweep here is a partial rectangle. A sweep covering the whole table
+ * IS the selected table (an object, pinned above), so a one-row fixture would
+ * test the wrong thing.
+ */
+describe("Turn into over a swept rectangle", () => {
+  const gridCell = (block: JSONContent): JSONContent => ({
+    type: "table_cell",
+    content: [block],
+  });
+  const prose = (text: string): JSONContent =>
+    gridCell({ type: "paragraph", content: [{ type: "text", text }] });
+
+  /** Two rows by two columns, so a swept row is a rectangle, not the table. */
+  function gridDoc(row1: JSONContent[], row2: JSONContent[]): JSONContent {
+    return {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            { type: "table_row", content: row1 },
+            { type: "table_row", content: row2 },
+          ],
+        },
+      ],
+    };
+  }
+
+  const PLAIN_GRID = gridDoc([prose("Status"), prose("Kael")], [prose("Rank"), prose("Nine")]);
+
+  /** First block of every cell, in document order. */
+  function cellBlocks(target: Editor): string[] {
+    return cellPositions(target).map(
+      (pos) => target.state.doc.nodeAt(pos)?.firstChild?.type.name ?? "missing",
+    );
+  }
+
+  function sweepFirstRow(target: Editor): void {
+    const [first, second] = cellPositions(target);
+    selectCells(target, first, second);
+  }
+
+  it("converts the block in every swept cell, not just the reported one", () => {
+    const target = editorWith(PLAIN_GRID);
+    sweepFirstRow(target);
+
+    expect(turnIntoBlockType(target, "heading2")).toBe(true);
+    expect(cellBlocks(target)).toEqual(["heading", "heading", "paragraph", "paragraph"]);
+    expect(target.state.doc.textContent).toContain("Status");
+    expect(target.state.doc.textContent).toContain("Kael");
+  });
+
+  it("keeps the sweep selected, and the second press toggles it back (law 6)", () => {
+    const target = editorWith(PLAIN_GRID);
+    sweepFirstRow(target);
+
+    expect(turnIntoBlockType(target, "heading2")).toBe(true);
+    // The writer swept a rectangle; the conversion must not eat the selection.
+    expect(target.state.selection).toBeInstanceOf(CellSelection);
+
+    expect(turnIntoBlockType(target, "heading2")).toBe(true);
+    expect(cellBlocks(target)).toEqual(["paragraph", "paragraph", "paragraph", "paragraph"]);
+  });
+
+  it("converges a mixed rectangle instead of trading types", () => {
+    const target = editorWith(
+      gridDoc(
+        [
+          gridCell({
+            type: "heading",
+            attrs: { level: 2 },
+            content: [{ type: "text", text: "Rank" }],
+          }),
+          prose("Kael"),
+        ],
+        [prose("Nine"), prose("Gates")],
+      ),
+    );
+    sweepFirstRow(target);
+
+    // The direction is decided once for the whole sweep, the way a mark lands:
+    // the cell that is already a heading stays one rather than toggling off.
+    expect(turnIntoBlockType(target, "heading2")).toBe(true);
+    expect(cellBlocks(target)).toEqual(["heading", "heading", "paragraph", "paragraph"]);
+  });
+
+  it("wraps every swept cell's block in a quote, which no range-blind command did", () => {
+    const target = editorWith(PLAIN_GRID);
+    sweepFirstRow(target);
+
+    expect(turnIntoBlockType(target, "blockquote")).toBe(true);
+    expect(cellBlocks(target)).toEqual(["blockquote", "blockquote", "paragraph", "paragraph"]);
+  });
+
+  it("lists every swept cell's block", () => {
+    const target = editorWith(PLAIN_GRID);
+    sweepFirstRow(target);
+
+    expect(toggleBulletListBlock(target)).toBe(true);
+    expect(cellBlocks(target)).toEqual(["bullet_list", "bullet_list", "paragraph", "paragraph"]);
+  });
+
+  it("refuses the whole sweep when a swept cell holds a rendered fence", () => {
+    const target = editorWith(
+      gridDoc(
+        [
+          gridCell({
+            type: "code_block",
+            attrs: { language: "mermaid" },
+            content: [{ type: "text", text: "graph TD; A --> B" }],
+          }),
+          prose("Kael"),
+        ],
+        [prose("Rank"), prose("Nine")],
+      ),
+    );
+    const [diagramCell] = cellPositions(target);
+    sweepFirstRow(target);
+
+    // The deepest owner still answers first for what a cell HOLDS: a diagram
+    // in the rectangle refuses like a diagram in a select-all.
+    expect(controlsFor(target).heading.blockedBy).toBe("mixed-selection");
+    expect(turnIntoBlockType(target, "heading1")).toBe(false);
+    const fence = target.state.doc.nodeAt(diagramCell)?.firstChild;
+    expect(fence?.type.name).toBe("code_block");
+    expect(fence?.attrs.language).toBe("mermaid");
   });
 });

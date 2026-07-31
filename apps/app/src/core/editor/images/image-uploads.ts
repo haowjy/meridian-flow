@@ -16,8 +16,9 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
+import { Fragment } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
-
+import { CellSelection } from "@tiptap/pm/tables";
 import {
   anchorRange,
   type EditorAnchor,
@@ -27,6 +28,7 @@ import {
   resolveNodeHold,
 } from "../anchors";
 import { objectSurfaceKind } from "../objects";
+import { sweepReplaceLanding } from "../table-sweep-paste";
 import type { ImageIngressHost, UploadedImage } from "./image-ingress-ports";
 import {
   type ImageIngressMessage,
@@ -223,6 +225,39 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
  * after this is that node's business.
  */
 export function insertImageFile(editor: Editor | null, file: File, pos?: number): void {
+  openImageFileUpload(editor, file, (target, alt, token) =>
+    insertPendingImageNode(target, alt, token, pos),
+  );
+}
+
+/**
+ * An image file arriving from the clipboard — the paste door's one decision.
+ *
+ * A paste over a swept rectangle of cells means what every paste over a sweep
+ * means (`../table-sweep-paste.ts`): the sweep is replaced, and the picture —
+ * paragraph-hosted, the shape a cell block is — lands in the top-left cell.
+ * Any other selection is the picture at the caret, exactly as an insert.
+ */
+export function pasteImageFile(editor: Editor | null, file: File): void {
+  if (!editor || editor.isDestroyed) return;
+  if (editor.state.selection instanceof CellSelection) {
+    openImageFileUpload(editor, file, insertPendingImageInSweep);
+    return;
+  }
+  insertImageFile(editor, file, editor.state.selection.from);
+}
+
+/**
+ * One lifecycle for a picture file with somewhere to go: validate the file,
+ * open the upload, let `place` land the slot, and start the bytes. `place`
+ * answers where the slot stands — null is a refusal, and it costs no upload
+ * and leaves the project no orphaned asset.
+ */
+function openImageFileUpload(
+  editor: Editor | null,
+  file: File,
+  place: (editor: Editor, alt: string, token: string) => number | null,
+): void {
   const storage = imageIngressStorage(editor);
   if (!editor || !storage || !editor.isEditable) return;
   if (!isImageFile(file)) {
@@ -235,7 +270,7 @@ export function insertImageFile(editor: Editor | null, file: File, pos?: number)
   if (!host) return;
   const alt = imageAltFromFilename(file.name);
   const upload = beginUpload(editor, { file, alt, landing: "insert" });
-  const at = insertPendingImageNode(editor, alt, upload.id, pos);
+  const at = place(editor, alt, upload.id);
   if (at === null) {
     cancelUpload(editor, upload);
     storage.status.refuse(t`A picture cannot go there.`);
@@ -322,6 +357,32 @@ function insertPendingImageNode(
   transaction.scrollIntoView();
   editor.view.dispatch(transaction);
   return imagePos;
+}
+
+/**
+ * The picture's slot, landed as a sweep-replace: the swept cells emptied and
+ * the picture standing in its own paragraph in the rectangle's top-left cell,
+ * in one transaction — so one undo restores the sweep and takes the picture
+ * with it. The transaction's shape is the sweep module's, not invented here;
+ * this only says what the landing content is.
+ */
+function insertPendingImageInSweep(editor: Editor, alt: string, token: string): number | null {
+  const { state } = editor;
+  const imageType = state.schema.nodes.image;
+  const paragraphType = state.schema.nodes.paragraph;
+  if (!imageType || !paragraphType) return null;
+  const image = imageType.create({
+    src: PENDING_IMAGE_SRC,
+    alt,
+    title: null,
+    [UPLOAD_TOKEN_ATTR]: token,
+  });
+  const landed = sweepReplaceLanding(state, () => Fragment.from(paragraphType.create(null, image)));
+  if (!landed) return null;
+  // The landing already put the caret after the picture, as an insert does.
+  editor.view.dispatch(landed.transaction.scrollIntoView());
+  // The paragraph opens the landing; the picture is its first child.
+  return landed.from + 1;
 }
 
 /**

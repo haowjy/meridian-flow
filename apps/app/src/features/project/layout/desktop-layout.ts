@@ -22,13 +22,13 @@ import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 export type { DesktopProjectSlotId } from "./types";
 
 export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
-  // Shelf: darker grey-gold + depth atmosphere + scoped role remaps (globals.css).
+  // Shelf: flat darker grey-gold + scoped role remaps (globals.css).
   { id: "rail-l", className: "relative shelf-surface" },
   // Center: chrome, not paper — every pane's h-10 band sits directly on it
   // (continuous with the dock) and the pane body rises as a `page-sheet`.
   { id: "center", className: "chrome-field" },
   // Dock: the chrome material (≡ the tab band) with airlight pooling at its
-  // floor — light surfaces breathe light, the shelf breathes shadow.
+  // floor.
   { id: "dock", className: "relative dock-surface" },
 ];
 

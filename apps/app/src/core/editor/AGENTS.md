@@ -112,7 +112,29 @@ change-trail events, not manuscript content.
   registration. The keyboard obeys the first rule too, through the same
   reading: an arrow walk lands ON an opaque object and Esc steps over it
   ([`objects/AGENTS.md`](objects/AGENTS.md)), so no input device can put a
-  caret in a body the page is not showing.
+  caret in a body the page is not showing. The same walk answers one level
+  down: a press on a cell's own inert surface (its padding, the seam between
+  two of its blocks) is claimed by
+  [`cell-interior-press.ts`](cell-interior-press.ts) and resolves inside THAT
+  cell — never a neighbouring cell, never the document (§4).
+
+- **A drop inside a table lands INSIDE a cell, never between two.** Near a
+  cell border, `posAtCoords` answers a structural position and ProseMirror's
+  `dropPoint` *approves* it by inventing a `table_cell` wrapper — that is how a
+  dragged picture manufactured a fourth column (`fixTables` then pads every
+  row). [`table-drop.ts`](table-drop.ts) is the one answer, pointer-boundary
+  style (impure geometry reading, pure decision): a table-structural drop
+  position snaps into the nearest cell or refuses, hostability is the actual
+  schema fit (any block sequence a cell legally holds, §3b), and the
+  transaction reads the table's shape and the pressed cell's bounds back
+  after the insert so the column count is invariant under drops and nothing
+  lands beyond the cell the dropcursor promised. Both consumers go through it —
+  `extensions/DropLandingExtension.ts` carries the drop handler AND the
+  dropcursor (the vendor view, carried because its target arithmetic is not
+  pluggable), so the caret shown during the drag is the landing the release
+  keeps. The OS-file drop (`images/ImageIngressExtension.ts`) resolves through
+  the same function. Never re-enable StarterKit's dropcursor: two landings
+  answering one drag is the bug this replaced.
 
 - **A node view that hides its own text derives that face from the selection,
   and never restructures around it.** A selection inside a rendered diagram
@@ -136,15 +158,11 @@ change-trail events, not manuscript content.
   indented code block, so the codec writes it `&#x9;`, and `packages/markup`'s
   codec test is what keeps the key safe to press.
 
-- **Enter in a cell breaks the line** (`TableEnterKeymapExtension`, human
-  ruling, 2026-07-30) — Docs and Word both grow the cell a line, and a Meridian
-  cell holds exactly one paragraph, so every rung of ProseMirror's base Enter
-  chain declines in one and the press used to reach the browser unhandled. It
-  is a hard break rather than a split for the same reason it is not a paragraph
-  gap: the cell stays one paragraph, and a GFM pipe cell cannot hold a raw
-  newline while an inline break already has a wire spelling there. Enter runs
-  the very command Shift-Enter runs, so the two cannot drift, and the break
-  renders at the cell's own line-height with nothing styling it specially.
+- **Enter in cell prose splits the paragraph**, exactly as it does outside a
+  table; Shift-Enter remains the hard break. `TableEnterKeymapExtension` owns
+  only the refusal: it consumes Enter over a swept `CellSelection` so the base
+  keymap cannot empty the rectangle, and declines caret/text selections to the
+  ordinary split chain.
 
 - What an href means is `links/`, once. A link is four kinds — wikilink,
   scheme, relative, external — and every consumer (the click, the hover hint,

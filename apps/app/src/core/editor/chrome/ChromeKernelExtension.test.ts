@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
 import { createStandaloneEditorExtensions } from "../config";
+import { selectedObject } from "../objects/object-selection";
 
 import { editorChromeAttributes, getEditorChrome } from "./ChromeKernelExtension";
 
@@ -169,6 +170,117 @@ describe("the kernel on a live editor", () => {
     // content of "the editor gave the key back".
     expect(pressEscape(instance)).toEqual({ owner: "document", layers: 0 });
     expect(instance.state.selection.eq(home)).toBe(true);
+  });
+
+  /**
+   * §5a of the cell addendum: unchanged machinery, longer lawful walks. Every
+   * fixture keeps a neighbouring cell and top-level prose in leaking distance,
+   * because the wrong landing for each step is one of those.
+   */
+  describe("from inside a cell", () => {
+    const fence = (language: string, source: string): JSONContent => ({
+      type: "code_block",
+      attrs: { language },
+      content: [{ type: "text", text: source }],
+    });
+    const cellOf = (...content: JSONContent[]): JSONContent => ({
+      type: "table_cell",
+      content,
+    });
+    const tableOf = (...cells: JSONContent[]): JSONContent => ({
+      type: "table",
+      content: [{ type: "table_row", content: cells }],
+    });
+
+    function caretAtEndOf(instance: Editor, text: string): void {
+      let at: number | null = null;
+      instance.state.doc.descendants((node, pos) => {
+        if (at === null && node.isText && node.text === text) at = pos + text.length;
+        return at === null;
+      });
+      if (at === null) throw new Error(`no "${text}" in the fixture`);
+      instance.commands.setTextSelection(at);
+    }
+
+    function tablePositions(instance: Editor): number[] {
+      const positions: number[] = [];
+      instance.state.doc.descendants((node, pos) => {
+        if (node.type.name === "table") positions.push(pos);
+        return true;
+      });
+      return positions;
+    }
+
+    it("walks a fence inside a cell home in three steps", () => {
+      const instance = mount([
+        paragraph("before"),
+        tableOf(
+          cellOf(paragraph("lead"), fence("ts", "const gate = 3;"), paragraph("tail")),
+          cellOf(paragraph("neighbour")),
+        ),
+        paragraph("after"),
+      ]);
+      caretAtEndOf(instance, "const gate = 3;");
+
+      // One: the caret leaves the fence and stands beside it, still in the cell.
+      expect(pressEscape(instance).owner).toBe("table-cell");
+      expect(instance.state.selection.$head.parent.textContent).toBe("tail");
+
+      // Two: the table is selected whole.
+      expect(pressEscape(instance).owner).toBe("object");
+      expect(selectedObject(instance.state)?.node.type.name).toBe("table");
+
+      // Three: home, in the prose after the table.
+      expect(pressEscape(instance).owner).toBe("document");
+      expect(instance.state.selection.$head.parent.textContent).toBe("after");
+    });
+
+    it("keeps the landing inside the cell when the fence ends it", () => {
+      // The seam §5a says to verify rather than trust: the position after the
+      // fence exists but holds no textblock, and the landing must not slide
+      // into the neighbouring cell.
+      const instance = mount([
+        paragraph("before"),
+        tableOf(
+          cellOf(paragraph("lead"), fence("ts", "const gate = 3;")),
+          cellOf(paragraph("neighbour")),
+        ),
+        paragraph("after"),
+      ]);
+      caretAtEndOf(instance, "const gate = 3;");
+
+      expect(pressEscape(instance).owner).toBe("table-cell");
+      expect(instance.state.selection.$head.parent.textContent).toBe("lead");
+    });
+
+    it("walks a nested table home in four steps", () => {
+      const instance = mount([
+        paragraph("before"),
+        tableOf(
+          cellOf(paragraph("intro"), tableOf(cellOf(paragraph("deep"))), paragraph("outro")),
+          cellOf(paragraph("neighbour")),
+        ),
+        paragraph("after"),
+      ]);
+      const [outerPos, innerPos] = tablePositions(instance);
+      caretAtEndOf(instance, "deep");
+
+      // One: the inner table — the deepest enclosing object — is selected.
+      expect(pressEscape(instance).owner).toBe("object");
+      expect(selectedObject(instance.state)?.pos).toBe(innerPos);
+
+      // Two: the caret lands after it, inside the outer cell.
+      expect(pressEscape(instance).owner).toBe("table-cell");
+      expect(instance.state.selection.$head.parent.textContent).toBe("outro");
+
+      // Three: the outer table.
+      expect(pressEscape(instance).owner).toBe("object");
+      expect(selectedObject(instance.state)?.pos).toBe(outerPos);
+
+      // Four: home.
+      expect(pressEscape(instance).owner).toBe("document");
+      expect(instance.state.selection.$head.parent.textContent).toBe("after");
+    });
   });
 
   it("walks home off a selected plain fence", () => {

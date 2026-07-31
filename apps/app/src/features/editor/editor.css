@@ -178,32 +178,6 @@
   font-weight: 650;
 }
 
-/* A cell holding a picture is measured by the table, never by the picture.
-
-   An auto-layout table sizes its columns from what is inside them, and a
-   measured picture carries its own width in pixels (the upload's frame, or the
-   width the writer dragged to). Percentages are dropped while that measuring
-   happens, so `max-width: 100%` cannot cap what it is being asked to widen: a
-   1280px screenshot dropped into a cell at a 500px viewport took the column to
-   1301px, the table to 1352px, and left half of the picture's resize grips on
-   the far side of the wrapper's horizontal scroller.
-
-   Size containment is the fence. The line the picture stands in is sized as if
-   it were empty, so nothing inside it can reach the column's arithmetic; the
-   room it asks for instead is one definite number, the same 8rem the unmeasured
-   placeholder box is built on — a thumbnail's worth, which a table can afford in
-   any layout. The cell is then definite, `max-width: 100%` finally has a box to
-   answer against, and the picture fills whatever the column turned out to be:
-   8rem of it in a narrow table, all of it in a wide one.
-
-   Scoped to the cells that hold a picture, so an ordinary table still sizes its
-   columns to its prose. A cell holds exactly one paragraph
-   (`MeridianTableCell`), so this is that paragraph. */
-.meridian-editor .ProseMirror :is(td, th) > p:has(.meridian-image-node) {
-  contain: inline-size;
-  contain-intrinsic-inline-size: 8rem;
-}
-
 .meridian-editor .ProseMirror img {
   max-width: 100%;
   border-radius: var(--radius-md);
@@ -342,6 +316,38 @@
    is exactly the set of elements the manuscript does not own. */
 .meridian-editor .ProseMirror .react-renderer {
   position: relative;
+}
+
+/* A cell holding object chrome is measured by the table, never by the object.
+
+   An auto-layout table sizes its columns from what is inside them, and object
+   chrome carries its own width: a measured picture's pixels (the upload's
+   frame, or the width the writer dragged to), a rendered diagram's SVG, a
+   fence's longest unbroken line. Percentages are dropped while that measuring
+   happens, so `max-width: 100%` cannot cap what it is being asked to widen: a
+   1280px screenshot dropped into a cell at a 500px viewport took the column to
+   1301px, the table to 1352px, and left half of the picture's resize grips on
+   the far side of the wrapper's horizontal scroller. With `block+` cells a
+   640px diagram SVG did the same — 707px column, 797px table, prose columns
+   crushed to 30px beside it.
+
+   Size containment is the fence. The box the object stands in is sized as if
+   it were empty, so nothing inside it can reach the column's arithmetic; the
+   room it asks for instead is one definite number, the same 8rem the unmeasured
+   placeholder box is built on — a thumbnail's worth, which a table can afford in
+   any layout. The cell is then definite, `max-width: 100%` finally has a box to
+   answer against, and the object fills whatever the column turned out to be:
+   a diagram scales down, a fence pans on its own `overflow-x` scroller.
+
+   Two shapes hold every case, so an ordinary table still sizes its columns to
+   its prose: a paragraph carrying an inline picture, and a node view standing
+   as a cell's own block — the same `.react-renderer` host the rule above
+   positions, which is exactly the set of blocks the manuscript does not lay
+   out itself (fences, rendered diagrams, figures). */
+.meridian-editor .ProseMirror :is(td, th) > p:has(.meridian-image-node),
+.meridian-editor .ProseMirror :is(td, th) > .react-renderer {
+  contain: inline-size;
+  contain-intrinsic-inline-size: 8rem;
 }
 
 /* An inline node view's outer wrapper is `display: inline` by default, so its
