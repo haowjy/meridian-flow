@@ -30,9 +30,11 @@ import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
+import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
+import { objectSelectedInDecorations } from "../objects";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -398,6 +400,7 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
       alt: { default: null },
       title: { default: null },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
+      width: IMAGE_WIDTH_ATTRIBUTE,
     };
   },
 
@@ -416,7 +419,12 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
         if (oldNode.type !== newNode.type) return false;
         if (
           oldNode !== newNode ||
-          pendingImageSignature(oldDecorations) !== pendingImageSignature(newDecorations)
+          pendingImageSignature(oldDecorations) !== pendingImageSignature(newDecorations) ||
+          // The resize grips exist while the jade ring does, and a selection
+          // change moves neither the node nor the upload. The ring's own
+          // decoration is the signal both read.
+          objectSelectedInDecorations(oldDecorations) !==
+            objectSelectedInDecorations(newDecorations)
         ) {
           updateProps();
         }

@@ -57,6 +57,21 @@ export const objectPhysicsPluginKey = new PluginKey(OBJECT_PHYSICS_NAME);
 export const SELECTED_OBJECT_CLASS = "meridian-object-selected";
 
 /**
+ * The same fact in the same decoration, for a node view that has to DO
+ * something about being selected rather than only look different — an image's
+ * resize handles, which exist while the jade ring does and not otherwise.
+ *
+ * Read from the decoration for the reason the ring is painted by one: a node
+ * view's own `selected` prop comes from `selectNode`/`deselectNode`, which a
+ * peer's whole-document rebuild never calls.
+ */
+export function objectSelectedInDecorations(decorations: readonly { spec?: unknown }[]): boolean {
+  return decorations.some(
+    (decoration) => (decoration.spec as { selectedObject?: unknown } | undefined)?.selectedObject,
+  );
+}
+
+/**
  * Opens the object's own surface.
  *
  * It returns nothing, and that is the contract rather than an omission: Enter
@@ -338,7 +353,12 @@ export const ObjectPhysicsExtension = Extension.create({
             const range = selectedObjectRange(state);
             if (!range) return null;
             return DecorationSet.create(state.doc, [
-              Decoration.node(range.from, range.to, { class: SELECTED_OBJECT_CLASS }),
+              Decoration.node(
+                range.from,
+                range.to,
+                { class: SELECTED_OBJECT_CLASS },
+                { selectedObject: true },
+              ),
             ]);
           },
 

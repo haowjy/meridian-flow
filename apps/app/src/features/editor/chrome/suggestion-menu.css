@@ -6,11 +6,33 @@
  * under the editor.
  */
 
+/* The popover clips its children to its own rounded corners; the list inside
+   it is what scrolls.
+
+   It also never asks for more room than the caret leaves it. A menu opened from
+   a cell near the bottom of the window is taller than the space under it, so
+   floating-ui flips it above the caret — and a menu still taller than the space
+   ABOVE hangs off the top of the window, taking the refusal note with it, which
+   is the one line saying why the rows below are grey. Radix measures that space
+   for every placement it tries; capping to it makes the list give way instead
+   of the note. */
+.meridian-suggestion-menu-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: var(--radix-popper-available-height);
+}
+
 /* Height caps near eight rows and the list scrolls inside itself (ruled). The
-   native scrollbar stays hidden: the fades above and below already say there
-   is more, and a bar on a 14rem menu is louder than the menu. */
+   native scrollbar stays hidden: the fades at the list's own edges already say
+   there is more, and a bar on a 14rem menu is louder than the menu.
+
+   `min-height: 0` is what lets the cap above shorten it: a flex child's floor
+   is its content, so without this the list keeps its eight rows and pushes the
+   note back off the screen. */
 .meridian-suggestion-menu {
   max-height: 19.5rem;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -23,41 +45,38 @@
   display: none;
 }
 
-/* The fades sit on the popover, not the scroller: a fade that scrolled with
-   the list would announce nothing. */
-.meridian-suggestion-menu-shell {
-  position: relative;
-  overflow: hidden;
+/* The fade belongs to what actually scrolls (ruling 2026-07-30), so it is a
+   mask on the list itself — the same mechanism the chat transcript uses
+   (`chat-scroll-fade-bottom`, globals.css) and for the same two reasons: a
+   mask sits on the element that owns the overflow, hugging its real top and
+   bottom rather than the popover's border, and it needs no surface colour to
+   imitate. A pinned note above the list is therefore never veiled.
+
+   Painted on the popover instead, the top band fell across that note and said
+   "more above" about a header that does not scroll.
+
+   Each band is one stop in a single gradient, sized to zero unless
+   `data-overflow` (measured in `SuggestionMenu`) says there is list behind
+   that edge. Zero collapses the stop, so a list that fits wears no fade. */
+.meridian-suggestion-menu {
+  --suggestion-fade: 1.5rem;
+  --suggestion-fade-top: 0px;
+  --suggestion-fade-bottom: 0px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--suggestion-fade-top),
+    #000 calc(100% - var(--suggestion-fade-bottom)),
+    transparent 100%
+  );
 }
 
-.meridian-suggestion-menu-shell::before,
-.meridian-suggestion-menu-shell::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  left: 0;
-  height: 1.5rem;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-  pointer-events: none;
+.meridian-suggestion-menu[data-overflow="top"],
+.meridian-suggestion-menu[data-overflow="both"] {
+  --suggestion-fade-top: var(--suggestion-fade);
 }
 
-.meridian-suggestion-menu-shell::before {
-  top: 0;
-  background: linear-gradient(to bottom, var(--color-popover), transparent);
-}
-
-.meridian-suggestion-menu-shell::after {
-  bottom: 0;
-  background: linear-gradient(to top, var(--color-popover), transparent);
-}
-
-.meridian-suggestion-menu-shell:has([data-overflow="top"])::before,
-.meridian-suggestion-menu-shell:has([data-overflow="both"])::before {
-  opacity: 1;
-}
-
-.meridian-suggestion-menu-shell:has([data-overflow="bottom"])::after,
-.meridian-suggestion-menu-shell:has([data-overflow="both"])::after {
-  opacity: 1;
+.meridian-suggestion-menu[data-overflow="bottom"],
+.meridian-suggestion-menu[data-overflow="both"] {
+  --suggestion-fade-bottom: var(--suggestion-fade);
 }

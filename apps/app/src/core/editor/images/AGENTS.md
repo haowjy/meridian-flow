@@ -48,6 +48,8 @@ every door refuses out loud rather than opening onto nothing.
 | `ImageNodeView.tsx` | An inline picture at every point in its life |
 | `image-drag-preview.ts` | The ghost a picture drags with |
 | `measure-image.ts` | The picture's own size, read from the local file |
+| `image-resize.ts` | How big the writer wants it: the drag's arithmetic, and the one transaction |
+| `ImageResizeHandles.tsx` | The four grips a selected picture wears |
 
 ## Key rules
 
@@ -59,15 +61,44 @@ every door refuses out loud rather than opening onto nothing.
   same object at the same size mid-sentence or alone in its paragraph, with the
   prose column as its only bound. A big picture in a sentence makes a tall line,
   and that is the right answer rather than a bug to cap. The document always
-  said this much — a drop has always landed the node between two text nodes of
-  one paragraph and the wire has always carried `text ![alt](p) text` — so
-  nothing about the picture's size is derived, stored, or announced; it is the
-  CSS in [`../../../features/editor/editor.css`](../../../features/editor/editor.css)
-  and nothing else. That CSS holds one fact worth knowing before touching it:
-  baseline alignment goes on TipTap's own inline wrapper, the box the line box
-  is built out of, and everything inside that wrapper is block-level so its
+  said this much: a drop has always landed the node between two text nodes of
+  one paragraph and the wire has always carried `text ![alt](p) text`. How a
+  picture is PLACED is therefore the CSS in
+  [`../../../features/editor/editor.css`](../../../features/editor/editor.css)
+  and nothing else, and that CSS holds one fact worth knowing before touching
+  it: baseline alignment goes on TipTap's own inline wrapper, the box the line
+  box is built out of, and everything inside that wrapper is block-level so its
   baseline falls back to the bottom margin edge instead of a line box that would
   hang the font's descender under the picture.
+- **How big a picture is has ONE answer, and the document holds it.** `width`
+  is the number of CSS pixels the writer dragged to, or null for the file's own
+  size; the prose column caps both alike (human ruling, 2026-07-30: the Docs
+  model). Null is the state nearly every picture is in and the state whose wire
+  form stays plain `![alt](src)`, so the escalation to `<img … width>` is paid
+  for only by pictures that were actually resized (`packages/markup`). This is
+  what makes the Docs look reachable rather than absent: a picture as wide as
+  the column fills the line it stands in by definition, and dragging it smaller
+  is how words come to stand beside it.
+- **The drag is geometry; only the release is an edit.** Each frame writes a
+  width onto the picture's own element, which the writer sees and no peer does,
+  and the release dispatches one `setNodeMarkup` carrying every other attribute
+  through, `uploadToken` included. A per-frame dispatch would put the whole
+  gesture on the wire, in every peer's repaint, and in the undo stack a hundred
+  times over. The target is a `NodeHold`, because a peer or an AI write can move
+  the picture between the press and the release
+  ([`image-resize.ts`](image-resize.ts)).
+- **The grips are inside the node view**, which is what
+  `features/editor/chrome/object-overlay.ts` already calls the default for an
+  object that owns its DOM: chrome rendered in the element it decorates rides
+  scroll and reflow with the manuscript, so there is no rect to re-measure and
+  no way to strand a grip beside the paragraph that took the picture's place.
+  Never measure them onto the viewport.
+- **Selected-ness reaches the node view as a decoration**, never as TipTap's
+  `selected` prop: that prop comes from `selectNode`, which a peer's
+  whole-document rebuild does not call, and the jade ring learned that the hard
+  way ([`../objects/AGENTS.md`](../objects/AGENTS.md)). `MeridianImage`'s node
+  view repaints on that decoration for the same reason it repaints on the
+  pending one.
 - **A measured frame is the measured box, at any size.** The slot an upload
   reserves is the file's own width and ratio, so a 32px icon reserves 32px and
   the landing moves nothing. The placeholder's readable minimums are the
@@ -125,17 +156,23 @@ every door refuses out loud rather than opening onto nothing.
 - **One entry per upload.** Two pictures arriving together are two lifecycles.
   Nothing about one upload gates another, which is why the toolbar's image
   control has no busy state.
-- **Replace is an upload aimed at a slot that already exists, and it holds that
-  slot.** The object surface's Replace verb (§5.6) hands
-  `openImageReplacePicker` a `NodeHold` and never a position: the writer is in
+- **The picker aims at a HELD target, never at a number.** The writer is in
   front of an operating-system dialog while peers and AI writes move the
-  document, and a number aimed at a picture then aims at prose or at somebody
-  else's picture. The hold is resolved after the file comes back and the node is
-  read back as a registered image surface; a picture that is gone cancels out
-  loud, with no entry opened and no asset uploaded. Then the ordinary lifecycle
-  runs on that node, so nothing is inserted or removed and the alt text and a
-  figure's caption and label survive. It works for the `figure` node for the same
-  reason: the landing writes `src` on whatever node the hold resolves to.
+  document, so a position taken before the dialog opened means something else by
+  the time a file comes back. `openImagePicker` therefore takes one
+  `ImagePickerTarget` and nothing else: an `EditorAnchor` for a new picture
+  (`imageCaretTarget`, or the anchor the slash lane pins where its trigger text
+  was), a `NodeHold` for §5.6's Replace (`imageReplaceTarget`). Each is resolved
+  when the file arrives and read back before anything is opened — the place
+  through `acceptsInlineImage`, the node through `objectSurfaceKind` — and a
+  target that is gone refuses out loud, with no entry opened and no asset
+  uploaded. Nothing falls back to the selection or hunts for another home: a
+  picture that appeared past the table the writer asked from is what this
+  contract exists to prevent. Replace then runs the ordinary lifecycle on the
+  node that was already there, so nothing is inserted or removed and the alt
+  text and a figure's caption and label survive; it works for `figure` for the
+  same reason, since the landing writes `src` on whatever node the hold
+  resolves to.
 - **What one undo takes back depends on how the slot was opened.** The entry
   carries it (`landing`). An INSERT's landing stays out of history, because the
   insert already IS the writer's event and undo should take the picture away
@@ -164,10 +201,15 @@ every door refuses out loud rather than opening onto nothing.
   it is recoverable; with a live owner it is somebody's upload.
 - Turning a refused paste-import into a document write. The link the paste
   landed is already the honest answer.
-- A second reading of how big a picture is, for a picture that shares its line
-  with words. That was the condemned shape: a decoration plugin, a class, a
-  15rem cap, and a scaled upload frame, all so a picture mid-sentence could be a
-  different object than the same picture alone.
+- A second reading of how big a picture is. There is one: the `width`
+  attribute, or the file's own size when it is null, capped by the prose column
+  either way. The condemned shape was a decoration plugin, a class, a 15rem cap,
+  and a scaled upload frame, all so a picture mid-sentence could be a different
+  object than the same picture alone.
+- Dispatching from inside the resize drag. One gesture is one event.
+- A size in local state, a ref, or a CSS variable the wire never learns about. A
+  size only one writer can see is a size their collaborator's screen disagrees
+  with, and the manuscript is what both of them are reading.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) — the lifecycle in detail, the
   ports, and the paste-import seam

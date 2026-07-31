@@ -179,6 +179,8 @@ export const DOCUMENT_DIALECT_CONTRACT = {
     assetId: "realm-map",
     path: "assets/realm-map.png",
     wire: "![Realm map](assets/realm-map.png)",
+    /** The one reason a picture leaves Markdown syntax: a display width. */
+    sizedWire: '<img src="assets/realm-map.png" alt="Realm map" width="240" />',
   },
 } as const;
 
@@ -203,6 +205,7 @@ export const DOCUMENT_DIALECT_ROUND_TRIP_SPELLINGS = [
     wire: spelling.wire,
   })),
   { id: "image-asset-path", wire: DOCUMENT_DIALECT_CONTRACT.image.wire },
+  { id: "image-sized", wire: DOCUMENT_DIALECT_CONTRACT.image.sizedWire },
 ] as const;
 
 const htmlEscalationReasons = DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations
@@ -227,6 +230,7 @@ export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   `- Use raw HTML \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open}\` when a table needs ${htmlEscalationReasons}. In HTML cells, use \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline}\` for a literal newline and \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak}\` for a hard break.`,
   `- Wrap exactly one paragraph, heading, or table in ${alignmentForms}, closed by \`${DOCUMENT_DIALECT_CONTRACT.syntax.layoutClose}\`, for block alignment. On a table only, add ${widthsForm} to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.`,
   `- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`${DOCUMENT_DIALECT_CONTRACT.image.wire}\`. Do not emit internal \`${DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix}\` identifiers or signed URLs.`,
+  `- A picture is shown at its own size unless it carries a display width. To give it one, use raw HTML \`${DOCUMENT_DIALECT_CONTRACT.image.sizedWire}\`, where the width is whole pixels. Keep Markdown image syntax for every picture that has no width.`,
   "",
   "Specialized table, diagram, and link references are a deeper tier. When the harness offers one, load it before uncommon formatting; this core card remains authoritative for wire spelling.",
 ].join("\n");

@@ -33,7 +33,7 @@ import {
 
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { openImagePicker } from "@/core/editor/images";
+import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
   type EditorMountIdentity,
@@ -292,7 +292,9 @@ function ActiveSessionEditorView({
   // editor, so a menu already open when the fence lands would still insert.
   const slashCommandCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable) return null;
-    return documentSlashCatalog(() => openImagePicker(editorRef.current));
+    // The place the pick was made, not the caret when the file comes back: the
+    // chooser outlives both the writer's own caret and every peer's writes.
+    return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
   // Read when the `[[` menu opens, for the same reason as the slash catalog:
@@ -414,7 +416,7 @@ function ActiveSessionEditorView({
                 editor={editor}
                 editable={effectiveEditable}
                 schemaType={identity.schemaType}
-                onUploadFigure={() => openImagePicker(editor)}
+                onUploadFigure={() => openImagePicker(editor, imageCaretTarget(editor))}
                 uploadAvailable={Boolean(projectId)}
               />
             ) : undefined

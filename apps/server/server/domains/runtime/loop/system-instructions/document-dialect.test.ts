@@ -121,6 +121,26 @@ describe("document dialect card codec gate", () => {
     expect(paragraph?.firstChild?.attrs.src).toBe(
       `${DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix}${DOCUMENT_DIALECT_CONTRACT.image.assetId}`,
     );
+    expect(paragraph?.firstChild?.attrs.width).toBeNull();
+  });
+
+  // The escalation ladder the card teaches: the raw tag is what carries a
+  // display width, and taking the width away puts the picture back in Markdown
+  // syntax byte for byte.
+  it("maps the claimed sized image spelling to a width, and back down without one", () => {
+    const [paragraph] = expectWireFixpoint(DOCUMENT_DIALECT_CONTRACT.image.sizedWire);
+    const picture = paragraph?.firstChild;
+    expect(picture?.type.name).toBe("image");
+    expect(picture?.attrs.width).toBe(240);
+    expect(picture?.attrs.src).toBe(
+      `${DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix}${DOCUMENT_DIALECT_CONTRACT.image.assetId}`,
+    );
+
+    if (!picture) throw new Error("expected the sized spelling to parse a picture");
+    const unsized = schema.node("paragraph", null, [
+      picture.type.create({ ...picture.attrs, width: null }),
+    ]);
+    expect(codec.serialize([unsized])).toBe(`${DOCUMENT_DIALECT_CONTRACT.image.wire}\n`);
   });
 
   it("ships only spellings represented by the codec contract", () => {
@@ -147,6 +167,7 @@ describe("document dialect card codec gate", () => {
       DOCUMENT_DIALECT_CONTRACT.syntax.layoutClose,
       DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix,
       DOCUMENT_DIALECT_CONTRACT.image.wire,
+      DOCUMENT_DIALECT_CONTRACT.image.sizedWire,
     ]) {
       expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(spelling);
     }

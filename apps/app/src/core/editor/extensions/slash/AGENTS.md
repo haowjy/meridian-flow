@@ -36,12 +36,27 @@ only as part of its list, so a block asked for from inside a bullet lands after
 the whole list. A quote is deliberately not one of those: its children are
 ordinary blocks that happen to be quoted.
 
+**An entry's strategy is what it LANDS**, and it decides which question
+availability asks. A block strategy asks for a level of the document that will
+hold its node (convert, or insert after). The image strategy asks whether the
+paragraph the writer typed `/` in accepts an inline `image`. Two questions, so
+two strategies: a single flag standing for "the host dispatches it" made a
+picture answer the block question, which is how it came to refuse everywhere a
+block refuses.
+
 **A table cell is never left** (ruling). §5.7 lets `/` open in a cell, but a
 pick that answered by inserting after the whole table would yank the caret out
 of the structure the writer is standing in — the deepest owner, law 4. A
-Meridian cell holds one plain paragraph, so most entries have nowhere to go
+Meridian cell holds one plain paragraph, so every block entry has nowhere to go
 there: they grey, and the menu says why in the toolbar's own words. Nothing
 inserts outside a cell from inside one.
+
+**The picture is the cell's one legal act.** An image is an inline atom, and a
+cell's paragraph holds one exactly as any other paragraph does, so the Image row
+stays live in a cell and lands the picture IN it. A menu whose every row is dead
+is not a menu; that was the overreach in the first answer to the teleport bug,
+and the fix is a truthful availability question rather than a special case for
+tables.
 
 ## Key rules
 
@@ -49,6 +64,13 @@ inserts outside a cell from inside one.
   localized and the image entry needs the host's picker, so nothing here may
   hard-code a string. Ids are a closed union: a new entry needs a row in the
   insertion table and an icon in the surface, or it will not compile.
+- **A picture is asked for at an anchored place.** Choosing Image consumes the
+  trigger and hands the host an `EditorAnchor` for the position it left behind
+  (`requestImageUpload`). The host's chooser is an operating-system dialog that
+  outlives the writer's caret and every peer write, so nothing downstream may
+  read the selection when the file comes back — the picker resolves the anchor,
+  checks the place still takes a picture, and refuses out loud otherwise
+  ([`../../images/AGENTS.md`](../../images/AGENTS.md)).
 - **A refusal is a code here and copy there.** `slashRefusals` answers for
   every visible row at once, in the toolbar's vocabulary (`"table-cell"`); the
   surface renders it through `blockTypeReasonMessage`, so a writer meets one
@@ -66,6 +88,10 @@ inserts outside a cell from inside one.
   is the product contract; a rule that is not in it is a silent rejection.
 - Reaching for TipTap's block commands (`setHeading`, `insertTable`) per entry.
   They each place the caret their own way; the insertion table is one rule.
+- Modelling an entry as a node shape it does not actually land, or as a flag
+  about who dispatches it. Availability then answers about the surrogate: an
+  inline picture modelled as an empty paragraph asked "is there room for another
+  block", and truthfully got no in every cell.
 - Reaching for `insertPoint` for the insertion position. It answers a schema
   question — first legal parent, stop climbing at a sibling — and this is a
   domain one, which is how a table once landed inside a bullet and how the

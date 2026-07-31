@@ -2140,6 +2140,10 @@ msgstr ""
 msgid "Reset column widths"
 msgstr ""
 
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
+msgid "Reset size"
+msgstr ""
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr ""
@@ -2612,6 +2616,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Theme"
+msgstr ""
+
+#: src/core/editor/images/image-uploads.ts
+msgid "There is nowhere left to put that picture."
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx

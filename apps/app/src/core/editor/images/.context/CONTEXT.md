@@ -35,16 +35,24 @@ Each step's rule:
   size, bounded by the prose column, sitting on the text baseline either way.
   Insert and drop are deliberately not unified — the caret is the insert's
   answer, the dropcursor is the drop's.
-- **Replace claims an existing slot, and takes hold of it first.**
-  `openImageReplacePicker` accepts a `NodeHold` — the identity the object surface
-  already carries — never a position: the operating system's chooser stays open
-  across peer writes and AI writes, and a raw number means something else by the
-  time a file comes back. After the file arrives the hold is resolved, the node is
-  read back through `objectSurfaceKind(node) === "image"`, and a picture that went
-  away refuses out loud rather than opening an entry or an upload. Then the token
-  goes on (`addToHistory: false`, because it is bookkeeping) and the ordinary
-  lifecycle runs. It works on `figure` for the same reason it works on `image`:
-  both carry the attribute, and both are registered image surfaces.
+- **The picker takes a held target, and only a held target.** `openImagePicker`
+  accepts one `ImagePickerTarget`: `{ kind: "insert", at: EditorAnchor }` for a
+  new picture, `{ kind: "replace", slot: NodeHold }` for a slot the writer
+  already placed. The operating system's chooser stays open across peer writes
+  and AI writes, and a raw number means something else by the time a file comes
+  back, so nothing may read the selection then. `imageCaretTarget` pins the
+  caret for a toolbar or menu press; the slash lane pins the position its
+  trigger text left behind and hands that anchor through the catalog callback.
+  Both kinds are resolved after the file arrives and read back before anything
+  is opened — an insert asks `acceptsInlineImage` of the resolved position, a
+  replace asks `objectSurfaceKind(node) === "image"` of the resolved node — and
+  a target that is gone refuses out loud rather than opening an entry or an
+  upload. Neither searches for somewhere else to put the picture: a picture that
+  appeared outside the table the writer asked from is a worse answer than one
+  that says it cannot go. Replace then writes the token
+  (`addToHistory: false`, because it is bookkeeping) and the ordinary lifecycle
+  runs. It works on `figure` for the same reason it works on `image`: both carry
+  the attribute, and both are registered image surfaces.
 - **The frame.** `measure-image.ts` decodes the local file for its intrinsic
   size, and that size is what the slot reserves wherever it stands. The node
   view puts it on the wrapper and REMEMBERS it, because
@@ -86,6 +94,40 @@ Each step's rule:
   after the view updates, never inside `update` itself: a plugin must not
   dispatch from its own update, and identity can only be read once the Yjs
   binding has finished describing the new document (`../../anchors.ts`).
+
+## Display size
+
+`width` is CSS pixels or null. Null means the file's own size; both are capped
+by the prose column, which is `max-width: 100%` in the editor CSS and nothing
+else. A stored width also wins over a measured upload frame, so a slot resized
+mid-upload lands where the writer put it — the frame's ratio still holds the
+box, which is what keeps the landing from moving a line.
+
+The gesture:
+
+1. **Press.** `ImageResizeHandles` reads the picture's rendered box, the prose
+   line height (the floor: a picture at one line is still a glyph among the
+   words), and the width of the first non-inline ancestor (the ceiling). It takes
+   a `NodeHold` on the picture. Nothing is dispatched.
+2. **Move.** `resizedImageWidth` projects the pointer offset onto the picture's
+   own diagonal — the closest box to where the pointer actually is, which is what
+   makes a corner feel attached to the hand — clamps it, and the element's
+   `style.width` is written. The document is untouched. A rebuild under the drag
+   stops the preview and not the gesture: the hold still knows which picture it
+   is.
+3. **Release.** One `setNodeMarkup` through `setImageWidth`, spreading the old
+   attrs so `uploadToken`, `alt`, and `title` ride through. `pointercancel`
+   restores the element's old inline width and dispatches nothing.
+
+The grips render when the ring does, over something with a box: a displayed
+picture or a measured slot. A slot that is asking a question instead (failed,
+abandoned, an address that would not resolve) has given its box back and has no
+size to be. Selected-ness is read from the ring's own decoration
+(`objectSelectedInDecorations`), which is also what `MeridianImage`'s node view
+repaints on.
+
+On the wire, a picture with no width is `![alt](src)` byte for byte and one with
+a width is `<img src alt title width />` (`packages/markup/.context/CONTEXT.md`).
 
 ## Ports
 
@@ -196,3 +238,7 @@ the write either way and publishes the current field map when presence resumes.
 - Two uploads and two imports hold independent state.
 - An empty-src image round-trips through `@meridian/markup`, and a token'd one
   serializes identically with no token on the wire (its codec test).
+- A resize is exactly one transaction, carries every other attribute through,
+  and lands on the picture the writer grabbed after a peer writes above it.
+- An unsized picture serializes byte-identically to what it always did; a sized
+  one escalates and de-escalates (`packages/markup`'s codec test).

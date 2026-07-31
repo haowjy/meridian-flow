@@ -35,6 +35,9 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "../asset-image-render-state";
+import { objectSelectedInDecorations } from "../objects";
+import { ImageResizeHandles } from "./ImageResizeHandles";
+import { imageWidthAttr } from "./image-resize";
 import { removePendingImage, retryPendingImage } from "./image-uploads";
 import {
   type PendingImageFrame,
@@ -45,6 +48,7 @@ import {
 export function ImageNodeView(props: NodeViewProps) {
   const src = typeof props.node.attrs.src === "string" ? props.node.attrs.src : "";
   const alt = typeof props.node.attrs.alt === "string" ? props.node.attrs.alt : "";
+  const width = imageWidthAttr(props.node.attrs);
   const { projectId } = (props.extension.options ?? {}) as { projectId?: string };
   const [state, actions] = useAssetImageRenderState({ projectId, src });
   const pending = pendingUploadFromDecorations(props.decorations);
@@ -68,6 +72,16 @@ export function ImageNodeView(props: NodeViewProps) {
     mine?.status.kind === "failed" || (!pending && !state.url && state.kind !== "loading");
   const frame = asking ? null : frameRef.current;
 
+  // The grips live on the selected state and nowhere else (§5.2's jade ring),
+  // and only over something with a box to drag: a picture, or the measured slot
+  // one is arriving into. A frame that is asking a question instead has given
+  // its box back, and there is nothing there to be a size.
+  const box = useRef<HTMLElement | null>(null);
+  const resizable =
+    objectSelectedInDecorations(props.decorations) &&
+    props.editor.isEditable &&
+    (state.url !== null || frame !== null);
+
   // The whole picture is its own grip (`body: "inline-drag"` in EDITOR_OBJECT_TYPES):
   // a writer grabs the picture, not a handle beside it. `data-drag-handle` is
   // how a TipTap node view says so — without it the node view refuses the
@@ -75,10 +89,15 @@ export function ImageNodeView(props: NodeViewProps) {
   return (
     <NodeViewWrapper
       as="span"
-      className={cn("meridian-image-node", frame && "meridian-image-node--framed")}
+      ref={box}
+      className={cn(
+        "meridian-image-node",
+        frame && "meridian-image-node--framed",
+        width !== null && "meridian-image-node--sized",
+      )}
       data-type="image"
       data-drag-handle
-      style={frame ? frameStyle(frame) : undefined}
+      style={imageBoxStyle(frame, width)}
     >
       {mine ? (
         <PendingImage entry={mine} editor={props.editor} getPos={props.getPos} />
@@ -113,6 +132,9 @@ export function ImageNodeView(props: NodeViewProps) {
           )}
         </span>
       )}
+      {resizable ? (
+        <ImageResizeHandles editor={props.editor} getPos={props.getPos} box={() => box.current} />
+      ) : null}
     </NodeViewWrapper>
   );
 }
@@ -267,15 +289,27 @@ function AbandonedImage({
 }
 
 /**
- * The picture's own proportions, held by the wrapper so the `<img>` inside can
- * change without the box changing. The frame is the file's own size wherever
- * the slot stands, mid-sentence or alone in its paragraph, because a picture is
- * one object at one size. `max-width` still belongs to the CSS: a picture wider
- * than the prose column is the column's business.
+ * The box the picture stands in, from the two things that can decide it.
+ *
+ * A measured FRAME is the file's own size, held by the wrapper so the `<img>`
+ * inside can change without the box changing; it is the same size wherever the
+ * slot stands, mid-sentence or alone in its paragraph, because a picture is one
+ * object at one size. A stored WIDTH is what the writer dragged the picture to,
+ * and it wins over the frame — including while the bytes are still travelling,
+ * so a slot resized mid-upload lands at the size the writer chose rather than
+ * jumping back to the file's. The frame's ratio survives either way, which is
+ * what keeps the landing from moving a line.
+ *
+ * `max-width` still belongs to the CSS: a picture wider than the prose column
+ * is the column's business, at any size and from any source.
  */
-function frameStyle(frame: PendingImageFrame): CSSProperties {
+function imageBoxStyle(
+  frame: PendingImageFrame | null,
+  width: number | null,
+): CSSProperties | undefined {
+  if (!frame) return width === null ? undefined : { width: `${width}px` };
   return {
-    width: `${frame.width}px`,
+    width: `${width ?? frame.width}px`,
     aspectRatio: `${frame.width} / ${frame.height}`,
   };
 }

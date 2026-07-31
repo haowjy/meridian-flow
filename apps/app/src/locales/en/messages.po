@@ -2140,6 +2140,10 @@ msgstr "Required"
 msgid "Reset column widths"
 msgstr "Reset column widths"
 
+#: src/features/editor/surfaces/objects/object-menu-items.tsx
+msgid "Reset size"
+msgstr "Reset size"
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr "Resize right rail"
@@ -2613,6 +2617,10 @@ msgstr "The requested passage wasn't specific enough."
 #: src/features/account/SettingsDialog.tsx
 msgid "Theme"
 msgstr "Theme"
+
+#: src/core/editor/images/image-uploads.ts
+msgid "There is nowhere left to put that picture."
+msgstr "There is nowhere left to put that picture."
 
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"

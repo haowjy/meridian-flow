@@ -5,22 +5,17 @@ import type { Mark, Node as PMNode } from "prosemirror-model";
 import { inlineContentToMdast, type MdastInline, rawTextForAst } from "../../helpers.js";
 import { getRuntime } from "../../runtime.js";
 import type { ParseContext, SerializeContext } from "../../types.js";
+import {
+  decodeHtml,
+  elementChildren,
+  escapeHtmlAttribute,
+  escapeHtmlText,
+  type HtmlElement,
+  type HtmlNode,
+  parseHtml,
+} from "../html-tag.js";
+import { imageHtmlTag, parseImageHtmlAttributes } from "./image-html.js";
 
-type HtmlNode = HtmlElement | HtmlText;
-
-interface HtmlElement {
-  type: "element";
-  name: string;
-  attributes: ReadonlyMap<string, string | null>;
-  children: HtmlNode[];
-}
-
-interface HtmlText {
-  type: "text";
-  value: string;
-}
-
-const VOID_ELEMENTS = new Set(["br", "img"]);
 const ALIGNMENTS = new Set(["left", "center", "right"]);
 
 export function serializeHtmlTable(table: PMNode, ctx: SerializeContext): string {
@@ -155,10 +150,12 @@ function inlineNodeToHtml(node: MdastInline): string {
       return "<br />";
     case "image": {
       const image = node as { url: string; alt: string | null; title: string | null };
-      const alt = image.alt === null ? "" : ` alt="${escapeHtmlAttribute(image.alt)}"`;
-      const title = image.title === null ? "" : ` title="${escapeHtmlAttribute(image.title)}"`;
-      return `<img src="${escapeHtmlAttribute(image.url)}"${alt}${title} />`;
+      return imageHtmlTag({ ...image, width: null });
     }
+    // A picture that already escalated to its own tag (a display size) arrives
+    // written, and an HTML cell is the one place raw tags need no escaping.
+    case "html":
+      return String((node as { value?: unknown }).value ?? "");
     default:
       throw new Error(`pm->html: unsupported table inline node "${node.type}"`);
   }
@@ -176,21 +173,6 @@ function inlineChildren(node: MdastInline): MdastInline[] {
   return children as MdastInline[];
 }
 
-function escapeHtmlText(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("{", "&#123;")
-    .replaceAll("}", "&#125;")
-    .replaceAll("\r", "&#13;")
-    .replaceAll("\n", "&#10;");
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return escapeHtmlText(value).replaceAll('"', "&quot;");
-}
-
 function tableRows(table: HtmlElement): HtmlElement[] | null {
   const rows: HtmlElement[] = [];
   const children = elementChildren(table);
@@ -206,18 +188,6 @@ function tableRows(table: HtmlElement): HtmlElement[] | null {
     rows.push(...groupRows);
   }
   return rows;
-}
-
-function elementChildren(element: HtmlElement): HtmlElement[] | null {
-  const children: HtmlElement[] = [];
-  for (const child of element.children) {
-    if (child.type === "text") {
-      if (decodeHtml(child.value).trim().length > 0) return null;
-      continue;
-    }
-    children.push(child);
-  }
-  return children;
 }
 
 function cellAttrs(element: HtmlElement): Record<string, unknown> | null {
@@ -330,150 +300,24 @@ function inlineMark(element: HtmlElement, ctx: ParseContext): Mark | null {
 }
 
 function parseImage(element: HtmlElement, ctx: ParseContext): PMNode | null {
-  const allowed = new Set(["src", "alt", "title"]);
-  if ([...element.attributes.keys()].some((name) => !allowed.has(name))) return null;
-  const src = element.attributes.get("src");
-  const alt = element.attributes.get("alt");
-  const title = element.attributes.get("title");
-  if (typeof src !== "string" || alt === null || title === null) return null;
+  const tag = parseImageHtmlAttributes(element.attributes);
+  if (!tag) return null;
 
   const imageCodec = getRuntime(ctx).blockMap.get("image");
   return (
     imageCodec?.parse(
       {
-        type: "image",
-        url: decodeHtml(src),
-        alt: typeof alt === "string" ? decodeHtml(alt) : null,
-        title: typeof title === "string" ? decodeHtml(title) : null,
+        type: "html",
+        value: imageHtmlTag({
+          ...tag,
+          url: decodeHtml(tag.url),
+          alt: tag.alt === null ? null : decodeHtml(tag.alt),
+          title: tag.title === null ? null : decodeHtml(tag.title),
+        }),
       },
       ctx,
     ) ?? null
   );
-}
-
-function parseHtml(source: string): HtmlElement | null {
-  const root: HtmlElement = {
-    type: "element",
-    name: "#root",
-    attributes: new Map(),
-    children: [],
-  };
-  const stack = [root];
-  let offset = 0;
-
-  while (offset < source.length) {
-    const tagStart = source.indexOf("<", offset);
-    if (tagStart === -1) {
-      stack.at(-1)?.children.push({ type: "text", value: source.slice(offset) });
-      offset = source.length;
-      break;
-    }
-    if (tagStart > offset) {
-      stack.at(-1)?.children.push({ type: "text", value: source.slice(offset, tagStart) });
-    }
-
-    const parsed = parseTag(source, tagStart);
-    if (!parsed) return null;
-    offset = parsed.end;
-
-    if (parsed.closing) {
-      const current = stack.pop();
-      if (!current || current === root || current.name !== parsed.name) return null;
-      continue;
-    }
-
-    const element: HtmlElement = {
-      type: "element",
-      name: parsed.name,
-      attributes: parsed.attributes,
-      children: [],
-    };
-    stack.at(-1)?.children.push(element);
-    if (!parsed.selfClosing && !VOID_ELEMENTS.has(parsed.name)) stack.push(element);
-  }
-
-  if (stack.length !== 1) return null;
-  const children = elementChildren(root);
-  return children?.length === 1 ? children[0] : null;
-}
-
-function parseTag(
-  source: string,
-  start: number,
-): {
-  name: string;
-  attributes: Map<string, string | null>;
-  closing: boolean;
-  selfClosing: boolean;
-  end: number;
-} | null {
-  let offset = start + 1;
-  const closing = source[offset] === "/";
-  if (closing) offset++;
-  const nameStart = offset;
-  while (/[A-Za-z0-9:-]/.test(source[offset] ?? "")) offset++;
-  if (offset === nameStart) return null;
-  const name = source.slice(nameStart, offset).toLowerCase();
-  const attributes = new Map<string, string | null>();
-
-  while (offset < source.length) {
-    while (/\s/.test(source[offset] ?? "")) offset++;
-    if (source[offset] === ">") {
-      return { name, attributes, closing, selfClosing: false, end: offset + 1 };
-    }
-    if (source[offset] === "/" && source[offset + 1] === ">") {
-      return { name, attributes, closing, selfClosing: true, end: offset + 2 };
-    }
-    if (closing) return null;
-
-    const attrStart = offset;
-    while (/[A-Za-z0-9:_-]/.test(source[offset] ?? "")) offset++;
-    if (offset === attrStart) return null;
-    const attrName = source.slice(attrStart, offset).toLowerCase();
-    if (attributes.has(attrName)) return null;
-    while (/\s/.test(source[offset] ?? "")) offset++;
-    if (source[offset] !== "=") {
-      attributes.set(attrName, null);
-      continue;
-    }
-
-    offset++;
-    while (/\s/.test(source[offset] ?? "")) offset++;
-    const quote = source[offset];
-    let value: string;
-    if (quote === '"' || quote === "'") {
-      offset++;
-      const valueStart = offset;
-      while (offset < source.length && source[offset] !== quote) offset++;
-      if (offset >= source.length) return null;
-      value = source.slice(valueStart, offset);
-      offset++;
-    } else {
-      const valueStart = offset;
-      while (offset < source.length && !/[\s>]/.test(source[offset] ?? "")) offset++;
-      if (offset === valueStart) return null;
-      value = source.slice(valueStart, offset);
-    }
-    attributes.set(attrName, value);
-  }
-  return null;
-}
-
-function decodeHtml(value: string): string {
-  return value.replace(/&(#(?:x[0-9a-f]+|\d+)|amp|lt|gt|quot|apos);/gi, (entity, body: string) => {
-    const normalized = body.toLowerCase();
-    if (normalized === "amp") return "&";
-    if (normalized === "lt") return "<";
-    if (normalized === "gt") return ">";
-    if (normalized === "quot") return '"';
-    if (normalized === "apos") return "'";
-    const codePoint = normalized.startsWith("#x")
-      ? Number.parseInt(normalized.slice(2), 16)
-      : Number.parseInt(normalized.slice(1), 10);
-    return Number.isSafeInteger(codePoint) && codePoint <= 0x10ffff
-      ? String.fromCodePoint(codePoint)
-      : entity;
-  });
 }
 
 function htmlSource(ast: unknown, ctx: ParseContext): string {

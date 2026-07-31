@@ -14,9 +14,10 @@
  * layer.
  *
  * A lane brings rows and reacts to a choice. Everything below — the eight-row
- * cap, the internal scroll, the hairline fades, the announcement the caret's
- * own element has to carry — is one behavior both menus share, so neither lane
- * can drift from the other on a Radix upgrade (§5.7's height ruling).
+ * cap, the internal scroll, the fades on the list's own edges, the
+ * announcement the caret's own element has to carry — is one behavior both
+ * menus share, so neither lane can drift from the other on a Radix upgrade
+ * (§5.7's height ruling).
  *
  * A row a lane cannot take is shown greyed rather than hidden, with the reason
  * in `note` (law 5: absent beats disabled, disabled beats dead, and a writer
@@ -67,7 +68,7 @@ export type SuggestionMenuProps = {
   className?: string;
 };
 
-/** Which edges have more list behind them, for the hairline fades. */
+/** Which of the scroller's own edges have more list behind them, for its fades. */
 type Overflow = "none" | "top" | "bottom" | "both";
 
 export function SuggestionMenu({
@@ -114,11 +115,14 @@ export function SuggestionMenu({
 
   // The scroll follows the arrow keys (ruled), and `nearest` plus the
   // scroller's own scroll padding keeps the highlighted row clear of the fade.
+  // `rows` is a dependency because the writer is still typing: a query that
+  // narrows twenty rows to three shortens the list without touching the
+  // highlight, and a fade left behind would promise items that no longer exist.
   useEffect(() => {
     if (!shown) return;
     activeRef.current?.scrollIntoView({ block: "nearest" });
     readOverflow();
-  }, [shown, activeIndex, readOverflow]);
+  }, [shown, activeIndex, rows, readOverflow]);
 
   const activeKey = rows[activeIndex]?.key;
 

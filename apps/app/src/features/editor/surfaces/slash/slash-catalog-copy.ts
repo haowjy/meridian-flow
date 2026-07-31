@@ -10,6 +10,7 @@
 
 import { t } from "@lingui/core/macro";
 
+import type { EditorAnchor } from "@/core/editor/anchors";
 import { defaultDiagramProvider } from "@/core/editor/diagrams";
 import type { SlashCommandCatalog } from "@/core/editor/extensions/slash";
 
@@ -26,7 +27,9 @@ function diagramName(): string {
   return defaultDiagramProvider().name;
 }
 
-export function documentSlashCatalog(requestImageUpload: () => void): SlashCommandCatalog {
+export function documentSlashCatalog(
+  requestImageUpload: (at: EditorAnchor) => void,
+): SlashCommandCatalog {
   return {
     menuLabel: t`Insert block`,
     groupLabels: { text: t`Text`, insert: t`Insert` },

@@ -18,7 +18,14 @@ import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 
-import { type NodeHold, resolveNodeHold } from "../anchors";
+import {
+  anchorRange,
+  type EditorAnchor,
+  holdNode,
+  type NodeHold,
+  resolveAnchorIn,
+  resolveNodeHold,
+} from "../anchors";
 import { objectSurfaceKind } from "../objects";
 import type { ImageIngressHost, UploadedImage } from "./image-ingress-ports";
 import {
@@ -31,7 +38,7 @@ import {
   sendIngressMessage,
   uploadEntry,
 } from "./image-ingress-runtime";
-import { imageAltFromFilename, isImageFile } from "./image-workflow";
+import { acceptsInlineImage, imageAltFromFilename, isImageFile } from "./image-workflow";
 import { measureImageFile } from "./measure-image";
 import {
   PENDING_IMAGE_SRC,
@@ -80,35 +87,98 @@ function ingressHost(editor: Editor | null): ImageIngressHost | null {
   return storage.host;
 }
 
-/** A new picture, at the caret. */
-export function openImagePicker(editor: Editor | null): void {
-  if (!editor || !ingressHost(editor)) return;
-  pickImageFile((file) => insertImageFile(editor, file));
+/**
+ * Where a picture the writer is about to choose goes.
+ *
+ * **A target is held, never a number.** The operating system's chooser stays
+ * open for as long as the writer takes, and every raw position in the document
+ * means something else after one peer write or one AI write — the same hazard
+ * `anchors.ts` exists for, at its worst. So the caller says what it is aiming at
+ * BEFORE the chooser opens, in a shape that outlives it, and the file that comes
+ * back is resolved against the document as it now stands. A picker holding
+ * nothing would read the selection at file-return time, which is how a picture
+ * asked for from a table cell once landed past the whole table.
+ *
+ * The two kinds are the two things a picture can be aimed at, and each takes the
+ * hold that fits it: an existing picture is a NODE, and it is that node the
+ * writer pointed at (a hold ends at a Yjs move, which is the honest answer for a
+ * gesture); a new picture is a PLACE in the prose, which has no node yet and
+ * survives as an anchor.
+ */
+export type ImagePickerTarget =
+  /** A new picture at a place in the prose. */
+  | { kind: "insert"; at: EditorAnchor }
+  /** Another picture for a slot the writer already placed. */
+  | { kind: "replace"; slot: NodeHold };
+
+/** A new picture where the caret is now, pinned before the chooser opens. */
+export function imageCaretTarget(editor: Editor | null): ImagePickerTarget | null {
+  if (!editor || editor.isDestroyed) return null;
+  const at = editor.state.selection.from;
+  return { kind: "insert", at: anchorRange(editor.state, { from: at, to: at }) };
 }
 
 /**
- * Another picture for a slot the writer already placed (§5.6's Replace verb, on
- * the object surface's ⋮).
+ * The picture at `pos`, for §5.6's Replace verb (on the object surface's ⋮), or
+ * null when nothing starts there.
+ */
+export function imageReplaceTarget(editor: Editor | null, pos: number): ImagePickerTarget | null {
+  if (!editor || editor.isDestroyed) return null;
+  const slot = holdNode(editor.state, pos);
+  return slot && { kind: "replace", slot };
+}
+
+/**
+ * Ask the writer for a picture, and put it where the target says.
+ *
+ * One door for both kinds, because the part that is hard is the part they share:
+ * the wait. What differs afterwards is only what a resolved target means — an
+ * insert makes a slot, a replace reuses one — and both refuse out loud rather
+ * than falling back to wherever the caret has drifted to.
+ */
+export function openImagePicker(editor: Editor | null, target: ImagePickerTarget | null): void {
+  if (!editor || !target || !ingressHost(editor)) return;
+  pickImageFile((file) =>
+    target.kind === "replace"
+      ? replaceImageFile(editor, target.slot, file)
+      : insertImageAtAnchor(editor, target.at, file),
+  );
+}
+
+/**
+ * A new picture at the place the writer asked from, however far the document
+ * has moved since.
+ *
+ * The anchor answers where that place is now, and the schema answers whether it
+ * is still a place a picture may stand — a peer can have turned the paragraph
+ * into something that holds no inline content, or taken it away entirely. Both
+ * questions are asked before an entry is opened, so a refusal costs no upload
+ * and leaves the project no asset it has no use for.
+ *
+ * Nothing here searches for somewhere else to put it. The writer pointed at one
+ * place; a picture that appeared anywhere but there — after the table they were
+ * standing in, say — is a worse answer than a picture that says it cannot go.
+ */
+function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): void {
+  const storage = imageIngressStorage(editor);
+  if (!storage) return;
+  const at = resolveAnchorIn(editor.state, anchor);
+  if (!at || !acceptsInlineImage(editor.state.doc, at.from)) {
+    storage.status.refuse(t`There is nowhere left to put that picture.`);
+    return;
+  }
+  insertImageFile(editor, file, at.from);
+}
+
+/**
+ * Another picture for a slot the writer already placed (§5.6's Replace verb).
  *
  * The node stays exactly where it is and keeps everything the writer wrote about
  * it — its alt text, and a figure's caption and label. The ordinary upload
  * lifecycle then runs over that slot: same entry, same progress, same failure.
  * So nothing is inserted, nothing is removed, the manuscript does not move, and
  * one undo puts the old picture back (`landUpload`).
- *
- * **The target is held, never a number.** The operating system's chooser can
- * stay open for as long as the writer takes, and every raw position in the
- * document means something else after one peer write or one AI write — the same
- * hazard `anchors.ts` exists for, at its worst. So the caller hands over the
- * identity of the picture the writer pointed at, and it is resolved after the
- * file comes back; a picture that is gone by then cancels rather than aiming an
- * upload at whatever slid into its numbers.
  */
-export function openImageReplacePicker(editor: Editor | null, target: NodeHold | null): void {
-  if (!editor || !target || !ingressHost(editor)) return;
-  pickImageFile((file) => replaceImageFile(editor, target, file));
-}
-
 function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): void {
   const storage = imageIngressStorage(editor);
   const host = ingressHost(editor);

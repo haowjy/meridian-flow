@@ -75,6 +75,9 @@ const basicNodeOverrides = {
   // an upload writes it, a ProseMirror move copies it with the node, the landing
   // clears it, and no serializer emits it. It is what lets a peer tell "someone
   // is uploading this" from "this was abandoned" without any percent on the wire.
+  // `width` is the display size the writer dragged the picture to, in CSS
+  // pixels. Null is "the file's own size, capped by the column" — the state
+  // every untouched picture is in, and what keeps its wire form `![alt](src)`.
   image: {
     inline: true,
     group: "inline",
@@ -84,6 +87,7 @@ const basicNodeOverrides = {
       alt: { default: null },
       title: { default: null },
       uploadToken: { default: null },
+      width: { default: null },
     },
     draggable: true,
   },

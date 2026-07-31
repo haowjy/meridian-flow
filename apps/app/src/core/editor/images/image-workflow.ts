@@ -10,6 +10,23 @@ export function isImageFile(file: Pick<File, "type" | "name">): boolean {
 }
 
 /**
+ * May a picture stand at this exact position?
+ *
+ * An `image` is an inline atom (§5.6), so this is a schema question about the
+ * parent the position is IN, never about the block it could go after. One
+ * function because two lanes ask it about one position at two different times:
+ * the slash menu asks before the writer picks (is the Image row live here), and
+ * the picker asks again when the operating system's chooser returns, against
+ * whatever the document has become in between.
+ */
+export function acceptsInlineImage(doc: PMNode, pos: number): boolean {
+  const imageType = doc.type.schema.nodes.image;
+  if (!imageType || pos < 0 || pos > doc.content.size) return false;
+  const $pos = doc.resolve(pos);
+  return $pos.parent.canReplaceWith($pos.index(), $pos.index(), imageType);
+}
+
+/**
  * What a drop carrying files means.
  *
  * The editor answers for every file dropped on it, including the ones it
