@@ -658,6 +658,9 @@ export class ContextFS implements ContextSchemeAdapter {
     }
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
+    if (await this.store.findDocument(folderId, name, extension)) {
+      return Err({ code: "conflict" });
+    }
     const doc = await this.store.createBinaryDocument({
       folderId,
       name,

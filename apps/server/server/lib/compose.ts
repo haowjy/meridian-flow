@@ -335,21 +335,21 @@ export async function createProductionAppPorts(input: {
         ),
     },
   });
-  const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
-  const threadUploadImports = createThreadUploadImportService({
-    repos: threadRepos,
-    uploadDocuments,
-    documentSync,
-    objectStore,
-    eventSink,
-  });
-  const results = createDrizzleResultRepository(db);
-  const promotionService = createPromotionService({ objectStore, results });
   contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
   });
+  const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
+  const threadUploadImports = createThreadUploadImportService({
+    repos: threadRepos,
+    contextPorts,
+    uploadDocuments,
+    objectStore,
+    eventSink,
+  });
+  const results = createDrizzleResultRepository(db);
+  const promotionService = createPromotionService({ objectStore, results });
   // Upload creates the asset as a context document, so the service needs the
   // context ports; it feeds each new path straight back into the resolver the
   // codec reads.
@@ -884,15 +884,6 @@ export function createInMemoryAppServices(): AppServices {
     },
     localObjectStore: null,
     uploadDocuments: {
-      async transaction(operation) {
-        return operation();
-      },
-      async createUploadDocument() {
-        throw new Error("in-memory upload documents are not implemented");
-      },
-      async updateMarkdownProjection() {
-        throw new Error("in-memory upload documents are not implemented");
-      },
       async getDocument() {
         return null;
       },
