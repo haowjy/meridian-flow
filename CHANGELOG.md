@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: the left sidebar now keeps one flat shelf tone, so selected and
+  hovered rows retain the same contrast while the file tree scrolls.
 - `apps/app`: chapters now wait briefly for complete local and server state
   before binding, then report schema-normalized prose in a dismissible copyable
   notice without blocking editing; repairs that arrive during live
