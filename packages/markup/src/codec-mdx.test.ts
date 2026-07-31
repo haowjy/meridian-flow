@@ -7,6 +7,7 @@ import {
   docFrom,
   emptyParagraph,
   expectStable,
+  firstParsedBlock,
   m,
   paragraph,
   parsedDoc,
@@ -62,6 +63,19 @@ describe("mdx prose and component round-trip corpus", () => {
       codec,
       '<Figure src="uploads://w1/map.png" alt="Realm map" label="fig-map" caption="The northern provinces &amp; beyond" />',
     );
+  });
+
+  it("round-trips a Figure with a multiline caption", () => {
+    const figure = schema.node("figure", {
+      src: "uploads://w1/map.png",
+      alt: "Realm map",
+      label: "fig-map",
+      caption: "The northern provinces\nBeyond the pass",
+    });
+    const serialized = codec.serializeBlock(figure);
+
+    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(figure.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
   });
 
   it("stabilizes JSX leaf components with nested JSON props", () => {

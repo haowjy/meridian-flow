@@ -487,6 +487,47 @@ describe("tables and Layout round-trip corpus", () => {
     expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
 
+  it.each([
+    { case: "LF", caption: "First line\nSecond line" },
+    { case: "CRLF", caption: "First line\r\nSecond line" },
+    { case: "quotes", caption: '"The gate is open," she said.' },
+    { case: "entities", caption: "North &amp; south & beyond" },
+    { case: "braces", caption: "{north} meets }south{" },
+    { case: "closing-tag-looking text", caption: "Look </Figure> then <Panel>" },
+  ])("round-trips Figure caption $case through the delegated carrier", ({ caption }) => {
+    const original = oneCellTable(
+      schema.node("figure", {
+        src: "asset:portrait",
+        alt: "The Warden",
+        label: "Figure 7",
+        caption,
+      }),
+    );
+    const html = codec.serializeBlock(original);
+
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("rejects a delegated source that parses as a different block kind", () => {
+    const original = oneCellTable(
+      schema.node("figure", {
+        src: "asset:portrait",
+        alt: "The Warden",
+        label: "Figure 7",
+        caption: "At the gate",
+      }),
+    );
+    const html = codec.serializeBlock(original);
+    expect(html).toContain('<meridian-block kind="figure" source=');
+
+    const mismatched = html.replace('kind="figure"', 'kind="paragraph"');
+    const parsed = firstParsedBlock(codec, mismatched);
+
+    expect(parsed.type.name).toBe("paragraph");
+    expect(parsed.textContent).toContain('<meridian-block kind="figure"');
+  });
+
   it("delegates the generic serializer's malformed-Unicode normalization", () => {
     const original = oneCellTable(
       schema.node("jsx_leaf", { name: "Badge", props: { tone: "warning" } }, [t("\ud800")]),
