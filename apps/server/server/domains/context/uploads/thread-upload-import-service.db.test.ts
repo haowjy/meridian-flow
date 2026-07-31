@@ -1,6 +1,6 @@
 /** Postgres-backed proof that thread imports, uploads://, the rail, deletion, and image resolution agree. */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -10,6 +10,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("work-scoped thread uploads (postgres)", async () => {
     const schema = await import("@meridian/database/schema");
+    const { createDb } = await import("@meridian/database");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
@@ -22,9 +23,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createInMemoryObjectStore } = await import("../../storage/index.js");
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../../test-support/rollback-test-database.js"
-    );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createProductionUnifiedContextPortFactory } = await import(
       "../unified-context-port-factory.js"
@@ -37,14 +35,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const PROJECT_ID = "00000000-0000-4000-8000-000000000b02";
     const WORK_ID = "00000000-0000-4000-8000-000000000b03";
     const THREAD_ID = "00000000-0000-4000-8000-000000000b04";
-    const database = useRollbackTestDatabase(DATABASE_URL, {
-      max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
-    });
-    let db = database.current;
+    const db = createDb(DATABASE_URL, { max: 4 });
 
     beforeEach(async () => {
-      db = database.current;
+      await truncateDrizzleTables(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "work-upload"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -71,6 +65,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         isPrimary: true,
       });
     });
+
+    afterAll(async () => db.$client.end());
 
     it("imports into uploads://, suffixes collisions, resolves images, and soft-deletes by attachment", async () => {
       const repos = createDrizzleRepositories(db);
@@ -274,9 +270,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         objectStore,
         eventSink: createInMemoryEventSink(),
       });
+      let enterWinnerWrite!: () => void;
+      const winnerWriteEntered = new Promise<void>((resolve) => {
+        enterWinnerWrite = resolve;
+      });
+      const winningContextPorts = {
+        forProject: contextPorts.forProject.bind(contextPorts),
+        forWork(...args: Parameters<typeof contextPorts.forWork>) {
+          const port = contextPorts.forWork(...args);
+          return {
+            ...port,
+            async writeBinary(...writeArgs: Parameters<typeof port.writeBinary>) {
+              enterWinnerWrite();
+              return port.writeBinary(...writeArgs);
+            },
+          };
+        },
+      };
       const winningImports = createThreadUploadImportService({
         repos,
-        contextPorts,
+        contextPorts: winningContextPorts,
         uploadDocuments,
         objectStore,
         eventSink: createInMemoryEventSink(),
@@ -292,6 +305,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const failed = failedImports.importUpload(input);
       await failureEntered;
       const winning = winningImports.importUpload(input);
+      await winnerWriteEntered;
       releaseFailure();
       const [failedResult, winningResult] = await Promise.all([failed, winning]);
 
