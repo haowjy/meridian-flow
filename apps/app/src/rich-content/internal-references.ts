@@ -18,6 +18,13 @@
  * since it has no idea what our schemes are. So the node renders as an element
  * of our own, which leaves the anchor renderer, and therefore every ordinary
  * link in a message, completely untouched.
+ *
+ * **One markdown construct joins the two spellings**: a real link whose URL is
+ * an internal scheme — `[fight.png](uploads://fight.png)`, the composer's
+ * spelling for a pasted upload. Left alone it would reach the sanitizer as an
+ * anchor on a refused protocol and render as the writer's filename plus a
+ * "[blocked]" scar. It becomes the same reference element, keeping the link's
+ * own text as the display. Relative and web URLs stay ordinary links.
  */
 
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "@/core/links";
@@ -84,9 +91,34 @@ function transform(node: MdastNode): void {
       index += split.length;
       continue;
     }
+    const internal = child.type === "link" ? internalLinkReference(child) : null;
+    if (internal) {
+      children.splice(index, 1, internal);
+      index += 1;
+      continue;
+    }
     transform(child);
     index += 1;
   }
+}
+
+/**
+ * A markdown link whose URL is one of our schemes, rebuilt as a reference —
+ * or null for every link that belongs to the web (or to a relative path,
+ * which the anchor renderer already owns).
+ */
+function internalLinkReference(node: MdastNode): MdastNode | null {
+  const url = node.url ?? "";
+  const target = url ? classifyLinkTarget(url) : null;
+  if (!target || target.kind !== "scheme") return null;
+  const text = flattenedText(node);
+  return reference(linkTargetHref(target), text || url);
+}
+
+/** The link's visible text, whatever inline nodes it was written with. */
+function flattenedText(node: MdastNode): string {
+  if (node.value) return node.value;
+  return (node.children ?? []).map(flattenedText).join("");
 }
 
 /** The text broken into plain runs and references, or null when it holds none. */

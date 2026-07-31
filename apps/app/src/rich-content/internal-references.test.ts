@@ -20,6 +20,7 @@ import {
 type Node = {
   type: string;
   value?: string;
+  url?: string;
   children?: Node[];
   data?: { hName?: string; hProperties?: Record<string, string> };
 };
@@ -46,7 +47,25 @@ function transformed(node: Node): string[] {
   return read(node.children?.[0]?.children ?? []);
 }
 
+function link(url: string, ...children: Node[]): Node {
+  return { type: "link", url, children };
+}
+
 describe("what becomes a reference", () => {
+  it("reads a markdown link on an internal scheme — the composer's upload spelling", () => {
+    expect(
+      transformed(paragraph(text("See "), link("uploads://fight-2.png", text("fight-2.png")))),
+    ).toEqual(["See ", "→uploads://fight-2.png=fight-2.png"]);
+  });
+
+  it("leaves web and relative links to the anchor renderer", () => {
+    const web = link("https://example.com", text("example"));
+    const relative = link("chapter-1.md", text("chapter one"));
+    remarkInternalReferences()(paragraph(web, relative));
+    expect(web.data).toBeUndefined();
+    expect(relative.data).toBeUndefined();
+  });
+
   it("reads a wikilink out of the middle of a sentence", () => {
     expect(transformed(paragraph(text("Rewrite [[The Third Gate]] to match.")))).toEqual([
       "Rewrite ",
