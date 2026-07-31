@@ -18,6 +18,12 @@ const target = {
 } as Work;
 
 describe("reassignThreadPrimaryWork", () => {
+  it("explains that the pending draft belongs to the conversation's Work", () => {
+    expect(new PendingDraftWorkReassignmentError().message).toBe(
+      "This conversation's Work has an unreviewed draft. Review it before moving the conversation.",
+    );
+  });
+
   it("rejects reassignment while the current Work has an unreviewed draft", async () => {
     const addMembership = vi.fn();
 

@@ -10,7 +10,9 @@ interface WorkReassignmentRepository {
 
 export class PendingDraftWorkReassignmentError extends Error {
   constructor() {
-    super("Review the pending draft first");
+    super(
+      "This conversation's Work has an unreviewed draft. Review it before moving the conversation.",
+    );
     this.name = "PendingDraftWorkReassignmentError";
   }
 }

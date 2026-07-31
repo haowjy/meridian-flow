@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
     return serializeTransport(result);
   } catch (error) {
     if (error instanceof PendingDraftWorkReassignmentError) {
-      throw createError({ statusCode: 409, message: "review the pending draft first" });
+      throw createError({ statusCode: 409, message: error.message });
     }
     if (error instanceof InvalidThreadWorkTargetError) {
       throw createError({ statusCode: 404, message: "Work not found" });
