@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import postgres from "postgres";
 
 export type Db = ReturnType<typeof postgres>;
@@ -60,14 +60,13 @@ export type ProjectFixture = {
 
 export async function seedProjectFixture(
   db: Db,
+  request: APIRequestContext,
   input: { userId: string; titlePrefix: string },
 ): Promise<ProjectFixture> {
   const projectId = randomUUID();
   const workId = randomUUID();
   const threadId = randomUUID();
   const contextSourceId = randomUUID();
-  const alphaId = randomUUID();
-  const betaId = randomUUID();
   const title = `${input.titlePrefix} ${projectId.slice(0, 8)}`;
 
   await db.begin(async (tx) => {
@@ -91,22 +90,60 @@ export async function seedProjectFixture(
       INSERT INTO context_sources (id, project_id, name, slug, scope, adapter_type, is_primary, sort_order)
       VALUES (${contextSourceId}, ${projectId}, 'Knowledge Base', 'kb', 'project', 'local', false, 1)
     `;
-    await tx`
-      INSERT INTO documents (id, context_source_id, name, extension, file_type, markdown_projection)
-      VALUES
-        (${alphaId}, ${contextSourceId}, 'alpha', 'md', 'markdown', '# Alpha\n\nSeed context.'),
-        (${betaId}, ${contextSourceId}, 'beta', 'md', 'markdown', '# Beta\n\nSeed context.')
-    `;
   });
 
-  return {
-    projectId,
-    workId,
-    threadId,
-    contextSourceId,
-    documentIds: [alphaId, betaId],
-    title,
-  };
+  try {
+    const alphaId = await createFixtureDocument(request, projectId, {
+      path: "/alpha.md",
+      content: "# Alpha\n\nSeed context.",
+    });
+    const betaId = await createFixtureDocument(request, projectId, {
+      path: "/beta.md",
+      content: "# Beta\n\nSeed context.",
+    });
+
+    return {
+      projectId,
+      workId,
+      threadId,
+      contextSourceId,
+      documentIds: [alphaId, betaId],
+      title,
+    };
+  } catch (error) {
+    await cleanupProjectFixture(db, {
+      projectId,
+      workId,
+      threadId,
+      contextSourceId,
+      documentIds: [],
+      title,
+    });
+    throw error;
+  }
+}
+
+async function createFixtureDocument(
+  request: APIRequestContext,
+  projectId: string,
+  input: { path: string; content: string },
+): Promise<string> {
+  const response = await request.post(`/api/projects/${projectId}/context/kb/create`, {
+    data: { type: "file", ...input },
+  });
+  if (!response.ok()) {
+    throw new Error(
+      `Failed to create fixture document ${input.path}: ${response.status()} ${await response.text()}`,
+    );
+  }
+
+  const body: unknown = await response.json();
+  const documentId =
+    body && typeof body === "object" && "documentId" in body ? body.documentId : undefined;
+  if (typeof documentId !== "string") {
+    throw new Error(`Fixture document ${input.path} response did not include a document ID`);
+  }
+  return documentId;
 }
 
 export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Promise<void> {
@@ -120,12 +157,10 @@ export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Pr
     await tx`DELETE FROM turn_document_touches WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM turns WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM threads WHERE id = ${fixture.threadId}`;
-    // Opening a document in the editor opens its work draft, and that branch
-    // holds its work with ON DELETE RESTRICT: the fixture has to let go of the
-    // draft before it can let go of the work.
     await tx`
-      DELETE FROM document_branches
-      WHERE work_id IN (SELECT id FROM works WHERE project_id = ${fixture.projectId})
+      DELETE FROM context_sources
+      WHERE project_id = ${fixture.projectId}
+      OR work_id IN (SELECT id FROM works WHERE project_id = ${fixture.projectId})
     `;
     await tx`DELETE FROM works WHERE project_id = ${fixture.projectId}`;
     await tx`DELETE FROM projects WHERE id = ${fixture.projectId}`;
@@ -176,6 +211,13 @@ export async function resetUserProjects(db: Db, userId: string): Promise<void> {
       DELETE FROM turns
       WHERE thread_id IN (
         SELECT id FROM threads WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
+      )
+    `;
+    await tx`
+      DELETE FROM context_sources
+      WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
+      OR work_id IN (
+        SELECT id FROM works WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
       )
     `;
     await tx`DELETE FROM projects WHERE user_id = ${userId}::uuid`;

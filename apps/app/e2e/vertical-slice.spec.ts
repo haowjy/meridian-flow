@@ -5,6 +5,7 @@ import {
   cleanupProjectFixture,
   findTestUserId,
   openE2eDb,
+  type ProjectFixture,
   seedProjectFixture,
 } from "./support/e2e-db";
 
@@ -14,12 +15,13 @@ test.describe("vertical slice", () => {
   test("opens a real project context editor and streams a thread turn", async ({ page }) => {
     test.skip(!DATABASE_URL, "DATABASE_URL is required");
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, {
-      userId: await findTestUserId(db),
-      titlePrefix: "Vertical slice",
-    });
+    let fixture: ProjectFixture | undefined;
 
     try {
+      fixture = await seedProjectFixture(db, page.request, {
+        userId: await findTestUserId(db),
+        titlePrefix: "Vertical slice",
+      });
       const search = new URLSearchParams({
         screen: "context",
         thread: fixture.threadId,
@@ -51,7 +53,9 @@ test.describe("vertical slice", () => {
       await expect(assistantTurn).toHaveAttribute("data-turn-status", "complete");
       await expect(editor).toHaveAttribute("contenteditable", "true");
     } finally {
-      await cleanupProjectFixture(db, fixture).finally(() => db.end());
+      await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+        db.end(),
+      );
     }
   });
 });
