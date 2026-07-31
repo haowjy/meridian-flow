@@ -264,6 +264,19 @@ function pressOnBlock(
     }
   }
 
+  // Geometry can betray the press outright: beside a cell border,
+  // `posAtCoords` answers the NEIGHBOURING cell (the S6 probe watched a fence
+  // cell's padding put the caret one cell over). The press is still ON this
+  // block, and a block whose text is on the page takes it — at the nearer of
+  // its two ends, because the line the pointer sat beside is unknowable once
+  // geometry has lied. An opaque object still refuses (hidden interior), and
+  // a container block still answers through the seam walk below.
+  const held = doc.nodeAt(band.pos);
+  if (held?.isTextblock && !isOpaqueObject(held)) {
+    const pastMiddle = y >= (band.top + band.bottom) / 2;
+    return placeText(doc, pastMiddle ? band.pos + 1 + held.content.size : band.pos + 1);
+  }
+
   const index = bands.indexOf(band);
   const pastMiddle = y >= (band.top + band.bottom) / 2;
   const before = pastMiddle ? band : (bands[index - 1] ?? null);
