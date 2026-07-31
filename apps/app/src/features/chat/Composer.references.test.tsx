@@ -59,6 +59,14 @@ async function type(value: string, caret = value.length) {
   });
 }
 
+async function blur() {
+  const element = textarea();
+  await act(async () => {
+    element.dispatchEvent(new window.FocusEvent("blur", { bubbles: false }));
+    element.dispatchEvent(new window.FocusEvent("focusout", { bubbles: true }));
+  });
+}
+
 async function press(key: string, init: KeyboardEventInit = {}) {
   const element = textarea();
   await act(async () => {
@@ -94,6 +102,17 @@ describe("the composer's @ menu", () => {
   it("closes when nothing matches, leaving the writer alone with their @", async () => {
     await withReactRoot(<Composer onSubmit={() => {}} projectId="project-1" />, async () => {
       await type("Rewrite @zzz");
+
+      expect(rows()).toEqual([]);
+    });
+  });
+
+  it("takes the menu down when the writer stops typing in the composer", async () => {
+    await withReactRoot(<Composer onSubmit={() => {}} projectId="project-1" />, async () => {
+      await type("Rewrite @thi");
+      expect(rows()).not.toEqual([]);
+
+      await blur();
 
       expect(rows()).toEqual([]);
     });

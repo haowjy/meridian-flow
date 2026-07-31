@@ -75,6 +75,12 @@ export type ComposerReferences = {
   anchor: DOMRect | null;
   /** Re-reads the token after anything that could have moved the caret. */
   sync: () => void;
+  /**
+   * Takes the menu down without treating it as a dismissal, for a composer the
+   * writer has stopped typing in. Nothing about the `@` changed, so coming back
+   * and typing one more letter opens it again.
+   */
+  close: () => void;
   /** True when the menu took the key and the composer must not act on it. */
   handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => boolean;
 };
@@ -167,6 +173,11 @@ export function useComposerReferences({
     else store.controller.open(session);
   }, [measure, projectId, store, textareaRef]);
 
+  const close = useCallback(() => {
+    token.current = null;
+    store.controller.close();
+  }, [store]);
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (!store.menu.snapshot().open) return false;
@@ -226,7 +237,7 @@ export function useComposerReferences({
     if (!projectId) store.controller.close();
   }, [projectId, store]);
 
-  return { menu: store.menu, snapshot, anchor, sync, handleKeyDown };
+  return { menu: store.menu, snapshot, anchor, sync, close, handleKeyDown };
 }
 
 function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {

@@ -197,7 +197,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // Every way the caret can move without the text changing: arrow keys,
         // a click into the middle of a word, a drag that ends as a caret.
         onSelect={references.sync}
-        onBlur={references.sync}
+        // A composer nobody is typing in has no menu. The rows cancel their own
+        // mousedown, so choosing one never reaches this.
+        onBlur={references.close}
         placeholder={resolvedPlaceholder}
         rows={1}
         // Force field-sizing: fixed so our JS auto-resize has full control.
