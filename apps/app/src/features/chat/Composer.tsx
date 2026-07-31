@@ -19,7 +19,7 @@ import type { UserMessageBlock } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, TriangleAlert } from "lucide-react";
 import {
   forwardRef,
   type ReactNode,
@@ -383,9 +383,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       ) : null}
 
       {/* Informational only — send stays live, matching the server's own
-          quiet degrade (the image is dropped, the text reference stays). */}
+          quiet degrade (the image is dropped, the text reference stays).
+          Warning tokens, not error ones: worth flagging, never blocks. */}
       {draftHasPictures && modelSupportsImageInput === false ? (
-        <p role="status" className="mt-1 px-1.5 text-ink-subtle text-xs">
+        <p
+          role="status"
+          className="mt-1.5 flex items-start gap-1.5 rounded-md border border-warning-border bg-warning-bg px-2 py-1 text-warning-foreground text-xs"
+        >
+          <TriangleAlert aria-hidden className="mt-0.5 size-3 shrink-0" />
           {t`This model can't view pictures, so picture references are sent as text.`}
         </p>
       ) : null}
