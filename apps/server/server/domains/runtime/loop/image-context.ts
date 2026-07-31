@@ -40,7 +40,7 @@ export async function projectImageBlocksForModel(input: {
   // eligible only while space remains, and duplicate references share one object read.
   for (let index = input.blocks.length - 1; index >= 0 && remainingBytes > 0; index--) {
     const block = input.blocks[index];
-    if (block?.blockType !== "image") continue;
+    if (block?.blockType !== "image" || block.pruned) continue;
     const reference = imageReference(block.content);
     if (!reference) continue;
     const key = `${reference.documentId}\0${reference.uri}`;

@@ -150,4 +150,25 @@ describe("projectImageBlocksForModel", () => {
     expect(projected).toHaveLength(2);
     expect(resolve).toHaveBeenCalledTimes(1);
   });
+
+  it("does not let pruned history consume the live image budget", async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      mediaType: "image/png",
+      data: "encoded",
+      sizeBytes: MAX_MODEL_IMAGE_BYTES,
+    });
+    const projected = await projectImageBlocksForModel({
+      thread: { id: "thread-1", projectId: "project-1" },
+      blocks: [
+        imageBlock,
+        { ...imageBlock, id: "pruned-1", sequence: 2, pruned: true },
+        { ...imageBlock, id: "pruned-2", sequence: 3, pruned: true },
+      ],
+      supportsImageInput: true,
+      imageAssets: { isValidReference: vi.fn(), resolve },
+    });
+
+    expect(projected.map((block) => block.id)).toEqual(["image"]);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
 });
