@@ -15,6 +15,8 @@ import {
   apiThreadRecentDocumentsPath,
   apiThreadSnapshotPath,
   apiThreadTurnContextPreviewDebugPath,
+  apiThreadUploadImportPath,
+  apiThreadUploadPath,
   apiThreadUploadsPath,
   type CancelTurnResponse,
   type ListThreadRecentDocumentsResponse,
@@ -27,10 +29,11 @@ import {
   type ThreadSnapshotResponse,
   type ThreadUploadDocumentItem,
   type TurnContextPreview,
+  type UploadThreadDocumentResponse,
 } from "@meridian/contracts/protocol";
 import type { UserMessageBlock } from "@meridian/contracts/threads";
 
-import { deleteRequest, getJson, postJson } from "./http-client";
+import { deleteRequest, getJson, postForm, postJson } from "./http-client";
 
 type CreateThreadInput = {
   id?: string;
@@ -138,6 +141,35 @@ export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
 export async function getThreadUploads(threadId: string): Promise<ThreadUploadDocumentItem[]> {
   const response = await getJson<ListThreadUploadsResponse>(apiThreadUploadsPath(threadId));
   return response.uploads;
+}
+
+/**
+ * POST /api/threads/:threadId/upload — imports one attached file into the
+ * thread's primary Work `uploads://` source (server classifies text-like vs
+ * binary and suffixes filename collisions). The returned item carries the
+ * final name the server allocated.
+ */
+export async function uploadThreadDocument(input: {
+  threadId: string;
+  file: File;
+  signal?: AbortSignal;
+}): Promise<ThreadUploadDocumentItem> {
+  const form = new FormData();
+  form.append("file", input.file, input.file.name);
+  const response = await postForm<UploadThreadDocumentResponse>(
+    apiThreadUploadImportPath(input.threadId),
+    form,
+    { signal: input.signal },
+  );
+  return response.upload;
+}
+
+/** DELETE /api/threads/:threadId/uploads/:documentId — soft-delete one attached upload. */
+export async function deleteThreadUploadDocument(
+  threadId: string,
+  documentId: string,
+): Promise<void> {
+  await deleteRequest(apiThreadUploadPath(threadId, documentId));
 }
 
 /**

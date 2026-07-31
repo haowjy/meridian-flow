@@ -113,6 +113,22 @@ export async function postJson<T>(
   return deserializeTransport<T>(payload as T);
 }
 
+/** Multipart POST (file uploads). The browser sets the boundary header itself. */
+export async function postForm<T>(
+  url: string,
+  form: FormData,
+  options?: { signal?: AbortSignal },
+): Promise<T> {
+  const response = await fetch(url, { method: "POST", body: form, signal: options?.signal });
+  const payload = await readResponsePayload(response);
+
+  if (!response.ok) {
+    throw errorFromResponse(payload, response.status);
+  }
+
+  return deserializeTransport<T>(payload as T);
+}
+
 export async function putJson<T>(
   url: string,
   body: unknown,
