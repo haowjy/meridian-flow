@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/app`: dragging a picture onto a table's cell border no longer grows
+  the table a new column. The drop lands inside the nearest cell's paragraph
+  (or refuses when nothing can host it), the drop caret shown during the drag
+  is the landing the release keeps, and dropped files and in-cell pastes
+  follow the same rule. Column count cannot change under a drop.
 - `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
   (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at
   the size the screen can actually give it. At phone widths the source pane

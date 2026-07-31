@@ -90,6 +90,12 @@ every door refuses out loud rather than opening onto nothing.
   8rem, so the column is settled first and the picture fills it. Never answer
   this with hidden overflow, and never fence a cell that holds no picture — the
   table's columns are its prose's to size.
+- **A file dropped near a cell border lands inside the cell.** The drop door
+  resolves its landing through [`../table-drop.ts`](../table-drop.ts) before
+  inserting — the same resolution the dropcursor and a dragged node's drop go
+  through — because a table-structural landing position manufactures a column
+  (`dropPoint` wraps the picture in a new `table_cell`). A refusal from that
+  resolution says so out loud instead of inserting somewhere else.
 - **The drag is geometry; only the release is an edit.** Each frame writes a
   width onto the picture's own element, which the writer sees and no peer does,
   and the release dispatches one `setNodeMarkup` carrying every other attribute

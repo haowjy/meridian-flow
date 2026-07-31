@@ -114,6 +114,22 @@ change-trail events, not manuscript content.
   ([`objects/AGENTS.md`](objects/AGENTS.md)), so no input device can put a
   caret in a body the page is not showing.
 
+- **A drop inside a table lands INSIDE a cell, never between two.** Near a
+  cell border, `posAtCoords` answers a structural position and ProseMirror's
+  `dropPoint` *approves* it by inventing a `table_cell` wrapper — that is how a
+  dragged picture manufactured a fourth column (`fixTables` then pads every
+  row). [`table-drop.ts`](table-drop.ts) is the one answer, pointer-boundary
+  style (impure geometry reading, pure decision): a table-structural drop
+  position snaps into the nearest cell's paragraph or refuses, and the
+  transaction reads the table's shape back after the insert so the column
+  count is invariant under drops. Both consumers go through it —
+  `extensions/DropLandingExtension.ts` carries the drop handler AND the
+  dropcursor (the vendor view, carried because its target arithmetic is not
+  pluggable), so the caret shown during the drag is the landing the release
+  keeps. The OS-file drop (`images/ImageIngressExtension.ts`) resolves through
+  the same function. Never re-enable StarterKit's dropcursor: two landings
+  answering one drag is the bug this replaced.
+
 - **A node view that hides its own text derives that face from the selection,
   and never restructures around it.** A selection inside a rendered diagram
   fence implies a visible, connected source content DOM; rendering that
