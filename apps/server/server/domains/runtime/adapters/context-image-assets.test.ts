@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import { LocalObjectStoreAdapter } from "../../storage/index.js";
 import { createContextImageAssetAdapter } from "./context-image-assets.js";
 
@@ -27,6 +28,7 @@ function deps() {
         value: { bytes: Uint8Array.from([1, 2, 3]), mimeType: "image/png" },
       }),
     },
+    eventSink: createInMemoryEventSink(),
   };
 }
 
@@ -49,9 +51,10 @@ describe("context image asset adapter", () => {
     };
 
     await expect(adapter.isValidReference(context, reference)).resolves.toBe(true);
-    await expect(adapter.resolve(context, reference)).resolves.toEqual({
+    await expect(adapter.resolve(context, reference, { maxBytes: 1024 })).resolves.toEqual({
       mediaType: "image/png",
       data: "AQID",
+      sizeBytes: 3,
     });
     expect(stubs.figures.findManuscriptAssetForProject).toHaveBeenCalledWith(
       "project-1",
@@ -140,17 +143,53 @@ describe("context image asset adapter", () => {
         figures: stubs.figures as never,
         uploads: stubs.uploads as never,
         objectStore,
+        eventSink: createInMemoryEventSink(),
       });
 
       await expect(
-        adapter.resolve(context, {
-          type: "image_reference",
-          documentId,
-          uri: "manuscript://assets/map.png",
-        }),
-      ).resolves.toEqual({ mediaType: "image/png", data: "AQID" });
+        adapter.resolve(
+          context,
+          {
+            type: "image_reference",
+            documentId,
+            uri: "manuscript://assets/map.png",
+          },
+          { maxBytes: 1024 },
+        ),
+      ).resolves.toEqual({ mediaType: "image/png", data: "AQID", sizeBytes: 3 });
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }
+  });
+
+  it("emits diagnostics for operational object-store failures while degrading", async () => {
+    const stubs = deps();
+    stubs.figures.findManuscriptAssetForProject.mockResolvedValue({
+      assetDocumentId: documentId,
+      assetPath: "assets/map.png",
+      storageUrl: "object://meridian/figures/map.png",
+      mimeType: "image/png",
+      fileType: "image",
+      sizeBytes: 3,
+    });
+    stubs.objectStore.get.mockResolvedValue({
+      ok: false,
+      error: { code: "io_error", message: "storage unavailable" },
+    });
+    const adapter = createContextImageAssetAdapter(stubs as never);
+
+    await expect(
+      adapter.resolve(
+        context,
+        { type: "image_reference", documentId, uri: "manuscript://assets/map.png" },
+        { maxBytes: 1024 },
+      ),
+    ).resolves.toBeNull();
+    expect(stubs.eventSink.events).toEqual([
+      expect.objectContaining({
+        source: "runtime.image-assets",
+        name: "object_read.failed",
+      }),
+    ]);
   });
 });

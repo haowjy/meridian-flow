@@ -10,6 +10,7 @@ export interface DocumentFileRecord {
 
 export interface ProjectDocumentFileRecord extends DocumentFileRecord {
   projectId: string;
+  assetPath: string;
 }
 
 export interface ManuscriptAssetFileRecord extends DocumentFileRecord {

@@ -366,6 +366,7 @@ export async function createProductionAppPorts(input: {
     figures: figureDocuments,
     uploads: uploadDocuments,
     objectStore,
+    eventSink,
   });
   const packageRepository = createDrizzlePackageStore({ db });
   const marsPackageFetcher = createGitHubMarsPackageFetcher({

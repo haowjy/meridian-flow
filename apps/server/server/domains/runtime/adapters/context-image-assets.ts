@@ -4,6 +4,7 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { PersistedImageReference } from "@meridian/contracts/threads";
 import type { ThreadUploadDocumentStore } from "../../context/index.js";
 import type { FigureDocumentRepository } from "../../context/ports/figure-document-repository.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import { objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type {
@@ -15,12 +16,14 @@ import type {
 interface ImageStorageRecord {
   mediaType: string;
   storageUrl: string;
+  sizeBytes: number;
 }
 
 export interface ContextImageAssetAdapterDeps {
   figures: FigureDocumentRepository;
   uploads: ThreadUploadDocumentStore;
   objectStore: ObjectStorePort;
+  eventSink: EventSink;
 }
 
 function imageMediaType(value: string | null | undefined): string | null {
@@ -43,7 +46,7 @@ async function findImageStorage(
     );
     const mediaType = imageMediaType(document?.mimeType);
     return document && mediaType && document.assetPath === parsed.value.path
-      ? { mediaType, storageUrl: document.storageUrl }
+      ? { mediaType, storageUrl: document.storageUrl, sizeBytes: document.sizeBytes }
       : null;
   }
 
@@ -52,7 +55,34 @@ async function findImageStorage(
   if (!attached) return null;
   const document = await deps.uploads.getDocument(reference.documentId);
   const mediaType = imageMediaType(document?.mimeType);
-  return document?.storageUrl && mediaType ? { mediaType, storageUrl: document.storageUrl } : null;
+  return document?.storageUrl && mediaType
+    ? {
+        mediaType,
+        storageUrl: document.storageUrl,
+        sizeBytes: document.sizeBytes ?? 0,
+      }
+    : null;
+}
+
+function warn(
+  deps: ContextImageAssetAdapterDeps,
+  name: string,
+  context: ImageAssetContext,
+  reference: PersistedImageReference,
+  payload: Record<string, unknown>,
+): void {
+  emitEvent(deps.eventSink, {
+    level: "warn",
+    source: "runtime.image-assets",
+    name,
+    correlation: { threadId: context.threadId },
+    payload: {
+      projectId: context.projectId,
+      documentId: reference.documentId,
+      uri: reference.uri,
+      ...payload,
+    },
+  });
 }
 
 export function createContextImageAssetAdapter(deps: ContextImageAssetAdapterDeps): ImageAssetPort {
@@ -61,19 +91,42 @@ export function createContextImageAssetAdapter(deps: ContextImageAssetAdapterDep
       return (await findImageStorage(deps, context, reference)) !== null;
     },
 
-    async resolve(context, reference): Promise<ResolvedImageAsset | null> {
+    async resolve(context, reference, options): Promise<ResolvedImageAsset | null> {
       try {
         const image = await findImageStorage(deps, context, reference);
         if (!image) return null;
+        if (image.sizeBytes > options.maxBytes) return null;
         const key = objectStoreKeyFromStorageUrl(image.storageUrl);
-        if (!key) return null;
+        if (!key) {
+          warn(deps, "storage_url.invalid", context, reference, { storageUrl: image.storageUrl });
+          return null;
+        }
         const object = await deps.objectStore.get(key);
-        if (!object.ok || imageMediaType(object.value.mimeType) !== image.mediaType) return null;
+        if (!object.ok) {
+          if (object.error.code !== "not_found") {
+            warn(deps, "object_read.failed", context, reference, { error: object.error });
+          }
+          return null;
+        }
+        if (
+          object.value.bytes.byteLength > options.maxBytes ||
+          imageMediaType(object.value.mimeType) !== image.mediaType
+        ) {
+          warn(deps, "object_metadata.mismatch", context, reference, {
+            expectedMediaType: image.mediaType,
+            actualMediaType: object.value.mimeType,
+            expectedSizeBytes: image.sizeBytes,
+            actualSizeBytes: object.value.bytes.byteLength,
+          });
+          return null;
+        }
         return {
           mediaType: image.mediaType,
           data: Buffer.from(object.value.bytes).toString("base64"),
+          sizeBytes: object.value.bytes.byteLength,
         };
-      } catch {
+      } catch (error) {
+        warn(deps, "resolution.failed", context, reference, unknownToEventPayload(error));
         return null;
       }
     },

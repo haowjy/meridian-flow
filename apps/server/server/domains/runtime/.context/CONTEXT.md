@@ -65,6 +65,10 @@ spelling. The orchestrator persists reference metadata only. `ImageAssetPort`
 validates authoritative project/thread scope at append time
 and reads object bytes into request-time image data during context assembly;
 bytes and signed URLs never enter turn blocks.
+Context assembly gives newer images priority within a 10 MiB per-image and
+20 MiB aggregate request budget, and caches repeated references for one object
+read. Missing objects stay quiet; operational storage failures emit diagnostics
+and still degrade without failing the turn.
 
 Thread snapshots expose `{ model: { id, capabilities } }`. This is the same
 registry-backed capability vocabulary used by context assembly, not a

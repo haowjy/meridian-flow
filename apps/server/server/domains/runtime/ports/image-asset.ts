@@ -10,6 +10,7 @@ export interface ImageAssetContext {
 export interface ResolvedImageAsset {
   mediaType: string;
   data: string | URL;
+  sizeBytes: number;
 }
 
 export interface ImageAssetPort {
@@ -20,6 +21,7 @@ export interface ImageAssetPort {
   resolve(
     context: ImageAssetContext,
     reference: PersistedImageReference,
+    options: { maxBytes: number },
   ): Promise<ResolvedImageAsset | null>;
 }
 

@@ -2,7 +2,11 @@
 
 import type { Block } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
-import { projectImageBlocksForModel } from "./image-context.js";
+import {
+  MAX_MODEL_IMAGE_BYTES,
+  MAX_MODEL_IMAGE_CONTEXT_BYTES,
+  projectImageBlocksForModel,
+} from "./image-context.js";
 
 const textBlock = {
   id: "text",
@@ -50,7 +54,11 @@ describe("projectImageBlocksForModel", () => {
       imageAssets: {
         isValidReference: vi.fn(),
         async resolve() {
-          return { mediaType: "image/png", data: new URL("https://assets.example/map.png") };
+          return {
+            mediaType: "image/png",
+            data: new URL("https://assets.example/map.png"),
+            sizeBytes: 3,
+          };
         },
       },
     });
@@ -82,5 +90,64 @@ describe("projectImageBlocksForModel", () => {
     });
 
     expect(projected).toEqual([textBlock]);
+  });
+
+  it("prioritizes newest images within per-image and aggregate byte budgets", async () => {
+    const oldest = {
+      ...imageBlock,
+      id: "oldest",
+      content: { ...imageBlock.content, documentId: "oldest" },
+    };
+    const middle = {
+      ...imageBlock,
+      id: "middle",
+      content: { ...imageBlock.content, documentId: "middle" },
+    };
+    const newest = {
+      ...imageBlock,
+      id: "newest",
+      content: { ...imageBlock.content, documentId: "newest" },
+    };
+    const resolve = vi.fn(
+      async (
+        _context: unknown,
+        reference: { documentId: string },
+        options: { maxBytes: number },
+      ) => ({
+        mediaType: "image/png",
+        data: reference.documentId,
+        sizeBytes: Math.min(MAX_MODEL_IMAGE_BYTES, options.maxBytes),
+      }),
+    );
+
+    const projected = await projectImageBlocksForModel({
+      thread: { id: "thread-1", projectId: "project-1" },
+      blocks: [oldest, middle, newest],
+      supportsImageInput: true,
+      imageAssets: { isValidReference: vi.fn(), resolve },
+    });
+
+    expect(projected.map((block) => block.id)).toEqual(["middle", "newest"]);
+    expect(resolve).toHaveBeenCalledTimes(2);
+    expect(resolve.mock.calls[0]?.[2]).toEqual({ maxBytes: MAX_MODEL_IMAGE_BYTES });
+    expect(MAX_MODEL_IMAGE_CONTEXT_BYTES).toBe(2 * MAX_MODEL_IMAGE_BYTES);
+  });
+
+  it("reads duplicate image references once while accounting for each occurrence", async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      mediaType: "image/png",
+      data: "encoded",
+      sizeBytes: 1024,
+    });
+
+    const projected = await projectImageBlocksForModel({
+      thread: { id: "thread-1", projectId: "project-1" },
+      blocks: [imageBlock, { ...imageBlock, id: "image-copy", sequence: 2 }],
+      supportsImageInput: true,
+      imageAssets: { isValidReference: vi.fn(), resolve },
+    });
+
+    expect(projected).toHaveLength(2);
+    expect(resolve).toHaveBeenCalledTimes(1);
   });
 });
