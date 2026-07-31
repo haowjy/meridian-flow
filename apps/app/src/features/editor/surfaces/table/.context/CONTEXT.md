@@ -238,6 +238,21 @@ frame's edge scheduled — left running, it fades the grip out from under a
 pointer already resting on it, after which the closed chrome takes no pointer
 events and `elementFromPoint` over the grip answers the prose underneath.
 
+**Nesting turns the gap into a competing hit, and that judgment is this
+lane's too.** A table nested in another table's cell shares its top-level
+hover owner with it, and the gap beside the inner frame sits on the OUTER
+table's cell — so instead of the probe missing (which is what lets `holds`
+vote), the lane freshly hits the outer cell and the reveal re-anchored to the
+outer table before the pointer reached the inner grip. The lane's `reconcile`
+hook arbitrates the held cell against the fresh one: the held cell wins while
+the fresh cell's table `contains` the held cell's table and the pointer is
+still inside the held table's `tableHoverZone` (`nestedCellKeepsReveal` in
+[`table-anchors.ts`](../table-anchors.ts)). Ancestry is containment, never a
+depth count, so a depth-3 hold outranks a depth-2 and a depth-1 hit alike;
+any other fresh cell — same table, deeper table, sibling table — wins, which
+is what keeps grips following the pointer cell to cell and moves the reveal
+inward when the writer hovers the nested table itself.
+
 While a menu is open the anchor is frozen: a stray hover would slide the grips
 out from under the menu and leave it pointing at another row. The approach
 keeps settling meanwhile and the lane remembers the answer, so on close the

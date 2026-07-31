@@ -100,7 +100,16 @@ the `Layout widths` codec reads, so persistence needed no lane code. See
   on each side; it holds a reveal, never starts one. Its left edge is the
   grips' half of the shared margin and stops one pixel short of the block
   handle's. It is this lane's `holds` predicate on the kernel's hover anchor —
-  the one thing about this reveal the kernel cannot know.
+  what this lane alone knows about its reveal.
+- **A nested table's gap is `holds` territory that also hits.** For a table
+  nested in another table's cell, the pixels beside the inner frame are on the
+  OUTER cell rather than on nothing, so the probe answers fresh there and
+  `holds` alone never gets a vote — the grips re-anchored to the outer table
+  mid-approach. The lane's `reconcile` on the kernel's hover anchor arbitrates:
+  the held cell keeps the reveal while the fresh cell's table CONTAINS the held
+  cell's table (any depth, never a depth count) and the pointer is still in the
+  held table's zone (`nestedCellKeepsReveal`). Any other fresh cell wins, so
+  grips keep following the pointer cell to cell.
 - **Everything about the pointer except that zone is the kernel's.** This lane
   answers "which cell is at this point" and nothing else: the delay, the grace,
   the pointer's last place, the re-hit-test after a scroll, and the single
