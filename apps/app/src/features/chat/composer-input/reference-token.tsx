@@ -155,11 +155,14 @@ export const ReferenceTokenNode = Node.create({
 });
 
 /**
- * The quiet inline pill. It sits in the sentence at the sentence's size, says
- * the document's name, and claims no color the prose around it does not have —
- * a token is a fact about the message, not a control demanding attention.
- * Selection (click, or shift-arrow onto it) is the one loud state, because a
- * selected token is one keystroke from gone.
+ * The quiet inline token. It sits in the sentence at the sentence's size,
+ * says the document's name, and reads the way a reference reads anywhere in
+ * this app's prose: reference-colored ink, no box — a token is a fact about
+ * the message, not a control demanding attention. (No border or fill on
+ * purpose: the attachment chip row above the editor is a card because it is
+ * a control surface; giving the token the same card skin made the two read
+ * as one duplicated element.) Selection (click, or shift-arrow onto it) is
+ * the one loud state, because a selected token is one keystroke from gone.
  */
 function ReferenceTokenView({ node, selected }: NodeViewProps) {
   const attrs = node.attrs as ReferenceTokenAttributes;
@@ -176,11 +179,13 @@ function ReferenceTokenView({ node, selected }: NodeViewProps) {
       as="span"
       data-reference-token={attrs.kind}
       className={cn(
-        "inline-flex max-w-full items-baseline gap-1 rounded-sm border border-border-subtle bg-muted/60 px-1 align-baseline",
-        selected && "border-border-focus bg-accent text-accent-foreground",
+        // Selection swaps ink for a fill plus ring (ring, not border, so the
+        // token never changes size between its two states).
+        "inline-flex max-w-full items-baseline gap-1 rounded-sm px-0.5 align-baseline text-primary",
+        selected && "bg-accent text-accent-foreground ring-1 ring-border-focus",
       )}
     >
-      <Icon aria-hidden className="size-[0.85em] shrink-0 self-center text-muted-foreground" />
+      <Icon aria-hidden className="size-[0.85em] shrink-0 self-center" />
       <span className="truncate">{attrs.label}</span>
     </NodeViewWrapper>
   );
