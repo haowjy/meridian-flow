@@ -156,6 +156,8 @@ export function ChatView({
             streaming={isStreaming}
             onSubmit={handleSubmit}
             onStop={handleStop}
+            projectId={projectId}
+            workId={activeWork?.id ?? null}
             toolbarLeft={
               <>
                 {threadStarted ? (

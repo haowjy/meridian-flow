@@ -1,7 +1,14 @@
 /**
  * Composer — shared chat input surface used by home and pinned chat footers.
- * It owns textarea growth, keyboard submit/stop behaviour, and the send control
- * while callers own message dispatch and streaming state.
+ * It owns textarea growth, keyboard submit/stop behaviour, the `@` reference
+ * menu, and the send control, while callers own message dispatch and streaming
+ * state.
+ *
+ * **An open menu owns its keys.** ArrowUp, ArrowDown, Enter and Escape belong
+ * to the `@` menu while it is showing rows, so `handleKeyDown` asks it before
+ * it submits or stops a stream. A textarea has no chrome kernel to register a
+ * layer with, so the precedence is enforced right here (§Trigger-composition 2)
+ * — and it is one call, at the top, rather than a condition on each branch.
  */
 import { t } from "@lingui/core/macro";
 import { ArrowUp } from "lucide-react";
@@ -20,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
+import { ComposerReferenceMenu, useComposerReferences } from "./composer-references";
 import { useComposerPlaceholder } from "./placeholders";
 
 export type ComposerProps = {
@@ -45,6 +53,13 @@ export type ComposerProps = {
   variant?: "hero" | "pinned";
   /** Footer toolbar slot for caller-owned controls such as the agent selector. */
   toolbarLeft?: ReactNode;
+  /**
+   * The project whose documents `@` can name, and the Work whose scratch is in
+   * reach. Absent on the Home hero, where there is no project yet and `@` is
+   * ordinary prose.
+   */
+  projectId?: string | null;
+  workId?: string | null;
 };
 
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
@@ -53,7 +68,7 @@ export type ComposerHandle = {
 };
 
 function resizeComposerTextarea(el: HTMLTextAreaElement) {
-  const maxHeight = Number.parseInt(getComputedStyle(el).maxHeight, 10);
+  const maxHeight = Number.parseInt(window.getComputedStyle(el).maxHeight, 10);
   const cap = Number.isFinite(maxHeight) ? maxHeight : 240;
   el.style.height = "auto";
   el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
@@ -77,6 +92,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     autoFocus = false,
     variant = "hero",
     toolbarLeft,
+    projectId = null,
+    workId = null,
   },
   ref,
 ) {
@@ -84,7 +101,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const resolvedPlaceholder = placeholder ?? rotatingPlaceholder;
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  /** Where a pick asked the caret to land, applied once the value has painted. */
+  const pendingCaret = useRef<number | null>(null);
   const canSend = text.trim().length > 0;
+
+  const references = useComposerReferences({
+    projectId,
+    workId,
+    textareaRef,
+    frameRef,
+    onReplace: ({ text: next, caret }) => {
+      pendingCaret.current = caret;
+      setText(next);
+    },
+  });
 
   // Expose a focus() handle to parent components (e.g. ChatView).
   useImperativeHandle(ref, () => ({
@@ -93,14 +124,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   // Resize after React commits `text` — including post-submit clear. Synchronous
   // resize in submit() measured stale DOM content (controlled value not flushed yet).
+  // A pick's caret lands in the same pass, for the same reason: the value it is
+  // an offset into is only in the DOM now.
   useEffect(() => {
     const el = textareaRef.current;
-    if (el) resizeComposerTextarea(el);
-  }, [text]);
+    if (!el) return;
+    resizeComposerTextarea(el);
+    const caret = pendingCaret.current;
+    if (caret === null) return;
+    pendingCaret.current = null;
+    el.focus();
+    el.setSelectionRange(caret, caret);
+    references.sync();
+  }, [text, references.sync]);
 
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
     setText(event.target.value);
     resizeComposerTextarea(event.target);
+    references.sync();
   }
 
   function submit() {
@@ -113,6 +154,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // An open menu owns the arrows, Enter and Escape. Asked first, so a pick is
+    // never also a sent message and a dismissal is never also a cancelled turn.
+    if (references.handleKeyDown(event)) return;
+
     // Esc cancels the stream when streaming.
     if (event.key === "Escape" && streaming) {
       event.preventDefault();
@@ -142,13 +187,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   );
 
   return (
-    <div className={cn("px-4 pt-4 pb-3", containerClassName)}>
+    <div ref={frameRef} className={cn("px-4 pt-4 pb-3", containerClassName)}>
       <Textarea
         ref={textareaRef}
         value={text}
         autoFocus={autoFocus}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        // Every way the caret can move without the text changing: arrow keys,
+        // a click into the middle of a word, a drag that ends as a caret.
+        onSelect={references.sync}
+        onBlur={references.sync}
         placeholder={resolvedPlaceholder}
         rows={1}
         // Force field-sizing: fixed so our JS auto-resize has full control.
@@ -163,7 +212,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           "max-h-60 overflow-y-auto placeholder:text-muted-foreground",
           variant === "hero" ? "min-h-[52px]" : "min-h-[40px]",
         )}
+        aria-expanded={references.snapshot.open || undefined}
+        aria-controls={references.snapshot.open ? "composer-reference-menu" : undefined}
+        aria-activedescendant={activeOptionId(references)}
       />
+
+      <ComposerReferenceMenu id="composer-reference-menu" references={references} />
 
       <div className="mt-1 flex items-center gap-2">
         {toolbarLeft}
@@ -193,3 +247,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     </div>
   );
 });
+
+/**
+ * Which row a screen reader should read. The caret never leaves the textarea,
+ * so the announcement has to travel from the textarea rather than from the menu.
+ */
+function activeOptionId({
+  snapshot,
+}: {
+  snapshot: { open: boolean; items: readonly { key: string }[]; activeIndex: number };
+}): string | undefined {
+  if (!snapshot.open) return undefined;
+  const key = snapshot.items[snapshot.activeIndex]?.key;
+  return key ? `composer-reference-menu-${key}` : undefined;
+}

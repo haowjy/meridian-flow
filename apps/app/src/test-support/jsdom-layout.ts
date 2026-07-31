@@ -32,28 +32,45 @@ function emptyRectList(): DOMRectList {
   return list as unknown as DOMRectList;
 }
 
-export function installJsdomLayoutFallbacks(): void {
-  if (typeof Range === "undefined") return;
+/**
+ * `scope` is which window to install into. A suite renders into the ambient
+ * jsdom and gets the default; `withReactRoot` builds a jsdom of its own, whose
+ * prototypes are different objects and would otherwise miss all of this.
+ */
+type JsdomScope = {
+  Range?: typeof Range;
+  HTMLElement?: typeof HTMLElement;
+  document?: Document;
+  ResizeObserver?: typeof ResizeObserver;
+};
 
-  if (typeof Range.prototype.getClientRects !== "function") {
-    Range.prototype.getClientRects = emptyRectList;
+export function installJsdomLayoutFallbacks(scope: JsdomScope = globalThis): void {
+  const range = scope.Range;
+  if (!range) return;
+
+  if (typeof range.prototype.getClientRects !== "function") {
+    range.prototype.getClientRects = emptyRectList;
   }
-  if (typeof Range.prototype.getBoundingClientRect !== "function") {
-    Range.prototype.getBoundingClientRect = () => EMPTY_RECT;
+  if (typeof range.prototype.getBoundingClientRect !== "function") {
+    range.prototype.getBoundingClientRect = () => EMPTY_RECT;
+  }
+  // Scrolling a highlighted row into view. Nothing is laid out, so nothing can
+  // scroll: doing nothing is what an unlaid-out document would honestly do, and
+  // a missing method is a throw out of the effect that asked.
+  if (scope.HTMLElement && typeof scope.HTMLElement.prototype.scrollIntoView !== "function") {
+    scope.HTMLElement.prototype.scrollIntoView = () => {};
   }
   // The context-menu router's tests hit-test the point under the pointer;
   // jsdom has no layout, so "nothing there" is the honest answer.
-  if (typeof document !== "undefined") {
-    document.elementFromPoint ??= () => null;
+  if (scope.document) {
+    scope.document.elementFromPoint ??= () => null;
   }
 
   // Every floating surface observes the manuscript's boxes. Nothing here is
   // laid out, so nothing ever resizes: an observer that never fires is what an
   // unlaid-out document would honestly report, and a missing constructor is a
   // throw out of a layout effect instead.
-  if (typeof globalThis.ResizeObserver === "undefined") {
-    globalThis.ResizeObserver = InertResizeObserver;
-  }
+  scope.ResizeObserver ??= InertResizeObserver;
 }
 
 class InertResizeObserver implements ResizeObserver {

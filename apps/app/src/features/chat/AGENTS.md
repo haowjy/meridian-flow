@@ -12,6 +12,12 @@ single scroll container for the conversation. It is NOT the chat session, thread
 management, or composer — those are adjacent concerns in sibling files
 (`useChatThreadSession`, `Composer.tsx`).
 
+The composer's `@` lives in
+[`composer-references/`](composer-references/AGENTS.md) — a thin host over the
+same completion engine and listbox the manuscript's `[[` uses. The composer
+itself owns one rule about it: an open menu gets the key first, so a pick is
+never also a sent message.
+
 ## Mental model
 
 An assistant turn renders as a **stack of segments**, one per interrupt round.
