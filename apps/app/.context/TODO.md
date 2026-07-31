@@ -2,6 +2,14 @@
 
 ## Editor UX gaps — deferred, tracked
 
+- **Temp-doc save row: persistent band vs save-time affordance.**
+  ([#209](https://github.com/haowjy/meridian-flow/issues/209))
+  PR #208 collapsed the form to one VS Code-style URI line, but the line is
+  still a *persistent* band above the toolbar. Remaining candidates:
+  save-from-tab (row appears only at save time), inline title-first.
+  Presentation-only — the save state machine (`use-temp-document-save.ts`)
+  stays as is. `TempDocumentSaveBar.tsx`.
+
 - **Block-level `+` gutter handle.**
   ([#210](https://github.com/haowjy/meridian-flow/issues/210))
   "Turn into" / "Insert" menu on the current paragraph. Additive to the docked
