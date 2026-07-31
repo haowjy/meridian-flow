@@ -3,6 +3,10 @@ import type { AiWriteMode, Work, WorkStatus } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects, threads, threadWorks, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
   CreateWorkInput,
@@ -53,13 +57,13 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
   async function findWorkById(id: WorkId): Promise<Work | null> {
     if (!isUuid(id)) return null;
-    const [row] = await db.select().from(works).where(eq(works.id, id)).limit(1);
+    const [row] = await currentDrizzleDb(db).select().from(works).where(eq(works.id, id)).limit(1);
     return row ? mapWork(row) : null;
   }
 
   async function updateWork(id: WorkId, patch: Partial<typeof works.$inferInsert>): Promise<Work> {
     if (!isUuid(id)) throw new Error(`Work not found: ${id}`);
-    const [row] = await db
+    const [row] = await currentDrizzleDb(db)
       .update(works)
       .set({ ...patch, updatedAt: new Date() })
       .where(and(eq(works.id, id), isNull(works.deletedAt)))
@@ -69,16 +73,20 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
   }
 
   return {
+    transaction<T>(operation: () => Promise<T>): Promise<T> {
+      return runInDrizzleTransaction(db, operation);
+    },
     async create(input: CreateWorkInput): Promise<Work> {
       const id = input.id ?? crypto.randomUUID();
-      const [project] = await db
+      const activeDb = currentDrizzleDb(db);
+      const [project] = await activeDb
         .select()
         .from(projects)
         .where(eq(projects.id, input.projectId))
         .limit(1);
       let row: WorkRow | undefined;
       try {
-        [row] = await db
+        [row] = await activeDb
           .insert(works)
           .values({
             id,
@@ -108,7 +116,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         opts?.includeDeleted ? undefined : isNull(works.deletedAt),
         opts?.status ? eq(works.status, opts.status) : undefined,
       );
-      const rows = await db.select().from(works).where(where).orderBy(desc(works.updatedAt));
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(works)
+        .where(where)
+        .orderBy(desc(works.updatedAt));
       return rows.map(mapWork);
     },
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
@@ -144,8 +156,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       if (!existing || existing.deletedAt) return;
       if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
 
-      await db.transaction(async (tx) => {
-        const [work] = await tx
+      await runInDrizzleTransaction(db, async () => {
+        const activeDb = currentDrizzleDb(db);
+        const [work] = await activeDb
           .select({ id: works.id, deletedAt: works.deletedAt })
           .from(works)
           .where(eq(works.id, id))
@@ -153,7 +166,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           .for("update");
         if (!work || work.deletedAt) return;
 
-        const [membership] = await tx
+        const [membership] = await activeDb
           .select({ threadId: threadWorks.threadId })
           .from(threadWorks)
           .innerJoin(threads, eq(threadWorks.threadId, threads.id))
@@ -161,30 +174,31 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           .limit(1);
         if (membership) throw new WorkDeleteBlockedError("threads");
 
-        await tx
+        await activeDb
           .update(works)
           .set({ deletedAt: new Date(), updatedAt: new Date() })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
       });
     },
     async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {
-      return db.transaction(async (tx) => {
-        await tx.execute(
+      return runInDrizzleTransaction(db, async () => {
+        const activeDb = currentDrizzleDb(db);
+        await activeDb.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${projectId}, 42::bigint))`,
         );
-        const existing = await tx
+        const existing = await activeDb
           .select()
           .from(works)
           .where(and(eq(works.projectId, projectId), isNull(works.deletedAt)))
           .orderBy(desc(works.updatedAt))
           .limit(1);
         if (existing[0]) return mapWork(existing[0]);
-        const [project] = await tx
+        const [project] = await activeDb
           .select()
           .from(projects)
           .where(eq(projects.id, projectId))
           .limit(1);
-        const [created] = await tx
+        const [created] = await activeDb
           .insert(works)
           .values({
             projectId: projectId,
@@ -197,9 +211,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       });
     },
     async touch(id: WorkId): Promise<void> {
-      const [existing] = await db.select().from(works).where(eq(works.id, id)).limit(1);
+      const activeDb = currentDrizzleDb(db);
+      const [existing] = await activeDb.select().from(works).where(eq(works.id, id)).limit(1);
       if (!existing || existing.deletedAt) return;
-      await db.update(works).set({ updatedAt: new Date() }).where(eq(works.id, id));
+      await activeDb.update(works).set({ updatedAt: new Date() }).where(eq(works.id, id));
     },
   };
 }

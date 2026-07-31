@@ -730,6 +730,9 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     works: {
+      async transaction(operation) {
+        return operation();
+      },
       async create() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -799,6 +802,9 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     workRepo: {
+      async transaction(operation) {
+        return operation();
+      },
       async create() {
         throw new Error("in-memory work repository is not implemented");
       },

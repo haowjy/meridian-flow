@@ -54,6 +54,7 @@ export class WorkNameConflictError extends Error {
  * shared knowledge built during grilling.
  */
 export interface WorkRepository {
+  transaction<T>(operation: () => Promise<T>): Promise<T>;
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
   /** Lists most recently updated first. */

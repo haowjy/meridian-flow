@@ -56,6 +56,17 @@ export function createInMemoryWorkRepository(
   }
 
   const repo: WorkRepository = {
+    async transaction<T>(operation: () => Promise<T>): Promise<T> {
+      const snapshot = structuredClone(rows);
+      try {
+        return await operation();
+      } catch (cause) {
+        rows.clear();
+        for (const [id, work] of snapshot) rows.set(id, work);
+        throw cause;
+      }
+    },
+
     async create(input: CreateWorkInput): Promise<Work> {
       const work = build(input);
       if (nameIsTaken(work.projectId, work.name)) throw new WorkNameConflictError();
