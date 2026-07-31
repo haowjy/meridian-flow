@@ -2,7 +2,21 @@
 
 ## [Unreleased]
 
-- `apps/server`: thread attachments now enter the thread's primary Work
+- `apps/app`: `@` now completes references everywhere a writer types. In the
+  editor it offers documents and pictures — a document pick lands as
+  `[[Title]]` (or a title-labeled canonical URI when two documents share the
+  name), a picture pick places the image inline. The chat composer gained the
+  same `@` over a new rich input: a picked reference is one atomic pill that
+  backspaces out whole, pictures ride to the model as image references, and a
+  quiet line says when the current model cannot see them (sending never
+  blocks). Pasting a file into the composer uploads it immediately to the
+  Work's `uploads://` source with a preview chip above the input — removing
+  the pill or the chip both detach it, and a draft's own never-sent upload is
+  deleted on detach. Markdown pastes become editable documents; other files
+  attach as named references. A failed upload holds the send with a plain
+  sentence until retried or removed. The link form's URL field offers the
+  same document completion, stepping aside for typed web addresses. Sent
+  turns render references as live links and keep Shift+Enter line breaks.
   `uploads://` source with their writer-facing filename, using deterministic
   `-2`, `-3` suffixes on collisions. The hidden project-level
   `thread_uploads` store is gone; the thread rail reads attached context
