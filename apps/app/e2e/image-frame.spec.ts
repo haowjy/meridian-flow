@@ -27,12 +27,13 @@ test.describe("pending image frame", () => {
   test("a small measured picture lands in the box its upload reserved", async ({ page }) => {
     test.skip(!DATABASE_URL, "DATABASE_URL is required");
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, page.request, {
-      userId: await findTestUserId(db),
-      titlePrefix: "Image frame",
-    });
+    let fixture: ProjectFixture | undefined;
 
     try {
+      fixture = await seedProjectFixture(db, page.request, {
+        userId: await findTestUserId(db),
+        titlePrefix: "Image frame",
+      });
       await holdUploads(page);
       await openManuscript(page, fixture);
       await typeSentenceOpening(page);
@@ -58,7 +59,9 @@ test.describe("pending image frame", () => {
       expect(round(landed)).toEqual(round(pendingFrame));
       expect(round(landedLine)).toEqual(round(pendingLine));
     } finally {
-      await cleanupProjectFixture(db, fixture).finally(() => db.end());
+      await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+        db.end(),
+      );
     }
   });
 
@@ -67,12 +70,13 @@ test.describe("pending image frame", () => {
   }) => {
     test.skip(!DATABASE_URL, "DATABASE_URL is required");
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, page.request, {
-      userId: await findTestUserId(db),
-      titlePrefix: "Image frame fallback",
-    });
+    let fixture: ProjectFixture | undefined;
 
     try {
+      fixture = await seedProjectFixture(db, page.request, {
+        userId: await findTestUserId(db),
+        titlePrefix: "Image frame fallback",
+      });
       await holdUploads(page);
       await openManuscript(page, fixture);
       await typeSentenceOpening(page);
@@ -87,7 +91,9 @@ test.describe("pending image frame", () => {
       expect(fallback.width).toBeGreaterThanOrEqual(128);
       expect(fallback.height).toBeGreaterThanOrEqual(72);
     } finally {
-      await cleanupProjectFixture(db, fixture).finally(() => db.end());
+      await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+        db.end(),
+      );
     }
   });
 });

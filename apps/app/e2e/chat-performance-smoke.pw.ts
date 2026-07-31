@@ -20,12 +20,13 @@ test("large chat keeps settled history virtualized", async ({ page }) => {
 
   await login(page);
   const db = openE2eDb(DATABASE_URL ?? "");
-  const fixture = await seedProjectFixture(db, page.request, {
-    userId: await findTestUserId(db),
-    titlePrefix: "Chat performance smoke",
-  });
+  let fixture: ProjectFixture | undefined;
 
   try {
+    fixture = await seedProjectFixture(db, page.request, {
+      userId: await findTestUserId(db),
+      titlePrefix: "Chat performance smoke",
+    });
     await seedChatTurns(db, fixture, TURN_COUNT);
     await page.goto(`/chat/${fixture.threadId}`, { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: fixture.title })).toBeVisible();
@@ -59,7 +60,9 @@ test("large chat keeps settled history virtualized", async ({ page }) => {
     expect(metrics.totalDomNodes).toBeLessThanOrEqual(MAX_TOTAL_DOM_NODES);
     expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
   } finally {
-    await cleanupProjectFixture(db, fixture).finally(() => db.end());
+    await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+      db.end(),
+    );
   }
 });
 

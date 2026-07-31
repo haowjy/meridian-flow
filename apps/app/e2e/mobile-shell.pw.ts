@@ -4,6 +4,7 @@ import {
   findTestUserId,
   login,
   openE2eDb,
+  type ProjectFixture,
   seedProjectFixture,
 } from "./support/e2e-db";
 
@@ -19,11 +20,12 @@ test.describe("project shell selection", () => {
 
     await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, page.request, {
-      userId: await findTestUserId(db),
-      titlePrefix: "Mobile shell",
-    });
+    let fixture: ProjectFixture | undefined;
     try {
+      fixture = await seedProjectFixture(db, page.request, {
+        userId: await findTestUserId(db),
+        titlePrefix: "Mobile shell",
+      });
       await page.goto(`/project/${fixture.projectId}`, { waitUntil: "domcontentloaded" });
 
       await expect(page.locator('[data-phone-shell="true"]')).toBeVisible();
@@ -34,7 +36,9 @@ test.describe("project shell selection", () => {
       await page.getByRole("button", { name: "Open navigation" }).click();
       await expect(page.getByRole("navigation", { name: "Workspace navigation" })).toBeVisible();
     } finally {
-      await cleanupProjectFixture(db, fixture).finally(() => db.end());
+      await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+        db.end(),
+      );
     }
   });
 
@@ -47,18 +51,21 @@ test.describe("project shell selection", () => {
 
     await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
-    const fixture = await seedProjectFixture(db, page.request, {
-      userId: await findTestUserId(db),
-      titlePrefix: "Desktop shell",
-    });
+    let fixture: ProjectFixture | undefined;
     try {
+      fixture = await seedProjectFixture(db, page.request, {
+        userId: await findTestUserId(db),
+        titlePrefix: "Desktop shell",
+      });
       await page.goto(`/project/${fixture.projectId}`, { waitUntil: "domcontentloaded" });
 
       await expect(page.locator('[data-phone-shell="true"]')).toHaveCount(0);
       await expect(page.locator("[data-desktop-home-table]")).toBeVisible();
       await expect(page.locator("[data-mobile-home-list]")).toHaveCount(0);
     } finally {
-      await cleanupProjectFixture(db, fixture).finally(() => db.end());
+      await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+        db.end(),
+      );
     }
   });
 });

@@ -92,23 +92,35 @@ export async function seedProjectFixture(
     `;
   });
 
-  const alphaId = await createFixtureDocument(request, projectId, {
-    path: "/alpha.md",
-    content: "# Alpha\n\nSeed context.",
-  });
-  const betaId = await createFixtureDocument(request, projectId, {
-    path: "/beta.md",
-    content: "# Beta\n\nSeed context.",
-  });
+  try {
+    const alphaId = await createFixtureDocument(request, projectId, {
+      path: "/alpha.md",
+      content: "# Alpha\n\nSeed context.",
+    });
+    const betaId = await createFixtureDocument(request, projectId, {
+      path: "/beta.md",
+      content: "# Beta\n\nSeed context.",
+    });
 
-  return {
-    projectId,
-    workId,
-    threadId,
-    contextSourceId,
-    documentIds: [alphaId, betaId],
-    title,
-  };
+    return {
+      projectId,
+      workId,
+      threadId,
+      contextSourceId,
+      documentIds: [alphaId, betaId],
+      title,
+    };
+  } catch (error) {
+    await cleanupProjectFixture(db, {
+      projectId,
+      workId,
+      threadId,
+      contextSourceId,
+      documentIds: [],
+      title,
+    });
+    throw error;
+  }
 }
 
 async function createFixtureDocument(
@@ -145,12 +157,10 @@ export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Pr
     await tx`DELETE FROM turn_document_touches WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM turns WHERE thread_id = ${fixture.threadId}`;
     await tx`DELETE FROM threads WHERE id = ${fixture.threadId}`;
-    // Opening a document in the editor opens its work draft, and that branch
-    // holds its work with ON DELETE RESTRICT: the fixture has to let go of the
-    // draft before it can let go of the work.
     await tx`
-      DELETE FROM document_branches
-      WHERE work_id IN (SELECT id FROM works WHERE project_id = ${fixture.projectId})
+      DELETE FROM context_sources
+      WHERE project_id = ${fixture.projectId}
+      OR work_id IN (SELECT id FROM works WHERE project_id = ${fixture.projectId})
     `;
     await tx`DELETE FROM works WHERE project_id = ${fixture.projectId}`;
     await tx`DELETE FROM projects WHERE id = ${fixture.projectId}`;
@@ -204,8 +214,9 @@ export async function resetUserProjects(db: Db, userId: string): Promise<void> {
       )
     `;
     await tx`
-      DELETE FROM document_branches
-      WHERE work_id IN (
+      DELETE FROM context_sources
+      WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
+      OR work_id IN (
         SELECT id FROM works WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
       )
     `;
