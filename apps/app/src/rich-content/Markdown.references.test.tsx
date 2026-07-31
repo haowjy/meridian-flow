@@ -81,6 +81,36 @@ describe("a reference in a sent message", () => {
     });
   });
 
+  it("renders a picture reference as the composer's pill, never the raw URI", async () => {
+    const picture: ResolvedDocumentLink = {
+      documentId: "asset-1",
+      title: "pic-1",
+      fileType: "image",
+      scheme: "manuscript",
+      path: "pictures/pic-1.png",
+      uri: "manuscript://pictures/pic-1.png",
+      workId: null,
+    };
+    const { node, open } = transcript("Look at manuscript://pictures/pic-1.png", picture);
+    await withReactRoot(node, async () => {
+      await settle();
+      const element = reference();
+
+      // Icon + filename (extension and all — `title` is the stripped name).
+      expect(element?.tagName).toBe("BUTTON");
+      expect(element?.getAttribute("data-link-file")).toBe("image");
+      expect(element?.querySelector("svg")).not.toBeNull();
+      expect(element?.textContent).toBe("pic-1.png");
+      expect(element?.textContent).not.toContain("manuscript://");
+
+      // Still a door: it opens the picture document like any reference.
+      await act(async () => {
+        (element as HTMLButtonElement).click();
+      });
+      expect(open).toHaveBeenCalledWith("asset-1");
+    });
+  });
+
   it("goes quiet rather than dead when nothing is behind it yet", async () => {
     const { node } = transcript("Rewrite [[Chapter 400]] please", null);
     await withReactRoot(node, async () => {

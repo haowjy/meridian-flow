@@ -19,6 +19,8 @@
  * no per-caller knowledge of that fact.
  */
 
+import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
+import { Image } from "lucide-react";
 import { createContext, type ReactNode, useContext, useEffect, useSyncExternalStore } from "react";
 
 import {
@@ -86,6 +88,25 @@ export function InternalReference({
     );
   }
 
+  // A picture wears the composer token's face — icon plus filename — because
+  // the wire spelling for an asset is its URI, and `manuscript://pictures/…`
+  // is an address, not the picture's name. The classified file type is the
+  // only signal that says "image"; URI shape never is.
+  if (entry?.state === "resolved" && entry.document.fileType === "image") {
+    return (
+      <button
+        type="button"
+        data-link-state="resolved"
+        data-link-file="image"
+        onClick={() => void follow(runtime, href)}
+        className={cn("meridian-reference", "focus-ring rounded-xs")}
+      >
+        <Image aria-hidden className="size-[0.85em] shrink-0 self-center" />
+        <span className="truncate">{filenameOf(entry.document)}</span>
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -96,6 +117,15 @@ export function InternalReference({
       {children}
     </button>
   );
+}
+
+/**
+ * The label the composer's token shows for the same pick: the filename,
+ * extension and all. `title` is the resolver's extension-stripped document
+ * name (`pic-1`, not `pic-1.png`), so the filename is the path's last segment.
+ */
+function filenameOf(document: ResolvedDocumentLink): string {
+  return document.path.split("/").at(-1) || document.title;
 }
 
 /**
