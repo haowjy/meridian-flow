@@ -47,6 +47,19 @@ function document_(title: string, overrides: Partial<ReferenceCandidate> = {}): 
   } as ReferenceCandidate;
 }
 
+function picture(name: string, overrides: Partial<ReferenceCandidate> = {}): ReferenceCandidate {
+  return {
+    kind: "asset",
+    name,
+    location: "Assets",
+    assetDocumentId: `asset-${name}`,
+    path: `/assets/${name}`,
+    fileType: "image",
+    uri: `manuscript://assets/${name}`,
+    ...overrides,
+  } as ReferenceCandidate;
+}
+
 /** The mounted editor, which exists one effect after the composer renders. */
 function editorOf(handle: { current: ComposerHandle | null }): Editor {
   const editor = handle.current?.editor;
@@ -262,6 +275,58 @@ describe("who owns Escape", () => {
         expect(onStop).toHaveBeenCalled();
       },
     );
+  });
+});
+
+describe("the non-vision hint", () => {
+  const hint = () => document.querySelector('p[role="status"]')?.textContent ?? null;
+
+  it("shows for an @-picked picture at any manuscript path when the model cannot see", async () => {
+    // The G1 probe found the hint firing for pasted images but not @-picked
+    // pills: draftHasPictures derives from composerImageBlocks, whose old URI
+    // prefix filter dropped assets outside assets/. Same tokens, same model →
+    // same hint, wherever the asset lives.
+    candidates = [
+      picture("pic-1.png", { uri: "manuscript://pictures/pic-1.png", path: "/pictures/pic-1.png" }),
+    ];
+    const handle = createRef<ComposerHandle>();
+    await withReactRoot(
+      <Composer
+        ref={handle}
+        onSubmit={() => {}}
+        projectId="project-1"
+        modelSupportsImageInput={false}
+      />,
+      async () => {
+        await type(editorOf(handle), "Look at @pic");
+        await press(editorOf(handle), "Enter");
+
+        expect(hint()).toBe(
+          "This model can't view pictures, so picture references are sent as text.",
+        );
+      },
+    );
+  });
+
+  it("stays quiet while the model is unknown, and for a model that can see", async () => {
+    candidates = [picture("pic-1.png")];
+    for (const modelSupportsImageInput of [null, true] as const) {
+      const handle = createRef<ComposerHandle>();
+      await withReactRoot(
+        <Composer
+          ref={handle}
+          onSubmit={() => {}}
+          projectId="project-1"
+          modelSupportsImageInput={modelSupportsImageInput}
+        />,
+        async () => {
+          await type(editorOf(handle), "Look at @pic");
+          await press(editorOf(handle), "Enter");
+
+          expect(hint()).toBeNull();
+        },
+      );
+    }
   });
 });
 

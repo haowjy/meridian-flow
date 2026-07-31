@@ -1,5 +1,5 @@
 /**
- * The documents and pictures `@` offers in the chat composer.
+ * The documents and asset files `@` offers in the chat composer.
  *
  * The rows are [`SuggestionList`](../../../components/app/SuggestionList.tsx),
  * the same list the manuscript's `/` and `[[` render, so a writer meets all
@@ -25,7 +25,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { FileText, Image } from "lucide-react";
+import { File, FileText, Image } from "lucide-react";
 import { type CSSProperties, type RefObject, useEffect, useReducer } from "react";
 import { createPortal } from "react-dom";
 
@@ -132,18 +132,23 @@ function groupHeading(items: readonly ComposerReferenceItem[], index: number, qu
   if (query !== "" || !item || item.kind === items[index - 1]?.kind) return undefined;
   return (
     <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
-      {item.kind === "asset" ? t`Pictures` : t`Documents`}
+      {item.kind === "asset" ? t`Files` : t`Documents`}
     </div>
   );
 }
 
 function ReferenceRow({ item }: { item: ComposerReferenceItem }) {
   if (item.kind === "asset") {
+    // Pixels read as a picture; the PDFs and files beside them read as the
+    // files they are. Picking either designates it — only pictures also ride
+    // as image blocks.
+    const pictorial = item.fileType === "image";
+    const Icon = pictorial ? Image : File;
     return (
       <>
-        <Image aria-hidden />
+        <Icon aria-hidden />
         <span className="truncate">{item.name}</span>
-        <span className="sr-only">{t`picture`}</span>
+        <span className="sr-only">{pictorial ? t`picture` : t`file`}</span>
         <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">{item.location}</span>
       </>
     );

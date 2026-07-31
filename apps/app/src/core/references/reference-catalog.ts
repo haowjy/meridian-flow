@@ -101,6 +101,12 @@ export type ReferenceItem =
       location: string;
       assetDocumentId: string;
       path: string;
+      /**
+       * Carried through so a pick knows what it took: only an `image` can
+       * ride a message as an image block; every other file is
+       * designation-only.
+       */
+      fileType: string;
       /** The candidate's canonical URI, carried through for the same reason. */
       uri: string;
     }
@@ -172,6 +178,7 @@ export function filterReferenceItems<TKind extends ReferenceKind>(
           location: candidate.location,
           assetDocumentId: candidate.assetDocumentId,
           path: candidate.path,
+          fileType: candidate.fileType,
           uri: candidate.uri,
         },
   );

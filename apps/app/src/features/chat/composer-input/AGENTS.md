@@ -10,11 +10,12 @@ the one serialization the wire reads.
 
 ## Mental model
 
-**Tokens own attachment state.** A pick from `@` — a document or a picture —
-inserts an atomic `referenceToken`; it never splices text. The token carries
-identity (`documentId`, `uri`) and its wire `spelling`, computed at pick time
-(`[[Title]]`, or the canonical URI when the title is ambiguous; a picture is
-always its canonical `manuscript://assets/…` URI). Backspace at
+**Tokens own attachment state.** A pick from `@` — a document or any asset
+file, pictures and PDFs alike — inserts an atomic `referenceToken`; it never
+splices text. The token carries identity (`documentId`, `uri`, an asset's
+`fileType`) and its wire `spelling`, computed at pick time (`[[Title]]`, or
+the canonical URI when the title is ambiguous; an asset is always its
+canonical `manuscript://` URI). Backspace at
 the token's boundary deletes the whole token, and that IS detach; the chip
 row is a derived view over `composerUploadTokens(doc)`, never a
 parallel store. Hand-typed `[[…]]` or `manuscript://…` stays plain text —
@@ -35,12 +36,14 @@ Non-image uploads are designation-only: chip and link, no content block.
 **Serialization is the wire contract.** `onSubmit` still carries a plain
 string: text verbatim, hard break → `\n`, paragraphs joined on `\n`, token →
 its stored `spelling`. Beside it, and only when the draft holds picture
-tokens (`@`-picked assets or resolved image uploads), `composerImageBlocks(doc)`
-derives the message's image blocks
+tokens (`@`-picked image assets or resolved image uploads),
+`composerImageBlocks(doc)` derives the message's image blocks
 (`{ documentId, uri }`, one per distinct picture) — derived from token
-presence at submit, never stored anywhere else. The token's spelling IS its
-URI, which is what satisfies the server's image-URI-appears-in-text check by
-construction. When the thread's model lacks `image_input`, `Composer.tsx`
+presence at submit, never stored anywhere else, keyed on what the token IS
+(kind, plus an asset's `fileType`), never on a URI path convention. A
+non-image asset pick is designation-only: the URI in the text is the whole
+ride. The token's spelling IS its URI, which is what satisfies the server's
+image-URI-appears-in-text check by construction. When the thread's model lacks `image_input`, `Composer.tsx`
 shows a quiet hint under the draft; it informs and never gates the send.
 
 **The `@` rides `@tiptap/suggestion`**, the same utility as the editor's

@@ -54,9 +54,12 @@ export type ComposerImageBlock = Extract<UserMessageBlock, { type: "image" }>;
  * Two token families ride: `@`-picked pictures, and pasted image uploads once
  * their upload has resolved (a pending upload has no documentId yet, and
  * submit waits for it; a non-image upload is designation-only and never
- * becomes a block). Only the URI families the append contract accepts ride
- * along (`manuscript://assets/…`, `uploads://…`); any other token stays what
- * its spelling already is, text.
+ * becomes a block). The decision keys on what the token IS, never on a URI
+ * path convention: real assets live at arbitrary manuscript paths, so a
+ * prefix filter would silently drop their pictures. The client does not
+ * pre-judge which URIs the server accepts — it derives blocks from what
+ * tokens claim to be, and the server degrades quietly (image dropped, text
+ * kept) for anything it cannot resolve.
  */
 export function composerImageBlocks(doc: PMNode): ComposerImageBlock[] {
   const blocks = new Map<string, ComposerImageBlock>();
@@ -72,16 +75,13 @@ export function composerImageBlocks(doc: PMNode): ComposerImageBlock[] {
 }
 
 function ridesAsImageBlock(token: ReferenceTokenAttributes): boolean {
-  if (!imageBlockUri(token.uri)) return false;
-  if (token.kind === "asset") return true;
+  // A non-image asset (a PDF the writer @-named) is designation-only: its
+  // spelling already put the URI in the text, and that is all that rides.
+  if (token.kind === "asset") return token.fileType === "image";
   return (
     token.kind === "upload" &&
     token.upload?.state === "ready" &&
     token.upload.mimeType.startsWith("image/") &&
     token.documentId !== ""
   );
-}
-
-function imageBlockUri(uri: string): boolean {
-  return uri.startsWith("manuscript://assets/") || uri.startsWith("uploads://");
 }

@@ -25,7 +25,7 @@
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type NodeViewProps, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
-import { FileText, Image } from "lucide-react";
+import { File, FileText, Image } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -51,9 +51,16 @@ export type ReferenceTokenUpload = {
 };
 
 export type ReferenceTokenAttributes = {
-  /** What the token names: a page, a picture, or a pasted upload. */
+  /** What the token names: a page, an asset file, or a pasted upload. */
   kind: "document" | "asset" | "upload";
   documentId: string;
+  /**
+   * The asset's catalog file type, null on the other kinds. `"image"` is
+   * what earns an image block at submit; a PDF beside it is
+   * designation-only — the pick spells its URI and rides as text alone.
+   * (An upload's image-ness lives in `upload.mimeType` instead.)
+   */
+  fileType: string | null;
   /** The resolver's canonical spelling, kept for chips and future detach UI. */
   uri: string;
   /** What the pill shows: the document's title. */
@@ -75,6 +82,7 @@ export const ReferenceTokenNode = Node.create({
     return {
       kind: { default: "document" },
       documentId: { default: "" },
+      fileType: { default: null },
       uri: { default: "" },
       label: { default: "" },
       spelling: { default: "" },
@@ -91,6 +99,7 @@ export const ReferenceTokenNode = Node.create({
         getAttrs: (element) => ({
           kind: element.getAttribute("data-kind") === "asset" ? "asset" : "document",
           documentId: element.getAttribute("data-document-id") ?? "",
+          fileType: element.getAttribute("data-file-type"),
           uri: element.getAttribute("data-uri") ?? "",
           label: element.getAttribute("data-label") ?? "",
           spelling: element.getAttribute("data-spelling") ?? "",
@@ -108,6 +117,7 @@ export const ReferenceTokenNode = Node.create({
         "data-reference-token": "",
         "data-kind": attrs.kind,
         "data-document-id": attrs.documentId,
+        "data-file-type": attrs.fileType ?? undefined,
         "data-uri": attrs.uri,
         "data-label": attrs.label,
         "data-spelling": attrs.spelling,
@@ -153,12 +163,14 @@ export const ReferenceTokenNode = Node.create({
  */
 function ReferenceTokenView({ node, selected }: NodeViewProps) {
   const attrs = node.attrs as ReferenceTokenAttributes;
-  // The icon is the kind, same glyphs as the menu rows: a page, or a picture.
-  // A pasted upload reads as whichever of the two it is (pixels or a file).
+  // The icon says what the token holds, same glyphs as the menu rows: pixels
+  // get the picture, a page the page, and a non-image asset the plain file it
+  // is. A pasted upload reads off its MIME type, an asset off its catalog
+  // file type.
   const pictorial =
-    attrs.kind === "asset" ||
+    (attrs.kind === "asset" && attrs.fileType === "image") ||
     (attrs.kind === "upload" && (attrs.upload?.mimeType.startsWith("image/") ?? false));
-  const Icon = pictorial ? Image : FileText;
+  const Icon = pictorial ? Image : attrs.kind === "document" ? FileText : File;
   return (
     <NodeViewWrapper
       as="span"
