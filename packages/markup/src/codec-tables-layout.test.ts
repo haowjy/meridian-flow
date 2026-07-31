@@ -19,6 +19,12 @@ import {
 
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
 
+function oneCellTable(...blocks: PMNode[]): PMNode {
+  return schema.node("table", null, [
+    schema.node("table_row", null, [schema.node("table_cell", null, blocks)]),
+  ]);
+}
+
 describe("tables and Layout round-trip corpus", () => {
   it("keeps unstyled alignable blocks in byte-identical plain markdown", () => {
     const plain = "Plain prose.\n\n## Heading\n\n| A | B |\n| - | - |\n| 1 | 2 |\n";
@@ -283,13 +289,16 @@ describe("tables and Layout round-trip corpus", () => {
     expect(codec.serializeBlock(firstParsedBlock(codec, wrapped))).toBe(wrapped);
   });
 
-  it("keeps aligned GFM tables in pipes", () => {
+  it("canonicalizes aligned GFM tables to HTML in one pass", () => {
     const gfm = "| Skill     | Rank |\n| :-------- | ---: |\n| Iron Body |    7 |\n";
-    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(gfm);
-    expect(codec.serialize(codec.parse(gfm).blocks)).not.toContain("<table>");
+    const html = codec.serialize(codec.parse(gfm).blocks);
+
+    expect(html).toContain("<table>");
+    expect(html).not.toContain("| Skill");
+    expect(codec.serialize(codec.parse(html).blocks)).toBe(html);
   });
 
-  it("round-trips hard breaks inside pipe cells as backslash-newline", () => {
+  it("canonicalizes pipe-cell hard breaks to HTML and reaches a fixpoint", () => {
     const table = firstParsedBlock(codec, "| Detail |\n| - |\n| one |");
     const bodyRow = table.child(1);
     const bodyCell = bodyRow.child(0);
@@ -300,11 +309,63 @@ describe("tables and Layout round-trip corpus", () => {
       table.child(0),
       bodyRow.type.create(bodyRow.attrs, [breakCell]),
     ]);
-    const gfm = "| Detail    |\n| --------- |\n| one\\\ntwo |\n";
+    const html = codec.serializeBlock(changedTable);
 
-    expect(codec.serializeBlock(changedTable)).toBe(gfm.trimEnd());
-    expect(firstParsedBlock(codec, gfm).toJSON()).toEqual(changedTable.toJSON());
-    expect(codec.serializeBlock(firstParsedBlock(codec, gfm))).toBe(gfm.trimEnd());
+    expect(html).toContain("<table>");
+    expect(html).toContain("<br />");
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(changedTable.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it.each([
+    { block: "paragraph", tag: "p", node: paragraph(t("Prose")) },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      block: `heading ${index + 1}`,
+      tag: `h${index + 1}`,
+      node: schema.node("heading", { level: index + 1 }, [t(`Heading ${index + 1}`)]),
+    })),
+    {
+      block: "bullet list",
+      tag: "ul",
+      node: schema.node("bullet_list", { tight: true }, [
+        schema.node("list_item", null, [paragraph(t("Bullet"))]),
+      ]),
+    },
+    {
+      block: "ordered list",
+      tag: "ol",
+      node: schema.node("ordered_list", { order: 3, tight: false }, [
+        schema.node("list_item", null, [paragraph(t("Third"))]),
+      ]),
+    },
+    {
+      block: "blockquote",
+      tag: "blockquote",
+      node: schema.node("blockquote", null, [paragraph(t("Quoted"))]),
+    },
+    {
+      block: "code block",
+      tag: "pre",
+      node: schema.node("code_block", { language: "typescript" }, [t("const rank = 7;")]),
+    },
+    { block: "horizontal rule", tag: "hr", node: schema.node("horizontal_rule") },
+  ])("round-trips a $block inside an HTML table cell", ({ node, tag }) => {
+    const original = oneCellTable(node);
+    const html = codec.serializeBlock(original);
+
+    expect(html).toContain(`<${tag}`);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
+  });
+
+  it("round-trips a nested table inside an HTML table cell", () => {
+    const nested = oneCellTable(paragraph(t("Inner")));
+    const original = oneCellTable(nested);
+    const html = codec.serializeBlock(original);
+
+    expect(html.match(/<table>/g)).toHaveLength(2);
+    expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
+    expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
 
   it("does not confuse literal br syntax with a pipe-cell hard break", () => {
@@ -483,15 +544,7 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  /**
-   * A pipe table whose cells carry hard breaks, and the containers a writer can
-   * nest one inside.
-   *
-   * One corpus rather than a fixture per container: the rule is the same
-   * wherever the table sits — `\` at the end of the line, never `<br>`, and a
-   * round trip that lands on the same document — so a container is a row and a
-   * cell shape is a row, and both codecs run every combination.
-   */
+  /** Hard-break cells and every container a writer can nest their table inside. */
   type BrokenCellMarks = readonly (readonly ReturnType<typeof m>[])[];
 
   /** Marks on the broken cell text; one entry breaks the body row alone. */
@@ -550,7 +603,7 @@ describe("tables and Layout round-trip corpus", () => {
           ]),
         ]),
     },
-  ])("keeps pipe-cell hard breaks canonical inside $container", ({ wrap }) => {
+  ])("keeps HTML cell hard breaks canonical inside $container", ({ wrap }) => {
     for (const { shape, rowMarks } of BROKEN_CELL_SHAPES) {
       const original = wrap(tableWithBrokenCells(rowMarks));
 
@@ -559,8 +612,9 @@ describe("tables and Layout round-trip corpus", () => {
         codec,
       ]) {
         const serialized = activeCodec.serializeBlock(original);
-        expect(serialized, shape).toContain("\\\n");
-        expect(serialized, shape).not.toContain("<br");
+        expect(serialized, shape).toContain("<table>");
+        expect(serialized, shape).toContain("<br />");
+        expect(serialized, shape).not.toContain("\\\n");
         expect(firstParsedBlock(activeCodec, serialized).toJSON(), shape).toEqual(
           original.toJSON(),
         );
@@ -568,13 +622,7 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  /**
-   * The one container that is not a wrapper around the serialized block but a
-   * re-stringification of it: `Layout` re-parses the table it is wrapping and
-   * spells a cell's break `<br />` on the way out, which MDX ingress then
-   * escapes — a broken line came back as the literal text `head<br />down`.
-   */
-  it("keeps pipe-cell hard breaks canonical inside a Layout wrapper", () => {
+  it("keeps HTML cell hard breaks canonical inside a Layout wrapper", () => {
     const plain = tableWithBrokenCells([[], []]);
     const rows: PMNode[] = [];
     plain.forEach((row) => {
@@ -588,10 +636,10 @@ describe("tables and Layout round-trip corpus", () => {
     const styled = plain.type.create({ align: "center" }, rows);
     const serialized = codec.serializeBlock(styled);
 
-    expect(serialized).toBe(
-      '<Layout align="center" widths="120">\n  | head\\\n  down |\n  | -------------- |\n  | body\\\n  down |\n</Layout>',
-    );
-    expect(serialized).not.toContain("<br");
+    expect(serialized).toContain('<Layout align="center" widths="120">');
+    expect(serialized).toContain("<table>");
+    expect(serialized).toContain("<br />");
+    expect(serialized).not.toContain("\\\n");
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(styled.toJSON());
     expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
   });
@@ -630,7 +678,7 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  it("keeps a plain-GFM LitRPG status screen in pipes", () => {
+  it("canonicalizes a plain-GFM LitRPG status screen to HTML in one pass", () => {
     const gfm = [
       "| Stat | Value |",
       "| ---- | ----: |",
@@ -640,16 +688,10 @@ describe("tables and Layout round-trip corpus", () => {
       "",
     ].join("\n");
 
-    expect(codec.serialize(codec.parse(gfm).blocks)).toBe(
-      [
-        "| Stat   | Value |",
-        "| ------ | ----: |",
-        "| Level  |    42 |",
-        "| Health |   810 |",
-        "| Mana   |   275 |",
-        "",
-      ].join("\n"),
-    );
+    const html = codec.serialize(codec.parse(gfm).blocks);
+    expect(html).toContain("<table>");
+    expect(html).not.toContain("| Stat");
+    expect(codec.serialize(codec.parse(html).blocks)).toBe(html);
   });
 
   it("throws rather than silently dropping malformed column widths", () => {
