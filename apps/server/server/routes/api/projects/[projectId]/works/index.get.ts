@@ -11,14 +11,22 @@ export default defineEventHandler(async (event) => {
   const { userId } = user;
   const projectId = getRouterParam(event, "projectId") ?? "";
   const rawStatus = getQuery(event).status;
-  if (rawStatus !== undefined && rawStatus !== "active" && rawStatus !== "archived") {
-    throw createError({ statusCode: 400, message: "status must be active or archived" });
+  if (
+    rawStatus !== undefined &&
+    rawStatus !== "active" &&
+    rawStatus !== "archived" &&
+    rawStatus !== "all"
+  ) {
+    throw createError({ statusCode: 400, message: "status must be active, archived, or all" });
   }
-  const status = (rawStatus ?? "active") as WorkStatus;
+  const status = rawStatus ?? "active";
 
   const project = await requireProjectOwner({ projects: projectRepo }, projectId, userId);
   const currentWork = await resolveCurrentWork({ works: workRepo, preferences }, user, project);
-  const listedWorks = await workRepo.listByProject(projectId, { status });
+  const listedWorks = await workRepo.listByProject(
+    projectId,
+    status === "all" ? undefined : { status: status as WorkStatus },
+  );
   const works = listedWorks.some((work) => work.id === currentWork.id)
     ? listedWorks
     : [currentWork, ...listedWorks];

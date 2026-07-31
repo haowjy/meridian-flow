@@ -17,11 +17,11 @@ const project = {
   deletedAt: null,
 } as Project;
 
-function work(id: string): Work {
+function work(id: string, status: Work["status"] = "active"): Work {
   return {
     id,
     projectId: PROJECT_ID,
-    status: "active",
+    status,
     deletedAt: null,
   } as Work;
 }
@@ -95,6 +95,37 @@ describe("GET /api/projects/:projectId/works", () => {
           { id: current.id, status: "archived" },
           { id: active.id, status: "active" },
         ],
+      },
+    });
+  });
+
+  it("returns active and archived Works for status=all", async () => {
+    const works = [work("active"), work("archived", "archived")];
+    const listByProject = vi.fn(async () => works);
+    vi.mocked(requireAppUser).mockResolvedValue({
+      user: { userId: USER_ID },
+      app: {
+        projectRepo: { findById: async () => project },
+        workRepo: {
+          findById: async () => works[0],
+          listByProject,
+        },
+        preferences: { getCurrentWorkId: async () => works[0]?.id },
+        documentSync: { countUnpushedRowsForWork: async () => 0 },
+      },
+    } as never);
+    const event = {
+      req: new Request(`https://server.local/api/projects/${PROJECT_ID}/works?status=all`),
+      context: { params: { projectId: PROJECT_ID } },
+      res: { status: 200 },
+    };
+
+    const response = await handler(event as never);
+
+    expect(listByProject).toHaveBeenCalledWith(PROJECT_ID, undefined);
+    expect(response).toMatchObject({
+      value: {
+        works: [{ id: "active" }, { id: "archived" }],
       },
     });
   });
