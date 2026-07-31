@@ -504,6 +504,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       return resolveWorkMembership(
         {
           workRepo: ports.workRepo,
+          preferences: ports.preferences,
           threadWorks: ports.threadRepos.threadWorks,
         },
         input,

@@ -57,8 +57,8 @@ export interface WorkRepository {
   /** Soft-deletes only when no live thread membership or unreviewed Work draft remains. */
   softDelete(id: WorkId): Promise<void>;
   /**
-   * Provision the project's sole active Work when none exists. Refuses multiple
-   * active Works; selection policy belongs to resolveDefaultWork.
+   * Provision a concretely named Work only when the project has none. Current
+   * selection policy belongs to resolveCurrentWork.
    */
   ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work>;
   touch(id: WorkId): Promise<void>;

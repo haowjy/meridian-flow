@@ -25,6 +25,7 @@ export default defineEventHandler(async (event) => {
       {
         projects: projectRepo,
         workRepo,
+        preferences: app.preferences,
         threads: repos.threads,
         threadWorks: repos.threadWorks,
         transaction: repos.transaction,
