@@ -225,6 +225,36 @@ export function pointerHoldsTableChrome(
   return boxHolds(tableHoverZone(boxOf(table)), clientX, clientY);
 }
 
+/**
+ * Between a held cell and a freshly hit one, the reveal stays with the held
+ * cell — true only for tables nested in another table's cell.
+ *
+ * The gap beside a NESTED table's frame is on no cell of that table, so the
+ * hit test there answers with the outer cell the table is nested in: a fresh
+ * hit that would re-anchor every grip to the outer table while the writer is
+ * mid-travel to an inner grip. The held cell keeps the reveal while the fresh
+ * cell's table CONTAINS the held cell's table and the pointer is still on the
+ * held table's hover surface. Any other fresh cell wins: grips follow the
+ * pointer cell to cell within one table, and hovering a nested table's cell
+ * moves the reveal inward.
+ *
+ * Ancestry is `contains`, never a depth count, so a depth-3 hold outranks a
+ * depth-2 hit and a depth-1 hit alike, for exactly as long as its own zone
+ * holds the pointer.
+ */
+export function nestedCellKeepsReveal(
+  heldCell: HTMLElement,
+  hitCell: HTMLElement,
+  clientX: number,
+  clientY: number,
+): boolean {
+  const heldTable = heldCell.closest("table");
+  const hitTable = hitCell.closest("table");
+  if (!heldTable || !hitTable || hitTable === heldTable) return false;
+  if (!hitTable.contains(heldTable)) return false;
+  return pointerHoldsTableChrome(heldCell, clientX, clientY);
+}
+
 function boxOf(element: Element): Box {
   const rect = element.getBoundingClientRect();
   return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
