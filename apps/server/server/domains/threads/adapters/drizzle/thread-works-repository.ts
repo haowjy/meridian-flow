@@ -17,7 +17,8 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
         const [thread] = await activeDb
           .select({ projectId: schema.threads.projectId })
           .from(schema.threads)
-          .where(eq(schema.threads.id, threadId));
+          .where(eq(schema.threads.id, threadId))
+          .for("update");
         if (!thread) {
           throw new Error("Thread membership requires an existing thread");
         }

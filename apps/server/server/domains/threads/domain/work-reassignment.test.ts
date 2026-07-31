@@ -39,8 +39,8 @@ describe("reassignThreadPrimaryWork", () => {
     expect(addMembership).not.toHaveBeenCalled();
   });
 
-  it("atomically replaces the primary membership after review", async () => {
-    let primaryWorkId = OLD_WORK_ID;
+  it("requests primary membership replacement after review", async () => {
+    const addMembership = vi.fn();
 
     await expect(
       reassignThreadPrimaryWork(
@@ -50,15 +50,13 @@ describe("reassignThreadPrimaryWork", () => {
             hasUnreviewedDraft: async () => false,
           },
           threadWorks: {
-            findPrimary: async () => ({ workId: primaryWorkId }),
-            async addMembership(_threadId: string, workId: WorkId, isPrimary: boolean) {
-              if (isPrimary) primaryWorkId = workId;
-            },
+            findPrimary: async () => ({ workId: OLD_WORK_ID }),
+            addMembership,
           } as never,
         },
         { threadId: THREAD_ID, projectId: PROJECT_ID, workId: NEW_WORK_ID },
       ),
     ).resolves.toEqual({ workId: NEW_WORK_ID });
-    expect(primaryWorkId).toBe(NEW_WORK_ID);
+    expect(addMembership).toHaveBeenCalledWith(THREAD_ID, NEW_WORK_ID, true);
   });
 });
