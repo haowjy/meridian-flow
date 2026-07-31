@@ -2463,8 +2463,8 @@ msgid "Table"
 msgstr "Table"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-msgid "Table cells hold plain paragraphs."
-msgstr "Table cells hold plain paragraphs."
+#~ msgid "Table cells hold plain paragraphs."
+#~ msgstr "Table cells hold plain paragraphs."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table controls"

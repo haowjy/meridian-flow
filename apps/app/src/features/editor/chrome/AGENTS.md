@@ -187,7 +187,7 @@ is ever painted outside the editor".
   every refused row is standing information, and three of them turn a menu into
   a paragraph. Rows wear `aria-disabled`, never Radix's `disabled`, which takes
   the hover and focus path away and the tooltip with it. One shared note above
-  a whole list — the slash menu's — is a different thing and stays.
+  a whole list is a different thing and stays.
 - No raw color. Chip and row styling lives in the stylesheet beside the
   component that renders it; token classes elsewhere.
 

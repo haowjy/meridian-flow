@@ -9,13 +9,14 @@
  * fix — and neither is visible from the trigger's own tests.
  */
 import { Editor, type JSONContent } from "@tiptap/core";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
 import { defaultDiagramProvider } from "../../diagrams";
 import { type ObjectAt, registerObjectEngagement } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
-import { applySlashCommand, slashRefusals } from "./slash-insertion";
+import { applySlashCommand } from "./slash-insertion";
 
 let editor: Editor | null = null;
 
@@ -119,6 +120,51 @@ function cellAroundCaret(instance: Editor): unknown {
 
 function blockTypes(instance: Editor): string[] {
   return instance.state.doc.content.content.map((node) => node.type.name);
+}
+
+/** What each catalog entry leaves standing in a cell (the diagram is a fence). */
+const CELL_LANDINGS: Record<(typeof BLOCK_ENTRIES)[number], string> = {
+  "heading-1": "heading",
+  "heading-2": "heading",
+  "heading-3": "heading",
+  "bullet-list": "bullet_list",
+  "numbered-list": "ordered_list",
+  quote: "blockquote",
+  divider: "horizontal_rule",
+  table: "table",
+  diagram: "code_block",
+  code: "code_block",
+};
+
+/** The first cell in document order, with its outer document range. */
+function firstCell(instance: Editor): { node: PMNode; from: number; to: number } {
+  let found: { node: PMNode; from: number; to: number } | null = null;
+  instance.state.doc.descendants((node, pos) => {
+    if (found) return false;
+    const role = node.type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") {
+      found = { node, from: pos, to: pos + node.nodeSize };
+    }
+    return !found;
+  });
+  if (!found) throw new Error("fixture has no cell");
+  return found;
+}
+
+function firstCellBlockTypes(instance: Editor): string[] {
+  return firstCell(instance).node.content.content.map((node) => node.type.name);
+}
+
+function firstCellText(instance: Editor): string {
+  return firstCell(instance).node.textContent;
+}
+
+/** Positional, not structural: whatever the entry made, the caret is in the cell. */
+function expectCaretInFirstCell(instance: Editor, entry: string): void {
+  const { from, to } = firstCell(instance);
+  const head = instance.state.selection.head;
+  expect(head, `${entry} caret`).toBeGreaterThan(from);
+  expect(head, `${entry} caret`).toBeLessThan(to);
 }
 
 describe("slash insertion semantics", () => {
@@ -359,15 +405,50 @@ describe("slash insertion out of nested structures", () => {
     expect(caretChain(instance)).toEqual(["table", "table_row", "table_cell", "heading"]);
   });
 
-  it("keeps every schema-valid entry choosable in a cell", () => {
-    for (const text of ["portrait ", ""]) {
+  /**
+   * The whole catalog, applied where the schema now says it may go: each block
+   * entry lands INSIDE the cell (teleport rule), the sentence the writer was
+   * standing in is untouched, and the caret stays within the cell's own range
+   * so the pick never walks the writer out of the structure they were in.
+   */
+  it("lands every block entry inside the cell, after the cell's prose", () => {
+    for (const id of BLOCK_ENTRIES) {
       const { editor: instance, range } = mountAround([
-        { type: "table", content: [row(cell(`${text}${TRIGGER}`), cell("notes"))] },
+        { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
       ]);
-      const refusals = slashRefusals(instance, range, [item("image"), ...BLOCK_ENTRIES.map(item)]);
+      const applied = applySlashCommand(instance, range, item(id), catalog());
 
-      expect(refusals.get("image"), `in a cell saying "${text}"`).toBeUndefined();
-      expect(refusals.size, `in a cell saying "${text}"`).toBe(0);
+      expect(applied, id).toBe(true);
+      expect(blockTypes(instance), id).toEqual(["table"]);
+      const landed = firstCellBlockTypes(instance);
+      const expected =
+        id === "divider"
+          ? ["paragraph", "horizontal_rule", "paragraph"]
+          : ["paragraph", CELL_LANDINGS[id]];
+      expect(landed, id).toEqual(expected);
+      expect(firstCellText(instance), id).toContain("rank ");
+      expectCaretInFirstCell(instance, id);
+      instance.destroy();
+    }
+  });
+
+  /**
+   * The other half of §5.7 in a cell: an empty cell paragraph CONVERTS, so the
+   * cell then holds exactly what the writer asked for — including a nested
+   * table — and the caret is ready to work inside it.
+   */
+  it("converts an empty cell's paragraph in place, for every block entry", () => {
+    for (const id of BLOCK_ENTRIES) {
+      const { editor: instance, range } = mountAround([
+        { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
+      ]);
+      const applied = applySlashCommand(instance, range, item(id), catalog());
+
+      expect(applied, id).toBe(true);
+      expect(blockTypes(instance), id).toEqual(["table"]);
+      const expected = id === "divider" ? ["horizontal_rule", "paragraph"] : [CELL_LANDINGS[id]];
+      expect(firstCellBlockTypes(instance), id).toEqual(expected);
+      expectCaretInFirstCell(instance, id);
       instance.destroy();
     }
   });
@@ -409,27 +490,20 @@ describe("slash insertion out of nested structures", () => {
     expect(instance.state.doc.textContent).toBe("");
   });
 
-  it("reports no table-cell refusal and converts empty cell prose in place", () => {
-    const inCell = mountAround([{ type: "table", content: [row(cell(TRIGGER), cell("skill"))] }]);
-    const cellRefusals = slashRefusals(inCell.editor, inCell.range, [
-      item("heading-1"),
-      item("code"),
-      item("table"),
+  it("opens a nested table ready to work: caret in its first cell", () => {
+    const { editor: instance, range } = mountAround([
+      { type: "table", content: [row(cell(TRIGGER), cell("skill"))] },
     ]);
-    expect(cellRefusals.size).toBe(0);
-    expect(applySlashCommand(inCell.editor, inCell.range, item("heading-1"), catalog())).toBe(true);
-    expect(
-      inCell.editor.state.doc.firstChild?.firstChild?.firstChild?.content.content.map(
-        (node) => node.type.name,
-      ),
-    ).toEqual(["heading"]);
-    expect(caretChain(inCell.editor)).toEqual(["table", "table_row", "table_cell", "heading"]);
-    inCell.editor.destroy();
-
-    const inProse = mountWithTrigger("She stepped through. ", "/x");
-    expect(
-      slashRefusals(inProse.editor, inProse.range, [item("heading-1"), item("table")]).size,
-    ).toBe(0);
+    expect(applySlashCommand(instance, range, item("table"), catalog())).toBe(true);
+    expect(caretChain(instance)).toEqual([
+      "table",
+      "table_row",
+      "table_cell",
+      "table",
+      "table_row",
+      "table_header",
+      "paragraph",
+    ]);
   });
 
   it("carries a text entry out of a list too", () => {

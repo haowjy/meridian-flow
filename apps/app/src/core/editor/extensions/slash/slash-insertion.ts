@@ -128,46 +128,13 @@ function diagramInsertion(): SlashInsertion {
   });
 }
 
-/**
- * Why each entry cannot apply where the trigger sits, computed once against
- * the document a pick would act on. An id absent from the map works here.
- *
- * The menu asks this to grey rows and say why (law 5): a writer in a table
- * cell must learn that the cell holds plain paragraphs, not watch nine rows do
- * nothing or, worse, watch one throw their caret outside the table.
- */
-export function slashRefusals(
-  editor: Editor,
-  range: Range,
-  items: readonly SlashCommandItem[],
-): ReadonlyMap<SlashCommandId, SlashRefusal> {
-  const landing = editor.state.tr.delete(range.from, range.to);
-  const pos = landing.mapping.map(range.from);
-  const refusals = new Map<SlashCommandId, SlashRefusal>();
-
-  for (const item of items) {
-    const target = slashTarget(landing.doc, pos, SLASH_INSERTIONS[item.id]);
-    if (target?.mode === "blocked") refusals.set(item.id, target.reason);
-  }
-  return refusals;
-}
-
-/**
- * Why an entry cannot apply where the caret is. The spelling is the toolbar's
- * (`BlockTypeRefusalReason`) so one refusal reads the same wherever a writer
- * meets it; the surface renders it through that module's copy.
- */
-export type SlashRefusal = "table-cell";
-
 type SlashTarget =
   /** The block the writer typed `/` in becomes the new node. */
   | { mode: "convert"; from: number; to: number; block: SlashBlock }
   /** The block keeps its text and the new node lands after it. */
   | { mode: "insert-after"; pos: number; block: SlashBlock }
   /** A picture stands exactly where the trigger was, among the same words. */
-  | { mode: "inline"; pos: number }
-  /** Nowhere this entry may land without leaving the writer's structure. */
-  | { mode: "blocked"; reason: SlashRefusal };
+  | { mode: "inline"; pos: number };
 
 /**
  * What this entry would do at this position, or null when the schema holds
@@ -203,7 +170,8 @@ function inlineImageTarget(doc: PMNode, pos: number): SlashTarget | null {
  * the quote.
  *
  * A table is absent for the opposite reason: a cell is never escaped at all
- * (see `cellFloor`), so there is nothing to walk out of.
+ * (see `cellFloor`), so there is nothing to walk out of — a cell holds any
+ * block, and an entry asked for inside one lands inside it.
  *
  * Only the insert-after walk consults this. Convert cannot reach inside a list
  * item, which must open with a paragraph, so the schema refuses it there.
@@ -229,12 +197,14 @@ const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
  * The walk has a ceiling as well as a direction: **a table cell is never left**
  * (ruling). §5.7 lets `/` open in a cell, and a pick that answered by inserting
  * after the whole table would yank the caret out of the structure the writer is
- * standing in — the deepest owner, law 4. A Meridian cell holds one plain
- * paragraph, so most entries have nowhere to go there and say so instead.
+ * standing in — the deepest owner, law 4. The ceiling costs nothing now: a
+ * cell holds any block (`block+`), so the walk always finds a level inside the
+ * cell before it reaches the floor, and every entry lands IN the cell. Nothing
+ * but `canReplaceWith` is consulted, so the menu can never drift from the
+ * schema.
  *
  * Returns null only when nothing from the caret up to the document will hold
- * the node, which no trigger position can produce; blocked is the refusal a
- * writer can read.
+ * the node, which no trigger position can produce.
  */
 function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget | null {
   const type = doc.type.schema.nodes[block.node.type as string];
@@ -262,7 +232,7 @@ function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget |
       return { mode: "insert-after", pos: $pos.after(level), block };
     }
   }
-  return floor > 0 ? { mode: "blocked", reason: "table-cell" } : null;
+  return null;
 }
 
 /**
@@ -296,12 +266,12 @@ export function applySlashCommand(
   // Decided against the document the delete will produce, and decided BEFORE
   // anything is dispatched: TipTap dispatches a chain's transaction even when
   // one of its commands declines, so resolving the target inside the chain
-  // would let a refusal eat the trigger text and insert nothing in its place.
-  // A refusal therefore costs the writer nothing — not even the `/` they typed.
+  // would let a decline eat the trigger text and insert nothing in its place.
+  // A decline therefore costs the writer nothing — not even the `/` they typed.
   const deleted = editor.state.tr.delete(range.from, range.to);
   const at = deleted.mapping.map(range.from);
   const target = slashTarget(deleted.doc, at, SLASH_INSERTIONS[item.id]);
-  if (!target || target.mode === "blocked") return false;
+  if (!target) return false;
 
   if (target.mode === "inline") {
     const consumed = editor.chain().focus().deleteRange(range).run();
@@ -359,13 +329,23 @@ function landCaret(tr: Transaction, start: number, size: number, caret: "inside"
   const forwardFrom = caret === "inside" ? start + 1 : end;
   const found = Selection.findFrom(tr.doc.resolve(forwardFrom), 1, true);
 
-  if (found) {
+  // The teleport rule holds for the caret too. A forward search from the end
+  // of a cell's last block finds the NEXT cell's text, and a divider asked for
+  // in a cell would walk the writer into a cell they never touched. A landing
+  // outside the cell reads as "nothing ahead", and the fallback paragraph
+  // below is the line to keep typing on — inside the cell.
+  const $start = tr.doc.resolve(start);
+  const floor = cellFloor($start);
+  const escaped = found !== null && floor > 0 && found.from > $start.end(floor);
+
+  if (found && !escaped) {
     tr.setSelection(found).scrollIntoView();
     return;
   }
 
   // Nothing to type into ahead: a divider that landed at the end of the
-  // document. The writer asked for a break, not for a dead end.
+  // document, or against its cell's wall. The writer asked for a break, not
+  // for a dead end.
   const paragraph = tr.doc.type.schema.nodes.paragraph?.createAndFill();
   if (!paragraph) return;
   tr.insert(end, paragraph);
