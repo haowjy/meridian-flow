@@ -92,6 +92,7 @@ describe("resolveWorkMembership", () => {
   it("creates a concrete default only after every earlier source is absent", async () => {
     const created = work("created");
     const ensureDefaultForProject = vi.fn(async () => created);
+    const setCurrentWorkId = vi.fn();
 
     await expect(
       resolveWorkMembership(
@@ -100,12 +101,16 @@ describe("resolveWorkMembership", () => {
             listByProject: async () => [],
             ensureDefaultForProject,
           } as never,
-          preferences: { getCurrentWorkId: async () => null } as never,
+          preferences: {
+            getCurrentWorkId: async () => null,
+            setCurrentWorkId,
+          } as never,
           threadWorks: { addMembership: async () => {} } as never,
         },
         { threadId: THREAD_ID, projectId: PROJECT_ID, project, userId: USER_ID },
       ),
     ).resolves.toBe(created.id);
     expect(ensureDefaultForProject).toHaveBeenCalledWith(PROJECT_ID, "Novel");
+    expect(setCurrentWorkId).toHaveBeenCalledWith(USER_ID, PROJECT_ID, created.id);
   });
 });
