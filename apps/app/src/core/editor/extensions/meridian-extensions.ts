@@ -246,7 +246,7 @@ export const MeridianTableRow = TableRow.extend({
 
 export const MeridianTableHeader = TableHeader.extend({
   name: "table_header",
-  content: "paragraph",
+  content: "block+",
 
   addAttributes() {
     return tableCellAttributes(this.parent);
@@ -255,7 +255,7 @@ export const MeridianTableHeader = TableHeader.extend({
 
 export const MeridianTableCell = TableCell.extend({
   name: "table_cell",
-  content: "paragraph",
+  content: "block+",
 
   addAttributes() {
     return tableCellAttributes(this.parent);

@@ -117,9 +117,9 @@ const customNodes = {
     attrs: { checked: { default: null } },
   },
 
-  // GFM table cells are single-line inline markdown; one paragraph is the
-  // structural representation TipTap table commands expect. colspan/rowspan/
-  // colwidth stay because prosemirror-tables editing commands use them internally.
+  // Cells are isolating mini-documents: any block that belongs in the manuscript
+  // can also belong in a cell. colspan/rowspan/colwidth stay because
+  // prosemirror-tables editing commands use them internally.
   table: {
     attrs: { align: layoutAlignAttr },
     content: "table_row+",
@@ -134,7 +134,7 @@ const customNodes = {
   },
 
   table_header: {
-    content: "paragraph",
+    content: "block+",
     tableRole: "header_cell",
     isolating: true,
     attrs: {
@@ -146,7 +146,7 @@ const customNodes = {
   },
 
   table_cell: {
-    content: "paragraph",
+    content: "block+",
     tableRole: "cell",
     isolating: true,
     attrs: {
