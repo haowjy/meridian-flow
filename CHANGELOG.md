@@ -13,6 +13,9 @@
 - `apps/server`: Work create, edit, archive, restore, delete, current selection,
   thread listing, and conversation move routes are available. Moving a
   conversation waits until its pending draft is reviewed.
+- `apps/server`: new conversations attach by explicit Work, parent Work, writer
+  preference, then default. Subagents, forks, and handoffs cannot drift out of
+  their parent's Work.
 
 - `apps/app`: the diagram lightbox now opens as a near-fullscreen workspace
   (94vw by 88svh) instead of a fixed 960 by 480 window, so a diagram fits at
