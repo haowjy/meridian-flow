@@ -2,7 +2,6 @@
 
 const dialectSyntax = {
   fence: "```",
-  pipeHardBreak: "one\\\ntwo",
   htmlTable: {
     open: "<table>",
     close: "</table>",
@@ -13,109 +12,37 @@ const dialectSyntax = {
   internalAssetPrefix: "asset:",
 } as const;
 
-const htmlTableEscalations = [
-  {
-    reason: "`rowspan` or `colspan`",
-    wire: [
-      dialectSyntax.htmlTable.open,
-      "  <thead>",
-      "    <tr>",
-      '      <th colspan="2">Name</th>',
-      '      <th rowspan="2" align="right">Rank</th>',
-      "    </tr>",
-      "  </thead>",
-      "  <tbody>",
-      "    <tr>",
-      "      <td>Iron</td>",
-      "      <td>Body</td>",
-      "    </tr>",
-      "  </tbody>",
-      dialectSyntax.htmlTable.close,
-    ].join("\n"),
-  },
-  {
-    reason: "literal multi-line cell text",
-    wire: [
-      dialectSyntax.htmlTable.open,
-      "  <thead>",
-      "    <tr>",
-      "      <th>Note</th>",
-      "    </tr>",
-      "  </thead>",
-      "  <tbody>",
-      "    <tr>",
-      `      <td>line one${dialectSyntax.htmlLiteralNewline}line two</td>`,
-      "    </tr>",
-      "  </tbody>",
-      dialectSyntax.htmlTable.close,
-    ].join("\n"),
-  },
-  {
-    reason: "no header row",
-    wire: [
-      dialectSyntax.htmlTable.open,
-      "  <tbody>",
-      "    <tr>",
-      `      <td>Skill${dialectSyntax.htmlHardBreak}Type</td>`,
-      "      <td>Rank</td>",
-      "    </tr>",
-      "    <tr>",
-      "      <td>Iron Body</td>",
-      "      <td>7</td>",
-      "    </tr>",
-      "  </tbody>",
-      dialectSyntax.htmlTable.close,
-    ].join("\n"),
-  },
-  {
-    reason: "mixed header and body cells in one row",
-    wire: [
-      dialectSyntax.htmlTable.open,
-      "  <tbody>",
-      "    <tr>",
-      "      <th>Skill</th>",
-      "      <td>Iron Body</td>",
-      "    </tr>",
-      "  </tbody>",
-      dialectSyntax.htmlTable.close,
-    ].join("\n"),
-  },
-  {
-    reason: "ragged rows",
-    wire: [
-      dialectSyntax.htmlTable.open,
-      "  <thead>",
-      "    <tr>",
-      "      <th>Skill</th>",
-      "      <th>Rank</th>",
-      "    </tr>",
-      "  </thead>",
-      "  <tbody>",
-      "    <tr>",
-      "      <td>Iron Body</td>",
-      "    </tr>",
-      "  </tbody>",
-      dialectSyntax.htmlTable.close,
-    ].join("\n"),
-  },
-  {
-    reason: "per-cell alignment that is not one column alignment",
-    wire: [
-      dialectSyntax.htmlTable.open,
-      "  <thead>",
-      "    <tr>",
-      '      <th align="left">Value</th>',
-      "    </tr>",
-      "  </thead>",
-      "  <tbody>",
-      "    <tr>",
-      '      <td align="right">7</td>',
-      "    </tr>",
-      "  </tbody>",
-      dialectSyntax.htmlTable.close,
-    ].join("\n"),
-  },
-] as const;
+const tableSpelling = {
+  ingressNote: "GFM pipe tables are understood on input but never echoed.",
+  wire: [
+    "<table>",
+    "  <thead>",
+    "    <tr>",
+    "      <th>",
+    "        <p>Skill</p>",
+    "      </th>",
+    "      <th>",
+    "        <p>Details</p>",
+    "      </th>",
+    "    </tr>",
+    "  </thead>",
+    "  <tbody>",
+    "    <tr>",
+    "      <td>",
+    "        <p>Iron Body</p>",
+    "      </td>",
+    "      <td>",
+    '        <ul data-tight="false">',
+    "          <li>",
+    "            <p>Rank 7</p>",
+    "          </li>",
+    "        </ul>",
+    "      </td>",
+    "    </tr>",
+    "  </tbody>",
+    "</table>",
+  ].join("\n"),
+} as const;
 
 function layoutSpelling(opening: string, body: string) {
   return {
@@ -130,9 +57,34 @@ const layoutSpellings = [
   layoutSpelling(
     '<Layout widths="120,,80">',
     [
-      "  | Stat | Detail | Value |",
-      "  | ---- | ------ | ----: |",
-      "  | STR  | Power  |    15 |",
+      "  <table>",
+      "    <thead>",
+      "      <tr>",
+      "        <th>",
+      "          <p>Stat</p>",
+      "        </th>",
+      "        <th>",
+      "          <p>Detail</p>",
+      "        </th>",
+      "        <th>",
+      "          <p>Value</p>",
+      "        </th>",
+      "      </tr>",
+      "    </thead>",
+      "    <tbody>",
+      "      <tr>",
+      "        <td>",
+      "          <p>STR</p>",
+      "        </td>",
+      "        <td>",
+      "          <p>Power</p>",
+      "        </td>",
+      "        <td>",
+      "          <p>15</p>",
+      "        </td>",
+      "      </tr>",
+      "    </tbody>",
+      "  </table>",
     ].join("\n"),
   ),
 ] as const;
@@ -169,11 +121,7 @@ export const DOCUMENT_DIALECT_CONTRACT = {
       wire: `${dialectSyntax.fence}mermaid\ngraph TD\n  Trial --> Ascension\n${dialectSyntax.fence}`,
     },
   ],
-  pipeTable: {
-    wire: "| Skill     | Rank |\n| :-------- | ---: |\n| Iron Body |    7 |",
-    hardBreakWire: `| Detail    |\n| --------- |\n| ${dialectSyntax.pipeHardBreak} |`,
-  },
-  htmlTableEscalations,
+  table: tableSpelling,
   layouts: layoutSpellings,
   image: {
     assetId: "realm-map",
@@ -191,15 +139,7 @@ export const DOCUMENT_DIALECT_ROUND_TRIP_SPELLINGS = [
     id: `fence-${spelling.language}`,
     wire: spelling.wire,
   })),
-  { id: "table-pipes", wire: DOCUMENT_DIALECT_CONTRACT.pipeTable.wire },
-  {
-    id: "table-pipe-hard-break",
-    wire: DOCUMENT_DIALECT_CONTRACT.pipeTable.hardBreakWire,
-  },
-  ...DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations.map((spelling, index) => ({
-    id: `table-html-${index + 1}`,
-    wire: spelling.wire,
-  })),
+  { id: "table-html", wire: DOCUMENT_DIALECT_CONTRACT.table.wire },
   ...DOCUMENT_DIALECT_CONTRACT.layouts.map((spelling, index) => ({
     id: `layout-${index + 1}`,
     wire: spelling.wire,
@@ -208,9 +148,6 @@ export const DOCUMENT_DIALECT_ROUND_TRIP_SPELLINGS = [
   { id: "image-sized", wire: DOCUMENT_DIALECT_CONTRACT.image.sizedWire },
 ] as const;
 
-const htmlEscalationReasons = DOCUMENT_DIALECT_CONTRACT.htmlTableEscalations
-  .map(({ reason }) => reason)
-  .join(", ");
 const alignmentForms = DOCUMENT_DIALECT_CONTRACT.layouts
   .slice(0, 2)
   .map(({ opening }) => `\`${opening}\``)
@@ -226,11 +163,11 @@ export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   "Meridian adds these wire rules:",
   `- Link to another document as \`${DOCUMENT_DIALECT_CONTRACT.wikilink.wire}\`. The target is the label; \`${DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral}\` is literal text, not a link.`,
   `- Put block code in a language-tagged fence such as \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening} \`\`\`\`. Use \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[1].opening} \`\`\`\` for a diagram.`,
-  `- Keep a table in GFM pipes when it has one header row, rectangular rows, unit cells, consistent per-column alignment, and no literal newline in a cell. Within a pipe cell, use this exact hard-break spelling:\n\n\`\`\`markdown\n${DOCUMENT_DIALECT_CONTRACT.syntax.pipeHardBreak}\n\`\`\``,
-  `- Use raw HTML \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open}\` when a table needs ${htmlEscalationReasons}. In HTML cells, use \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline}\` for a literal newline and \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak}\` for a hard break.`,
+  `- Write every table as raw HTML \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open}\`. Put block children inside each \`<td>\` or \`<th>\`: \`<p>\`, \`<h1>\` through \`<h6>\`, \`<ul>\`, \`<ol>\`, \`<blockquote>\`, \`<pre><code class="language-...">\`, \`<hr />\`, or a nested \`<table>\`. Use \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline}\` for a literal newline and \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak}\` for a hard break. ${DOCUMENT_DIALECT_CONTRACT.table.ingressNote}`,
+  `- Use this table form:\n\n\`\`\`html\n${DOCUMENT_DIALECT_CONTRACT.table.wire}\n\`\`\``,
   `- Wrap exactly one paragraph, heading, or table in ${alignmentForms}, closed by \`${DOCUMENT_DIALECT_CONTRACT.syntax.layoutClose}\`, for block alignment. On a table only, add ${widthsForm} to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.`,
   `- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`${DOCUMENT_DIALECT_CONTRACT.image.wire}\`. Do not emit internal \`${DOCUMENT_DIALECT_CONTRACT.syntax.internalAssetPrefix}\` identifiers or signed URLs.`,
   `- A picture is shown at its own size unless it carries a display width. To give it one, use raw HTML \`${DOCUMENT_DIALECT_CONTRACT.image.sizedWire}\`, where the width is whole pixels. Keep Markdown image syntax for every picture that has no width.`,
   "",
-  "Specialized table, diagram, and link references are a deeper tier. When the harness offers one, load it before uncommon formatting; this core card remains authoritative for wire spelling.",
+  "Specialized diagram and link references are a deeper tier. When the harness offers one, load it before uncommon formatting; this core card remains authoritative for wire spelling.",
 ].join("\n");

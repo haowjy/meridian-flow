@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
+  table cells now hold full block content. Tables serialize as HTML every time
+  while pipe-table imports still parse, and Enter in cell prose splits a
+  paragraph while Shift-Enter keeps the hard break. The collaboration schema is
+  now `0.5.0`.
 - `apps/app`: dragging a picture onto a table's cell border no longer grows
   the table a new column. The drop lands inside the nearest cell's paragraph
   (or refuses when nothing can host it), the drop caret shown during the drag
@@ -83,11 +88,10 @@
   selected object starts a paragraph where the writer is looking
   instead of editing into hidden diagram code.
 - `apps/app`: `/` in a table cell works again. Image is choosable (a
-  picture is an oversized word, and a cell paragraph holds words); block
-  commands stay visible but grey with their reason. The chosen image
-  lands in the asked-from cell even if collaborators edit while the file
-  chooser is open, and refuses honestly if that cell is gone when the
-  chooser returns.
+  picture is an oversized word, and a cell paragraph holds words), and block
+  commands insert inside the cell without escaping it. The chosen image lands
+  in the asked-from cell even if collaborators edit while the file chooser is
+  open, and refuses honestly if that cell is gone when the chooser returns.
 - `apps/app`: the slash and `[[` menus' scroll fade now lives on the list
   that actually scrolls. Top fade only when scrolled down, bottom fade
   only when more items remain, no fade when everything fits, and pinned

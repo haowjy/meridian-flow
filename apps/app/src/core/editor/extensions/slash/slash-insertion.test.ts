@@ -311,14 +311,7 @@ describe("slash insertion out of nested structures", () => {
     expect(instance.state.doc.firstChild?.textContent).toBe("outerinner ");
   });
 
-  /**
-   * Ruling: a cell never teleports. §5.7 lets `/` open in a table cell, but a
-   * pick may not yank the caret out of the structure the writer is standing in
-   * (law 4), and a Meridian cell holds one plain paragraph — so an entry that
-   * cannot live in the cell refuses with a reason (law 5) instead of landing
-   * after the whole table.
-   */
-  it("refuses rather than leaving the cell, from any cell", () => {
+  it("inserts inside the cell without escaping it, from any cell", () => {
     for (const target of ["first", "middle", "last"]) {
       const cells = ["first", "middle", "last"].map((name) =>
         cell(name === target ? `${name} ${TRIGGER}` : name),
@@ -326,35 +319,47 @@ describe("slash insertion out of nested structures", () => {
       const { editor: instance, range } = mountAround([
         { type: "table", content: [row(...cells)] },
       ]);
-      const before = instance.state.doc.toJSON();
       const applied = applySlashCommand(instance, range, item("table"), catalog());
 
-      expect(applied, `from the ${target} cell`).toBe(false);
-      expect(instance.state.doc.toJSON(), `from the ${target} cell`).toEqual(before);
-      expect(cellAroundCaret(instance), `from the ${target} cell`).toBe("cell");
+      expect(applied, `from the ${target} cell`).toBe(true);
+      expect(blockTypes(instance), `from the ${target} cell`).toEqual(["table"]);
+      const targetCell = instance.state.doc.firstChild?.firstChild?.child(
+        ["first", "middle", "last"].indexOf(target),
+      );
+      expect(
+        targetCell?.content.content.map((node) => node.type.name),
+        `from the ${target} cell`,
+      ).toEqual(["paragraph", "table"]);
+      expect(caretChain(instance), `from the ${target} cell`).toEqual([
+        "table",
+        "table_row",
+        "table_cell",
+        "table",
+        "table_row",
+        "table_header",
+        "paragraph",
+      ]);
       instance.destroy();
     }
   });
 
-  it("keeps the caret in the cell when an entry refuses", () => {
+  it("inserts after nonempty cell prose and keeps the caret in the cell", () => {
     const { editor: instance, range } = mountAround([
       { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
     ]);
     const applied = applySlashCommand(instance, range, item("heading-1"), catalog());
 
-    expect(applied).toBe(false);
+    expect(applied).toBe(true);
     expect(blockTypes(instance)).toEqual(["table"]);
-    expect(cellAroundCaret(instance)).toBe("cell");
+    expect(
+      instance.state.doc.firstChild?.firstChild?.firstChild?.content.content.map(
+        (node) => node.type.name,
+      ),
+    ).toEqual(["paragraph", "heading"]);
+    expect(caretChain(instance)).toEqual(["table", "table_row", "table_cell", "heading"]);
   });
 
-  /**
-   * The cell's one legal act. A cell holds one plain paragraph, so every entry
-   * that makes a BLOCK has nowhere to go and says so — but a picture is an
-   * inline atom that same paragraph can hold, and refusing it too left the
-   * writer a menu with nothing in it they could choose. Both halves are one
-   * case because the contract is the pair: one row live, ten truthfully grey.
-   */
-  it("keeps Image choosable in a cell while every block entry refuses", () => {
+  it("keeps every schema-valid entry choosable in a cell", () => {
     for (const text of ["portrait ", ""]) {
       const { editor: instance, range } = mountAround([
         { type: "table", content: [row(cell(`${text}${TRIGGER}`), cell("notes"))] },
@@ -362,10 +367,7 @@ describe("slash insertion out of nested structures", () => {
       const refusals = slashRefusals(instance, range, [item("image"), ...BLOCK_ENTRIES.map(item)]);
 
       expect(refusals.get("image"), `in a cell saying "${text}"`).toBeUndefined();
-      expect(
-        Object.fromEntries(BLOCK_ENTRIES.map((id) => [id, refusals.get(id)])),
-        `in a cell saying "${text}"`,
-      ).toEqual(Object.fromEntries(BLOCK_ENTRIES.map((id) => [id, "table-cell"])));
+      expect(refusals.size, `in a cell saying "${text}"`).toBe(0);
       instance.destroy();
     }
   });
@@ -407,16 +409,21 @@ describe("slash insertion out of nested structures", () => {
     expect(instance.state.doc.textContent).toBe("");
   });
 
-  it("names the refusal so the menu can render it", () => {
-    const inCell = mountAround([
-      { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
-    ]);
+  it("reports no table-cell refusal and converts empty cell prose in place", () => {
+    const inCell = mountAround([{ type: "table", content: [row(cell(TRIGGER), cell("skill"))] }]);
     const cellRefusals = slashRefusals(inCell.editor, inCell.range, [
       item("heading-1"),
       item("code"),
       item("table"),
     ]);
-    expect([...cellRefusals.values()]).toEqual(["table-cell", "table-cell", "table-cell"]);
+    expect(cellRefusals.size).toBe(0);
+    expect(applySlashCommand(inCell.editor, inCell.range, item("heading-1"), catalog())).toBe(true);
+    expect(
+      inCell.editor.state.doc.firstChild?.firstChild?.firstChild?.content.content.map(
+        (node) => node.type.name,
+      ),
+    ).toEqual(["heading"]);
+    expect(caretChain(inCell.editor)).toEqual(["table", "table_row", "table_cell", "heading"]);
     inCell.editor.destroy();
 
     const inProse = mountWithTrigger("She stepped through. ", "/x");

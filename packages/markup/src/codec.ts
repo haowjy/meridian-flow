@@ -111,6 +111,22 @@ function buildMarkupCodec(
   const stringifyMarkdown = (root: MdastRoot): string =>
     stringifyProcessor.stringify(root as Parameters<typeof stringifyProcessor.stringify>[0]);
 
+  const parseBlocks = (content: string, baseCtx: ParseContext): PMNode[] => {
+    const source = preprocess(content);
+    const runtime = makeRuntime(source);
+    const ctx = withRuntime<ParseContext>(
+      { schema: baseCtx.schema, assetPathResolver: baseCtx.assetPathResolver },
+      runtime,
+    );
+    const tree = postParsers.reduce(
+      (current, hook) => hook(current),
+      parsePreparedMarkdown(source),
+    );
+    return tree.children
+      .map((child) => parseBlockAst(child, ctx))
+      .filter((node): node is PMNode => node !== null);
+  };
+
   const makeRuntime = (source: string): CodecRuntime => ({
     source,
     schema,
@@ -118,6 +134,7 @@ function buildMarkupCodec(
     blockMap,
     markMap,
     parseMarkdown,
+    parseBlocks,
     stringifyMarkdown,
     serializeBlock: serializeWithHooks,
   });
@@ -158,16 +175,7 @@ function buildMarkupCodec(
       if (content.trim().length === 0) {
         return { blocks: [schema.node("paragraph")] };
       }
-      const source = preprocess(content);
-      const runtime = makeRuntime(source);
-      const ctx = withRuntime<ParseContext>({ schema, assetPathResolver }, runtime);
-      const tree = postParsers.reduce(
-        (current, hook) => hook(current),
-        parsePreparedMarkdown(source),
-      );
-      const parsed = tree.children
-        .map((child) => parseBlockAst(child, ctx))
-        .filter((node): node is PMNode => node !== null);
+      const parsed = parseBlocks(content, { schema, assetPathResolver });
       return { blocks: parsed.length > 0 ? parsed : [schema.node("paragraph")] };
     },
 

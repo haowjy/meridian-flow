@@ -135,6 +135,22 @@ function columnCounts(current: Editor): number[] {
   return counts;
 }
 
+function expectOnlyTableStructure(current: Editor): void {
+  current.state.doc.descendants((node) => {
+    if (node.type.name === "table") {
+      node.forEach((child) => {
+        expect(child.type.name).toBe("table_row");
+      });
+    }
+    if (node.type.name === "table_row") {
+      node.forEach((child) => {
+        expect(child.type.spec.tableRole).toMatch(/^(?:cell|header_cell)$/);
+      });
+    }
+    return true;
+  });
+}
+
 function imageSlice(current: Editor, imagePos: number): Slice {
   const image = current.state.doc.nodeAt(imagePos);
   if (!image) throw new Error("no image at position");
@@ -170,12 +186,12 @@ describe("resolveTableDrop", () => {
     expect(decision).toEqual({ kind: "default" });
   });
 
-  it("snaps a cell-boundary position into that cell's paragraph, never a row child", () => {
+  it("snaps a cell-boundary position into that cell's paragraph", () => {
     const current = createTableEditor();
     const shape = docShape(current);
     // Just inside B2, before its paragraph: the exact resolution the live
-    // repro produced (parent table_cell, offset 0). PM's own dropPoint answers
-    // a table_row child here — the position that manufactured a fourth column.
+    // repro produced (parent table_cell, offset 0). Under block+ PM's own
+    // dropPoint keeps this payload inside the cell too.
     const cellPos = shape.cellPositions[2][1];
     const rawPos = cellPos + 1;
     const $raw = current.state.doc.resolve(rawPos);
@@ -184,7 +200,7 @@ describe("resolveTableDrop", () => {
     const pmAnswer = dropPoint(current.state.doc, rawPos, slice);
     expect(pmAnswer).not.toBeNull();
     if (pmAnswer === null) throw new Error("unreachable");
-    expect(current.state.doc.resolve(pmAnswer).parent.type.name).toBe("table_row");
+    expect(current.state.doc.resolve(pmAnswer).parent.type.name).toBe("table_cell");
 
     // Pointer sits on the border between B1 and B2 (x = 100), row 2 (y = 75).
     const decision = resolveTableDrop({
@@ -304,6 +320,7 @@ describe("seamDropTransaction", () => {
     if (!transaction) throw new Error("unreachable");
     current.view.dispatch(transaction);
     expect(columnCounts(current)).toEqual([3, 3, 3]);
+    expectOnlyTableStructure(current);
 
     // The image stands in the target cell's paragraph now.
     const after = docShape(current);
@@ -370,6 +387,7 @@ describe("seamDropTransaction", () => {
     // both keep the grid; a fourth column is the one forbidden outcome.
     if (transaction) current.view.dispatch(transaction);
     expect(columnCounts(current)).toEqual([3, 3, 3]);
+    expectOnlyTableStructure(current);
   });
 });
 
