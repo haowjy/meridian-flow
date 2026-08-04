@@ -1,5 +1,5 @@
 /** LocalEventSink queue bounds and serialized mirror behavior. */
-import { mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -316,28 +316,5 @@ describe("LocalEventSink", () => {
     ]);
     expect(sizes.every(({ size }) => size <= 300)).toBe(true);
     expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(600);
-  });
-
-  it("never steals a stale-looking lock from a live writer", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "meridian-local-event-sink-"));
-    directories.push(directory);
-    const lockPath = path.join(directory, ".events-jsonl.lock");
-    const owner = `${process.pid}:live-owner`;
-    await writeFile(lockPath, owner);
-    await utimes(lockPath, new Date(0), new Date(0));
-    const now = vi.spyOn(Date, "now").mockReturnValueOnce(100_000).mockReturnValue(103_000);
-    const sink = new LocalEventSink({
-      dir: directory,
-      segmentBytes: 300,
-      maxBytes: 600,
-      stdout: { write: () => true, once: vi.fn() },
-    });
-
-    sink.emit(event(1));
-    await sink.flush();
-
-    expect(await readFile(lockPath, "utf8")).toBe(owner);
-    expect((await readdir(directory)).filter((file) => file.endsWith(".jsonl"))).toEqual([]);
-    now.mockRestore();
   });
 });

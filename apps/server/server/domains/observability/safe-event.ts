@@ -17,10 +17,7 @@ const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 /** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set(["firstOutputMs", "inputTokens", "outputTokens"]);
-const SAFE_PAYLOAD_STRING_KEYS = new Set([
-  "action",
-  "command",
-  "direction",
+const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "deletedNodeTypes",
   "documentId",
   "documentIds",
@@ -28,18 +25,11 @@ const SAFE_PAYLOAD_STRING_KEYS = new Set([
   "field",
   "fields",
   "gatewayCallId",
-  "kind",
-  "level",
   "logPrefix",
   "method",
   "model",
-  "name",
-  "originType",
-  "outcome",
-  "phase",
   "projectId",
   "provider",
-  "reason",
   "requestId",
   "responseId",
   "responseTransactionId",
@@ -48,17 +38,61 @@ const SAFE_PAYLOAD_STRING_KEYS = new Set([
   "route",
   "schemaVersion",
   "sessionId",
-  "source",
-  "status",
   "threadId",
   "toolCallId",
   "toolName",
   "toolUseId",
-  "transport",
   "turnId",
   "workId",
   "yjsSpans",
 ]);
+const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
+  action: new Set(["flush_then_exit", "logged_continue"]),
+  command: new Set(["create", "diff", "insert", "read", "redo", "replace", "undo"]),
+  direction: new Set(["redo", "undo"]),
+  finishReason: new Set(["end_turn", "error", "max_tokens", "stop_sequence", "tool_use"]),
+  kind: new Set([
+    "agent",
+    "all",
+    "branch",
+    "buffered",
+    "closed",
+    "committing",
+    "human",
+    "latest",
+    "live",
+    "range",
+    "shared",
+    "single",
+    "system",
+    "turn",
+  ]),
+  level: new Set(["debug", "error", "fatal", "info", "trace", "warn"]),
+  originType: new Set(["fork", "handoff"]),
+  outcome: new Set(["cancelled", "error", "ok"]),
+  phase: new Set(["committed", "skeleton", "staged"]),
+  reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
+  source: new Set(["agent", "connection", "local", "redis", "system", "unknown", "writer"]),
+  status: new Set([
+    "active",
+    "cant_undo_dependent",
+    "closed",
+    "committed",
+    "discarded",
+    "expired",
+    "invalid_write",
+    "not_found",
+    "nothing_to_redo",
+    "nothing_to_undo",
+    "reconciled",
+    "redone",
+    "reversed",
+    "rolledBack",
+    "rolledBackDegraded",
+    "success",
+  ]),
+  transport: new Set(["gateway", "http", "thread_ws", "yjs"]),
+};
 const SAFE_ERROR_CODES = new Set([
   "EACCES",
   "EADDRINUSE",
@@ -71,7 +105,13 @@ const SAFE_ERROR_CODES = new Set([
 ]);
 
 function payloadStringIsApproved(key: string, value: string): boolean {
-  return SAFE_PAYLOAD_STRING_KEYS.has(key) && /^[A-Za-z0-9_./:-]+$/.test(value);
+  const enumValues = SAFE_PAYLOAD_ENUM_VALUES[key];
+  if (enumValues) return enumValues.has(value);
+  return (
+    SAFE_PAYLOAD_IDENTIFIER_KEYS.has(key) &&
+    value.length <= MAX_IDENTIFIER_LENGTH &&
+    /^[A-Za-z0-9_./:-]+$/.test(value)
+  );
 }
 
 function redactString(value: string): string {
@@ -233,7 +273,7 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
     return payloadStringIsApproved(key, value) ? redactString(value) : "[redacted]";
   }
   if (typeof value === "number" || typeof value === "boolean") return value;
-  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "bigint") return "[redacted]";
   if (depth > 5) return "[redacted-depth]";
   if (Array.isArray(value)) {
     const items: unknown[] = [];

@@ -218,10 +218,12 @@ function compactEvent(value: unknown): Record<string, unknown> {
 
 export async function queryDebugEvents(
   options: DebugEventsOptions,
-  repoRoot = resolveCurrentRepoRoot(),
+  repoRoot?: string,
 ): Promise<Record<string, unknown>> {
   const deadlineAt = Date.now() + COMMAND_DEADLINE_MS;
-  const origins = resolveOrigins(repoRoot, deadlineAt);
+  const resolvedRepoRoot =
+    repoRoot ?? resolveCurrentRepoRoot(process.cwd(), remainingCommandMs(deadlineAt));
+  const origins = resolveOrigins(resolvedRepoRoot, deadlineAt);
   const login = await request(
     new URL("/api/auth/dev-login", origins.app).toString(),
     {},

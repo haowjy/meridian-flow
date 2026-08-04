@@ -47,17 +47,18 @@ function gitEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-export function runGit(cwd: string, args: string[]): string {
+export function runGit(cwd: string, args: string[], timeout?: number): string {
   return execFileSync("git", args, {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
     env: gitEnv(),
+    ...(timeout === undefined ? {} : { timeout }),
   }).trim();
 }
 
-export function resolveCurrentRepoRoot(cwd = process.cwd()): string {
-  const repoRoot = runGit(cwd, ["rev-parse", "--show-toplevel"]);
+export function resolveCurrentRepoRoot(cwd = process.cwd(), timeout?: number): string {
+  const repoRoot = runGit(cwd, ["rev-parse", "--show-toplevel"], timeout);
   if (!repoRoot) throw new Error(`git did not report a repository root for ${cwd}`);
   return repoRoot;
 }

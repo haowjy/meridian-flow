@@ -60,18 +60,10 @@ describe("sanitizeEventRecord byte boundary", () => {
       name: "test.large",
       correlation: { traceId: "trace-1", threadId: "thread-1" },
       payload: Object.fromEntries(
-        [
-          "documentId",
-          "threadId",
-          "turnId",
-          "projectId",
-          "workId",
-          "responseId",
-          "requestId",
-          "sessionId",
-          "toolUseId",
-          "gatewayCallId",
-        ].map((key) => [key, "x".repeat(1_000)]),
+        Array.from({ length: 10 }, (_, index) => [
+          `group${index}`,
+          { documentIds: Array.from({ length: 20 }, () => "x".repeat(128)) },
+        ]),
       ),
     });
 
@@ -188,6 +180,31 @@ describe("sanitizeEventRecord privacy boundary", () => {
       reason: "[redacted]",
       writerReason: "[redacted]",
     });
+  });
+
+  it("preserves owner-approved categories but rejects token-shaped prose", () => {
+    expect(
+      sanitize({
+        finishReason: "tool_use",
+        outcome: "ok",
+        reason: "dragon_dies_in_chapter_81",
+        phase: "secret_reveal",
+      }),
+    ).toEqual({
+      finishReason: "tool_use",
+      outcome: "ok",
+      reason: "[redacted]",
+      phase: "[redacted]",
+    });
+  });
+
+  it("rejects oversized identifiers and bigint values before serialization", () => {
+    expect(
+      sanitize({
+        documentId: "x".repeat(1_000_000),
+        count: BigInt(`1${"0".repeat(100_000)}`),
+      }),
+    ).toEqual({ documentId: "[redacted]", count: "[redacted]" });
   });
 
   it("revalidates crafted error envelopes instead of trusting token-shaped prose", () => {

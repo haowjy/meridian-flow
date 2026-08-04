@@ -2,18 +2,12 @@
  * Local EventSink: always writes structured JSON events to stdout for platform
  * log capture and optionally mirrors them to `LOG_DIR/YYYY-MM-DD.jsonl` when a
  * log directory is configured. Daily files can be retained for a bounded number
- * of days. Writes are serialized per process.
+ * of days. Writes are serialized in process and mirrored under a cross-process
+ * directory lock.
  */
-import {
-  appendFile as appendFileToDisk,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  stat,
-  unlink,
-} from "node:fs/promises";
+import { appendFile as appendFileToDisk, mkdir, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
+import { lock } from "proper-lockfile";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 import { serializedEventBytes } from "../../safe-event.js";
 
@@ -299,47 +293,25 @@ export class LocalEventSink implements EventSink {
     if (!this.dir) return;
     await mkdir(this.dir, { recursive: true });
     const lockPath = path.join(this.dir, DIRECTORY_LOCK_FILE);
-    const deadline = Date.now() + DIRECTORY_LOCK_WAIT_MS;
-    while (true) {
-      try {
-        const handle = await open(lockPath, "wx");
-        const owner = `${process.pid}:${crypto.randomUUID()}`;
-        try {
-          await handle.writeFile(owner, "utf8");
-          await operation();
-        } finally {
-          await handle.close().catch(() => undefined);
-          const currentOwner = await readFile(lockPath, "utf8").catch(() => "");
-          if (currentOwner === owner) await unlink(lockPath).catch(() => undefined);
-        }
-        return;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        try {
-          const lock = await stat(lockPath);
-          if (Date.now() - lock.mtimeMs > DIRECTORY_LOCK_STALE_MS) {
-            const owner = await readFile(lockPath, "utf8").catch(() => "");
-            const ownerPid = Number(owner.split(":", 1)[0]);
-            let ownerIsAlive = Number.isInteger(ownerPid) && ownerPid > 0;
-            if (ownerIsAlive) {
-              try {
-                process.kill(ownerPid, 0);
-              } catch (ownerError) {
-                ownerIsAlive = (ownerError as NodeJS.ErrnoException).code !== "ESRCH";
-              }
-            }
-            if (!ownerIsAlive) {
-              await unlink(lockPath);
-              continue;
-            }
-          }
-        } catch (lockError) {
-          if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") throw lockError;
-          continue;
-        }
-        if (Date.now() >= deadline) return;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
+    const release = await lock(this.dir, {
+      lockfilePath: lockPath,
+      realpath: false,
+      stale: DIRECTORY_LOCK_STALE_MS,
+      update: DIRECTORY_LOCK_STALE_MS / 3,
+      retries: {
+        retries: DIRECTORY_LOCK_WAIT_MS / 10,
+        factor: 1,
+        minTimeout: 10,
+        maxTimeout: 10,
+        randomize: false,
+      },
+      // A lost best-effort mirror lock must not crash the server asynchronously.
+      onCompromised: () => undefined,
+    });
+    try {
+      await operation();
+    } finally {
+      await release().catch(() => undefined);
     }
   }
 

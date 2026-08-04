@@ -34,6 +34,7 @@
     "nitro": "catalog:",
     "openai": "^6.45.0",
     "postgres": "catalog:",
+    "proper-lockfile": "^4.1.2",
     "prosemirror-model": "^1.25.9",
     "prosemirror-transform": "^1.12.0",
     "semver": "^7.8.5",
@@ -49,6 +50,7 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "4.3.0",
+    "@types/proper-lockfile": "^4.1.4",
     "@types/semver": "^7.7.1",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
