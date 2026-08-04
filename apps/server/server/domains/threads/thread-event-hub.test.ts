@@ -220,9 +220,10 @@ describe("createThreadEventHub fanout", () => {
           level: "error",
           source: "threads.event-hub",
           name: "listener.failed",
-          payload: expect.objectContaining({ message: "socket send failed" }),
+          payload: { error: { class: "Error", category: "unexpected" } },
         }),
       ]),
     );
+    expect(JSON.stringify(eventSink.events)).not.toContain("socket send failed");
   });
 });
