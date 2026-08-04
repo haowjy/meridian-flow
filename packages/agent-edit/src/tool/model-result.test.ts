@@ -1,18 +1,18 @@
 // Verifies the versioned model-result discriminants used by durable recovery.
 import { describe, expect, it } from "vitest";
-import { isAgentEditResult } from "./model-result.js";
+import { isAgentEditResultEnvelope } from "./model-result.js";
 
 describe("agent-edit model result", () => {
   it("rejects states whose phase disagrees with status", () => {
     expect(
-      isAgentEditResult({
+      isAgentEditResultEnvelope({
         schema: "meridian.agent-edit.v1",
         command: "read",
         status: "success",
       }),
     ).toBe(false);
     expect(
-      isAgentEditResult({
+      isAgentEditResultEnvelope({
         schema: "meridian.agent-edit.v1",
         command: "delete",
         status: "not_found",
@@ -23,7 +23,7 @@ describe("agent-edit model result", () => {
 
   it("rejects unknown commands and statuses", () => {
     expect(
-      isAgentEditResult({
+      isAgentEditResultEnvelope({
         schema: "meridian.agent-edit.v1",
         command: "overwrite",
         status: "success",
@@ -31,7 +31,7 @@ describe("agent-edit model result", () => {
       }),
     ).toBe(false);
     expect(
-      isAgentEditResult({
+      isAgentEditResultEnvelope({
         schema: "meridian.agent-edit.v1",
         command: "read",
         status: "pending",

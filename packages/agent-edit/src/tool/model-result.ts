@@ -109,7 +109,21 @@ export function agentEditResultCommand(input: unknown): AgentEditResultCommand {
   return writeCommandName(input) ?? "unknown";
 }
 
-export function isAgentEditResult(input: unknown): input is AgentEditResultV1 {
+type AgentEditResultEnvelope = Record<string, unknown> & {
+  schema: typeof AGENT_EDIT_RESULT_SCHEMA;
+  command: AgentEditResultCommand;
+  status: WriteStatus;
+  phase?: WriteSuccessPhase;
+};
+
+/**
+ * Validates only the durable envelope fields used by recovery.
+ *
+ * Payload fields remain opaque because recovery preserves them rather than
+ * interpreting them. Naming this as an envelope check keeps the type guard
+ * honest instead of claiming arbitrary persisted JSON is a full model result.
+ */
+export function isAgentEditResultEnvelope(input: unknown): input is AgentEditResultEnvelope {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return false;
   const result = input as Record<string, unknown>;
   if (

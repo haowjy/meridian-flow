@@ -63,10 +63,9 @@
  */
 
 import {
-  type AgentEditResultV1,
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
-  isAgentEditResult,
+  isAgentEditResultEnvelope,
   modelConcurrentResult,
   modelResult,
   type ResponseCommitWriteReceipt,
@@ -456,7 +455,9 @@ async function reconcileOrphanedPendingWrites(
       output?: unknown;
       metadata?: { stagedWrite?: unknown };
     } | null;
-    if (content?.metadata?.stagedWrite !== true || !isAgentEditResult(content.output)) continue;
+    if (content?.metadata?.stagedWrite !== true || !isAgentEditResultEnvelope(content.output)) {
+      continue;
+    }
     if (content.output.phase !== "staged") continue;
     await persistUncommittedWriteResult({
       deps,
@@ -700,7 +701,7 @@ async function persistUncommittedWriteResult(input: {
   const message = ["Write did not land.", input.text].join("\n\n");
   const output = toJsonValue(
     modelResult({
-      command: isAgentEditResult(priorOutput) ? priorOutput.command : "unknown",
+      command: isAgentEditResultEnvelope(priorOutput) ? priorOutput.command : "unknown",
       status: "internal_error",
       payload: { message },
     }),
@@ -1233,9 +1234,9 @@ async function* generateEvents(
           if (!content?.output) continue;
 
           const output = content.output;
-          if (!isAgentEditResult(output)) continue;
+          if (!isAgentEditResultEnvelope(output)) continue;
 
-          const updatedOutput: AgentEditResultV1 = {
+          const updatedOutput = {
             ...output,
             concurrent: modelConcurrentResult(boundedEdits),
           };

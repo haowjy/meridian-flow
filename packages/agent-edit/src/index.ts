@@ -59,7 +59,7 @@ export type {
 export {
   AGENT_EDIT_RESULT_SCHEMA,
   agentEditResultCommand,
-  isAgentEditResult,
+  isAgentEditResultEnvelope,
   modelBlockItem,
   modelConcurrentResult,
   modelResult,
