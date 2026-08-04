@@ -136,7 +136,7 @@ async function scenarioReplace(env: DemoEnvironment, docId: string) {
 }
 
 async function scenarioDelete(env: DemoEnvironment, docId: string) {
-  section("5. delete: replace a block with empty content");
+  section("5. delete: remove a block structurally");
   const before = await blocks(env, docId);
   const inserted = before.find((block) => block.text === "A foxfire lantern flared to life.");
   assert(inserted !== undefined, "inserted paragraph should exist before delete");
@@ -145,7 +145,7 @@ async function scenarioDelete(env: DemoEnvironment, docId: string) {
     defaultContext,
   );
   const after = await blocks(env, docId);
-  print(`write(replace in ${inserted.hash}, content="")`, result.text);
+  print(`write(delete in ${inserted.hash})`, result.text);
   print(`block count: ${before.length} -> ${after.length}`, "");
   printBlocks("live doc", after);
   assert(result.text.includes("deleted:"), "delete should report the deleted hash");
