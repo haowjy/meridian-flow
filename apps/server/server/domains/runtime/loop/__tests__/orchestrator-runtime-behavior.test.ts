@@ -722,7 +722,7 @@ describe("runtime orchestrator behavior", () => {
       ...gatewayStubDefaults,
       async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
         requests.push(request);
-        if (requests.length <= 2) {
+        if (requests.length <= 3) {
           yield {
             type: "end",
             result: {
@@ -805,6 +805,17 @@ describe("runtime orchestrator behavior", () => {
           commitCount += 1;
           if (commitCount === 1) {
             await notices.record({
+              kind: "undo",
+              scope: { kind: "thread", threadId: thread.id },
+              message: "",
+              data: {
+                writeHandles: ["w1"],
+                uri: "manuscript://chapter-1.md",
+                direction: "redo",
+              },
+            });
+          } else if (commitCount === 2) {
+            await notices.record({
               kind: "awareness_degraded",
               scope: { kind: "thread", threadId: thread.id },
               message: "Document awareness degraded",
@@ -825,8 +836,8 @@ describe("runtime orchestrator behavior", () => {
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
     );
 
-    expect(drainCount).toBe(3);
-    expect(requests).toHaveLength(3);
+    expect(drainCount).toBe(4);
+    expect(requests).toHaveLength(4);
     const firstSystemMessages = requests[0]?.messages.filter(
       (message) => message.role === "system",
     );
@@ -840,22 +851,22 @@ describe("runtime orchestrator behavior", () => {
     expect(messageText(firstWriterMessage)).toContain(
       "The writer reversed the following edits before this message",
     );
-    const secondSystemMessages = requests[1]?.messages.filter(
+    const noticeSystemMessages = requests[2]?.messages.filter(
       (message) => message.role === "system",
     );
-    const secondMessages = requests[1]?.messages ?? [];
-    const secondWriterMessages = secondMessages.filter((message) => message.role === "user");
-    const initiatingWriterMessage = secondWriterMessages.find((message) =>
+    const noticeMessages = requests[2]?.messages ?? [];
+    const noticeWriterMessages = noticeMessages.filter((message) => message.role === "user");
+    const initiatingWriterMessage = noticeWriterMessages.find((message) =>
       messageText(message).includes("continue"),
     );
-    const postToolContextMessage = secondWriterMessages.at(-1);
+    const postToolContextMessage = noticeWriterMessages.at(-1);
     if (!postToolContextMessage) throw new Error("expected post-tool notice context");
-    expect(secondSystemMessages).toHaveLength(1);
-    expect(secondSystemMessages).toEqual(firstSystemMessages);
+    expect(noticeSystemMessages).toHaveLength(1);
+    expect(noticeSystemMessages).toEqual(firstSystemMessages);
     expect(JSON.stringify(firstSystemMessages)).not.toContain(
       "The writer reversed the following edits",
     );
-    expect(JSON.stringify(secondSystemMessages)).not.toContain(
+    expect(JSON.stringify(noticeSystemMessages)).not.toContain(
       "could not verify whether concurrent writer content was preserved",
     );
     expect(messageText(initiatingWriterMessage)).toContain(
@@ -871,11 +882,11 @@ describe("runtime orchestrator behavior", () => {
     expect(messageText(postToolContextMessage)).toContain(
       "could not verify whether concurrent writer content was preserved",
     );
-    const toolResultIndex = secondMessages.findIndex((message) =>
+    const toolResultIndex = noticeMessages.findIndex((message) =>
       message.content.some((part) => part.type === "tool_result"),
     );
-    expect(secondMessages.indexOf(postToolContextMessage)).toBeGreaterThan(toolResultIndex);
-    expect(requests[2]?.messages.slice(0, secondMessages.length)).toEqual(secondMessages);
+    expect(noticeMessages.indexOf(postToolContextMessage)).toBeGreaterThan(toolResultIndex);
+    expect(requests[3]?.messages.slice(0, noticeMessages.length)).toEqual(noticeMessages);
   });
 
   it("does not let debug capture failure prevent a notice-bearing model call", async () => {

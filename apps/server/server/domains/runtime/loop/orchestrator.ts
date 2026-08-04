@@ -934,12 +934,15 @@ async function* generateEvents(
         if (preTurnNotices.length > 0) {
           request.messages = attachNoticesToLatestUserMessage(request.messages, preTurnNotices);
         }
-        for (const [index, batch] of postToolNoticeBatches.entries()) {
+        let insertedNoticeMessages = 0;
+        for (const batch of postToolNoticeBatches) {
+          const beforeInsert = request.messages.length;
           request.messages = insertPostToolNotices(
             request.messages,
             batch.notices,
-            batch.afterMessageCount + index,
+            batch.afterMessageCount + insertedNoticeMessages,
           );
+          insertedNoticeMessages += request.messages.length - beforeInsert;
         }
         // After this point the drain is durable. If the provider stream throws before
         // returning a result, the notice is lost, matching the model-call boundary.
