@@ -79,11 +79,11 @@ workarounds. Don't explain what the code does; explain why it's surprising.
 parentheses — never punctuation glyphs such as `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-copy-separation.md).
 
-**Debugging.** Temporary console probes must use the marked convention in
-[docs/debugging.md](docs/debugging.md) and be deleted before push. Server
-diagnostics go through `EventSink` and are queryable in dev — endpoints,
-filters, and `jq`/curl workflows are documented in the same file, along with
-browser probe tooling.
+**Debugging.** Start with the marked temporary console convention in
+[docs/debugging.md](docs/debugging.md); `pnpm check` blocks it from merging.
+Promote a reusable server signal to `EventSink` instead of leaving any permanent
+server console call. Query workflows and browser probe tooling are documented in
+the same file. `EventSink` is diagnostic evidence, not product feature tracking.
 
 
 ## Documentation

@@ -47,8 +47,10 @@ Rules:
 - Put `// TEMP-DEBUG: remove before push` immediately above the console line.
 - Prefix the message with `[temp-debug:<area>]`.
 - Log one compact metadata object.
-- Pre-push blocks `TEMP-DEBUG`, `[temp-debug:...]`, `console.log(`, and
-  `console.debug(` in product source, even when the console call is unmarked.
+- `pnpm check` and pre-push block `TEMP-DEBUG`, `[temp-debug:...]`,
+  `console.log(`, and `console.debug(` in product source, even when the console
+  call is unmarked. They also block permanent `console.info`, `console.warn`,
+  and `console.error` calls in server product source.
 - Do not log secrets, cookies, raw prompts, raw model output, uploaded content,
   tool arguments, or tool results.
 - Remove the probe before pushing, or convert it into durable observability.
@@ -164,6 +166,6 @@ Find the same product-source patterns that pre-push blocks:
 node tools/ci/check-debug-probes.mjs
 ```
 
-Pre-push runs `node tools/ci/check-debug-probes.mjs` and blocks temporary probes
-in product source. The fix is to delete the probe or convert it to durable
+`pnpm check` and pre-push run `node tools/ci/check-debug-probes.mjs`. The fix is
+to delete a temporary probe or convert a reusable server signal to durable
 observability.

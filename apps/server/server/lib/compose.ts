@@ -406,7 +406,7 @@ export async function createProductionAppPorts(input: {
     defaultPackageSeeder,
     preferences,
     workingSet,
-    modelRequestDebug: createModelRequestDebugStoreFromEnv(),
+    modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
     objectStore,
     localObjectStore,
     uploadDocuments,

@@ -93,8 +93,6 @@ export async function createGatewayFromEnv(
   const startupInfo = formatGatewayStartupInfo(providers, gatewayOptions.defaultModel);
   if (options?.onInfo) {
     options.onInfo(startupInfo);
-  } else {
-    console.info(startupInfo.message);
   }
 
   const gateway = createGateway({

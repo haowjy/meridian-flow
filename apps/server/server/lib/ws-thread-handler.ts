@@ -10,7 +10,11 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { runWithEventCorrelation } from "../domains/observability/index.js";
+import {
+  emitEvent,
+  runWithEventCorrelation,
+  unknownToEventPayload,
+} from "../domains/observability/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import { parseRequestId } from "../shared/uuid.js";
 import type { AppServices } from "./app.js";
@@ -76,7 +80,15 @@ function sendFrame(peer: WsPeer, message: WsServerMessage): boolean {
     peer.send(encodeWsServerMessage(message));
     return true;
   } catch (error) {
-    console.error("ws-thread-handler: send failed", error);
+    const eventSink = peer.context?.app.eventSink;
+    if (eventSink) {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "wire.thread_ws",
+        name: "send.failed",
+        payload: unknownToEventPayload(error),
+      });
+    }
     peer.close(1011, "send_failed");
     disposeSubscriptions(peer);
     return false;
@@ -281,7 +293,15 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               return;
           }
         } catch (error) {
-          console.error("ws-thread-handler: message failed", error);
+          const eventSink = peer.context?.app.eventSink;
+          if (eventSink) {
+            emitEvent(eventSink, {
+              level: "error",
+              source: "wire.thread_ws",
+              name: "message.failed",
+              payload: unknownToEventPayload(error),
+            });
+          }
           sendError(peer, meridianError("internal", "Internal server error"));
         }
       });

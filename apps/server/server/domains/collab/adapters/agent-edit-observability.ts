@@ -9,10 +9,49 @@ import type {
 } from "@meridian/agent-edit/integration";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
+import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
+import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
+
+export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
+  return {
+    rerunFailed({ documentId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.branch_pull",
+        name: "rerun.failed",
+        correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+export function createResponseTransactionDiagnostics(
+  eventSink?: EventSink,
+): ResponseTransactionDiagnostics {
+  const emitFailure = (name: string, input: { responseTransactionId: string; cause: unknown }) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "error",
+      source: "collab.response_transaction",
+      name,
+      payload: {
+        responseTransactionId: input.responseTransactionId,
+        ...unknownToEventPayload(input.cause),
+      },
+    });
+  };
+  return {
+    participantCommitFailed: (input) => emitFailure("participant_commit.failed", input),
+    participantReconciliationFailed: (input) =>
+      emitFailure("participant_reconciliation.failed", input),
+  };
+}
 
 export function createBranchAgentEditDiagnostics(
   eventSink?: EventSink,
@@ -37,10 +76,7 @@ export function createBranchAgentEditDiagnostics(
       });
     },
     autoPushUnapplied(payload) {
-      if (!eventSink) {
-        console.error("Branch auto-push resolved without applying", payload);
-        return;
-      }
+      if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
         source: "collab.branch_auto_push",
@@ -49,10 +85,7 @@ export function createBranchAgentEditDiagnostics(
       });
     },
     autoPushFailed({ workDraftBranchId, cause }) {
-      if (!eventSink) {
-        console.error("Branch auto-push failed", { workDraftBranchId, cause });
-        return;
-      }
+      if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
         source: "collab.branch_auto_push",
@@ -131,8 +164,8 @@ export function createMarkdownSerializationAnomalyObserver(
           deletedClockCount: anomaly.deletedClockCount,
         },
       });
-    } catch (cause) {
-      console.error("collab schema serialization anomaly emission failed", anomaly, cause);
+    } catch {
+      // Diagnostic delivery cannot turn a successful serialization into a failure.
     }
   };
 }
@@ -247,13 +280,10 @@ function invariantPolicy(eventSink?: EventSink): (message: string) => void {
           name: "invariant_violation",
           payload: { message },
         });
-      } catch (cause) {
-        console.error(message, cause);
+      } catch {
+        // Invariant reporting is best-effort after production policy has handled it.
       }
-      return;
     }
-
-    console.error(message);
   };
 }
 
@@ -334,11 +364,9 @@ function reversalNoticeFailedObserver(
           payload: { ...event },
         });
         return;
-      } catch (cause) {
-        console.error("agent-edit undo notification recording failed", event, cause);
-        return;
+      } catch {
+        // Notice diagnostics cannot change the already-durable reversal outcome.
       }
     }
-    console.error("agent-edit undo notification recording failed", event);
   };
 }

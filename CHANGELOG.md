@@ -16,6 +16,10 @@
   IDs. Detached work retains its initiating scope, shared Yjs persistence mints
   a fresh operation trace, and conflicting caller IDs are reported without
   overriding the active boundary or blocking the operation.
+- `tools`, `apps/server`: `pnpm check` now blocks temporary debug probes and all
+  permanent server console calls. Existing server diagnostics use `EventSink`;
+  the marked console form remains available locally for one-off debugging but
+  cannot reach a push or merge.
 - `apps/app`: a table nested in another table's cell now keeps its grip
   chrome while the pointer travels to a grip. The gap beside the inner frame
   no longer re-anchors hover to the outer table, so the inner table's row
