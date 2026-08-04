@@ -7,7 +7,8 @@
 import type { EventRecord } from "./ports/event-sink.js";
 
 const SENSITIVE_KEY_PATTERN =
-  /(authorization|cookie|password|secret|token|api[_-]?key|prompt|messages?|systemmessages|content|arguments|input|output|raw|stack|cause|query|sql|response|body)/i;
+  /(authorization|cookie|password|secret|token|api[_-]?key|prompt|systemmessages|content|arguments|input|output|raw|stack|cause|query|sql)/i;
+const SENSITIVE_EXACT_KEYS = new Set(["body", "message", "messages", "response"]);
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
 const MAX_IDENTIFIER_LENGTH = 128;
@@ -20,6 +21,7 @@ const SAFE_PAYLOAD_STRING_KEYS = new Set([
   "action",
   "command",
   "direction",
+  "deletedNodeTypes",
   "field",
   "fields",
   "kind",
@@ -33,6 +35,7 @@ const SAFE_PAYLOAD_STRING_KEYS = new Set([
   "phase",
   "provider",
   "reason",
+  "roomKey",
   "route",
   "schemaVersion",
   "source",
@@ -84,6 +87,22 @@ function sanitizeIdentifierRecord<T extends object>(value: T): T {
 function safeErrorEnvelope(value: unknown): Record<string, unknown> | "[redacted]" {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "[redacted]";
   const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.code === "string" &&
+    /^[a-z][a-z0-9_]{0,63}$/.test(candidate.code) &&
+    (candidate.source === "gateway" ||
+      candidate.source === "tool" ||
+      candidate.source === "child-agent" ||
+      candidate.source === "system") &&
+    typeof candidate.retryable === "boolean"
+  ) {
+    return Object.freeze({
+      class: "MeridianError",
+      category: candidate.source,
+      code: candidate.code,
+      retryable: candidate.retryable,
+    });
+  }
   const errorClass =
     typeof candidate.class === "string" &&
     /^(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|URIError|EvalError|AggregateError|MeridianError)$/.test(
@@ -130,7 +149,11 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
   if (key === "error") return safeErrorEnvelope(value);
   const isSafeMetric =
     SAFE_METRIC_KEYS.has(key) && typeof value === "number" && Number.isFinite(value);
-  if (!isSafeMetric && SENSITIVE_KEY_PATTERN.test(key)) return "[redacted]";
+  if (
+    !isSafeMetric &&
+    (SENSITIVE_EXACT_KEYS.has(key.toLowerCase()) || SENSITIVE_KEY_PATTERN.test(key))
+  )
+    return "[redacted]";
   if (value == null) return value;
   if (typeof value === "string") {
     return payloadStringIsApproved(key) ? redactString(value) : "[redacted]";

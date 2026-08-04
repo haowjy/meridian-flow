@@ -188,7 +188,16 @@ describe("createThreadEventHub fanout", () => {
         level: "error",
         source: "threads.event-hub",
         name: "turn.error",
-        payload: expect.objectContaining({ threadId: "thread_error", turnId: "turn_error", error }),
+        payload: expect.objectContaining({
+          threadId: "thread_error",
+          turnId: "turn_error",
+          error: {
+            class: "MeridianError",
+            category: "system",
+            code: "runtime_error",
+            retryable: false,
+          },
+        }),
       }),
     );
   });
