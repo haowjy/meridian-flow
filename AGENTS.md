@@ -46,9 +46,10 @@ bounded.
 Meridian-specific: the primary writer primitives are **Project** (a serial /
 book / body of work) and **Work** (a task-scoped editing context within a
 project — groups threads, owns shared drafts, carries a goal, holds scratch
-context via `work://` URIs). Schema: `works` table + `thread_works` M:N join.
-Currently 1 default work per project; multi-work and writer-facing UI are
-in progress.
+context via `scratch://` URIs). Schema: `works` table + `thread_works` M:N join.
+A chat's Work is set once at creation and never reassigned; every surface outside
+creation displays Work, never controls it. Currently 1 default work per project;
+multi-work and writer-facing UI are in progress.
 
 ## Agency
 
