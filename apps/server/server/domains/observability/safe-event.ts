@@ -10,7 +10,7 @@ const SENSITIVE_KEY_PATTERN =
   /(authorization|cookie|password|secret|token|api[_-]?key|prompt|messages|systemmessages|content|arguments|input|output|raw|stack)/i;
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
-const MAX_IDENTIFIER_LENGTH = 256;
+const MAX_IDENTIFIER_LENGTH = 128;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
@@ -25,6 +25,25 @@ function redactString(value: string): string {
 
 function boundedIdentifier(value: string): string {
   return redactString(value).slice(0, MAX_IDENTIFIER_LENGTH);
+}
+
+function sanitizeIdentifierRecord<T extends object>(value: T): T {
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(value)
+        .slice(0, MAX_OBJECT_KEYS)
+        .map(([key, item]) => [
+          key,
+          typeof item === "string"
+            ? boundedIdentifier(item)
+            : typeof item === "number" && Number.isFinite(item)
+              ? item
+              : typeof item === "boolean"
+                ? item
+                : "[redacted]",
+        ]),
+    ),
+  ) as unknown as T;
 }
 
 function sanitizeValue(key: string, value: unknown, depth: number): unknown {
@@ -58,18 +77,18 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
 
 export function sanitizeEventRecord(event: EventRecord): EventRecord {
   const sanitized = {
-    eventId: event.eventId ?? crypto.randomUUID(),
-    timestamp: event.timestamp,
+    eventId: boundedIdentifier(event.eventId ?? crypto.randomUUID()),
+    timestamp: boundedIdentifier(event.timestamp),
     level: event.level,
     source: boundedIdentifier(event.source),
     name: boundedIdentifier(event.name),
     sensitivity: event.sensitivity ?? "safe",
     payload: sanitizeValue("payload", event.payload, 0) as Record<string, unknown>,
     ...(event.correlation !== undefined && {
-      correlation: sanitizeValue("correlation", event.correlation, 0) as EventRecord["correlation"],
+      correlation: sanitizeIdentifierRecord(event.correlation),
     }),
     ...(event.stream !== undefined && {
-      stream: sanitizeValue("stream", event.stream, 0) as EventRecord["stream"],
+      stream: sanitizeIdentifierRecord(event.stream),
     }),
   } satisfies EventRecord;
   const originalBytes = serializedEventBytes(sanitized);

@@ -67,6 +67,51 @@ describe("sanitizeEventRecord byte boundary", () => {
     expect(event.correlation).toEqual({ traceId: "trace-1", threadId: "thread-1" });
     expect(event.payload).toMatchObject({ truncated: true, reason: "record_byte_limit" });
   });
+
+  it("keeps the hard limit when header and correlation strings are hostile", () => {
+    const huge = "x".repeat(20_000);
+    const event = sanitizeEventRecord({
+      eventId: huge,
+      timestamp: huge,
+      level: "error",
+      source: huge,
+      name: huge,
+      correlation: {
+        traceId: huge,
+        runId: huge,
+        parentRunId: huge,
+        requestId: huge,
+        threadId: huge,
+        turnId: huge,
+        childRunId: huge,
+        agentSlug: huge,
+        attemptId: huge,
+        gatewayCallId: huge,
+        provider: huge,
+        model: huge,
+        route: huge,
+        method: huge,
+        projectId: huge,
+        workId: huge,
+        toolName: huge,
+        toolCallId: huge,
+        errorCode: huge,
+        documentId: huge,
+        branchId: huge,
+        yjsSpans: huge,
+      },
+      stream: {
+        streamId: huge,
+        transport: "yjs",
+        observedAt: "server",
+        messageClass: huge,
+        observerSeq: 1,
+      },
+      payload: { value: huge },
+    });
+
+    expect(serializedEventBytes(event)).toBeLessThanOrEqual(MAX_EVENT_RECORD_BYTES);
+  });
 });
 
 describe("unknownToEventPayload", () => {

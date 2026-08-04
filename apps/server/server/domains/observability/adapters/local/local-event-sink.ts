@@ -272,7 +272,7 @@ export class LocalEventSink implements EventSink {
     }
 
     await mkdir(this.dir, { recursive: true });
-    await this.pruneFiles(now, nextBytes);
+    await this.pruneFiles(now, this.segmentBytes);
     if (this.activeDate !== date) {
       const existing = (await readdir(this.dir))
         .filter((name) => name.startsWith(`${date}-`) && LOG_FILE_PATTERN.test(name))
