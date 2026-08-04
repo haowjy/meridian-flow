@@ -134,14 +134,17 @@ function cutoffDateStamp(now: Date, retentionDays: number): string {
   return utcDateStamp(cutoff);
 }
 
-function segmentNumber(fileName: string): number {
+function segmentNumber(fileName: string): bigint {
   const match = LOG_FILE_PATTERN.exec(fileName);
-  return match ? Number(match[2]) : -1;
+  return match ? BigInt(match[2] as string) : -1n;
 }
 
 function compareLogFiles(left: string, right: string): number {
   const dateOrder = left.slice(0, 10).localeCompare(right.slice(0, 10));
-  return dateOrder || segmentNumber(left) - segmentNumber(right);
+  if (dateOrder) return dateOrder;
+  const leftSegment = segmentNumber(left);
+  const rightSegment = segmentNumber(right);
+  return leftSegment < rightSegment ? -1 : leftSegment > rightSegment ? 1 : 0;
 }
 
 export class LocalEventSink implements EventSink {
@@ -161,7 +164,7 @@ export class LocalEventSink implements EventSink {
   private activeDate: string | null = null;
   private activePath: string | null = null;
   private activeBytes = 0;
-  private activeSegment = -1;
+  private activeSegment = -1n;
 
   constructor(options: LocalEventSinkOptions = {}) {
     this.dir = options.dir;
@@ -375,13 +378,13 @@ export class LocalEventSink implements EventSink {
         }
         this.activeSegment = latestSegment;
       } else {
-        this.activeSegment = -1;
+        this.activeSegment = -1n;
       }
     }
-    this.activeSegment += 1;
+    this.activeSegment += 1n;
     const filePath = path.join(
       this.dir,
-      `${date}-${String(this.activeSegment).padStart(4, "0")}.jsonl`,
+      `${date}-${this.activeSegment.toString().padStart(4, "0")}.jsonl`,
     );
     this.activeDate = date;
     this.activePath = filePath;

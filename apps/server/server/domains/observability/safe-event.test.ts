@@ -221,6 +221,22 @@ describe("sanitizeEventRecord privacy boundary", () => {
     expect(reads).toBe(0);
   });
 
+  it("does not invoke array accessors", () => {
+    let reads = 0;
+    const documentIds: string[] = [];
+    Object.defineProperty(documentIds, "0", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        throw new Error("array getter veto");
+      },
+    });
+    documentIds.length = 1;
+
+    expect(sanitize({ documentIds })).toEqual({ documentIds: ["[redacted]"] });
+    expect(reads).toBe(0);
+  });
+
   it("rejects inherited payload state without traversing it", () => {
     let inheritedReads = 0;
     const prototype = Object.create(null) as Record<string, unknown>;
@@ -285,6 +301,22 @@ describe("unknownToEventPayload", () => {
 
     expect(() => unknownToEventPayload(error)).not.toThrow();
     expect(unknownToEventPayload(error)).toEqual({
+      error: { class: "Error", category: "unexpected" },
+    });
+  });
+
+  it("does not let a hostile prototype trap escape error conversion", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf: () => {
+          throw new Error("prototype veto");
+        },
+      },
+    );
+
+    expect(() => unknownToEventPayload(hostile)).not.toThrow();
+    expect(unknownToEventPayload(hostile)).toEqual({
       error: { class: "Error", category: "unexpected" },
     });
   });

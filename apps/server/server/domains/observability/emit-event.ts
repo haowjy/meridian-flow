@@ -68,15 +68,22 @@ export function unknownToEventPayload(error: unknown): Record<string, unknown> {
   } catch {
     return { error: { class: "Error", category: "unexpected" } };
   }
-  if (error instanceof Error) {
-    const code = safeErrorScalar(ownDataValue(error, "code"));
-    const rawStatus = ownDataValue(error, "status") ?? ownDataValue(error, "statusCode");
+  let nativeError = false;
+  try {
+    nativeError = error instanceof Error;
+  } catch {
+    return { error: { class: "Error", category: "unexpected" } };
+  }
+  if (nativeError) {
+    const native = error as Error;
+    const code = safeErrorScalar(ownDataValue(native, "code"));
+    const rawStatus = ownDataValue(native, "status") ?? ownDataValue(native, "statusCode");
     const status =
       typeof rawStatus === "number" && Number.isFinite(rawStatus) ? rawStatus : undefined;
-    const severity = ownDataValue(error, "severity");
+    const severity = ownDataValue(native, "severity");
     return {
       error: {
-        class: safeErrorClass(error),
+        class: safeErrorClass(native),
         category: severity === undefined ? "unexpected" : "database",
         ...(code !== undefined && { code }),
         ...(status !== undefined && { status }),

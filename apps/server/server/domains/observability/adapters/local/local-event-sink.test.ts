@@ -293,6 +293,31 @@ describe("LocalEventSink", () => {
     expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(600);
   });
 
+  it("parses segment counters beyond Number safe-integer range", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "meridian-local-event-sink-"));
+    directories.push(directory);
+    await writeFile(path.join(directory, "2026-08-03-9007199254740992.jsonl"), "x".repeat(250));
+    const sink = new LocalEventSink({
+      dir: directory,
+      now: () => new Date("2026-08-03T00:00:00.000Z"),
+      segmentBytes: 300,
+      maxBytes: 600,
+      stdout: { write: () => true, once: vi.fn() },
+    });
+
+    sink.emit(event(1));
+    await sink.flush();
+
+    const files = (await readdir(directory)).filter((file) => file.endsWith(".jsonl"));
+    const sizes = await Promise.all(files.map((file) => stat(path.join(directory, file))));
+    expect(files.sort()).toEqual([
+      "2026-08-03-9007199254740992.jsonl",
+      "2026-08-03-9007199254740993.jsonl",
+    ]);
+    expect(sizes.every(({ size }) => size <= 300)).toBe(true);
+    expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(600);
+  });
+
   it("never steals a stale-looking lock from a live writer", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-local-event-sink-"));
     directories.push(directory);

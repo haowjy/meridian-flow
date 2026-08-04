@@ -236,9 +236,18 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
   if (typeof value === "bigint") return value.toString();
   if (depth > 5) return "[redacted-depth]";
   if (Array.isArray(value)) {
-    return Object.freeze(
-      value.slice(0, MAX_ARRAY_ITEMS).map((item) => sanitizeValue(key, item, depth + 1)),
-    );
+    const items: unknown[] = [];
+    try {
+      const length = Math.min(value.length, MAX_ARRAY_ITEMS);
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        const item = descriptor && "value" in descriptor ? descriptor.value : "[redacted]";
+        items.push(sanitizeValue(key, item, depth + 1));
+      }
+    } catch {
+      return Object.freeze([]);
+    }
+    return Object.freeze(items);
   }
   if (typeof value === "object") {
     if (!isPlainRecord(value)) return "[redacted-object]";
