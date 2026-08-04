@@ -55,6 +55,12 @@ function textGateway(): Gateway {
   ]);
 }
 
+function messageText(message: GenerateRequest["messages"][number] | undefined): string {
+  return (
+    message?.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") ?? ""
+  );
+}
+
 async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway = textGateway()) {
   const projectRepo = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects: projectRepo });
@@ -812,10 +818,28 @@ describe("runtime orchestrator behavior", () => {
 
     expect(drainCount).toBe(2);
     expect(requests).toHaveLength(2);
-    expect(JSON.stringify(requests[0]?.messages)).toContain(
+    const firstSystemMessages = requests[0]?.messages.filter(
+      (message) => message.role === "system",
+    );
+    const firstWriterMessage = requests[0]?.messages
+      .filter((message) => message.role === "user")
+      .at(-1);
+    expect(firstSystemMessages).toHaveLength(1);
+    expect(messageText(firstWriterMessage)).toContain(
+      "continue\n\nMeridian context for this message",
+    );
+    expect(messageText(firstWriterMessage)).toContain(
       "The writer reversed the following edits before this message",
     );
-    expect(JSON.stringify(requests[1]?.messages)).toContain(
+    const secondSystemMessages = requests[1]?.messages.filter(
+      (message) => message.role === "system",
+    );
+    const secondWriterMessage = requests[1]?.messages
+      .filter((message) => message.role === "user")
+      .at(-1);
+    expect(secondSystemMessages).toHaveLength(1);
+    expect(messageText(secondWriterMessage)).toContain("continue");
+    expect(messageText(secondWriterMessage)).toContain(
       "could not verify whether concurrent writer content was preserved",
     );
   });

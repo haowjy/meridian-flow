@@ -275,9 +275,27 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-export function noticeSystemMessage(notices: readonly Notice[]): Message | null {
+export function attachNoticesToLatestUserMessage(
+  messages: readonly Message[],
+  notices: readonly Notice[],
+): Message[] {
   const content = formatNotices(notices);
-  return content ? system(content) : null;
+  if (!content) return [...messages];
+
+  const updated = [...messages];
+  const notice = text(`\n\nMeridian context for this message:\n${content}`);
+  for (let index = updated.length - 1; index >= 0; index--) {
+    const message = updated[index];
+    if (message?.role !== "user") continue;
+    updated[index] = {
+      ...message,
+      content: [...message.content, notice],
+    };
+    return updated;
+  }
+
+  updated.push({ role: "user", content: [notice] });
+  return updated;
 }
 
 export function formatNotices(notices: readonly Notice[]): string {

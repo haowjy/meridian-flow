@@ -103,7 +103,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { noticeSystemMessage } from "./context-builder.js";
+import { attachNoticesToLatestUserMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -919,15 +919,7 @@ async function* generateEvents(
       {
         const notices = await deps.notices.drainForModelContext(input.threadId);
         if (notices.length > 0) {
-          const noticeMessage = noticeSystemMessage(notices);
-          if (noticeMessage) {
-            const insertAt = request.messages.findIndex((message) => message.role !== "system");
-            request.messages.splice(
-              insertAt === -1 ? request.messages.length : insertAt,
-              0,
-              noticeMessage,
-            );
-          }
+          request.messages = attachNoticesToLatestUserMessage(request.messages, notices);
         }
         // After this point the drain is durable. If the provider stream throws before
         // returning a result, the notice is lost, matching the model-call boundary.
