@@ -1,6 +1,7 @@
 /** Sanitizer boundary tests for sensitive fields and numeric gateway metrics. */
 import { describe, expect, it } from "vitest";
 import { unknownToEventPayload } from "./emit-event.js";
+import type { EventRecord } from "./ports/event-sink.js";
 import { MAX_EVENT_RECORD_BYTES, sanitizeEventRecord, serializedEventBytes } from "./safe-event.js";
 
 function sanitize(payload: Record<string, unknown>): Record<string, unknown> {
@@ -112,6 +113,27 @@ describe("sanitizeEventRecord byte boundary", () => {
 
     expect(serializedEventBytes(event)).toBeLessThanOrEqual(MAX_EVENT_RECORD_BYTES);
   });
+
+  it("keeps the hard limit when an untyped caller adds hostile context keys", () => {
+    const extraContext = Object.fromEntries(
+      Array.from({ length: 100 }, (_, index) => [`extra${index}`, "x".repeat(20_000)]),
+    );
+    const event = sanitizeEventRecord({
+      eventId: "event-hostile-context",
+      timestamp: "2026-07-18T00:00:00.000Z",
+      level: "error",
+      source: "test",
+      name: "test.hostile_context",
+      correlation: extraContext,
+      stream: extraContext,
+      payload: {},
+    } as unknown as EventRecord);
+
+    expect(serializedEventBytes(event)).toBeLessThanOrEqual(MAX_EVENT_RECORD_BYTES);
+    expect(event.correlation).toBeUndefined();
+    expect(event.stream).toBeUndefined();
+    expect(event.payload).toMatchObject({ truncated: true, reason: "record_byte_limit" });
+  });
 });
 
 describe("unknownToEventPayload", () => {
@@ -132,5 +154,17 @@ describe("unknownToEventPayload", () => {
     expect(JSON.stringify(payload)).not.toContain("writer");
     expect(JSON.stringify(payload)).not.toContain("query");
     expect(JSON.stringify(payload)).not.toContain("cause");
+  });
+
+  it("drops prose disguised as an error class or code", () => {
+    const error = Object.assign(new Error("writer prose"), {
+      name: "private writer prose",
+      code: "chapter one private writer prose",
+      status: "502 bad private upstream body",
+    });
+
+    expect(unknownToEventPayload(error)).toEqual({
+      error: { class: "Error", category: "unexpected" },
+    });
   });
 });

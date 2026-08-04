@@ -5,7 +5,7 @@ import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { type EventSink, emitEvent } from "../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
 import type {
@@ -160,10 +160,7 @@ export function createHocuspocusPersistenceService(
       level: "error",
       source: "collab.hocuspocus",
       name: "persistence_append.failed",
-      payload: {
-        documentId,
-        error: cause instanceof Error ? cause.message : String(cause),
-      },
+      payload: { documentId, ...unknownToEventPayload(cause) },
     });
   }
 
@@ -173,10 +170,7 @@ export function createHocuspocusPersistenceService(
       level: "error",
       source: "collab.hocuspocus",
       name: "offline_reconciliation.failed_after_durability",
-      payload: {
-        documentId,
-        error: cause instanceof Error ? cause.message : String(cause),
-      },
+      payload: { documentId, ...unknownToEventPayload(cause) },
     });
   }
 

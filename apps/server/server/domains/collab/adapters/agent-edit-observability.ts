@@ -278,7 +278,7 @@ function invariantPolicy(eventSink?: EventSink): (message: string) => void {
           level: "error",
           source: "collab.agent_edit",
           name: "invariant_violation",
-          payload: { message },
+          payload: { errorCode: "invariant_violation" },
         });
       } catch {
         // Invariant reporting is best-effort after production policy has handled it.

@@ -74,6 +74,11 @@ class BoundedEventQueue {
         dropped.records += 1;
         dropped.bytes += evicted.bytes;
       }
+      if (bytes > this.byteCapacity) {
+        dropped.records += 1;
+        dropped.bytes += bytes;
+        continue;
+      }
       const index = (this.head + this.size) % this.capacity;
       this.records[index] = { event, bytes };
       this.size += 1;
@@ -208,6 +213,7 @@ export class LocalEventSink implements EventSink {
     while (this.pendingEvents.length > 0) {
       const events = this.pendingEvents.drain();
       const dropped = this.droppedEvents;
+      const droppedBytes = this.droppedBytes;
       if (dropped > 0) {
         events.unshift({
           eventId: crypto.randomUUID(),
@@ -216,13 +222,13 @@ export class LocalEventSink implements EventSink {
           source: "observability",
           name: "sink.dropped",
           sensitivity: "safe",
-          payload: { droppedRecords: dropped, droppedBytes: this.droppedBytes },
+          payload: { droppedRecords: dropped, droppedBytes },
         });
       }
       await this.appendEvents(events);
       if (dropped > 0) {
         this.droppedEvents -= dropped;
-        this.droppedBytes = 0;
+        this.droppedBytes -= droppedBytes;
       }
     }
   }
@@ -325,7 +331,6 @@ export class LocalEventSink implements EventSink {
     let totalBytes = retained.reduce((total, file) => total + file.bytes, 0);
     for (const file of retained) {
       if (totalBytes + reserveBytes <= this.maxBytes) break;
-      if (file.filePath === this.activePath) continue;
       await unlink(file.filePath);
       totalBytes -= file.bytes;
     }

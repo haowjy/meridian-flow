@@ -6,12 +6,26 @@ import { isMeridianError } from "@meridian/contracts/interrupt";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
 
 const ERROR_SCALAR_MAX = 128;
+const STABLE_ERROR_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
-function safeErrorScalar(value: unknown): string | number | boolean | undefined {
-  if (typeof value === "boolean") return value;
+function safeErrorScalar(value: unknown): string | number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") return value.slice(0, ERROR_SCALAR_MAX);
+  if (
+    typeof value === "string" &&
+    value.length <= ERROR_SCALAR_MAX &&
+    STABLE_ERROR_TOKEN.test(value)
+  ) {
+    return value;
+  }
   return undefined;
+}
+
+function safeErrorClass(error: Error): string {
+  return typeof error.name === "string" &&
+    error.name.length <= ERROR_SCALAR_MAX &&
+    STABLE_ERROR_TOKEN.test(error.name)
+    ? error.name
+    : "Error";
 }
 
 export function unknownToEventPayload(error: unknown): Record<string, unknown> {
@@ -31,7 +45,7 @@ export function unknownToEventPayload(error: unknown): Record<string, unknown> {
     const status = safeErrorScalar(candidate.status ?? candidate.statusCode);
     return {
       error: {
-        class: error.name.slice(0, ERROR_SCALAR_MAX),
+        class: safeErrorClass(error),
         category: candidate.severity === undefined ? "unexpected" : "database",
         ...(code !== undefined && { code }),
         ...(status !== undefined && { status }),

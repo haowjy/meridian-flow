@@ -45,11 +45,21 @@ export class RecentEventsBuffer implements EventSink, EventQuery {
     ) {
       this.evictOldest();
     }
+    if (bytes > this.byteCapacity) {
+      this.dropped += 1;
+      this.droppedBytes += bytes;
+      this.notify(event);
+      return;
+    }
     const index = (this.head + this.size) % this.capacity;
     this.records[index] = event;
     this.recordBytes[index] = bytes;
     this.retainedBytes += bytes;
     this.size += 1;
+    this.notify(event);
+  }
+
+  private notify(event: EventRecord): void {
     for (const listener of this.listeners) {
       try {
         listener(event);

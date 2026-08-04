@@ -135,6 +135,55 @@ describe("LocalEventSink", () => {
     expect(state.droppedEvents).toBe(0);
   });
 
+  it("keeps byte-loss accounting added while an earlier summary is writing", async () => {
+    let output = "";
+    let releaseFirstWrite: (() => void) | undefined;
+    let releaseSecondWrite: (() => void) | undefined;
+    const firstWriteStalled = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve;
+    });
+    const secondWriteStalled = new Promise<void>((resolve) => {
+      releaseSecondWrite = resolve;
+    });
+    const appendFile = vi
+      .fn()
+      .mockImplementationOnce(() => firstWriteStalled)
+      .mockImplementationOnce(() => secondWriteStalled)
+      .mockResolvedValue(undefined);
+    const directory = await mkdtemp(path.join(tmpdir(), "meridian-local-event-sink-"));
+    directories.push(directory);
+    const sink = new LocalEventSink({
+      dir: directory,
+      appendFile,
+      pendingEventCapacity: 2,
+      stdout: {
+        write: (chunk) => {
+          output += String(chunk);
+          return true;
+        },
+        once: vi.fn(),
+      },
+    });
+
+    sink.emit(event(-1));
+    await vi.waitFor(() => expect(appendFile).toHaveBeenCalledTimes(1));
+    sink.emitBatch([event(0), event(1), event(2), event(3)]);
+    releaseFirstWrite?.();
+    await vi.waitFor(() => expect(appendFile).toHaveBeenCalledTimes(2));
+    sink.emitBatch([event(4), event(5), event(6), event(7)]);
+    releaseSecondWrite?.();
+    await sink.flush();
+
+    const summaries = output
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as EventRecord)
+      .filter(({ name }) => name === "sink.dropped");
+    expect(summaries).toHaveLength(2);
+    expect(summaries.map(({ payload }) => payload.droppedRecords)).toEqual([2, 2]);
+    expect(summaries.every(({ payload }) => Number(payload.droppedBytes) > 0)).toBe(true);
+  });
+
   it("preserves emitBatch and flush on the normal path", async () => {
     let output = "";
     const sink = new LocalEventSink({
@@ -185,5 +234,25 @@ describe("LocalEventSink", () => {
     expect(files).not.toContain("2026-06-01-0000.jsonl");
     expect(sizes.every(({ size }) => size <= 600)).toBe(true);
     expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(1_200);
+  });
+
+  it("removes the active full segment when the total cap permits only one", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "meridian-local-event-sink-"));
+    directories.push(directory);
+    const sink = new LocalEventSink({
+      dir: directory,
+      segmentBytes: 220,
+      maxBytes: 220,
+      stdout: { write: () => true, once: vi.fn() },
+    });
+
+    sink.emit(event(1));
+    await sink.flush();
+    sink.emit(event(2));
+    await sink.flush();
+
+    const files = await readdir(directory);
+    const sizes = await Promise.all(files.map((file) => stat(path.join(directory, file))));
+    expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(220);
   });
 });

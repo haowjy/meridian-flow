@@ -1,5 +1,5 @@
 /** Recent query history remains bounded by both record count and serialized bytes. */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EventRecord } from "../../ports/event-sink.js";
 import { serializedEventBytes } from "../../safe-event.js";
 import { RecentEventsBuffer } from "./recent-events-buffer.js";
@@ -37,5 +37,21 @@ describe("RecentEventsBuffer", () => {
     buffer.emitBatch([event(1), event(2)]);
 
     expect(buffer.query({ eventId: "event-1" }).events).toEqual([event(1)]);
+  });
+
+  it("drops a record that cannot fit within the byte ceiling", () => {
+    const oversized = event(1, "x".repeat(100));
+    const listener = vi.fn();
+    const buffer = new RecentEventsBuffer(10, serializedEventBytes(oversized) - 1);
+    buffer.subscribe(listener);
+
+    buffer.emit(oversized);
+
+    expect(buffer.query({})).toEqual({
+      events: [],
+      dropped: 1,
+      droppedBytes: serializedEventBytes(oversized),
+    });
+    expect(listener).toHaveBeenCalledWith(oversized);
   });
 });

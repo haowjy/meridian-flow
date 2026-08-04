@@ -94,13 +94,27 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
   const originalBytes = serializedEventBytes(sanitized);
   if (originalBytes <= MAX_EVENT_RECORD_BYTES) return Object.freeze(sanitized);
 
-  return Object.freeze({
+  const truncated = Object.freeze({
     ...sanitized,
     payload: Object.freeze({
       truncated: true,
       originalBytes,
       reason: "record_byte_limit",
     }),
+  });
+  if (serializedEventBytes(truncated) <= MAX_EVENT_RECORD_BYTES) return truncated;
+
+  // Correlation and stream are structurally bounded, but retain a minimal
+  // envelope if an untyped caller supplies enough extra keys to exceed the
+  // byte ceiling. A hard storage bound is more important than hostile context.
+  return Object.freeze({
+    eventId: truncated.eventId,
+    timestamp: truncated.timestamp,
+    level: truncated.level,
+    source: truncated.source,
+    name: truncated.name,
+    sensitivity: truncated.sensitivity,
+    payload: truncated.payload,
   });
 }
 
