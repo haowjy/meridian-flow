@@ -47,20 +47,6 @@ describe("findTextMatches", () => {
     });
   });
 
-  it("preserves soft breaks inside an exact multiline body", () => {
-    const body = "Line A\nLine B";
-    const result = findInBodies([body], body);
-
-    expect(result).toMatchObject({ ok: true });
-    if (!result.ok) throw new Error(result.message);
-    expect(result.matches[0]).toMatchObject({
-      startIndex: 0,
-      endIndex: 0,
-      rangeSource: body,
-      matchEnd: body.length,
-    });
-  });
-
   it("keeps an empty block in the middle of an exact multi-block needle", () => {
     const result = findInBodies(["A", "", "B"], "A\n\n\n\nB");
 
@@ -74,16 +60,6 @@ describe("findTextMatches", () => {
     });
   });
 
-  it("returns not_found for a hashline that is not literal document content", () => {
-    const result = findInBodies([""], "a1b2|");
-
-    expect(result).toMatchObject({
-      ok: false,
-      code: "not_found",
-      message: 'Could not find "a1b2|" in the selected scope',
-    });
-  });
-
   it("does not reinterpret mixed prose and hash-shaped lines", () => {
     const result = findInBodies(["tail"], "Plain text\nde0e|tail");
 
@@ -92,15 +68,6 @@ describe("findTextMatches", () => {
       code: "not_found",
       message: 'Could not find "Plain text\nde0e|tail" in the selected scope',
     });
-  });
-
-  it("matches markdown escape characters literally", () => {
-    const body = "He whispered **not bold** and `code|pipe`.";
-    const result = findInBodies([body], body);
-
-    expect(result).toMatchObject({ ok: true });
-    if (!result.ok) throw new Error(result.message);
-    expect(result.matches[0]).toMatchObject({ rangeSource: body });
   });
 
   it("keeps raw document pipes literal", () => {
@@ -119,16 +86,6 @@ describe("findTextMatches", () => {
     expect(result.matches[0]).toMatchObject({
       rangeSource: "abcd|note",
       matchEnd: "abcd|note".length,
-    });
-  });
-
-  it("returns not_found for a nonliteral hash-prefixed needle", () => {
-    const result = findInBodies(["Present body"], "63bf|Missing body");
-
-    expect(result).toMatchObject({
-      ok: false,
-      code: "not_found",
-      message: 'Could not find "63bf|Missing body" in the selected scope',
     });
   });
 

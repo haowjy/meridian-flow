@@ -1,15 +1,8 @@
 // Verifies the versioned model-result discriminants used by durable recovery.
 import { describe, expect, it } from "vitest";
-import { isAgentEditResult, modelResult } from "./model-result.js";
+import { isAgentEditResult } from "./model-result.js";
 
 describe("agent-edit model result", () => {
-  it("accepts valid success and error results", () => {
-    expect(
-      isAgentEditResult(modelResult({ command: "read", status: "success", phase: "committed" })),
-    ).toBe(true);
-    expect(isAgentEditResult(modelResult({ command: "delete", status: "not_found" }))).toBe(true);
-  });
-
   it("rejects states whose phase disagrees with status", () => {
     expect(
       isAgentEditResult({

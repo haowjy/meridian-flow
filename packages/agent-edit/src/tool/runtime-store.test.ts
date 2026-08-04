@@ -183,42 +183,6 @@ describe("runtime store", () => {
     expect(blockTexts(replaceCtx.liveDoc("chapter.md"))).toEqual(["Human Alpha blade."]);
   });
 
-  it("allows scoped replace and delete without a reread gate", async () => {
-    const nonStale = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
-    await nonStale.core.write({ command: "read", file: "chapter.md" }, context);
-    const alphaHash = hashAt(nonStale.liveDoc("chapter.md"), 0);
-    const replaced = await nonStale.core.write(
-      { command: "replace", file: "chapter.md", in: alphaHash, content: "Agent replacement." },
-      context,
-    );
-    expect(replaced.status).toBe("success");
-    expect(blockTexts(nonStale.liveDoc("chapter.md"))).toEqual([
-      "Agent replacement.",
-      "Beta shield.",
-    ]);
-    const betaHash = hashAt(nonStale.liveDoc("chapter.md"), 1);
-    const deleted = await nonStale.core.write(
-      { command: "delete", file: "chapter.md", in: betaHash },
-      context,
-    );
-    expect(deleted.status).toBe("success");
-    expect(blockTexts(nonStale.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
-
-    const reread = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
-    await reread.core.write({ command: "read", file: "chapter.md" }, context);
-    const staleHash = hashAt(reread.liveDoc("chapter.md"), 0);
-    await appendHumanPrefixAndInvalidate(reread, "chapter.md");
-    const staleAttempt = await reread.core.write(
-      { command: "replace", file: "chapter.md", in: staleHash, content: "Agent replacement." },
-      context,
-    );
-    expect(staleAttempt.status).toBe("success");
-    expect(blockTexts(reread.liveDoc("chapter.md"))).toEqual([
-      "Agent replacement.",
-      "Beta shield.",
-    ]);
-  });
-
   it("rehydrates durable redo after restart and marks it redone", async () => {
     const turnId = "thread-a:chapter.md:turn-restart-redo";
 

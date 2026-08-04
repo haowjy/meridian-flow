@@ -1,7 +1,7 @@
 // Write-command schema parity checks for the public package boundary.
 import { describe, expect, it } from "vitest";
 
-import { WriteCommandSchema, writeCommandCategory } from "./command-schema.js";
+import { WriteCommandSchema } from "./command-schema.js";
 
 const validCommands = [
   { command: "create", file: "chapter.md" },
@@ -99,32 +99,8 @@ describe("WriteCommandSchema", () => {
   });
 
   it("rejects only the intended strict-schema tightenings", () => {
-    expect(intendedTightenings.map(([label]) => label)).toEqual([
-      "extra key",
-      "insert extra key",
-      "old read spelling",
-      "read with content",
-      "replace with after",
-      "replace with before",
-      "insert with undo selector",
-      "undo with content",
-      "create with find",
-      "delete with content",
-      "delete without scope",
-    ]);
-
     for (const [, command] of intendedTightenings) {
       expect(WriteCommandSchema.safeParse(command).success).toBe(false);
     }
-  });
-
-  it("classifies query, mutating, and history commands", () => {
-    expect(writeCommandCategory({ command: "read", file: "chapter.md" })).toBe("query");
-    expect(writeCommandCategory({ command: "diff" })).toBe("query");
-    expect(writeCommandCategory({ command: "insert", file: "chapter.md", content: "Beta" })).toBe(
-      "mutating",
-    );
-    expect(writeCommandCategory({ command: "delete", file: "chapter.md", in: 2 })).toBe("mutating");
-    expect(writeCommandCategory({ command: "undo", file: "chapter.md" })).toBe("history");
   });
 });

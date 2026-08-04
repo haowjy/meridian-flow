@@ -39,7 +39,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
 export type { BlockHashLookup, BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
 export type { Hashline } from "./model/hashline.js";
-export { splitHashline, stripBlockHash, toHashline } from "./model/hashline.js";
+export { splitHashline, toHashline } from "./model/hashline.js";
 export type { LiveBlockRangeTarget } from "./model/navigation-target.js";
 export {
   decodeNavigationPosition,
@@ -47,17 +47,8 @@ export {
   isBlockItemId,
   validateLiveBlockRange,
 } from "./model/navigation-target.js";
-export type {
-  WriteCommand,
-  WriteCommandCategory,
-  WriteCommandName,
-} from "./tool/command-schema.js";
-export {
-  MUTATING_WRITE_COMMANDS,
-  WriteCommandSchema,
-  writeCommandCategory,
-  writeCommandName,
-} from "./tool/command-schema.js";
+export type { WriteCommand, WriteCommandName } from "./tool/command-schema.js";
+export { WriteCommandSchema, writeCommandName } from "./tool/command-schema.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,

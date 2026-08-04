@@ -58,8 +58,8 @@ export interface RuntimeStore {
     session: ActorSession,
     docId: string,
     commandName: WriteCommand["command"],
+    runtime: RuntimeDocumentState,
     filePath?: string,
-    runtime?: RuntimeDocumentState,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
 }
@@ -259,10 +259,10 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     commandName: WriteCommand["command"],
+    runtime: RuntimeDocumentState,
     filePath = docId,
-    runtime?: RuntimeDocumentState,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
-    if (staleLiveDocs.has(docId) && runtime) {
+    if (staleLiveDocs.has(docId)) {
       const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
         filePath,
       });
@@ -273,21 +273,11 @@ export function createRuntimeStore(deps: {
     const state = session.documents.get(docId);
     if (state) return { ok: true, stateVector: state.stateVector };
 
-    if (runtime) {
-      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
-        filePath,
-      });
-      if (isInternalWriteResult(restored)) return { ok: false, response: restored };
-      return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
-    }
-
-    return {
-      ok: false,
-      response: {
-        status: "not_found",
-        text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
-      },
-    };
+    const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
+      filePath,
+    });
+    if (isInternalWriteResult(restored)) return { ok: false, response: restored };
+    return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
   }
 
   function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {

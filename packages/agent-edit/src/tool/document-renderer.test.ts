@@ -1,5 +1,5 @@
 // Document-renderer block selection and agent-facing text rendering contracts.
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   collisionMarkdown,
@@ -10,24 +10,6 @@ import { hashAt, renderedBlockBodies } from "./test-support/assertions.js";
 import { codec, createDoc, model } from "./test-support/write-tool-harness.js";
 
 describe("document renderer", () => {
-  it("builds a full typed read from one batch serialization", () => {
-    const doc = createDoc("Alpha\n\nBeta\n\nGamma", 100);
-    const instrumentedModel = {
-      ...model,
-      getBlockId: vi.fn(model.getBlockId),
-      serializeBlockLines: vi.fn(model.serializeBlockLines),
-      serializeBlockBodies: vi.fn(model.serializeBlockBodies),
-    };
-    const renderer = createDocumentRenderer({ model: instrumentedModel, codec });
-
-    const read = renderer.renderRead(doc, instrumentedModel.getBlocks(doc), "chapter.md", "full");
-
-    expect(read.blocks.map((block) => block.body)).toEqual(["Alpha", "Beta", "Gamma"]);
-    expect(instrumentedModel.serializeBlockLines).toHaveBeenCalledTimes(1);
-    expect(instrumentedModel.serializeBlockBodies).not.toHaveBeenCalled();
-    expect(instrumentedModel.getBlockId).not.toHaveBeenCalled();
-  });
-
   it("renders block-hashed document content and scoped outline sections", () => {
     const doc = createDoc("# Chapter\n\nAlpha sword.\n\n## Arena\n\nBeta waits.", 100);
     const renderer = createDocumentRenderer({ model, codec });

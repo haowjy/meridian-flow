@@ -392,8 +392,8 @@ export function createWriteCommands(deps: {
       session,
       address.documentId,
       command.command,
-      address.filePath,
       runtime,
+      address.filePath,
     );
     if (!synced.ok) return synced.response;
     if (context.interactionContext) {

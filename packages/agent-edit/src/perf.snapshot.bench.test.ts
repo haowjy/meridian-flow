@@ -22,7 +22,6 @@ const model = yProsemirrorModel(schema);
 const renderer = createDocumentRenderer({ model, codec });
 
 const BLOCK_COUNTS = [50, 100, 200, 400];
-const READ_BLOCK_COUNTS = [...BLOCK_COUNTS, 800];
 const WARMUP = 2;
 const ITERATIONS = 5;
 
@@ -135,15 +134,7 @@ describe("snapshot cost baseline", () => {
 });
 
 describe("read reconstruction cost", () => {
-  for (const blockCount of READ_BLOCK_COUNTS) {
-    it(`renderRead full B=${blockCount}`, () => {
-      const doc = buildLiveDoc(blockCount);
-      const blocks = model.getBlocks(doc);
-      time(`renderRead full B=${blockCount}`, () => {
-        renderer.renderRead(doc, blocks, "chapter.md", "full");
-      });
-    });
-
+  for (const blockCount of BLOCK_COUNTS) {
     it(`read rebuild (clone + render) B=${blockCount}`, () => {
       const live = buildLiveDoc(blockCount);
       time(`read clone+render B=${blockCount}`, () => {

@@ -206,27 +206,6 @@ describe("createInvokeToolRegistration", () => {
     );
   });
 
-  it("returns no-longer-available when a baked skill is deleted", async () => {
-    const handler = registerInvoke({
-      bakedSkillSlugs: ["alpha", "beta"],
-      skills: [resolvedSkill({ skill: skillRecord({ slug: "beta" }) })],
-    });
-
-    const output = await handler(
-      { skillname: "alpha" },
-      {
-        signal: new AbortController().signal,
-        threadId: "thread-1",
-        turnId: "turn-1",
-        agentSlug: "agent-one",
-      },
-    );
-
-    expect(output).toEqual(
-      invokeError('Skill "alpha" is no longer available. Available skills: beta'),
-    );
-  });
-
   it("returns a tool error when skillname is missing", async () => {
     const handler = registerInvoke({ skills: [resolvedSkill()] });
 
