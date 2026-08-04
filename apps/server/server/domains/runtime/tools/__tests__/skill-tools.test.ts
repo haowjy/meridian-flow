@@ -1,7 +1,6 @@
 /**
  * Skill invoke dispatcher tests.
  */
-import { meridianErrorFromTool, meridianErrorToJson } from "@meridian/contracts/interrupt";
 import { describe, expect, it } from "vitest";
 
 import type { ResolvedSkill, SkillRecord } from "../../../packages/domain/types.js";
@@ -14,7 +13,15 @@ import {
 import type { ToolHandler } from "../types.js";
 
 function invokeError(message: string) {
-  return { isError: true, output: meridianErrorToJson(meridianErrorFromTool(message)) };
+  return {
+    isError: true,
+    output: {
+      code: "tool_error",
+      message,
+      source: "tool",
+      retryable: false,
+    },
+  };
 }
 
 function skillRecord(overrides: Partial<SkillRecord> = {}): SkillRecord {

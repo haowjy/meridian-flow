@@ -487,6 +487,10 @@ describe("write reversal under concurrent edits", () => {
     );
 
     expect(undo.status).toBe("reconciled");
+    expect(undo.result).toMatchObject({
+      command: "undo",
+      reversal: { direction: "undo", count: 1 },
+    });
     expect(scenario.blockTexts()).toEqual(["Beta bright shield."]);
   });
 

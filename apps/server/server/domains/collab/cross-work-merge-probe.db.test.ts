@@ -73,7 +73,13 @@ describe("cross-Work merge mechanics probe (postgres)", () => {
     const receipt = JSON.stringify(result.echo);
     expect(receipt).toContain("Work B stale replacement.");
     expect(receipt).toContain("Writer-approved Work A text.");
-    expect(receipt).toContain('"concurrent":{"runs":[{"origin":"agent"');
+    expect(result.echo).toMatchObject({
+      result: {
+        concurrent: {
+          runs: expect.arrayContaining([expect.objectContaining({ origin: "agent" })]),
+        },
+      },
+    });
     harness.destroyWarmState();
   });
 });

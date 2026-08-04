@@ -838,6 +838,13 @@ describe("runtime orchestrator behavior", () => {
       .filter((message) => message.role === "user")
       .at(-1);
     expect(secondSystemMessages).toHaveLength(1);
+    expect(secondSystemMessages).toEqual(firstSystemMessages);
+    expect(JSON.stringify(firstSystemMessages)).not.toContain(
+      "The writer reversed the following edits",
+    );
+    expect(JSON.stringify(secondSystemMessages)).not.toContain(
+      "could not verify whether concurrent writer content was preserved",
+    );
     expect(messageText(secondWriterMessage)).toContain("continue");
     expect(messageText(secondWriterMessage)).toContain(
       "could not verify whether concurrent writer content was preserved",

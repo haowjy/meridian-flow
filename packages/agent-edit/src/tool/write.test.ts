@@ -1296,8 +1296,10 @@ describe("write tool dispatch", () => {
     ).toEqual(["Only block"]);
   });
 
-  it("replaces text and formatting, then structurally deletes a block", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword.\n\nDelete me." });
+  it("replaces text and formatting, then structurally deletes and restores a block range", async () => {
+    const ctx = harness({
+      "chapter.md": "Alpha sword.\n\nDelete one.\n\n## Delete two\n\nKeep me.",
+    });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const text = await ctx.core.write(
@@ -1316,22 +1318,30 @@ describe("write tool dispatch", () => {
     expect(outcomeText(formatted)).toContain("|Alpha **blade**.");
     expect(serializeDoc(ctx.liveDoc("chapter.md"))).toContain("Alpha **blade**.");
 
-    const deleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const beforeDelete = serializeDoc(ctx.liveDoc("chapter.md"));
+    const firstDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const lastDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 2);
     const deletion = await ctx.core.write(
-      { command: "delete", file: "chapter.md", in: deleteHash },
+      { command: "delete", file: "chapter.md", in: [firstDeleteHash, lastDeleteHash] },
       context,
     );
 
     expect(outcomeText(deletion)).toContain("status: success");
-    expect(outcomeText(deletion)).toContain(`deleted: ${deleteHash}`);
     expect(deletion.result).toMatchObject({
       command: "delete",
-      write: { deletedHashes: [deleteHash] },
+      write: { deletedHashes: [firstDeleteHash, lastDeleteHash] },
     });
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Keep me."]);
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(undo.result).toMatchObject({
+      command: "undo",
+      reversal: { direction: "undo", count: 1 },
+    });
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(beforeDelete);
 
     const rejectedSentinel = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "", in: 1 },
+      { command: "replace", file: "chapter.md", content: "", in: 4 },
       context,
     );
     expect(rejectedSentinel.status).toBe("invalid_write");

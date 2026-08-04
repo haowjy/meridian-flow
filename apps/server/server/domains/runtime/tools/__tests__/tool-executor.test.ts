@@ -290,6 +290,24 @@ describe("createToolExecutor", () => {
         message: "Tool timed out after 10ms",
       },
     });
+
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(
+      executor.executeTool(
+        { id: "write-abort", name: "write", arguments: { command: "insert" } },
+        { ...ctx, signal: aborted.signal },
+      ),
+    ).resolves.toEqual({
+      toolCallId: "write-abort",
+      isError: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "insert",
+        status: "internal_error",
+        message: "Tool aborted",
+      },
+    });
   });
 
   it("binds handler output deltas to the current tool call id", async () => {
