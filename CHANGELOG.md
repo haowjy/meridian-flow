@@ -7,6 +7,10 @@
   well as record limits, and local JSONL output rotates at 8 MiB with both
   14-day and 128 MiB retention ceilings. Loss summaries report records and
   bytes, and debug queries can select an exact event ID.
+- `packages/agent-edit`, `apps/server`: unexpected write-dispatch failures now
+  notify the host with their original cause and safe operation identifiers
+  before returning the same sanitized `internal_error`; Meridian emits the
+  diagnostic through `EventSink`, and observer failures can never veto writes.
 - `apps/app`: a table nested in another table's cell now keeps its grip
   chrome while the pointer travels to a grip. The gap beside the inner frame
   no longer re-anchors hover to the outer table, so the inner table's row

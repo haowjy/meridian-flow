@@ -108,6 +108,76 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Durable."]);
   });
 
+  it("reports an unexpected write failure without changing the model-facing outcome", async () => {
+    const cause = new Error("private writer text must not enter the outcome");
+    const onUnexpectedWriteError = vi.fn();
+    const ctx = harness(
+      { [INTERNAL_DOCUMENT_ID]: "Alpha." },
+      {
+        onUnexpectedWriteError,
+        journalOverride: (journal) => {
+          journal.reserveWriteOrdinal = async () => {
+            throw cause;
+          };
+          return journal;
+        },
+      },
+    );
+    await ctx.core.write(
+      { command: "read", file: "chapter.md", documentId: INTERNAL_DOCUMENT_ID },
+      context,
+    );
+
+    const failed = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        documentId: INTERNAL_DOCUMENT_ID,
+        content: "Never committed.",
+        tool_use_id: "tool-1",
+      },
+      { ...context, turnId: "turn-1", responseId: "response-1" },
+    );
+
+    expectOutcome(failed, "internal_error", true);
+    expect(outcomeText(failed)).not.toContain(cause.message);
+    expect(onUnexpectedWriteError).toHaveBeenCalledWith({
+      cause,
+      command: "insert",
+      documentId: INTERNAL_DOCUMENT_ID,
+      sessionId: "session-a",
+      threadId: THREAD_ID,
+      turnId: "turn-1",
+      responseId: "response-1",
+      toolUseId: "tool-1",
+    });
+  });
+
+  it("does not let an unexpected-write observer veto the collapsed failure", async () => {
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        onUnexpectedWriteError: () => {
+          throw new Error("observer unavailable");
+        },
+        journalOverride: (journal) => {
+          journal.reserveWriteOrdinal = async () => {
+            throw new Error("write failed");
+          };
+          return journal;
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Never committed." },
+      context,
+    );
+
+    expectOutcome(failed, "internal_error", true);
+  });
+
   it("reports a pulled human edit once after a failed immediate write", async () => {
     const ctx = harness({
       "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",

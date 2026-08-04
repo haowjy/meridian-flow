@@ -4,6 +4,7 @@ import type {
   ResponseLifecycleClaimDiscardedDetail,
   ReversalNoticeFailedDetail,
   ReversalNoticePort,
+  UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -193,6 +194,7 @@ export function createAgentEditObservabilityOptions(input: {
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
+  | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
 > {
   return {
@@ -202,7 +204,34 @@ export function createAgentEditObservabilityOptions(input: {
     onResponseClaimDiscarded: responseClaimDiscardedObserver(input.eventSink),
     onResponseCommitterTransition: responseCommitterTransitionObserver(input.eventSink),
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
+    onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
     onReversalNoticeFailed: reversalNoticeFailedObserver(input.eventSink),
+  };
+}
+
+function unexpectedWriteErrorObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onUnexpectedWriteError"]> {
+  return (event: UnexpectedWriteErrorDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "error",
+      source: "collab.agent_edit",
+      name: "write.failed",
+      correlation: {
+        threadId: event.threadId,
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        ...(event.documentId ? { documentId: event.documentId } : {}),
+        errorCode: "internal_error",
+      },
+      payload: {
+        command: event.command,
+        sessionId: event.sessionId,
+        ...(event.responseId ? { responseId: event.responseId } : {}),
+        ...(event.toolUseId ? { toolUseId: event.toolUseId } : {}),
+        ...unknownToEventPayload(event.cause),
+      },
+    });
   };
 }
 

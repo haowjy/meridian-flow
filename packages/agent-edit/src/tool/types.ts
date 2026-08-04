@@ -104,6 +104,18 @@ export interface WriteIdempotencyHitDetail {
     | { status: Exclude<WriteStatus, "success"> };
 }
 
+/** Host-only evidence for a dispatch failure collapsed to the stable internal-error outcome. */
+export interface UnexpectedWriteErrorDetail {
+  cause: unknown;
+  command: WriteCommandName;
+  documentId?: string;
+  sessionId: string;
+  threadId: string;
+  turnId?: string;
+  responseId?: string;
+  toolUseId?: string;
+}
+
 export type ResponseLifecycleEvent =
   | ResponseLifecycleErrorDetail
   | ResponseLifecycleClaimDiscardedDetail;
