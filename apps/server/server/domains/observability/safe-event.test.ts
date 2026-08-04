@@ -60,7 +60,18 @@ describe("sanitizeEventRecord byte boundary", () => {
       name: "test.large",
       correlation: { traceId: "trace-1", threadId: "thread-1" },
       payload: Object.fromEntries(
-        Array.from({ length: 50 }, (_, index) => [`field${index}Id`, "x".repeat(1_000)]),
+        [
+          "documentId",
+          "threadId",
+          "turnId",
+          "projectId",
+          "workId",
+          "responseId",
+          "requestId",
+          "sessionId",
+          "toolUseId",
+          "gatewayCallId",
+        ].map((key) => [key, "x".repeat(1_000)]),
       ),
     });
 
@@ -134,6 +145,22 @@ describe("sanitizeEventRecord byte boundary", () => {
     expect(event.stream).toBeUndefined();
     expect(event.payload).toMatchObject({ truncated: true, reason: "record_byte_limit" });
   });
+
+  it("keeps the hard limit when top-level enums are hostile runtime values", () => {
+    const event = sanitizeEventRecord({
+      eventId: "event-hostile-enums",
+      timestamp: "2026-07-18T00:00:00.000Z",
+      level: "x".repeat(20_000),
+      source: "test",
+      name: "test.hostile_enums",
+      sensitivity: "x".repeat(20_000),
+      payload: {},
+    } as unknown as EventRecord);
+
+    expect(serializedEventBytes(event)).toBeLessThanOrEqual(MAX_EVENT_RECORD_BYTES);
+    expect(event.level).toBe("error");
+    expect(event.sensitivity).toBe("safe");
+  });
 });
 
 describe("sanitizeEventRecord privacy boundary", () => {
@@ -148,6 +175,8 @@ describe("sanitizeEventRecord privacy boundary", () => {
         query: `SELECT ${secret}`,
         sql: `SELECT ${secret}`,
         note: secret,
+        reason: "the dragon dies in chapter 81",
+        writerReason: "the heroine reveals the hidden child",
       }),
     ).toEqual({
       error: "[redacted]",
@@ -156,6 +185,8 @@ describe("sanitizeEventRecord privacy boundary", () => {
       query: "[redacted]",
       sql: "[redacted]",
       note: "[redacted]",
+      reason: "[redacted]",
+      writerReason: "[redacted]",
     });
   });
 
@@ -172,7 +203,7 @@ describe("sanitizeEventRecord privacy boundary", () => {
     ).toEqual({ error: { class: "Error", category: "unexpected" } });
   });
 
-  it("reads only the bounded number of payload values", () => {
+  it("does not invoke payload accessors", () => {
     let reads = 0;
     const payload: Record<string, unknown> = {};
     for (let index = 0; index < 100; index += 1) {
@@ -187,7 +218,26 @@ describe("sanitizeEventRecord privacy boundary", () => {
 
     sanitize(payload);
 
-    expect(reads).toBe(50);
+    expect(reads).toBe(0);
+  });
+
+  it("rejects inherited payload state without traversing it", () => {
+    let inheritedReads = 0;
+    const prototype = Object.create(null) as Record<string, unknown>;
+    for (let index = 0; index < 100; index += 1) {
+      Object.defineProperty(prototype, `inherited${index}`, {
+        enumerable: true,
+        get: () => {
+          inheritedReads += 1;
+          return "private prose";
+        },
+      });
+    }
+    const payload = Object.create(prototype) as Record<string, unknown>;
+    payload.status = "ok";
+
+    expect(sanitize(payload)).toEqual({ redacted: true });
+    expect(inheritedReads).toBe(0);
   });
 });
 
@@ -218,6 +268,22 @@ describe("unknownToEventPayload", () => {
       status: "502 bad private upstream body",
     });
 
+    expect(unknownToEventPayload(error)).toEqual({
+      error: { class: "Error", category: "unexpected" },
+    });
+  });
+
+  it("never invokes throwing error metadata getters", () => {
+    const error = new Error("writer prose");
+    for (const key of ["name", "code", "status", "statusCode", "severity"]) {
+      Object.defineProperty(error, key, {
+        get: () => {
+          throw new Error("diagnostic getter veto");
+        },
+      });
+    }
+
+    expect(() => unknownToEventPayload(error)).not.toThrow();
     expect(unknownToEventPayload(error)).toEqual({
       error: { class: "Error", category: "unexpected" },
     });

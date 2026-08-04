@@ -16,8 +16,9 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
 - **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
 - **Diagnostic queries** — `debug-events.ts` (current-worktree Portless discovery,
-  in-memory dev auth, bounded deterministic EventQuery JSON, 5-second request
-  deadlines, and fixed login/event response byte ceilings)
+  in-memory dev auth, bounded deterministic EventQuery JSON, one 5-second
+  command deadline spanning route discovery and both requests, and fixed
+  login/event response byte ceilings)
 
 ## Directory layout
 

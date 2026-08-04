@@ -22,8 +22,12 @@ const SAFE_PAYLOAD_STRING_KEYS = new Set([
   "command",
   "direction",
   "deletedNodeTypes",
+  "documentId",
+  "documentIds",
+  "errorCode",
   "field",
   "fields",
+  "gatewayCallId",
   "kind",
   "level",
   "logPrefix",
@@ -33,19 +37,41 @@ const SAFE_PAYLOAD_STRING_KEYS = new Set([
   "originType",
   "outcome",
   "phase",
+  "projectId",
   "provider",
   "reason",
+  "requestId",
+  "responseId",
+  "responseTransactionId",
   "roomKey",
+  "runId",
   "route",
   "schemaVersion",
+  "sessionId",
   "source",
   "status",
+  "threadId",
+  "toolCallId",
+  "toolName",
+  "toolUseId",
   "transport",
+  "turnId",
+  "workId",
+  "yjsSpans",
 ]);
-const SAFE_PAYLOAD_STRING_SUFFIX = /(?:Id|Ids|Seq|Version|Hash|Hashes|Code|Reason)$/;
+const SAFE_ERROR_CODES = new Set([
+  "EACCES",
+  "EADDRINUSE",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOENT",
+  "ENOTFOUND",
+  "EPIPE",
+  "ETIMEDOUT",
+]);
 
-function payloadStringIsApproved(key: string): boolean {
-  return SAFE_PAYLOAD_STRING_KEYS.has(key) || SAFE_PAYLOAD_STRING_SUFFIX.test(key);
+function payloadStringIsApproved(key: string, value: string): boolean {
+  return SAFE_PAYLOAD_STRING_KEYS.has(key) && /^[A-Za-z0-9_./:-]+$/.test(value);
 }
 
 function redactString(value: string): string {
@@ -57,16 +83,27 @@ function redactString(value: string): string {
   return `${withoutSecrets.slice(0, MAX_STRING_LENGTH)}…[truncated:${value.length}]`;
 }
 
-function boundedIdentifier(value: string): string {
-  return redactString(value).slice(0, MAX_IDENTIFIER_LENGTH);
+function boundedIdentifier(value: unknown): string {
+  return typeof value === "string"
+    ? redactString(value).slice(0, MAX_IDENTIFIER_LENGTH)
+    : "[invalid]";
 }
 
 function sanitizeIdentifierRecord<T extends object>(value: T): T {
+  if (!isPlainRecord(value)) return Object.freeze({}) as T;
   const entries: Array<[string, unknown]> = [];
-  for (const key in value) {
-    if (!Object.hasOwn(value, key)) continue;
-    entries.push([key, value[key as keyof T]]);
-    if (entries.length === MAX_OBJECT_KEYS) break;
+  try {
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      entries.push([
+        boundedIdentifier(key),
+        descriptor && "value" in descriptor ? descriptor.value : "[redacted]",
+      ]);
+      if (entries.length === MAX_OBJECT_KEYS) break;
+    }
+  } catch {
+    return Object.freeze({}) as T;
   }
   return Object.freeze(
     Object.fromEntries(
@@ -84,63 +121,100 @@ function sanitizeIdentifierRecord<T extends object>(value: T): T {
   ) as unknown as T;
 }
 
+function isPlainRecord(value: object): boolean {
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  } catch {
+    return false;
+  }
+}
+
+function ownDataValue(value: Record<string, unknown>, key: string): unknown {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function safeErrorEnvelope(value: unknown): Record<string, unknown> | "[redacted]" {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "[redacted]";
+  if (!isPlainRecord(value)) return "[redacted]";
   const candidate = value as Record<string, unknown>;
+  const candidateCode = ownDataValue(candidate, "code");
+  const candidateSource = ownDataValue(candidate, "source");
+  const candidateRetryable = ownDataValue(candidate, "retryable");
   if (
-    typeof candidate.code === "string" &&
-    /^[a-z][a-z0-9_]{0,63}$/.test(candidate.code) &&
-    (candidate.source === "gateway" ||
-      candidate.source === "tool" ||
-      candidate.source === "child-agent" ||
-      candidate.source === "system") &&
-    typeof candidate.retryable === "boolean"
+    typeof candidateCode === "string" &&
+    /^[a-z][a-z0-9_]{0,63}$/.test(candidateCode) &&
+    (candidateSource === "gateway" ||
+      candidateSource === "tool" ||
+      candidateSource === "child-agent" ||
+      candidateSource === "system") &&
+    typeof candidateRetryable === "boolean"
   ) {
     return Object.freeze({
       class: "MeridianError",
-      category: candidate.source,
-      code: candidate.code,
-      retryable: candidate.retryable,
+      category: candidateSource,
+      code: candidateCode,
+      retryable: candidateRetryable,
     });
   }
+  const candidateClass = ownDataValue(candidate, "class");
+  const candidateCategory = ownDataValue(candidate, "category");
+  const candidateStatus = ownDataValue(candidate, "status");
   const errorClass =
-    typeof candidate.class === "string" &&
+    typeof candidateClass === "string" &&
     /^(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|URIError|EvalError|AggregateError|MeridianError)$/.test(
-      candidate.class,
+      candidateClass,
     )
-      ? candidate.class
+      ? candidateClass
       : "Error";
   const category =
-    candidate.category === "database" || candidate.category === "unexpected"
-      ? candidate.category
-      : typeof candidate.category === "string" && /^[a-z][a-z0-9_]{0,31}$/.test(candidate.category)
-        ? candidate.category
-        : "unexpected";
+    candidateCategory === "database" ||
+    candidateCategory === "unexpected" ||
+    candidateCategory === "gateway" ||
+    candidateCategory === "tool" ||
+    candidateCategory === "child-agent" ||
+    candidateCategory === "system"
+      ? candidateCategory
+      : "unexpected";
   const code =
-    (typeof candidate.code === "string" &&
-      /^(?:[A-Z0-9]{5}|E[A-Z0-9_]{1,63}|ERR_[A-Z0-9_]{1,59})$/.test(candidate.code)) ||
-    (typeof candidate.code === "number" && Number.isFinite(candidate.code))
-      ? candidate.code
+    (typeof candidateCode === "string" &&
+      (/^[A-Z0-9]{5}$/.test(candidateCode) || SAFE_ERROR_CODES.has(candidateCode))) ||
+    (typeof candidateCode === "number" && Number.isFinite(candidateCode))
+      ? candidateCode
       : undefined;
   const status =
-    typeof candidate.status === "number" && Number.isFinite(candidate.status)
-      ? candidate.status
+    typeof candidateStatus === "number" && Number.isFinite(candidateStatus)
+      ? candidateStatus
       : undefined;
   return Object.freeze({
     class: errorClass,
     category,
     ...(code !== undefined && { code }),
     ...(status !== undefined && { status }),
-    ...(typeof candidate.retryable === "boolean" && { retryable: candidate.retryable }),
+    ...(typeof candidateRetryable === "boolean" && { retryable: candidateRetryable }),
   });
 }
 
 function boundedOwnEntries(value: Record<string, unknown>): Array<[string, unknown]> {
+  if (!isPlainRecord(value)) return [];
   const entries: Array<[string, unknown]> = [];
-  for (const key in value) {
-    if (!Object.hasOwn(value, key)) continue;
-    entries.push([key, value[key]]);
-    if (entries.length === MAX_OBJECT_KEYS) break;
+  try {
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      entries.push([
+        boundedIdentifier(key),
+        descriptor && "value" in descriptor ? descriptor.value : "[redacted]",
+      ]);
+      if (entries.length === MAX_OBJECT_KEYS) break;
+    }
+  } catch {
+    return [];
   }
   return entries;
 }
@@ -156,7 +230,7 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
     return "[redacted]";
   if (value == null) return value;
   if (typeof value === "string") {
-    return payloadStringIsApproved(key) ? redactString(value) : "[redacted]";
+    return payloadStringIsApproved(key, value) ? redactString(value) : "[redacted]";
   }
   if (typeof value === "number" || typeof value === "boolean") return value;
   if (typeof value === "bigint") return value.toString();
@@ -167,6 +241,7 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
     );
   }
   if (typeof value === "object") {
+    if (!isPlainRecord(value)) return "[redacted-object]";
     return Object.freeze(
       Object.fromEntries(
         boundedOwnEntries(value as Record<string, unknown>).map(([childKey, childValue]) => [
@@ -176,18 +251,40 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
       ),
     );
   }
-  return String(value);
+  return "[redacted-type]";
+}
+
+function eventLevel(value: unknown): EventRecord["level"] {
+  return value === "trace" ||
+    value === "debug" ||
+    value === "info" ||
+    value === "warn" ||
+    value === "error" ||
+    value === "fatal"
+    ? value
+    : "error";
+}
+
+function eventSensitivity(value: unknown): EventRecord["sensitivity"] {
+  return value === "protected_reference" ? value : "safe";
+}
+
+function sanitizePayload(value: unknown): Record<string, unknown> {
+  const sanitized = sanitizeValue("payload", value, 0);
+  return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized)
+    ? (sanitized as Record<string, unknown>)
+    : Object.freeze({ redacted: true });
 }
 
 export function sanitizeEventRecord(event: EventRecord): EventRecord {
   const sanitized = {
     eventId: boundedIdentifier(event.eventId ?? crypto.randomUUID()),
     timestamp: boundedIdentifier(event.timestamp),
-    level: event.level,
+    level: eventLevel(event.level),
     source: boundedIdentifier(event.source),
     name: boundedIdentifier(event.name),
-    sensitivity: event.sensitivity ?? "safe",
-    payload: sanitizeValue("payload", event.payload, 0) as Record<string, unknown>,
+    sensitivity: eventSensitivity(event.sensitivity),
+    payload: sanitizePayload(event.payload),
     ...(event.correlation !== undefined && {
       correlation: sanitizeIdentifierRecord(event.correlation),
     }),
@@ -211,7 +308,7 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
   // Correlation and stream are structurally bounded, but retain a minimal
   // envelope if an untyped caller supplies enough extra keys to exceed the
   // byte ceiling. A hard storage bound is more important than hostile context.
-  return Object.freeze({
+  const minimal = Object.freeze({
     eventId: truncated.eventId,
     timestamp: truncated.timestamp,
     level: truncated.level,
@@ -219,6 +316,16 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
     name: truncated.name,
     sensitivity: truncated.sensitivity,
     payload: truncated.payload,
+  });
+  if (serializedEventBytes(minimal) <= MAX_EVENT_RECORD_BYTES) return minimal;
+  return Object.freeze({
+    eventId: "record-truncated",
+    timestamp: "1970-01-01T00:00:00.000Z",
+    level: "error",
+    source: "observability",
+    name: "record.truncated",
+    sensitivity: "safe",
+    payload: Object.freeze({ truncated: true, reason: "record_byte_limit" }),
   });
 }
 

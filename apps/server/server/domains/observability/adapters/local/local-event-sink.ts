@@ -9,6 +9,7 @@ import {
   mkdir,
   open,
   readdir,
+  readFile,
   stat,
   unlink,
 } from "node:fs/promises";
@@ -42,7 +43,7 @@ export type LocalEventSinkOptions = {
   maxBytes?: number;
 };
 
-const LOG_FILE_PATTERN = /^\d{4}-\d{2}-\d{2}-\d{4}\.jsonl$/;
+const LOG_FILE_PATTERN = /^(\d{4}-\d{2}-\d{2})-(\d+)\.jsonl$/;
 const DEFAULT_PENDING_EVENT_CAPACITY = 5_000;
 const DEFAULT_PENDING_BYTE_CAPACITY = 16 * 1_024 * 1_024;
 const DEFAULT_SEGMENT_BYTES = 8 * 1_024 * 1_024;
@@ -131,6 +132,16 @@ function cutoffDateStamp(now: Date, retentionDays: number): string {
   cutoff.setUTCHours(0, 0, 0, 0);
   cutoff.setUTCDate(cutoff.getUTCDate() - Math.max(0, retentionDays - 1));
   return utcDateStamp(cutoff);
+}
+
+function segmentNumber(fileName: string): number {
+  const match = LOG_FILE_PATTERN.exec(fileName);
+  return match ? Number(match[2]) : -1;
+}
+
+function compareLogFiles(left: string, right: string): number {
+  const dateOrder = left.slice(0, 10).localeCompare(right.slice(0, 10));
+  return dateOrder || segmentNumber(left) - segmentNumber(right);
 }
 
 export class LocalEventSink implements EventSink {
@@ -289,11 +300,14 @@ export class LocalEventSink implements EventSink {
     while (true) {
       try {
         const handle = await open(lockPath, "wx");
+        const owner = `${process.pid}:${crypto.randomUUID()}`;
         try {
+          await handle.writeFile(owner, "utf8");
           await operation();
         } finally {
           await handle.close().catch(() => undefined);
-          await unlink(lockPath).catch(() => undefined);
+          const currentOwner = await readFile(lockPath, "utf8").catch(() => "");
+          if (currentOwner === owner) await unlink(lockPath).catch(() => undefined);
         }
         return;
       } catch (error) {
@@ -301,8 +315,20 @@ export class LocalEventSink implements EventSink {
         try {
           const lock = await stat(lockPath);
           if (Date.now() - lock.mtimeMs > DIRECTORY_LOCK_STALE_MS) {
-            await unlink(lockPath);
-            continue;
+            const owner = await readFile(lockPath, "utf8").catch(() => "");
+            const ownerPid = Number(owner.split(":", 1)[0]);
+            let ownerIsAlive = Number.isInteger(ownerPid) && ownerPid > 0;
+            if (ownerIsAlive) {
+              try {
+                process.kill(ownerPid, 0);
+              } catch (ownerError) {
+                ownerIsAlive = (ownerError as NodeJS.ErrnoException).code !== "ESRCH";
+              }
+            }
+            if (!ownerIsAlive) {
+              await unlink(lockPath);
+              continue;
+            }
           }
         } catch (lockError) {
           if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") throw lockError;
@@ -334,12 +360,12 @@ export class LocalEventSink implements EventSink {
     if (this.activeDate !== date) {
       const existing = (await readdir(this.dir))
         .filter((name) => name.startsWith(`${date}-`) && LOG_FILE_PATTERN.test(name))
-        .sort();
+        .sort(compareLogFiles);
       const latest = existing.at(-1);
       if (latest) {
         const latestPath = path.join(this.dir, latest);
         const latestBytes = (await stat(latestPath)).size;
-        const latestSegment = Number(latest.slice(11, 15));
+        const latestSegment = segmentNumber(latest);
         if (latestBytes + nextBytes <= this.segmentBytes) {
           this.activeDate = date;
           this.activePath = latestPath;
@@ -371,7 +397,7 @@ export class LocalEventSink implements EventSink {
     const files = entries
       .filter((entry) => entry.isFile() && LOG_FILE_PATTERN.test(entry.name))
       .map((entry) => path.join(this.dir as string, entry.name))
-      .sort();
+      .sort((left, right) => compareLogFiles(path.basename(left), path.basename(right)));
     const retained: Array<{ filePath: string; bytes: number }> = [];
     for (const filePath of files) {
       if (cutoff !== undefined && path.basename(filePath).slice(0, 10) < cutoff) {

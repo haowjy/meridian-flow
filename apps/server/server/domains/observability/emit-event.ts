@@ -16,14 +16,32 @@ const SAFE_ERROR_CLASSES = new Set([
   "EvalError",
   "AggregateError",
 ]);
-const STABLE_ERROR_CODE = /^(?:[A-Z0-9]{5}|E[A-Z0-9_]{1,63}|ERR_[A-Z0-9_]{1,59})$/;
+const SAFE_ERROR_CODES = new Set([
+  "EACCES",
+  "EADDRINUSE",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOENT",
+  "ENOTFOUND",
+  "EPIPE",
+  "ETIMEDOUT",
+]);
+
+function ownDataValue(value: object, key: string): unknown {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function safeErrorScalar(value: unknown): string | number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (
     typeof value === "string" &&
     value.length <= ERROR_SCALAR_MAX &&
-    STABLE_ERROR_CODE.test(value)
+    (/^[A-Z0-9]{5}$/.test(value) || SAFE_ERROR_CODES.has(value))
   ) {
     return value;
   }
@@ -31,32 +49,35 @@ function safeErrorScalar(value: unknown): string | number | undefined {
 }
 
 function safeErrorClass(error: Error): string {
-  return typeof error.name === "string" && SAFE_ERROR_CLASSES.has(error.name)
-    ? error.name
-    : "Error";
+  const name = ownDataValue(error, "name");
+  return typeof name === "string" && SAFE_ERROR_CLASSES.has(name) ? name : "Error";
 }
 
 export function unknownToEventPayload(error: unknown): Record<string, unknown> {
-  if (isMeridianError(error)) {
-    return {
-      error: {
-        class: "MeridianError",
-        category: error.source,
-        code: error.code.slice(0, ERROR_SCALAR_MAX),
-        retryable: error.retryable,
-      },
-    };
+  try {
+    if (isMeridianError(error)) {
+      return {
+        error: {
+          class: "MeridianError",
+          category: error.source,
+          code: error.code.slice(0, ERROR_SCALAR_MAX),
+          retryable: error.retryable,
+        },
+      };
+    }
+  } catch {
+    return { error: { class: "Error", category: "unexpected" } };
   }
   if (error instanceof Error) {
-    const candidate = error as Error & Record<string, unknown>;
-    const code = safeErrorScalar(candidate.code);
-    const rawStatus = candidate.status ?? candidate.statusCode;
+    const code = safeErrorScalar(ownDataValue(error, "code"));
+    const rawStatus = ownDataValue(error, "status") ?? ownDataValue(error, "statusCode");
     const status =
       typeof rawStatus === "number" && Number.isFinite(rawStatus) ? rawStatus : undefined;
+    const severity = ownDataValue(error, "severity");
     return {
       error: {
         class: safeErrorClass(error),
-        category: candidate.severity === undefined ? "unexpected" : "database",
+        category: severity === undefined ? "unexpected" : "database",
         ...(code !== undefined && { code }),
         ...(status !== undefined && { status }),
       },

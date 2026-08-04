@@ -108,8 +108,8 @@ A narrowing pivot is required: `--event`, `--trace`, `--thread`, `--turn`,
 `--document`, or `--error-code`. Optional filters are `--source`, `--name`,
 `--level`, `--since`, and `--limit`. Compact output omits payloads and caps at
 50 events; `--full` includes sanitized records and caps at 200. Output includes
-the query and dropped record/byte counts. Requests have a five-second wall-clock
-deadline; login and event bodies have 64 KiB and 2 MiB byte ceilings. Failures
+the query and dropped record/byte counts. Route discovery, login, and event fetch
+share one five-second command deadline; login and event bodies have 64 KiB and 2 MiB byte ceilings. Failures
 exit nonzero with remediation.
 
 Authenticated local development/test servers with the `local` event provider

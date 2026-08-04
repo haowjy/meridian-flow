@@ -4,7 +4,7 @@ import type { IncomingHttpHeaders } from "node:http";
 import https from "node:https";
 import { pathToFileURL } from "node:url";
 import { portlessCa } from "./dev-readiness";
-import { resolveCurrentRepoRoot, runGit } from "./lib/dev-env";
+import { resolveCurrentRepoRoot } from "./lib/dev-env";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import { resolveExpectedRouteUrls } from "./portless-routes";
 
@@ -86,7 +86,7 @@ export function parseDebugEventsArgs(args: string[]): DebugEventsOptions {
 }
 
 type HttpResult = { status: number; headers: IncomingHttpHeaders; body: string };
-const REQUEST_DEADLINE_MS = 5_000;
+const COMMAND_DEADLINE_MS = 5_000;
 const LOGIN_RESPONSE_BYTES = 64 * 1_024;
 const EVENT_RESPONSE_BYTES = 2 * 1_024 * 1_024;
 
@@ -110,8 +110,9 @@ export function createBoundedResponseCollector(maxBytes: number) {
 
 function request(
   url: string,
-  headers: Record<string, string> = {},
-  maxResponseBytes = EVENT_RESPONSE_BYTES,
+  headers: Record<string, string>,
+  maxResponseBytes: number,
+  timeoutMs: number,
 ): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -145,26 +146,39 @@ function request(
       },
     );
     const deadline = setTimeout(
-      () => clientRequest.destroy(new Error(`request exceeded ${REQUEST_DEADLINE_MS}ms`)),
-      REQUEST_DEADLINE_MS,
+      () => clientRequest.destroy(new Error("debug event query exceeded its 5-second deadline")),
+      timeoutMs,
     );
     clientRequest.on("error", (error) => finish(() => reject(error)));
     clientRequest.end();
   });
 }
 
-function resolveOrigins(repoRoot: string): { app: string; server: string } {
+function remainingCommandMs(deadlineAt: number): number {
+  const remaining = deadlineAt - Date.now();
+  if (remaining <= 0) throw new Error("debug event query exceeded its 5-second deadline");
+  return remaining;
+}
+
+function resolveOrigins(repoRoot: string, deadlineAt: number): { app: string; server: string } {
   let output: string;
   try {
     output = execFileSync("pnpm", ["portless:list"], {
       cwd: repoRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: remainingCommandMs(deadlineAt),
     });
   } catch {
+    remainingCommandMs(deadlineAt);
     throw new Error("Portless is unavailable. Start this worktree with `pnpm dev` and retry.");
   }
-  const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const branchName = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: remainingCommandMs(deadlineAt),
+  }).trim();
   const urls = resolveExpectedRouteUrls({
     output,
     mode: "local",
@@ -206,11 +220,13 @@ export async function queryDebugEvents(
   options: DebugEventsOptions,
   repoRoot = resolveCurrentRepoRoot(),
 ): Promise<Record<string, unknown>> {
-  const origins = resolveOrigins(repoRoot);
+  const deadlineAt = Date.now() + COMMAND_DEADLINE_MS;
+  const origins = resolveOrigins(repoRoot, deadlineAt);
   const login = await request(
     new URL("/api/auth/dev-login", origins.app).toString(),
     {},
     LOGIN_RESPONSE_BYTES,
+    remainingCommandMs(deadlineAt),
   );
   if (login.status !== 302) {
     throw new Error(`Dev login failed with HTTP ${login.status}: ${login.body.slice(0, 400)}`);
@@ -218,7 +234,12 @@ export async function queryDebugEvents(
   const url = new URL("/api/debug/events", origins.server);
   for (const [key, value] of Object.entries(options.query))
     url.searchParams.set(key, String(value));
-  const response = await request(url.toString(), { Cookie: sessionCookie(login.headers) });
+  const response = await request(
+    url.toString(),
+    { Cookie: sessionCookie(login.headers) },
+    EVENT_RESPONSE_BYTES,
+    remainingCommandMs(deadlineAt),
+  );
   if (response.status !== 200) {
     throw new Error(
       `Event query failed with HTTP ${response.status}: ${response.body.slice(0, 400)}`,
