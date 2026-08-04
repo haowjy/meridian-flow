@@ -4,6 +4,7 @@
  */
 import { isMeridianError } from "@meridian/contracts/interrupt";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
+import { safeMeridianErrorCode } from "./safe-event.js";
 
 const ERROR_SCALAR_MAX = 128;
 const SAFE_ERROR_CLASSES = new Set([
@@ -56,11 +57,12 @@ function safeErrorClass(error: Error): string {
 export function unknownToEventPayload(error: unknown): Record<string, unknown> {
   try {
     if (isMeridianError(error)) {
+      const code = safeMeridianErrorCode(error.code);
       return {
         error: {
           class: "MeridianError",
           category: error.source,
-          code: error.code.slice(0, ERROR_SCALAR_MAX),
+          ...(code !== undefined && { code }),
           retryable: error.retryable,
         },
       };

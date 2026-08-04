@@ -103,6 +103,59 @@ const SAFE_ERROR_CODES = new Set([
   "EPIPE",
   "ETIMEDOUT",
 ]);
+const SAFE_MERIDIAN_ERROR_CODES = new Set([
+  "account_link_conflict",
+  "already_active",
+  "ambiguous",
+  "ambiguous_match",
+  "auth_error",
+  "auth_failed",
+  "authority_head_busy",
+  "bad_request",
+  "branch_corrupt_reset",
+  "checkpoint_incomplete",
+  "checkpoint_not_found",
+  "claimed_write_discarded",
+  "conflict",
+  "content_filtered",
+  "context_overflow",
+  "context_unavailable",
+  "corrupt_state",
+  "credits_exhausted",
+  "forbidden",
+  "internal",
+  "interrupt_correlation_mismatch",
+  "interrupt_not_pending",
+  "invalid_mutation",
+  "invalid_operation",
+  "invalid_request",
+  "invalid_uri",
+  "invalid_write",
+  "io_error",
+  "malformed_response",
+  "network_error",
+  "not_found",
+  "not_subscribed",
+  "package_dependency_unresolved",
+  "permission_denied",
+  "provider_error",
+  "rate_limited",
+  "response_closed",
+  "runtime_error",
+  "scope_mismatch",
+  "server_error",
+  "spawn_depth_exceeded",
+  "stale_generation",
+  "stale_source",
+  "stale_target",
+  "tool_error",
+]);
+
+export function safeMeridianErrorCode(value: unknown): string | undefined {
+  return typeof value === "string" && value.length <= 64 && SAFE_MERIDIAN_ERROR_CODES.has(value)
+    ? value
+    : undefined;
+}
 
 function payloadStringIsApproved(key: string, value: string): boolean {
   const enumValues = SAFE_PAYLOAD_ENUM_VALUES[key];
@@ -186,28 +239,34 @@ function safeErrorEnvelope(value: unknown): Record<string, unknown> | "[redacted
   const candidateCode = ownDataValue(candidate, "code");
   const candidateSource = ownDataValue(candidate, "source");
   const candidateRetryable = ownDataValue(candidate, "retryable");
-  if (
-    typeof candidateCode === "string" &&
-    /^[a-z][a-z0-9_]{0,63}$/.test(candidateCode) &&
-    (candidateSource === "gateway" ||
-      candidateSource === "tool" ||
-      candidateSource === "child-agent" ||
-      candidateSource === "system") &&
-    typeof candidateRetryable === "boolean"
-  ) {
+  const candidateClass = ownDataValue(candidate, "class");
+  const candidateCategory = ownDataValue(candidate, "category");
+  const meridianCategory =
+    candidateSource === "gateway" ||
+    candidateSource === "tool" ||
+    candidateSource === "child-agent" ||
+    candidateSource === "system"
+      ? candidateSource
+      : candidateClass === "MeridianError" &&
+          (candidateCategory === "gateway" ||
+            candidateCategory === "tool" ||
+            candidateCategory === "child-agent" ||
+            candidateCategory === "system")
+        ? candidateCategory
+        : undefined;
+  if (meridianCategory && typeof candidateRetryable === "boolean") {
+    const code = safeMeridianErrorCode(candidateCode);
     return Object.freeze({
       class: "MeridianError",
-      category: candidateSource,
-      code: candidateCode,
+      category: meridianCategory,
+      ...(code !== undefined && { code }),
       retryable: candidateRetryable,
     });
   }
-  const candidateClass = ownDataValue(candidate, "class");
-  const candidateCategory = ownDataValue(candidate, "category");
   const candidateStatus = ownDataValue(candidate, "status");
   const errorClass =
     typeof candidateClass === "string" &&
-    /^(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|URIError|EvalError|AggregateError|MeridianError)$/.test(
+    /^(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|URIError|EvalError|AggregateError)$/.test(
       candidateClass,
     )
       ? candidateClass

@@ -220,6 +220,57 @@ describe("sanitizeEventRecord privacy boundary", () => {
     ).toEqual({ error: { class: "Error", category: "unexpected" } });
   });
 
+  it("uses one approved code policy for raw and normalized Meridian errors", () => {
+    expect(
+      sanitize({
+        error: {
+          code: "runtime_error",
+          source: "system",
+          retryable: false,
+        },
+      }),
+    ).toEqual({
+      error: {
+        class: "MeridianError",
+        category: "system",
+        code: "runtime_error",
+        retryable: false,
+      },
+    });
+    expect(
+      sanitize({
+        evidence: {
+          error: {
+            class: "MeridianError",
+            category: "system",
+            code: "runtime_error",
+            retryable: false,
+          },
+        },
+      }),
+    ).toEqual({
+      evidence: {
+        error: {
+          class: "MeridianError",
+          category: "system",
+          code: "runtime_error",
+          retryable: false,
+        },
+      },
+    });
+    expect(
+      sanitize({
+        error: {
+          code: "dragon_dies_in_chapter_81",
+          source: "system",
+          retryable: false,
+        },
+      }),
+    ).toEqual({
+      error: { class: "MeridianError", category: "system", retryable: false },
+    });
+  });
+
   it("does not invoke payload accessors", () => {
     let reads = 0;
     const payload: Record<string, unknown> = {};
@@ -275,6 +326,34 @@ describe("sanitizeEventRecord privacy boundary", () => {
 });
 
 describe("unknownToEventPayload", () => {
+  it("retains only owner-approved Meridian error codes", () => {
+    expect(
+      unknownToEventPayload({
+        code: "runtime_error",
+        message: "private provider prose",
+        retryable: false,
+        source: "system",
+      }),
+    ).toEqual({
+      error: {
+        class: "MeridianError",
+        category: "system",
+        code: "runtime_error",
+        retryable: false,
+      },
+    });
+    expect(
+      unknownToEventPayload({
+        code: "dragon_dies_in_chapter_81",
+        message: "private writer prose",
+        retryable: false,
+        source: "system",
+      }),
+    ).toEqual({
+      error: { class: "MeridianError", category: "system", retryable: false },
+    });
+  });
+
   it("keeps only allowlisted error identity and stable scalars", () => {
     const error = Object.assign(new Error("writer prose and provider text"), {
       code: "23505",
