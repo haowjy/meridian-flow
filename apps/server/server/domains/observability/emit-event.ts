@@ -6,14 +6,15 @@ import { isMeridianError } from "@meridian/contracts/interrupt";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
 
 const ERROR_SCALAR_MAX = 128;
-const STABLE_ERROR_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const STABLE_ERROR_CLASS = /^[A-Za-z][A-Za-z0-9._:-]*$/;
+const STABLE_ERROR_CODE = /^[A-Z0-9][A-Z0-9_]{1,63}$/;
 
 function safeErrorScalar(value: unknown): string | number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (
     typeof value === "string" &&
     value.length <= ERROR_SCALAR_MAX &&
-    STABLE_ERROR_TOKEN.test(value)
+    STABLE_ERROR_CODE.test(value)
   ) {
     return value;
   }
@@ -23,7 +24,7 @@ function safeErrorScalar(value: unknown): string | number | undefined {
 function safeErrorClass(error: Error): string {
   return typeof error.name === "string" &&
     error.name.length <= ERROR_SCALAR_MAX &&
-    STABLE_ERROR_TOKEN.test(error.name)
+    STABLE_ERROR_CLASS.test(error.name)
     ? error.name
     : "Error";
 }

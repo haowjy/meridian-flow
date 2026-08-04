@@ -159,7 +159,7 @@ describe("unknownToEventPayload", () => {
   it("drops prose disguised as an error class or code", () => {
     const error = Object.assign(new Error("writer prose"), {
       name: "private writer prose",
-      code: "chapter one private writer prose",
+      code: "sql",
       status: "502 bad private upstream body",
     });
 
