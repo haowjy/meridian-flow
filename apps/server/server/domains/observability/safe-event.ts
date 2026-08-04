@@ -16,6 +16,34 @@ const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 /** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set(["firstOutputMs", "inputTokens", "outputTokens"]);
+const SAFE_PAYLOAD_STRING_KEYS = new Set([
+  "action",
+  "command",
+  "direction",
+  "field",
+  "fields",
+  "kind",
+  "level",
+  "logPrefix",
+  "method",
+  "model",
+  "name",
+  "originType",
+  "outcome",
+  "phase",
+  "provider",
+  "reason",
+  "route",
+  "schemaVersion",
+  "source",
+  "status",
+  "transport",
+]);
+const SAFE_PAYLOAD_STRING_SUFFIX = /(?:Id|Ids|Seq|Version|Hash|Hashes|Code|Reason)$/;
+
+function payloadStringIsApproved(key: string): boolean {
+  return SAFE_PAYLOAD_STRING_KEYS.has(key) || SAFE_PAYLOAD_STRING_SUFFIX.test(key);
+}
 
 function redactString(value: string): string {
   const candidate = value.slice(0, MAX_STRING_LENGTH + 256);
@@ -104,7 +132,9 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
     SAFE_METRIC_KEYS.has(key) && typeof value === "number" && Number.isFinite(value);
   if (!isSafeMetric && SENSITIVE_KEY_PATTERN.test(key)) return "[redacted]";
   if (value == null) return value;
-  if (typeof value === "string") return redactString(value);
+  if (typeof value === "string") {
+    return payloadStringIsApproved(key) ? redactString(value) : "[redacted]";
+  }
   if (typeof value === "number" || typeof value === "boolean") return value;
   if (typeof value === "bigint") return value.toString();
   if (depth > 5) return "[redacted-depth]";

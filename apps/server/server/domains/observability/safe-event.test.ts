@@ -60,7 +60,7 @@ describe("sanitizeEventRecord byte boundary", () => {
       name: "test.large",
       correlation: { traceId: "trace-1", threadId: "thread-1" },
       payload: Object.fromEntries(
-        Array.from({ length: 50 }, (_, index) => [`field${index}`, "x".repeat(1_000)]),
+        Array.from({ length: 50 }, (_, index) => [`field${index}Id`, "x".repeat(1_000)]),
       ),
     });
 
@@ -147,6 +147,7 @@ describe("sanitizeEventRecord privacy boundary", () => {
         cause: { message: secret },
         query: `SELECT ${secret}`,
         sql: `SELECT ${secret}`,
+        note: secret,
       }),
     ).toEqual({
       error: "[redacted]",
@@ -154,6 +155,7 @@ describe("sanitizeEventRecord privacy boundary", () => {
       cause: "[redacted]",
       query: "[redacted]",
       sql: "[redacted]",
+      note: "[redacted]",
     });
   });
 

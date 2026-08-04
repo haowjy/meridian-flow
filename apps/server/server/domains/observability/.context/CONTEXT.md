@@ -70,8 +70,9 @@ delegating it. The tee, local sink, recent ring, queries, and listeners all rece
 that same immutable snapshot, so fan-out does not repeat traversal or share caller-owned aliases.
 Records are capped at 8 KiB; oversized payloads become a deterministic marker
 while headers and bounded correlation survive. Error conversion retains only
-known-safe identity/status fields, never arbitrary messages, stacks, causes,
-SQL, or provider text. Sanitizer traversal and secret scanning are bounded before
+  known-safe identity/status fields, never arbitrary messages, stacks, causes,
+  SQL, or provider text. Payload strings are default-denied unless their key is
+  in the owner-reviewed metadata/identity vocabulary. Sanitizer traversal and secret scanning are bounded before
 the serialized ceiling is calculated. Call sites should still emit allowlisted metadata and correlation ids rather than
 raw prompts, model text, tool arguments/results, uploaded bytes, cookies, or
 headers.

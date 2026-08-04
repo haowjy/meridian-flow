@@ -183,7 +183,9 @@ Conventions:
 - Diagnostic delivery is non-vetoing. Never use sink success as application
   authority or branch application behavior on whether evidence was retained.
 - No secrets, raw prompts, model output, or tool arguments — events are
-  sanitized structurally, not content-inspected.
+  sanitized structurally, not content-inspected. Payload strings are redacted
+  unless their key is in the narrow diagnostic metadata/identity vocabulary;
+  prefer numbers, booleans, enums, counts, and correlation IDs.
 - High-frequency per-item events (per chunk, per frame) should be gated behind
   an `OBS_VERBOSE` category so they never compete with lifecycle records.
 - `EventSink` is operational diagnostic evidence. Product feature tracking and
