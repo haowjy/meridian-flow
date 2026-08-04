@@ -21,7 +21,11 @@ import {
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
-import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
+import {
+  emitEvent,
+  runWithEventCorrelation,
+  unknownToEventPayload,
+} from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
 export type BranchHandshakeState = "pending" | "passed" | "rejected";
 
@@ -30,6 +34,7 @@ type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
 export type YjsGatewayPeer = {
   request: Request;
   userId: UserId;
+  traceId: string;
   socket: WebSocketLike;
   close(code?: number, reason?: string): void;
 };
@@ -77,6 +82,7 @@ type YjsConnectionAdmission =
 
 type YjsConnectionContext = {
   userId: UserId;
+  traceId: string;
   clientSchemaVersion: CollabSchemaVersion;
   branchSyncState: Map<string, BranchHandshakeState>;
   offlineSyncUpdates: Set<string>;
@@ -419,119 +425,136 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
     debounce: 2000,
     maxDebounce: 10000,
     async onConnect({ documentName, context }) {
-      const userId = context.userId;
-      if (!userId) throw permissionDenied("permission-denied");
+      return runWithEventCorrelation({ traceId: context.traceId }, async () => {
+        const userId = context.userId;
+        if (!userId) throw permissionDenied("permission-denied");
 
-      const room = parseRoomOrDeny(documentName);
-      const admission = await classifyYjsConnectionAdmission({
-        services,
-        room,
-        userId,
-        clientSchemaVersion: context.clientSchemaVersion,
-      });
-      if (admission.kind === "refused") {
-        refuseSchemaAdmission({
+        const room = parseRoomOrDeny(documentName);
+        const admission = await classifyYjsConnectionAdmission({
           services,
-          context,
-          roomKey: documentName,
-          ...admission,
+          room,
+          userId,
+          clientSchemaVersion: context.clientSchemaVersion,
         });
-      }
-      context.admissionTarget = admission.target;
-
-      if (admission.target.kind === "branch") {
-        const target = admission.target;
-        // Do not delay room admission: a cold room may briefly render its persisted
-        // state before this pull arrives, then normal CRDT sync catches it up.
-        void services.documentSync
-          .flushBranchLivePull(target.documentId)
-          .catch((cause: unknown) => {
-            emitEvent(services.eventSink, {
-              level: "warn",
-              source: "collab.hocuspocus",
-              name: "branch_review.live_pull_failed",
-              payload: {
-                documentId: target.documentId,
-                branchId: target.branchId,
-                ...unknownToEventPayload(cause),
-              },
-            });
+        if (admission.kind === "refused") {
+          refuseSchemaAdmission({
+            services,
+            context,
+            roomKey: documentName,
+            ...admission,
           });
-      }
+        }
+        context.admissionTarget = admission.target;
+
+        if (admission.target.kind === "branch") {
+          const target = admission.target;
+          // Do not delay room admission: a cold room may briefly render its persisted
+          // state before this pull arrives, then normal CRDT sync catches it up.
+          void services.documentSync
+            .flushBranchLivePull(target.documentId)
+            .catch((cause: unknown) => {
+              emitEvent(services.eventSink, {
+                level: "warn",
+                source: "collab.hocuspocus",
+                name: "branch_review.live_pull_failed",
+                correlation: { documentId: target.documentId, branchId: target.branchId },
+                payload: unknownToEventPayload(cause),
+              });
+            });
+        }
+      });
     },
     async beforeHandleMessage({ context }) {
-      const userId = context.userId;
-      if (!userId) throw permissionDenied("permission-denied");
+      return runWithEventCorrelation({ traceId: context.traceId }, async () => {
+        const userId = context.userId;
+        if (!userId) throw permissionDenied("permission-denied");
+      });
     },
     async beforeSync({ documentName, document, type, payload, context }) {
-      const userId = context.userId;
-      if (!userId) throw permissionDenied("permission-denied");
-      const target = admittedTargetForSync(context, documentName);
-      await admitWriterSync({
-        services,
-        documentName,
-        document,
-        syncType: type,
-        payload,
-        userId,
-        closeTransport: context.closeTransport,
-        expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
-        context,
+      return runWithEventCorrelation({ traceId: context.traceId }, async () => {
+        const userId = context.userId;
+        if (!userId) throw permissionDenied("permission-denied");
+        const target = admittedTargetForSync(context, documentName);
+        await admitWriterSync({
+          services,
+          documentName,
+          document,
+          syncType: type,
+          payload,
+          userId,
+          closeTransport: context.closeTransport,
+          expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
+          context,
+        });
       });
     },
     async onLoadDocument({ documentName, document, context }) {
-      const room = parseRoomOrDeny(documentName);
-      let state: Uint8Array | undefined;
-      try {
-        state =
-          room.kind === "live"
-            ? await services.documentSync.loadHocuspocusDocument(room.documentId)
-            : (
-                await services.documentSync.loadHocuspocusBranchState(
-                  room.branchId,
-                  room.generation,
-                )
-              )?.state;
-      } catch (cause) {
-        if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
-        refuseSchemaAdmission({
-          services,
-          context,
-          roomKey: documentName,
-          documentId: cause.docId as DocumentId,
-          close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
-          clientSchemaVersion: context.clientSchemaVersion,
-          headSchemaVersion: cause.storedVersion,
-          serverSchemaVersion: cause.expectedVersion,
-        });
-      }
-      if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
-      if (state) Y.applyUpdate(document, state);
-      if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
+      return runWithEventCorrelation({ traceId: context.traceId }, async () => {
+        const room = parseRoomOrDeny(documentName);
+        let state: Uint8Array | undefined;
+        try {
+          state =
+            room.kind === "live"
+              ? await services.documentSync.loadHocuspocusDocument(room.documentId)
+              : (
+                  await services.documentSync.loadHocuspocusBranchState(
+                    room.branchId,
+                    room.generation,
+                  )
+                )?.state;
+        } catch (cause) {
+          if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
+          refuseSchemaAdmission({
+            services,
+            context,
+            roomKey: documentName,
+            documentId: cause.docId as DocumentId,
+            close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
+            clientSchemaVersion: context.clientSchemaVersion,
+            headSchemaVersion: cause.storedVersion,
+            serverSchemaVersion: cause.expectedVersion,
+          });
+        }
+        if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
+        if (state) Y.applyUpdate(document, state);
+        if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
+      });
     },
     async onChange({ documentName, update, transactionOrigin, document, connection }) {
-      const origin = deriveOrigin(transactionOrigin);
-      if (origin.source !== "connection") return;
+      const operation = () => {
+        const origin = deriveOrigin(transactionOrigin);
+        if (origin.source !== "connection") return;
 
-      const room = parseRoomOrDeny(documentName);
-      if (room.kind === "live") {
-        services.documentSync.persistConnectionUpdate({
-          documentId: room.documentId,
-          update,
-          origin: origin.origin,
-          document,
-          reconcileOffline:
-            connection?.context.offlineSyncUpdates?.delete(updateIdentity(update)) ?? false,
-        });
-      }
+        const room = parseRoomOrDeny(documentName);
+        if (room.kind === "live") {
+          services.documentSync.persistConnectionUpdate({
+            documentId: room.documentId,
+            update,
+            origin: origin.origin,
+            document,
+            reconcileOffline:
+              connection?.context.offlineSyncUpdates?.delete(updateIdentity(update)) ?? false,
+          });
+        }
+      };
+      const traceId = connection?.context.traceId;
+      return traceId ? runWithEventCorrelation({ traceId }, operation) : operation();
     },
     async onStoreDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);
-      if (room.kind === "live") {
-        await services.documentSync.storeHocuspocusDocument(room.documentId, document);
-        return;
-      }
-      await services.documentSync.storeHocuspocusBranch(room.branchId, document);
+      return runWithEventCorrelation(
+        {
+          traceId: crypto.randomUUID(),
+          ...(room.kind === "live" ? { documentId: room.documentId } : { branchId: room.branchId }),
+        },
+        async () => {
+          if (room.kind === "live") {
+            await services.documentSync.storeHocuspocusDocument(room.documentId, document);
+            return;
+          }
+          await services.documentSync.storeHocuspocusBranch(room.branchId, document);
+        },
+      );
     },
   });
   services.documentSync.bindHocuspocus(hocuspocus);
@@ -557,6 +580,7 @@ export function createYjsGateway(services: YjsGatewayServices) {
       };
       const hocuspocusConnection = hocuspocus.handleConnection(peer.socket, peer.request, {
         userId: peer.userId,
+        traceId: peer.traceId,
         clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
         branchSyncState: connection.branchSyncState,
         offlineSyncUpdates: connection.offlineSyncUpdates,

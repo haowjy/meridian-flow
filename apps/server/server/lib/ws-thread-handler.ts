@@ -10,6 +10,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { runWithEventCorrelation } from "../domains/observability/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import { parseRequestId } from "../shared/uuid.js";
 import type { AppServices } from "./app.js";
@@ -19,6 +20,7 @@ const SERVER_VERSION = "0.0.0";
 export type WsAuthenticatedContext = {
   app: AppServices;
   userId: UserId;
+  traceId: string;
 };
 
 export type WsPeer = {
@@ -180,104 +182,117 @@ function unregisterPeerConnectionToken(peer: WsPeer): void {
 }
 
 export function createThreadWebSocketSession(peer: WsPeer) {
+  const runInPeerScope = <T>(operation: () => T): T =>
+    runWithEventCorrelation(
+      peer.context?.traceId ? { traceId: peer.context.traceId } : {},
+      operation,
+    );
   return {
     open(): boolean {
-      const auth = peer.context;
-      if (!auth) {
-        sendError(peer, meridianError("auth_failed", "Authentication failed"));
-        peer.close(WS_CLOSE.AUTH_FAILED.code, WS_CLOSE.AUTH_FAILED.reason);
-        return false;
-      }
+      return runInPeerScope(() => {
+        const auth = peer.context;
+        if (!auth) {
+          sendError(peer, meridianError("auth_failed", "Authentication failed"));
+          peer.close(WS_CLOSE.AUTH_FAILED.code, WS_CLOSE.AUTH_FAILED.reason);
+          return false;
+        }
 
-      const connectionToken = getPeerState(peer).connectionToken;
-      const sent = sendFrame(peer, {
-        type: "connected",
-        userId: auth.userId,
-        scope: { type: "standalone" },
-        serverVersion: SERVER_VERSION,
-        connectionToken,
+        const connectionToken = getPeerState(peer).connectionToken;
+        const sent = sendFrame(peer, {
+          type: "connected",
+          userId: auth.userId,
+          scope: { type: "standalone" },
+          serverVersion: SERVER_VERSION,
+          connectionToken,
+        });
+        if (sent) {
+          auth.app.runner.registerLiveConnectionToken?.(connectionToken);
+        }
+        return sent;
       });
-      if (sent) {
-        auth.app.runner.registerLiveConnectionToken?.(connectionToken);
-      }
-      return sent;
     },
 
     async onMessage(raw: string | ArrayBuffer) {
-      try {
-        const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
-        const message = parseWsClientMessage(text);
-        if (!message) {
-          sendError(peer, meridianError("bad_request", "Malformed WebSocket message"));
-          return;
-        }
+      return runInPeerScope(async () => {
+        try {
+          const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+          const message = parseWsClientMessage(text);
+          if (!message) {
+            sendError(peer, meridianError("bad_request", "Malformed WebSocket message"));
+            return;
+          }
 
-        switch (message.type) {
-          case "subscribe":
-            await subscribeThread(peer, message.threadId as ThreadId, message.lastSeq);
-            return;
-          case "resume":
-            for (const subscription of message.subscriptions) {
-              await subscribeThread(peer, subscription.threadId as ThreadId, subscription.lastSeq);
-            }
-            return;
-          case "unsubscribe": {
-            const threadId = parseRequestId(message.threadId) as ThreadId | null;
-            if (!threadId) {
-              sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+          switch (message.type) {
+            case "subscribe":
+              await subscribeThread(peer, message.threadId as ThreadId, message.lastSeq);
+              return;
+            case "resume":
+              for (const subscription of message.subscriptions) {
+                await subscribeThread(
+                  peer,
+                  subscription.threadId as ThreadId,
+                  subscription.lastSeq,
+                );
+              }
+              return;
+            case "unsubscribe": {
+              const threadId = parseRequestId(message.threadId) as ThreadId | null;
+              if (!threadId) {
+                sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+                return;
+              }
+              const state = getPeerState(peer);
+              state.subscriptions.get(threadId)?.();
+              state.subscriptions.delete(threadId);
+              state.liveWatermark.delete(threadId);
               return;
             }
-            const state = getPeerState(peer);
-            state.subscriptions.get(threadId)?.();
-            state.subscriptions.delete(threadId);
-            state.liveWatermark.delete(threadId);
-            return;
+            case "interrupt.respond": {
+              const threadId = parseRequestId(message.threadId) as ThreadId | null;
+              if (!threadId) {
+                sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
+                return;
+              }
+              const turnId = parseRequestId(message.turnId);
+              if (!turnId) {
+                sendError(peer, meridianError("not_found", "Turn not found"), threadId);
+                return;
+              }
+              const context = peer.context;
+              try {
+                if (!context) throw new Error("Missing peer context");
+                await context.app.threadRuntime.requireOwnedThread(threadId, context.userId);
+              } catch {
+                sendError(peer, meridianError("not_found", "Thread not found"), threadId);
+                return;
+              }
+              const result = context.app.interruptRegistry.resolve({
+                threadId,
+                turnId: turnId as TurnId,
+                interruptId: message.interruptId,
+                value: message.value as JsonValue,
+              });
+              if (!result.ok) {
+                sendError(peer, interruptRejectionError(result.reason, result.message), threadId);
+              }
+              return;
+            }
+            case "pong":
+              return;
           }
-          case "interrupt.respond": {
-            const threadId = parseRequestId(message.threadId) as ThreadId | null;
-            if (!threadId) {
-              sendError(peer, meridianError("not_found", "Thread not found"), message.threadId);
-              return;
-            }
-            const turnId = parseRequestId(message.turnId);
-            if (!turnId) {
-              sendError(peer, meridianError("not_found", "Turn not found"), threadId);
-              return;
-            }
-            const context = peer.context;
-            try {
-              if (!context) throw new Error("Missing peer context");
-              await context.app.threadRuntime.requireOwnedThread(threadId, context.userId);
-            } catch {
-              sendError(peer, meridianError("not_found", "Thread not found"), threadId);
-              return;
-            }
-            const result = context.app.interruptRegistry.resolve({
-              threadId,
-              turnId: turnId as TurnId,
-              interruptId: message.interruptId,
-              value: message.value as JsonValue,
-            });
-            if (!result.ok) {
-              sendError(peer, interruptRejectionError(result.reason, result.message), threadId);
-            }
-            return;
-          }
-          case "pong":
-            return;
+        } catch (error) {
+          console.error("ws-thread-handler: message failed", error);
+          sendError(peer, meridianError("internal", "Internal server error"));
         }
-      } catch (error) {
-        console.error("ws-thread-handler: message failed", error);
-        sendError(peer, meridianError("internal", "Internal server error"));
-      }
+      });
     },
 
     onClose() {
-      disposeSubscriptions(peer);
+      runInPeerScope(() => disposeSubscriptions(peer));
     },
 
     onError() {
-      disposeSubscriptions(peer);
+      runInPeerScope(() => disposeSubscriptions(peer));
     },
   };
 }

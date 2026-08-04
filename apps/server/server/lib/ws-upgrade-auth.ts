@@ -9,7 +9,6 @@
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import {
-  createNoopEventSink,
   type EventSink,
   emitEvent,
   unknownToEventPayload,
@@ -23,6 +22,7 @@ export type WsAuthenticatedUpgrade = {
   kind: "authenticated";
   app: AppServices;
   userId: UserId;
+  traceId: string;
 };
 
 export type WsDeferredCloseUpgrade<TClose extends WsDeferredClose = WsDeferredClose> = {
@@ -32,8 +32,6 @@ export type WsDeferredCloseUpgrade<TClose extends WsDeferredClose = WsDeferredCl
 
 export type WsUpgradeAuthResult = WsAuthenticatedUpgrade | WsDeferredCloseUpgrade;
 
-const defaultEventSink = createNoopEventSink();
-
 export function deferWsClose<TClose extends WsDeferredClose>(
   close: TClose,
 ): WsDeferredCloseUpgrade<TClose> {
@@ -42,20 +40,22 @@ export function deferWsClose<TClose extends WsDeferredClose>(
 
 export async function resolveWsUpgradeAuth(
   request: Request,
-  options: { logPrefix: string; eventSink?: EventSink },
+  options: { logPrefix: string; eventSink: EventSink; traceId?: string },
 ): Promise<WsUpgradeAuthResult> {
-  const eventSink = options.eventSink ?? defaultEventSink;
+  const traceId = options.traceId ?? crypto.randomUUID();
+  const { eventSink } = options;
   try {
     const auth = await resolveAppUserFromRequest(request);
     if (!auth) {
       return deferWsClose(WS_CLOSE.AUTH_FAILED);
     }
-    return { kind: "authenticated", app: auth.app, userId: auth.user.userId };
+    return { kind: "authenticated", app: auth.app, userId: auth.user.userId, traceId };
   } catch (error) {
     emitEvent(eventSink, {
       level: "error",
       source: "lib.ws-upgrade-auth",
       name: "upgrade_auth.failed",
+      correlation: { traceId },
       payload: { logPrefix: options.logPrefix, ...unknownToEventPayload(error) },
     });
     return deferWsClose(WS_CLOSE.AUTH_ERROR);

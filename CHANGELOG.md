@@ -11,6 +11,11 @@
   notify the host with their original cause and safe operation identifiers
   before returning the same sanitized `internal_error`; Meridian emits the
   diagnostic through `EventSink`, and observer failures can never veto writes.
+- `apps/server`: HTTP requests and WebSocket connections now establish isolated
+  causal scopes that automatically enrich server diagnostics with their trace
+  IDs. Detached work retains its initiating scope, shared Yjs persistence mints
+  a fresh operation trace, and conflicting caller IDs are reported without
+  overriding the active boundary or blocking the operation.
 - `apps/app`: a table nested in another table's cell now keeps its grip
   chrome while the pointer travels to a grip. The gap beside the inner frame
   no longer re-anchors hover to the outer table, so the inner table's row

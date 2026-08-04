@@ -13,6 +13,13 @@ export {
 export { createNoopEventSink, NoopEventSink } from "./adapters/noop/noop-event-sink.js";
 export { RecentEventsBuffer } from "./adapters/recent/recent-events-buffer.js";
 export { createTeeEventSink, TeeEventSink } from "./adapters/tee/tee-event-sink.js";
+export {
+  CorrelatingEventSink,
+  currentEventCorrelation,
+  type EventCorrelationScope,
+  enterEventCorrelation,
+  runWithEventCorrelation,
+} from "./causal-context.js";
 export { emitEvent, unknownToEventPayload } from "./emit-event.js";
 export {
   type EventQuery,
