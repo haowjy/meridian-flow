@@ -26,10 +26,11 @@ records; adapters decide where safe records go.
 - **`InMemoryEventSink`** / **`NoopEventSink`** — tests and disabled paths.
 - **`RecentEventsBuffer`** — dev/test-only 5,000-record / 16 MiB ring of safe
   snapshots behind `EventQuery`; `TeeEventSink` composes it with the local sink.
-- **Causal scope** — the process sink enriches active HTTP and WebSocket work.
-  Boundary IDs win conflicts; a bounded diagnostic reports mismatches without
+- **Causal scope** — the process sink enriches active HTTP and WebSocket work
+  with a trace. Request and domain joins stay explicit at emit sites. The active
+  trace wins event conflicts; a bounded diagnostic reports mismatches without
   vetoing the operation. Detached work retains its scope; shared Yjs persistence
-  mints a new trace joined by document or branch identity.
+  mints a new trace and emits document or branch joins explicitly.
 
 ## Wiring
 

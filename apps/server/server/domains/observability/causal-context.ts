@@ -2,7 +2,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { EventCorrelation, EventRecord, EventSink } from "./ports/event-sink.js";
 
-export type EventCorrelationScope = Readonly<Partial<EventCorrelation>>;
+/** Only causal identity belongs in async scope; domain/query joins stay explicit. */
+export type EventCorrelationScope = Readonly<Partial<Pick<EventCorrelation, "traceId">>>;
 
 const storage = new AsyncLocalStorage<EventCorrelationScope>();
 
@@ -32,13 +33,12 @@ export class CorrelatingEventSink implements EventSink {
       return;
     }
 
-    const conflicts = Object.keys(active)
-      .filter((key) => {
-        const correlationKey = key as keyof EventCorrelation;
-        const supplied = event.correlation?.[correlationKey];
-        return supplied !== undefined && supplied !== active[correlationKey];
-      })
-      .slice(0, 16);
+    const conflicts =
+      active.traceId !== undefined &&
+      event.correlation?.traceId !== undefined &&
+      event.correlation.traceId !== active.traceId
+        ? ["traceId"]
+        : [];
     this.delegate.emit({
       ...event,
       correlation: { ...event.correlation, ...active },

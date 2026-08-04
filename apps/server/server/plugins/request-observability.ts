@@ -42,9 +42,6 @@ export default function requestObservabilityPlugin(app: unknown) {
     event.context.observability = context;
     enterEventCorrelation({
       traceId: context.traceId,
-      requestId: context.requestId,
-      method: context.method,
-      route: context.route,
     });
   });
 

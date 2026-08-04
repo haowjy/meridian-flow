@@ -545,7 +545,6 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
       return runWithEventCorrelation(
         {
           traceId: crypto.randomUUID(),
-          ...(room.kind === "live" ? { documentId: room.documentId } : { branchId: room.branchId }),
         },
         async () => {
           if (room.kind === "live") {
