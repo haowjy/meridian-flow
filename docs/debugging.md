@@ -10,6 +10,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | --- | --- | --- |
 | Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
 | `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
+| `pnpm debug:events` | An agent needs bounded JSON for one known event/trace/domain id | [Consume Server Events](#consume-server-events) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
 | `GET /api/debug/events/stream` | Live SSE tail while reproducing | [Consume Server Events](#consume-server-events) |
 | DebugOverlay → **LLM Calls** | Inspect gateway calls: latency, tokens, outcomes, retries | debug pill in dev builds |
@@ -26,6 +27,9 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Something is slow or chatty.** LLM Calls panel first (latency, retries,
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
+- **An LLM is debugging.** Start with
+  `pnpm debug:events -- --trace <id>`. Pivot by thread, turn, document, error
+  code, or exact event ID. Add `--full` only when compact metadata is insufficient.
 - **It broke and the server restarted.** The in-memory ring is gone; fall back
   to the JSONL mirror with `jq`, remembering it is best-effort and bounded.
 - **Polling from a script or agent.** Use `sinceEventId` cursors — event IDs
@@ -64,15 +68,17 @@ instead of `console.log`.
 - Stdout is authoritative and lands interleaved in `logs/portless.log` during
   local dev. The dev stack pins `LOG_DIR` to the absolute repo-root
   `logs/events/` directory, so its best-effort daily JSONL mirror lands at
-  `logs/events/YYYY-MM-DD.jsonl` regardless of each service's working
+  8 MiB segments under `logs/events/` regardless of each service's working
   directory. An absolute `LOG_DIR` override is honored; relative overrides are
-  ignored. Files are day-pruned, not an audit log.
+  ignored. Segments are pruned after 14 days and when the worktree exceeds
+  128 MiB (`LOG_MAX_BYTES` overrides the byte cap), so this is not an audit log.
 - The dev Vite and Nitro watchers exclude the repository `logs/` tree. Log
   writes must not reload either process; a reload during a long-running turn is
   a bug, not expected dev behavior.
-- The local output sink holds at most 5,000 pending events. Output backpressure
-  drops oldest first; the next successful write prepends an
-  `observability.sink.dropped` record with the loss count.
+- Each event is at most 8 KiB. The local output sink holds at most 5,000 pending
+  events or 16 MiB. Output backpressure drops oldest first; the next successful
+  write reports lost record and byte counts. The recent ring uses the same dual
+  cap; process bootstrap is capped at 1,000 records or 4 MiB.
 - Model-request diagnostics can use the existing model-request debug capture
   path when that is the right level of detail. Broader prompt and agent-run
   trace capture is not implemented yet; until it exists, use safe metadata in
@@ -86,9 +92,25 @@ instead of `console.log`.
 
 ## Consume Server Events
 
+For an LLM or script, prefer the repository CLI. It resolves the current
+worktree's live Portless routes, performs dev login in memory, and never writes
+a cookie jar:
+
+```bash
+pnpm debug:events -- --trace <trace-id>
+pnpm debug:events -- --thread <thread-id> --level error
+pnpm debug:events -- --event <event-id> --full
+```
+
+A narrowing pivot is required: `--event`, `--trace`, `--thread`, `--turn`,
+`--document`, or `--error-code`. Optional filters are `--source`, `--name`,
+`--level`, `--since`, and `--limit`. Compact output omits payloads and caps at
+50 events; `--full` includes sanitized records and caps at 200. Output includes
+the query and dropped record/byte counts. Failures exit nonzero with remediation.
+
 Authenticated local development/test servers with the `local` event provider
-retain 5,000 sanitized records in memory. Other environments and disabled
-providers return 404; there is no runtime override.
+retain up to 5,000 sanitized records or 16 MiB in memory. Other environments
+and disabled providers return 404; there is no runtime override.
 
 For direct `curl` access, bootstrap through the app and retarget the host-only
 development session cookie to the paired server origin:
@@ -101,8 +123,8 @@ curl -sS -c "$COOKIE_JAR" "$APP_URL/api/auth/dev-login" >/dev/null
 sed -i 's/app\.meridian\.localhost/server.meridian.localhost/' "$COOKIE_JAR"
 ```
 
-`GET /api/debug/events` returns newest first. Filters are `source` (exact),
-`name` (prefix), `level` (severity floor), `sinceEventId` (exclusive),
+`GET /api/debug/events` returns newest first. Filters are `eventId` (exact),
+`source` (exact), `name` (prefix), `level` (severity floor), `sinceEventId` (exclusive),
 `sinceTimestamp` (inclusive), `limit` (default 200, max 1,000), and every
 `EventCorrelation` key as an equality parameter.
 
@@ -151,12 +173,15 @@ Conventions:
   names, not log strings.
 - Put anything you'll want to filter by in `correlation` (ids, `errorCode`);
   `payload` is opaque to queries.
-- For errors, `unknownToEventPayload(err)` produces a JSON-natural payload with
-  stack/cause (and Postgres wire diagnostics when pg-shaped).
+- For errors, `unknownToEventPayload(err)` keeps only error class/category,
+  stable code, and approved scalar status. Messages, stacks, causes, SQL,
+  provider text, prompts, tool data, and writer prose stay out.
 - No secrets, raw prompts, model output, or tool arguments — events are
   sanitized structurally, not content-inspected.
 - High-frequency per-item events (per chunk, per frame) should be gated behind
   an `OBS_VERBOSE` category so they never compete with lifecycle records.
+- `EventSink` is operational diagnostic evidence. Product feature tracking and
+  analytics are a separate concern; do not encode them as server diagnostics.
 
 ## Cleanup
 

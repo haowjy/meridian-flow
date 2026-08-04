@@ -10,21 +10,26 @@ records; adapters decide where safe records go.
   correlation types are canonical in `@meridian/contracts/observability`; the
   server port re-exports them so domain imports stay anchored on the port.
 - **`EventSink`** — `emit` / `emitBatch` / `flush`.
-- **`EventQuery`** — filtered newest-first recent history and live subscriptions. `excludeName` (exact event-name exclusion) is applied **before** the result `limit`, so a high-volume excluded class (e.g. verbose `stream.chunk`) cannot crowd lifecycle records out of a bounded query. Consumers rely on this to keep polling independent of verbose capture.
+- **`EventQuery`** — filtered newest-first recent history and live subscriptions.
+  Exact `eventId` lookup is supported; results report evicted records and bytes.
+  `excludeName` is applied **before** the result `limit`.
 - **`emitEvent`** — timestamping helper for non-critical diagnostics.
 - **Safe-event helpers** — id stamping, key-pattern redaction, secret stripping,
   bounded envelopes, detachment, and freezing before records leave process memory.
 - **`DeferredEventSink`** — process bootstrap sink that buffers startup/crash
   events until production composition binds the real sink.
 - **`LocalEventSink`** — local/prod-default adapter: always writes structured
-  JSON to stdout and mirrors to `LOG_DIR/YYYY-MM-DD.jsonl` when `LOG_DIR` is set.
-  Its 5,000-event pending queue drops oldest under mirror backpressure and emits
-  an `observability.sink.dropped` summary after the mirror resumes.
-  When JSONL mirroring is enabled, the factory retains 14 daily files by default;
-  override with `LOG_RETENTION_DAYS`.
+  JSON to stdout and mirrors to 8 MiB JSONL segments when `LOG_DIR` is set. Its
+  5,000-event / 16 MiB pending queue drops oldest under backpressure and reports
+  lost records and bytes. Segments retain for 14 days and at most 128 MiB per
+  worktree by default (`LOG_RETENTION_DAYS`, `LOG_MAX_BYTES`).
 - **`InMemoryEventSink`** / **`NoopEventSink`** — tests and disabled paths.
-- **`RecentEventsBuffer`** — dev/test-only 5,000-record ring of safe snapshots behind
-  `EventQuery`; `TeeEventSink` composes it with the local sink.
+- **`RecentEventsBuffer`** — dev/test-only 5,000-record / 16 MiB ring of safe
+  snapshots behind `EventQuery`; `TeeEventSink` composes it with the local sink.
+- **Causal scope** — the process sink enriches active HTTP and WebSocket work.
+  Boundary IDs win conflicts; a bounded diagnostic reports mismatches without
+  vetoing the operation. Detached work retains its scope; shared Yjs persistence
+  mints a new trace joined by document or branch identity.
 
 ## Wiring
 
@@ -33,9 +38,9 @@ request observability, crash policy, and app composition all use the same sink;
 `lib/app.ts` binds the env-selected concrete sink once the app singleton starts.
 
 `lib/event-sink-factory.ts` reads `EVENT_PROVIDER` (`local` → stdout + optional
-JSONL, `none`/`noop` → no-op). When `LOG_DIR` is set, `LOG_RETENTION_DAYS`
-controls local JSONL retention and must be a positive integer; pruning runs when
-the sink rolls to a new UTC daily file. External provider policy is deliberately
+JSONL, `none`/`noop` → no-op). When `LOG_DIR` is set, `LOG_RETENTION_DAYS` and
+`LOG_MAX_BYTES` control local JSONL retention and must be positive integers;
+pruning runs when the sink rolls segments. External provider policy is deliberately
 not wired into production composition yet; inject another `EventSink` later
 without changing route or domain code.
 
@@ -48,8 +53,9 @@ There is no ambient fallback in domain code: if a service emits diagnostics, its
 constructor/deps require an `EventSink` so disabled observability is an explicit
 adapter choice.
 
-LLM-facing local monitors should read the structured `EventRecord` JSONL stream
-or an adapter over it. Do not build dashboards by scraping arbitrary console text.
+LLM-facing local monitors should use `pnpm debug:events` for bounded authenticated
+queries, or read the structured JSONL stream for post-restart forensics. Do not
+build dashboards by scraping arbitrary console text.
 
 ## Safety model
 
@@ -57,9 +63,15 @@ The process-scoped `DeferredEventSink` is the single `safe-event.ts` boundary:
 it sanitizes, detaches, and freezes each record synchronously before buffering or
 delegating it. The tee, local sink, recent ring, queries, and listeners all receive
 that same immutable snapshot, so fan-out does not repeat traversal or share caller-owned aliases.
-Call sites should still emit allowlisted metadata and correlation ids rather than
+Records are capped at 8 KiB; oversized payloads become a deterministic marker
+while headers and bounded correlation survive. Error conversion retains only
+safe identity/status fields, never arbitrary messages, stacks, causes, SQL, or
+provider text. Call sites should still emit allowlisted metadata and correlation ids rather than
 raw prompts, model text, tool arguments/results, uploaded bytes, cookies, or
 headers.
+
+`EventRecord` / `EventSink` are operational diagnostics, not product feature
+tracking or analytics. Product events need a separate future seam.
 
 ## Related
 

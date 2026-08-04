@@ -39,6 +39,7 @@
     "smoke:app-dev-transform": "tsx tools/dev/smoke-app-dev-transform.ts",
     "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
+    "debug:events": "tsx tools/dev/debug-events.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts"
   },

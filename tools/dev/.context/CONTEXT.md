@@ -15,6 +15,8 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Readiness** — `dev-readiness.ts` (real HTTP probes before reporting started)
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
 - **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
+- **Diagnostic queries** — `debug-events.ts` (current-worktree Portless discovery,
+  in-memory dev auth, bounded deterministic EventQuery JSON)
 
 ## Directory layout
 
@@ -38,6 +40,7 @@ tools/dev/
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
 ├── check-db-gate.ts           Reachability-aware local `pnpm check` DB gate
+├── debug-events.ts            Authenticated current-worktree EventQuery client
 ├── dev-tmux.ts                pnpm dev entry point (thin — see session plan, readiness, tailscale)
 ├── dev-session-plan.ts        Session command construction + redaction + internal API origin
 ├── dev-readiness.ts           HTTP readiness probes (server /readyz + app origin)

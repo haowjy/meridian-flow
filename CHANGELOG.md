@@ -20,6 +20,10 @@
   permanent server console calls. Existing server diagnostics use `EventSink`;
   the marked console form remains available locally for one-off debugging but
   cannot reach a push or merge.
+- `tools`: local agents can now run `pnpm debug:events -- --trace <id>` (or
+  pivot by event, thread, turn, document, or error code) to authenticate in
+  memory and receive deterministic bounded JSON from the current worktree's
+  Portless server. Compact output caps at 50 records and full output at 200.
 - `apps/app`: a table nested in another table's cell now keeps its grip
   chrome while the pointer travels to a grip. The gap beside the inner frame
   no longer re-anchors hover to the outer table, so the inner table's row
