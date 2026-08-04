@@ -1,6 +1,6 @@
 /** Debug-event CLI argument policy keeps local agent queries narrow and bounded. */
 import { describe, expect, it } from "vitest";
-import { parseDebugEventsArgs } from "./debug-events";
+import { createBoundedResponseCollector, parseDebugEventsArgs } from "./debug-events";
 
 describe("parseDebugEventsArgs", () => {
   it("maps a correlation pivot and compact defaults", () => {
@@ -21,5 +21,14 @@ describe("parseDebugEventsArgs", () => {
     expect(() => parseDebugEventsArgs(["--source", "collab"])).toThrow(
       "A narrowing pivot is required",
     );
+  });
+});
+
+describe("createBoundedResponseCollector", () => {
+  it("rejects a response as soon as its cumulative byte ceiling is exceeded", () => {
+    const collector = createBoundedResponseCollector(5);
+    collector.push("123");
+
+    expect(() => collector.push("456")).toThrow("5-byte safety limit");
   });
 });

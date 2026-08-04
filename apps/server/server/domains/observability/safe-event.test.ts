@@ -136,6 +136,59 @@ describe("sanitizeEventRecord byte boundary", () => {
   });
 });
 
+describe("sanitizeEventRecord privacy boundary", () => {
+  it("default-denies raw error text and common exception/query fields", () => {
+    const secret = "the dragon is her father postgresql://alice:hunter2@db/private";
+
+    expect(
+      sanitize({
+        error: secret,
+        message: secret,
+        cause: { message: secret },
+        query: `SELECT ${secret}`,
+        sql: `SELECT ${secret}`,
+      }),
+    ).toEqual({
+      error: "[redacted]",
+      message: "[redacted]",
+      cause: "[redacted]",
+      query: "[redacted]",
+      sql: "[redacted]",
+    });
+  });
+
+  it("revalidates crafted error envelopes instead of trusting token-shaped prose", () => {
+    expect(
+      sanitize({
+        error: {
+          class: "WriterSecretDragonFather",
+          category: "unexpected",
+          code: "WRITER_SECRET",
+          message: "private prose",
+        },
+      }),
+    ).toEqual({ error: { class: "Error", category: "unexpected" } });
+  });
+
+  it("reads only the bounded number of payload values", () => {
+    let reads = 0;
+    const payload: Record<string, unknown> = {};
+    for (let index = 0; index < 100; index += 1) {
+      Object.defineProperty(payload, `field${index}`, {
+        enumerable: true,
+        get: () => {
+          reads += 1;
+          return index;
+        },
+      });
+    }
+
+    sanitize(payload);
+
+    expect(reads).toBe(50);
+  });
+});
+
 describe("unknownToEventPayload", () => {
   it("keeps only allowlisted error identity and stable scalars", () => {
     const error = Object.assign(new Error("writer prose and provider text"), {

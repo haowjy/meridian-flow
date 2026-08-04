@@ -21,11 +21,11 @@ import type { AppServices } from "./app.js";
 
 const SERVER_VERSION = "0.0.0";
 
-export type WsAuthenticatedContext = {
+export type WsAuthenticatedContext = Readonly<{
   app: AppServices;
   userId: UserId;
   traceId: string;
-};
+}>;
 
 export type WsPeer = {
   request: Request;
@@ -99,6 +99,11 @@ function sendError(peer: WsPeer, error: MeridianError, threadId?: string): boole
   return sendFrame(peer, { type: "error", kind: "error", error, threadId });
 }
 
+function runInPeerScope<T>(peer: WsPeer, operation: () => T): T {
+  const traceId = peer.context?.traceId;
+  return traceId ? runWithEventCorrelation({ traceId }, operation) : operation();
+}
+
 async function subscribeThread(
   peer: WsPeer,
   requestedThreadId: string,
@@ -135,15 +140,17 @@ async function subscribeThread(
   let watermark = BigInt(parsedLastSeq);
   const { catchup, hitReplayLimit, unsubscribe } =
     await auth.app.threadEventHub.catchupAndSubscribe(threadId, watermark, (entry) => {
-      if (state.closed) return;
-      const minSeq = state.liveWatermark.get(threadId) ?? 0n;
-      if (entry.seq <= minSeq) return;
-      state.liveWatermark.set(threadId, entry.seq);
-      sendFrame(peer, {
-        type: "event",
-        threadId,
-        seq: entry.seq.toString(),
-        event: entry.event,
+      runInPeerScope(peer, () => {
+        if (state.closed) return;
+        const minSeq = state.liveWatermark.get(threadId) ?? 0n;
+        if (entry.seq <= minSeq) return;
+        state.liveWatermark.set(threadId, entry.seq);
+        sendFrame(peer, {
+          type: "event",
+          threadId,
+          seq: entry.seq.toString(),
+          event: entry.event,
+        });
       });
     });
 
@@ -194,14 +201,9 @@ function unregisterPeerConnectionToken(peer: WsPeer): void {
 }
 
 export function createThreadWebSocketSession(peer: WsPeer) {
-  const runInPeerScope = <T>(operation: () => T): T =>
-    runWithEventCorrelation(
-      peer.context?.traceId ? { traceId: peer.context.traceId } : {},
-      operation,
-    );
   return {
     open(): boolean {
-      return runInPeerScope(() => {
+      return runInPeerScope(peer, () => {
         const auth = peer.context;
         if (!auth) {
           sendError(peer, meridianError("auth_failed", "Authentication failed"));
@@ -225,7 +227,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
     },
 
     async onMessage(raw: string | ArrayBuffer) {
-      return runInPeerScope(async () => {
+      return runInPeerScope(peer, async () => {
         try {
           const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
           const message = parseWsClientMessage(text);
@@ -308,11 +310,11 @@ export function createThreadWebSocketSession(peer: WsPeer) {
     },
 
     onClose() {
-      runInPeerScope(() => disposeSubscriptions(peer));
+      runInPeerScope(peer, () => disposeSubscriptions(peer));
     },
 
     onError() {
-      runInPeerScope(() => disposeSubscriptions(peer));
+      runInPeerScope(peer, () => disposeSubscriptions(peer));
     },
   };
 }

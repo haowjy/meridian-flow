@@ -160,7 +160,8 @@ export function createHocuspocusPersistenceService(
       level: "error",
       source: "collab.hocuspocus",
       name: "persistence_append.failed",
-      payload: { documentId, ...unknownToEventPayload(cause) },
+      correlation: { documentId },
+      payload: unknownToEventPayload(cause),
     });
   }
 
@@ -170,7 +171,8 @@ export function createHocuspocusPersistenceService(
       level: "error",
       source: "collab.hocuspocus",
       name: "offline_reconciliation.failed_after_durability",
-      payload: { documentId, ...unknownToEventPayload(cause) },
+      correlation: { documentId },
+      payload: unknownToEventPayload(cause),
     });
   }
 
@@ -180,7 +182,8 @@ export function createHocuspocusPersistenceService(
       level: "warn",
       source: "collab.hocuspocus",
       name: "offline_reconciliation.evidence_degraded",
-      payload: { documentId },
+      correlation: { documentId },
+      payload: {},
     });
   }
 
@@ -476,7 +479,8 @@ export function createHocuspocusPersistenceService(
           level: "warn",
           source: "collab.hocuspocus",
           name: "branch_sync_step1.fenced",
-          payload: { branchId: input.branchId, generation: input.generation },
+          correlation: { branchId: input.branchId, branchGeneration: input.generation },
+          payload: {},
         });
       }
       return true;

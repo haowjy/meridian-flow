@@ -4,7 +4,14 @@
  * log directory is configured. Daily files can be retained for a bounded number
  * of days. Writes are serialized per process.
  */
-import { appendFile as appendFileToDisk, mkdir, readdir, stat, unlink } from "node:fs/promises";
+import {
+  appendFile as appendFileToDisk,
+  mkdir,
+  open,
+  readdir,
+  stat,
+  unlink,
+} from "node:fs/promises";
 import path from "node:path";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
 import { serializedEventBytes } from "../../safe-event.js";
@@ -40,6 +47,9 @@ const DEFAULT_PENDING_EVENT_CAPACITY = 5_000;
 const DEFAULT_PENDING_BYTE_CAPACITY = 16 * 1_024 * 1_024;
 const DEFAULT_SEGMENT_BYTES = 8 * 1_024 * 1_024;
 const DEFAULT_MAX_BYTES = 128 * 1_024 * 1_024;
+const DIRECTORY_LOCK_FILE = ".events-jsonl.lock";
+const DIRECTORY_LOCK_WAIT_MS = 2_000;
+const DIRECTORY_LOCK_STALE_MS = 30_000;
 
 type QueuedEvent = { event: EventRecord; bytes: number };
 type DropCount = { records: number; bytes: number };
@@ -241,27 +251,66 @@ export class LocalEventSink implements EventSink {
     }
     if (!this.dir) return;
     try {
-      let cursor = 0;
-      while (cursor < lines.length) {
-        const firstLineBytes = Buffer.byteLength(lines[cursor] as string, "utf8");
-        const filePath = await this.resolveFilePath(firstLineBytes);
-        if (!filePath) break;
-        const remainingBytes = this.segmentBytes - this.activeBytes;
-        const chunk: string[] = [];
-        let chunkBytes = 0;
+      await this.withDirectoryLock(async () => {
+        let cursor = 0;
         while (cursor < lines.length) {
-          const line = lines[cursor] as string;
-          const lineBytes = Buffer.byteLength(line, "utf8");
-          if (chunk.length > 0 && chunkBytes + lineBytes > remainingBytes) break;
-          chunk.push(line);
-          chunkBytes += lineBytes;
-          cursor += 1;
+          const firstLineBytes = Buffer.byteLength(lines[cursor] as string, "utf8");
+          if (firstLineBytes > this.segmentBytes) {
+            cursor += 1;
+            continue;
+          }
+          const filePath = await this.resolveFilePath(firstLineBytes);
+          if (!filePath) break;
+          const remainingBytes = this.segmentBytes - this.activeBytes;
+          const chunk: string[] = [];
+          let chunkBytes = 0;
+          while (cursor < lines.length) {
+            const line = lines[cursor] as string;
+            const lineBytes = Buffer.byteLength(line, "utf8");
+            if (chunk.length > 0 && chunkBytes + lineBytes > remainingBytes) break;
+            chunk.push(line);
+            chunkBytes += lineBytes;
+            cursor += 1;
+          }
+          await this.appendFile(filePath, chunk.join(""), { encoding: "utf8", flag: "a" });
+          this.activeBytes += chunkBytes;
         }
-        await this.appendFile(filePath, chunk.join(""), { encoding: "utf8", flag: "a" });
-        this.activeBytes += chunkBytes;
-      }
+      });
     } catch {
       // Stdout is the required local sink; JSONL mirroring is best-effort.
+    }
+  }
+
+  private async withDirectoryLock(operation: () => Promise<void>): Promise<void> {
+    if (!this.dir) return;
+    await mkdir(this.dir, { recursive: true });
+    const lockPath = path.join(this.dir, DIRECTORY_LOCK_FILE);
+    const deadline = Date.now() + DIRECTORY_LOCK_WAIT_MS;
+    while (true) {
+      try {
+        const handle = await open(lockPath, "wx");
+        try {
+          await operation();
+        } finally {
+          await handle.close().catch(() => undefined);
+          await unlink(lockPath).catch(() => undefined);
+        }
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        try {
+          const lock = await stat(lockPath);
+          if (Date.now() - lock.mtimeMs > DIRECTORY_LOCK_STALE_MS) {
+            await unlink(lockPath);
+            continue;
+          }
+        } catch (lockError) {
+          if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") throw lockError;
+          continue;
+        }
+        if (Date.now() >= deadline) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
     }
   }
 
@@ -269,12 +318,15 @@ export class LocalEventSink implements EventSink {
     if (!this.dir) return null;
     const now = this.now();
     const date = utcDateStamp(now);
-    if (
-      this.activeDate === date &&
-      this.activePath &&
-      this.activeBytes + nextBytes <= this.segmentBytes
-    ) {
-      return this.activePath;
+    if (this.activeDate === date && this.activePath) {
+      try {
+        this.activeBytes = (await stat(this.activePath)).size;
+        if (this.activeBytes + nextBytes <= this.segmentBytes) return this.activePath;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        this.activePath = null;
+        this.activeBytes = 0;
+      }
     }
 
     await mkdir(this.dir, { recursive: true });

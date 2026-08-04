@@ -6,8 +6,17 @@ import { isMeridianError } from "@meridian/contracts/interrupt";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
 
 const ERROR_SCALAR_MAX = 128;
-const STABLE_ERROR_CLASS = /^[A-Za-z][A-Za-z0-9._:-]*$/;
-const STABLE_ERROR_CODE = /^[A-Z0-9][A-Z0-9_]{1,63}$/;
+const SAFE_ERROR_CLASSES = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+]);
+const STABLE_ERROR_CODE = /^(?:[A-Z0-9]{5}|E[A-Z0-9_]{1,63}|ERR_[A-Z0-9_]{1,59})$/;
 
 function safeErrorScalar(value: unknown): string | number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -22,9 +31,7 @@ function safeErrorScalar(value: unknown): string | number | undefined {
 }
 
 function safeErrorClass(error: Error): string {
-  return typeof error.name === "string" &&
-    error.name.length <= ERROR_SCALAR_MAX &&
-    STABLE_ERROR_CLASS.test(error.name)
+  return typeof error.name === "string" && SAFE_ERROR_CLASSES.has(error.name)
     ? error.name
     : "Error";
 }
@@ -43,7 +50,9 @@ export function unknownToEventPayload(error: unknown): Record<string, unknown> {
   if (error instanceof Error) {
     const candidate = error as Error & Record<string, unknown>;
     const code = safeErrorScalar(candidate.code);
-    const status = safeErrorScalar(candidate.status ?? candidate.statusCode);
+    const rawStatus = candidate.status ?? candidate.statusCode;
+    const status =
+      typeof rawStatus === "number" && Number.isFinite(rawStatus) ? rawStatus : undefined;
     return {
       error: {
         class: safeErrorClass(error),

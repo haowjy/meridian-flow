@@ -86,26 +86,69 @@ export function parseDebugEventsArgs(args: string[]): DebugEventsOptions {
 }
 
 type HttpResult = { status: number; headers: IncomingHttpHeaders; body: string };
+const REQUEST_DEADLINE_MS = 5_000;
+const LOGIN_RESPONSE_BYTES = 64 * 1_024;
+const EVENT_RESPONSE_BYTES = 2 * 1_024 * 1_024;
 
-function request(url: string, headers: Record<string, string> = {}): Promise<HttpResult> {
+export function createBoundedResponseCollector(maxBytes: number) {
+  let receivedBytes = 0;
+  const chunks: Buffer[] = [];
+  return {
+    push(chunk: Uint8Array | string): void {
+      const buffer = Buffer.from(chunk);
+      receivedBytes += buffer.byteLength;
+      if (receivedBytes > maxBytes) {
+        throw new Error(`response exceeded the ${maxBytes}-byte safety limit`);
+      }
+      chunks.push(buffer);
+    },
+    body(): string {
+      return Buffer.concat(chunks).toString("utf8");
+    },
+  };
+}
+
+function request(
+  url: string,
+  headers: Record<string, string> = {},
+  maxResponseBytes = EVENT_RESPONSE_BYTES,
+): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (operation: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      operation();
+    };
     const clientRequest = https.request(
       url,
-      { method: "GET", headers, ca: portlessCa(), timeout: 5_000 },
+      { method: "GET", headers, ca: portlessCa() },
       (response) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        const collector = createBoundedResponseCollector(maxResponseBytes);
+        response.on("data", (chunk) => {
+          try {
+            collector.push(chunk);
+          } catch (error) {
+            clientRequest.destroy(error as Error);
+          }
+        });
         response.on("end", () =>
-          resolve({
-            status: response.statusCode ?? 0,
-            headers: response.headers,
-            body: Buffer.concat(chunks).toString("utf8"),
-          }),
+          finish(() =>
+            resolve({
+              status: response.statusCode ?? 0,
+              headers: response.headers,
+              body: collector.body(),
+            }),
+          ),
         );
       },
     );
-    clientRequest.on("timeout", () => clientRequest.destroy(new Error("request timed out")));
-    clientRequest.on("error", reject);
+    const deadline = setTimeout(
+      () => clientRequest.destroy(new Error(`request exceeded ${REQUEST_DEADLINE_MS}ms`)),
+      REQUEST_DEADLINE_MS,
+    );
+    clientRequest.on("error", (error) => finish(() => reject(error)));
     clientRequest.end();
   });
 }
@@ -164,7 +207,11 @@ export async function queryDebugEvents(
   repoRoot = resolveCurrentRepoRoot(),
 ): Promise<Record<string, unknown>> {
   const origins = resolveOrigins(repoRoot);
-  const login = await request(new URL("/api/auth/dev-login", origins.app).toString());
+  const login = await request(
+    new URL("/api/auth/dev-login", origins.app).toString(),
+    {},
+    LOGIN_RESPONSE_BYTES,
+  );
   if (login.status !== 302) {
     throw new Error(`Dev login failed with HTTP ${login.status}: ${login.body.slice(0, 400)}`);
   }

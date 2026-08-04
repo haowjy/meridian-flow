@@ -47,12 +47,12 @@ export default defineWebSocketHandler(() => ({
       };
     }
     return {
-      context: {
+      context: Object.freeze({
         kind: "authenticated",
         app: auth.app,
         userId: auth.userId,
         traceId: auth.traceId,
-      } satisfies ThreadWsRouteContext,
+      } satisfies ThreadWsRouteContext),
     };
   },
 

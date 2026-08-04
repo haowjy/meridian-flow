@@ -65,4 +65,21 @@ describe("CorrelatingEventSink", () => {
       payload: { fields: ["traceId"], conflictCount: 1 },
     });
   });
+
+  it("never lets a failing diagnostic adapter veto emit, batch, or flush", async () => {
+    const failure = new Error("sink failure");
+    const sink = new CorrelatingEventSink({
+      emit: () => {
+        throw failure;
+      },
+      emitBatch: () => {
+        throw failure;
+      },
+      flush: () => Promise.reject(failure),
+    });
+
+    expect(() => sink.emit(event("event-1"))).not.toThrow();
+    expect(() => sink.emitBatch([event("event-2")])).not.toThrow();
+    await expect(sink.flush()).resolves.toBeUndefined();
+  });
 });

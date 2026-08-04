@@ -18,12 +18,12 @@ import { resolveAppUserFromRequest } from "./auth-gate.js";
 
 export type WsDeferredClose = typeof WS_CLOSE.AUTH_FAILED | typeof WS_CLOSE.AUTH_ERROR;
 
-export type WsAuthenticatedUpgrade = {
+export type WsAuthenticatedUpgrade = Readonly<{
   kind: "authenticated";
   app: AppServices;
   userId: UserId;
   traceId: string;
-};
+}>;
 
 export type WsDeferredCloseUpgrade<TClose extends WsDeferredClose = WsDeferredClose> = {
   kind: "deferred-close";
@@ -49,7 +49,12 @@ export async function resolveWsUpgradeAuth(
     if (!auth) {
       return deferWsClose(WS_CLOSE.AUTH_FAILED);
     }
-    return { kind: "authenticated", app: auth.app, userId: auth.user.userId, traceId };
+    return Object.freeze({
+      kind: "authenticated",
+      app: auth.app,
+      userId: auth.user.userId,
+      traceId,
+    });
   } catch (error) {
     emitEvent(eventSink, {
       level: "error",

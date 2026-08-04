@@ -35,7 +35,11 @@ export class DeferredEventSink implements EventSink {
         this.droppedRecords = 0;
         this.droppedBytes = 0;
       }
-      delegate.emitBatch(events);
+      try {
+        delegate.emitBatch(events);
+      } catch {
+        // Binding diagnostics cannot veto application composition.
+      }
     }
   }
 
@@ -62,6 +66,10 @@ export class DeferredEventSink implements EventSink {
   }
 
   async flush(): Promise<void> {
-    await this.delegate?.flush();
+    try {
+      await this.delegate?.flush();
+    } catch {
+      // Flush evidence cannot veto shutdown or application work.
+    }
   }
 }

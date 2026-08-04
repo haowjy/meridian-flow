@@ -7,7 +7,7 @@
 import type { EventRecord } from "./ports/event-sink.js";
 
 const SENSITIVE_KEY_PATTERN =
-  /(authorization|cookie|password|secret|token|api[_-]?key|prompt|messages|systemmessages|content|arguments|input|output|raw|stack)/i;
+  /(authorization|cookie|password|secret|token|api[_-]?key|prompt|messages?|systemmessages|content|arguments|input|output|raw|stack|cause|query|sql|response|body)/i;
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
 const MAX_IDENTIFIER_LENGTH = 128;
@@ -18,9 +18,12 @@ export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 const SAFE_METRIC_KEYS = new Set(["firstOutputMs", "inputTokens", "outputTokens"]);
 
 function redactString(value: string): string {
-  const withoutSecrets = value.replace(SECRET_TEXT_PATTERN, "[redacted-secret]");
-  if (withoutSecrets.length <= MAX_STRING_LENGTH) return withoutSecrets;
-  return `${withoutSecrets.slice(0, MAX_STRING_LENGTH)}…[truncated:${withoutSecrets.length}]`;
+  const candidate = value.slice(0, MAX_STRING_LENGTH + 256);
+  const withoutSecrets = candidate.replace(SECRET_TEXT_PATTERN, "[redacted-secret]");
+  if (value.length <= MAX_STRING_LENGTH && withoutSecrets.length <= MAX_STRING_LENGTH) {
+    return withoutSecrets;
+  }
+  return `${withoutSecrets.slice(0, MAX_STRING_LENGTH)}…[truncated:${value.length}]`;
 }
 
 function boundedIdentifier(value: string): string {
@@ -28,25 +31,75 @@ function boundedIdentifier(value: string): string {
 }
 
 function sanitizeIdentifierRecord<T extends object>(value: T): T {
+  const entries: Array<[string, unknown]> = [];
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) continue;
+    entries.push([key, value[key as keyof T]]);
+    if (entries.length === MAX_OBJECT_KEYS) break;
+  }
   return Object.freeze(
     Object.fromEntries(
-      Object.entries(value)
-        .slice(0, MAX_OBJECT_KEYS)
-        .map(([key, item]) => [
-          key,
-          typeof item === "string"
-            ? boundedIdentifier(item)
-            : typeof item === "number" && Number.isFinite(item)
+      entries.map(([key, item]) => [
+        key,
+        typeof item === "string"
+          ? boundedIdentifier(item)
+          : typeof item === "number" && Number.isFinite(item)
+            ? item
+            : typeof item === "boolean"
               ? item
-              : typeof item === "boolean"
-                ? item
-                : "[redacted]",
-        ]),
+              : "[redacted]",
+      ]),
     ),
   ) as unknown as T;
 }
 
+function safeErrorEnvelope(value: unknown): Record<string, unknown> | "[redacted]" {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "[redacted]";
+  const candidate = value as Record<string, unknown>;
+  const errorClass =
+    typeof candidate.class === "string" &&
+    /^(?:Error|TypeError|RangeError|ReferenceError|SyntaxError|URIError|EvalError|AggregateError|MeridianError)$/.test(
+      candidate.class,
+    )
+      ? candidate.class
+      : "Error";
+  const category =
+    candidate.category === "database" || candidate.category === "unexpected"
+      ? candidate.category
+      : typeof candidate.category === "string" && /^[a-z][a-z0-9_]{0,31}$/.test(candidate.category)
+        ? candidate.category
+        : "unexpected";
+  const code =
+    (typeof candidate.code === "string" &&
+      /^(?:[A-Z0-9]{5}|E[A-Z0-9_]{1,63}|ERR_[A-Z0-9_]{1,59})$/.test(candidate.code)) ||
+    (typeof candidate.code === "number" && Number.isFinite(candidate.code))
+      ? candidate.code
+      : undefined;
+  const status =
+    typeof candidate.status === "number" && Number.isFinite(candidate.status)
+      ? candidate.status
+      : undefined;
+  return Object.freeze({
+    class: errorClass,
+    category,
+    ...(code !== undefined && { code }),
+    ...(status !== undefined && { status }),
+    ...(typeof candidate.retryable === "boolean" && { retryable: candidate.retryable }),
+  });
+}
+
+function boundedOwnEntries(value: Record<string, unknown>): Array<[string, unknown]> {
+  const entries: Array<[string, unknown]> = [];
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) continue;
+    entries.push([key, value[key]]);
+    if (entries.length === MAX_OBJECT_KEYS) break;
+  }
+  return entries;
+}
+
 function sanitizeValue(key: string, value: unknown, depth: number): unknown {
+  if (key === "error") return safeErrorEnvelope(value);
   const isSafeMetric =
     SAFE_METRIC_KEYS.has(key) && typeof value === "number" && Number.isFinite(value);
   if (!isSafeMetric && SENSITIVE_KEY_PATTERN.test(key)) return "[redacted]";
@@ -57,18 +110,16 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
   if (depth > 5) return "[redacted-depth]";
   if (Array.isArray(value)) {
     return Object.freeze(
-      value.slice(0, MAX_ARRAY_ITEMS).map((item) => sanitizeValue("item", item, depth + 1)),
+      value.slice(0, MAX_ARRAY_ITEMS).map((item) => sanitizeValue(key, item, depth + 1)),
     );
   }
   if (typeof value === "object") {
     return Object.freeze(
       Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-          .slice(0, MAX_OBJECT_KEYS)
-          .map(([childKey, childValue]) => [
-            childKey,
-            sanitizeValue(childKey, childValue, depth + 1),
-          ]),
+        boundedOwnEntries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+          childKey,
+          sanitizeValue(childKey, childValue, depth + 1),
+        ]),
       ),
     );
   }

@@ -71,7 +71,9 @@ instead of `console.log`.
   8 MiB segments under `logs/events/` regardless of each service's working
   directory. An absolute `LOG_DIR` override is honored; relative overrides are
   ignored. Segments are pruned after 14 days and when the worktree exceeds
-  128 MiB (`LOG_MAX_BYTES` overrides the byte cap), so this is not an audit log.
+  128 MiB (`LOG_MAX_BYTES` overrides the byte cap). Allocation, append, and
+  pruning share a worktree lock so overlapping server generations keep both
+  ceilings hard. This is not an audit log.
 - The dev Vite and Nitro watchers exclude the repository `logs/` tree. Log
   writes must not reload either process; a reload during a long-running turn is
   a bug, not expected dev behavior.
@@ -106,7 +108,9 @@ A narrowing pivot is required: `--event`, `--trace`, `--thread`, `--turn`,
 `--document`, or `--error-code`. Optional filters are `--source`, `--name`,
 `--level`, `--since`, and `--limit`. Compact output omits payloads and caps at
 50 events; `--full` includes sanitized records and caps at 200. Output includes
-the query and dropped record/byte counts. Failures exit nonzero with remediation.
+the query and dropped record/byte counts. Requests have a five-second wall-clock
+deadline; login and event bodies have 64 KiB and 2 MiB byte ceilings. Failures
+exit nonzero with remediation.
 
 Authenticated local development/test servers with the `local` event provider
 retain up to 5,000 sanitized records or 16 MiB in memory. Other environments
@@ -176,6 +180,8 @@ Conventions:
 - For errors, `unknownToEventPayload(err)` keeps only error class/category,
   stable code, and approved scalar status. Messages, stacks, causes, SQL,
   provider text, prompts, tool data, and writer prose stay out.
+- Diagnostic delivery is non-vetoing. Never use sink success as application
+  authority or branch application behavior on whether evidence was retained.
 - No secrets, raw prompts, model output, or tool arguments — events are
   sanitized structurally, not content-inspected.
 - High-frequency per-item events (per chunk, per frame) should be gated behind

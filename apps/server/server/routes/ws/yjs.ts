@@ -58,13 +58,13 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
     return auth.kind === "deferred-close"
       ? { context: deferWsClose(auth.close) satisfies YjsRouteContext, ...responseHeaders }
       : {
-          context: {
+          context: Object.freeze({
             kind: "authenticated",
             app: auth.app,
             userId: auth.userId,
             gateway: getYjsGateway(auth.app),
             traceId: auth.traceId,
-          } satisfies YjsRouteContext,
+          } satisfies YjsRouteContext),
           ...responseHeaders,
         };
   },

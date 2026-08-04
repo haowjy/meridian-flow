@@ -29,7 +29,11 @@ export class CorrelatingEventSink implements EventSink {
   emit(event: EventRecord): void {
     const active = storage.getStore();
     if (!active || Object.keys(active).length === 0) {
-      this.delegate.emit(event);
+      try {
+        this.delegate.emit(event);
+      } catch {
+        // Diagnostics are evidence about an operation, never permission for it.
+      }
       return;
     }
 
@@ -39,10 +43,14 @@ export class CorrelatingEventSink implements EventSink {
       event.correlation.traceId !== active.traceId
         ? ["traceId"]
         : [];
-    this.delegate.emit({
-      ...event,
-      correlation: { ...event.correlation, ...active },
-    });
+    try {
+      this.delegate.emit({
+        ...event,
+        correlation: { ...event.correlation, ...active },
+      });
+    } catch {
+      return;
+    }
     if (conflicts.length === 0 || event.name === "correlation.conflict") return;
     try {
       this.delegate.emit({
@@ -64,7 +72,11 @@ export class CorrelatingEventSink implements EventSink {
     for (const event of events) this.emit(event);
   }
 
-  flush(): Promise<void> {
-    return this.delegate.flush();
+  async flush(): Promise<void> {
+    try {
+      await this.delegate.flush();
+    } catch {
+      // Flush evidence cannot veto shutdown or the operation being flushed.
+    }
   }
 }

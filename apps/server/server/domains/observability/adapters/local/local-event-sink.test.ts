@@ -39,6 +39,7 @@ describe("LocalEventSink", () => {
     const sink = new LocalEventSink({
       dir: directory,
       appendFile,
+      pendingEventCapacity: 5,
       stdout: {
         write: (chunk) => {
           output += String(chunk);
@@ -50,18 +51,13 @@ describe("LocalEventSink", () => {
 
     sink.emit(event(-1));
     await vi.waitFor(() => expect(appendFile).toHaveBeenCalledTimes(1));
-    for (let sequence = 0; sequence < 50_000; sequence += 1) {
+    for (let sequence = 0; sequence < 50; sequence += 1) {
       sink.emit(event(sequence));
     }
-
-    const state = sink as unknown as {
-      pendingEvents: EventRecord[];
-      droppedEvents: number;
-      droppedBytes: number;
-    };
-    expect(state.pendingEvents).toHaveLength(5_000);
-    expect(state.droppedEvents).toBe(45_000);
-    const droppedBytes = state.droppedBytes;
+    const droppedBytes = Array.from({ length: 45 }, (_, index) => event(index)).reduce(
+      (total, record) => total + Buffer.byteLength(JSON.stringify(record), "utf8"),
+      0,
+    );
 
     releaseFirstWrite?.();
     await sink.flush();
@@ -70,16 +66,15 @@ describe("LocalEventSink", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as EventRecord);
-    expect(records).toHaveLength(5_002);
+    expect(records).toHaveLength(7);
     expect(records[1]).toMatchObject({
       level: "warn",
       source: "observability",
       name: "sink.dropped",
-      payload: { droppedRecords: 45_000, droppedBytes },
+      payload: { droppedRecords: 45, droppedBytes },
     });
-    expect(records[2]?.eventId).toBe("event-45000");
-    expect(records.at(-1)?.eventId).toBe("event-49999");
-    expect(state.droppedEvents).toBe(0);
+    expect(records[2]?.eventId).toBe("event-45");
+    expect(records.at(-1)?.eventId).toBe("event-49");
   });
 
   it("waits for stdout drain while retaining only the bounded pending queue", async () => {
@@ -96,22 +91,17 @@ describe("LocalEventSink", () => {
         releaseDrain = listener;
       }),
     };
-    const sink = new LocalEventSink({ stdout });
+    const sink = new LocalEventSink({ stdout, pendingEventCapacity: 5 });
 
     sink.emit(event(-1));
     await vi.waitFor(() => expect(stdout.write).toHaveBeenCalledOnce());
-    for (let sequence = 0; sequence < 50_000; sequence += 1) {
+    for (let sequence = 0; sequence < 50; sequence += 1) {
       sink.emit(event(sequence));
     }
-
-    const state = sink as unknown as {
-      pendingEvents: EventRecord[];
-      droppedEvents: number;
-      droppedBytes: number;
-    };
-    expect(state.pendingEvents).toHaveLength(5_000);
-    expect(state.droppedEvents).toBe(45_000);
-    const droppedBytes = state.droppedBytes;
+    const droppedBytes = Array.from({ length: 45 }, (_, index) => event(index)).reduce(
+      (total, record) => total + Buffer.byteLength(JSON.stringify(record), "utf8"),
+      0,
+    );
     expect(stdout.write).toHaveBeenCalledOnce();
 
     releaseDrain?.();
@@ -121,18 +111,17 @@ describe("LocalEventSink", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as EventRecord);
-    expect(records).toHaveLength(5_002);
+    expect(records).toHaveLength(7);
     expect(records[0]?.eventId).toBe("event--1");
     expect(records.slice(2).map(({ eventId }) => eventId)).toEqual(
-      Array.from({ length: 5_000 }, (_, index) => `event-${index + 45_000}`),
+      Array.from({ length: 5 }, (_, index) => `event-${index + 45}`),
     );
     expect(records[1]).toMatchObject({
       level: "warn",
       source: "observability",
       name: "sink.dropped",
-      payload: { droppedRecords: 45_000, droppedBytes },
+      payload: { droppedRecords: 45, droppedBytes },
     });
-    expect(state.droppedEvents).toBe(0);
   });
 
   it("keeps byte-loss accounting added while an earlier summary is writing", async () => {
@@ -254,5 +243,30 @@ describe("LocalEventSink", () => {
     const files = await readdir(directory);
     const sizes = await Promise.all(files.map((file) => stat(path.join(directory, file))));
     expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(220);
+  });
+
+  it("serializes concurrent writers before segment allocation and pruning", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "meridian-local-event-sink-"));
+    directories.push(directory);
+    const sinks = Array.from(
+      { length: 4 },
+      () =>
+        new LocalEventSink({
+          dir: directory,
+          segmentBytes: 300,
+          maxBytes: 600,
+          stdout: { write: () => true, once: vi.fn() },
+        }),
+    );
+
+    sinks.forEach((sink, sinkIndex) => {
+      sink.emitBatch(Array.from({ length: 8 }, (_, index) => event(sinkIndex * 10 + index)));
+    });
+    await Promise.all(sinks.map((sink) => sink.flush()));
+
+    const files = (await readdir(directory)).filter((file) => file.endsWith(".jsonl"));
+    const sizes = await Promise.all(files.map((file) => stat(path.join(directory, file))));
+    expect(sizes.every(({ size }) => size <= 300)).toBe(true);
+    expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(600);
   });
 });
