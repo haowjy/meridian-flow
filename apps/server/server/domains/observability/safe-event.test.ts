@@ -1,6 +1,7 @@
 /** Sanitizer boundary tests for sensitive fields and numeric gateway metrics. */
 import { describe, expect, it } from "vitest";
-import { sanitizeEventRecord } from "./safe-event.js";
+import { unknownToEventPayload } from "./emit-event.js";
+import { MAX_EVENT_RECORD_BYTES, sanitizeEventRecord, serializedEventBytes } from "./safe-event.js";
 
 function sanitize(payload: Record<string, unknown>): Record<string, unknown> {
   return sanitizeEventRecord({
@@ -45,5 +46,46 @@ describe("sanitizeEventRecord numeric metrics", () => {
       firstOutputMs: "[redacted]",
       audit: { inputTokens: "[redacted]" },
     });
+  });
+});
+
+describe("sanitizeEventRecord byte boundary", () => {
+  it("replaces an oversized payload with a deterministic marker", () => {
+    const event = sanitizeEventRecord({
+      eventId: "event-large",
+      timestamp: "2026-07-18T00:00:00.000Z",
+      level: "error",
+      source: "test",
+      name: "test.large",
+      correlation: { traceId: "trace-1", threadId: "thread-1" },
+      payload: Object.fromEntries(
+        Array.from({ length: 50 }, (_, index) => [`field${index}`, "x".repeat(1_000)]),
+      ),
+    });
+
+    expect(serializedEventBytes(event)).toBeLessThanOrEqual(MAX_EVENT_RECORD_BYTES);
+    expect(event.correlation).toEqual({ traceId: "trace-1", threadId: "thread-1" });
+    expect(event.payload).toMatchObject({ truncated: true, reason: "record_byte_limit" });
+  });
+});
+
+describe("unknownToEventPayload", () => {
+  it("keeps only allowlisted error identity and stable scalars", () => {
+    const error = Object.assign(new Error("writer prose and provider text"), {
+      code: "23505",
+      severity: "ERROR",
+      query: "select secret manuscript",
+      detail: "private writer content",
+      cause: new Error("provider key sk-private-private"),
+    });
+
+    const payload = unknownToEventPayload(error);
+
+    expect(payload).toEqual({
+      error: { class: "Error", category: "database", code: "23505" },
+    });
+    expect(JSON.stringify(payload)).not.toContain("writer");
+    expect(JSON.stringify(payload)).not.toContain("query");
+    expect(JSON.stringify(payload)).not.toContain("cause");
   });
 });

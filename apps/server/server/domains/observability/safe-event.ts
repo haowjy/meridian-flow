@@ -10,8 +10,10 @@ const SENSITIVE_KEY_PATTERN =
   /(authorization|cookie|password|secret|token|api[_-]?key|prompt|messages|systemmessages|content|arguments|input|output|raw|stack)/i;
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
+const MAX_IDENTIFIER_LENGTH = 256;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
+export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 /** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set(["firstOutputMs", "inputTokens", "outputTokens"]);
 
@@ -19,6 +21,10 @@ function redactString(value: string): string {
   const withoutSecrets = value.replace(SECRET_TEXT_PATTERN, "[redacted-secret]");
   if (withoutSecrets.length <= MAX_STRING_LENGTH) return withoutSecrets;
   return `${withoutSecrets.slice(0, MAX_STRING_LENGTH)}…[truncated:${withoutSecrets.length}]`;
+}
+
+function boundedIdentifier(value: string): string {
+  return redactString(value).slice(0, MAX_IDENTIFIER_LENGTH);
 }
 
 function sanitizeValue(key: string, value: unknown, depth: number): unknown {
@@ -51,12 +57,12 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
 }
 
 export function sanitizeEventRecord(event: EventRecord): EventRecord {
-  return Object.freeze({
+  const sanitized = {
     eventId: event.eventId ?? crypto.randomUUID(),
     timestamp: event.timestamp,
     level: event.level,
-    source: event.source,
-    name: event.name,
+    source: boundedIdentifier(event.source),
+    name: boundedIdentifier(event.name),
     sensitivity: event.sensitivity ?? "safe",
     payload: sanitizeValue("payload", event.payload, 0) as Record<string, unknown>,
     ...(event.correlation !== undefined && {
@@ -65,7 +71,22 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
     ...(event.stream !== undefined && {
       stream: sanitizeValue("stream", event.stream, 0) as EventRecord["stream"],
     }),
+  } satisfies EventRecord;
+  const originalBytes = serializedEventBytes(sanitized);
+  if (originalBytes <= MAX_EVENT_RECORD_BYTES) return Object.freeze(sanitized);
+
+  return Object.freeze({
+    ...sanitized,
+    payload: Object.freeze({
+      truncated: true,
+      originalBytes,
+      reason: "record_byte_limit",
+    }),
   });
+}
+
+export function serializedEventBytes(event: EventRecord): number {
+  return Buffer.byteLength(JSON.stringify(event), "utf8");
 }
 
 export function safeSnippet(value: string, maxLength = 160): string {

@@ -54,6 +54,7 @@ function singleValue(query: EventQueryParameters, key: string): string | undefin
 }
 
 export function parseEventQueryFilter(query: EventQueryParameters): EventQueryFilter {
+  const eventId = singleValue(query, "eventId");
   const source = singleValue(query, "source");
   const name = singleValue(query, "name");
   const excludeName = singleValue(query, "excludeName");
@@ -88,6 +89,7 @@ export function parseEventQueryFilter(query: EventQueryParameters): EventQueryFi
 
   const correlation = Object.fromEntries(correlationEntries) as Partial<EventCorrelation>;
   return {
+    ...(eventId !== undefined && { eventId }),
     ...(source !== undefined && { source }),
     ...(name !== undefined && { name }),
     ...(excludeName !== undefined && { excludeName }),

@@ -2,6 +2,8 @@
 import type { EventCorrelation, EventLevel, EventRecord } from "./event-sink.js";
 
 export interface EventQueryFilter {
+  /** Exact event id match. */
+  eventId?: string;
   /** Exact source match. */
   source?: string;
   /** Event-name prefix match. */
@@ -24,6 +26,8 @@ export interface EventQueryResult {
   events: EventRecord[];
   /** Lifetime count of records evicted from the query surface. */
   dropped: number;
+  /** Lifetime serialized bytes evicted from the query surface. */
+  droppedBytes: number;
 }
 
 export interface EventQuery {
@@ -42,6 +46,7 @@ const LEVEL_RANK: Record<EventLevel, number> = {
 
 /** Match scalar filters; ordered query owners apply the event-id cursor. */
 export function eventMatchesQueryFilter(event: EventRecord, filter: EventQueryFilter): boolean {
+  if (filter.eventId !== undefined && event.eventId !== filter.eventId) return false;
   if (filter.source !== undefined && event.source !== filter.source) return false;
   if (filter.name !== undefined && !event.name.startsWith(filter.name)) return false;
   if (filter.excludeName !== undefined && event.name === filter.excludeName) return false;

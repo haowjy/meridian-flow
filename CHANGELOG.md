@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/server`: diagnostic events are now capped at 8 KiB, error envelopes
+  retain only safe identity fields, in-memory and pending buffers have byte as
+  well as record limits, and local JSONL output rotates at 8 MiB with both
+  14-day and 128 MiB retention ceilings. Loss summaries report records and
+  bytes, and debug queries can select an exact event ID.
 - `apps/app`: a table nested in another table's cell now keeps its grip
   chrome while the pointer travels to a grip. The gap beside the inner frame
   no longer re-anchors hover to the outer table, so the inner table's row

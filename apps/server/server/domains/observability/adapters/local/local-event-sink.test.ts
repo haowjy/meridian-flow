@@ -1,5 +1,5 @@
 /** LocalEventSink queue bounds and serialized mirror behavior. */
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -57,9 +57,11 @@ describe("LocalEventSink", () => {
     const state = sink as unknown as {
       pendingEvents: EventRecord[];
       droppedEvents: number;
+      droppedBytes: number;
     };
     expect(state.pendingEvents).toHaveLength(5_000);
     expect(state.droppedEvents).toBe(45_000);
+    const droppedBytes = state.droppedBytes;
 
     releaseFirstWrite?.();
     await sink.flush();
@@ -73,7 +75,7 @@ describe("LocalEventSink", () => {
       level: "warn",
       source: "observability",
       name: "sink.dropped",
-      payload: { dropped: 45_000 },
+      payload: { droppedRecords: 45_000, droppedBytes },
     });
     expect(records[2]?.eventId).toBe("event-45000");
     expect(records.at(-1)?.eventId).toBe("event-49999");
@@ -105,9 +107,11 @@ describe("LocalEventSink", () => {
     const state = sink as unknown as {
       pendingEvents: EventRecord[];
       droppedEvents: number;
+      droppedBytes: number;
     };
     expect(state.pendingEvents).toHaveLength(5_000);
     expect(state.droppedEvents).toBe(45_000);
+    const droppedBytes = state.droppedBytes;
     expect(stdout.write).toHaveBeenCalledOnce();
 
     releaseDrain?.();
@@ -126,7 +130,7 @@ describe("LocalEventSink", () => {
       level: "warn",
       source: "observability",
       name: "sink.dropped",
-      payload: { dropped: 45_000 },
+      payload: { droppedRecords: 45_000, droppedBytes },
     });
     expect(state.droppedEvents).toBe(0);
   });
@@ -153,5 +157,33 @@ describe("LocalEventSink", () => {
         .split("\n")
         .map((line) => (JSON.parse(line) as EventRecord).eventId),
     ).toEqual(["event-1", "event-2", "event-3"]);
+  });
+
+  it("rotates bounded segments and prunes old and over-budget files", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "meridian-local-event-sink-"));
+    directories.push(directory);
+    await writeFile(path.join(directory, "2026-06-01-0000.jsonl"), "old".repeat(100));
+    await writeFile(path.join(directory, "2026-07-18-0000.jsonl"), "recent".repeat(80));
+    let now = new Date("2026-07-18T00:00:00.000Z");
+    const sink = new LocalEventSink({
+      dir: directory,
+      now: () => now,
+      retentionDays: 14,
+      segmentBytes: 600,
+      maxBytes: 1_200,
+      stdout: { write: () => true, once: vi.fn() },
+    });
+
+    sink.emitBatch(Array.from({ length: 12 }, (_, index) => event(index)));
+    await sink.flush();
+    now = new Date("2026-07-19T00:00:00.000Z");
+    sink.emit(event(20));
+    await sink.flush();
+
+    const files = (await readdir(directory)).sort();
+    const sizes = await Promise.all(files.map((file) => stat(path.join(directory, file))));
+    expect(files).not.toContain("2026-06-01-0000.jsonl");
+    expect(sizes.every(({ size }) => size <= 600)).toBe(true);
+    expect(sizes.reduce((total, { size }) => total + size, 0)).toBeLessThanOrEqual(1_200);
   });
 });

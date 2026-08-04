@@ -28,4 +28,9 @@ export type {
   EventSink,
   TraceStreamRef,
 } from "./ports/event-sink.js";
-export { safeSnippet, sanitizeEventRecord } from "./safe-event.js";
+export {
+  MAX_EVENT_RECORD_BYTES,
+  safeSnippet,
+  sanitizeEventRecord,
+  serializedEventBytes,
+} from "./safe-event.js";
