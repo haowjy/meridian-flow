@@ -294,7 +294,25 @@ export function attachNoticesToLatestUserMessage(
     return updated;
   }
 
-  updated.push({ role: "user", content: [notice] });
+  throw new Error("Cannot attach pre-turn notices without a writer message");
+}
+
+export function insertPostToolNotices(
+  messages: readonly Message[],
+  notices: readonly Notice[],
+  afterMessageCount: number,
+): Message[] {
+  const content = formatNotices(notices);
+  if (!content) return [...messages];
+  if (afterMessageCount < 0 || afterMessageCount > messages.length) {
+    throw new Error("Post-tool notice anchor is outside the model request");
+  }
+
+  const updated = [...messages];
+  updated.splice(afterMessageCount, 0, {
+    role: "user",
+    content: [text(`Meridian context after the preceding edits:\n${content}`)],
+  });
   return updated;
 }
 

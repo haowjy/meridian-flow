@@ -136,12 +136,12 @@ facet.
   missing results in the immediately following tool-role group. Repairs are
   never persisted and never rerun tools.
 - **Edit-intent notices** — before every provider stream, `runTurn` drains the
-  single notice port for the thread and its active documents, then appends the
-  notices as a clearly labeled transient part of the latest writer message. This
-  keeps them chronological without changing the frozen system prompt or
-  prior-turn history. Notices never enter the turn graph. Undo/redo uses
-  `kind: "undo"`; late sweeps and degraded-awareness reports recorded mid-turn
-  therefore reach the next model call in the same agentic loop.
+  single notice port for the thread and its active documents. Notices present
+  before the first call attach to that writer message and remain there for every
+  tool-loop iteration. Notices recorded mid-turn are inserted after the tool
+  exchange that caused them and retain that causal position on later
+  iterations. This keeps the already-sent request prefix stable without
+  changing the frozen system prompt or persisting notices into the turn graph.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results

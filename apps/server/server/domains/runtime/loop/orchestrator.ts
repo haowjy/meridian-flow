@@ -83,7 +83,7 @@ import type {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
-import type { NoticePort } from "../../notices/index.js";
+import type { Notice, NoticePort } from "../../notices/index.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -102,7 +102,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { attachNoticesToLatestUserMessage } from "./context-builder.js";
+import { attachNoticesToLatestUserMessage, insertPostToolNotices } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -858,6 +858,11 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    const preTurnNotices: Notice[] = [];
+    const postToolNoticeBatches: Array<{
+      afterMessageCount: number;
+      notices: Notice[];
+    }> = [];
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
     // Every cancellation/error path must yield terminal events, not just
@@ -918,9 +923,23 @@ async function* generateEvents(
       };
 
       {
+        const baseMessageCount = request.messages.length;
         const notices = await deps.notices.drainForModelContext(input.threadId);
-        if (notices.length > 0) {
-          request.messages = attachNoticesToLatestUserMessage(request.messages, notices);
+        if (iteration === 1) {
+          preTurnNotices.push(...notices);
+        } else if (notices.length > 0) {
+          postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices });
+        }
+
+        if (preTurnNotices.length > 0) {
+          request.messages = attachNoticesToLatestUserMessage(request.messages, preTurnNotices);
+        }
+        for (const [index, batch] of postToolNoticeBatches.entries()) {
+          request.messages = insertPostToolNotices(
+            request.messages,
+            batch.notices,
+            batch.afterMessageCount + index,
+          );
         }
         // After this point the drain is durable. If the provider stream throws before
         // returning a result, the notice is lost, matching the model-call boundary.

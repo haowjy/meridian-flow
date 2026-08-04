@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-- `apps/server`: undo and edit-awareness notices now travel with the current
-  writer message instead of rewriting the system prompt prefix, preserving the
-  writer's chronology and keeping the frozen prefix stable for prompt caching.
+- `apps/server`: undo notices now stay with the current writer message through
+  every tool-loop call. Edit-awareness notices stay after the tool result that
+  caused them. Neither rewrites the frozen system prompt prefix.
 - `packages/agent-edit`, `apps/server`: agents can delete a block scope with the
   explicit `delete` command. Stale runtimes now rebuild and apply the requested
   edit instead of refusing destructive writes until the agent rereads; Yjs

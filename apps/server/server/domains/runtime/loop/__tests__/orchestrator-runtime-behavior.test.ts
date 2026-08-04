@@ -722,12 +722,17 @@ describe("runtime orchestrator behavior", () => {
       ...gatewayStubDefaults,
       async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
         requests.push(request);
-        if (requests.length === 1) {
+        if (requests.length <= 2) {
           yield {
             type: "end",
             result: {
               content: [
-                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+                {
+                  type: "tool_use",
+                  toolCallId: `call-write-${requests.length}`,
+                  toolName: "write",
+                  input: {},
+                },
               ],
               toolCalls: [],
               finishReason: "tool_use",
@@ -785,6 +790,7 @@ describe("runtime orchestrator behavior", () => {
       drainCount += 1;
       return drain(threadId);
     };
+    let commitCount = 0;
     const deps = createTestOrchestratorDeps({
       gateway,
       repos,
@@ -796,15 +802,18 @@ describe("runtime orchestrator behavior", () => {
       },
       responseWrites: {
         async commitResponse() {
-          await notices.record({
-            kind: "awareness_degraded",
-            scope: { kind: "thread", threadId: thread.id },
-            message: "Document awareness degraded",
-            data: {
-              documentId: "00000000-0000-4000-8000-000000000002",
-              documentName: "chapter-2.md",
-            },
-          });
+          commitCount += 1;
+          if (commitCount === 1) {
+            await notices.record({
+              kind: "awareness_degraded",
+              scope: { kind: "thread", threadId: thread.id },
+              message: "Document awareness degraded",
+              data: {
+                documentId: "00000000-0000-4000-8000-000000000002",
+                documentName: "chapter-2.md",
+              },
+            });
+          }
           return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse() {},
@@ -816,8 +825,8 @@ describe("runtime orchestrator behavior", () => {
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
     );
 
-    expect(drainCount).toBe(2);
-    expect(requests).toHaveLength(2);
+    expect(drainCount).toBe(3);
+    expect(requests).toHaveLength(3);
     const firstSystemMessages = requests[0]?.messages.filter(
       (message) => message.role === "system",
     );
@@ -834,9 +843,13 @@ describe("runtime orchestrator behavior", () => {
     const secondSystemMessages = requests[1]?.messages.filter(
       (message) => message.role === "system",
     );
-    const secondWriterMessage = requests[1]?.messages
-      .filter((message) => message.role === "user")
-      .at(-1);
+    const secondMessages = requests[1]?.messages ?? [];
+    const secondWriterMessages = secondMessages.filter((message) => message.role === "user");
+    const initiatingWriterMessage = secondWriterMessages.find((message) =>
+      messageText(message).includes("continue"),
+    );
+    const postToolContextMessage = secondWriterMessages.at(-1);
+    if (!postToolContextMessage) throw new Error("expected post-tool notice context");
     expect(secondSystemMessages).toHaveLength(1);
     expect(secondSystemMessages).toEqual(firstSystemMessages);
     expect(JSON.stringify(firstSystemMessages)).not.toContain(
@@ -845,10 +858,24 @@ describe("runtime orchestrator behavior", () => {
     expect(JSON.stringify(secondSystemMessages)).not.toContain(
       "could not verify whether concurrent writer content was preserved",
     );
-    expect(messageText(secondWriterMessage)).toContain("continue");
-    expect(messageText(secondWriterMessage)).toContain(
+    expect(messageText(initiatingWriterMessage)).toContain(
+      "The writer reversed the following edits before this message",
+    );
+    expect(messageText(initiatingWriterMessage)).not.toContain(
       "could not verify whether concurrent writer content was preserved",
     );
+    expect(messageText(postToolContextMessage)).not.toContain("continue");
+    expect(messageText(postToolContextMessage)).toContain(
+      "Meridian context after the preceding edits",
+    );
+    expect(messageText(postToolContextMessage)).toContain(
+      "could not verify whether concurrent writer content was preserved",
+    );
+    const toolResultIndex = secondMessages.findIndex((message) =>
+      message.content.some((part) => part.type === "tool_result"),
+    );
+    expect(secondMessages.indexOf(postToolContextMessage)).toBeGreaterThan(toolResultIndex);
+    expect(requests[2]?.messages.slice(0, secondMessages.length)).toEqual(secondMessages);
   });
 
   it("does not let debug capture failure prevent a notice-bearing model call", async () => {
