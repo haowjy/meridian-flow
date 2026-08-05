@@ -1,7 +1,7 @@
 // Write-command schema parity checks for the public package boundary.
 import { describe, expect, it } from "vitest";
 
-import { WriteCommandSchema, writeCommandCategory } from "./command-schema.js";
+import { WriteCommandSchema } from "./command-schema.js";
 
 const validCommands = [
   { command: "create", file: "chapter.md" },
@@ -28,6 +28,8 @@ const validCommands = [
     all: true,
   },
   { command: "replace", file: "chapter.md", content: "", in: 1 },
+  { command: "delete", file: "chapter.md", in: "a1b2" },
+  { command: "delete", file: "chapter.md", in: [1, "c3d4"] },
   {
     command: "replace",
     file: "chapter.md",
@@ -65,6 +67,8 @@ const intendedTightenings = [
   ],
   ["undo with content", { command: "undo", file: "chapter.md", content: "ignored before" }],
   ["create with find", { command: "create", file: "chapter.md", find: "ignored before" }],
+  ["delete with content", { command: "delete", file: "chapter.md", in: 1, content: "" }],
+  ["delete without scope", { command: "delete", file: "chapter.md" }],
 ] satisfies Array<[string, unknown]>;
 
 describe("WriteCommandSchema", () => {
@@ -95,29 +99,8 @@ describe("WriteCommandSchema", () => {
   });
 
   it("rejects only the intended strict-schema tightenings", () => {
-    expect(intendedTightenings.map(([label]) => label)).toEqual([
-      "extra key",
-      "insert extra key",
-      "old read spelling",
-      "read with content",
-      "replace with after",
-      "replace with before",
-      "insert with undo selector",
-      "undo with content",
-      "create with find",
-    ]);
-
     for (const [, command] of intendedTightenings) {
       expect(WriteCommandSchema.safeParse(command).success).toBe(false);
     }
-  });
-
-  it("classifies query, mutating, and history commands", () => {
-    expect(writeCommandCategory({ command: "read", file: "chapter.md" })).toBe("query");
-    expect(writeCommandCategory({ command: "diff" })).toBe("query");
-    expect(writeCommandCategory({ command: "insert", file: "chapter.md", content: "Beta" })).toBe(
-      "mutating",
-    );
-    expect(writeCommandCategory({ command: "undo", file: "chapter.md" })).toBe("history");
   });
 });

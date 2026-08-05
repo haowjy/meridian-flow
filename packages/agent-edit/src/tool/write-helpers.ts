@@ -3,6 +3,8 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { UpdateMeta } from "../ports/types.js";
+import { writeCommandName } from "./command-schema.js";
+import type { RenderedRead } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { result, status } from "./response-format.js";
@@ -38,8 +40,23 @@ export function errorResponse(
   );
 }
 
-export function readSuccess(text: string): InternalWriteResult {
-  return result("success", text, { phase: "committed" });
+export function readSuccess(read: RenderedRead): InternalWriteResult {
+  return result("success", read.text, {
+    phase: "committed",
+    model: {
+      read: { format: read.format },
+      blocks:
+        read.blocks.length > 0
+          ? [
+              {
+                extent: "full",
+                relation: "document",
+                items: read.blocks,
+              },
+            ]
+          : [],
+    },
+  });
 }
 
 export function writeError(cause: unknown): InternalWriteResult {
@@ -79,20 +96,7 @@ export function mutationUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrig
 }
 
 export function fallbackCommandName(command: unknown): WriteCommand["command"] {
-  if (typeof command === "object" && command !== null && "command" in command) {
-    const value = (command as { command?: unknown }).command;
-    switch (value) {
-      case "create":
-      case "read":
-      case "diff":
-      case "insert":
-      case "replace":
-      case "undo":
-      case "redo":
-        return value;
-    }
-  }
-  return "read";
+  return writeCommandName(command) ?? "read";
 }
 
 export function writeSchemaError(error: {
@@ -104,15 +108,4 @@ export function writeSchemaError(error: {
       return `${path}${issue.message}`;
     })
     .join("; ");
-}
-
-export function isUnconfirmedDestructiveReplace(
-  command: Extract<WriteCommand, { command: "insert" | "replace" }>,
-  address: DocumentAddress,
-): boolean {
-  return (
-    command.command === "replace" &&
-    command.find === undefined &&
-    (command.in !== undefined || address.fragment !== undefined)
-  );
 }

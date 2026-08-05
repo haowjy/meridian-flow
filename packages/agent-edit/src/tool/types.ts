@@ -1,34 +1,17 @@
 // LLM-facing write(command=...) contract types for the agent editing core.
 
-import type { z } from "zod";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { WriteCommandSchema } from "./command-schema.js";
-import type { WriteResultBlock } from "./internal-result.js";
+import type { WriteCommand, WriteCommandName } from "./command-schema.js";
+import type { AgentEditResultV1, WriteStatus, WriteSuccessPhase } from "./model-result.js";
 
-export type WriteErrorStatus =
-  | "not_found"
-  | "ambiguous_match"
-  | "invalid_write"
-  | "document_not_found"
-  | "partial_failure"
-  | "cant_undo_dependent"
-  | "internal_error";
-
-export type UndoRedoOutcome =
-  | "reversed"
-  | "reconciled"
-  | "partial"
-  | "nothing_to_undo"
-  | "nothing_to_redo"
-  | "expired";
-
-// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
-export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
-export type { WriteResultBlock };
-
-export type WriteCommand = z.infer<typeof WriteCommandSchema>;
-export type WriteCommandName = WriteCommand["command"];
+export type { WriteCommand, WriteCommandName } from "./command-schema.js";
+export type {
+  UndoRedoOutcome,
+  WriteErrorStatus,
+  WriteStatus,
+  WriteSuccessPhase,
+} from "./model-result.js";
 export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
 export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
 export type DiffCommand = Extract<WriteCommand, { command: "diff" }>;
@@ -40,8 +23,6 @@ export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
 
-export type WriteSuccessPhase = "staged" | "committed";
-
 interface WriteOutcomeBase {
   command: WriteCommandName;
   isError: boolean;
@@ -51,10 +32,10 @@ interface WriteOutcomeBase {
   settlementId?: string;
   /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
   error?: WriteErrorDetail;
-  /** The exact LLM-facing text: status line, echo, concurrent edits, or read content. */
+  /** Canonical versioned JSON result presented to the model. */
+  result: AgentEditResultV1;
+  /** Host-facing diagnostic text; models receive only `result`. */
   text: string;
-  /** Multi-block content for structured tool_result. When set, takes priority over text. */
-  content?: WriteResultBlock[];
   /** Host metadata; never rendered independently of the tool result. */
 }
 
@@ -189,7 +170,7 @@ export interface WriteContext {
   threadId?: string;
   /** Host turn id for undo metadata; cross-call turn grouping is completed above this API later. */
   turnId?: string;
-  /** Host/tool-call idempotency key. Replays return the original plain-text response. */
+  /** Host/tool-call idempotency key. Replays return the original outcome. */
   tool_use_id?: string;
   /** Host model-response id. Mutating writes buffer until commitResponse when set. */
   responseId?: string;
@@ -230,7 +211,7 @@ export interface ResponseCommitDocumentResult {
 export interface ResponseCommitWriteReceipt {
   writeId: string;
   settlementId: string;
-  content: WriteResultBlock[];
+  result: AgentEditResultV1;
 }
 
 export interface ResponseStagedCreateOutcome {

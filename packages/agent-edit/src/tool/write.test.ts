@@ -33,6 +33,30 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
+  it("returns exact logical read blocks in the versioned result envelope", async () => {
+    const firstBody = "```text\nfirst line\nc3d4|looks like another block\n```";
+    const ctx = harness({ "chapter.md": `${firstBody}\n\nActual block.` });
+
+    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    expect(read.result).toMatchObject({
+      schema: "meridian.agent-edit.v1",
+      command: "read",
+      status: "success",
+      read: { format: "full" },
+    });
+    expect(read.result.blocks).toEqual([
+      {
+        extent: "full",
+        relation: "document",
+        items: [
+          expect.objectContaining({ body: firstBody }),
+          expect.objectContaining({ body: "Actual block." }),
+        ],
+      },
+    ]);
+  });
+
   it("retains the diff command name when malformed diff arguments are rejected", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const result = await ctx.core.write(
@@ -1342,8 +1366,10 @@ describe("write tool dispatch", () => {
     ).toEqual(["Only block"]);
   });
 
-  it("replaces text, formatting, and deletes through replace(content='')", async () => {
-    const ctx = harness({ "chapter.md": "Alpha sword.\n\nDelete me." });
+  it("replaces text and formatting, then structurally deletes and restores a block range", async () => {
+    const ctx = harness({
+      "chapter.md": "Alpha sword.\n\nDelete one.\n\n## Delete two\n\nKeep me.",
+    });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
 
     const text = await ctx.core.write(
@@ -1362,54 +1388,34 @@ describe("write tool dispatch", () => {
     expect(outcomeText(formatted)).toContain("|Alpha **blade**.");
     expect(serializeDoc(ctx.liveDoc("chapter.md"))).toContain("Alpha **blade**.");
 
-    const deleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const beforeDelete = serializeDoc(ctx.liveDoc("chapter.md"));
+    const firstDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const lastDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 2);
     const deletion = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "", in: deleteHash },
+      { command: "delete", file: "chapter.md", in: [firstDeleteHash, lastDeleteHash] },
       context,
     );
 
     expect(outcomeText(deletion)).toContain("status: success");
-    expect(outcomeText(deletion)).toContain(`deleted: ${deleteHash}`);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
-  });
+    expect(deletion.result).toMatchObject({
+      command: "delete",
+      write: { deletedHashes: [firstDeleteHash, lastDeleteHash] },
+    });
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Keep me."]);
 
-  it("replaces with a find needle copied from hash-prefixed read output", async () => {
-    const ctx = harness({ "chapter.md": "The heavens rumbled...\n\nTail." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const firstHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    expect(undo.result).toMatchObject({
+      command: "undo",
+      reversal: { direction: "undo", count: 1 },
+    });
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(beforeDelete);
 
-    const replaced = await ctx.core.write(
-      {
-        command: "replace",
-        file: "chapter.md",
-        content: "The sky split.",
-        find: `${firstHash}|The heavens rumbled...`,
-      },
+    const rejectedSentinel = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "", in: 4 },
       context,
     );
-
-    expect(outcomeText(replaced)).toContain("status: success");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["The sky split.", "Tail."]);
-  });
-
-  it("replaces a multi-block range with a find needle copied from hash-prefixed read output", async () => {
-    const ctx = harness({ "chapter.md": "First.\n\nSecond.\n\nTail." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const firstHash = hashAt(ctx.liveDoc("chapter.md"), 0);
-    const secondHash = hashAt(ctx.liveDoc("chapter.md"), 1);
-
-    const replaced = await ctx.core.write(
-      {
-        command: "replace",
-        file: "chapter.md",
-        content: "Merged.",
-        find: `${firstHash}|First.\n${secondHash}|Second.`,
-      },
-      context,
-    );
-
-    expect(outcomeText(replaced)).toContain("status: success");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Merged.", "Tail."]);
+    expect(rejectedSentinel.status).toBe("invalid_write");
+    expect(outcomeText(rejectedSentinel)).toContain("Use the delete command");
   });
 
   it("replaces and inserts with find anchors copied from markdown-form read", async () => {

@@ -24,6 +24,20 @@
   pivot by event, thread, turn, document, or error code) to authenticate in
   memory and receive deterministic bounded JSON from the current worktree's
   Portless server. Compact output caps at 50 records and full output at 200.
+- `apps/server`: undo notices now stay with the current writer message through
+  every tool-loop call. Edit-awareness notices stay after the tool result that
+  caused them. Neither rewrites the frozen system prompt prefix.
+- `packages/agent-edit`, `apps/server`: agents can delete a block scope with the
+  explicit `delete` command. Stale runtimes now rebuild and apply the requested
+  edit instead of refusing destructive writes until the agent rereads; Yjs
+  merge, write receipts, and undo preserve the writer's recovery path.
+- `packages/agent-edit`, `apps/server`: every model-facing edit result now uses
+  the versioned `meridian.agent-edit.v1` JSON envelope. Logical block bodies,
+  hashes, exact-prefix context, concurrent edits, diffs, and reversal metadata
+  stay typed instead of sharing an ambiguous multiline text stream. Blocks with
+  the same extent and relation travel as one group, and full reads build text
+  and typed items in one batch pass. Hashes remain tool-internal targeting
+  tokens rather than writer-facing prose labels.
 - `apps/app`: a table nested in another table's cell now keeps its grip
   chrome while the pointer travels to a grip. The gap beside the inner frame
   no longer re-anchors hover to the outer table, so the inner table's row

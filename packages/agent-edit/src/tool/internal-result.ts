@@ -1,21 +1,17 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
-import type { WriteCommand, WriteErrorDetail, WriteStatus, WriteSuccessPhase } from "./types.js";
 
-export interface WriteResultBlock {
-  type: "text";
-  text: string;
-}
+import type { AgentEditModelPayload } from "./model-result.js";
+import type { WriteCommand, WriteErrorDetail, WriteStatus, WriteSuccessPhase } from "./types.js";
 
 export type InternalWriteResult = InternalWriteResultBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
 
 interface InternalWriteResultBase {
   text: string;
+  model?: AgentEditModelPayload;
   writeId?: string;
   settlementId?: string;
   error?: WriteErrorDetail;
-  /** Multi-block content for structured tool_result. Block 1 = metadata, Block 2 = echo. */
-  content?: WriteResultBlock[];
 }
 
 export function documentNotFound(
@@ -45,5 +41,6 @@ function status(code: Exclude<WriteStatus, "success">, message?: string): Intern
   return {
     status: code,
     text: message ? `status: ${code}\n\n${message}` : `status: ${code}`,
+    ...(message ? { model: { message } } : {}),
   };
 }

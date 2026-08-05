@@ -63,10 +63,18 @@ adapters (for example no-op sinks), not by omitted deps.
 |---|---|
 | `ToolRegistry` | Name-keyed map. Duplicate names throw immediately. `getDefinitions()` advertises only server-executable registrations whose `advertise !== false`. |
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
-| `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, and a single `capability?: "interrupt" | "spawn" | "return_result"`. |
+| `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | Algorithms live under `tools/core-handlers/`; composition wires them through `lib/wired-core-tools.ts`. |
 | Skill tools | One statically registered `invoke` dispatcher (`source: "skill"`, `advertise: false`) with schema `{ skillname }` only (`additionalProperties: false`). First turn attempt atomically bakes model-invocable skill catalogs (slug + description rows) into `composedSystemPrompt` and persists `bakedSkillSlugs` via compare-and-swap (`bakeComposedSystemPrompt` while `bakedSkillSlugs` is null); concurrent losers use the winner's frozen prompt. `invoke` advertisement on later turns follows the persisted slug set (non-empty → advertise). Dispatch enforces: `skillname` ∈ baked set (added-after-bake → unknown); still model-invocable and resolvable (demoted/deleted → no-longer-available). Extra invoke properties from frozen prompts are ignored; skills read project workspace context, not call-time params. Error listings = baked ∩ currently-invocable. Subagent threads bake both fields at creation (empty set when no skills). |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
+
+Handler-owned `{ isError: true, output }` results already define their
+model-facing protocol, so the executor preserves their output by definition.
+Parse, timeout, abort, and thrown failures belong to the executor; it delegates
+those to the registration's `formatExecutionError` when present and otherwise
+uses the generic Meridian error format. The `write` registration owns such a
+formatter so every executor-owned write failure still returns
+`meridian.agent-edit.v1` without teaching the generic executor about agent-edit.
 
 The core-tool publication boundary lives in `tools/core-tools.ts`: definitions,
 names, and constraints are canonical there, but `createCoreToolRegistrations()`
@@ -127,21 +135,26 @@ facet.
   persisted `tool_use` intent and synthesizes transient error results for calls
   missing results in the immediately following tool-role group. Repairs are
   never persisted and never rerun tools.
-- **Safety notices** — before every provider stream, `runTurn` drains the single
-  notice port for the thread and its active documents, then injects notices as a
-  transient system message. Notices never enter the turn graph. Undo/redo uses
-  `kind: "undo"`; late sweeps and degraded-awareness reports recorded mid-turn
-  therefore reach the next model call in the same agentic loop.
+- **Edit-intent notices** — before every provider stream, `runTurn` drains the
+  single notice port for the thread and its active documents. Notices present
+  before the first call attach to that writer message and remain there for every
+  tool-loop iteration. Notices recorded mid-turn are inserted after the tool
+  exchange that caused them and retain that causal position on later
+  iterations. This keeps the already-sent request prefix stable without
+  changing the frozen system prompt or persisting notices into the turn graph.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results
   finalize in the same database transaction as that commit using the settled
   receipts returned by agent-edit, never the speculative staged output. A
   host-only settlement id correlates each tool call to its receipt; the
-  model-facing write handle is not unique within a response. A pending result
-  left by a pre-commit process failure is rejected before a later
-  turn assembles model context. Cancellation paths roll the response buffer back
-  before finalizing the turn as cancelled.
+  model-facing write handle is not unique within a response. A staged result
+  left by a pre-commit process failure becomes a typed rejection before a later
+  turn assembles model context. Durable orphan recovery recognizes that state
+  only when the persisted block is marked as a staged write, its output passes
+  the canonical `isAgentEditResult` guard, and the discriminated result phase is
+  `staged`; a schema string alone is not sufficient. Cancellation paths roll the
+  response buffer back before finalizing the turn as cancelled.
 - **Response write settlement is report-only** — ordinary Yjs merge always
   commits. Destructive effects are echoed to the model and writer-lineage
   overlap may elevate receiving-writer-specific session marks. Trail evidence
