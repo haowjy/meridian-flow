@@ -193,12 +193,50 @@ Conventions:
 
 ## Cleanup
 
-Find the same product-source patterns that pre-push blocks:
+Before handoff or push, remove temporary evidence and release only the resources
+owned by this worktree.
+
+1. Delete every temporary source probe, then run the same product-source check
+   that pre-push uses:
 
 ```bash
 node tools/ci/check-debug-probes.mjs
 ```
 
-`pnpm check` and pre-push run `node tools/ci/check-debug-probes.mjs`. The fix is
-to delete a temporary probe or convert a reusable server signal to durable
-observability.
+   Convert a signal to durable observability only when it will help another
+   debugging session; otherwise delete it.
+2. `pnpm debug:events` keeps authentication in memory and leaves nothing to
+   remove. If you used the direct `curl` workflow, delete its local cookie jar:
+
+```bash
+rm -f auth.cookies
+```
+
+3. Stop this worktree's dev stack through its owner. This removes its tmux
+   session and prunes its Portless and Tailscale routes without touching another
+   lane:
+
+```bash
+pnpm dev:stop
+```
+
+Do not manually kill shared Portless or reset Tailscale. Searchable JSONL is
+ignored, bounded, and useful after a restart, so routine debugging does not need
+to delete `logs/events/`.
+
+Do not drop the worktree database for routine debugging. If the database was
+created only for a disposable probe and its state is no longer useful, remove it
+through the guarded owner command:
+
+```bash
+pnpm dev:db:drop -- --yes
+```
+
+After a PR merges or a lane is abandoned, clean the linked worktree, database,
+dev session, branch, and work item together. Run this from a checkout you are
+not removing and inspect the plan before confirming it:
+
+```bash
+pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
+pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
+```
