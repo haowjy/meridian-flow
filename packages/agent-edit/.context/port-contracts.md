@@ -126,7 +126,7 @@ one block's result, so a per-block loop is **O(B²)**, not O(B):
 - Single-block codec projection rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
 - `AgentEditCodec.serializeBlock` does per-block serialization work.
 
-Every batched write touches all of these (snapshot, render, find). **Use the batch path for any multi-block op:**
+Multi-block reads and writes touch these paths. **Use the batch path for any multi-block op:**
 
 | Batch | Replaces (do not loop) | Does once |
 |---|---|---|
@@ -138,9 +138,9 @@ Every batched write touches all of these (snapshot, render, find). **Use the bat
 | `ReversalStore.mutationsForWrites(docId, threadId, handles)` | per-handle `mutationsForWrite` | one query |
 
 Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
-`renderBlockLines` / `renderOutline` (`tool/document-renderer.ts`),
+`renderBlockLines` / `renderRead` (`tool/document-renderer.ts`),
 `serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
-(`resolver/block-hash.ts`), and echo after-snapshots in
+(`model/block-hash.ts`), and echo after-snapshots in
 `tool/mutation-commit.ts`. Response settlement recomputes each staged write's
 receipt against the settled runtime projection before the host publishes it.
 Receipts carry a unique host-only settlement id because several tool calls may

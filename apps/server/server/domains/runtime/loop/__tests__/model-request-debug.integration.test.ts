@@ -31,7 +31,7 @@ describe("orchestrator model-request debug capture", () => {
     await mock.close();
   });
 
-  it("records at least one debug row per assistant turn with system prompts", async () => {
+  it("records at least one debug row per assistant turn with stable system prompts", async () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "WB" });
@@ -107,7 +107,7 @@ describe("orchestrator model-request debug capture", () => {
       agentSlug: "agent-one",
     });
     expect(first?.systemMessages.join("\n")).toContain("You are a helpful assistant.");
-    expect(first?.systemMessages.join("\n")).toContain("chapter-debug");
+    expect(first?.systemMessages.join("\n")).not.toContain("chapter-debug");
     expect(first?.messageCount).toBeGreaterThanOrEqual(1);
   });
 });

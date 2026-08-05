@@ -6,6 +6,8 @@
  * assembly and dispatcher registration while making executable skill invokes a
  * deliberate no-op boundary.
  */
+
+import { meridianErrorFromTool, meridianErrorToJson } from "@meridian/contracts/interrupt";
 import type { PackageRepository, ResolvedSkill } from "../../packages/index.js";
 import type { FunctionTool } from "../gateway/index.js";
 import type { ToolHandler, ToolRegistration } from "./types.js";
@@ -45,23 +47,27 @@ function formatAvailableSkillsList(slugs: string[]): string {
   return slugs.length > 0 ? slugs.join(", ") : "(none)";
 }
 
+function invokeError(message: string) {
+  return { isError: true as const, output: meridianErrorToJson(meridianErrorFromTool(message)) };
+}
+
 export function createInvokeToolRegistration(deps: InvokeToolDeps): ToolRegistration {
   const handler: ToolHandler = async (input, ctx) => {
     const raw = (input ?? {}) as Record<string, unknown>;
     const skillname = raw.skillname;
     if (typeof skillname !== "string" || skillname.length === 0) {
-      return { isError: true, output: "invoke requires skillname (string)." };
+      return invokeError("invoke requires skillname (string).");
     }
 
     const thread = await deps.findThreadById(ctx.threadId);
     if (!thread) {
-      return { isError: true, output: `Thread not found: ${ctx.threadId}` };
+      return invokeError(`Thread not found: ${ctx.threadId}`);
     }
     if (!thread.currentAgent) {
-      return { isError: true, output: "Thread has no agent-bound skill context." };
+      return invokeError("Thread has no agent-bound skill context.");
     }
     if (thread.bakedSkillSlugs === null || thread.bakedSkillSlugs === undefined) {
-      return { isError: true, output: "Thread skill catalog is not baked yet." };
+      return invokeError("Thread skill catalog is not baked yet.");
     }
 
     const packageContext = await deps.packageRepository.getAgentWithLinkedSkills(
@@ -73,26 +79,23 @@ export function createInvokeToolRegistration(deps: InvokeToolDeps): ToolRegistra
     const availableSlugs = invokeAvailableSkillSlugs(thread.bakedSkillSlugs, packageContext.skills);
 
     if (!bakedSlugs.has(skillname)) {
-      return {
-        isError: true,
-        output: `Unknown skill "${skillname}". Available skills: ${formatAvailableSkillsList(availableSlugs)}`,
-      };
+      return invokeError(
+        `Unknown skill "${skillname}". Available skills: ${formatAvailableSkillsList(availableSlugs)}`,
+      );
     }
 
     const resolved = packageContext.skills
       .filter((skill) => skill.modelInvocable)
       .find((candidate) => candidate.skill.slug === skillname);
     if (!resolved) {
-      return {
-        isError: true,
-        output: `Skill "${skillname}" is no longer available. Available skills: ${formatAvailableSkillsList(availableSlugs)}`,
-      };
+      return invokeError(
+        `Skill "${skillname}" is no longer available. Available skills: ${formatAvailableSkillsList(availableSlugs)}`,
+      );
     }
 
-    return {
-      isError: true,
-      output: `Skill "${skillname}" is available as prompt context, but executable skill runtime is disabled in Meridian.`,
-    };
+    return invokeError(
+      `Skill "${skillname}" is available as prompt context, but executable skill runtime is disabled in Meridian.`,
+    );
   };
 
   return {

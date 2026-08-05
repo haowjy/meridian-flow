@@ -24,7 +24,7 @@ const BaseCommandSchema = z.object({
   tool_use_id: z.string().optional(),
 });
 
-export const CreateCommandSchema = BaseCommandSchema.extend({
+const CreateCommandSchema = BaseCommandSchema.extend({
   command: z.literal("create"),
   content: z.string().optional(),
   overwrite: z
@@ -33,14 +33,14 @@ export const CreateCommandSchema = BaseCommandSchema.extend({
     .describe("Set true to replace an entire existing document with content."),
 }).strict();
 
-export const ReadCommandSchema = BaseCommandSchema.extend({
+const ReadCommandSchema = BaseCommandSchema.extend({
   command: z.literal("read"),
   in: ScopeTargetSchema.optional(),
   around: z.string().optional(),
   format: z.enum(["auto", "full", "outline"]).optional(),
 }).strict();
 
-export const DiffCommandSchema = z
+const DiffCommandSchema = z
   .object({
     command: z.literal("diff"),
     document_id: z
@@ -54,7 +54,7 @@ export const DiffCommandSchema = z
     "Read the settled net effect of this turn's writes. Results are folded across writes and provisional until the trail settles.",
   );
 
-export const InsertCommandSchema = BaseCommandSchema.extend({
+const InsertCommandSchema = BaseCommandSchema.extend({
   command: z.literal("insert"),
   content: z.string(),
   after: z.string().optional().describe("Block hash to insert after; not literal document text."),
@@ -65,7 +65,7 @@ export const InsertCommandSchema = BaseCommandSchema.extend({
   all: z.boolean().optional(),
 }).strict();
 
-export const ReplaceCommandSchema = BaseCommandSchema.extend({
+const ReplaceCommandSchema = BaseCommandSchema.extend({
   command: z.literal("replace"),
   content: z.string(),
   in: ScopeTargetSchema.optional(),
@@ -77,12 +77,17 @@ export const ReplaceCommandSchema = BaseCommandSchema.extend({
   all: z.boolean().optional(),
 }).strict();
 
-export const UndoCommandSchema = BaseCommandSchema.extend({
+const DeleteCommandSchema = BaseCommandSchema.extend({
+  command: z.literal("delete"),
+  in: ScopeTargetSchema,
+}).strict();
+
+const UndoCommandSchema = BaseCommandSchema.extend({
   command: z.literal("undo"),
   ...WriteHandleSelectorSchema,
 }).strict();
 
-export const RedoCommandSchema = BaseCommandSchema.extend({
+const RedoCommandSchema = BaseCommandSchema.extend({
   command: z.literal("redo"),
   ...WriteHandleSelectorSchema,
 }).strict();
@@ -93,29 +98,28 @@ export const WriteCommandSchema = z.discriminatedUnion("command", [
   DiffCommandSchema,
   InsertCommandSchema,
   ReplaceCommandSchema,
+  DeleteCommandSchema,
   UndoCommandSchema,
   RedoCommandSchema,
 ]);
 
-export const MUTATING_WRITE_COMMANDS = ["create", "insert", "replace"] as const;
+export type WriteCommand = z.infer<typeof WriteCommandSchema>;
+export type WriteCommandName = WriteCommand["command"];
 
-export type WriteCommandCategory = "query" | "mutating" | "history";
-
-export function writeCommandCategory(
-  command: z.infer<typeof WriteCommandSchema>,
-): WriteCommandCategory {
-  switch (command.command) {
+export function writeCommandName(input: unknown): WriteCommandName | undefined {
+  if (typeof input !== "object" || input === null || !("command" in input)) return undefined;
+  const command = (input as { command?: unknown }).command;
+  switch (command) {
     case "read":
-      // Not pure: read rebuilds the runtime from live state and replays staged updates.
-      return "query";
     case "diff":
-      return "query";
     case "create":
     case "insert":
     case "replace":
-      return "mutating";
+    case "delete":
     case "undo":
     case "redo":
-      return "history";
+      return command;
+    default:
+      return undefined;
   }
 }

@@ -24,7 +24,7 @@ import {
   type ScopeFailure,
 } from "./scope.js";
 
-export type WriteCommandName = "insert" | "replace";
+export type WriteCommandName = "insert" | "replace" | "delete";
 
 export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
@@ -69,7 +69,9 @@ export function resolveWrite(
 ): ResolveWriteResult {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
-  if (params.content === undefined) return error("invalid_write", "content is required");
+  if (params.command !== "delete" && params.content === undefined) {
+    return error("invalid_write", "content is required");
+  }
   const normalized = normalizeParams(params);
   const concreteCtx: ConcreteResolveContext = { ...ctx, doc: ctx.doc };
   const contentCheck = validateContent(concreteCtx, normalized);
@@ -82,6 +84,9 @@ export function resolveWrite(
       break;
     case "replace":
       resolved = resolveReplace(concreteCtx, normalized, contentCheck.parsed);
+      break;
+    case "delete":
+      resolved = resolveDelete(concreteCtx, normalized);
       break;
   }
   if (!resolved.ok) return resolved;
@@ -172,8 +177,22 @@ function resolveReplace(
   if (target === undefined) return error("invalid_write", "replace without `find` requires `in`");
   const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
-  if (params.content.length === 0) return deleteScope(params, scope.scope);
+  if (params.content.length === 0) {
+    return error("invalid_write", "Use the delete command to remove a block scope");
+  }
   return replaceScope(ctx, params, scope.scope, parsed);
+}
+
+function resolveDelete(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+): ResolveWriteResultWithoutIr {
+  if (params.documentAddress.fragment !== undefined) {
+    return error("invalid_write", "delete uses `in` for its block scope; remove the file fragment");
+  }
+  const scope = resolveScope(ctx, params.in, { allowSlugFallback: false });
+  if (!scope.ok) return scopeError(scope);
+  return deleteScope(params, scope.scope);
 }
 
 interface ConcreteResolveContext extends ResolveWriteContext {
@@ -195,6 +214,7 @@ function validateContent(
   if (params.command === "replace" && params.content.length === 0) {
     return { ok: true, parsed: { blocks: [] } };
   }
+  if (params.command === "delete") return { ok: true, parsed: { blocks: [] } };
   try {
     return { ok: true, parsed: ctx.codec.parse(params.content) };
   } catch (cause) {

@@ -65,6 +65,9 @@
 import {
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
+  isAgentEditResultEnvelope,
+  modelConcurrentResult,
+  modelResult,
   type ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
@@ -80,7 +83,7 @@ import type {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
-import type { NoticePort } from "../../notices/index.js";
+import type { Notice, NoticePort } from "../../notices/index.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -99,7 +102,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { noticeSystemMessage } from "./context-builder.js";
+import { attachNoticesToLatestUserMessage, insertPostToolNotices } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -203,32 +206,6 @@ function settledReceipt(
     throw new Error(`Settled receipt missing for ${documentId}:${settlementId}.`);
   }
   return settled.receipt;
-}
-
-function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every(
-      (item) =>
-        typeof item === "object" &&
-        item !== null &&
-        (item as { type?: unknown }).type === "text" &&
-        typeof (item as { text?: unknown }).text === "string",
-    )
-  );
-}
-
-function formatConcurrentEdits(info: ConcurrentEditInfo): string {
-  const lines = ["concurrent edits:"];
-  for (const run of info.runs) {
-    lines.push(`  ${run.origin}:`, ...run.blocks.map((block) => `    ${block}`));
-    for (const tombstone of run.tombstones) {
-      lines.push(`    ${tombstone.hash}| [explicit deletion]`, tombstone.capturedBody);
-    }
-  }
-  if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
-  return lines.join("\n");
 }
 
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
@@ -478,9 +455,10 @@ async function reconcileOrphanedPendingWrites(
       output?: unknown;
       metadata?: { stagedWrite?: unknown };
     } | null;
-    if (content?.metadata?.stagedWrite !== true || !isTextContentBlockArray(content.output))
+    if (content?.metadata?.stagedWrite !== true || !isAgentEditResultEnvelope(content.output)) {
       continue;
-    if (!content.output.some(({ text }) => text.startsWith("status: pending_commit"))) continue;
+    }
+    if (content.output.phase !== "staged") continue;
     await persistUncommittedWriteResult({
       deps,
       threadId,
@@ -719,12 +697,15 @@ async function persistUncommittedWriteResult(input: {
 }): Promise<{ block: Block; events: OrchestratorEvent[] }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
-  const output = [
-    {
-      type: "text" as const,
-      text: ["status: internal_error", "Write did not land.", input.text].join("\n\n"),
-    },
-  ];
+  const priorOutput = (input.block.content as { output?: unknown } | null)?.output;
+  const message = ["Write did not land.", input.text].join("\n\n");
+  const output = toJsonValue(
+    modelResult({
+      command: isAgentEditResultEnvelope(priorOutput) ? priorOutput.command : "unknown",
+      status: "internal_error",
+      payload: { message },
+    }),
+  );
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       id: input.block.id,
@@ -877,6 +858,11 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    const preTurnNotices: Notice[] = [];
+    const postToolNoticeBatches: Array<{
+      afterMessageCount: number;
+      notices: Notice[];
+    }> = [];
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
     // Every cancellation/error path must yield terminal events, not just
@@ -937,17 +923,26 @@ async function* generateEvents(
       };
 
       {
+        const baseMessageCount = request.messages.length;
         const notices = await deps.notices.drainForModelContext(input.threadId);
-        if (notices.length > 0) {
-          const noticeMessage = noticeSystemMessage(notices);
-          if (noticeMessage) {
-            const insertAt = request.messages.findIndex((message) => message.role !== "system");
-            request.messages.splice(
-              insertAt === -1 ? request.messages.length : insertAt,
-              0,
-              noticeMessage,
-            );
-          }
+        if (iteration === 1) {
+          preTurnNotices.push(...notices);
+        } else if (notices.length > 0) {
+          postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices });
+        }
+
+        if (preTurnNotices.length > 0) {
+          request.messages = attachNoticesToLatestUserMessage(request.messages, preTurnNotices);
+        }
+        let insertedNoticeMessages = 0;
+        for (const batch of postToolNoticeBatches) {
+          const beforeInsert = request.messages.length;
+          request.messages = insertPostToolNotices(
+            request.messages,
+            batch.notices,
+            batch.afterMessageCount + insertedNoticeMessages,
+          );
+          insertedNoticeMessages += request.messages.length - beforeInsert;
         }
         // After this point the drain is durable. If the provider stream throws before
         // returning a result, the notice is lost, matching the model-call boundary.
@@ -1218,7 +1213,7 @@ async function* generateEvents(
                         threadId: input.threadId,
                         block: write.block,
                         output: settledReceipt(result.receipts, documentId, write.settlementId)
-                          .content,
+                          .result,
                       })
                     : await persistUncommittedWriteResult({
                         deps,
@@ -1261,16 +1256,12 @@ async function* generateEvents(
           if (!content?.output) continue;
 
           const output = content.output;
-          if (!isTextContentBlockArray(output)) continue;
+          if (!isAgentEditResultEnvelope(output)) continue;
 
-          const [metadataBlock, ...remainingBlocks] = output;
-          const updatedOutput = [
-            {
-              ...metadataBlock,
-              text: `${metadataBlock.text}\n${formatConcurrentEdits(boundedEdits)}`,
-            },
-            ...remainingBlocks,
-          ];
+          const updatedOutput = {
+            ...output,
+            concurrent: modelConcurrentResult(boundedEdits),
+          };
           const updatedContent = {
             ...content,
             output: updatedOutput,

@@ -51,6 +51,7 @@ describe("createToolRegistry core tools", () => {
       { type: "string", const: "diff" },
       { type: "string", const: "insert" },
       { type: "string", const: "replace" },
+      { type: "string", const: "delete" },
       { type: "string", const: "undo" },
       { type: "string", const: "redo" },
     ]);
@@ -70,6 +71,9 @@ describe("createToolRegistry core tools", () => {
     }
     expect(registry.getRegistration("write")?.definition.description).toContain(
       "create with overwrite=true",
+    );
+    expect(registry.getRegistration("write")?.definition.description).toContain(
+      "Block hashes are internal targeting tokens",
     );
     expect(writeSchema.oneOf?.[0]?.properties).toMatchObject({
       overwrite: { description: expect.stringContaining("entire existing document") },
@@ -100,6 +104,14 @@ describe("createToolRegistry core tools", () => {
       in: { description: expect.stringContaining("inclusive [start, end] range") },
     });
     expect(writeSchema.oneOf?.[5]?.properties).toMatchObject({
+      in: { description: expect.stringContaining("inclusive [start, end] range") },
+    });
+    expect(writeSchema.oneOf?.[5]?.required).toEqual(
+      expect.arrayContaining(["command", "path", "in"]),
+    );
+    expect(writeSchema.oneOf?.[5]?.properties).not.toHaveProperty("content");
+    expect(writeSchema.oneOf?.[5]?.properties).not.toHaveProperty("find");
+    expect(writeSchema.oneOf?.[6]?.properties).toMatchObject({
       to: { type: "string" },
       from: { type: "string" },
       last: { type: "integer", minimum: 1 },
@@ -152,6 +164,7 @@ describe("createToolRegistry core tools", () => {
         in: [1, "c3d4"],
         before: "a1b2",
       },
+      { command: "delete", path: "chapter.md", in: "c3d4" },
     ]) {
       expect(validate(command), JSON.stringify(validate.errors)).toBe(true);
     }

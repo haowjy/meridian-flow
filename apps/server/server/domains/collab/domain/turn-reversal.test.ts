@@ -1,5 +1,5 @@
 /** Unit coverage for turn-level reversal safety handoff. */
-import type { ReversalStore } from "@meridian/agent-edit/integration";
+import { modelResult, type ReversalStore } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import { aggregateStatus, reverseTurn } from "./turn-reversal.js";
 
@@ -27,6 +27,7 @@ describe("reverseTurn", () => {
             status: "cant_undo_dependent" as const,
             isError: true,
             text: "status: cant_undo_dependent",
+            result: modelResult({ command: "undo", status: "cant_undo_dependent" }),
           };
         },
       },
@@ -75,6 +76,7 @@ describe("reverseTurn", () => {
               status: "cant_undo_dependent",
               isError: true,
               text: "status: cant_undo_dependent\nInjected race row.",
+              result: modelResult({ command: "undo", status: "cant_undo_dependent" }),
             };
           },
         },

@@ -22,16 +22,20 @@
     for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
     to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
 
-### Destructive scoped replace/delete wrong-target residual
+### Destructive scope targeting and recovery
+
+`delete` is the structural block-removal command and requires an explicit `in`
+scope. `replace({ find, content: "" })` remains exact text-span deletion, while
+an empty scope-only `replace` is rejected so an empty-string sentinel cannot be
+confused with structural deletion.
 
 Scope addresses are view-scoped; durable identity is the full CRDT item hash and
-its content. A stale no-`find` destructive replace/delete scoped by hash, numeric
-index, range, or section can resolve to a different current block after
-concurrent edits, and without content confirmation the target cannot be verified.
-Mitigations are layered: `find`-based replace is content-backstopped;
-no-`find` destructive scoped replace/delete is staleness-gated and asks for a
-re-read when the doc changed since the last read; any remaining wrong-target is
-visible in the op echo and recoverable through undo lineage.
+its content. When canonical state advances, the runtime rebuilds and resolves the
+writer-requested command against the current document instead of requiring a
+reread. A missing target returns ordinary `not_found`. Any wrong-target residual
+is visible in the result receipt and recoverable through durable undo lineage;
+target uncertainty never becomes an approval or refusal gate on the writer's
+instruction.
 
 - **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
   parse. Repeated serialize → parse cycles produce identical output.
@@ -94,21 +98,26 @@ going blind to a concurrent human edit.
 - **Echoes are one per-write function.** `computeEcho(before, after, touched,
   deleted)` expands a ±1 window around the agent-touched/deleted hashes and tiers
   each surviving post-write block independently: inserted or serialized-content
-  changed from `v_pre` to `v_post` → full `hash|content`; identical context →
-  first ~8 words plus `...`; outside the window → omitted. Concurrent overlap and
-  structural changes are not separate modes.
+  changed from `v_pre` to `v_post` → full body; identical context → an exact
+  first-~8-word prefix; outside the window → omitted. Concurrent overlap and
+  structural changes are not separate modes. The model result labels the former
+  `extent: "full"` and the latter `extent: "prefix"`.
 - **Echoed text is verbatim, because the model targets it.** Every character an
   echo shows must resolve through the exact matcher, so the echo path normalizes
   nothing — no whitespace collapsing, no tab/NBSP folding. Truncation may drop a
   suffix but never rewrites the prefix it keeps. The tempting `\s+ → " "` cleanup
   reads as cosmetic and is not: find-all deletion legitimately leaves double
   spaces, and an agent retrying with what it was just shown then fails
-  deterministically (#383). Block framing is the open counterpart — multi-line
-  bodies still break the `hash|body` line grammar (#409).
-- **Tool results use two content blocks.** Successful writes and undo/redo
-  return metadata in block 1 (`status`, write id or reversal count, concurrent
-  edits) and echo `hash|content` lines in block 2 when there are echo lines.
-  Hosts should prefer structured `content` over the joined `text`.
+  deterministically (#383). Model-facing framing is a versioned JSON envelope:
+  groups carry `{ extent, relation, items: [{ hash, body }] }`, so each logical
+  block remains distinct without repeating shared semantics. Only full
+  document/changed/swept groups and prefix context groups exist. Concurrent
+  blocks and tombstones sit in `concurrent.runs`; placement, not another block
+  relation, conveys their concurrent semantics.
+- **Tool results have one model representation.** Read, diff, mutation, undo,
+  redo, and write errors return `meridian.agent-edit.v1`. Provider adapters
+  JSON-stringify that object; no provider receives the internal diagnostic
+  hashline stream or a parallel compatibility rendering.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
   Whole-document overwrite preserves this behavior for positional same-type

@@ -74,7 +74,7 @@ export class ReversalScenario {
   async deletedFirstBlock(turnId: string): Promise<{ originalHash: string }> {
     const originalHash = hashAt(this.ctx.liveDoc("chapter.md"), 0);
     await this.ctx.core.write(
-      { command: "replace", file: `chapter.md#${originalHash}`, content: "" },
+      { command: "delete", file: "chapter.md", in: originalHash },
       { ...context, turnId },
     );
     return { originalHash };

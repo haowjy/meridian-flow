@@ -9,10 +9,14 @@
  * `createWiredCoreToolRegistrations`, keeping this runtime-domain catalogue free
  * of ContextPort or other app-layer adapter imports.
  */
-import { WriteCommandSchema } from "@meridian/agent-edit/integration";
+import {
+  agentEditResultCommand,
+  modelResult,
+  WriteCommandSchema,
+} from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
-import type { ToolRegistration } from "./types.js";
+import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["write", "ls", "search", "ask_user"] as const;
@@ -28,6 +32,14 @@ export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
 function writeToolInputSchema(): Record<string, unknown> {
   return packageSchemaToModelSchema(z.toJSONSchema(WriteCommandSchema));
+}
+
+function formatWriteExecutionError(error: ToolExecutionError) {
+  return modelResult({
+    command: agentEditResultCommand(error.arguments),
+    status: error.kind === "arguments_parse" ? "invalid_write" : "internal_error",
+    payload: { message: error.message },
+  });
 }
 
 function packageSchemaToModelSchema(schema: unknown): Record<string, unknown> {
@@ -89,12 +101,13 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Document edit tool. Use read for block-hashed content. Use diff to inspect the folded net effect of this turn's writes; it is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits a scope; find replaces only the exact matched span, never following blocks. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. undo and redo reverse or reapply this thread's document writes.",
+          "Document edit tool. Results use the meridian.agent-edit.v1 JSON envelope; each block record separates hash from exact body and says whether body is full or a prefix. Use read for block-addressed content. Use diff to inspect the folded net effect of this turn's writes; it is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits content; find replaces only the exact matched span, never following blocks. delete removes the block or block range selected by in. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details. undo and redo reverse or reapply this thread's document writes.",
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
       sequential: true,
       timeoutMs: 30_000,
+      formatExecutionError: formatWriteExecutionError,
     },
     {
       source: "core",
