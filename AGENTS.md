@@ -1,172 +1,154 @@
 # Meridian Flow — Agent Instructions
 
-> **v3 Full-Stack Rebuild** — ground-up TypeScript rebuild replacing the prior
-> Go backend. Yjs collab + TipTap editor, Drizzle ORM over Postgres, WorkOS
-> AuthKit, credits-only billing. No real users or data yet — **no backwards
-> compatibility**: change schemas freely, delete what's unused, never add a
-> compat shim.
+> **v3 full-stack rebuild.** TypeScript with Yjs + TipTap, Drizzle over Postgres,
+> WorkOS AuthKit, and credits-only billing. There are no real users or data.
+> Change schemas freely, delete unused code, and never add compatibility shims.
 
 ## Mission
 
-**Writers should spend their time writing, not fighting their tools.** Meridian
-Flow makes creative-writing ideas flow faster — it helps fiction writers get the
-story out of their head and onto the page, with AI that understands narrative
-craft. Every architectural and product decision should survive the question:
-*does this help a writer bring their idea to life faster?*
+**Writers should spend their time writing, not fighting their tools.** Every
+product and architecture choice should help a fiction writer bring an idea to
+life faster, with AI that understands narrative craft.
 
-**Who it's for:** fiction writers managing 100+ chapter web serials (xianxia,
-LitRPG, progression fantasy) at 5,000–10,000+ words/day — Scrivener's power at
-that scale, without the complexity cliff.
+**Audience:** fiction writers producing 100+ chapter xianxia, LitRPG, and
+progression-fantasy web serials at 5,000–10,000+ words/day who need
+Scrivener-scale power without its complexity.
 
-**The editing model trusts the LLM.** Make it easy for an LLM to make
-changes, so a writer can make changes through an LLM, so the writer can
-write. AI writes merge like any Yjs peer's — marks and receipts inform, undo
-recovers, nothing gates. Do not add approval gates, refusal vetoes, or
-"safety" friction on AI writes: the writer usually told the LLM exactly what
-to do, so gating the LLM gates the writer. Agents have reintroduced this
-friction repeatedly and the human has struck it down every time — see the
+**Trust the LLM.** AI writes merge like any Yjs peer's: marks and receipts
+inform, and undo recovers. Never add approval gates, refusal vetoes, or
+"safety" friction to AI writes; that gates the writer's instruction. See the
 [trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/trust-the-llm-mission.md).
 
 ## Engineering principles
 
-**Load `/dev-principles` when planning or changing code** — it is the single
-source for engineering values (simplicity, deep modules, separation of concerns,
-naming discipline, commenting, aggressive deletion, consistency, testing
-restraint). Core principle: make the code easy to change.
+**Load `/dev-principles` before planning or changing code.** It is the source
+for simplicity, boundaries, naming, deletion, consistency, and testing
+restraint. Make the code easy to change.
 
-Modules should be written as if they are being prepared to be shared with other people to create useful, flexible, powerful libraries so that 1. we may eventually split the module out to share with others, and 2. so that we can get the flexibility and make our future lives easier when we want to change something.
+**Design reusable modules.** Give modules deep public interfaces and keep
+app-specific wiring outside them so they can become shared libraries later.
 
-**Structural improvements are never deferred.** When a review surfaces
-architectural debt — parallel hierarchies, leaking abstractions, shallow
-modules, split ownership — fix it in the same PR. Don't track it as a follow-up.
-Code quality, refactors, and simplification are part of the work, not separate
-from it. The cost of structural debt compounds; the cost of fixing it now is
-bounded.
+**Fix structural debt in the same PR.** Do not defer parallel hierarchies,
+leaking abstractions, shallow modules, split ownership, or obvious
+simplification.
 
-Meridian-specific: the primary writer primitives are **Project** (a serial /
-book / body of work) and **Work** (a task-scoped editing context within a
-project — groups threads, owns shared drafts, carries a goal, holds scratch
-context via `scratch://` URIs). Schema: `works` table + `thread_works` M:N join.
-A chat's Work is set once at creation and never reassigned; every surface outside
-creation displays Work, never controls it. Currently 1 default work per project;
-multi-work and writer-facing UI are in progress.
+**Writer primitives:** a **Project** is a serial, book, or body of work. A
+**Work** is a task-scoped editing context within a project; it groups threads,
+owns shared drafts, carries a goal, and holds `scratch://` context. A chat's Work
+is fixed at creation; outside creation, surfaces display Work and never control
+it. The schema is `works` + `thread_works`; the product currently creates one
+default Work per project.
 
 ## Agency
 
-Default to acting on confident inferences; don't ask permission you don't need.
-Before interrupting to ask the human. Code quality, refactors, deleting unneeded code and simplifying are just being good code citizens, you do not need permission. Make the code easy to change.
+Act on confident inferences. Do not ask permission to refactor, delete dead
+code, or simplify.
 
 ## Conventions
 
-**Layering.** Apps are thin shells — business logic lives in packages or server
-domains, never in route handlers. Don't import across packages in ways that
-bypass their public exports.
+**Layering.** Apps are thin shells. Business logic lives in packages or server
+domains, not route handlers. Use package public exports.
 
-**Ports & adapters.** Protocol boundaries are explicit port interfaces; domain
-logic depends on ports, never concrete adapters. Adapter/provider choice is
-config-driven DI at the composition root, not hardcoded. Layout is
-`domain/` + `ports/` + `adapters/` where the seam earns it; new/growing domains
-converge on it.
+**Ports and adapters.** Domain logic depends on explicit ports, never concrete
+adapters. Provider choice is config-driven DI at the composition root. Use
+`domain/`, `ports/`, and `adapters/` where the seam earns it; new and growing
+domains converge on that layout.
 
-**Tooling.** `pnpm` (not npm); Biome for lint/format; Nx for task orchestration.
-No raw hex/color outside `design-tokens`.
+**Tooling.** Use `pnpm`, Biome, and Nx. Do not use npm. Do not add raw colors
+outside `packages/design-tokens`.
 
-**Comments.** File headers: a short description of what it's *for*. Inline
-comments: explain the *weird* — hidden constraints, non-obvious invariants,
-workarounds. Don't explain what the code does; explain why it's surprising.
+**Comments.** File headers say what a file is for. Inline comments explain only
+hidden constraints, surprising invariants, and workarounds.
 
-**Writer-facing copy.** Separate facts with layout, typography, a sentence, or
-parentheses — never punctuation glyphs such as `·`, `•`, `—`, or `|`. See the
+**Writer-facing copy.** Separate facts with layout, typography, sentences, or
+parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-copy-separation.md).
 
-**Debugging.** Temporary console probes must use the marked convention in
-[docs/debugging.md](docs/debugging.md) and be deleted before push. Server
-diagnostics go through `EventSink` and are queryable in dev — endpoints,
-filters, and `jq`/curl workflows are documented in the same file, along with
-browser probe tooling.
+**Debugging.** Follow [docs/debugging.md](docs/debugging.md). Query existing
+evidence before adding a signal. Use a marked console probe for a one-off; use
+`EventSink` for a signal another agent will need. `pnpm check` blocks temporary
+probes. The guide also covers browser evidence and cleanup. `EventSink` is
+diagnostic evidence, not product feature tracking or analytics.
 
+## Knowledge and structure
 
-## Documentation
+This is a TypeScript monorepo. `apps/app`, `apps/server`, and `apps/www` are
+shells over `packages/` and `apps/server/server/domains/`; dev and CI scripts
+live in `tools/`. See [.context/CONTEXT.md](.context/CONTEXT.md) for the root
+architecture.
 
-Load `/knowledge-layers` for where to put things. Load `/qi-layer` before
-editing `AGENTS.md` or `.context/` files. Keep knowledge layers current as you
-work — update `AGENTS.md`, `.context/`, and KB when your changes shift the
-mental model, contracts, or decisions.
+Before reading source in an area:
 
-## Monorepo architecture
+1. Run `meridian qi graph <path>` for its `AGENTS.md` chain and
+   `.context/CONTEXT.md`.
+2. Read that guidance for intent, contracts, and invariants.
+3. Use `ls` and source to confirm current structure.
 
-TypeScript monorepo (pnpm + Nx). `apps/` (app, server, www) are thin shells over
-domain logic in shared `packages/` and server domains
-(`apps/server/server/domains/`); dev/CI scripts live in `tools/`.
+Load `/knowledge-layers` before placing durable knowledge and `/qi-layer`
+before editing `AGENTS.md` or `.context/`. Update the relevant `AGENTS.md`,
+`.context/`, or KB material when a change shifts the mental model, contracts, or
+decisions.
 
-Don't memorize structure from this file — it rots. When working in a module,
-start from colocated knowledge:
+## Command output
 
-1. `meridian qi graph <path>` — surfaces the `AGENTS.md` chain + `.context/CONTEXT.md`
-2. Read `AGENTS.md` for the frame/intent, then `.context/CONTEXT.md` for contracts, architecture, invariants
-3. Then `ls` + raw source to confirm specifics
-
-## Token hygiene for command output
-
-Use `rtk` for noisy human-readable commands so agents spend context on signal,
-not log volume: `rtk git diff`, `rtk git status`, `rtk rg "<pattern>"`,
-`rtk pnpm test`, etc. Use raw commands when exact output is required
-(machine-readable formats, pipes, snapshots, reproduction logs). If `rtk` is
-unavailable, run the raw command and note that compressed output was missing.
+Use `rtk` for noisy human-readable commands: `rtk git diff`, `rtk git status`,
+`rtk rg "<pattern>"`, and `rtk pnpm test`. Use raw commands for exact or
+machine-readable output. If `rtk` is unavailable, run the raw command and say
+so.
 
 ## Dev environment
 
-Dev uses **portless** (HTTPS `*.localhost`). Do **not** assume raw ports, bind
-ports by hand, or probe `ws://127.0.0.1:<port>`. Run `pnpm dev` to start;
-`pnpm portless:list` for live URLs. Postgres is a plain `postgres:16` Docker
-container; `DATABASE_URL` is the only app seam. For libpq CLIs (`createdb`,
-`psql`, `dropdb`), use noninteractive auth (`PGPASSWORD` or `-w`) — never let
-them prompt.
+Dev uses Portless HTTPS routes. Never assume raw ports, bind ports manually, or
+probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
+`pnpm portless:list`.
 
-**Local setup:** [DEVELOPMENT.md](DEVELOPMENT.md). **Editing `tools/dev`:** [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
+Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
+noninteractive libpq authentication (`PGPASSWORD` or `-w`).
+
+Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
+[tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
 ## Build and test
 
-`pnpm check` runs lint, negative-space, typecheck, unit tests, and graph checks.
-When the configured local Postgres server is reachable it also runs the DB
-suite; without Postgres it skips that step loudly. Use `pnpm test:db` to force
-the DB gate. `pnpm check` is necessary but never sufficient for slices that
-touch runtime behavior. Those slices require a probe session before merge: run
-the full dev stack, exercise the real workflows the slice affects, observe
-logs/streams/DB state, and compare against a baseline. The probe verdict is
-the merge gate for runtime correctness.
+`pnpm check` runs lint, negative-space, typecheck, unit tests, graph checks, and
+the DB suite when local Postgres is reachable. An unreachable Postgres is a
+loud skip; use `pnpm test:db` when the DB gate must run.
 
-## Commit discipline
+Runtime changes also require a real probe before merge: start the full stack,
+exercise the affected workflow, inspect logs, streams, and DB state, and compare
+with a baseline. The probe verdict is the runtime merge gate.
 
-Commit continuously as you develop — frequent, small, logically-scoped commits
-create a verifiable history trail where each step is independently reviewable and
-revertible. After each self-contained change that passes checks
-(typecheck / lint / tests), commit it. Don't accumulate large uncommitted work.
-(This governs local commit cadence.) When a feature branch (never `main`) is
-complete and passes the full gate (`pnpm check` green), push it and open/update
-its PR without asking. **Merging to a stable branch (`main`) is a human
-gate**: agents never merge into it — agent review is not a substitute for the
-human's review. Open the PR, report it, and stop; the human merges (or
-explicitly says "merge it"). Merges between working branches (feature →
-integration lanes) need no gate. Docs-only updates (AGENTS.md, `.context/`,
-KB pages) are exempt: commit them straight to `main` (human ruling,
-2026-07-27).
+## Git workflow
 
-## Worktree discipline
+Commit each self-contained change after its checks pass. When a feature branch
+is complete and `pnpm check` is green, push it, open or update its PR, report it,
+and stop.
 
-**Never switch the branch of a checkout you don't own** — it may be shared. Need
-another branch? Make a worktree (`git worktree add ../meridian-flow.worktrees/<name>
--b <branch> <base>`) and pass `--task-dir <worktree>` to spawns.
+A human merges into `main` or `staging` unless explicitly instructing the agent
+to merge. Merges between working branches need no gate. Docs-only `AGENTS.md`,
+`.context/`, and KB changes may commit directly to `main`.
 
-Clean up merged or abandoned work with `pnpm dev:prune-worktrees` from a
-checkout you are not removing. Clean one deliberate lane at a time with
-`--target <work-id|path|branch|pr> --dry-run`; `--auto` is advanced and not yet
-trusted for routine batch use.
+Never switch the branch of a checkout you do not own. From the primary
+checkout, create another branch under the sibling worktree root, then pass its
+path to spawns with `--task-dir`:
 
-## Cross-repo linking
+```bash
+git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
+```
 
-- Links into the docs repo ([meridian-flow-docs]) use full GitHub URLs.
-- Same-repo links use relative paths.
-- Prefer reference-style markdown links.
+Clean one merged or abandoned lane from a different checkout:
+
+```bash
+pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
+```
+
+Inspect the plan before running it without `--dry-run`. Do not use `--auto` for
+routine cleanup.
+
+## Links
+
+- Use full GitHub URLs for the [Meridian Flow docs repository][meridian-flow-docs].
+- Use relative links within this repository.
+- Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs

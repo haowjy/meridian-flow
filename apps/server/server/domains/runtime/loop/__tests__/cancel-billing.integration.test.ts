@@ -95,7 +95,7 @@ describe("cancel billing", () => {
     let ownerConnectionToken = "";
     const ownerPeer: WsPeer = {
       request: new Request("https://app.localhost/ws"),
-      context: { app, userId: "user-1" },
+      context: { app, userId: "user-1", traceId: "test-ws-trace" },
       send: (data) => {
         const frame = JSON.parse(data) as { type?: string; connectionToken?: string };
         if (frame.type === "connected" && frame.connectionToken) {
@@ -136,7 +136,7 @@ describe("cancel billing", () => {
     let ownerConnectionToken = "";
     const ownerPeer: WsPeer = {
       request: new Request("https://app.localhost/ws-owner"),
-      context: { app, userId: "user-1" },
+      context: { app, userId: "user-1", traceId: "test-ws-trace" },
       send: (data) => {
         const frame = JSON.parse(data) as { type?: string; connectionToken?: string };
         if (frame.type === "connected" && frame.connectionToken) {
@@ -158,7 +158,7 @@ describe("cancel billing", () => {
 
     const spectatorPeer: WsPeer = {
       request: new Request("https://app.localhost/ws-spectator"),
-      context: { app, userId: "user-1" },
+      context: { app, userId: "user-1", traceId: "test-ws-trace" },
       send: () => {},
       close: () => {},
     };
@@ -189,7 +189,7 @@ describe("cancel billing", () => {
 
     const peer: WsPeer = {
       request: new Request("https://app.localhost/ws-unrelated"),
-      context: { app, userId: "user-1" },
+      context: { app, userId: "user-1", traceId: "test-ws-trace" },
       send: () => {},
       close: () => {},
     };

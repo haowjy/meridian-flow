@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+- `apps/server`: diagnostic events are now capped at 8 KiB, error envelopes
+  retain only safe identity fields, in-memory and pending buffers have byte as
+  well as record limits, and local JSONL output rotates at 8 MiB with both
+  14-day and 128 MiB retention ceilings. Loss summaries report records and
+  bytes, and debug queries can select an exact event ID.
+- `packages/agent-edit`, `apps/server`: unexpected write-dispatch failures now
+  notify the host with their original cause and safe operation identifiers
+  before returning the same sanitized `internal_error`; Meridian emits the
+  diagnostic through `EventSink`, and observer failures can never veto writes.
+- `apps/server`: HTTP requests and WebSocket connections now establish isolated
+  causal scopes that automatically enrich server diagnostics with their trace
+  IDs. Detached work retains its initiating scope, shared Yjs persistence mints
+  a fresh operation trace, and conflicting caller IDs are reported without
+  overriding the active boundary or blocking the operation.
+- `tools`, `apps/server`: `pnpm check` now blocks temporary debug probes and all
+  permanent server console calls. Existing server diagnostics use `EventSink`;
+  the marked console form remains available locally for one-off debugging but
+  cannot reach a push or merge.
+- `tools`: local agents can now run `pnpm debug:events -- --trace <id>` (or
+  pivot by event, thread, turn, document, or error code) to authenticate in
+  memory and receive deterministic bounded JSON from the current worktree's
+  Portless server. Compact output caps at 50 records and full output at 200.
 - `apps/server`: undo notices now stay with the current writer message through
   every tool-loop call. Edit-awareness notices stay after the tool result that
   caused them. Neither rewrites the frozen system prompt prefix.

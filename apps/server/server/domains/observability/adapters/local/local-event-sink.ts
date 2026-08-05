@@ -2,11 +2,14 @@
  * Local EventSink: always writes structured JSON events to stdout for platform
  * log capture and optionally mirrors them to `LOG_DIR/YYYY-MM-DD.jsonl` when a
  * log directory is configured. Daily files can be retained for a bounded number
- * of days. Writes are serialized per process.
+ * of days. Writes are serialized in process and mirrored under a cross-process
+ * directory lock.
  */
-import { appendFile as appendFileToDisk, mkdir, readdir, unlink } from "node:fs/promises";
+import { appendFile as appendFileToDisk, mkdir, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
+import { lock } from "proper-lockfile";
 import type { EventRecord, EventSink } from "../../ports/event-sink.js";
+import { serializedEventBytes } from "../../safe-event.js";
 
 type EventOutput = {
   write(chunk: string): boolean;
@@ -26,17 +29,36 @@ export type LocalEventSinkOptions = {
   appendFile?: typeof appendFileToDisk;
   /** Maximum number of events waiting behind the active write. */
   pendingEventCapacity?: number;
+  /** Maximum serialized bytes waiting behind the active write. */
+  pendingByteCapacity?: number;
+  /** Maximum bytes in one JSONL segment. */
+  segmentBytes?: number;
+  /** Maximum total bytes retained across JSONL segments. */
+  maxBytes?: number;
 };
 
-const DAILY_LOG_FILE_PATTERN = /^\d{4}-\d{2}-\d{2}\.jsonl$/;
+const LOG_FILE_PATTERN = /^(\d{4}-\d{2}-\d{2})-(\d+)\.jsonl$/;
 const DEFAULT_PENDING_EVENT_CAPACITY = 5_000;
+const DEFAULT_PENDING_BYTE_CAPACITY = 16 * 1_024 * 1_024;
+const DEFAULT_SEGMENT_BYTES = 8 * 1_024 * 1_024;
+const DEFAULT_MAX_BYTES = 128 * 1_024 * 1_024;
+const DIRECTORY_LOCK_FILE = ".events-jsonl.lock";
+const DIRECTORY_LOCK_WAIT_MS = 2_000;
+const DIRECTORY_LOCK_STALE_MS = 30_000;
+
+type QueuedEvent = { event: EventRecord; bytes: number };
+type DropCount = { records: number; bytes: number };
 
 class BoundedEventQueue {
-  private readonly records: Array<EventRecord | undefined>;
+  private readonly records: Array<QueuedEvent | undefined>;
   private head = 0;
   private size = 0;
+  private retainedBytes = 0;
 
-  constructor(private readonly capacity: number) {
+  constructor(
+    private readonly capacity: number,
+    private readonly byteCapacity: number,
+  ) {
     this.records = new Array(capacity);
   }
 
@@ -44,28 +66,28 @@ class BoundedEventQueue {
     return this.size;
   }
 
-  pushBatch(events: readonly EventRecord[]): number {
-    if (events.length >= this.capacity) {
-      const dropped = this.size + events.length - this.capacity;
-      const retained = events.slice(-this.capacity);
-      for (let index = 0; index < retained.length; index += 1) {
-        this.records[index] = retained[index];
-      }
-      this.head = 0;
-      this.size = this.capacity;
-      return dropped;
-    }
-
-    let dropped = 0;
+  pushBatch(events: readonly EventRecord[]): DropCount {
+    const dropped = { records: 0, bytes: 0 };
     for (const event of events) {
-      if (this.size === this.capacity) {
-        this.records[this.head] = event;
-        this.head = (this.head + 1) % this.capacity;
-        dropped += 1;
-      } else {
-        this.records[(this.head + this.size) % this.capacity] = event;
-        this.size += 1;
+      const bytes = serializedEventBytes(event);
+      while (
+        this.size > 0 &&
+        (this.size === this.capacity || this.retainedBytes + bytes > this.byteCapacity)
+      ) {
+        const evicted = this.shift();
+        if (!evicted) break;
+        dropped.records += 1;
+        dropped.bytes += evicted.bytes;
       }
+      if (bytes > this.byteCapacity) {
+        dropped.records += 1;
+        dropped.bytes += bytes;
+        continue;
+      }
+      const index = (this.head + this.size) % this.capacity;
+      this.records[index] = { event, bytes };
+      this.size += 1;
+      this.retainedBytes += bytes;
     }
     return dropped;
   }
@@ -74,13 +96,24 @@ class BoundedEventQueue {
     const events: EventRecord[] = [];
     for (let offset = 0; offset < this.size; offset += 1) {
       const index = (this.head + offset) % this.capacity;
-      const event = this.records[index];
-      if (event) events.push(event);
+      const queued = this.records[index];
+      if (queued) events.push(queued.event);
       this.records[index] = undefined;
     }
     this.head = 0;
     this.size = 0;
+    this.retainedBytes = 0;
     return events;
+  }
+
+  private shift(): QueuedEvent | undefined {
+    if (this.size === 0) return undefined;
+    const queued = this.records[this.head];
+    this.records[this.head] = undefined;
+    this.head = (this.head + 1) % this.capacity;
+    this.size -= 1;
+    if (queued) this.retainedBytes -= queued.bytes;
+    return queued;
   }
 }
 
@@ -95,6 +128,19 @@ function cutoffDateStamp(now: Date, retentionDays: number): string {
   return utcDateStamp(cutoff);
 }
 
+function segmentNumber(fileName: string): bigint {
+  const match = LOG_FILE_PATTERN.exec(fileName);
+  return match ? BigInt(match[2] as string) : -1n;
+}
+
+function compareLogFiles(left: string, right: string): number {
+  const dateOrder = left.slice(0, 10).localeCompare(right.slice(0, 10));
+  if (dateOrder) return dateOrder;
+  const leftSegment = segmentNumber(left);
+  const rightSegment = segmentNumber(right);
+  return leftSegment < rightSegment ? -1 : leftSegment > rightSegment ? 1 : 0;
+}
+
 export class LocalEventSink implements EventSink {
   private readonly dir: string | undefined;
   private readonly retentionDays: number | undefined;
@@ -102,11 +148,17 @@ export class LocalEventSink implements EventSink {
   private readonly stdout: EventOutput;
   private readonly appendFile: typeof appendFileToDisk;
   private readonly pendingEventCapacity: number;
+  private readonly pendingByteCapacity: number;
+  private readonly segmentBytes: number;
+  private readonly maxBytes: number;
   private readonly pendingEvents: BoundedEventQueue;
   private droppedEvents = 0;
+  private droppedBytes = 0;
   private drainPromise: Promise<void> | null = null;
   private activeDate: string | null = null;
   private activePath: string | null = null;
+  private activeBytes = 0;
+  private activeSegment = -1n;
 
   constructor(options: LocalEventSinkOptions = {}) {
     this.dir = options.dir;
@@ -115,10 +167,22 @@ export class LocalEventSink implements EventSink {
     this.stdout = options.stdout ?? process.stdout;
     this.appendFile = options.appendFile ?? appendFileToDisk;
     this.pendingEventCapacity = options.pendingEventCapacity ?? DEFAULT_PENDING_EVENT_CAPACITY;
+    this.pendingByteCapacity = options.pendingByteCapacity ?? DEFAULT_PENDING_BYTE_CAPACITY;
+    this.segmentBytes = options.segmentBytes ?? DEFAULT_SEGMENT_BYTES;
+    this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     if (!Number.isInteger(this.pendingEventCapacity) || this.pendingEventCapacity < 1) {
       throw new Error("pendingEventCapacity must be a positive integer");
     }
-    this.pendingEvents = new BoundedEventQueue(this.pendingEventCapacity);
+    if (!Number.isInteger(this.pendingByteCapacity) || this.pendingByteCapacity < 1) {
+      throw new Error("pendingByteCapacity must be a positive integer");
+    }
+    if (!Number.isInteger(this.segmentBytes) || this.segmentBytes < 1) {
+      throw new Error("segmentBytes must be a positive integer");
+    }
+    if (!Number.isInteger(this.maxBytes) || this.maxBytes < this.segmentBytes) {
+      throw new Error("maxBytes must be an integer greater than or equal to segmentBytes");
+    }
+    this.pendingEvents = new BoundedEventQueue(this.pendingEventCapacity, this.pendingByteCapacity);
   }
 
   emit(event: EventRecord): void {
@@ -142,7 +206,9 @@ export class LocalEventSink implements EventSink {
   }
 
   private enqueue(events: EventRecord[]): void {
-    this.droppedEvents += this.pendingEvents.pushBatch(events);
+    const dropped = this.pendingEvents.pushBatch(events);
+    this.droppedEvents += dropped.records;
+    this.droppedBytes += dropped.bytes;
     if (!this.drainPromise) this.startDrain();
   }
 
@@ -165,6 +231,7 @@ export class LocalEventSink implements EventSink {
     while (this.pendingEvents.length > 0) {
       const events = this.pendingEvents.drain();
       const dropped = this.droppedEvents;
+      const droppedBytes = this.droppedBytes;
       if (dropped > 0) {
         events.unshift({
           eventId: crypto.randomUUID(),
@@ -173,54 +240,153 @@ export class LocalEventSink implements EventSink {
           source: "observability",
           name: "sink.dropped",
           sensitivity: "safe",
-          payload: { dropped },
+          payload: { droppedRecords: dropped, droppedBytes },
         });
       }
       await this.appendEvents(events);
-      if (dropped > 0) this.droppedEvents -= dropped;
+      if (dropped > 0) {
+        this.droppedEvents -= dropped;
+        this.droppedBytes -= droppedBytes;
+      }
     }
   }
 
   private async appendEvents(events: EventRecord[]): Promise<void> {
-    const payload = events.map((event) => `${JSON.stringify(event)}\n`).join("");
+    const lines = events.map((event) => `${JSON.stringify(event)}\n`);
+    const payload = lines.join("");
     if (!this.stdout.write(payload)) {
       await new Promise<void>((resolve) => this.stdout.once("drain", resolve));
     }
     if (!this.dir) return;
     try {
-      const filePath = await this.resolveFilePath();
-      if (filePath) await this.appendFile(filePath, payload, { encoding: "utf8", flag: "a" });
+      await this.withDirectoryLock(async () => {
+        let cursor = 0;
+        while (cursor < lines.length) {
+          const firstLineBytes = Buffer.byteLength(lines[cursor] as string, "utf8");
+          if (firstLineBytes > this.segmentBytes) {
+            cursor += 1;
+            continue;
+          }
+          const filePath = await this.resolveFilePath(firstLineBytes);
+          if (!filePath) break;
+          const remainingBytes = this.segmentBytes - this.activeBytes;
+          const chunk: string[] = [];
+          let chunkBytes = 0;
+          while (cursor < lines.length) {
+            const line = lines[cursor] as string;
+            const lineBytes = Buffer.byteLength(line, "utf8");
+            if (chunk.length > 0 && chunkBytes + lineBytes > remainingBytes) break;
+            chunk.push(line);
+            chunkBytes += lineBytes;
+            cursor += 1;
+          }
+          await this.appendFile(filePath, chunk.join(""), { encoding: "utf8", flag: "a" });
+          this.activeBytes += chunkBytes;
+        }
+      });
     } catch {
       // Stdout is the required local sink; JSONL mirroring is best-effort.
     }
   }
 
-  private async resolveFilePath(): Promise<string | null> {
+  private async withDirectoryLock(operation: () => Promise<void>): Promise<void> {
+    if (!this.dir) return;
+    await mkdir(this.dir, { recursive: true });
+    const lockPath = path.join(this.dir, DIRECTORY_LOCK_FILE);
+    const release = await lock(this.dir, {
+      lockfilePath: lockPath,
+      realpath: false,
+      stale: DIRECTORY_LOCK_STALE_MS,
+      update: DIRECTORY_LOCK_STALE_MS / 3,
+      retries: {
+        retries: DIRECTORY_LOCK_WAIT_MS / 10,
+        factor: 1,
+        minTimeout: 10,
+        maxTimeout: 10,
+        randomize: false,
+      },
+      // A lost best-effort mirror lock must not crash the server asynchronously.
+      onCompromised: () => undefined,
+    });
+    try {
+      await operation();
+    } finally {
+      await release().catch(() => undefined);
+    }
+  }
+
+  private async resolveFilePath(nextBytes: number): Promise<string | null> {
     if (!this.dir) return null;
     const now = this.now();
     const date = utcDateStamp(now);
     if (this.activeDate === date && this.activePath) {
-      return this.activePath;
+      try {
+        this.activeBytes = (await stat(this.activePath)).size;
+        if (this.activeBytes + nextBytes <= this.segmentBytes) return this.activePath;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        this.activePath = null;
+        this.activeBytes = 0;
+      }
     }
 
     await mkdir(this.dir, { recursive: true });
-    await this.pruneExpiredFiles(now);
-    const filePath = path.join(this.dir, `${date}.jsonl`);
+    await this.pruneFiles(now, this.segmentBytes);
+    if (this.activeDate !== date) {
+      const existing = (await readdir(this.dir))
+        .filter((name) => name.startsWith(`${date}-`) && LOG_FILE_PATTERN.test(name))
+        .sort(compareLogFiles);
+      const latest = existing.at(-1);
+      if (latest) {
+        const latestPath = path.join(this.dir, latest);
+        const latestBytes = (await stat(latestPath)).size;
+        const latestSegment = segmentNumber(latest);
+        if (latestBytes + nextBytes <= this.segmentBytes) {
+          this.activeDate = date;
+          this.activePath = latestPath;
+          this.activeBytes = latestBytes;
+          this.activeSegment = latestSegment;
+          return latestPath;
+        }
+        this.activeSegment = latestSegment;
+      } else {
+        this.activeSegment = -1n;
+      }
+    }
+    this.activeSegment += 1n;
+    const filePath = path.join(
+      this.dir,
+      `${date}-${this.activeSegment.toString().padStart(4, "0")}.jsonl`,
+    );
     this.activeDate = date;
     this.activePath = filePath;
+    this.activeBytes = 0;
     return filePath;
   }
 
-  private async pruneExpiredFiles(now: Date): Promise<void> {
-    if (!this.dir || this.retentionDays === undefined) return;
-    const cutoff = cutoffDateStamp(now, this.retentionDays);
+  private async pruneFiles(now: Date, reserveBytes: number): Promise<void> {
+    if (!this.dir) return;
+    const cutoff =
+      this.retentionDays === undefined ? undefined : cutoffDateStamp(now, this.retentionDays);
     const entries = await readdir(this.dir, { withFileTypes: true });
-    await Promise.all(
-      entries
-        .filter((entry) => entry.isFile() && DAILY_LOG_FILE_PATTERN.test(entry.name))
-        .filter((entry) => entry.name.slice(0, 10) < cutoff)
-        .map((entry) => unlink(path.join(this.dir as string, entry.name))),
-    );
+    const files = entries
+      .filter((entry) => entry.isFile() && LOG_FILE_PATTERN.test(entry.name))
+      .map((entry) => path.join(this.dir as string, entry.name))
+      .sort((left, right) => compareLogFiles(path.basename(left), path.basename(right)));
+    const retained: Array<{ filePath: string; bytes: number }> = [];
+    for (const filePath of files) {
+      if (cutoff !== undefined && path.basename(filePath).slice(0, 10) < cutoff) {
+        await unlink(filePath);
+      } else {
+        retained.push({ filePath, bytes: (await stat(filePath)).size });
+      }
+    }
+    let totalBytes = retained.reduce((total, file) => total + file.bytes, 0);
+    for (const file of retained) {
+      if (totalBytes + reserveBytes <= this.maxBytes) break;
+      await unlink(file.filePath);
+      totalBytes -= file.bytes;
+    }
   }
 }
 

@@ -13,6 +13,7 @@ import {
 import { resolveRecentEventsEnabled } from "./env.js";
 
 const DEFAULT_LOG_RETENTION_DAYS = 14;
+const DEFAULT_LOG_MAX_BYTES = 128 * 1_024 * 1_024;
 
 function localLogRetentionDays(): number {
   const raw = process.env.LOG_RETENTION_DAYS;
@@ -20,6 +21,16 @@ function localLogRetentionDays(): number {
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed < 1) {
     throw new Error(`LOG_RETENTION_DAYS must be a positive integer; received ${raw}`);
+  }
+  return parsed;
+}
+
+function localLogMaxBytes(): number {
+  const raw = process.env.LOG_MAX_BYTES;
+  if (!raw) return DEFAULT_LOG_MAX_BYTES;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`LOG_MAX_BYTES must be a positive integer; received ${raw}`);
   }
   return parsed;
 }
@@ -37,6 +48,7 @@ export function createEventSinkFromEnv(): EventSinkComposition {
     const local = createLocalEventSink({
       dir,
       retentionDays: dir ? localLogRetentionDays() : undefined,
+      maxBytes: dir ? localLogMaxBytes() : undefined,
     });
     if (!resolveRecentEventsEnabled({ rawNodeEnv: process.env.NODE_ENV })) {
       return { sink: local };

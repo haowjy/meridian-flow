@@ -4,6 +4,7 @@
  * diagnostics across independent queues or lose early boot events.
  */
 import {
+  CorrelatingEventSink,
   DeferredEventSink,
   type EventQuery,
   type EventSink,
@@ -14,6 +15,7 @@ const OBSERVABILITY_KEY = Symbol.for("meridian.api.observability.v1");
 type ObservabilityGlobal = typeof globalThis & {
   [OBSERVABILITY_KEY]?: {
     sink: DeferredEventSink;
+    correlatedSink: CorrelatingEventSink;
     eventQuery?: EventQuery;
     delegateBound: boolean;
     shutdownInstalled: boolean;
@@ -23,17 +25,21 @@ type ObservabilityGlobal = typeof globalThis & {
 
 function state() {
   const store = globalThis as ObservabilityGlobal;
-  store[OBSERVABILITY_KEY] ??= {
-    sink: new DeferredEventSink(),
-    delegateBound: false,
-    shutdownInstalled: false,
-    shutdownCallbacks: [],
-  };
+  if (!store[OBSERVABILITY_KEY]) {
+    const sink = new DeferredEventSink();
+    store[OBSERVABILITY_KEY] = {
+      sink,
+      correlatedSink: new CorrelatingEventSink(sink),
+      delegateBound: false,
+      shutdownInstalled: false,
+      shutdownCallbacks: [],
+    };
+  }
   return store[OBSERVABILITY_KEY];
 }
 
 export function getProcessEventSink(): EventSink {
-  return state().sink;
+  return state().correlatedSink;
 }
 
 export function getOrBindProcessObservability(
@@ -50,7 +56,7 @@ export function getOrBindProcessObservability(
     current.delegateBound = true;
   }
   return {
-    sink: current.sink,
+    sink: current.correlatedSink,
     ...(current.eventQuery !== undefined && { eventQuery: current.eventQuery }),
   };
 }

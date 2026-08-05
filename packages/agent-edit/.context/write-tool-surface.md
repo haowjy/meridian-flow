@@ -113,6 +113,9 @@ the server response owner.
 Within a session, idempotency keys are scoped by response id, then turn id; with
 neither, the session is the fallback scope.
 `onIdempotencyHit` reports `{ toolUseId, scopeKind, scopeId, sessionId, outcome }`.
+Unexpected dispatch failures call `onUnexpectedWriteError` with the original
+cause plus safe command, document, session, thread, turn, response, and tool-use
+identifiers before collapsing to the unchanged model-facing `internal_error`.
 Response lifecycle observers receive explicit committer transitions; discarded
 mutation claims surface through `onResponseClaimDiscarded` and
 `ResponseCommitResult.discardedClaims`. Observer exceptions never change

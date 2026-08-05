@@ -84,7 +84,7 @@ import type {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { Notice, NoticePort } from "../../notices/index.js";
-import type { EventSink } from "../../observability/index.js";
+import { type EventSink, unknownToEventPayload } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type {
@@ -968,7 +968,7 @@ async function* generateEvents(
           name: "model_request_debug.capture_failed",
           sensitivity: "safe",
           correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-          payload: { error: cause instanceof Error ? cause.message : String(cause) },
+          payload: unknownToEventPayload(cause),
         });
       }
 

@@ -48,6 +48,7 @@ describe("Yjs branch handshake route guard", () => {
         },
       }),
       userId: "user-1" as never,
+      traceId: "trace-1",
       close: vi.fn(),
       socket: {
         send: vi.fn(),
@@ -346,6 +347,7 @@ describe("Yjs branch handshake route guard", () => {
         },
       }),
       userId: "user-1" as never,
+      traceId: "trace-1",
       close,
       socket: {
         send: vi.fn(),

@@ -78,6 +78,7 @@ export type {
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   UndoResult,
+  UnexpectedWriteErrorDetail,
   WriteContext,
   WriteErrorStatus,
   WriteFunction,

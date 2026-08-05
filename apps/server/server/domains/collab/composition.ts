@@ -16,8 +16,10 @@ import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
+  createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
   createMarkdownSerializationAnomalyObserver,
+  createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
   createSweepProjectionDiagnostics,
 } from "./adapters/agent-edit-observability.js";
@@ -151,6 +153,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     concurrentJournalWatermarks,
     liveJournal: persistence.journal,
+    diagnostics: createBranchPullDiagnostics(deps.eventSink),
   });
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
@@ -180,6 +183,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     eventSink: deps.eventSink,
     reversalNoticePort,
   });
+  const responseTransactionDiagnostics = createResponseTransactionDiagnostics(deps.eventSink);
   const runtime = createAgentEditRuntime({
     journal: persistence.journal,
     coordinator: liveCoordinator,
@@ -274,7 +278,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     responseTransactions: {
       enlist: enlistResponseParticipant,
-      run: runResponseTransaction,
+      run: (atomic, operation, settlement) =>
+        runResponseTransaction(atomic, operation, settlement, responseTransactionDiagnostics),
     },
   });
 

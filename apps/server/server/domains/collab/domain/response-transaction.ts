@@ -19,6 +19,11 @@ export type ResponseTransactionSettlement = {
   deferUntilRollback(callback: () => void | Promise<void>): boolean;
 };
 
+export type ResponseTransactionDiagnostics = {
+  participantCommitFailed(input: { responseTransactionId: string; cause: unknown }): void;
+  participantReconciliationFailed(input: { responseTransactionId: string; cause: unknown }): void;
+};
+
 const immediateSettlement: ResponseTransactionSettlement = {
   deferUntilCommit: () => false,
   deferUntilRollback: () => false,
@@ -44,6 +49,7 @@ export async function runResponseTransaction<T>(
   atomic: (operation: () => Promise<T>) => Promise<T>,
   operation: () => Promise<T>,
   settlement: ResponseTransactionSettlement = immediateSettlement,
+  diagnostics?: ResponseTransactionDiagnostics,
 ): Promise<T> {
   const active = responseTransactionStorage.getStore();
   if (active) return operation();
@@ -60,14 +66,14 @@ export async function runResponseTransaction<T>(
       try {
         await participant.commit();
       } catch (cause) {
-        console.error("Response participant failed after durable commit", {
+        diagnostics?.participantCommitFailed({
           responseTransactionId: transaction.id,
           cause,
         });
         try {
           await participant.onCommitFailure?.(cause);
         } catch (reconciliationCause) {
-          console.error("Response participant reconciliation failed", {
+          diagnostics?.participantReconciliationFailed({
             responseTransactionId: transaction.id,
             cause: reconciliationCause,
           });

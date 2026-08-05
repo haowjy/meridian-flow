@@ -2,7 +2,9 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import { selectCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { defineWebSocketHandler } from "nitro";
+import { runWithEventCorrelation } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
+import { getProcessEventSink } from "../../lib/observability.js";
 import {
   deferWsClose,
   resolveWsUpgradeAuth,
@@ -21,6 +23,7 @@ type YjsRouteContext =
       app: AppServices;
       userId: UserId;
       gateway: YjsGateway;
+      traceId: string;
     }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
@@ -42,7 +45,10 @@ export function getYjsGateway(app: AppServices): YjsGateway {
 
 export const yjsWebSocketHandler = defineWebSocketHandler({
   async upgrade(request) {
-    const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-yjs-route" });
+    const auth = await resolveWsUpgradeAuth(request, {
+      logPrefix: "ws-yjs-route",
+      eventSink: getProcessEventSink(),
+    });
     const selectedSubprotocol = selectCollabSchemaSubprotocol(
       request.headers.get("sec-websocket-protocol"),
     );
@@ -52,12 +58,13 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
     return auth.kind === "deferred-close"
       ? { context: deferWsClose(auth.close) satisfies YjsRouteContext, ...responseHeaders }
       : {
-          context: {
+          context: Object.freeze({
             kind: "authenticated",
             app: auth.app,
             userId: auth.userId,
             gateway: getYjsGateway(auth.app),
-          } satisfies YjsRouteContext,
+            traceId: auth.traceId,
+          } satisfies YjsRouteContext),
           ...responseHeaders,
         };
   },
@@ -68,35 +75,54 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
       return;
     }
     if (wsPeer.context?.kind !== "authenticated") return;
-    wsPeer._yjs = wsPeer.context.gateway.connect({
-      request: wsPeer.request,
-      userId: wsPeer.context.userId,
-      close: (code, reason) => wsPeer.close(code, reason),
-      socket: {
-        send: (data) =>
-          wsPeer.send(typeof data === "string" ? data : new Uint8Array(data as ArrayBufferLike)),
-        close: (code, reason) => wsPeer.close(code, reason),
-        get readyState() {
-          return wsPeer.websocket?.readyState ?? 1;
-        },
-      },
-    });
+    wsPeer._yjs = runWithEventCorrelation({ traceId: wsPeer.context.traceId }, () =>
+      wsPeer.context?.kind === "authenticated"
+        ? wsPeer.context.gateway.connect({
+            request: wsPeer.request,
+            userId: wsPeer.context.userId,
+            traceId: wsPeer.context.traceId,
+            close: (code, reason) => wsPeer.close(code, reason),
+            socket: {
+              send: (data) =>
+                wsPeer.send(
+                  typeof data === "string" ? data : new Uint8Array(data as ArrayBufferLike),
+                ),
+              close: (code, reason) => wsPeer.close(code, reason),
+              get readyState() {
+                return wsPeer.websocket?.readyState ?? 1;
+              },
+            },
+          })
+        : undefined,
+    );
   },
   message(peer, message) {
     const wsPeer = peer as unknown as YjsRoutePeer;
     if (wsPeer.context?.kind !== "authenticated") return;
-    wsPeer.context.gateway.message(wsPeer._yjs, message.uint8Array());
+    runWithEventCorrelation({ traceId: wsPeer.context.traceId }, () =>
+      wsPeer.context?.kind === "authenticated"
+        ? wsPeer.context.gateway.message(wsPeer._yjs, message.uint8Array())
+        : undefined,
+    );
   },
   close(peer, event) {
     const wsPeer = peer as unknown as YjsRoutePeer;
     if (wsPeer.context?.kind !== "authenticated") return;
-    wsPeer.context.gateway.close(wsPeer._yjs, event);
+    runWithEventCorrelation({ traceId: wsPeer.context.traceId }, () =>
+      wsPeer.context?.kind === "authenticated"
+        ? wsPeer.context.gateway.close(wsPeer._yjs, event)
+        : undefined,
+    );
     delete wsPeer._yjs;
   },
   error(peer) {
     const wsPeer = peer as unknown as YjsRoutePeer;
     if (wsPeer.context?.kind !== "authenticated") return;
-    wsPeer.context.gateway.error(wsPeer._yjs);
+    runWithEventCorrelation({ traceId: wsPeer.context.traceId }, () =>
+      wsPeer.context?.kind === "authenticated"
+        ? wsPeer.context.gateway.error(wsPeer._yjs)
+        : undefined,
+    );
     delete wsPeer._yjs;
   },
 });

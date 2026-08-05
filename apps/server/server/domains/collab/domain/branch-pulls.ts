@@ -36,6 +36,10 @@ export type BranchPullService = {
   }>;
 };
 
+export type BranchPullDiagnostics = {
+  rerunFailed(input: { documentId: DocumentId; cause: unknown }): void;
+};
+
 export function createBranchPullService(input: {
   liveCoordinator: DocumentCoordinator;
   branchCoordinator: BranchCoordinator;
@@ -44,6 +48,7 @@ export function createBranchPullService(input: {
   maxDebounceMs?: number;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
+  diagnostics?: BranchPullDiagnostics;
 }): BranchPullService {
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
@@ -96,7 +101,7 @@ export function createBranchPullService(input: {
         entry.running = undefined;
         entry.rerun = false;
         void run(documentId).catch((cause: unknown) => {
-          console.error("Branch live-pull rerun failed", { documentId, cause });
+          input.diagnostics?.rerunFailed({ documentId, cause });
         });
       } else {
         timers.delete(documentId);
