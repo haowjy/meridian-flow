@@ -48,7 +48,7 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
 ]);
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
   action: new Set(["flush_then_exit", "logged_continue"]),
-  command: new Set(["create", "diff", "insert", "read", "redo", "replace", "undo"]),
+  command: new Set(["create", "delete", "diff", "insert", "read", "redo", "replace", "undo"]),
   direction: new Set(["redo", "undo"]),
   finishReason: new Set(["end_turn", "error", "max_tokens", "stop_sequence", "tool_use"]),
   kind: new Set([
