@@ -274,6 +274,18 @@ export function createOrchestratorEventProjector() {
             content: typeof event.output === "string" ? event.output : JSON.stringify(event.output),
           }),
         );
+        if (event.metadata !== undefined) {
+          events.push(
+            parseAguiEvent({
+              type: EventType.CUSTOM,
+              name: "meridian.tool.result_metadata",
+              value: {
+                toolCallId: event.toolCallId,
+                metadata: event.metadata,
+              },
+            }),
+          );
+        }
         if (event.isError === true) {
           events.push(
             parseAguiEvent({

@@ -34,6 +34,7 @@ export async function resolveDocumentUri(
       extension: documents.extension,
       folderId: documents.folderId,
       sourceSlug: contextSources.slug,
+      workId: contextSources.workId,
     })
     .from(documents)
     .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
@@ -54,7 +55,8 @@ export async function resolveDocumentUri(
   const folderPath = await resolveFolderPath(db, document.folderId);
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
   const path = [...folderPath, filename].join("/");
-  return toCanonical(scheme, path);
+  const workAuthority = scheme === "scratch" || scheme === "uploads" ? document.workId : null;
+  return toCanonical(scheme, path, workAuthority);
 }
 
 async function resolveFolderPath(db: DocumentUriDb, folderId: string | null): Promise<string[]> {
