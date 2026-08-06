@@ -758,6 +758,9 @@ export function createInMemoryAppServices(): AppServices {
       async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
+      async restore() {
+        throw new Error("in-memory work repository is not implemented");
+      },
       async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -828,6 +831,9 @@ export function createInMemoryAppServices(): AppServices {
         return false;
       },
       async softDelete() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async restore() {
         throw new Error("in-memory work repository is not implemented");
       },
       async ensureDefaultForProject() {

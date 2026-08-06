@@ -10,6 +10,8 @@ export interface Work {
   projectId: ProjectId;
   createdByUserId: UserId;
   name: string;
+  /** Stable project-unique handle. Renaming a Work does not change it. */
+  slug: string;
   goal: string | null;
   description: string | null;
   status: WorkStatus;

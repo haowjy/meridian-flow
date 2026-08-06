@@ -50,18 +50,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Old",
+          slug: "old",
         },
         {
           id: FIRST_WORK_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "First",
+          slug: "first",
         },
         {
           id: SECOND_WORK_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Second",
+          slug: "second",
         },
       ]);
       await db.insert(schema.threads).values({

@@ -71,6 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Thread Head Work",
+        slug: "thread-head-work",
       });
       await db.insert(schema.threads).values({
         id: THREAD_ID,

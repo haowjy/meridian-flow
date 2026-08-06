@@ -174,6 +174,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Branch Work",
+        slug: "branch-work",
       });
       await db.insert(contextSources).values({
         id: SOURCE_ID,
@@ -239,6 +240,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Next Work",
+        slug: "next-work",
       });
       await db.transaction(async (tx) => {
         await tx

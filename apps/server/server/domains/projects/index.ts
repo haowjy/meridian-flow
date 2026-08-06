@@ -193,6 +193,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         projectId,
         createdByUserId: userId,
         name: "Book 1",
+        slug: "book-1",
       })
       .returning({ id: works.id });
     if (!work) throw new Error("Failed to create default work");
@@ -459,6 +460,7 @@ export {
   WorkDeleteBlockedError,
   WorkNameConflictError,
   type WorkRepository,
+  WorkRestoreConflictError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
 export { type UpdateWorkCommandInput, updateWork } from "./update-work.js";

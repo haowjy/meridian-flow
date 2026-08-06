@@ -29,12 +29,14 @@ export interface ListWorksOptions {
 }
 
 export class WorkDeleteBlockedError extends Error {
-  constructor(public readonly reason: "threads" | "drafts") {
-    super(
-      reason === "threads"
-        ? "Work cannot be deleted while it has conversations"
-        : "Work cannot be deleted while it has an unreviewed draft",
-    );
+  constructor(public readonly reason: "threads" | "drafts" | "documents" | "folders") {
+    const messages = {
+      threads: "Work cannot be deleted while it has conversations",
+      drafts: "Work cannot be deleted while it has an unreviewed draft",
+      documents: "Work cannot be deleted while its scratch or uploads contain files",
+      folders: "Work cannot be deleted while its scratch or uploads contain folders",
+    } as const;
+    super(messages[reason]);
     this.name = "WorkDeleteBlockedError";
   }
 }
@@ -43,6 +45,17 @@ export class WorkNameConflictError extends Error {
   constructor() {
     super("A Work with this name already exists in the project");
     this.name = "WorkNameConflictError";
+  }
+}
+
+export class WorkRestoreConflictError extends Error {
+  constructor(public readonly reason: "name" | "slug") {
+    super(
+      reason === "name"
+        ? "Work cannot be restored because its name is now in use"
+        : "Work cannot be restored because its slug is now in use",
+    );
+    this.name = "WorkRestoreConflictError";
   }
 }
 
@@ -65,6 +78,8 @@ export interface WorkRepository {
   hasUnreviewedDraft(id: WorkId): Promise<boolean>;
   /** Soft-deletes only when no live thread membership or unreviewed Work draft remains. */
   softDelete(id: WorkId): Promise<void>;
+  /** Restores a soft-deleted Work when its stable name and slug remain available. */
+  restore(id: WorkId): Promise<Work>;
   /**
    * Provision a concretely named Work only when the project has none. Current
    * selection policy belongs to resolveCurrentWork.

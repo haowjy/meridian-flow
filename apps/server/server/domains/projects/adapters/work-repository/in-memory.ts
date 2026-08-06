@@ -7,12 +7,18 @@ import type {
   UpdateWorkInput,
   WorkRepository,
 } from "../../ports/work-repository.js";
-import { WorkDeleteBlockedError, WorkNameConflictError } from "../../ports/work-repository.js";
-import { DEFAULT_WORK_NAME } from "./shared.js";
+import {
+  WorkDeleteBlockedError,
+  WorkNameConflictError,
+  WorkRestoreConflictError,
+} from "../../ports/work-repository.js";
+import { DEFAULT_WORK_NAME, nextWorkSlug } from "./shared.js";
 
 export interface InMemoryWorkRepositoryOptions {
   hasLiveThreads?: (workId: WorkId) => boolean | Promise<boolean>;
   hasUnreviewedDrafts?: (workId: WorkId) => boolean | Promise<boolean>;
+  hasDocuments?: (workId: WorkId) => boolean | Promise<boolean>;
+  hasFolders?: (workId: WorkId) => boolean | Promise<boolean>;
 }
 
 /** In-memory {@link WorkRepository} for tests. */
@@ -32,6 +38,12 @@ export function createInMemoryWorkRepository(
       projectId: input.projectId,
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
       name: input.name.trim(),
+      slug: nextWorkSlug(
+        input.name,
+        [...rows.values()]
+          .filter((work) => work.projectId === input.projectId && work.deletedAt === null)
+          .map((work) => work.slug),
+      ),
       goal: input.goal ?? null,
       description: input.description ?? null,
       status: "active",
@@ -134,9 +146,32 @@ export function createInMemoryWorkRepository(
       if (!row || row.deletedAt) return;
       if (await options.hasLiveThreads?.(id)) throw new WorkDeleteBlockedError("threads");
       if (await repo.hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
+      if (await options.hasDocuments?.(id)) throw new WorkDeleteBlockedError("documents");
+      if (await options.hasFolders?.(id)) throw new WorkDeleteBlockedError("folders");
       row.deletedAt = now();
       row.updatedAt = row.deletedAt;
       row.lastActivityAt = row.updatedAt;
+    },
+
+    async restore(id: WorkId): Promise<Work> {
+      const row = rows.get(id);
+      if (!row) throw new Error(`Work not found: ${id}`);
+      if (!row.deletedAt) return { ...row };
+      if (nameIsTaken(row.projectId, row.name, row.id)) {
+        throw new WorkRestoreConflictError("name");
+      }
+      const slugIsTaken = [...rows.values()].some(
+        (other) =>
+          other.id !== row.id &&
+          other.projectId === row.projectId &&
+          other.deletedAt === null &&
+          other.slug === row.slug,
+      );
+      if (slugIsTaken) throw new WorkRestoreConflictError("slug");
+      row.deletedAt = null;
+      row.updatedAt = now();
+      row.lastActivityAt = row.updatedAt;
+      return { ...row };
     },
 
     async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {

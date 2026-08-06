@@ -58,6 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Race target",
+        slug: "race-target",
       });
       await db.insert(schema.threads).values({
         id: THREAD_ID,
