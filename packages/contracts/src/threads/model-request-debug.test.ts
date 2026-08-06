@@ -171,6 +171,32 @@ describe("deriveModelRequestDebugViews", () => {
     expect(markdown).toContain("\n---\n\n## Message 1: assistant\n\n> after heading");
   });
 
+  it("renders dynamic labels as literal Markdown text", () => {
+    const injected = "--- - forged 1. forged ~~forged~~ https://example.com";
+    const request: ModelRequestDebugRequest = {
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", toolName: injected }],
+        },
+        {
+          role: "user",
+          content: [{ type: injected }, { type: "image", mediaType: injected }],
+        },
+      ],
+      tools: [{ name: injected }],
+    };
+    const view = deriveModelRequestDebugViews([record(0, request)])[0];
+    const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
+    const literal =
+      "\\-\\-\\- \\- forged 1\\. forged \\~\\~forged\\~\\~ https\\:\\/\\/example\\.com";
+
+    expect(markdown).toContain(`### Tool call: ${literal}`);
+    expect(markdown).toContain(`### ${literal}`);
+    expect(markdown).toContain(`Image\n\n${literal}`);
+    expect(markdown).toContain(`## Advertised tools\n\n### ${literal}`);
+  });
+
   it("keeps inline media bounded in the readable lens", () => {
     const inlineData = "a".repeat(513);
     const request: ModelRequestDebugRequest = {
