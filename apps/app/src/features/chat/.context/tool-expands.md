@@ -23,6 +23,16 @@ comes from `tool-command.ts`, and what to do about it comes from
 `command-descriptor.ts`, including the expand's shape. A renderer never
 switches on a command itself.
 
+**Work rows are receipts.** A `work` mutation's row title is the server's
+receipt line (`metadata.workReceipt.line`, carried on the tool result), worn
+verbatim minus its terminal period — it is already the factual sentence, in
+Work names. Reads keep one minimal generic row; failures title with the
+failure verb and open onto the structured message. The receipt's `inverse` is
+parsed (`workReceipt` in `tool-command.ts`) but not yet actionable: the only
+reversal seam (`/api/threads/:id/context/reverse`) is document-write-specific,
+and the Work inverse executor is server work that has not landed. When it
+does, the undo affordance belongs on this row, not in a new system.
+
 **The tool picks the parser.** A search hit and a listing entry are both
 `{uri, …}`, so a payload cannot be asked what it is: guessing from the first
 recognizable entry discards every later row that disagrees. The caller knows

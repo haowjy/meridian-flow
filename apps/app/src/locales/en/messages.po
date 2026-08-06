@@ -486,6 +486,10 @@ msgstr "Chat context"
 msgid "Checked recent changes"
 msgstr "Checked recent changes"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Checked Works"
+msgstr "Checked Works"
+
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr "Checking pending changes…"
@@ -493,6 +497,10 @@ msgstr "Checking pending changes…"
 #: src/features/chat/command-descriptor.ts
 msgid "Checking recent changes…"
 msgstr "Checking recent changes…"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Checking Works…"
+msgstr "Checking Works…"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
@@ -666,6 +674,18 @@ msgstr "Couldn't apply. Check your connection and try again."
 msgid "Couldn't check recent changes"
 msgstr "Couldn't check recent changes"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't check Works"
+msgstr "Couldn't check Works"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't create a Work"
+msgstr "Couldn't create a Work"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't delete that Work"
+msgstr "Couldn't delete that Work"
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -765,8 +785,16 @@ msgid "Couldn't search"
 msgstr "Couldn't search"
 
 #: src/features/chat/command-descriptor.ts
+msgid "Couldn't switch Works"
+msgstr "Couldn't switch Works"
+
+#: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't update that Work"
+msgstr "Couldn't update that Work"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't write"
@@ -792,6 +820,14 @@ msgstr "Create project"
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Create the document"
 msgstr "Create the document"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Created a Work"
+msgstr "Created a Work"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Creating a Work…"
+msgstr "Creating a Work…"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
@@ -848,6 +884,14 @@ msgstr "Delete row"
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete table"
 msgstr "Delete table"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleted a Work"
+msgstr "Deleted a Work"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleting a Work…"
+msgstr "Deleting a Work…"
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
@@ -2386,6 +2430,14 @@ msgstr "Switch screens or manage your account."
 msgid "Switch work"
 msgstr "Switch work"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Switched Works"
+msgstr "Switched Works"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Switching Works…"
+msgstr "Switching Works…"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
@@ -2820,6 +2872,14 @@ msgstr "Update link"
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
 msgstr "Updated"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Updated a Work"
+msgstr "Updated a Work"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Updating a Work…"
+msgstr "Updating a Work…"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "upload"

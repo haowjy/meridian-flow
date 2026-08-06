@@ -590,6 +590,30 @@ function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
   );
 }
 
+/**
+ * A Work receipt worn as a row title: the server's one factual line, already
+ * written in Work names, truncating as a whole. No verb/parameter split —
+ * the line is the sentence, and carving the name back out of server copy to
+ * restyle it would couple this renderer to the server's phrasing.
+ */
+function WorkToolTitle({ tool }: { tool: ToolView }) {
+  if (tool.isError) return descriptorFor(tool).failureVerb("direct");
+  // `block` so truncate applies: the title slot is a flexified span, and an
+  // inline child cannot clip its own overflow.
+  return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
+}
+
+/**
+ * A failed Work command explains itself with the structured message, exactly
+ * as reported — these are already sentences about Works, not machine detail.
+ */
+function workExpand(tool: ToolView): ToolExpand | null {
+  if (!tool.isError || tool.output == null) return null;
+  const message = meridianErrorFromStructuredToolOutput(tool.output).message;
+  if (!message) return null;
+  return () => <div className="text-compact text-destructive">{message}</div>;
+}
+
 /* ── registry ──────────────────────────────────────────────────────────── */
 
 /** A registered tool whose whole title is its phrase, with no document to name. */
@@ -624,6 +648,10 @@ const RENDERERS: Record<string, ToolRenderer> = {
   invoke: {
     title: phraseTitle,
     expand: invokeExpand,
+  },
+  work: {
+    title: (tool) => <WorkToolTitle tool={tool} />,
+    expand: workExpand,
   },
 };
 
