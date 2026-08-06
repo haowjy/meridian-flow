@@ -40,6 +40,7 @@ import {
 } from "../../threads/index.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { RunTurnPort } from "./run-turn-port.js";
+import type { SystemUpdateDelivery } from "./system-update-delivery.js";
 
 export type TurnRunner = ReturnType<typeof createTurnRunner>;
 
@@ -83,6 +84,7 @@ export function createTurnRunner(deps: {
   repos: { turns: TurnRepository };
   eventSink: EventSink;
   helperResultDelivery?: Pick<HelperResultDelivery, "flush">;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "flush">;
 }) {
   const eventSink = deps.eventSink;
   const running = new Map<ThreadId, RunningTurn>();
@@ -134,6 +136,10 @@ export function createTurnRunner(deps: {
 
     getRunningTurnId(threadId: ThreadId): TurnId | null {
       return running.get(threadId)?.assistantTurnId ?? null;
+    },
+
+    isThreadRunning(threadId: ThreadId): boolean {
+      return running.has(threadId);
     },
 
     async startTurn(input: {
@@ -208,6 +214,7 @@ export function createTurnRunner(deps: {
           } finally {
             running.delete(input.threadId);
             await deps.helperResultDelivery?.flush(input.threadId);
+            await deps.systemUpdateDelivery?.flush(input.threadId);
             childRunRegistry.abortChildrenOf(input.threadId);
           }
         })();

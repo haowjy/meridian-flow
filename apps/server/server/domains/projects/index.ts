@@ -442,6 +442,7 @@ export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } fro
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
 export { resolveCurrentWork } from "./current-work.js";
+export { deleteWork, restoreWork } from "./delete-work.js";
 export type {
   CreateProjectInput,
   ListProjectsOptions,
@@ -465,3 +466,7 @@ export {
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
 export { type UpdateWorkCommandInput, updateWork } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
+export {
+  noopWorkContextUpdates,
+  type WorkContextUpdates,
+} from "./work-context-updates.js";

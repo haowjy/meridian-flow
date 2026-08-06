@@ -84,15 +84,19 @@ import {
   createOrchestrator,
   createPermissionGate,
   createSpawnToolRegistrations,
+  createSystemUpdateDelivery,
   createToolExecutor,
   createToolRegistry,
   createTurnRunner,
+  createWorkContextReader,
   type Gateway,
   type RunTurnPort,
   resolveProfile,
+  type SystemUpdateDelivery,
   type ToolExecutor,
   type ToolRegistry,
   type TurnRunner,
+  type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
   createInterruptRegistry,
@@ -159,6 +163,8 @@ export type AppServices = {
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
+  workContext: WorkContextReader;
+  systemUpdates: SystemUpdateDelivery;
   billing: BillingService;
   agents: AgentPackageStore;
   interruptRegistry: InterruptRegistry;
@@ -444,6 +450,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
+  const workContext = createWorkContextReader({
+    works: ports.workRepo,
+    threadWorks: ports.threadRepos.threadWorks,
+  });
   const toolRegistry = createToolRegistry();
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
@@ -481,6 +491,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
   let helperResultDelivery: ReturnType<typeof createHelperResultDelivery> | undefined;
+  let systemUpdates: SystemUpdateDelivery | undefined;
   const runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,
@@ -491,11 +502,22 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         await helperResultDelivery?.flush(threadId);
       },
     },
+    systemUpdateDelivery: {
+      async flush(threadId) {
+        await systemUpdates?.flush(threadId);
+      },
+    },
   });
   helperResultDelivery = createHelperResultDelivery({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
+  });
+  systemUpdates = createSystemUpdateDelivery({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    workContext,
+    isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
   });
   const childRunCoordinator = createChildRunCoordinator({
     orchestrator: runTurnProxy,
@@ -523,6 +545,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
     billingSpendReader: ports.billingSpendReader,
+    workContext,
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
@@ -539,6 +562,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         return work.aiWriteMode;
       },
     },
+    workContext,
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     childRunCoordinator,
     helperResultDelivery,
@@ -574,6 +598,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     projectRepo: ports.projectRepo,
     users: ports.users,
     workRepo: ports.workRepo,
+    workContext,
+    systemUpdates,
     billing: ports.billing,
     agents: ports.agents,
     interruptRegistry,
@@ -623,6 +649,16 @@ export function createInMemoryAppServices(): AppServices {
   });
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
+  const unavailableWorkContext: WorkContextReader = {
+    async renderForThread() {
+      throw new Error("in-memory Work context is not configured");
+    },
+  };
+  const noopSystemUpdates: SystemUpdateDelivery = {
+    async projectChanged() {},
+    async threadChanged() {},
+    async flush() {},
+  };
 
   const inMemoryThreadEventHub: ThreadEventHub = {
     publishPersistedEvent() {},
@@ -841,6 +877,8 @@ export function createInMemoryAppServices(): AppServices {
       },
       async touch() {},
     },
+    workContext: unavailableWorkContext,
+    systemUpdates: noopSystemUpdates,
     billing: billingDomain.service,
     agents: { phase: "skeleton" },
     interruptRegistry: createInterruptRegistry(),
@@ -875,6 +913,9 @@ export function createInMemoryAppServices(): AppServices {
       },
       getRunningTurnId() {
         return null;
+      },
+      isThreadRunning() {
+        return false;
       },
       registerLiveConnectionToken() {},
       unregisterLiveConnectionToken() {},

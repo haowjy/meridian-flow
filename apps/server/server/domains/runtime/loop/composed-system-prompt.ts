@@ -19,6 +19,7 @@ import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-ur
 export interface AssembleComposedSystemPromptInput {
   basePrompt?: string | null;
   skillsSystemPromptSection?: string;
+  workContext?: string;
 }
 
 /** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
@@ -26,6 +27,7 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
   return [
     input.basePrompt,
     input.skillsSystemPromptSection,
+    input.workContext,
     DOCUMENT_DIALECT_CORE_INSTRUCTION,
     RUNTIME_URI_SYSTEM_INSTRUCTION,
   ]

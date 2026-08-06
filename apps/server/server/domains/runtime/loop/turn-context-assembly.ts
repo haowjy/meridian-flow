@@ -24,6 +24,7 @@ import {
 import { modelInvocableSkillSlugs } from "../tools/skill-tools.js";
 import { isThreadPromptFrozen, rebakeComposedSystemPrompt } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
+import type { WorkContextReader } from "./work-context.js";
 
 const MAX_REBIND_BAKE_ATTEMPTS = 3;
 
@@ -40,6 +41,7 @@ export interface AssembleNextTurnContextInput {
     threadId: ThreadId,
     input: BakeComposedSystemPromptInput,
   ) => Promise<Thread>;
+  workContext: WorkContextReader;
 }
 
 export interface AssembledNextTurnContext {
@@ -74,6 +76,7 @@ export async function assembleNextTurnContext(
 
     let tools = agentContext.tools;
     let skillsSystemPromptSection: string | undefined;
+    let workContextSection: string | undefined;
     let unfrozenBasePrompt: string | null | undefined;
     let systemPrompt: string;
     const baked = thread.bakedSkillSlugs != null;
@@ -86,9 +89,11 @@ export async function assembleNextTurnContext(
       });
       systemPrompt = thread.composedSystemPrompt ?? "";
     } else {
+      const workContext = await input.workContext.renderForThread(thread.id as ThreadId);
       const bakedPrompt = rebakeComposedSystemPrompt({
         basePrompt: thread.systemPrompt ?? agentContext.agentBody ?? null,
         skillsSystemPromptSection: agentContext.skillsSystemPromptSection,
+        workContext,
       });
 
       if (input.persistBake && input.bakeComposedSystemPrompt) {
@@ -121,6 +126,7 @@ export async function assembleNextTurnContext(
         systemPrompt = bakedPrompt;
         unfrozenBasePrompt = thread.systemPrompt ?? agentContext.agentBody ?? null;
         skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
+        workContextSection = workContext;
       }
     }
 
@@ -131,6 +137,7 @@ export async function assembleNextTurnContext(
       tools,
       unfrozenBasePrompt,
       skillsSystemPromptSection,
+      workContext: workContextSection,
     });
 
     const gatewayParams = agentContext.gatewayParams;

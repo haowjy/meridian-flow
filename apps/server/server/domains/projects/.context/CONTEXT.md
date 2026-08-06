@@ -22,8 +22,9 @@ This domain is not the full project CRUD surface; that lives in
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
-| `createWork(user, input)` | Creates a Work and selects it as that writer’s current Work in the same transaction. |
-| `updateWork(workId, input)` | Applies metadata edits and an optional archive/unarchive lifecycle transition in one transaction. |
+| `createWork(user, input)` | Creates a Work and selects it as that writer’s current Work in the same transaction, then refreshes project thread Work context once. |
+| `updateWork(workId, input)` | Applies metadata edits and an optional archive/unarchive lifecycle transition in one transaction, then emits at most one Work-context refresh. |
+| `deleteWork` / `restoreWork` | Wrap repository trash lifecycle changes and refresh project thread Work context after a real state change. |
 | `resolveCurrentWork(user, project)` | Reads the saved preference. Only a null or dangling selection falls back to newest active Work, newest archived Work, then concrete default creation; it persists that fallback with CAS and retries if another selection won. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 

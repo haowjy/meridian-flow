@@ -21,10 +21,20 @@ export {
   type RunTurnPort,
 } from "./loop/run-turn-port.js";
 export {
+  createSystemUpdateDelivery,
+  type SystemUpdateDelivery,
+} from "./loop/system-update-delivery.js";
+export {
   type ChildRunRegistry,
   createTurnRunner,
   type TurnRunner,
 } from "./loop/turn-runner.js";
+export {
+  createWorkContextReader,
+  renderWorkContext,
+  WORK_CONTEXT_ACTIVE_LIMIT,
+  type WorkContextReader,
+} from "./loop/work-context.js";
 export {
   type ChildRunCoordinator,
   createChildRunCoordinator,

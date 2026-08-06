@@ -128,6 +128,7 @@ import {
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
+import type { WorkContextReader } from "./work-context.js";
 
 const MAX_TURN_ITERATIONS = 32;
 
@@ -157,6 +158,7 @@ export interface OrchestratorDeps {
   workWriteMode: {
     read(workId: string): Promise<AiWriteMode>;
   };
+  workContext: WorkContextReader;
   permissionGate: PermissionGate;
   billingUsage: BillingUsagePolicy;
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
@@ -829,6 +831,7 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
+    workContext: input.deps.workContext,
   });
 
   return {
