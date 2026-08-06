@@ -174,4 +174,19 @@ describe("deriveModelRequestDebugViews", () => {
     expect(markdown).toContain("[513 characters omitted from readable view");
     expect(markdown).not.toContain(inlineData);
   });
+
+  it.each([
+    ["newlines", "\n".repeat(32 * 1024)],
+    ["astral Unicode", "😀".repeat(16 * 1024)],
+  ])("limits projected %s text by UTF-8 bytes", (_label, text) => {
+    const request: ModelRequestDebugRequest = {
+      messages: [{ role: "user", content: [{ type: "text", text }] }],
+    };
+    const view = deriveModelRequestDebugViews([record(0, request)])[0];
+    const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
+    const part = markdown.split("## Message 0: user\n\n")[1] ?? "";
+
+    expect(new TextEncoder().encode(part).byteLength).toBeLessThanOrEqual(32 * 1024);
+    expect(part).toContain("bytes omitted from readable view");
+  });
 });

@@ -5,7 +5,7 @@
  */
 import type { JsonObject, JsonValue } from "./index.js";
 
-const MAX_READABLE_PART_CHARACTERS = 32 * 1024;
+const MAX_READABLE_PART_BYTES = 32 * 1024;
 
 export type ModelRequestDebugMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -153,26 +153,74 @@ function objectString(value: JsonObject, key: string): string | undefined {
   return typeof candidate === "string" ? candidate : undefined;
 }
 
-function fencedJson(value: JsonValue): string {
-  const exactBody = JSON.stringify(value, null, 2);
-  const body =
-    exactBody.length > MAX_READABLE_PART_CHARACTERS
-      ? `${exactBody.slice(0, MAX_READABLE_PART_CHARACTERS)}\n[${exactBody.length - MAX_READABLE_PART_CHARACTERS} characters omitted from readable view; use the raw view for exact data]`
-      : exactBody;
-  const longestRun = Math.max(0, ...Array.from(body.matchAll(/`+/g), (match) => match[0].length));
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function safePrefix(value: string, length: number): string {
+  const end =
+    length > 0 && length < value.length && /[\uD800-\uDBFF]/.test(value[length - 1] ?? "")
+      ? length - 1
+      : length;
+  return value.slice(0, end);
+}
+
+function boundedReadablePart(
+  source: string,
+  render: (visible: string, omittedBytes: number) => string,
+): string {
+  const complete = render(source, 0);
+  if (utf8Bytes(complete) <= MAX_READABLE_PART_BYTES) return complete;
+
+  const sourceBytes = utf8Bytes(source);
+  let low = 0;
+  let high = source.length;
+  let best = render("", sourceBytes);
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const visible = safePrefix(source, middle);
+    const candidate = render(visible, sourceBytes - utf8Bytes(visible));
+    if (utf8Bytes(candidate) <= MAX_READABLE_PART_BYTES) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
+}
+
+function fencedBody(body: string): string {
+  let longestRun = 0;
+  for (const match of body.matchAll(/`+/g)) longestRun = Math.max(longestRun, match[0].length);
   const fence = "`".repeat(Math.max(3, longestRun + 1));
   return `${fence}json\n${body}\n${fence}`;
 }
 
-function quotedMarkdown(value: string): string {
-  const readable =
-    value.length > MAX_READABLE_PART_CHARACTERS
-      ? `${value.slice(0, MAX_READABLE_PART_CHARACTERS)}\n\n[${value.length - MAX_READABLE_PART_CHARACTERS} characters omitted from readable view; use the raw view for exact text]`
-      : value;
-  return readable
+function fencedJson(value: JsonValue, heading = ""): string {
+  const exactBody = JSON.stringify(value, null, 2);
+  return boundedReadablePart(exactBody, (visible, omittedBytes) => {
+    const body = omittedBytes
+      ? `${visible}\n[${omittedBytes} bytes omitted from readable view; use the raw view for exact data]`
+      : visible;
+    return `${heading}${fencedBody(body)}`;
+  });
+}
+
+function blockquote(value: string): string {
+  return value
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
+}
+
+function quotedMarkdown(value: string, heading = ""): string {
+  return boundedReadablePart(value, (visible, omittedBytes) => {
+    const body = omittedBytes
+      ? `${visible}\n\n[${omittedBytes} bytes omitted from readable view; use the raw view for exact text]`
+      : visible;
+    return `${heading}${blockquote(body)}`;
+  });
 }
 
 function readableMediaPart(part: JsonObject): JsonObject {
@@ -188,20 +236,23 @@ function readablePart(part: JsonObject, partIndex: number): string {
   const type = objectString(part, "type") ?? "unknown";
   if (type === "text") return quotedMarkdown(objectString(part, "text") ?? "");
   if (type === "reasoning") {
-    return `### Reasoning part ${partIndex}\n\n${quotedMarkdown(objectString(part, "text") ?? "")}`;
+    return quotedMarkdown(objectString(part, "text") ?? "", `### Reasoning part ${partIndex}\n\n`);
   }
   if (type === "tool_use") {
     const toolName = objectString(part, "toolName") ?? "unknown tool";
-    return `### Tool call: ${toolName}\n\n${fencedJson(part)}`;
+    return fencedJson(part, `### Tool call: ${toolName}\n\n`);
   }
   if (type === "tool_result") {
-    return `### Tool result\n\n${fencedJson(part)}`;
+    return fencedJson(part, "### Tool result\n\n");
   }
   if (type === "image" || type === "file") {
     const mediaType = objectString(part, "mediaType") ?? "unknown media type";
-    return `### ${type === "image" ? "Image" : "File"}\n\n${mediaType}\n\n${fencedJson(readableMediaPart(part))}`;
+    return fencedJson(
+      readableMediaPart(part),
+      `### ${type === "image" ? "Image" : "File"}\n\n${mediaType}\n\n`,
+    );
   }
-  return `### ${type}\n\n${fencedJson(part)}`;
+  return fencedJson(part, `### ${type}\n\n`);
 }
 
 export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): string {

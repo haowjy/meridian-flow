@@ -4,6 +4,7 @@
  */
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
 import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
+import { createError } from "nitro/h3";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
@@ -20,6 +21,52 @@ type ModelRequestDebugSelection = {
   iteration?: number;
   latest?: boolean;
 };
+
+export type ModelRequestDebugQueryParameters = Record<string, string | string[] | undefined>;
+
+function badQuery(message: string): never {
+  throw createError({ statusCode: 400, message });
+}
+
+function singleQueryValue(
+  query: ModelRequestDebugQueryParameters,
+  key: string,
+): string | undefined {
+  const value = query[key];
+  if (Array.isArray(value)) badQuery(`${key} must be supplied once`);
+  if (value === "") badQuery(`${key} must not be empty`);
+  return value;
+}
+
+/** Parse narrowing selectors strictly so malformed protected-content queries fail closed. */
+export function parseModelRequestDebugQuery(query: ModelRequestDebugQueryParameters): {
+  turnId?: string;
+  gatewayCallId?: string;
+  iteration?: number;
+  latest?: boolean;
+} {
+  const turnId = singleQueryValue(query, "turnId");
+  const gatewayCallId = singleQueryValue(query, "gatewayCallId");
+  const rawIteration = singleQueryValue(query, "iteration");
+  const rawLatest = singleQueryValue(query, "latest");
+
+  let iteration: number | undefined;
+  if (rawIteration !== undefined) {
+    iteration = Number(rawIteration);
+    if (!Number.isSafeInteger(iteration) || iteration < 0) {
+      badQuery("iteration must be a non-negative integer");
+    }
+  }
+
+  let latest: boolean | undefined;
+  if (rawLatest !== undefined) {
+    if (rawLatest === "1" || rawLatest === "true") latest = true;
+    else if (rawLatest === "0" || rawLatest === "false") latest = false;
+    else badQuery("latest must be true, false, 1, or 0");
+  }
+
+  return { turnId, gatewayCallId, iteration, latest };
+}
 
 /** Narrow exported records while retaining only the adjacent prefix context. */
 export function selectModelRequestDebugRecords(

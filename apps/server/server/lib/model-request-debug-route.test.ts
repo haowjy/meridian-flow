@@ -1,7 +1,10 @@
 /** Model-request route selection returns only matches plus required prefix context. */
 import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { selectModelRequestDebugRecords } from "./model-request-debug-route.js";
+import {
+  parseModelRequestDebugQuery,
+  selectModelRequestDebugRecords,
+} from "./model-request-debug-route.js";
 
 function record(turnId: string, iteration: number): ModelRequestDebugRecord {
   return {
@@ -46,5 +49,32 @@ describe("selectModelRequestDebugRecords", () => {
 
   it("returns all available records when no narrowing selector is present", () => {
     expect(selectModelRequestDebugRecords(records, {})).toEqual(records);
+  });
+});
+
+describe("parseModelRequestDebugQuery", () => {
+  it("parses exact selectors and explicit latest booleans", () => {
+    expect(
+      parseModelRequestDebugQuery({
+        turnId: "turn-1",
+        gatewayCallId: "call-1",
+        iteration: "2",
+        latest: "false",
+      }),
+    ).toEqual({
+      turnId: "turn-1",
+      gatewayCallId: "call-1",
+      iteration: 2,
+      latest: false,
+    });
+  });
+
+  it.each([
+    [{ gatewayCallId: ["call-1", "call-2"] }, "gatewayCallId must be supplied once"],
+    [{ turnId: "" }, "turnId must not be empty"],
+    [{ iteration: "1.5" }, "iteration must be a non-negative integer"],
+    [{ latest: "yes" }, "latest must be true, false, 1, or 0"],
+  ])("rejects malformed selectors instead of broadening the query", (query, message) => {
+    expect(() => parseModelRequestDebugQuery(query)).toThrow(message);
   });
 });

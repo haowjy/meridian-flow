@@ -124,8 +124,8 @@ local development, lives only in process memory, and is bounded to 200 records,
 digest but omit their body. A server restart clears the ring. Request content
 never enters `EventSink`, the event journal, thread snapshots, or JSONL logs.
 Staging and production cannot enable this capture. The Readable lens contains
-writer Markdown within explicit message boundaries and shortens individual
-parts above 32 KiB; Raw remains exact up to the request capture ceiling.
+writer Markdown within explicit message boundaries and limits each projected
+part to 32 KiB of UTF-8; Raw remains exact up to the request capture ceiling.
 
 ## Consume Server Events
 
