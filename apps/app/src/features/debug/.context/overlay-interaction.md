@@ -1,78 +1,54 @@
 # Debug overlay interaction
 
-## Gating + toggle
+## Activation
 
-`use-debug-enabled.ts` implements three layers:
+`use-debug-enabled.ts` applies three gates:
 
-1. **Build gate** — `DEBUG_FEATURE_ALLOWED`. False in production unless
-   `VITE_DEBUG_OVERLAY=1` is set at build time.
-2. **Force on (sticky)** — `?debug=1` enables the overlay AND persists the
-   preference to `localStorage`, so you can drop the param from the URL and it
-   stays on across reloads/navigation until explicitly disabled. (Without the
-   sticky write the param was session-only and the overlay vanished on any
-   reload to a param-less URL.)
-3. **Toggle + persistence** — ⌘⌃D (macOS) / Ctrl+Shift+D (other) flips a
-   boolean persisted to `localStorage` under `meridian:debug-overlay`. ⚠️ The
-   macOS combo collides with the system Dictionary-lookup shortcut, so the
-   reliable on-switch is `?debug=1`; the panel's "disable" button is the
-   reliable off-switch.
+1. `DEBUG_FEATURE_ALLOWED` excludes the surface from ordinary production
+   builds.
+2. `?debug=1` enables the surface and persists the preference as
+   `meridian:debug-overlay` in `localStorage`.
+3. Command-Control-D on macOS or Control-Shift-D elsewhere toggles the persisted
+   preference. Because macOS may reserve the shortcut, `?debug=1` is the
+   reliable way to enable it.
 
-## Inline inspector — alt+click the real transcript
+The first client render must stay disabled to match SSR. Resolve the query
+parameter and stored preference after mount; reading them in the `useState`
+initializer causes a hydration mismatch.
 
-`InlineInspector.tsx` (mounted from `DebugOverlay` alongside the pill, so it
-shares the build gate + enable toggle) installs ONE capture-phase `click`
-listener on `document`. On `event.altKey`, it resolves the closest
-`[data-block-id]` (preferred — most specific) or `[data-turn-id]` from the
-event target, looks the turn/block record up in the thread store
-(`turnsByThread`, held in a ref so the stable listener reads fresh data), and
-opens a cursor-anchored popover rendering that record via `JsonTree`.
+## Inline inspection
 
-- **Capture-phase + `preventDefault`/`stopPropagation`** so the inspect gesture
-  never fires the app's own click handlers. Non-alt clicks bail immediately and
-  pass through untouched.
-- **Read-only** — thread store reads only; never writes. Model-request capture
-  is a separate lazy path (below).
-- **Model requests (lazy HTTP)** — header "model requests" button fetches
-  `GET /api/threads/:threadId/debug/model-requests?turnId=…` (owner-gated on
-  the server). Not loaded on alt+click; only on explicit button click. Returns
-  404 (`not_found`) when capture is disabled on the server — the inspector
-  shows a disabled notice. In-flight fetches are keyed to the active
-  `{threadId, turnId}` so fast reselection cannot show another turn's rows.
-  Records render through the same Markdown, Raw, and Debug inspector used by
-  the LLM Calls pop-out and expose the response's retention counters. The turn
-  inspector selects one iteration at a time instead of rendering every retained
-  request together.
-- **Dead-end-free** — if an id isn't in the store, the popover still shows the
-  DOM attributes (role/status or blockType/seq) so the id is never lost.
-- **Copy** — a header "copy" button writes `JSON.stringify(record, null, 2)` to
-  the clipboard (`navigator.clipboard.writeText`; needs a real click for
-  user-activation), with a brief "copied" label flash.
-- **Dismiss** — a sibling transparent `<button>` backdrop (keyboard-clean, no
-  static-element click handler) or `Escape`.
-- **Why this consumes DOM anchors but scroll-to-turn does NOT:** the inspector
-  only acts on elements that are currently rendered (you click what you see), so
-  virtualization is irrelevant. scroll-to-turn must reach OFF-screen rows, which
-  `react-virtuoso` does not mount — so it lives in `TurnList` via `scrollToIndex`
-  and is owned by the chat track, not here.
+`InlineInspector` installs one capture-phase click listener while the overlay is
+enabled. Alt+click resolves the nearest target in this order:
 
-## Active-thread resolution
+1. `[data-block-id]`
+2. `[data-turn-id]`
+3. `[data-debug-composer]`
 
-1. `useThreadStore((s) => s.streamingThreadId)` (primary).
-2. Fallback: TanStack Router location — `/chat/$threadId` path param or the
-   project route's `?thread=…` search param (note: `thread`, NOT `threadId`).
-3. None → reports `resolvedActiveThreadId: null`.
+The gesture prevents the application's click handler. Turn and block records
+come from the thread store; if a record is absent, the inspector still shows
+the DOM identifiers. This works with virtualization because the user can only
+click mounted rows. Navigation to an off-screen turn must use the virtual
+list's index API instead of DOM anchors.
 
-This section reads only the thread store + router location. It deliberately does
-NOT subscribe to the query cache — an earlier version scanned the project-threads
-cache for a `ThreadListItem` lifecycle projection, which both duplicated Query
-Devtools and forced a `queueMicrotask`-deferred `useSyncExternalStore` wrapper to
-dodge a setState-in-render crash. Both were deleted; that hazard class is gone.
+Alt+clicking the composer lazily fetches an owner-gated preview of the next
+turn's system prompt, advertised tools, and gateway parameters. Preview assembly
+must not persist or freeze an unbaked prompt.
 
-## React-safety invariant (subtle — verified at runtime)
+For a turn or block, **model requests** lazily fetches
+`GET /api/threads/:threadId/debug/model-requests?turnId=…`. The inspector uses
+the shared Markdown, Raw, and Debug views and selects one iteration at a time.
+A 404 means capture is unavailable. Generation counters bind every in-flight
+response to the selected target so rapid reselection cannot display stale data.
 
-- **SSR-safe gate (no hydration mismatch).** `useDebugEnabled` returns
-  `enabled: false` on the first render (matching the server, which has no
-  `window` and renders nothing), then resolves the real value from
-  `?debug=1` / `localStorage` in a post-mount effect. Reading storage in the
-  `useState` initializer makes the first client render diverge from server
-  HTML → *"Hydration failed"*.
+## Active thread
+
+Resolve the pill's active thread in this order:
+
+1. `useThreadStore((state) => state.streamingThreadId)`
+2. `/chat/$threadId`
+3. the project route's `?thread=…` search parameter
+4. `null`
+
+Do not derive active-thread state from the query cache; TanStack Query Devtools
+already exposes that cache.

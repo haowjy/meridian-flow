@@ -1,40 +1,35 @@
-# LLM Calls viewer
+# LLM Calls
 
-The **LLM Calls** action opens a sibling pop-out to Streams using the shared
-`DebugPopout` lifecycle and copied document chrome. Its only default data source
-is the metadata-only same-origin query
-`/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500`.
-Excluding verbose records before the query limit keeps lifecycle polling
-independent of long generations. The viewer polls every three seconds while
-its popup is mounted; closing the popup unmounts the viewer, clears the interval,
-and aborts the active query.
+The **LLM Calls** pop-out joins metadata-only gateway lifecycle events with an
+explicit, content-bearing read of the canonical request sent to the model.
+Lifecycle polling must remain independent from prompt capture.
 
-`llm-calls/derive-llm-calls.ts` is the pure projection boundary. It groups by
-`correlation.gatewayCallId`, orders calls newest-first, resolves terminal
-outcome precedence, and collapses verbose chunk records into message-class
-counts. The normal lifecycle query derives those counts from terminal
-`chunkCounts`; direct verbose-record projection remains a compatibility path.
-Timeline and raw-record views exclude individual chunks so verbose capture
-cannot create hundreds of rows.
+## Data paths
 
-Gateway events and the initial call render remain metadata-only. Prompt and
-parameter content has one path: an explicit per-call action calls the
-owner-gated thread model-request endpoint when both `threadId` and `turnId` are
-present. The exact-call query returns only the selected request and its
-immediate predecessor because prefix evidence compares adjacent tool-loop
-requests. The shared
-`ModelRequestInspector` renders the canonical provider-neutral request through
-three lenses:
+The viewer polls
+`/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500` every three
+seconds while its window is open. `llm-calls/derive-llm-calls.ts` groups events
+by `gatewayCallId`, orders calls newest-first, applies terminal-outcome
+precedence, and derives message-class counts from terminal `chunkCounts`.
+Individual chunk events never enter the timeline or raw-record view.
 
-- **Markdown** uses the contracts package's bounded Markdown projection for system,
-  user, assistant, tool-result, and advertised-tool content. Writer text is
-  contained inside quoted message boundaries, and extreme parts are shortened
-  to 32 KiB in this lens only.
-- **Raw** shows the exact captured canonical request as JSON.
-- **Debug** shows request digest, gateway correlation, prefix status, capture
-  status, resolved skills, and tool registration provenance.
+Prompt content loads only when the user opens a call with both `threadId` and
+`turnId`. The owner-gated model-request endpoint returns the selected request
+and its immediate predecessor so the inspector can compare adjacent tool-loop
+prefixes. Model-request content never enters lifecycle events, the trace store,
+`EventSink`, or JSONL logs.
 
-The same contracts projection powers `pnpm --silent debug:model-context`, so
-the UI and CLI cannot disagree about readable content or prefix status. These
-records never join the lifecycle polling response, trace store, `EventSink`, or
-JSONL mirror.
+## Request views
+
+`ModelRequestInspector` presents the provider-neutral `GenerateRequest` in this
+order:
+
+1. **Markdown** shows ordered messages and advertised tools. It quotes message
+   boundaries and shortens any single extreme part beyond 32 KiB.
+2. **Raw** shows the exact captured request JSON.
+3. **Debug** shows digests, correlation IDs, prefix evidence, capture status,
+   resolved skills, and tool provenance.
+
+The contracts package owns the Markdown projection and prefix summary used by
+both this UI and `pnpm --silent debug:model-context`. Keep presentation logic
+there when the UI and CLI need the same answer.

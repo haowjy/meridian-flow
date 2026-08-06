@@ -16,10 +16,9 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
 - **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
 - **Diagnostic queries** — `debug-http-client.ts` owns current-worktree Portless
-  discovery, in-memory dev auth, bounded responses, and one five-second command
-  deadline. `debug-events.ts` queries safe event records;
-  `debug-model-context.ts` queries the separate content-bearing model-request
-  seam and shares its projections with the app.
+  discovery, dev auth, response bounds, and the five-second deadline.
+  `debug-events.ts` reads safe event records; `debug-model-context.ts` reads the
+  content-bearing model-request seam through the app's shared projection.
 
 ## Directory layout
 
