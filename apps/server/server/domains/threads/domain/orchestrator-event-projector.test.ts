@@ -145,21 +145,17 @@ describe("orchestrator event projector tool calls", () => {
     ]);
 
     expect(rest).toEqual([
-      expect.objectContaining({ type: EventType.TOOL_CALL_RESULT, toolCallId: "call-work" }),
-      {
-        type: EventType.CUSTOM,
-        name: "meridian.tool.result_metadata",
-        value: {
-          toolCallId: "call-work",
-          metadata: {
-            workReceipt: {
-              category: "mutate",
-              line: "Deleted Work Revision.",
-              inverse: { command: "restore", workId: "work-1" },
-            },
+      expect.objectContaining({
+        type: EventType.TOOL_CALL_RESULT,
+        toolCallId: "call-work",
+        metadata: {
+          workReceipt: {
+            category: "mutate",
+            line: "Deleted Work Revision.",
+            inverse: { command: "restore", workId: "work-1" },
           },
         },
-      },
+      }),
     ]);
   });
 
