@@ -57,6 +57,8 @@ interface Dispatch extends ContextTreeDispatch {
 
 const ENTRY_CREATION_DENIED_MESSAGE =
   "This context scheme does not allow creating files or folders. Use scratch:// as the authoring space. uploads:// accepts files through upload intake.";
+const UPLOAD_FOLDER_CREATION_DENIED_MESSAGE =
+  "This context scheme accepts flat files through upload intake; folders are not available here.";
 
 function entryCreationDenied(uri: string): Result<never, ContextError> {
   return Err({ code: "invalid_operation", uri, message: ENTRY_CREATION_DENIED_MESSAGE });
@@ -358,6 +360,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
+      }
+      if (!adapter.capabilities.creatable && path.includes("/")) {
+        return Err({
+          code: "invalid_operation",
+          uri: canonical,
+          message: UPLOAD_FOLDER_CREATION_DENIED_MESSAGE,
+        });
       }
       return callAdapter(canonical, () => adapter.writeBinary(path, options));
     },

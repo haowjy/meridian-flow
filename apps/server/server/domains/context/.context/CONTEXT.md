@@ -91,8 +91,10 @@ with a single unified `ContextPort` that resolves durable project schemes
 - Router methods attach the canonical URI to every `ContextError`.
 - `uploads://` is intake, not an authoring workspace: tracked creation, untitled
   allocation, directory creation, and cross-scheme move-in are rejected with an
-  actionable `invalid_operation`. Same-scheme moves and binary upload intake stay
-  available. `scratch://` remains fully writable and creatable.
+  actionable `invalid_operation`. Same-scheme moves and flat binary upload intake
+  stay available; nested intake paths are rejected because they would implicitly
+  create folders. `scratch://` remains fully writable and creatable, including
+  nested binary intake.
 - Writer-facing HTTP mutations use `context-mutation-validation.ts`, which delegates to the shared reason-coded path/name validators before constructing ContextPort URIs.
 - Adapter `Ok(null)` becomes `not_found`; `permission_denied`,
   `context_unavailable`, and `io_error` stay generic context/backing-store

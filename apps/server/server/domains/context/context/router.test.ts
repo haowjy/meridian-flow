@@ -236,7 +236,7 @@ describe("context router scheme creation capabilities", () => {
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });
 
-  it("keeps binary upload intake available in uploads", async () => {
+  it("accepts flat binary upload intake in non-creatable schemes", async () => {
     const { port, uploads } = createPort();
     const options = {
       storageUrl: "storage://upload",
@@ -250,5 +250,43 @@ describe("context router scheme creation capabilities", () => {
       value: { documentId: "binary-new" },
     });
     expect(uploads.writeBinary).toHaveBeenCalledOnce();
+  });
+
+  it("rejects nested binary upload paths in non-creatable schemes", async () => {
+    const { port, uploads } = createPort();
+    const options = {
+      storageUrl: "storage://upload",
+      mimeType: "image/png",
+      sizeBytes: 10,
+      fileType: "image" as const,
+    };
+
+    await expect(
+      port.writeBinary(`uploads://${workId}/nest/deep.png`, options),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_operation",
+        uri: `uploads://${workId}/nest/deep.png`,
+        message: expect.stringMatching(/flat files.+folders are not available/i),
+      },
+    });
+    expect(uploads.writeBinary).not.toHaveBeenCalled();
+  });
+
+  it("keeps nested binary upload paths available in creatable schemes", async () => {
+    const { port, scratch } = createPort();
+    const options = {
+      storageUrl: "storage://upload",
+      mimeType: "image/png",
+      sizeBytes: 10,
+      fileType: "image" as const,
+    };
+
+    await expect(port.writeBinary(`scratch://${workId}/nest/deep.png`, options)).resolves.toEqual({
+      ok: true,
+      value: { documentId: "binary-new" },
+    });
+    expect(scratch.writeBinary).toHaveBeenCalledWith("nest/deep.png", options);
   });
 });

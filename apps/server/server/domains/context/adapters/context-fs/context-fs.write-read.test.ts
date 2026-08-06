@@ -81,3 +81,30 @@ it("refuses to replace an unknown-extension binary with tracked text", async () 
     },
   });
 });
+
+it("creates implicit parent folders for nested binary intake in a creatable scheme", async () => {
+  const backing = createInMemoryContextDocumentStoreBacking();
+  const context = new ContextFS({
+    store: new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing }),
+    mutationStore: new InMemoryContextTreeMutationStore(backing),
+    scheme: "scratch",
+    documentSync: {} as never,
+  });
+
+  await expect(
+    context.writeBinary("nest/deep.png", {
+      fileType: "image",
+      storageUrl: "s3://bucket/deep.png",
+      mimeType: "image/png",
+      sizeBytes: 42,
+    }),
+  ).resolves.toMatchObject({ ok: true });
+  await expect(context.list("")).resolves.toMatchObject({
+    ok: true,
+    value: expect.arrayContaining([{ kind: "directory", path: "nest" }]),
+  });
+  await expect(context.stat("nest/deep.png")).resolves.toMatchObject({
+    ok: true,
+    value: { kind: "binary", path: "nest/deep.png" },
+  });
+});
