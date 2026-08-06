@@ -11,6 +11,7 @@ import { z } from "zod";
 import { ReverseThreadContextError } from "../../../../../domains/collab/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
+import { reverseWorkReceipts } from "../../../../../lib/work-receipt-reversal.js";
 
 const reverseBodySchema = z.object({
   uri: z
@@ -33,17 +34,34 @@ export default defineEventHandler(async (event) => {
   }
   const body = parsed.data;
   try {
+    const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
+    const turnId = (body.target ?? "") as TurnId;
     const outcome = await app.documentSync.reverseThreadContext({
-      threadId: requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId,
+      threadId,
       userId: user.userId,
       ...(body.uri ? { uri: body.uri } : {}),
       direction: body.direction,
       scope: body.scope,
       ...(body.target !== undefined ? { selection: body.target } : {}),
-      turnId: (body.target ?? "") as TurnId,
+      turnId,
     });
+    const canReverseWorkReceipts =
+      body.target !== undefined &&
+      body.direction === "undo" &&
+      (outcome.status === "reversed" || outcome.status === "nothing_to_undo");
+    const workReceipts = canReverseWorkReceipts
+      ? await reverseWorkReceipts(
+          {
+            blocks: app.threadRepos.blocks,
+            turns: app.threadRepos.turns,
+            works: app.works,
+            contextUpdates: app.systemUpdates,
+          },
+          { threadId, turnId, direction: body.direction },
+        )
+      : [];
     setResponseStatus(event, 200);
-    return outcome;
+    return { ...outcome, ...(workReceipts.length > 0 ? { workReceipts } : {}) };
   } catch (error) {
     if (!(error instanceof ReverseThreadContextError)) throw error;
     throw createError({

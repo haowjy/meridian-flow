@@ -66,7 +66,14 @@ export type OrchestratorEvent =
       /** Incremental chunk, not cumulative text. Consumers append chunks in event order. */
       text: string;
     }
-  | { type: "tool.result"; toolCallId: string; output: JsonValue; isError?: boolean }
+  | {
+      type: "tool.result";
+      toolCallId: string;
+      output: JsonValue;
+      isError?: boolean;
+      /** Host-only result metadata delivered beside, never inside, model-visible output. */
+      metadata?: JsonValue;
+    }
   | { type: "model.response_received"; response: ModelResponseReceivedRow }
   | { type: "block.upserted"; block: BlockUpsertedRow }
   | { type: "block.pruned"; blockId: string }

@@ -1,5 +1,5 @@
 /**
- * ContextPort resolution helpers: centralize the active-Work lookup that turns
+ * ContextPort resolution helpers: centralize the non-deleted Work lookup that turns
  * thread or project-browse context into the correct unified ContextPort.
  */
 import type { Thread } from "@meridian/contracts/threads";
@@ -63,7 +63,7 @@ export interface ProjectBrowseContextPortDeps {
   works: Pick<WorkRepository, "listByProject">;
 }
 
-/** Resolve the project-owned recovery surface across every active Work. */
+/** Resolve the project-owned recovery surface across every non-deleted Work. */
 export async function contextPortForProjectRecovery(input: {
   deps: ProjectBrowseContextPortDeps;
   projectId: string;
@@ -111,7 +111,7 @@ export async function contextPortForProjectAuthorities(input: {
 
 /**
  * Resolve a route-level context port after the caller has already proven
- * project ownership. The selected Work is primary, while every active Work in
+ * project ownership. The selected Work is primary, while every non-deleted Work in
  * the project remains addressable by slug.
  */
 export async function contextPortForProjectBrowse(input: {

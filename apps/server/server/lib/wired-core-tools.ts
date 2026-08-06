@@ -24,6 +24,7 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { Work } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
   CollabDrafts,
@@ -48,6 +49,7 @@ import {
   deleteWork,
   updateWork,
   type WorkContextUpdates,
+  WorkDeleteBlockedError,
   type WorkRepository,
 } from "../domains/projects/index.js";
 import {
@@ -92,6 +94,26 @@ type ModelDocumentWriteCommand = {
 type ModelWriteCommand = DiffWriteCommand | ModelDocumentWriteCommand;
 
 type ResolvedDocumentAddress = DocumentAddress & { created?: boolean };
+
+type ModelWork = Pick<
+  Work,
+  | "slug"
+  | "name"
+  | "goal"
+  | "description"
+  | "status"
+  | "aiWriteMode"
+  | "createdAt"
+  | "updatedAt"
+  | "lastActivityAt"
+  | "unpushedChangeCount"
+>;
+
+type ResolvedModelContextPort = {
+  port: ContextPort;
+  primaryWorkId: string | null;
+  workAuthorities: ReadonlyMap<string, string>;
+};
 
 export type StagedCreateCleanup = {
   responseId: string;
@@ -142,13 +164,61 @@ async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
   responseId?: string,
-): Promise<ContextPort | ToolErrorOutput> {
+): Promise<ResolvedModelContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
     { threads: deps.threads, threadWorks: deps.threadWorks, works: deps.works },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
-  return contextPortForThread(deps.contextPorts, resolution, { responseId });
+  return {
+    port: contextPortForThread(deps.contextPorts, resolution, { responseId }),
+    primaryWorkId: resolution.primaryWorkId,
+    workAuthorities: resolution.workAuthorities,
+  };
+}
+
+function modelWork(work: Work): ModelWork {
+  const {
+    slug,
+    name,
+    goal,
+    description,
+    status,
+    aiWriteMode,
+    createdAt,
+    updatedAt,
+    lastActivityAt,
+    unpushedChangeCount,
+  } = work;
+  return {
+    slug,
+    name,
+    goal,
+    description,
+    status,
+    aiWriteMode,
+    createdAt,
+    updatedAt,
+    lastActivityAt,
+    ...(unpushedChangeCount !== undefined ? { unpushedChangeCount } : {}),
+  };
+}
+
+function modelContextUri(uri: string, context: ResolvedModelContextPort): string {
+  const match = /^(scratch|uploads):\/\/([^/]+)(\/.*)?$/.exec(uri);
+  if (!match) return uri;
+  const workId = match[2];
+  const path = match[3] ?? "";
+  if (workId === context.primaryWorkId) return `${match[1]}://${path.replace(/^\//, "")}`;
+  const slug = [...context.workAuthorities].find(([, id]) => id === workId)?.[0];
+  return slug ? `${match[1]}://@${slug}${path}` : uri;
+}
+
+function modelContextResults<T extends { uri: string }>(
+  values: T[],
+  context: ResolvedModelContextPort,
+): T[] {
+  return values.map((value) => ({ ...value, uri: modelContextUri(value.uri, context) }));
 }
 
 function recordTouchInBackground(
@@ -252,12 +322,10 @@ async function workBySlug(
   const works = await deps.works.listByProject(projectId);
   const work = works.find((candidate) => candidate.slug === slug) ?? null;
   if (work) return work;
-  const validWorkSlugs = works
-    .filter((candidate) => candidate.status === "active")
-    .map((candidate) => candidate.slug);
+  const validWorkSlugs = works.map((candidate) => candidate.slug);
   return toolError({
     code: "work_not_found",
-    message: `Unknown Work ${slug}. Valid active Work slugs: ${validWorkSlugs.join(", ") || "none"}`,
+    message: `Unknown Work ${slug}. Valid Work slugs: ${validWorkSlugs.join(", ") || "none"}`,
     workSlug: slug,
     validWorkSlugs,
   });
@@ -466,7 +534,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           const works = await deps.works.listByProject(thread.projectId, {
             status: command.status ?? "active",
           });
-          return works.map(({ slug, name, goal, status }) => ({ slug, name, goal, status }));
+          return works.map(modelWork);
         }
 
         if (command.command === "create") {
@@ -486,7 +554,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             },
           );
           return {
-            output: work,
+            output: modelWork(work),
             metadata: workReceipt(command, `Created Work ${work.name}.`, {
               command: "delete",
               workId: work.id,
@@ -503,7 +571,15 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             deps.threads.listByWork(thread.projectId, selected.id),
             deps.drafts.draftReview.list({ projectId: thread.projectId, workId: selected.id }),
           ]);
-          return { work: selected, recentThreads: threads.slice(0, 10), drafts };
+          return {
+            work: modelWork(selected),
+            recentThreads: threads.slice(0, 10).map(({ title, updatedAt, status }) => ({
+              title,
+              updatedAt,
+              status,
+            })),
+            drafts: drafts.map(({ workId: _workId, ...draft }) => draft),
+          };
         }
 
         if (command.command === "update") {
@@ -518,7 +594,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             },
           );
           return {
-            output: updated,
+            output: modelWork(updated),
             metadata: workReceipt(command, `Updated Work ${updated.name}.`, {
               command: "update",
               workId: selected.id,
@@ -537,7 +613,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           );
           const deleted = await deps.works.findById(selected.id);
           return {
-            output: deleted ?? selected,
+            output: modelWork(deleted ?? selected),
             metadata: workReceipt(command, `Deleted Work ${selected.name}.`, {
               command: "restore",
               workId: selected.id,
@@ -557,13 +633,20 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
         await deps.workContextUpdates.threadChanged(thread.id);
         return {
-          output: selected,
+          output: modelWork(selected),
           metadata: workReceipt(command, `Switched this conversation to Work ${selected.name}.`, {
             command: "switch",
             workId: rebound.previousWorkId,
           }),
         };
       } catch (error) {
+        if (error instanceof WorkDeleteBlockedError) {
+          return toolError({
+            code: "work_delete_blocked",
+            message: error.message,
+            blockingContentKind: error.reason,
+          });
+        }
         return toolError({ message: error instanceof Error ? error.message : String(error) });
       }
     },
@@ -587,7 +670,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
 
-      const address = await resolveDocumentAddress(portOrError, parsed, {
+      const address = await resolveDocumentAddress(portOrError.port, parsed, {
         deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
       });
       if (isToolError(address)) return address;
@@ -608,7 +691,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         if (stagedCreate) {
           try {
             await deleteCreatedTrackedDocument({
-              port: portOrError,
+              port: portOrError.port,
               path: parsed.path,
               documentId: address.documentId,
             });
@@ -627,7 +710,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         if (responseId === undefined) return toolError({ message: "Missing staged response id" });
         deps.responseWrites.trackStagedCreate({
           responseId,
-          port: portOrError,
+          port: portOrError.port,
           path: parsed.path,
           documentId: address.documentId,
         });
@@ -660,18 +743,18 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const { path } = (input ?? {}) as { path?: string };
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
-      const result = await portOrError.list(path);
+      const result = await portOrError.port.list(path);
       if (!result.ok) return toolError(result.error);
-      return result.value;
+      return modelContextResults(result.value, portOrError);
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { pattern, scope } = input as { pattern?: string; scope?: string };
       if (!pattern) return toolError({ message: "pattern is required" });
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
-      const result = await portOrError.search(pattern, scope);
+      const result = await portOrError.port.search(pattern, scope);
       if (!result.ok) return toolError(result.error);
-      return result.value;
+      return modelContextResults(result.value, portOrError);
     },
     ask_user: askUserHandler,
   });

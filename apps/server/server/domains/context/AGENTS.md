@@ -8,7 +8,7 @@ default to `manuscript://`.
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,
 never scheme-specific adapters directly.
 
-Wire-qualified Work URIs use `@slug`. Context resolution loads the active
+Wire-qualified Work URIs use `@slug`. Context resolution loads the non-deleted
 same-project Work slug map once, and the router converts a qualifier to the
 stable Work ID before adapter dispatch. `thread_works` membership selects the
 thread's primary Work but never grants context access.

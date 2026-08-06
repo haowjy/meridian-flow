@@ -129,8 +129,7 @@ describe("context router Work slug resolution", () => {
       error: {
         code: "invalid_uri",
         uri: "scratch://@other-project-work/notes.md",
-        reason:
-          "Unknown Work @other-project-work. Valid active Work slugs: @drafting, @revision-pass",
+        reason: "Unknown Work @other-project-work. Valid Work slugs: @drafting, @revision-pass",
         workSlug: "other-project-work",
         validWorkSlugs: ["drafting", "revision-pass"],
       },
@@ -141,6 +140,17 @@ describe("context router Work slug resolution", () => {
     await expect(port().list("scratch://@revision-pass")).resolves.toMatchObject({
       ok: true,
       value: [{ uri: `scratch://${SIBLING_ID}/notes.md` }],
+    });
+  });
+
+  it("rejects reserved authority-like names below the router seam", async () => {
+    await expect(port().write("scratch://notes/@evil.md", "blocked")).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "invalid_uri",
+        uri: "scratch://notes/@evil.md",
+        reason: 'File and folder names cannot begin with "@" (@evil.md)',
+      },
     });
   });
 });

@@ -2,11 +2,16 @@ import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it, vi } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
-import type { ContextPort } from "../domains/context/index.js";
+import {
+  type ContextPort,
+  type ContextSchemeAdapter,
+  createContextPortRouter,
+} from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { createInMemoryWorkRepository } from "../domains/projects/index.js";
+import { createInMemoryWorkRepository, WorkDeleteBlockedError } from "../domains/projects/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
+import { Ok } from "../shared/result.js";
 import {
   createAgentEditResponseWriteLifecycle,
   createWiredCoreToolRegistrations,
@@ -51,7 +56,15 @@ describe("wired work tool", () => {
             userId: "user-1",
             kind,
           }) as never,
-        listByWork: async () => [{ id: "recent-thread" }],
+        listByWork: async () => [
+          {
+            id: "recent-thread",
+            title: "Revision chat",
+            updatedAt: "2026-08-06T12:00:00.000Z",
+            status: "active",
+            composedSystemPrompt: "large frozen prompt",
+          },
+        ],
       } as never,
       threadWorks: {
         findPrimary: async () => ({ workId: primaryWorkId }),
@@ -78,6 +91,7 @@ describe("wired work tool", () => {
       handler: registration.execution.handler as TestWriteHandler,
       current,
       target,
+      works: baseWorks,
       preferences,
       invalidateThread,
       threadChanged,
@@ -89,7 +103,14 @@ describe("wired work tool", () => {
     const ctx = toolContext();
     await expect(handler({ command: "list" }, ctx)).resolves.toHaveLength(2);
     await expect(handler({ command: "show", work: target.slug }, ctx)).resolves.toMatchObject({
-      recentThreads: [{ id: "recent-thread" }],
+      work: { slug: "target", name: "Target" },
+      recentThreads: [
+        {
+          title: "Revision chat",
+          updatedAt: "2026-08-06T12:00:00.000Z",
+          status: "active",
+        },
+      ],
       drafts: [{ draftId: "draft-1" }],
     });
     await expect(handler({ command: "create", name: "New Work" }, ctx)).resolves.toMatchObject({
@@ -112,6 +133,16 @@ describe("wired work tool", () => {
     ).resolves.toMatchObject({
       metadata: { workReceipt: { inverse: { command: "restore" } } },
     });
+
+    const [listOutput, showOutput, switchResult] = await Promise.all([
+      handler({ command: "list" }, ctx),
+      handler({ command: "show", work: target.slug }, ctx),
+      handler({ command: "switch", work: target.slug }, ctx),
+    ]);
+    const outputs = [listOutput, showOutput, (switchResult as { output: unknown }).output];
+    expect(JSON.stringify(outputs)).not.toMatch(
+      /00000000-0000-4000-8000-00000000001[12]|project-1|user-1|large frozen prompt/,
+    );
   });
 
   it("returns actionable unknown-slug errors and rejects extra schema fields", async () => {
@@ -125,6 +156,20 @@ describe("wired work tool", () => {
     await expect(
       handler({ command: "list", unexpected: true }, toolContext()),
     ).resolves.toMatchObject({ isError: true });
+  });
+
+  it("returns a coded delete refusal with the blocking content kind", async () => {
+    const { handler, target, works } = await setup();
+    vi.spyOn(works, "softDelete").mockRejectedValueOnce(new WorkDeleteBlockedError("documents"));
+    await expect(
+      handler({ command: "delete", work: target.slug }, toolContext()),
+    ).resolves.toMatchObject({
+      isError: true,
+      output: {
+        code: "work_delete_blocked",
+        details: { blockingContentKind: "documents" },
+      },
+    });
   });
 
   it("invalidates draft fingerprints, emits the system update, and only sticks primary switches", async () => {
@@ -396,6 +441,138 @@ describe("agent-edit response write lifecycle", () => {
 });
 
 describe("wired write tool", () => {
+  it("enforces reserved @ names through the model write path", async () => {
+    const ensureTrackedDocument = vi.fn(async () =>
+      Ok({ documentId: "00000000-0000-4000-8000-000000000031" }),
+    );
+    const adapter = {
+      name: "scratch",
+      capabilities: { writable: true, searchable: true, creatable: true },
+      stat: async () => Ok(null),
+      ensureTrackedDocument,
+    } as unknown as ContextSchemeAdapter;
+    const port = createContextPortRouter({ adapters: new Map([["scratch", adapter]]) });
+    const write = wiredWriteHandler({
+      documentId: "00000000-0000-4000-8000-000000000031",
+      filePath: "scratch://notes/@evil.md",
+      core: createWriteToolHarness({}).core,
+      port,
+    });
+
+    await expect(
+      write(
+        { command: "create", path: "scratch://notes/@evil.md", content: "blocked" },
+        toolContext(),
+      ),
+    ).resolves.toMatchObject({
+      isError: true,
+      output: { code: "tool_error" },
+    });
+    expect(ensureTrackedDocument).not.toHaveBeenCalled();
+  });
+
+  it("round-trips qualified ls and search result URIs directly into write read", async () => {
+    const currentId = "00000000-0000-4000-8000-000000000021";
+    const targetId = "00000000-0000-4000-8000-000000000022";
+    const documentId = "00000000-0000-4000-8000-000000000023";
+    const works = createInMemoryWorkRepository();
+    await works.create({
+      id: currentId,
+      projectId: "project-a",
+      createdByUserId: "user-a",
+      name: "Current",
+    });
+    await works.create({
+      id: targetId,
+      projectId: "project-a",
+      createdByUserId: "user-a",
+      name: "Target",
+    });
+    const receivedUris: string[] = [];
+    const port = {
+      ...contextPortFor(documentId, "scratch://@target/notes.md"),
+      stat: async (uri: string) => {
+        receivedUris.push(uri);
+        return {
+          ok: true as const,
+          value: {
+            kind: "tracked" as const,
+            uri,
+            documentId,
+            filetype: "markdown" as const,
+            schemaType: "document" as const,
+          },
+        };
+      },
+      list: async () => ({
+        ok: true as const,
+        value: [
+          {
+            kind: "file" as const,
+            uri: `scratch://${targetId}/notes.md`,
+            documentId,
+            editable: true as const,
+            readonly: false,
+            filetype: "markdown" as const,
+            schemaType: "document" as const,
+          },
+        ],
+      }),
+      search: async () => ({
+        ok: true as const,
+        value: [
+          {
+            uri: `scratch://${targetId}/notes.md`,
+            matches: [],
+            matchCount: 1,
+          },
+        ],
+      }),
+    } satisfies ContextPort;
+    const harness = createWriteToolHarness({ [documentId]: "Sibling notes" });
+    const registrations = createWiredCoreToolRegistrations({
+      threads: { findById: async () => thread() } as never,
+      threadWorks: {
+        findPrimary: async () => ({ workId: currentId }),
+        rebindPrimary: async () => ({ previousWorkId: currentId, changed: false }),
+      },
+      works,
+      preferences: {} as never,
+      workContextUpdates: { projectChanged: async () => {}, threadChanged: async () => {} },
+      drafts: { draftReview: { list: async () => [] } } as never,
+      contextPorts: { forProject: () => port, forWork: () => port },
+      documentSync: {
+        agentEdit: () => asThreadPeerAgentEditCore(harness.core),
+        refreshDocumentProjection: async () => {},
+        ...noopResponseFinalizer(),
+      },
+      responseWrites: { trackStagedCreate: () => {} },
+      eventSink: createInMemoryEventSink(),
+    });
+    const handler = (name: "write" | "ls" | "search") => {
+      const registration = registrations.find((candidate) => candidate.definition.name === name);
+      if (registration?.execution.type !== "server") throw new Error(`missing ${name}`);
+      return registration.execution.handler as TestWriteHandler;
+    };
+
+    const listed = (await handler("ls")({ path: "scratch://@target" }, toolContext())) as Array<{
+      uri: string;
+    }>;
+    const searched = (await handler("search")(
+      { pattern: "notes", scope: "scratch://@target" },
+      toolContext(),
+    )) as Array<{ uri: string }>;
+    expect(listed[0]?.uri).toBe("scratch://@target/notes.md");
+    expect(searched[0]?.uri).toBe("scratch://@target/notes.md");
+    await expect(
+      writeText(handler("write"), { command: "read", path: listed[0]?.uri }, toolContext()),
+    ).resolves.toContain("Sibling notes");
+    await expect(
+      writeText(handler("write"), { command: "read", path: searched[0]?.uri }, toolContext()),
+    ).resolves.toContain("Sibling notes");
+    expect(receivedUris).toEqual(["scratch://@target/notes.md", "scratch://@target/notes.md"]);
+  });
+
   it("forwards undo and redo to/from selectors through the model-facing tool boundary", async () => {
     const single = await seededWiredWrite();
 
@@ -516,8 +693,13 @@ async function seededWiredWrite() {
   return { write, filePath, ctx };
 }
 
-function wiredWriteHandler(input: { documentId: string; filePath: string; core: AgentEditCore }) {
-  const port = contextPortFor(input.documentId, input.filePath);
+function wiredWriteHandler(input: {
+  documentId: string;
+  filePath: string;
+  core: AgentEditCore;
+  port?: ContextPort;
+}) {
+  const port = input.port ?? contextPortFor(input.documentId, input.filePath);
   const [writeRegistration] = createWiredCoreToolRegistrations({
     threads: { findById: async () => thread() } as never,
     threadWorks: {

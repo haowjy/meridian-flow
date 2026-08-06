@@ -87,7 +87,7 @@ router resolves to a stable Work ID before dispatch.
   remain valid.
 - Work-scoped schemes (`scratch://`, `uploads://`) accept one `@<work-slug>`
   qualifier. Omitted authority resolves to the thread's primary Work. Every
-  active Work in the same project is addressable regardless of thread
+  non-deleted Work in the same project is addressable regardless of thread
   membership; cross-project Works are refused. `manuscript://`,
   `kb://`, `user://` carry no work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.

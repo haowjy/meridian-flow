@@ -191,6 +191,7 @@ export async function dispatchToolCall(
             toolCallId: execResult.toolCallId,
             output: persistedOutput,
             isError: execResult.isError,
+            ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },
         ],
       };

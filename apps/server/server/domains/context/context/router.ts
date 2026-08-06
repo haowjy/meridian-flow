@@ -3,6 +3,8 @@
  * scheme adapter that owns it, resolves Work handles at the project gate, and lifts
  * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
+
+import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   AdapterFault,
@@ -36,7 +38,7 @@ export interface ContextPortRouterDeps {
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** Canonical Work authority for Work-scoped adapters already present in the base map. */
   adapterAuthorities?: ReadonlyMap<ContextScheme, string>;
-  /** Active, same-project Work handles. Values are stable IDs used below this seam. */
+  /** Non-deleted, same-project Work handles. Values are stable IDs used below this seam. */
   workAuthorities?: ReadonlyMap<string, string>;
   /** Primary Work for bare Work-scoped URIs in this router. */
   primaryWorkId?: string;
@@ -171,7 +173,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({
           code: "invalid_uri",
           uri: parsed.value.canonical,
-          reason: `Unknown Work @${authority}. Valid active Work slugs: ${valid || "none"}`,
+          reason: `Unknown Work @${authority}. Valid Work slugs: ${valid || "none"}`,
           workSlug: authority,
           validWorkSlugs,
         });
@@ -207,6 +209,21 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     });
   }
 
+  async function resolveMutation(uri: string): Promise<Result<Dispatch, ContextError>> {
+    const resolved = await resolve(uri);
+    if (!resolved.ok) return resolved;
+    const validation = validateContextEntryPath(resolved.value.path, { allowRoot: true });
+    if (validation.ok) return resolved;
+    return Err({
+      code: "invalid_uri",
+      uri: resolved.value.canonical,
+      reason:
+        validation.reason === "name/reserved-authority-qualifier"
+          ? `File and folder names cannot begin with "@" (${validation.segment ?? "unknown"})`
+          : `Invalid context path (${validation.reason})`,
+    });
+  }
+
   return {
     async stat(uri: string): Promise<Result<FileRef, ContextError>> {
       const r = await resolve(uri);
@@ -235,7 +252,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       content: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolve(uri);
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -248,7 +265,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
-      const r = await resolve(uri);
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -263,7 +280,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       content: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
-      const r = await resolve(uri);
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
@@ -275,7 +292,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       homeUri,
       options,
     ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>> {
-      const r = await resolve(homeUri);
+      const r = await resolveMutation(homeUri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
@@ -352,7 +369,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       command: import("../ports/context-port.js").ContextEditCommand,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolve(uri);
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -365,7 +382,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options: ContextWriteBinaryOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolve(uri);
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -388,7 +405,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextMoveResult, ContextError>> {
       const source = await resolve(sourceUri);
       if (!source.ok) return source;
-      const destination = await resolve(destinationUri);
+      const destination = await resolveMutation(destinationUri);
       if (!destination.ok) return destination;
       if (
         source.value.scheme === destination.value.scheme &&
@@ -411,7 +428,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     async commitWriterLocation(sourceUri, destinationUri, _options) {
       const source = await resolve(sourceUri);
       if (!source.ok) return source;
-      const destination = await resolve(destinationUri);
+      const destination = await resolveMutation(destinationUri);
       if (!destination.ok) return destination;
       const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
@@ -419,7 +436,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     },
 
     async delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
-      const r = await resolve(uri);
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       if (!r.value.adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: r.value.canonical });
@@ -428,7 +445,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     },
 
     async mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
-      const r = await resolve(uri);
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
