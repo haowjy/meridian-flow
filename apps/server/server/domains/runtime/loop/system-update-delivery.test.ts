@@ -5,6 +5,7 @@ import { createInMemoryProjectRepository } from "../../projects/index.js";
 import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
+  TurnStartConflictError,
 } from "../../threads/index.js";
 import { createSystemUpdateDelivery } from "./system-update-delivery.js";
 
@@ -119,5 +120,52 @@ describe("createSystemUpdateDelivery", () => {
 
     await delivery.threadChanged(threadId);
     expect(contextReads).toBe(0);
+  });
+
+  it("retries from the new active head when a concurrent turn start wins", async () => {
+    const threadId = "00000000-0000-4000-8000-000000000124" as ThreadId;
+    const expectedHeads: Array<string | null> = [];
+    let headRead = 0;
+    const delivery = createSystemUpdateDelivery({
+      repos: {
+        turns: {
+          async getLatestByThread() {
+            return { id: headRead++ === 0 ? "old-head" : "new-turn-head" };
+          },
+          async findById() {
+            return null;
+          },
+          async create() {},
+        },
+        blocks: { async upsert() {} },
+        modelResponses: {},
+        threads: { async updateActiveLeafTurn() {} },
+        async transaction(operation: () => Promise<unknown>) {
+          return operation();
+        },
+        async runTurnStartTransition(
+          _threadId: ThreadId,
+          expected: string | null,
+          operation: () => Promise<unknown>,
+        ) {
+          expectedHeads.push(expected);
+          if (expectedHeads.length === 1) {
+            throw new TurnStartConflictError(threadId, "already_running");
+          }
+          return operation();
+        },
+      } as never,
+      eventWriter: { async appendEvent() {} } as never,
+      workContext: {
+        async renderForThread() {
+          return "fresh";
+        },
+      },
+      isThreadRunning: () => true,
+    });
+
+    const update = await delivery.deliverNow(threadId);
+    expect(expectedHeads).toEqual(["old-head", "new-turn-head"]);
+    expect(update.turn.prevTurnId).toBe("new-turn-head");
   });
 });
