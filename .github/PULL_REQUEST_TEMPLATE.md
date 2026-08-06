@@ -20,7 +20,18 @@
 
 <!-- Orient the reviewer to the diff. List the major implementation or design
      changes, important boundaries, and deliberate tradeoffs. This should be a
-     map of the solution, not a commit log or a repeat of Resulting Behavior. -->
+     map of the solution, not a commit log or a repeat of Resulting Behavior.
+     Start with the diff size: files changed and +/- line counts EXCLUDING
+     generated migrations (state the migration delta separately), e.g.
+     "113 files, +3,102 / -360 excluding migrations (3 files, +26)". -->
+
+## DB Changes
+
+<!-- Only when the PR touches schema/migrations; delete otherwise. Name the
+     migration(s) and show the schema delta as a mermaid erDiagram of the
+     CHANGED tables and their relationships, annotating columns with
+     NEW / DROPPED / renamed. List added constraints and indexes below the
+     diagram. -->
 
 ## Resulting Behavior
 
