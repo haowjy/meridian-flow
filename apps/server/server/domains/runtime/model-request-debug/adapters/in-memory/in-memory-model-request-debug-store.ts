@@ -3,18 +3,21 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
 } from "@meridian/contracts/threads";
+import {
+  buildModelRequestDebugRecord,
+  type ModelRequestDebugCaptureInput,
+} from "../../build-record.js";
 import type { ModelRequestDebugStore } from "../../ports/model-request-debug-store.js";
 
 const DEFAULT_CAPACITY = 200;
-const DEFAULT_MAX_RECORD_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
-const UTF8_ENCODER = new TextEncoder();
 
 type StoredRecord = { record: ModelRequestDebugRecord; bytes: number };
 
 export interface InMemoryModelRequestDebugStoreOptions {
   capacity?: number;
-  maxRecordBytes?: number;
+  maxRequestBytes?: number;
   maxBytes?: number;
 }
 
@@ -24,13 +27,13 @@ function positiveInteger(value: number, name: string): number {
 }
 
 function serializedBytes(value: unknown): number {
-  return UTF8_ENCODER.encode(JSON.stringify(value)).byteLength;
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
 export class InMemoryModelRequestDebugStore implements ModelRequestDebugStore {
   readonly captureEnabled = true;
   private readonly capacity: number;
-  private readonly maxRecordBytes: number;
+  private readonly maxRequestBytes: number;
   private readonly maxBytes: number;
   private readonly records: StoredRecord[] = [];
   private retainedBytes = 0;
@@ -39,27 +42,16 @@ export class InMemoryModelRequestDebugStore implements ModelRequestDebugStore {
 
   constructor(options: InMemoryModelRequestDebugStoreOptions = {}) {
     this.capacity = positiveInteger(options.capacity ?? DEFAULT_CAPACITY, "capacity");
-    this.maxRecordBytes = positiveInteger(
-      options.maxRecordBytes ?? DEFAULT_MAX_RECORD_BYTES,
-      "maxRecordBytes",
+    this.maxRequestBytes = positiveInteger(
+      options.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES,
+      "maxRequestBytes",
     );
     this.maxBytes = positiveInteger(options.maxBytes ?? DEFAULT_MAX_BYTES, "maxBytes");
   }
 
-  record(record: ModelRequestDebugRecord): void {
-    const retainedRecord: ModelRequestDebugRecord =
-      record.request && record.requestBytes > this.maxRecordBytes
-        ? {
-            ...record,
-            capture: {
-              status: "omitted",
-              reason: "record_too_large",
-              maxRecordBytes: this.maxRecordBytes,
-            },
-            request: null,
-          }
-        : record;
-    const bytes = serializedBytes(retainedRecord);
+  capture(input: ModelRequestDebugCaptureInput): void {
+    const record = buildModelRequestDebugRecord(input, this.maxRequestBytes);
+    const bytes = serializedBytes(record);
 
     if (bytes > this.maxBytes) {
       this.droppedRecords += 1;
@@ -78,7 +70,7 @@ export class InMemoryModelRequestDebugStore implements ModelRequestDebugStore {
       this.droppedBytes += evicted.bytes;
     }
 
-    this.records.push({ record: retainedRecord, bytes });
+    this.records.push({ record, bytes });
     this.retainedBytes += bytes;
   }
 

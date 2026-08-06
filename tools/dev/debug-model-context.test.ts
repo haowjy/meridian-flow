@@ -25,7 +25,6 @@ function view(iteration: number): ModelRequestDebugView {
       previousRequestDigest: iteration === 0 ? null : `digest-${iteration - 1}`,
       preservedMessageCount: 0,
     },
-    markdown: `request ${iteration}`,
   };
 }
 

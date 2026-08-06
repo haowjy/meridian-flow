@@ -6,6 +6,7 @@ import { apiThreadModelRequestsDebugPath } from "@meridian/contracts/protocol";
 import {
   deriveModelRequestDebugViews,
   type ModelRequestDebugView,
+  renderModelRequestDebugMarkdown,
 } from "@meridian/contracts/threads";
 import { getAuthenticatedDebugJson } from "./debug-http-client";
 
@@ -112,7 +113,13 @@ export async function queryDebugModelContext(
   repoRoot?: string,
 ): Promise<Record<string, unknown>> {
   const response = (await getAuthenticatedDebugJson({
-    path: apiThreadModelRequestsDebugPath(options.threadId, { turnId: options.turnId }),
+    path: apiThreadModelRequestsDebugPath(options.threadId, {
+      turnId: options.turnId,
+      iteration: options.iteration,
+      gatewayCallId: options.gatewayCallId,
+      latest:
+        !options.all && options.iteration === undefined && options.gatewayCallId === undefined,
+    }),
     maxResponseBytes: RESPONSE_BYTES,
     repoRoot,
   })) as ModelRequestDebugListResponse;
@@ -125,7 +132,7 @@ export async function queryDebugModelContext(
     requests: selected.map((view) => {
       if (options.view === "raw") return { prefix: view.prefix, record: view.record };
       if (options.view === "summary") return summary(view);
-      return { ...summary(view), markdown: view.markdown };
+      return { ...summary(view), markdown: renderModelRequestDebugMarkdown(view) };
     }),
   };
 }

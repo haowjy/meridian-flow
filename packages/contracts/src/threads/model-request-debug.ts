@@ -5,6 +5,8 @@
  */
 import type { JsonObject, JsonValue } from "./index.js";
 
+const MAX_READABLE_PART_CHARACTERS = 32 * 1024;
+
 export type ModelRequestDebugMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: JsonObject[];
@@ -29,7 +31,7 @@ export type ModelRequestDebugRequest = {
 
 export type ModelRequestDebugCapture =
   | { status: "complete" }
-  | { status: "omitted"; reason: "record_too_large"; maxRecordBytes: number };
+  | { status: "omitted"; reason: "request_too_large"; maxRequestBytes: number };
 
 /** One canonical request captured immediately before Gateway.stream(). */
 export type ModelRequestDebugRecord = {
@@ -69,11 +71,30 @@ export type ModelRequestPrefix = {
 export type ModelRequestDebugView = {
   record: ModelRequestDebugRecord;
   prefix: ModelRequestPrefix;
-  markdown: string;
 };
 
-function json(value: unknown): string {
-  return JSON.stringify(value);
+function jsonEqual(left: JsonValue, right: JsonValue): boolean {
+  if (left === right) return true;
+  if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => jsonEqual(value, right[index] as JsonValue))
+    );
+  }
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(right, key) && jsonEqual(left[key] as JsonValue, right[key] as JsonValue),
+    )
+  );
 }
 
 function requestWithoutMessages(
@@ -87,10 +108,17 @@ function prefixAgainst(
   current: ModelRequestDebugRecord,
   previous: ModelRequestDebugRecord | undefined,
 ): ModelRequestPrefix {
-  if (!previous) {
+  if (current.iteration === 0) {
     return {
-      status: current.iteration === 0 ? "first" : "unavailable",
+      status: "first",
       previousRequestDigest: null,
+      preservedMessageCount: 0,
+    };
+  }
+  if (!previous || previous.iteration + 1 !== current.iteration) {
+    return {
+      status: "unavailable",
+      previousRequestDigest: previous?.requestDigest ?? null,
       preservedMessageCount: 0,
     };
   }
@@ -102,14 +130,15 @@ function prefixAgainst(
     };
   }
 
-  const staticRequestMatches =
-    json(requestWithoutMessages(current.request)) ===
-    json(requestWithoutMessages(previous.request));
+  const staticRequestMatches = jsonEqual(
+    requestWithoutMessages(current.request),
+    requestWithoutMessages(previous.request),
+  );
   const enoughMessages = current.request.messages.length >= previous.request.messages.length;
   const messagesMatch =
     enoughMessages &&
-    previous.request.messages.every(
-      (message, index) => json(message) === json(current.request?.messages[index]),
+    previous.request.messages.every((message, index) =>
+      jsonEqual(message, current.request?.messages[index] as JsonValue),
     );
 
   return {
@@ -125,10 +154,25 @@ function objectString(value: JsonObject, key: string): string | undefined {
 }
 
 function fencedJson(value: JsonValue): string {
-  const body = JSON.stringify(value, null, 2);
+  const exactBody = JSON.stringify(value, null, 2);
+  const body =
+    exactBody.length > MAX_READABLE_PART_CHARACTERS
+      ? `${exactBody.slice(0, MAX_READABLE_PART_CHARACTERS)}\n[${exactBody.length - MAX_READABLE_PART_CHARACTERS} characters omitted from readable view; use the raw view for exact data]`
+      : exactBody;
   const longestRun = Math.max(0, ...Array.from(body.matchAll(/`+/g), (match) => match[0].length));
   const fence = "`".repeat(Math.max(3, longestRun + 1));
   return `${fence}json\n${body}\n${fence}`;
+}
+
+function quotedMarkdown(value: string): string {
+  const readable =
+    value.length > MAX_READABLE_PART_CHARACTERS
+      ? `${value.slice(0, MAX_READABLE_PART_CHARACTERS)}\n\n[${value.length - MAX_READABLE_PART_CHARACTERS} characters omitted from readable view; use the raw view for exact text]`
+      : value;
+  return readable
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
 }
 
 function readableMediaPart(part: JsonObject): JsonObject {
@@ -142,9 +186,9 @@ function readableMediaPart(part: JsonObject): JsonObject {
 
 function readablePart(part: JsonObject, partIndex: number): string {
   const type = objectString(part, "type") ?? "unknown";
-  if (type === "text") return objectString(part, "text") ?? "";
+  if (type === "text") return quotedMarkdown(objectString(part, "text") ?? "");
   if (type === "reasoning") {
-    return `### Reasoning part ${partIndex}\n\n${objectString(part, "text") ?? ""}`;
+    return `### Reasoning part ${partIndex}\n\n${quotedMarkdown(objectString(part, "text") ?? "")}`;
   }
   if (type === "tool_use") {
     const toolName = objectString(part, "toolName") ?? "unknown tool";
@@ -160,7 +204,8 @@ function readablePart(part: JsonObject, partIndex: number): string {
   return `### ${type}\n\n${fencedJson(part)}`;
 }
 
-function readableRequest(record: ModelRequestDebugRecord, prefix: ModelRequestPrefix): string {
+export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): string {
+  const { record, prefix } = view;
   const lines = [
     "# Model request",
     "",
@@ -175,7 +220,7 @@ function readableRequest(record: ModelRequestDebugRecord, prefix: ModelRequestPr
   if (!record.request) {
     lines.push(
       "",
-      `The canonical request exceeded the ${record.capture.status === "omitted" ? record.capture.maxRecordBytes : "configured"}-byte capture limit. Metadata and digest were retained.`,
+      `The canonical request exceeded the ${record.capture.status === "omitted" ? record.capture.maxRequestBytes : "configured"}-byte capture limit. Metadata and digest were retained.`,
     );
     return lines.join("\n");
   }
@@ -199,7 +244,7 @@ function readableRequest(record: ModelRequestDebugRecord, prefix: ModelRequestPr
 }
 
 /**
- * Derive cache-prefix evidence and a readable Markdown lens from ordered records.
+ * Derive cache-prefix evidence from ordered records.
  * Prefix comparison resets at each assistant turn.
  */
 export function deriveModelRequestDebugViews(
@@ -209,7 +254,7 @@ export function deriveModelRequestDebugViews(
   return records.map((record) => {
     const prefix = prefixAgainst(record, previousByTurn.get(record.turnId));
     previousByTurn.set(record.turnId, record);
-    return { record, prefix, markdown: readableRequest(record, prefix) };
+    return { record, prefix };
   });
 }
 

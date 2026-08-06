@@ -276,7 +276,10 @@ export type {
   ModelRequestDebugView,
   ModelRequestPrefix,
 } from "./model-request-debug.js";
-export { deriveModelRequestDebugViews } from "./model-request-debug.js";
+export {
+  deriveModelRequestDebugViews,
+  renderModelRequestDebugMarkdown,
+} from "./model-request-debug.js";
 export type {
   BlockUpsertedRow,
   ModelResponseReceivedRow,

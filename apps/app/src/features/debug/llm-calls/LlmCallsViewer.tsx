@@ -296,16 +296,12 @@ function ModelRequestDetail({ call }: { call: LlmCallSummary }) {
   const threadId = call.threadId;
   const turnId = call.turnId;
 
-  function toggle() {
-    if (visible) {
-      setVisible(false);
-      return;
-    }
-    setVisible(true);
-    if (!threadId || !turnId || state.status !== "idle") return;
-
+  function load() {
+    if (!threadId || !turnId) return;
     setState({ status: "loading" });
-    void getThreadModelRequestDebugRecords({ data: { threadId, turnId } })
+    void getThreadModelRequestDebugRecords({
+      data: { threadId, turnId, gatewayCallId: call.gatewayCallId },
+    })
       .then((response) => {
         setState({ status: "loaded", response });
       })
@@ -319,6 +315,15 @@ function ModelRequestDetail({ call }: { call: LlmCallSummary }) {
           message: error instanceof Error ? error.message : "request failed",
         });
       });
+  }
+
+  function toggle() {
+    if (visible) {
+      setVisible(false);
+      return;
+    }
+    setVisible(true);
+    if (state.status === "idle" || state.status === "error") load();
   }
 
   return (
@@ -337,7 +342,12 @@ function ModelRequestDetail({ call }: { call: LlmCallSummary }) {
             </p>
           ) : null}
           {state.status === "error" ? (
-            <p className="text-meta text-destructive">{state.message}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-meta text-destructive">{state.message}</p>
+              <Button type="button" variant="outline" size="xs" onClick={load}>
+                Retry request
+              </Button>
+            </div>
           ) : null}
           {state.status === "loaded" && state.response.records.length === 0 ? (
             <p className="text-meta text-muted-foreground">

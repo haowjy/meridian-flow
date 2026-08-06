@@ -6,13 +6,13 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
 } from "@meridian/contracts/threads";
-
+import type { ModelRequestDebugCaptureInput } from "../../build-record.js";
 import type { ModelRequestDebugStore } from "../../ports/model-request-debug-store.js";
 
 export class NoopModelRequestDebugStore implements ModelRequestDebugStore {
   readonly captureEnabled = false;
 
-  record(_record: ModelRequestDebugRecord): void {
+  capture(_input: ModelRequestDebugCaptureInput): void {
     // intentionally empty
   }
 

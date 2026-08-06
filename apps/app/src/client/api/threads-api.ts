@@ -155,10 +155,13 @@ export async function getThreadRecentDocuments(
 export function getThreadModelRequestDebugRecords({
   data,
 }: {
-  data: { threadId: string; turnId?: string };
+  data: { threadId: string; turnId?: string; gatewayCallId?: string };
 }): Promise<ModelRequestDebugListResponse> {
   return getJson<ModelRequestDebugListResponse>(
-    apiThreadModelRequestsDebugPath(data.threadId, { turnId: data.turnId }),
+    apiThreadModelRequestsDebugPath(data.threadId, {
+      turnId: data.turnId,
+      gatewayCallId: data.gatewayCallId,
+    }),
   );
 }
 

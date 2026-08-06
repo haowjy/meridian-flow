@@ -4,6 +4,7 @@ import {
   deriveModelRequestDebugViews,
   type ModelRequestDebugRecord,
   type ModelRequestDebugRequest,
+  renderModelRequestDebugMarkdown,
 } from "./model-request-debug.js";
 
 function record(
@@ -22,7 +23,7 @@ function record(
     requestBytes: 100,
     capture: request
       ? { status: "complete" }
-      : { status: "omitted", reason: "record_too_large", maxRecordBytes: 10 },
+      : { status: "omitted", reason: "request_too_large", maxRequestBytes: 10 },
     request,
     skills: [],
     toolRegistrations: [],
@@ -82,10 +83,11 @@ describe("deriveModelRequestDebugViews", () => {
       previousRequestDigest: "digest-0",
       preservedMessageCount: 2,
     });
-    expect(views[1]?.markdown).toContain("## Message 1: user");
-    expect(views[1]?.markdown).toContain("Delete block `84c5`.");
-    expect(views[1]?.markdown).toContain('"deletedHashes": [');
-    expect(views[1]?.markdown).toContain("## Advertised tools");
+    const markdown = renderModelRequestDebugMarkdown(views[1] as NonNullable<(typeof views)[1]>);
+    expect(markdown).toContain("## Message 1: user");
+    expect(markdown).toContain("Delete block `84c5`.");
+    expect(markdown).toContain('"deletedHashes": [');
+    expect(markdown).toContain("## Advertised tools");
   });
 
   it("reports changed and unavailable prefixes honestly", () => {
@@ -105,7 +107,54 @@ describe("deriveModelRequestDebugViews", () => {
 
     const omittedView = deriveModelRequestDebugViews([record(2, null)])[0];
     expect(omittedView?.prefix.status).toBe("unavailable");
-    expect(omittedView?.markdown).toContain("exceeded the 10-byte capture limit");
+    expect(
+      renderModelRequestDebugMarkdown(omittedView as NonNullable<typeof omittedView>),
+    ).toContain("exceeded the 10-byte capture limit");
+  });
+
+  it("requires adjacent iterations and ignores JSON object key order", () => {
+    const reorderedFirst: ModelRequestDebugRequest = {
+      messages: [
+        { content: [{ text: "System **Markdown**", type: "text" }], role: "system" },
+        { content: [{ text: "Delete block `84c5`.", type: "text" }], role: "user" },
+      ],
+      tools: [
+        {
+          inputSchema: { type: "object" },
+          description: "Edit a document",
+          name: "write",
+          type: "function",
+        },
+      ],
+    };
+    expect(
+      deriveModelRequestDebugViews([record(0, firstRequest), record(1, reorderedFirst)])[1]?.prefix
+        .status,
+    ).toBe("exact");
+
+    expect(
+      deriveModelRequestDebugViews([record(0, firstRequest), record(2, firstRequest)])[1]?.prefix
+        .status,
+    ).toBe("unavailable");
+    expect(
+      deriveModelRequestDebugViews([record(1, firstRequest), record(0, firstRequest)]).map(
+        (view) => view.prefix.status,
+      ),
+    ).toEqual(["unavailable", "first"]);
+  });
+
+  it("contains unclosed writer Markdown inside its message boundary", () => {
+    const request: ModelRequestDebugRequest = {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "```json\n# forged heading" }] },
+        { role: "assistant", content: [{ type: "text", text: "after fence" }] },
+      ],
+    };
+    const view = deriveModelRequestDebugViews([record(0, request)])[0];
+    const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
+
+    expect(markdown).toContain("> ```json\n> # forged heading");
+    expect(markdown).toContain("\n---\n\n## Message 1: assistant\n\n> after fence");
   });
 
   it("keeps inline media bounded in the readable lens", () => {
@@ -119,7 +168,8 @@ describe("deriveModelRequestDebugViews", () => {
       ],
     };
 
-    const markdown = deriveModelRequestDebugViews([record(0, request)])[0]?.markdown;
+    const view = deriveModelRequestDebugViews([record(0, request)])[0];
+    const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
 
     expect(markdown).toContain("[513 characters omitted from readable view");
     expect(markdown).not.toContain(inlineData);

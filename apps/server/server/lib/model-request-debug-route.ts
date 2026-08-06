@@ -15,9 +15,50 @@ export interface ModelRequestDebugRouteDeps {
   modelRequestDebug: ModelRequestDebugStore;
 }
 
+type ModelRequestDebugSelection = {
+  gatewayCallId?: string;
+  iteration?: number;
+  latest?: boolean;
+};
+
+/** Narrow exported records while retaining only the adjacent prefix context. */
+export function selectModelRequestDebugRecords(
+  available: readonly ModelRequestDebugRecord[],
+  selection: ModelRequestDebugSelection,
+): ModelRequestDebugRecord[] {
+  const narrowed = available.filter(
+    (record) =>
+      (selection.gatewayCallId === undefined || record.gatewayCallId === selection.gatewayCallId) &&
+      (selection.iteration === undefined || record.iteration === selection.iteration),
+  );
+  const selected = selection.latest ? narrowed.slice(-1) : narrowed;
+  const needsProjectionContext =
+    selection.latest === true ||
+    selection.gatewayCallId !== undefined ||
+    selection.iteration !== undefined;
+  if (!needsProjectionContext) return selected;
+
+  const selectedIds = new Set(selected.map((record) => record.gatewayCallId));
+  for (const record of selected) {
+    const previous = available.find(
+      (candidate) =>
+        candidate.turnId === record.turnId && candidate.iteration === record.iteration - 1,
+    );
+    if (previous) selectedIds.add(previous.gatewayCallId);
+  }
+  return available.filter((record) => selectedIds.has(record.gatewayCallId));
+}
+
 export async function handleGetModelRequestDebugRecords(
   deps: ModelRequestDebugRouteDeps,
-  input: { threadId: string; userId: string; turnId?: string },
+  input: {
+    threadId: string;
+    userId: string;
+    turnId?: string;
+    gatewayCallId?: string;
+    iteration?: number;
+    latest?: boolean;
+  },
 ): Promise<ModelRequestDebugListResponse> {
   if (!deps.modelRequestDebug.captureEnabled) {
     throwHttpInterruptForStatus(404, "Thread not found");
@@ -29,9 +70,10 @@ export async function handleGetModelRequestDebugRecords(
     input.userId,
   );
 
-  const records: ModelRequestDebugRecord[] = input.turnId
+  const available: ModelRequestDebugRecord[] = input.turnId
     ? deps.modelRequestDebug.listByTurn(thread.id, input.turnId)
     : deps.modelRequestDebug.listByThread(thread.id);
+  const records = selectModelRequestDebugRecords(available, input);
 
   return { records, retention: deps.modelRequestDebug.retention() };
 }

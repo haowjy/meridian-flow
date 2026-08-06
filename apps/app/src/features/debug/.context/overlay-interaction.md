@@ -39,7 +39,9 @@ opens a cursor-anchored popover rendering that record via `JsonTree`.
   shows a disabled notice. In-flight fetches are keyed to the active
   `{threadId, turnId}` so fast reselection cannot show another turn's rows.
   Records render through the same Readable, Raw, and Debug inspector used by
-  the LLM Calls pop-out and expose the response's retention counters.
+  the LLM Calls pop-out and expose the response's retention counters. The turn
+  inspector selects one iteration at a time instead of rendering every retained
+  request together.
 - **Dead-end-free** — if an id isn't in the store, the popover still shows the
   DOM attributes (role/status or blockType/seq) so the id is never lost.
 - **Copy** — a header "copy" button writes `JSON.stringify(record, null, 2)` to

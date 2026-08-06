@@ -113,7 +113,9 @@ pnpm --silent debug:model-context -- --thread <thread-id> --gateway-call <call-i
 
 The latest readable request is the default. `--iteration`, `--gateway-call`, or
 `--all` selects other records; `--view readable|raw|summary` controls the
-payload. A thread pivot is always required and the server verifies ownership.
+payload. Exact selectors transfer only the match and its immediately preceding
+request for prefix comparison. A thread pivot is always required and the server
+verifies ownership.
 
 This is the canonical request immediately before Meridian's gateway dispatch,
 not a claim about a provider SDK's private wire encoding. Capture is enabled in
@@ -121,6 +123,9 @@ local development, lives only in process memory, and is bounded to 200 records,
 2 MiB per request, and 16 MiB total. Oversized requests keep metadata and a
 digest but omit their body. A server restart clears the ring. Request content
 never enters `EventSink`, the event journal, thread snapshots, or JSONL logs.
+Staging and production cannot enable this capture. The Readable lens contains
+writer Markdown within explicit message boundaries and shortens individual
+parts above 32 KiB; Raw remains exact up to the request capture ceiling.
 
 ## Consume Server Events
 
