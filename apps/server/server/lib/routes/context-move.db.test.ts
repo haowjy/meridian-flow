@@ -112,7 +112,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: collab,
         manifestMembership: collab,
       });
-      const port = contextPorts.forWork(workId, projectId, USER_ID, new Set([workId]));
+      const port = contextPorts.forWork(
+        workId,
+        projectId,
+        USER_ID,
+        new Map([["current-work", workId]]),
+      );
       await createUntitledContextDocument({
         port,
         userId: USER_ID,
@@ -192,7 +197,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         provisionalName: false,
       });
       expect(row?.sourceId).toBe(row?.folderSourceId);
-      await expect(port.stat(`scratch://${workId}/Untitled 1.md`)).resolves.toMatchObject({
+      await expect(port.stat(`scratch://@current-work/Untitled 1.md`)).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },
       });
@@ -247,10 +252,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("keeps provisional naming across a system move without the writer-placement option", async () => {
-      const { projectId, workId, port } = await arrangeUntitled();
+      const { projectId, port } = await arrangeUntitled();
 
       const moved = await port.move(
-        `scratch://${workId}/Untitled 1.md`,
+        `scratch://@current-work/Untitled 1.md`,
         "manuscript://Act 1/Untitled 1.md",
         { origin: { type: "human", userId: USER_ID } },
       );
@@ -297,12 +302,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("moves a folder and its children across schemes", async () => {
       const { workId, port } = await arrangeUntitled();
       await expect(
-        port.mkdir(`scratch://${workId}/Source/Nested`, {
+        port.mkdir(`scratch://@current-work/Source/Nested`, {
           origin: { type: "human", userId: USER_ID },
         }),
       ).resolves.toMatchObject({ ok: true });
       await expect(
-        port.write(`scratch://${workId}/Source/Nested/chapter.md`, "Chapter", {
+        port.write(`scratch://@current-work/Source/Nested/chapter.md`, "Chapter", {
           origin: { type: "human", userId: USER_ID },
         }),
       ).resolves.toMatchObject({ ok: true });
@@ -331,7 +336,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       );
       await expect(
-        port.stat(`scratch://${workId}/Source/Nested/chapter.md`),
+        port.stat(`scratch://@current-work/Source/Nested/chapter.md`),
       ).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },
@@ -340,7 +345,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("returns the exact existing folder locator instead of nesting into it", async () => {
       const { workId, port } = await arrangeUntitled();
-      await expect(port.mkdir(`scratch://${workId}/Source/Children`)).resolves.toMatchObject({
+      await expect(port.mkdir(`scratch://@current-work/Source/Children`)).resolves.toMatchObject({
         ok: true,
       });
       await expect(port.mkdir("manuscript://Act 1/Source")).resolves.toMatchObject({ ok: true });
@@ -365,7 +370,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: [],
       });
-      await expect(port.list(`scratch://${workId}/Source`)).resolves.toMatchObject({ ok: true });
+      await expect(port.list(`scratch://@current-work/Source`)).resolves.toMatchObject({
+        ok: true,
+      });
     });
   });
 }

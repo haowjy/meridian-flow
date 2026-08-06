@@ -389,7 +389,8 @@ function wiredWriteHandler(input: { documentId: string; filePath: string; core: 
   const port = contextPortFor(input.documentId, input.filePath);
   const [writeRegistration] = createWiredCoreToolRegistrations({
     threads: { findById: async () => thread() } as never,
-    threadWorks: { findPrimary: async () => null, listByThread: async () => [] },
+    threadWorks: { findPrimary: async () => null },
+    works: { listByProject: async () => [] },
     contextPorts: { forProject: () => port, forWork: () => port },
     documentSync: {
       agentEdit: () => asThreadPeerAgentEditCore(input.core),

@@ -313,7 +313,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: collab,
         manifestMembership: collab,
       });
-      const port = contextPorts.forWork(WORK_ID, PROJECT_ID, USER_ID, new Set([WORK_ID]));
+      const port = contextPorts.forWork(
+        WORK_ID,
+        PROJECT_ID,
+        USER_ID,
+        new Map([["current-work", WORK_ID]]),
+      );
 
       const created = await createContextEntry({
         port,
@@ -339,7 +344,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
       ).resolves.toBe(PROJECT_ID);
 
-      await expect(port.delete(`scratch://${WORK_ID}/notes.md`)).resolves.toEqual({
+      await expect(port.delete(`scratch://@current-work/notes.md`)).resolves.toEqual({
         ok: true,
         value: undefined,
       });

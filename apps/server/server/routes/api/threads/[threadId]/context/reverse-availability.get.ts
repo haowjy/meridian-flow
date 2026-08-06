@@ -9,6 +9,7 @@ type AvailabilityRouteServices = {
   contextPorts: AppServices["contextPorts"];
   threads: AppServices["threadRepos"]["threads"];
   threadWorks: AppServices["threadRepos"]["threadWorks"];
+  works: AppServices["workRepo"];
   documentSync: AppServices["documentSync"];
 };
 
@@ -17,6 +18,7 @@ function selectAvailabilityRouteServices(app: AppServices): AvailabilityRouteSer
     contextPorts: app.contextPorts,
     threads: app.threadRepos.threads,
     threadWorks: app.threadRepos.threadWorks,
+    works: app.workRepo,
     documentSync: app.documentSync,
   };
 }
@@ -35,6 +37,7 @@ export default defineEventHandler(async (event) => {
       contextPorts: services.contextPorts,
       threads: services.threads,
       threadWorks: services.threadWorks,
+      works: services.works,
     },
     { threadId, userId: user.userId, uri },
   );

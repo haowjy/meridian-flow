@@ -15,7 +15,8 @@ with a single unified `ContextPort` that resolves durable project schemes
 - **Context URI primitives** — `parseUnifiedContextUri` / `toCanonical`
   normalize the five registered schemes: `manuscript`, `kb`, `user`, `scratch`,
   `uploads`. Bare paths default to `manuscript://`. Work-scoped schemes
-  (`scratch://`, `uploads://`) carry a `<workId>` authority.
+(`scratch://`, `uploads://`) carry an `@<work-slug>` wire qualifier that the
+router resolves to a stable Work ID before dispatch.
 - **Unified context port factory** (`unified-context-port-factory.ts`) — two deep
   modules: `context-source-provisioning.ts` (race-safe `context_sources`
   provisioning + lazy promise-cached resolution) and the factory composition root.
@@ -75,15 +76,19 @@ with a single unified `ContextPort` that resolves durable project schemes
 
 ## URI and router invariants
 
-- Canonical context URIs are `scheme://[authority]/path`; a scheme root is `scheme://`.
+- Wire context URIs are `scheme://[@slug]/path`; a scheme root is `scheme://`.
+  Canonical server results use the resolved Work ID so persisted references do
+  not rebind if a deleted Work's slug is reused.
 - Bare paths default to `manuscript://` (project-scoped).
 - Leading/trailing slashes and repeated slashes are normalized away; `.` segments
   are dropped; `..` is rejected.
 - Writer-created file and folder segments cannot begin with `@` at any depth.
   The prefix is reserved for Work authority qualifiers; interior `@` characters
   remain valid.
-- Work-scoped schemes (`scratch://`, `uploads://`) carry a `<workId>` authority.
-  Omitted authority resolves to the thread's primary Work. `manuscript://`,
+- Work-scoped schemes (`scratch://`, `uploads://`) accept one `@<work-slug>`
+  qualifier. Omitted authority resolves to the thread's primary Work. Every
+  active Work in the same project is addressable regardless of thread
+  membership; cross-project Works are refused. `manuscript://`,
   `kb://`, `user://` carry no work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Wikilink title/alias matching is case-insensitive and trims outer whitespace.

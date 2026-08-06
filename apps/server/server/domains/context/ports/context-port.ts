@@ -19,7 +19,7 @@ import type { Result } from "../../../shared/result.js";
  * Registered context URI schemes.
  *
  * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
- * Work-scoped: `scratch`/`uploads` (authority URIs use `scheme://<workId>/...`).
+ * Work-scoped: `scratch`/`uploads` (wire qualifiers use `scheme://@<work-slug>/...`).
  */
 export type ContextScheme = ContextUriScheme;
 
@@ -170,7 +170,13 @@ export type ContextError =
   | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string }
   | { code: "context_unavailable"; uri: string }
-  | { code: "invalid_uri"; uri: string; reason: string }
+  | {
+      code: "invalid_uri";
+      uri: string;
+      reason: string;
+      workSlug?: string;
+      validWorkSlugs?: string[];
+    }
   | { code: "io_error"; uri: string; message: string };
 
 export type WriteProvenance =

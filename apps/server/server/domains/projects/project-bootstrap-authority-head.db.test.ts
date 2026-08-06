@@ -108,7 +108,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         bootstrap.workId,
         bootstrap.projectId,
         USER_ID,
-        new Set([bootstrap.workId]),
+        new Map([["current-work", bootstrap.workId]]),
         bootstrap.threadId,
       );
 
@@ -237,7 +237,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         bootstrap.workId,
         bootstrap.projectId,
         USER_ID,
-        new Set([bootstrap.workId]),
+        new Map([["current-work", bootstrap.workId]]),
         bootstrap.threadId,
       );
       await expect(port.list("manuscript://")).resolves.toEqual({ ok: true, value: [] });

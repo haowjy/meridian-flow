@@ -41,11 +41,8 @@ describe("POST context upload", () => {
       ok: true,
       documentId: "document-1",
     });
-    expect(stat).toHaveBeenCalledWith("uploads://00000000-0000-4000-8000-000000000003/cover.png");
-    expect(writeBinary).toHaveBeenCalledWith(
-      "uploads://00000000-0000-4000-8000-000000000003/cover.png",
-      expect.any(Object),
-    );
+    expect(stat).toHaveBeenCalledWith("uploads://cover.png");
+    expect(writeBinary).toHaveBeenCalledWith("uploads://cover.png", expect.any(Object));
     expect(event.res.status).toBe(201);
   });
 

@@ -71,6 +71,80 @@ describe("context router listings", () => {
   });
 });
 
+describe("context router Work slug resolution", () => {
+  const PRIMARY_ID = "00000000-0000-4000-8000-000000000001";
+  const SIBLING_ID = "00000000-0000-4000-8000-000000000002";
+
+  function workAdapter(workId: string): ContextSchemeAdapter {
+    return {
+      name: `scratch-${workId}`,
+      capabilities: { writable: true, searchable: true, creatable: true },
+      read: vi.fn(async () => Ok({ content: workId })),
+      write: vi.fn(async () => Ok({ documentId: workId })),
+      list: vi.fn(async () =>
+        Ok([
+          {
+            kind: "file" as const,
+            path: "notes.md",
+            documentId: workId,
+            editable: true as const,
+            filetype: "markdown" as const,
+            schemaType: "document" as const,
+          },
+        ]),
+      ),
+    } as unknown as ContextSchemeAdapter;
+  }
+
+  function port() {
+    const primary = workAdapter(PRIMARY_ID);
+    const sibling = workAdapter(SIBLING_ID);
+    return createContextPortRouter({
+      adapters: new Map([["scratch", primary]]),
+      primaryWorkId: PRIMARY_ID,
+      workAuthorities: new Map([
+        ["drafting", PRIMARY_ID],
+        ["revision-pass", SIBLING_ID],
+      ]),
+      resolveWorkAdapters: (workId) =>
+        new Map([["scratch", workId === SIBLING_ID ? sibling : primary]]),
+    });
+  }
+
+  it("resolves a same-project sibling slug for both reads and writes", async () => {
+    const context = port();
+    await expect(context.read("scratch://@revision-pass/notes.md")).resolves.toEqual({
+      ok: true,
+      value: { content: SIBLING_ID },
+    });
+    await expect(context.write("scratch://@revision-pass/notes.md", "revised")).resolves.toEqual({
+      ok: true,
+      value: { documentId: SIBLING_ID },
+    });
+  });
+
+  it("reports an unknown or cross-project slug with the valid project slugs", async () => {
+    await expect(port().read("scratch://@other-project-work/notes.md")).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "invalid_uri",
+        uri: "scratch://@other-project-work/notes.md",
+        reason:
+          "Unknown Work @other-project-work. Valid active Work slugs: @drafting, @revision-pass",
+        workSlug: "other-project-work",
+        validWorkSlugs: ["drafting", "revision-pass"],
+      },
+    });
+  });
+
+  it("returns stable Work IDs in canonical URIs rather than persistable slugs", async () => {
+    await expect(port().list("scratch://@revision-pass")).resolves.toMatchObject({
+      ok: true,
+      value: [{ uri: `scratch://${SIBLING_ID}/notes.md` }],
+    });
+  });
+});
+
 describe("context router untitled identity recovery", () => {
   it("returns the primary Work authority for a retry found in the base adapter map", async () => {
     const scratch = {
@@ -90,12 +164,12 @@ describe("context router untitled identity recovery", () => {
       adapters: new Map([["scratch", scratch]]),
       adapterAuthorities: new Map([["scratch", "work-1"]]),
       primaryWorkId: "work-1",
-      allowedAuthorities: new Set(["work-1"]),
+      workAuthorities: new Map([["primary", "work-1"]]),
       resolveWorkAdapters: () => new Map([["scratch", scratch]]),
     });
 
     await expect(
-      port.createUntitledDocument("scratch://work-1", {
+      port.createUntitledDocument("scratch://@primary", {
         documentId: "00000000-0000-4000-8000-000000000100",
         origin: { type: "system" },
       }),
@@ -132,7 +206,7 @@ describe("context router untitled identity recovery", () => {
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
       adapters: new Map([["manuscript", manuscript]]),
-      allowedAuthorities: new Set(["work-2"]),
+      workAuthorities: new Map([["secondary", "work-2"]]),
       resolveWorkAdapters: () => new Map([["scratch", scratch]]),
     });
 
@@ -170,7 +244,7 @@ describe("context router scheme creation capabilities", () => {
           ["scratch", scratch],
           ["uploads", uploads],
         ]),
-        allowedAuthorities: new Set([workId]),
+        workAuthorities: new Map([["current", workId]]),
         primaryWorkId: workId,
       }),
     };
@@ -184,9 +258,9 @@ describe("context router scheme creation capabilities", () => {
     };
 
     await expect(
-      port.createTrackedDocument(`uploads://${workId}/notes.md`, "notes"),
+      port.createTrackedDocument(`uploads://@current/notes.md`, "notes"),
     ).resolves.toMatchObject({ ok: false, error: expectedError });
-    await expect(port.mkdir(`uploads://${workId}/notes`)).resolves.toMatchObject({
+    await expect(port.mkdir(`uploads://@current/notes`)).resolves.toMatchObject({
       ok: false,
       error: expectedError,
     });
@@ -198,9 +272,9 @@ describe("context router scheme creation capabilities", () => {
     const { port, scratch } = createPort();
 
     await expect(
-      port.createTrackedDocument(`scratch://${workId}/notes.md`, "notes"),
+      port.createTrackedDocument(`scratch://@current/notes.md`, "notes"),
     ).resolves.toMatchObject({ ok: true });
-    await expect(port.mkdir(`scratch://${workId}/notes`)).resolves.toEqual({
+    await expect(port.mkdir(`scratch://@current/notes`)).resolves.toEqual({
       ok: true,
       value: undefined,
     });
@@ -212,7 +286,7 @@ describe("context router scheme creation capabilities", () => {
     const { port, uploads } = createPort();
 
     await expect(
-      port.move(`scratch://${workId}/old.md`, `uploads://${workId}/old.md`),
+      port.move(`scratch://@current/old.md`, `uploads://@current/old.md`),
     ).resolves.toMatchObject({
       ok: false,
       error: {
@@ -222,13 +296,13 @@ describe("context router scheme creation capabilities", () => {
       },
     });
     await expect(
-      port.commitWriterLocation(`scratch://${workId}/old.md`, `uploads://${workId}/old.md`),
+      port.commitWriterLocation(`scratch://@current/old.md`, `uploads://@current/old.md`),
     ).resolves.toMatchObject({
       ok: false,
       error: { code: "invalid_operation", uri: `uploads://${workId}/old.md` },
     });
     await expect(
-      port.move(`uploads://${workId}/old.md`, `uploads://${workId}/renamed.md`),
+      port.move(`uploads://@current/old.md`, `uploads://@current/renamed.md`),
     ).resolves.toEqual({
       ok: true,
       value: { movedNodeId: "document-old", destinationPath: "renamed.md" },
@@ -245,7 +319,7 @@ describe("context router scheme creation capabilities", () => {
       fileType: "image" as const,
     };
 
-    await expect(port.writeBinary(`uploads://${workId}/cover.png`, options)).resolves.toEqual({
+    await expect(port.writeBinary(`uploads://@current/cover.png`, options)).resolves.toEqual({
       ok: true,
       value: { documentId: "binary-new" },
     });
@@ -262,7 +336,7 @@ describe("context router scheme creation capabilities", () => {
     };
 
     await expect(
-      port.writeBinary(`uploads://${workId}/nest/deep.png`, options),
+      port.writeBinary(`uploads://@current/nest/deep.png`, options),
     ).resolves.toMatchObject({
       ok: false,
       error: {
@@ -283,7 +357,7 @@ describe("context router scheme creation capabilities", () => {
       fileType: "image" as const,
     };
 
-    await expect(port.writeBinary(`scratch://${workId}/nest/deep.png`, options)).resolves.toEqual({
+    await expect(port.writeBinary(`scratch://@current/nest/deep.png`, options)).resolves.toEqual({
       ok: true,
       value: { documentId: "binary-new" },
     });

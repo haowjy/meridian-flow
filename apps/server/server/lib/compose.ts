@@ -299,6 +299,7 @@ export async function createProductionAppPorts(input: {
   const notices = createDrizzleNoticePort(db);
   const projectRepo = createDrizzleProjectRepository({ db });
   let contextPorts: UnifiedContextPortFactory;
+  let workRepo: ProjectWorkRepository;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
@@ -323,6 +324,7 @@ export async function createProductionAppPorts(input: {
             contextPorts,
             threads: threadRepos.threads,
             threadWorks: threadRepos.threadWorks,
+            works: workRepo,
           },
           input as never,
         ),
@@ -370,7 +372,7 @@ export async function createProductionAppPorts(input: {
     threads: threadRepos.threads,
     threadWorks: threadRepos.threadWorks,
   });
-  const workRepo = createDrizzleProjectWorkRepository({
+  workRepo = createDrizzleProjectWorkRepository({
     db,
     hasUnreviewedDraft: async (workId) => (await documentSync.countUnpushedRowsForWork(workId)) > 0,
   });
@@ -454,6 +456,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentSync: ports.documentSync,
     responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
+    works: ports.workRepo,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
   })) {

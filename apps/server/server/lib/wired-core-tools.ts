@@ -41,6 +41,7 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
+import type { WorkRepository } from "../domains/projects/index.js";
 import {
   createCoreToolRegistrations,
   type InterruptToolHandlerContext,
@@ -60,7 +61,8 @@ export interface ToolWiringDeps {
   contextPorts: UnifiedContextPortFactory;
   documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
-  threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
+  threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
+  works: Pick<WorkRepository, "listByProject">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
 }
@@ -126,7 +128,7 @@ async function resolveContextPort(
   responseId?: string,
 ): Promise<ContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
-    { threads: deps.threads, threadWorks: deps.threadWorks },
+    { threads: deps.threads, threadWorks: deps.threadWorks, works: deps.works },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });

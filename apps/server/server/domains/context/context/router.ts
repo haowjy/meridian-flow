@@ -1,6 +1,6 @@
 /**
  * Context-port router: builds a ContextPort that parses a URI, dispatches to the
- * scheme adapter that owns it, enforces optional Work-authority gates, and lifts
+ * scheme adapter that owns it, resolves Work handles at the project gate, and lifts
  * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -36,8 +36,8 @@ export interface ContextPortRouterDeps {
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** Canonical Work authority for Work-scoped adapters already present in the base map. */
   adapterAuthorities?: ReadonlyMap<ContextScheme, string>;
-  /** Work IDs this port may address through `scheme://<workId>/...` authority URIs. */
-  allowedAuthorities?: ReadonlySet<string>;
+  /** Active, same-project Work handles. Values are stable IDs used below this seam. */
+  workAuthorities?: ReadonlyMap<string, string>;
   /** Primary Work for bare Work-scoped URIs in this router. */
   primaryWorkId?: string;
   /** Lazily builds Work-scoped adapters for an authority-addressed target Work. */
@@ -156,28 +156,38 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   const { adapters, parseOptions } = deps;
   const treeMover = new ContextTreeMover();
 
-  function authorityAllowed(workId: string): boolean {
-    return deps.allowedAuthorities?.has(workId) ?? false;
-  }
-
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);
     if (!parsed.ok) return parsed;
-    const { scheme, authority, path, canonical } = parsed.value;
+    const { scheme, authority, path } = parsed.value;
 
     let adapterMap = adapters;
+    let resolvedAuthority: string | null = null;
     if (authority) {
-      if (!authorityAllowed(authority)) return Err({ code: "permission_denied", uri: canonical });
+      resolvedAuthority = deps.workAuthorities?.get(authority) ?? null;
+      if (!resolvedAuthority) {
+        const validWorkSlugs = [...(deps.workAuthorities?.keys() ?? [])];
+        const valid = validWorkSlugs.map((slug) => `@${slug}`).join(", ");
+        return Err({
+          code: "invalid_uri",
+          uri: parsed.value.canonical,
+          reason: `Unknown Work @${authority}. Valid active Work slugs: ${valid || "none"}`,
+          workSlug: authority,
+          validWorkSlugs,
+        });
+      }
       try {
-        adapterMap = deps.resolveWorkAdapters?.(authority) ?? adapters;
+        adapterMap = deps.resolveWorkAdapters?.(resolvedAuthority) ?? adapters;
       } catch (error) {
         return Err({
           code: "io_error",
-          uri: canonical,
+          uri: parsed.value.canonical,
           message: error instanceof Error ? error.message : String(error),
         });
       }
     }
+
+    const canonical = toCanonical(scheme, path, resolvedAuthority);
 
     const adapter = adapterMap.get(scheme);
     if (!adapter) {
@@ -190,8 +200,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return Ok({
       adapter,
       scheme,
-      authority,
-      workScopeId: authority ?? deps.primaryWorkId ?? null,
+      authority: resolvedAuthority,
+      workScopeId: resolvedAuthority ?? deps.primaryWorkId ?? null,
       path,
       canonical,
     });
@@ -289,7 +299,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       for (const [scheme, candidate] of adapters) {
         addLocation(scheme, deps.adapterAuthorities?.get(scheme) ?? null, candidate);
       }
-      for (const authority of deps.allowedAuthorities ?? []) {
+      for (const authority of deps.workAuthorities?.values() ?? []) {
         for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
           addLocation(scheme, authority, candidate);
         }
