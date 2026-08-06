@@ -38,7 +38,7 @@ opens a cursor-anchored popover rendering that record via `JsonTree`.
   404 (`not_found`) when capture is disabled on the server — the inspector
   shows a disabled notice. In-flight fetches are keyed to the active
   `{threadId, turnId}` so fast reselection cannot show another turn's rows.
-  Records render through the same Readable, Raw, and Debug inspector used by
+  Records render through the same Markdown, Raw, and Debug inspector used by
   the LLM Calls pop-out and expose the response's retention counters. The turn
   inspector selects one iteration at a time instead of rendering every retained
   request together.

@@ -273,12 +273,14 @@ export type {
   ModelRequestDebugRecord,
   ModelRequestDebugRequest,
   ModelRequestDebugRetention,
+  ModelRequestDebugSummary,
   ModelRequestDebugView,
   ModelRequestPrefix,
 } from "./model-request-debug.js";
 export {
   deriveModelRequestDebugViews,
   renderModelRequestDebugMarkdown,
+  summarizeModelRequestDebugView,
 } from "./model-request-debug.js";
 export type {
   BlockUpsertedRow,

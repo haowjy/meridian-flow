@@ -26,7 +26,7 @@ requests. The shared
 `ModelRequestInspector` renders the canonical provider-neutral request through
 three lenses:
 
-- **Readable** uses the contracts package's Markdown projection for system,
+- **Markdown** uses the contracts package's bounded Markdown projection for system,
   user, assistant, tool-result, and advertised-tool content. Writer text is
   contained inside quoted message boundaries, and extreme parts are shortened
   to 32 KiB in this lens only.

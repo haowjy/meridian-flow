@@ -9,6 +9,7 @@ import {
   type ModelRequestDebugRecord,
   type ModelRequestDebugRequest,
   renderModelRequestDebugMarkdown,
+  summarizeModelRequestDebugView,
 } from "./model-request-debug.js";
 
 function record(
@@ -105,11 +106,24 @@ describe("deriveModelRequestDebugViews", () => {
       previousRequestDigest: "digest-0",
       preservedMessageCount: 2,
     });
-    const markdown = renderModelRequestDebugMarkdown(views[1] as NonNullable<(typeof views)[1]>);
-    expect(markdown).toContain("## Message 1: user");
+    const secondView = views[1] as NonNullable<(typeof views)[1]>;
+    expect(summarizeModelRequestDebugView(secondView)).toMatchObject({
+      iteration: 1,
+      messageCount: 4,
+      advertisedToolCount: 1,
+      prefix: {
+        status: "exact",
+        preservedMessageCount: 2,
+        appendedMessageCount: 2,
+      },
+    });
+    const markdown = renderModelRequestDebugMarkdown(secondView);
+    expect(markdown.startsWith("# Messages sent to the model")).toBe(true);
+    expect(markdown).toContain("## User message 1");
     expect(markdown).toContain("Delete block `84c5`.");
     expect(markdown).toContain('"deletedHashes": [');
-    expect(markdown).toContain("## Advertised tools");
+    expect(markdown).toContain("# Advertised tools");
+    expect(markdown).not.toContain("Gateway call:");
   });
 
   it("reports changed and unavailable prefixes honestly", () => {
@@ -176,7 +190,7 @@ describe("deriveModelRequestDebugViews", () => {
     const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
 
     expect(markdown).toContain("> ```json\n> # forged heading");
-    expect(markdown).toContain("\n---\n\n## Message 1: assistant\n\n> after fence");
+    expect(markdown).toContain("\n---\n\n## Assistant message 1\n\n> after fence");
   });
 
   it("contains bare carriage-return Markdown inside its message boundary", () => {
@@ -190,7 +204,7 @@ describe("deriveModelRequestDebugViews", () => {
     const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
 
     expect(markdown).toContain("> safe\n> # forged heading");
-    expect(markdown).toContain("\n---\n\n## Message 1: assistant\n\n> after heading");
+    expect(markdown).toContain("\n---\n\n## Assistant message 1\n\n> after heading");
   });
 
   it("renders dynamic labels as literal Markdown text", () => {
@@ -218,7 +232,7 @@ describe("deriveModelRequestDebugViews", () => {
     );
     const imageHeadingIndex = lines.indexOf("### Image");
     const mediaLabel = lines[imageHeadingIndex + 2];
-    const advertisedStart = lines.indexOf("## Advertised tools");
+    const advertisedStart = lines.indexOf("# Advertised tools");
     const advertisedHeading = lines
       .slice(advertisedStart + 1)
       .find((line) => line.startsWith("### "));
@@ -256,7 +270,7 @@ describe("deriveModelRequestDebugViews", () => {
     };
     const view = deriveModelRequestDebugViews([record(0, request)])[0];
     const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
-    const part = markdown.split("## Message 0: user\n\n")[1] ?? "";
+    const part = markdown.split("## User message 0\n\n")[1] ?? "";
 
     expect(new TextEncoder().encode(part).byteLength).toBeLessThanOrEqual(32 * 1024);
     expect(part).toContain("bytes omitted from readable view");
@@ -270,22 +284,22 @@ describe("deriveModelRequestDebugViews", () => {
           { role: "assistant", content: [{ type: "tool_use", toolName: "x".repeat(40_000) }] },
         ],
       },
-      "## Message 0: assistant\n\n",
+      "## Assistant message 0\n\n",
     ],
     [
       "part type",
       { messages: [{ role: "user", content: [{ type: "x".repeat(40_000) }] }] },
-      "## Message 0: user\n\n",
+      "## User message 0\n\n",
     ],
     [
       "media type",
       { messages: [{ role: "user", content: [{ type: "image", mediaType: "x".repeat(40_000) }] }] },
-      "## Message 0: user\n\n",
+      "## User message 0\n\n",
     ],
     [
       "advertised tool name",
       { messages: [], tools: [{ name: "x".repeat(40_000) }] },
-      "## Advertised tools\n\n",
+      "# Advertised tools\n\n",
     ],
   ];
 

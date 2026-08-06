@@ -74,6 +74,22 @@ export type ModelRequestDebugView = {
   prefix: ModelRequestPrefix;
 };
 
+export type ModelRequestDebugSummary = {
+  iteration: number;
+  model: string | null;
+  messageCount: number | null;
+  advertisedToolCount: number | null;
+  requestBytes: number;
+  prefix: ModelRequestPrefix & { appendedMessageCount: number | null };
+  capture: ModelRequestDebugCapture;
+  requestDigest: string;
+  gatewayCallId: string;
+  threadId: string;
+  turnId: string;
+  requestedAt: string;
+  agentSlug: string | null;
+};
+
 function jsonEqual(left: JsonValue, right: JsonValue): boolean {
   if (left === right) return true;
   if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) {
@@ -283,36 +299,59 @@ function readablePart(part: JsonObject, partIndex: number): string {
   return fencedJson(part, `### ${readableLabel(type, "unknown")}\n\n`);
 }
 
+export function summarizeModelRequestDebugView(
+  view: ModelRequestDebugView,
+): ModelRequestDebugSummary {
+  const messageCount = view.record.request?.messages.length ?? null;
+  const appendedMessageCount =
+    messageCount === null
+      ? null
+      : view.prefix.status === "first"
+        ? messageCount
+        : view.prefix.status === "exact"
+          ? messageCount - view.prefix.preservedMessageCount
+          : null;
+
+  return {
+    iteration: view.record.iteration,
+    model: view.record.request?.model ?? null,
+    messageCount,
+    advertisedToolCount: view.record.request ? (view.record.request.tools?.length ?? 0) : null,
+    requestBytes: view.record.requestBytes,
+    prefix: { ...view.prefix, appendedMessageCount },
+    capture: view.record.capture,
+    requestDigest: view.record.requestDigest,
+    gatewayCallId: view.record.gatewayCallId,
+    threadId: view.record.threadId,
+    turnId: view.record.turnId,
+    requestedAt: view.record.requestedAt,
+    agentSlug: view.record.agentSlug,
+  };
+}
+
 export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): string {
-  const { record, prefix } = view;
-  const lines = [
-    "# Model request",
-    "",
-    `- Gateway call: \`${record.gatewayCallId}\``,
-    `- Turn: \`${record.turnId}\``,
-    `- Iteration: ${record.iteration}`,
-    `- Request digest: \`${record.requestDigest}\``,
-    `- Request bytes: ${record.requestBytes}`,
-    `- Previous request prefix: ${prefix.status}`,
-  ];
+  const { record } = view;
+  const lines = ["# Messages sent to the model"];
 
   if (!record.request) {
+    lines[0] = "# Request body unavailable";
     lines.push(
       "",
-      `The canonical request exceeded the ${record.capture.status === "omitted" ? record.capture.maxRequestBytes : "configured"}-byte capture limit. Metadata and digest were retained.`,
+      `The canonical request exceeded the ${record.capture.status === "omitted" ? record.capture.maxRequestBytes : "configured"}-byte capture limit. Open Debug for its retained metadata and digest.`,
     );
     return lines.join("\n");
   }
 
   record.request.messages.forEach((message, messageIndex) => {
-    lines.push("", "---", "", `## Message ${messageIndex}: ${message.role}`);
+    const role = `${message.role[0]?.toUpperCase() ?? ""}${message.role.slice(1)}`;
+    lines.push("", "---", "", `## ${role} message ${messageIndex}`);
     message.content.forEach((part, partIndex) => {
       lines.push("", readablePart(part, partIndex));
     });
   });
 
   if (record.request.tools?.length) {
-    lines.push("", "---", "", "## Advertised tools");
+    lines.push("", "---", "", "# Advertised tools");
     for (const tool of record.request.tools) {
       const name = readableLabel(
         objectString(tool, "name") ?? objectString(tool, "kind") ?? "",

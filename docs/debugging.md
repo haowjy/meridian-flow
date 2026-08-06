@@ -14,7 +14,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | `pnpm --silent debug:model-context` | An agent needs the model's canonical request, digest, or tool-loop prefix | [Inspect Model Context](#inspect-model-context) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
 | `GET /api/debug/events/stream` | Live SSE tail while reproducing | [Consume Server Events](#consume-server-events) |
-| DebugOverlay → **LLM Calls** | Inspect gateway calls plus readable, raw, and debug request views | [Inspect Model Context](#inspect-model-context) |
+| DebugOverlay → **LLM Calls** | Inspect gateway calls plus Markdown, Raw, and Debug request views | [Inspect Model Context](#inspect-model-context) |
 | DebugOverlay → **Streams** | Client Yjs / thread-socket traces; toggle in the server feed | [Durable Logs](#durable-logs) |
 | `logs/events/*.jsonl` + `jq` | Post-restart forensics; best-effort mirror | [Consume Server Events](#consume-server-events) |
 | `logs/portless.log` | Authoritative interleaved stdout | [Durable Logs](#durable-logs) |
@@ -97,9 +97,9 @@ instead of `console.log`.
 
 The LLM Calls pop-out joins metadata-only gateway lifecycle records to the
 content-bearing request with `gatewayCallId`. Expand a call, select **Show model
-request content**, then switch among **Readable**, **Raw**, and **Debug**. The
-Readable lens shows the model's message sequence as Markdown. Raw shows the
-captured provider-neutral `GenerateRequest`. Debug shows its SHA-256 digest,
+request content**, then switch among **Markdown**, **Raw**, and **Debug**. The
+Markdown tab shows the model's message sequence through the bounded readable
+lens. Raw shows the captured provider-neutral `GenerateRequest`. Debug shows its SHA-256 digest,
 capture status, resolved skills, tool provenance, and whether the previous
 tool-loop request is an exact prefix.
 
@@ -116,6 +116,11 @@ The latest readable request is the default. `--iteration`, `--gateway-call`, or
 payload. Exact selectors transfer only the match and its immediately preceding
 request for prefix comparison. A thread pivot is always required and the server
 verifies ownership.
+
+CLI output puts the requested evidence first: Readable records begin with
+`markdown`, Raw records begin with the exact canonical `request`, and supporting
+debug metadata follows. Query and retention details stay at the end of the JSON
+object so an LLM can reach the inspected content before transport bookkeeping.
 
 This is the canonical request immediately before Meridian's gateway dispatch,
 not a claim about a provider SDK's private wire encoding. Capture is enabled in

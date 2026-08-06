@@ -7,6 +7,7 @@ import {
   deriveModelRequestDebugViews,
   type ModelRequestDebugView,
   renderModelRequestDebugMarkdown,
+  summarizeModelRequestDebugView,
 } from "@meridian/contracts/threads";
 import { getAuthenticatedDebugJson } from "./debug-http-client";
 
@@ -93,19 +94,16 @@ export function selectModelRequestViews(
     : matches.slice(-1);
 }
 
-function summary(view: ModelRequestDebugView) {
-  return {
-    gatewayCallId: view.record.gatewayCallId,
-    threadId: view.record.threadId,
-    turnId: view.record.turnId,
-    iteration: view.record.iteration,
-    requestedAt: view.record.requestedAt,
-    agentSlug: view.record.agentSlug,
-    requestDigest: view.record.requestDigest,
-    requestBytes: view.record.requestBytes,
-    capture: view.record.capture,
-    prefix: view.prefix,
-  };
+export function formatModelRequestViews(
+  views: readonly ModelRequestDebugView[],
+  viewKind: ViewKind,
+): Record<string, unknown>[] {
+  return views.map((view) => {
+    const debug = summarizeModelRequestDebugView(view);
+    if (viewKind === "raw") return { request: view.record.request, debug };
+    if (viewKind === "summary") return debug;
+    return { markdown: renderModelRequestDebugMarkdown(view), debug };
+  });
 }
 
 export async function queryDebugModelContext(
@@ -126,14 +124,10 @@ export async function queryDebugModelContext(
   const selected = selectModelRequestViews(deriveModelRequestDebugViews(response.records), options);
 
   return {
-    query: options,
-    retention: response.retention,
+    requests: formatModelRequestViews(selected, options.view),
     matches: selected.length,
-    requests: selected.map((view) => {
-      if (options.view === "raw") return { prefix: view.prefix, record: view.record };
-      if (options.view === "summary") return summary(view);
-      return { ...summary(view), markdown: renderModelRequestDebugMarkdown(view) };
-    }),
+    retention: response.retention,
+    query: options,
   };
 }
 

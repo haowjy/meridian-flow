@@ -1,7 +1,11 @@
 /** CLI argument and bounded-selection policy for model-context inspection. */
 import type { ModelRequestDebugView } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { parseDebugModelContextArgs, selectModelRequestViews } from "./debug-model-context";
+import {
+  formatModelRequestViews,
+  parseDebugModelContextArgs,
+  selectModelRequestViews,
+} from "./debug-model-context";
 
 function view(iteration: number): ModelRequestDebugView {
   return {
@@ -71,5 +75,23 @@ describe("selectModelRequestViews", () => {
     expect(
       selectModelRequestViews(views, { all: false, gatewayCallId: "call-1" })[0]?.record.iteration,
     ).toBe(1);
+  });
+
+  it("puts requested content before debug evidence in readable and raw views", () => {
+    const selected = [view(1)];
+
+    expect(Object.keys(formatModelRequestViews(selected, "readable")[0] ?? {})).toEqual([
+      "markdown",
+      "debug",
+    ]);
+    expect(Object.keys(formatModelRequestViews(selected, "raw")[0] ?? {})).toEqual([
+      "request",
+      "debug",
+    ]);
+    expect(formatModelRequestViews(selected, "summary")[0]).toMatchObject({
+      iteration: 1,
+      messageCount: 0,
+      prefix: { status: "exact", appendedMessageCount: 0 },
+    });
   });
 });

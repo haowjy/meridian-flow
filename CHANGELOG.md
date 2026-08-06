@@ -5,7 +5,9 @@
 - `apps/app`, `apps/server`, `packages/contracts`, `tools`: one dev-only model
   context seam now serves the LLM Calls dashboard and `debug:model-context`
   CLI. It retains the complete provider-neutral request with a digest and hard
-  record/byte bounds, then exposes shared readable, raw, and prefix views.
+  record/byte bounds, then exposes shared Markdown, raw, and prefix views. The
+  dashboard leads with request identity and content while keeping hashes in
+  Debug; CLI JSON likewise returns requested evidence before bookkeeping.
   Prompt content stays in the owner-gated memory ring and never enters ordinary
   diagnostic events or JSONL logs.
 - `apps/server`: diagnostic events are now capped at 8 KiB, error envelopes
