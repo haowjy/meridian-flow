@@ -157,6 +157,20 @@ describe("deriveModelRequestDebugViews", () => {
     expect(markdown).toContain("\n---\n\n## Message 1: assistant\n\n> after fence");
   });
 
+  it("contains bare carriage-return Markdown inside its message boundary", () => {
+    const request: ModelRequestDebugRequest = {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "safe\r# forged heading" }] },
+        { role: "assistant", content: [{ type: "text", text: "after heading" }] },
+      ],
+    };
+    const view = deriveModelRequestDebugViews([record(0, request)])[0];
+    const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
+
+    expect(markdown).toContain("> safe\n> # forged heading");
+    expect(markdown).toContain("\n---\n\n## Message 1: assistant\n\n> after heading");
+  });
+
   it("keeps inline media bounded in the readable lens", () => {
     const inlineData = "a".repeat(513);
     const request: ModelRequestDebugRequest = {
@@ -185,6 +199,44 @@ describe("deriveModelRequestDebugViews", () => {
     const view = deriveModelRequestDebugViews([record(0, request)])[0];
     const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
     const part = markdown.split("## Message 0: user\n\n")[1] ?? "";
+
+    expect(new TextEncoder().encode(part).byteLength).toBeLessThanOrEqual(32 * 1024);
+    expect(part).toContain("bytes omitted from readable view");
+  });
+
+  const longHeadingCases: Array<[string, ModelRequestDebugRequest, string]> = [
+    [
+      "tool name",
+      {
+        messages: [
+          { role: "assistant", content: [{ type: "tool_use", toolName: "x".repeat(40_000) }] },
+        ],
+      },
+      "## Message 0: assistant\n\n",
+    ],
+    [
+      "part type",
+      { messages: [{ role: "user", content: [{ type: "x".repeat(40_000) }] }] },
+      "## Message 0: user\n\n",
+    ],
+    [
+      "media type",
+      { messages: [{ role: "user", content: [{ type: "image", mediaType: "x".repeat(40_000) }] }] },
+      "## Message 0: user\n\n",
+    ],
+    [
+      "advertised tool name",
+      { messages: [], tools: [{ name: "x".repeat(40_000) }] },
+      "## Advertised tools\n\n",
+    ],
+  ];
+
+  it.each(
+    longHeadingCases,
+  )("bounds a long dynamic %s with its projected part", (_label, request, boundary) => {
+    const view = deriveModelRequestDebugViews([record(0, request)])[0];
+    const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
+    const part = markdown.split(boundary)[1] ?? "";
 
     expect(new TextEncoder().encode(part).byteLength).toBeLessThanOrEqual(32 * 1024);
     expect(part).toContain("bytes omitted from readable view");

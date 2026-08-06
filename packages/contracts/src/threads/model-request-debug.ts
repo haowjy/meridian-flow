@@ -6,6 +6,7 @@
 import type { JsonObject, JsonValue } from "./index.js";
 
 const MAX_READABLE_PART_BYTES = 32 * 1024;
+const MAX_READABLE_LABEL_BYTES = 256;
 
 export type ModelRequestDebugMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -176,6 +177,9 @@ function boundedReadablePart(
   let low = 0;
   let high = source.length;
   let best = render("", sourceBytes);
+  if (utf8Bytes(best) > MAX_READABLE_PART_BYTES) {
+    return "[Readable part omitted because its framing exceeds the display limit; use the raw view for exact data]";
+  }
   while (low <= high) {
     const middle = Math.floor((low + high) / 2);
     const visible = safePrefix(source, middle);
@@ -188,6 +192,23 @@ function boundedReadablePart(
     }
   }
   return best;
+}
+
+function readableLabel(value: string, fallback: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return fallback;
+
+  let label = "";
+  let truncated = false;
+  for (const character of normalized) {
+    const escaped = /[\\`*_[\]<>#]/.test(character) ? `\\${character}` : character;
+    if (utf8Bytes(`${label}${escaped}…`) > MAX_READABLE_LABEL_BYTES) {
+      truncated = true;
+      break;
+    }
+    label += escaped;
+  }
+  return truncated ? `${label}…` : label;
 }
 
 function fencedBody(body: string): string {
@@ -209,6 +230,7 @@ function fencedJson(value: JsonValue, heading = ""): string {
 
 function blockquote(value: string): string {
   return value
+    .replace(/\r\n?/g, "\n")
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
@@ -239,20 +261,20 @@ function readablePart(part: JsonObject, partIndex: number): string {
     return quotedMarkdown(objectString(part, "text") ?? "", `### Reasoning part ${partIndex}\n\n`);
   }
   if (type === "tool_use") {
-    const toolName = objectString(part, "toolName") ?? "unknown tool";
+    const toolName = readableLabel(objectString(part, "toolName") ?? "", "unknown tool");
     return fencedJson(part, `### Tool call: ${toolName}\n\n`);
   }
   if (type === "tool_result") {
     return fencedJson(part, "### Tool result\n\n");
   }
   if (type === "image" || type === "file") {
-    const mediaType = objectString(part, "mediaType") ?? "unknown media type";
+    const mediaType = readableLabel(objectString(part, "mediaType") ?? "", "unknown media type");
     return fencedJson(
       readableMediaPart(part),
       `### ${type === "image" ? "Image" : "File"}\n\n${mediaType}\n\n`,
     );
   }
-  return fencedJson(part, `### ${type}\n\n`);
+  return fencedJson(part, `### ${readableLabel(type, "unknown")}\n\n`);
 }
 
 export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): string {
@@ -286,8 +308,11 @@ export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): st
   if (record.request.tools?.length) {
     lines.push("", "---", "", "## Advertised tools");
     for (const tool of record.request.tools) {
-      const name = objectString(tool, "name") ?? objectString(tool, "kind") ?? "unknown";
-      lines.push("", `### ${name}`, "", fencedJson(tool));
+      const name = readableLabel(
+        objectString(tool, "name") ?? objectString(tool, "kind") ?? "",
+        "unknown",
+      );
+      lines.push("", fencedJson(tool, `### ${name}\n\n`));
     }
   }
 
