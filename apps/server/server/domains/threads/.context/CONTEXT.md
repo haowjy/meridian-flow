@@ -163,9 +163,11 @@ contract shapes.
   non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
   Collisions use `-2`, `-3`, and later mutations never regenerate the handle;
   untitled threads keep `slug = null`.
-- **Primary Work reassignment is serialized.** The thread-row lock covers reading
-  the old primary Work, D18’s unreviewed-draft guard, and the membership flip, so
-  concurrent moves cannot each validate a stale primary Work.
+- **Primary Work reassignment is serialized.** `rebindPrimary` locks the target
+  Work (lifecycle lock) before the thread row lock. The Work lifecycle lock
+  prevents rebinding to a concurrently deleted Work; the thread-row lock covers
+  reading the old primary Work, D18’s unreviewed-draft guard, and the membership
+  flip so concurrent moves cannot each validate a stale primary Work.
 - Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
 - Hot cache is bounded at 500 events; older events fall through to journal
