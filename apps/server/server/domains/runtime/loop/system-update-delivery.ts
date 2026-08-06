@@ -1,15 +1,23 @@
 /** Queues refreshed Work context and appends it as a user-role transcript turn. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { OrchestratorEvent, ThreadListItem, Turn } from "@meridian/contracts/threads";
+import type { Block, OrchestratorEvent, ThreadListItem, Turn } from "@meridian/contracts/threads";
 import type { WorkContextUpdates } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
-import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
-import { contentForBlockInput } from "./block-helpers.js";
-import { persistAndAppendEvents } from "./persistence.js";
+import {
+  type EventJournalWriter,
+  type ThreadRepositories,
+  TurnStartConflictError,
+} from "../../threads/index.js";
+import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { WorkContextReader } from "./work-context.js";
 
 export interface SystemUpdateDelivery extends WorkContextUpdates {
   flush(threadId: ThreadId): Promise<void>;
+  /** Persist an update at the current head and return its local context rows. */
+  deliverNow(
+    threadId: ThreadId,
+  ): Promise<{ turn: Turn; block: Block; events: OrchestratorEvent[] }>;
 }
 
 function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
@@ -71,22 +79,38 @@ export function createSystemUpdateDelivery(deps: {
   const pending = new Set<string>();
   const flushChains = new Map<string, Promise<void>>();
 
-  async function append(threadId: ThreadId): Promise<void> {
-    const context = await deps.workContext.renderForThread(threadId);
-    const leaf = await deps.repos.turns.getLatestByThread(threadId);
-    const turn = localUserTurn(threadId, (leaf?.id as TurnId | undefined) ?? null);
-    const block = contentForBlockInput({
-      turnId: turn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent: `<system_update>\n${context}\n</system_update>`,
-      status: "complete",
-    });
-    const events: OrchestratorEvent[] = [
-      { type: "turn.created", turn },
-      { type: "block.upserted", block },
-    ];
-    await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }));
+  async function append(threadId: ThreadId) {
+    // The database head is the concurrency invariant. A racing turn start may
+    // win between this read and transition; retry from its new head rather
+    // than creating a sibling and replacing active history.
+    for (let attempt = 0; ; attempt += 1) {
+      const context = await deps.workContext.renderForThread(threadId);
+      const leaf = await deps.repos.turns.getLatestByThread(threadId);
+      const expected = (leaf?.id as TurnId | undefined) ?? null;
+      const turn = localUserTurn(threadId, expected);
+      const block = contentForBlockInput({
+        turnId: turn.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: `<system_update>\n${context}\n</system_update>`,
+        status: "complete",
+      });
+      const events: OrchestratorEvent[] = [
+        { type: "turn.created", turn },
+        { type: "block.upserted", block },
+      ];
+      try {
+        const persisted = await persistAndAppendTurnStartEvents(
+          deps,
+          threadId,
+          expected,
+          async () => ({ result: { turn, block: localBlockFromEvent(block) }, events }),
+        );
+        return { ...persisted.result, events: persisted.events };
+      } catch (error) {
+        if (!(error instanceof TurnStartConflictError) || attempt >= 2) throw error;
+      }
+    }
   }
 
   async function flushUnlocked(threadId: ThreadId): Promise<void> {
@@ -113,6 +137,11 @@ export function createSystemUpdateDelivery(deps: {
       await Promise.all(
         threads.filter(receivesWorkUpdates).map((thread) => delivery.threadChanged(thread.id)),
       );
+    },
+
+    async deliverNow(threadId) {
+      pending.delete(threadId as string);
+      return append(threadId);
     },
 
     async flush(threadId) {

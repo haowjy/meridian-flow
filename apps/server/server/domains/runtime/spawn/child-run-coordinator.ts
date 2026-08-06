@@ -260,6 +260,10 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         prepared.child.id as ThreadId,
         handle.assistantTurnId as TurnId,
       );
+      deps.childRunRegistry.markChildTurn(
+        prepared.child.id as ThreadId,
+        handle.assistantTurnId as TurnId,
+      );
 
       let childTerminal: ChildTerminal | null = null;
       for await (const event of handle.events) {

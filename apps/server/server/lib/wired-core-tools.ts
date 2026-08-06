@@ -79,6 +79,7 @@ export interface ToolWiringDeps {
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
+  transaction?<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
@@ -545,23 +546,41 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           };
         }
 
-        const rebound = await deps.threadWorks.rebindPrimary(thread.id, selected.id);
-        if (rebound.changed && rebound.previousWorkId) {
-          const previous = await deps.works.findById(rebound.previousWorkId);
-          if (previous?.aiWriteMode === "draft") {
-            await deps.documentSync.agentEdit().invalidateThread("", thread.id);
+        const current = await deps.threadWorks.findPrimary(thread.id);
+        if (current?.workId === selected.id) {
+          return {
+            output: selected,
+            metadata: workReceipt(
+              command,
+              `This conversation is already using Work ${selected.name}.`,
+              {
+                command: "switch",
+                workId: selected.id,
+              },
+            ),
+          };
+        }
+
+        // The membership and primary-thread preference are one committed
+        // decision. Both adapters join the ambient repository transaction.
+        const transaction =
+          deps.transaction ?? (async <T>(operation: () => Promise<T>) => operation());
+        const rebound = await transaction(async () => {
+          const result = await deps.threadWorks.rebindPrimary(thread.id, selected.id);
+          if (result.changed && thread.kind === "primary") {
+            await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, selected.id);
           }
-        }
-        if (thread.kind === "primary") {
-          await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, selected.id);
-        }
-        await deps.workContextUpdates.threadChanged(thread.id);
+          return result;
+        });
         return {
           output: selected,
-          metadata: workReceipt(command, `Switched this conversation to Work ${selected.name}.`, {
-            command: "switch",
-            workId: rebound.previousWorkId,
-          }),
+          metadata: {
+            ...workReceipt(command, `Switched this conversation to Work ${selected.name}.`, {
+              command: "switch",
+              workId: rebound.previousWorkId,
+            }),
+            workContextChanged: true,
+          },
         };
       } catch (error) {
         return toolError({ message: error instanceof Error ? error.message : String(error) });

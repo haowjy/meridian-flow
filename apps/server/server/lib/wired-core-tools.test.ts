@@ -127,11 +127,13 @@ describe("wired work tool", () => {
     ).resolves.toMatchObject({ isError: true });
   });
 
-  it("invalidates draft fingerprints, emits the system update, and only sticks primary switches", async () => {
+  it("marks changed switches for post-result delivery and only sticks primary switches", async () => {
     const primary = await setup("primary", true);
-    await primary.handler({ command: "switch", work: primary.target.slug }, toolContext());
-    expect(primary.invalidateThread).toHaveBeenCalledWith("", "thread-1");
-    expect(primary.threadChanged).toHaveBeenCalledWith("thread-1");
+    await expect(
+      primary.handler({ command: "switch", work: primary.target.slug }, toolContext()),
+    ).resolves.toMatchObject({ metadata: { workContextChanged: true } });
+    expect(primary.invalidateThread).not.toHaveBeenCalled();
+    expect(primary.threadChanged).not.toHaveBeenCalled();
     await expect(primary.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBe(
       primary.target.id,
     );
@@ -140,6 +142,15 @@ describe("wired work tool", () => {
     await subagent.handler({ command: "switch", work: subagent.target.slug }, toolContext());
     expect(subagent.invalidateThread).not.toHaveBeenCalled();
     await expect(subagent.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBeNull();
+  });
+
+  it("keeps an already-current switch side-effect free beyond its receipt", async () => {
+    const fixture = await setup();
+    await fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext());
+    await expect(
+      fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext()),
+    ).resolves.not.toMatchObject({ metadata: { workContextChanged: true } });
+    expect(fixture.threadChanged).not.toHaveBeenCalled();
   });
 });
 

@@ -56,6 +56,7 @@ export interface ChildRunRegistry {
     controller: AbortController,
   ): void;
   unregisterChild(childThreadId: ThreadId): void;
+  markChildTurn(childThreadId: ThreadId, assistantTurnId: TurnId): void;
   abortChild(childThreadId: ThreadId): void;
   abortChildrenOf(parentThreadId: ThreadId, options?: { includeBackground?: boolean }): void;
 }
@@ -102,12 +103,19 @@ export function createTurnRunner(deps: {
   const childRunRegistry: ChildRunRegistry = {
     registerChild(parentThreadId, childThreadId, controller) {
       childRuns.set(childThreadId, { parentThreadId, controller, background: false });
+      running.set(childThreadId, { controller });
     },
     registerBackgroundChild(parentThreadId, childThreadId, controller) {
       childRuns.set(childThreadId, { parentThreadId, controller, background: true });
+      running.set(childThreadId, { controller });
     },
     unregisterChild(childThreadId) {
       childRuns.delete(childThreadId);
+      running.delete(childThreadId);
+    },
+    markChildTurn(childThreadId, assistantTurnId) {
+      const child = childRuns.get(childThreadId);
+      if (child) running.set(childThreadId, { controller: child.controller, assistantTurnId });
     },
     abortChild(childThreadId) {
       this.abortChildrenOf(childThreadId, { includeBackground: true });

@@ -9,7 +9,7 @@
  */
 
 import type { TreeBudget } from "@meridian/contracts/spawn";
-import type { Block, OrchestratorEvent, Thread } from "@meridian/contracts/threads";
+import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
@@ -18,23 +18,28 @@ import type { InterruptSession, InterruptTurnState } from "./interrupt-session.j
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import type { ReturnResultCompleter } from "./run-turn-port.js";
+import type { SystemUpdateDelivery } from "./system-update-delivery.js";
 
 export interface ToolDispatchDeps {
   toolExecutor: ToolExecutor;
   childRunCoordinator: ChildRunCoordinator;
   eventSink: EventSink;
   persistenceDeps: PersistenceDeps;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow" | "threadChanged">;
 }
 
 export interface ToolDispatchContext {
   thread: Thread;
   responseId: string;
+  /** Agent-edit lifecycle scope; rotates at an in-response Work switch. */
+  editResponseId?: string;
   state: InterruptTurnState;
   interruptSession: InterruptSession;
   interruptAutoResume: InterruptAutoResumePolicy;
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   returnResultCompleter?: ReturnResultCompleter;
+  allTurns: Turn[];
 }
 
 export type ToolDispatchResult =
@@ -142,7 +147,7 @@ export async function dispatchToolCall(
     {
       threadId: ctx.state.threadId,
       turnId: ctx.state.currentTurn.id,
-      responseId: ctx.responseId,
+      responseId: ctx.editResponseId ?? ctx.responseId,
       agentSlug: ctx.thread.currentAgent,
       signal: ctx.state.signal,
       interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
@@ -198,6 +203,22 @@ export async function dispatchToolCall(
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
   events.push(...persistedToolResult.events);
+  if (execResult.metadata?.workContextChanged === true && deps.systemUpdateDelivery) {
+    try {
+      const update = await deps.systemUpdateDelivery.deliverNow(ctx.state.threadId);
+      ctx.allTurns.push(update.turn);
+      ctx.state.allBlocks.push(update.block);
+      events.push(...update.events);
+    } catch (error) {
+      // The binding is already committed and its tool result is durable. Keep
+      // that success honest; turn-boundary recovery will retry the queued
+      // update and the receipt carries a warning for the continuing model.
+      const metadata = execResult.metadata as Record<string, unknown>;
+      metadata.workContextWarning =
+        error instanceof Error ? error.message : "Work context refresh will retry after this turn.";
+      await deps.systemUpdateDelivery.threadChanged(ctx.state.threadId).catch(() => undefined);
+    }
+  }
   return {
     events,
     block: persistedToolResult.result,

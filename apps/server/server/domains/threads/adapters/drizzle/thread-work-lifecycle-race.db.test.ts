@@ -164,6 +164,54 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("serializes rebind before target deletion and then blocks the delete", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      await control.unsafe(`
+        CREATE FUNCTION test_block_thread_work_rebind() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_thread_work_rebind
+        BEFORE UPDATE ON thread_works
+        FOR EACH ROW WHEN (OLD.work_id IS DISTINCT FROM NEW.work_id)
+        EXECUTE FUNCTION test_block_thread_work_rebind();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+
+      try {
+        const rebind = threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID);
+        await waitForLock("advisory");
+        const deletion = works.softDelete(TARGET_WORK_ID).then(
+          () => ({ status: "fulfilled" as const }),
+          (reason: unknown) => ({ status: "rejected" as const, reason }),
+        );
+        await waitForLock("transactionid");
+
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await expect(rebind).resolves.toMatchObject({ changed: true });
+        const result = await deletion;
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected") {
+          expect(result.reason).toBeInstanceOf(WorkDeleteBlockedError);
+        }
+        await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+          workId: TARGET_WORK_ID,
+        });
+        await expect(works.findById(TARGET_WORK_ID)).resolves.toMatchObject({ deletedAt: null });
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_thread_work_rebind ON thread_works;
+          DROP FUNCTION IF EXISTS test_block_thread_work_rebind();
+        `);
+      }
+    });
+
     it("creates a root conversation without self-blocking when the project has no Work", async () => {
       await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
       await db.delete(schema.works).where(eq(schema.works.id, WORK_ID));

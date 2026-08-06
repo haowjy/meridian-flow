@@ -6,6 +6,7 @@ import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { requireLockedActiveWork } from "../../../../shared/work-lifecycle-lock.js";
 import type { ThreadWorksRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
@@ -65,6 +66,10 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
     async rebindPrimary(threadId, workId) {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
+        // Work lifecycle always precedes thread membership locking. Deletion
+        // takes the same Work lock, so it cannot pass its membership check
+        // while a rebind to that Work is in flight.
+        await requireLockedActiveWork(db, workId);
         const [thread] = await activeDb
           .select({ projectId: schema.threads.projectId })
           .from(schema.threads)

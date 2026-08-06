@@ -480,6 +480,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
+    transaction: ports.threadRepos.transaction,
   })) {
     toolRegistry.register(registration);
   }
@@ -579,6 +580,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     childRunCoordinator,
     helperResultDelivery,
+    systemUpdateDelivery: systemUpdates,
     interruptRegistry,
     billingUsage: ports.billingUsage,
     interruptArtifacts: createInterruptArtifactFlush({
@@ -671,6 +673,9 @@ export function createInMemoryAppServices(): AppServices {
     async projectChanged() {},
     async threadChanged() {},
     async flush() {},
+    async deliverNow() {
+      throw new Error("in-memory Work context is not configured");
+    },
   };
 
   const inMemoryThreadEventHub: ThreadEventHub = {
@@ -921,6 +926,7 @@ export function createInMemoryAppServices(): AppServices {
         registerChild() {},
         registerBackgroundChild() {},
         unregisterChild() {},
+        markChildTurn() {},
         abortChild() {},
         abortChildrenOf() {},
       },
