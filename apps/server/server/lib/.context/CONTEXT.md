@@ -88,8 +88,9 @@ free of Meridian URI schemes and database concerns.
 | Tool | Backend |
 |---|---|
 | `write` | Command grammar (`create` / `view` / `insert` / `replace` / `undo` / `redo`). Handler resolves the context URI to a tracked document id, calls `CollabDomain.agentEdit().write(...)`, and returns the package's plain-text `WriteResult`. When the runtime supplies a model `responseId`, `create` / `insert` / `replace` writes are staged in `@meridian/agent-edit`; the orchestrator's response lifecycle commits them, publishes the settled receipt, and refreshes the markdown projection once per affected document. Non-staged writes and undo/redo refresh after their immediate commit. |
-| `list` | Lists the resolved unified `ContextPort` path/URI. |
-| `search` | Searches the resolved unified `ContextPort` scope. |
+| `work` | Six-branch strict union (list/show/create/update/delete/switch). Handler resolves slugs to Work IDs, delegates to `WorkRepository` and domain commands, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Context-changing mutations return `workContextChanged: true`; the dispatcher calls `deliverNow` after result persistence to inject the refreshed `<system_update>` before the next provider call. Receipts carry category, factual line, and optional inverse metadata for turn-scoped undo. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
+| `list` | Lists the resolved unified `ContextPort` path/URI. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
+| `search` | Searches the resolved unified `ContextPort` scope. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `ask_user` | Creates a interrupt component block and keeps the assistant turn interruptible/resumable. |
 
 ## Auth and ownership
