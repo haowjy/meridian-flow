@@ -1,9 +1,11 @@
 import type { AgentEditCore, ResponseCommitSuccessResult } from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
 import type { ContextPort } from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
+import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/index.js";
+import { createInMemoryWorkRepository } from "../domains/projects/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import {
   createAgentEditResponseWriteLifecycle,
@@ -11,6 +13,135 @@ import {
 } from "./wired-core-tools.js";
 
 type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unknown>;
+
+describe("wired work tool", () => {
+  async function setup(kind: "primary" | "subagent" = "primary", draftMode = false) {
+    const baseWorks = createInMemoryWorkRepository();
+    const current = await baseWorks.create({
+      id: "00000000-0000-4000-8000-000000000011",
+      projectId: "project-1",
+      createdByUserId: "user-1",
+      name: "Current",
+    });
+    const target = await baseWorks.create({
+      id: "00000000-0000-4000-8000-000000000012",
+      projectId: "project-1",
+      createdByUserId: "user-1",
+      name: "Target",
+    });
+    const works = draftMode
+      ? {
+          ...baseWorks,
+          async findById(id: string) {
+            const work = await baseWorks.findById(id as never);
+            return work && id === current.id ? { ...work, aiWriteMode: "draft" as const } : work;
+          },
+        }
+      : baseWorks;
+    let primaryWorkId = current.id;
+    const invalidateThread = vi.fn(async () => {});
+    const threadChanged = vi.fn(async () => {});
+    const preferences = createInMemoryProjectPreferencesRepository();
+    const registrations = createWiredCoreToolRegistrations({
+      threads: {
+        findById: async () =>
+          ({
+            id: "thread-1",
+            projectId: "project-1",
+            userId: "user-1",
+            kind,
+          }) as never,
+        listByWork: async () => [{ id: "recent-thread" }],
+      } as never,
+      threadWorks: {
+        findPrimary: async () => ({ workId: primaryWorkId }),
+        rebindPrimary: async (_threadId, workId) => {
+          const previousWorkId = primaryWorkId;
+          primaryWorkId = workId;
+          return { previousWorkId, changed: previousWorkId !== workId };
+        },
+      },
+      works: works as never,
+      preferences,
+      workContextUpdates: { projectChanged: async () => {}, threadChanged },
+      drafts: { draftReview: { list: async () => [{ draftId: "draft-1" }] } } as never,
+      contextPorts: {} as never,
+      documentSync: {
+        agentEdit: () => ({ invalidateThread }) as never,
+      } as never,
+      responseWrites: { trackStagedCreate: () => {} } as never,
+      eventSink: createInMemoryEventSink(),
+    });
+    const registration = registrations.find((candidate) => candidate.definition.name === "work");
+    if (registration?.execution.type !== "server") throw new Error("missing work");
+    return {
+      handler: registration.execution.handler as TestWriteHandler,
+      current,
+      target,
+      preferences,
+      invalidateThread,
+      threadChanged,
+    };
+  }
+
+  it("dispatches all six branches and journals mutation receipts", async () => {
+    const { handler, target } = await setup();
+    const ctx = toolContext();
+    await expect(handler({ command: "list" }, ctx)).resolves.toHaveLength(2);
+    await expect(handler({ command: "show", work: target.slug }, ctx)).resolves.toMatchObject({
+      recentThreads: [{ id: "recent-thread" }],
+      drafts: [{ draftId: "draft-1" }],
+    });
+    await expect(handler({ command: "create", name: "New Work" }, ctx)).resolves.toMatchObject({
+      metadata: { workReceipt: { category: "mutate", inverse: { command: "delete" } } },
+    });
+    await expect(
+      handler({ command: "update", work: target.slug, goal: "" }, ctx),
+    ).resolves.toMatchObject({
+      output: { goal: null },
+      metadata: { workReceipt: { inverse: { command: "update" } } },
+    });
+    await expect(handler({ command: "switch", work: target.slug }, ctx)).resolves.toMatchObject({
+      metadata: { workReceipt: { category: "binding" } },
+    });
+    const created = (await handler({ command: "create", name: "Delete Me" }, ctx)) as {
+      output: { slug: string };
+    };
+    await expect(
+      handler({ command: "delete", work: created.output.slug }, ctx),
+    ).resolves.toMatchObject({
+      metadata: { workReceipt: { inverse: { command: "restore" } } },
+    });
+  });
+
+  it("returns actionable unknown-slug errors and rejects extra schema fields", async () => {
+    const { handler } = await setup();
+    await expect(
+      handler({ command: "show", work: "missing" }, toolContext()),
+    ).resolves.toMatchObject({
+      isError: true,
+      output: { code: "work_not_found", details: { validWorkSlugs: ["current", "target"] } },
+    });
+    await expect(
+      handler({ command: "list", unexpected: true }, toolContext()),
+    ).resolves.toMatchObject({ isError: true });
+  });
+
+  it("invalidates draft fingerprints, emits the system update, and only sticks primary switches", async () => {
+    const primary = await setup("primary", true);
+    await primary.handler({ command: "switch", work: primary.target.slug }, toolContext());
+    expect(primary.invalidateThread).toHaveBeenCalledWith("", "thread-1");
+    expect(primary.threadChanged).toHaveBeenCalledWith("thread-1");
+    await expect(primary.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBe(
+      primary.target.id,
+    );
+
+    const subagent = await setup("subagent", false);
+    await subagent.handler({ command: "switch", work: subagent.target.slug }, toolContext());
+    expect(subagent.invalidateThread).not.toHaveBeenCalled();
+    await expect(subagent.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBeNull();
+  });
+});
 
 function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): AgentEditCore {
   return {
@@ -389,8 +520,14 @@ function wiredWriteHandler(input: { documentId: string; filePath: string; core: 
   const port = contextPortFor(input.documentId, input.filePath);
   const [writeRegistration] = createWiredCoreToolRegistrations({
     threads: { findById: async () => thread() } as never,
-    threadWorks: { findPrimary: async () => null },
-    works: { listByProject: async () => [] },
+    threadWorks: {
+      findPrimary: async () => null,
+      rebindPrimary: async () => ({ previousWorkId: null, changed: true }),
+    },
+    works: { listByProject: async () => [] } as never,
+    preferences: {} as never,
+    workContextUpdates: { projectChanged: async () => {}, threadChanged: async () => {} },
+    drafts: { draftReview: { list: async () => [] } } as never,
     contextPorts: { forProject: () => port, forWork: () => port },
     documentSync: {
       agentEdit: () => asThreadPeerAgentEditCore(input.core),

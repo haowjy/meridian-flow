@@ -239,6 +239,11 @@ export interface ThreadDocumentRepository {
 export interface ThreadWorksRepository {
   /** When primary, demotes the old primary and upserts this membership atomically. */
   addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void>;
+  /** Replaces the primary membership in place under the thread row lock. */
+  rebindPrimary(
+    threadId: ThreadId,
+    workId: WorkId,
+  ): Promise<{ previousWorkId: WorkId | null; changed: boolean }>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
 }

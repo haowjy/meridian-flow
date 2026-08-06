@@ -457,6 +457,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadWorks: ports.threadRepos.threadWorks,
   });
   const toolRegistry = createToolRegistry();
+  let systemUpdates: SystemUpdateDelivery | undefined;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
@@ -467,6 +468,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
+    preferences: ports.preferences,
+    drafts: ports.documentSync,
+    workContextUpdates: {
+      async projectChanged(projectId) {
+        await systemUpdates?.projectChanged(projectId);
+      },
+      async threadChanged(threadId) {
+        await systemUpdates?.threadChanged(threadId);
+      },
+    },
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
   })) {
@@ -494,7 +505,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
   let helperResultDelivery: ReturnType<typeof createHelperResultDelivery> | undefined;
-  let systemUpdates: SystemUpdateDelivery | undefined;
   const runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,

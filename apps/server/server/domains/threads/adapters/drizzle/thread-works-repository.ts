@@ -62,6 +62,61 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
       });
     },
 
+    async rebindPrimary(threadId, workId) {
+      return runInDrizzleTransaction(db, async () => {
+        const activeDb = currentDrizzleDb(db);
+        const [thread] = await activeDb
+          .select({ projectId: schema.threads.projectId })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, threadId))
+          .for("update");
+        if (!thread) throw new Error("Thread membership requires an existing thread");
+
+        const [work] = await activeDb
+          .select({ projectId: schema.works.projectId, deletedAt: schema.works.deletedAt })
+          .from(schema.works)
+          .where(eq(schema.works.id, workId));
+        if (!work || work.deletedAt || work.projectId !== thread.projectId) {
+          throw new Error("Work is not available in this project");
+        }
+
+        const [current] = await activeDb
+          .select({ workId: schema.threadWorks.workId })
+          .from(schema.threadWorks)
+          .where(
+            and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.isPrimary, true)),
+          );
+        if (current?.workId === workId) {
+          return { previousWorkId: current.workId, changed: false };
+        }
+
+        await activeDb
+          .delete(schema.threadWorks)
+          .where(
+            and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.workId, workId)),
+          );
+        if (current) {
+          await activeDb
+            .update(schema.threadWorks)
+            .set({ workId, projectId: thread.projectId })
+            .where(
+              and(
+                eq(schema.threadWorks.threadId, threadId),
+                eq(schema.threadWorks.isPrimary, true),
+              ),
+            );
+        } else {
+          await activeDb.insert(schema.threadWorks).values({
+            threadId,
+            workId,
+            projectId: thread.projectId as ProjectId,
+            isPrimary: true,
+          });
+        }
+        return { previousWorkId: current?.workId ?? null, changed: true };
+      });
+    },
+
     async findPrimary(threadId: ThreadId) {
       const [row] = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
