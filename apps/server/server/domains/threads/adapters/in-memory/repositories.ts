@@ -164,7 +164,6 @@ export function createInMemoryRepositories(
   const documentTouches = new Map<string, TurnDocumentTouch>();
   const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
   const lastOpenedByThreadUser = new Map<string, string>();
-  const primaryWorkLockTails = new Map<string, Promise<void>>();
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
 
@@ -418,22 +417,6 @@ export function createInMemoryRepositories(
   };
 
   const threadWorksRepo: ThreadWorksRepository = {
-    async withPrimaryWorkLock(threadId, operation) {
-      const previous = primaryWorkLockTails.get(threadId) ?? Promise.resolve();
-      let release!: () => void;
-      const hold = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const tail = previous.then(() => hold);
-      primaryWorkLockTails.set(threadId, tail);
-      await previous;
-      try {
-        return await operation(await threadWorksRepo.findPrimary(threadId));
-      } finally {
-        release();
-        if (primaryWorkLockTails.get(threadId) === tail) primaryWorkLockTails.delete(threadId);
-      }
-    },
     async addMembership(threadId, workId, isPrimary) {
       const thread = threads.get(threadId);
       if (!thread) throw new Error("Thread membership requires an existing thread");

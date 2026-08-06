@@ -79,6 +79,9 @@ with a single unified `ContextPort` that resolves durable project schemes
 - Bare paths default to `manuscript://` (project-scoped).
 - Leading/trailing slashes and repeated slashes are normalized away; `.` segments
   are dropped; `..` is rejected.
+- Writer-created file and folder segments cannot begin with `@` at any depth.
+  The prefix is reserved for Work authority qualifiers; interior `@` characters
+  remain valid.
 - Work-scoped schemes (`scratch://`, `uploads://`) carry a `<workId>` authority.
   Omitted authority resolves to the thread's primary Work. `manuscript://`,
   `kb://`, `user://` carry no work authority.

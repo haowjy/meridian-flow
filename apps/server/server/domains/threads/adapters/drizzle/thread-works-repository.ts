@@ -11,28 +11,6 @@ import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadWorksRepository {
   return {
-    async withPrimaryWorkLock<T>(
-      threadId: ThreadId,
-      operation: (primary: { workId: WorkId } | null) => Promise<T>,
-    ): Promise<T> {
-      return runInDrizzleTransaction(db, async () => {
-        const activeDb = currentDrizzleDb(db);
-        const [thread] = await activeDb
-          .select({ id: schema.threads.id })
-          .from(schema.threads)
-          .where(eq(schema.threads.id, threadId))
-          .for("update");
-        if (!thread) throw new Error("Thread membership requires an existing thread");
-        const [primary] = await activeDb
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(
-            and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.isPrimary, true)),
-          );
-        return operation(primary ?? null);
-      });
-    },
-
     async addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void> {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
