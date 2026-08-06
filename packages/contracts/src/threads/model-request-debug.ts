@@ -131,6 +131,15 @@ function fencedJson(value: JsonValue): string {
   return `${fence}json\n${body}\n${fence}`;
 }
 
+function readableMediaPart(part: JsonObject): JsonObject {
+  const data = part.data;
+  if (typeof data !== "string" || data.length <= 512) return part;
+  return {
+    ...part,
+    data: `[${data.length} characters omitted from readable view; use the raw view for exact data]`,
+  };
+}
+
 function readablePart(part: JsonObject, partIndex: number): string {
   const type = objectString(part, "type") ?? "unknown";
   if (type === "text") return objectString(part, "text") ?? "";
@@ -146,7 +155,7 @@ function readablePart(part: JsonObject, partIndex: number): string {
   }
   if (type === "image" || type === "file") {
     const mediaType = objectString(part, "mediaType") ?? "unknown media type";
-    return `### ${type === "image" ? "Image" : "File"}\n\n${mediaType}\n\n${fencedJson(part)}`;
+    return `### ${type === "image" ? "Image" : "File"}\n\n${mediaType}\n\n${fencedJson(readableMediaPart(part))}`;
   }
   return `### ${type}\n\n${fencedJson(part)}`;
 }

@@ -40,11 +40,13 @@
     "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
     "debug:events": "tsx tools/dev/debug-events.ts",
+    "debug:model-context": "tsx tools/dev/debug-model-context.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
+    "@meridian/contracts": "workspace:*",
     "@meridian/database": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@types/node": "catalog:",

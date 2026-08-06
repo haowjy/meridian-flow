@@ -107,4 +107,21 @@ describe("deriveModelRequestDebugViews", () => {
     expect(omittedView?.prefix.status).toBe("unavailable");
     expect(omittedView?.markdown).toContain("exceeded the 10-byte capture limit");
   });
+
+  it("keeps inline media bounded in the readable lens", () => {
+    const inlineData = "a".repeat(513);
+    const request: ModelRequestDebugRequest = {
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", mediaType: "image/png", data: inlineData }],
+        },
+      ],
+    };
+
+    const markdown = deriveModelRequestDebugViews([record(0, request)])[0]?.markdown;
+
+    expect(markdown).toContain("[513 characters omitted from readable view");
+    expect(markdown).not.toContain(inlineData);
+  });
 });

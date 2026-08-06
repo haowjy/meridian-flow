@@ -118,8 +118,12 @@ describe("createInstrumentedGateway stream", () => {
       sink,
       verbose: new Set(),
     });
+    const correlatedRequest: GenerateRequest = {
+      ...request,
+      correlation: { ...request.correlation, gatewayCallId: "preallocated-call" },
+    };
 
-    expect(await collect(gateway.stream(request))).toEqual(scripted);
+    expect(await collect(gateway.stream(correlatedRequest))).toEqual(scripted);
     expect(eventNames(sink.events)).toEqual(["stream.open", "stream.first_output", "stream.close"]);
     expect(sink.events[0]?.payload).toEqual({
       provider: "test-provider",
@@ -146,11 +150,11 @@ describe("createInstrumentedGateway stream", () => {
     });
 
     const gatewayCallId = sink.events[0]?.correlation?.gatewayCallId;
-    expect(gatewayCallId).toEqual(expect.any(String));
+    expect(gatewayCallId).toBe("preallocated-call");
     for (const event of sink.events) {
       expect(event.source).toBe("gateway");
       expect(event.correlation).toEqual({
-        ...request.correlation,
+        ...correlatedRequest.correlation,
         gatewayCallId,
         provider: "test-provider",
         model: "test-model",

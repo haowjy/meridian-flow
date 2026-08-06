@@ -16,6 +16,7 @@ import type {
   Block,
   BlockType,
   ModelRequestDebugRecord,
+  ModelRequestDebugRetention,
   ModelResponse,
   Thread,
   ThreadAttention,
@@ -435,7 +436,7 @@ export type ThreadSnapshotResponse = {
 /** Dev-only: per-request model context captured by the orchestrator. */
 export type ModelRequestDebugListResponse = {
   records: ModelRequestDebugRecord[];
-  retention: import("../threads/model-request-debug.js").ModelRequestDebugRetention;
+  retention: ModelRequestDebugRetention;
 };
 
 export type ListThreadsResponse = {

@@ -38,8 +38,8 @@ opens a cursor-anchored popover rendering that record via `JsonTree`.
   404 (`not_found`) when capture is disabled on the server — the inspector
   shows a disabled notice. In-flight fetches are keyed to the active
   `{threadId, turnId}` so fast reselection cannot show another turn's rows.
-  Rendered records pass through the full API payload (including `threadId` /
-  `turnId`) via `JsonTree`.
+  Records render through the same Readable, Raw, and Debug inspector used by
+  the LLM Calls pop-out and expose the response's retention counters.
 - **Dead-end-free** — if an id isn't in the store, the popover still shows the
   DOM attributes (role/status or blockType/seq) so the id is never lost.
 - **Copy** — a header "copy" button writes `JSON.stringify(record, null, 2)` to

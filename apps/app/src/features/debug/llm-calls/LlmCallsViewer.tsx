@@ -1,6 +1,6 @@
-/** Pop-out dashboard for metadata-only gateway call lifecycle events. */
+/** Pop-out dashboard joining gateway lifecycle events with canonical model requests. */
 import type { EventRecord } from "@meridian/contracts/observability";
-import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
+import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
 import { useEffect, useMemo, useState } from "react";
 
 import { getJson, isMeridianApiError } from "@/client/api/http-client";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../DebugPopout";
 import { JsonTree } from "../JsonTree";
+import { ModelRequestInspector } from "../model-requests/ModelRequestInspector";
 import { deriveLlmCalls, type LlmCallOutcome, type LlmCallSummary } from "./derive-llm-calls";
 
 const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
@@ -114,7 +115,7 @@ function LlmCallsContent() {
         <div>
           <h1 className="text-sm font-semibold">LLM Calls</h1>
           <p className="text-meta text-muted-foreground">
-            Metadata-only gateway lifecycle, refreshed while this window is open
+            Gateway lifecycle and canonical model requests, refreshed while this window is open
           </p>
         </div>
         {state.status === "loaded" ? (
@@ -204,9 +205,11 @@ function CallCard({ call }: { call: LlmCallSummary }) {
           <Metric label="output tokens" value={formatCount(call.outputTokens)} />
         </dl>
         {correlation.length > 0 ? (
-          <p className="mt-2 break-all font-mono text-meta text-muted-foreground">
-            {correlation.join(" · ")}
-          </p>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 break-all font-mono text-meta text-muted-foreground">
+            {correlation.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
         ) : null}
       </button>
 
@@ -228,53 +231,54 @@ function CallDetail({ call }: { call: LlmCallSummary }) {
   const startedAt = Date.parse(call.startedAt);
 
   return (
-    <div className="grid gap-3 border-t border-border p-3 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(22rem,1.2fr)]">
-      <div className="space-y-3">
-        <section>
-          <h2 className="mb-2 text-xs font-medium">Lifecycle</h2>
-          <ol className="space-y-1.5">
-            {call.lifecycleEvents.map((event, index) => (
-              <li
-                key={event.eventId ?? `${event.stream?.observerSeq ?? index}:${event.name}`}
-                className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 rounded border border-border-subtle bg-muted px-2 py-1.5"
-              >
-                <span className="font-mono text-meta text-muted-foreground">
-                  +{relativeMilliseconds(startedAt, event.timestamp)} ms
-                </span>
-                <span className="min-w-0 font-mono text-meta text-foreground">
-                  {timelineLabel(event)}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        {call.chunkCount > 0 ? (
+    <div className="space-y-3 border-t border-border p-3">
+      <div className="grid gap-3 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(22rem,1.2fr)]">
+        <div className="space-y-3">
           <section>
-            <h2 className="mb-2 text-xs font-medium">Stream events ({call.chunkCount})</h2>
-            <dl className="grid grid-cols-2 gap-1.5">
-              {call.chunks.map((chunk) => (
-                <div
-                  key={chunk.messageClass}
-                  className="flex justify-between gap-2 rounded border border-border-subtle bg-muted px-2 py-1.5"
+            <h2 className="mb-2 text-xs font-medium">Lifecycle</h2>
+            <ol className="space-y-1.5">
+              {call.lifecycleEvents.map((event, index) => (
+                <li
+                  key={event.eventId ?? `${event.stream?.observerSeq ?? index}:${event.name}`}
+                  className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 rounded border border-border-subtle bg-muted px-2 py-1.5"
                 >
-                  <dt className="truncate font-mono text-meta text-muted-foreground">
-                    {chunk.messageClass}
-                  </dt>
-                  <dd className="font-mono text-meta text-foreground">{chunk.count}</dd>
-                </div>
+                  <span className="font-mono text-meta text-muted-foreground">
+                    +{relativeMilliseconds(startedAt, event.timestamp)} ms
+                  </span>
+                  <span className="min-w-0 font-mono text-meta text-foreground">
+                    {timelineLabel(event)}
+                  </span>
+                </li>
               ))}
-            </dl>
+            </ol>
           </section>
-        ) : null}
 
-        {call.threadId && call.turnId ? <ModelRequestDetail call={call} /> : null}
+          {call.chunkCount > 0 ? (
+            <section>
+              <h2 className="mb-2 text-xs font-medium">Stream events ({call.chunkCount})</h2>
+              <dl className="grid grid-cols-2 gap-1.5">
+                {call.chunks.map((chunk) => (
+                  <div
+                    key={chunk.messageClass}
+                    className="flex justify-between gap-2 rounded border border-border-subtle bg-muted px-2 py-1.5"
+                  >
+                    <dt className="truncate font-mono text-meta text-muted-foreground">
+                      {chunk.messageClass}
+                    </dt>
+                    <dd className="font-mono text-meta text-foreground">{chunk.count}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
+        </div>
+
+        <section className="min-w-0">
+          <h2 className="mb-2 text-xs font-medium">Raw lifecycle records</h2>
+          <JsonTree value={call.lifecycleEvents} className="max-h-[34rem]" />
+        </section>
       </div>
-
-      <section className="min-w-0">
-        <h2 className="mb-2 text-xs font-medium">Raw lifecycle records</h2>
-        <JsonTree value={call.lifecycleEvents} className="max-h-[34rem]" />
-      </section>
+      {call.threadId && call.turnId ? <ModelRequestDetail call={call} /> : null}
     </div>
   );
 }
@@ -282,7 +286,7 @@ function CallDetail({ call }: { call: LlmCallSummary }) {
 type ModelRequestState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "loaded"; records: ModelRequestDebugRecord[] }
+  | { status: "loaded"; response: ModelRequestDebugListResponse }
   | { status: "disabled" }
   | { status: "error"; message: string };
 
@@ -303,11 +307,7 @@ function ModelRequestDetail({ call }: { call: LlmCallSummary }) {
     setState({ status: "loading" });
     void getThreadModelRequestDebugRecords({ data: { threadId, turnId } })
       .then((response) => {
-        const records =
-          call.iteration === undefined
-            ? response.records
-            : response.records.filter((record) => record.iteration === call.iteration);
-        setState({ status: "loaded", records });
+        setState({ status: "loaded", response });
       })
       .catch((error: unknown) => {
         if (isMeridianApiError(error) && error.code === "not_found") {
@@ -339,13 +339,17 @@ function ModelRequestDetail({ call }: { call: LlmCallSummary }) {
           {state.status === "error" ? (
             <p className="text-meta text-destructive">{state.message}</p>
           ) : null}
-          {state.status === "loaded" && state.records.length === 0 ? (
+          {state.status === "loaded" && state.response.records.length === 0 ? (
             <p className="text-meta text-muted-foreground">
               No captured model request matches this call.
             </p>
           ) : null}
-          {state.status === "loaded" && state.records.length > 0 ? (
-            <JsonTree value={state.records} className="max-h-96" />
+          {state.status === "loaded" && state.response.records.length > 0 ? (
+            <ModelRequestInspector
+              records={state.response.records}
+              retention={state.response.retention}
+              gatewayCallId={call.gatewayCallId}
+            />
           ) : null}
         </div>
       ) : null}
@@ -361,7 +365,7 @@ function timelineLabel(event: EventRecord): string {
   if (event.name === "stream.first_output") return "first output";
   if (event.name === "stream.close") {
     const outcome = event.payload.outcome;
-    return `close${typeof outcome === "string" ? ` · ${outcome}` : ""}`;
+    return `close${typeof outcome === "string" ? ` (${outcome})` : ""}`;
   }
   return event.name.startsWith("stream.") ? event.name.slice("stream.".length) : event.name;
 }

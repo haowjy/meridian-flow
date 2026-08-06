@@ -1,6 +1,7 @@
 /** Debug-event CLI argument policy keeps local agent queries narrow and bounded. */
 import { describe, expect, it } from "vitest";
-import { createBoundedResponseCollector, parseDebugEventsArgs } from "./debug-events";
+import { parseDebugEventsArgs } from "./debug-events";
+import { createBoundedResponseCollector } from "./debug-http-client";
 
 describe("parseDebugEventsArgs", () => {
   it("maps a correlation pivot and compact defaults", () => {

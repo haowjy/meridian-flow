@@ -60,10 +60,10 @@ toggle, inspector, active-thread resolution, and hydration invariant.
 
 The **Streams** action, client transport taps, and optional server event feed
 live in [trace-viewer.md](trace-viewer.md). Client and server records share one
-trace ring, filter model, automation boundary, and export path. The
-metadata-only gateway call projection and its content-isolation boundary live
-in [llm-calls.md](llm-calls.md). Both viewers use the shared `DebugPopout`
-window lifecycle and chrome.
+trace ring, filter model, automation boundary, and export path. The gateway
+call projection and its explicit, content-bearing model-request detail live in
+[llm-calls.md](llm-calls.md). Both viewers use the shared `DebugPopout` window
+lifecycle and chrome.
 
 ## Document sessions
 

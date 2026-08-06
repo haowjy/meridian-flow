@@ -18,7 +18,20 @@ Timeline and raw-record views exclude individual chunks so verbose capture
 cannot create hundreds of rows.
 
 Gateway events and the initial call render remain metadata-only. Prompt and
-parameter content has one path: an explicit per-call action calls the existing
+parameter content has one path: an explicit per-call action calls the
 owner-gated thread model-request endpoint when both `threadId` and `turnId` are
-present. The returned records render only inside that expanded call detail and
-never join the polling response or trace store.
+present. It fetches all records for the turn before selecting the call, because
+prefix evidence compares adjacent tool-loop requests. The shared
+`ModelRequestInspector` renders the canonical provider-neutral request through
+three lenses:
+
+- **Readable** uses the contracts package's Markdown projection for system,
+  user, assistant, tool-result, and advertised-tool content.
+- **Raw** shows the exact captured canonical request as JSON.
+- **Debug** shows request digest, gateway correlation, prefix status, capture
+  status, resolved skills, and tool registration provenance.
+
+The same contracts projection powers `pnpm --silent debug:model-context`, so
+the UI and CLI cannot disagree about readable content or prefix status. These
+records never join the lifecycle polling response, trace store, `EventSink`, or
+JSONL mirror.

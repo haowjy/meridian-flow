@@ -11,9 +11,10 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
 | `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
 | `pnpm debug:events` | An agent needs bounded JSON for one known event/trace/domain id | [Consume Server Events](#consume-server-events) |
+| `pnpm --silent debug:model-context` | An agent needs the model's canonical request, digest, or tool-loop prefix | [Inspect Model Context](#inspect-model-context) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
 | `GET /api/debug/events/stream` | Live SSE tail while reproducing | [Consume Server Events](#consume-server-events) |
-| DebugOverlay → **LLM Calls** | Inspect gateway calls: latency, tokens, outcomes, retries | debug pill in dev builds |
+| DebugOverlay → **LLM Calls** | Inspect gateway calls plus readable, raw, and debug request views | [Inspect Model Context](#inspect-model-context) |
 | DebugOverlay → **Streams** | Client Yjs / thread-socket traces; toggle in the server feed | [Durable Logs](#durable-logs) |
 | `logs/events/*.jsonl` + `jq` | Post-restart forensics; best-effort mirror | [Consume Server Events](#consume-server-events) |
 | `logs/portless.log` | Authoritative interleaved stdout | [Durable Logs](#durable-logs) |
@@ -29,7 +30,9 @@ Start from your symptom in [Strategies](#strategies), or scan the
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
 - **An LLM is debugging.** Start with
   `pnpm debug:events -- --trace <id>`. Pivot by thread, turn, document, error
-  code, or exact event ID. Add `--full` only when compact metadata is insufficient.
+  code, or exact event ID. Add `--full` only when compact metadata is
+  insufficient. Use `debug:model-context` when the question is what the model
+  received rather than what the runtime did.
 - **It broke and the server restarted.** The in-memory ring is gone; fall back
   to the JSONL mirror with `jq`, remembering it is best-effort and bounded.
 - **Polling from a script or agent.** Use `sinceEventId` cursors — event IDs
@@ -81,16 +84,43 @@ instead of `console.log`.
   events or 16 MiB. Output backpressure drops oldest first; the next successful
   write reports lost record and byte counts. The recent ring uses the same dual
   cap; process bootstrap is capped at 1,000 records or 4 MiB.
-- Model-request diagnostics can use the existing model-request debug capture
-  path when that is the right level of detail. Broader prompt and agent-run
-  trace capture is not implemented yet; until it exists, use safe metadata in
-  `EventSink` events and keep protected content out of ordinary searchable logs.
+- Model-request diagnostics use a separate owner-gated, in-memory capture path.
+  Protected prompt and tool content stays out of ordinary searchable logs.
 - Client Yjs and thread-socket diagnostics are captured as metadata-only
   `EventRecord`s in debug-enabled builds. Open **Streams** from the debug pill
   for the live viewer, or use `window.__meridianTrace` for programmatic queries,
   stats, clearing, and next-event waits. API results are detached clones; caller
   mutation cannot alter retained evidence. Enable **Server feed** in Streams for
   process-side records, or use the HTTP surfaces below directly.
+
+## Inspect Model Context
+
+The LLM Calls pop-out joins metadata-only gateway lifecycle records to the
+content-bearing request with `gatewayCallId`. Expand a call, select **Show model
+request content**, then switch among **Readable**, **Raw**, and **Debug**. The
+Readable lens shows the model's message sequence as Markdown. Raw shows the
+captured provider-neutral `GenerateRequest`. Debug shows its SHA-256 digest,
+capture status, resolved skills, tool provenance, and whether the previous
+tool-loop request is an exact prefix.
+
+For an agent or script, query the same endpoint and projection as JSON:
+
+```bash
+pnpm --silent debug:model-context -- --thread <thread-id>
+pnpm --silent debug:model-context -- --thread <thread-id> --turn <turn-id> --all
+pnpm --silent debug:model-context -- --thread <thread-id> --gateway-call <call-id> --view raw
+```
+
+The latest readable request is the default. `--iteration`, `--gateway-call`, or
+`--all` selects other records; `--view readable|raw|summary` controls the
+payload. A thread pivot is always required and the server verifies ownership.
+
+This is the canonical request immediately before Meridian's gateway dispatch,
+not a claim about a provider SDK's private wire encoding. Capture is enabled in
+local development, lives only in process memory, and is bounded to 200 records,
+2 MiB per request, and 16 MiB total. Oversized requests keep metadata and a
+digest but omit their body. A server restart clears the ring. Request content
+never enters `EventSink`, the event journal, thread snapshots, or JSONL logs.
 
 ## Consume Server Events
 
