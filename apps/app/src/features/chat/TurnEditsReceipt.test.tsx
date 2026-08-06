@@ -8,10 +8,14 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((copy, part, index) => copy + part + (values[index] ?? ""), ""),
+}));
 
 const { mutateAsyncMock, contextNavigation } = vi.hoisted(() => ({
-  mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
+  mutateAsyncMock:
+    vi.fn<() => Promise<Pick<ReversalOutcome, "status"> & { workReceipts?: unknown }>>(),
   contextNavigation: {
     current: null as ((uri: string) => void) | null,
     canOpen: null as ((uri: string) => boolean) | null,
@@ -39,6 +43,12 @@ function turn(): Turn {
 }
 
 const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
+const deletedWorkReceipt = {
+  category: "mutate",
+  line: "Deleted Work Side quests.",
+  inverse: { command: "restore", workId: "work-1" },
+} as const;
+const readWorkReceipt = { category: "read", line: "Checked Works.", inverse: null } as const;
 const settledTrail = {
   trailId: "trail-1",
   owner: { kind: "turn", threadId: "thread-1", turnId: "turn-1" },
@@ -302,6 +312,122 @@ describe("TurnEditsReceipt", () => {
           (button) => button.textContent?.trim() === "beat.md",
         );
         expect(beatButtons).toHaveLength(0);
+      },
+    );
+  });
+});
+
+describe("TurnEditsReceipt Work receipts", () => {
+  beforeEach(() => {
+    contextNavigation.current = null;
+    contextNavigation.canOpen = null;
+  });
+
+  it("offers Undo on a Work-only turn whose receipt carries an inverse", () => {
+    const html = renderToStaticMarkup(
+      <TurnEditsReceipt
+        threadId="thread-1"
+        turn={turn()}
+        documents={[]}
+        receipt={{ state: "live-active", control: "undo" }}
+        workReceipts={[deletedWorkReceipt]}
+      />,
+    );
+
+    expect(html).toContain("Changed 1 Work");
+    expect(html).not.toContain("Edited");
+    expect(html).toContain("Undo");
+  });
+
+  it("renders nothing for a turn whose only Work receipts are reads", () => {
+    const html = renderToStaticMarkup(
+      <TurnEditsReceipt
+        threadId="thread-1"
+        turn={turn()}
+        documents={[]}
+        receipt={null}
+        workReceipts={[readWorkReceipt]}
+      />,
+    );
+
+    expect(html).toBe("");
+  });
+
+  it("lists the Work receipt line as a row behind expansion", async () => {
+    await withInteractiveCard({ documents: [], workReceipts: [deletedWorkReceipt] }, async () => {
+      expect(document.body.textContent).not.toContain("Deleted Work Side quests");
+      const toggle = document.querySelector<HTMLButtonElement>("[aria-controls]");
+      if (!toggle) throw new Error("missing receipt toggle");
+      await act(async () => toggle.click());
+      // The tool row's grammar: the line verbatim, minus its terminal period.
+      expect(document.body.textContent).toContain("Deleted Work Side quests");
+      expect(document.body.textContent).not.toContain("Deleted Work Side quests.");
+    });
+  });
+
+  // The re-review regression: the route restores the Work but preserves the
+  // document half's nothing_to_undo. A Work-only turn has no document half,
+  // so the restore is the outcome and must never read as refusal.
+  it("reads a restored Work as success even when the document half had nothing to undo", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({
+      status: "nothing_to_undo",
+      workReceipts: [{ command: "restore", workId: "work-1", status: "restored" }],
+    });
+    await withInteractiveCard(
+      { documents: [], workReceipts: [deletedWorkReceipt] },
+      async (card) => {
+        await card.click("Undo");
+
+        expect(document.body.textContent).toContain("Restored the Work.");
+        expect(document.body.textContent).not.toContain("Undo is no longer available.");
+      },
+    );
+  });
+
+  it("names the restored Work when the server sends its name", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({
+      status: "reversed",
+      workReceipts: [
+        { command: "restore", workId: "work-1", name: "Side quests", status: "restored" },
+      ],
+    });
+    await withInteractiveCard(
+      { documents: [], workReceipts: [deletedWorkReceipt] },
+      async (card) => {
+        await card.click("Undo");
+
+        expect(document.body.textContent).toContain("Restored Work Side quests.");
+      },
+    );
+  });
+
+  it("renders both halves of a mixed outcome factually", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({
+      status: "partial",
+      workReceipts: [
+        { command: "restore", workId: "work-1", name: "Side quests", status: "restored" },
+      ],
+    });
+    await withInteractiveCard(
+      { documents: [liveDocument], workReceipts: [deletedWorkReceipt] },
+      async (card) => {
+        await card.click("Undo");
+
+        expect(document.body.textContent).toContain("Restored Work Side quests.");
+        expect(document.body.textContent).toContain("Only part of this change could be reversed.");
+      },
+    );
+  });
+
+  it("still reports refusal when the server restored nothing", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({ status: "nothing_to_undo" });
+    await withInteractiveCard(
+      { documents: [], workReceipts: [deletedWorkReceipt] },
+      async (card) => {
+        await card.click("Undo");
+
+        expect(document.body.textContent).toContain("Undo is no longer available.");
+        expect(document.body.textContent).not.toContain("Restored");
       },
     );
   });

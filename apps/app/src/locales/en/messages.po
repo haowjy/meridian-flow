@@ -453,9 +453,17 @@ msgstr "Center"
 msgid "Centered"
 msgstr "Centered"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed {count} Works"
+msgstr "Changed {count} Works"
+
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr "Changed {relativeTime}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed 1 Work"
+msgstr "Changed 1 Work"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
@@ -2137,6 +2145,15 @@ msgstr "Resize sidebar"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Response complete"
 msgstr "Response complete"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Restored the Work."
+msgstr "Restored the Work."
+
+#. placeholder {0}: work.name
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Restored Work {0}."
+msgstr "Restored Work {0}."
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx

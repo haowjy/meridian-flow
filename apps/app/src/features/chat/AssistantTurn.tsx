@@ -36,8 +36,9 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { hasTurnEditsReceiptDocuments, TurnEditsReceipt } from "./TurnEditsReceipt";
+import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
 import { thinkingDigest } from "./thinking-digest";
+import { turnWorkReceipts } from "./tool-command";
 import { isToolViewVisible } from "./tool-view-visibility";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
@@ -77,6 +78,14 @@ function AssistantTurnComponent({
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
   );
+  // Work mutations leave no document lineage; their receipts ride the turn's
+  // own tool results, so a Work-only turn still gets its undo-bearing receipt.
+  // Gated on settlement like document lineage: a receipt is a record of a
+  // finished turn, and mid-stream it would offer Undo on a turn still writing.
+  const workReceipts = useMemo(
+    () => (isLive ? [] : turnWorkReceipts(sortedBlocks)),
+    [isLive, sortedBlocks],
+  );
 
   return (
     <div
@@ -98,12 +107,13 @@ function AssistantTurnComponent({
         />
       ))}
 
-      {hasTurnEditsReceiptDocuments(liveLineageDocuments, changeTrail) ? (
+      {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
         <TurnEditsReceipt
           threadId={resolvedThreadId}
           turn={turn}
           documents={liveLineageDocuments}
           receipt={liveLineage.receipt}
+          workReceipts={workReceipts}
           changeTrail={changeTrail}
           navigateToChange={navigateToChange}
         />

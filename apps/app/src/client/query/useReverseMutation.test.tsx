@@ -10,7 +10,8 @@ const { reverseTurnMock } = vi.hoisted(() => ({
   reverseTurnMock: vi.fn(),
 }));
 
-vi.mock("@/client/api/reverse-api", () => ({
+vi.mock("@/client/api/reverse-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/api/reverse-api")>()),
   reverseDocument: vi.fn(),
   reverseTurn: reverseTurnMock,
 }));
@@ -116,6 +117,95 @@ describe("useReverseTurnMutation", () => {
               threadQueryKeys.liveLineage("thread-1", "turn-1"),
             )?.receipt,
           ).toEqual({ state: "cant_undo_dependent", control: "view_change" });
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      queryClient.clear();
+    }
+  });
+
+  it("refreshes the project's works and threads after a restored-Work reversal", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { projectQueryKeys } = await import("./project-query-keys");
+    queryClient.setQueryData(threadQueryKeys.snapshot("thread-1"), {
+      threadId: "thread-1",
+      thread: { id: "thread-1", projectId: "project-1" },
+    });
+    // Seeded as fresh; only invalidation can mark them stale.
+    queryClient.setQueryData(projectQueryKeys.works("project-1"), { works: [] });
+    queryClient.setQueryData(projectQueryKeys.threads("project-1"), []);
+    const harnessRef: { reverse: ReturnType<typeof useReverseTurnMutation> | null } = {
+      reverse: null,
+    };
+
+    function Harness() {
+      harnessRef.reverse = useReverseTurnMutation("thread-1");
+      return null;
+    }
+
+    reverseTurnMock.mockResolvedValue({
+      status: "reversed",
+      documents: [],
+      workReceipts: [{ command: "restore", workId: "w1", status: "restored" }],
+    });
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+        async () => {
+          await act(async () => {
+            await harnessRef.reverse?.mutateAsync({ turnId: "turn-1", direction: "undo" });
+          });
+
+          expect(
+            queryClient.getQueryState(projectQueryKeys.works("project-1"))?.isInvalidated,
+          ).toBe(true);
+          expect(
+            queryClient.getQueryState(projectQueryKeys.threads("project-1"))?.isInvalidated,
+          ).toBe(true);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      queryClient.clear();
+    }
+  });
+
+  it("leaves project caches alone when the reversal restored no Work", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { projectQueryKeys } = await import("./project-query-keys");
+    queryClient.setQueryData(threadQueryKeys.snapshot("thread-1"), {
+      threadId: "thread-1",
+      thread: { id: "thread-1", projectId: "project-1" },
+    });
+    queryClient.setQueryData(projectQueryKeys.works("project-1"), { works: [] });
+    const harnessRef: { reverse: ReturnType<typeof useReverseTurnMutation> | null } = {
+      reverse: null,
+    };
+
+    function Harness() {
+      harnessRef.reverse = useReverseTurnMutation("thread-1");
+      return null;
+    }
+
+    reverseTurnMock.mockResolvedValue({ status: "reversed", documents: [] });
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+        async () => {
+          await act(async () => {
+            await harnessRef.reverse?.mutateAsync({ turnId: "turn-1", direction: "undo" });
+          });
+
+          expect(
+            queryClient.getQueryState(projectQueryKeys.works("project-1"))?.isInvalidated,
+          ).toBe(false);
         },
         { drainMacrotask: true },
       );

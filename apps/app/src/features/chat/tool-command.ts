@@ -12,8 +12,8 @@
  * `command-descriptor.ts`. Classification stays here so it has no opinion about
  * presentation and no React in its imports.
  */
-import type { JsonValue } from "@meridian/contracts/protocol";
-import type { ToolView } from "./group-delivery-segments";
+import type { Block, JsonValue } from "@meridian/contracts/protocol";
+import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 
 export type WriteMode = "direct" | "draft";
 
@@ -76,6 +76,25 @@ export function workReceipt(tool: ToolView): WorkReceipt | null {
   if (category !== "read" && category !== "mutate" && category !== "binding") return null;
   if (typeof line !== "string" || line.length === 0) return null;
   return { category, line, inverse: recordValue(receipt.inverse) };
+}
+
+/**
+ * Every Work receipt a turn's tool results carry, in block order. The turn
+ * edits receipt asks this to learn whether undo has a Work half; blocks are
+ * paired with the same grouping the timeline renders from, so live and durable
+ * block shapes answer identically.
+ */
+export function turnWorkReceipts(blocks: Block[]): WorkReceipt[] {
+  return groupDeliverySegments(blocks).flatMap((segment) => {
+    if (segment.kind === "tool") return workReceiptOrNone(segment.tool);
+    if (segment.kind === "tool-run") return segment.tools.flatMap(workReceiptOrNone);
+    return [];
+  });
+}
+
+function workReceiptOrNone(tool: ToolView): WorkReceipt[] {
+  const receipt = workReceipt(tool);
+  return receipt ? [receipt] : [];
 }
 
 function workToolCommand(tool: ToolView): ToolCommand {

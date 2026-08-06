@@ -2,7 +2,7 @@ import type { Block } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ToolView } from "./group-delivery-segments";
-import { toolCommand, workReceipt } from "./tool-command";
+import { toolCommand, turnWorkReceipts, workReceipt } from "./tool-command";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -117,5 +117,69 @@ describe("work receipts", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("turnWorkReceipts", () => {
+  function block(
+    sequence: number,
+    blockType: Block["blockType"],
+    content: Block["content"],
+  ): Block {
+    return {
+      id: `block-${sequence}`,
+      turnId: "turn-1",
+      sequence,
+      blockType,
+      status: "complete",
+      content,
+      textContent: null,
+    } as Block;
+  }
+
+  it("collects every work receipt a turn's durable blocks carry, in order", () => {
+    const deleteReceipt = {
+      category: "mutate",
+      line: "Deleted Work Tournament arc.",
+      inverse: { command: "restore", workId: "w1" },
+    };
+    const readReceipt = { category: "read", line: "Checked Works." };
+    const receipts = turnWorkReceipts([
+      block(0, "text", null),
+      block(1, "tool_use", {
+        toolCallId: "call_1",
+        toolName: "work",
+        input: { command: "delete", work: "tournament-arc" },
+      }),
+      block(2, "tool_result", {
+        toolCallId: "call_1",
+        output: { slug: "tournament-arc" },
+        metadata: { workReceipt: deleteReceipt },
+      }),
+      block(3, "tool_use", {
+        toolCallId: "call_2",
+        toolName: "work",
+        input: { command: "list" },
+      }),
+      block(4, "tool_result", {
+        toolCallId: "call_2",
+        output: {},
+        metadata: { workReceipt: readReceipt },
+      }),
+    ]);
+
+    expect(receipts).toEqual([
+      { category: "mutate", line: "Deleted Work Tournament arc.", inverse: deleteReceipt.inverse },
+      { category: "read", line: "Checked Works.", inverse: null },
+    ]);
+  });
+
+  it("finds no receipts on a turn without work results", () => {
+    expect(
+      turnWorkReceipts([
+        block(0, "tool_use", { toolCallId: "call_1", toolName: "write", input: {} }),
+        block(1, "tool_result", { toolCallId: "call_1", output: "ok" }),
+      ]),
+    ).toEqual([]);
   });
 });
