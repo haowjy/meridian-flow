@@ -1581,7 +1581,11 @@ msgid "Names cannot be empty"
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "Names cannot begin with '@'. That prefix identifies a Work"
+#~ msgid "Names cannot begin with '@'. That prefix identifies a Work"
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot begin with '@'. That prefix is reserved for authority qualifiers"
 msgstr ""
 
 #. placeholder {0}: error.character ?? ""

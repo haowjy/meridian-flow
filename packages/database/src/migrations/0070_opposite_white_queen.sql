@@ -11,6 +11,7 @@ BEGIN
   FOR work_row IN
     SELECT id, project_id, name
     FROM works
+    WHERE deleted_at IS NULL
     ORDER BY project_id, created_at, id
   LOOP
     base_slug := trim(BOTH '-' FROM regexp_replace(lower(work_row.name), '[^a-z0-9]+', '-', 'g'));
@@ -22,7 +23,9 @@ BEGIN
     suffix := 2;
     WHILE EXISTS (
       SELECT 1 FROM works
-      WHERE project_id = work_row.project_id AND slug = candidate_slug
+      WHERE project_id = work_row.project_id
+        AND slug = candidate_slug
+        AND deleted_at IS NULL
     ) LOOP
       candidate_slug := base_slug || '-' || suffix;
       suffix := suffix + 1;
@@ -30,7 +33,14 @@ BEGIN
 
     UPDATE works SET slug = candidate_slug WHERE id = work_row.id;
   END LOOP;
+
+  UPDATE works
+  SET slug = COALESCE(
+    NULLIF(trim(BOTH '-' FROM regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g')), ''),
+    'work'
+  )
+  WHERE deleted_at IS NOT NULL;
 END $$;--> statement-breakpoint
-ALTER TABLE "works" ALTER COLUMN "slug" SET NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "works_project_slug_active" ON "works" USING btree ("project_id","slug") WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
+ALTER TABLE "works" ALTER COLUMN "slug" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (every legacy row is backfilled above)--> statement-breakpoint
+CREATE UNIQUE INDEX "works_project_slug_active" ON "works" USING btree ("project_id","slug") WHERE "works"."deleted_at" IS NULL; -- migration-lint: skip INDEX_NOT_CONCURRENTLY (pre-release schema; active rows are deduplicated above)--> statement-breakpoint
 ALTER TABLE "works" ADD CONSTRAINT "works_slug_valid" CHECK ("works"."slug" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$');

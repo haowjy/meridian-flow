@@ -16,6 +16,7 @@ import {
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../../shared/uuid.js";
+import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
@@ -68,6 +69,12 @@ export interface DrizzleWorkRepositoryDeps {
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
   const { db, hasUnreviewedDraft } = deps;
 
+  async function lockProjectWorkCreation(projectId: ProjectId): Promise<void> {
+    await currentDrizzleDb(db).execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${projectId}, 42::bigint))`,
+    );
+  }
+
   async function findWorkById(id: WorkId): Promise<Work | null> {
     if (!isUuid(id)) return null;
     const [row] = await currentDrizzleDb(db).select().from(works).where(eq(works.id, id)).limit(1);
@@ -93,9 +100,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       return runInDrizzleTransaction(db, async () => {
         const id = input.id ?? crypto.randomUUID();
         const activeDb = currentDrizzleDb(db);
-        await activeDb.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${input.projectId}, 43::bigint))`,
-        );
+        await lockProjectWorkCreation(input.projectId);
         const [project] = await activeDb
           .select()
           .from(projects)
@@ -188,13 +193,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
       await runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        const [work] = await activeDb
-          .select({ id: works.id, deletedAt: works.deletedAt })
-          .from(works)
-          .where(eq(works.id, id))
-          .limit(1)
-          .for("update");
-        if (!work || work.deletedAt) return;
+        if ((await lockWorkLifecycle(db, id)) !== "active") return;
 
         const [membership] = await activeDb
           .select({ threadId: threadWorks.threadId })
@@ -258,9 +257,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        await activeDb.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${projectId}, 42::bigint))`,
-        );
+        await lockProjectWorkCreation(projectId);
         const existing = await activeDb
           .select()
           .from(works)

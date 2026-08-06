@@ -62,8 +62,9 @@ This domain is not the full project CRUD surface; that lives in
   not change a slug; soft deletion releases both active name and slug uniqueness.
 - Work deletion refuses live thread memberships, unreviewed drafts, and live
   files or folders in Work-owned context sources. Empty provisioned sources do
-  not block deletion. Restore refuses rather than clobbering a reclaimed active
-  name or slug.
+  not block deletion. Work-owned context mutations and deletion serialize on the
+  Work lifecycle row lock. Restore refuses rather than clobbering a reclaimed
+  active name or slug.
 
 ## Relationship to `domains/projects`
 

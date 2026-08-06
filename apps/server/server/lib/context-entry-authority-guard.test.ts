@@ -9,7 +9,7 @@ function expectAuthorityReservation(parse: () => unknown) {
   expect(parse).toThrowError(
     expect.objectContaining({
       status: 400,
-      message: expect.stringContaining("reserved for Work authority qualifiers"),
+      message: expect.stringContaining("reserved for authority qualifiers"),
       data: expect.objectContaining({ reason: "name/reserved-authority-qualifier" }),
     }),
   );

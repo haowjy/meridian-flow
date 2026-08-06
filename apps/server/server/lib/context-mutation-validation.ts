@@ -10,7 +10,7 @@ import { createError } from "nitro/h3";
 function validationError(field: string, error: ContextEntryValidationError): never {
   const message =
     error.reason === "name/reserved-authority-qualifier"
-      ? `Invalid \`${field}\`: names beginning with '@' are reserved for Work authority qualifiers`
+      ? `Invalid \`${field}\`: names beginning with '@' are reserved for authority qualifiers`
       : `Invalid \`${field}\`: ${error.reason}`;
   throw createError({
     statusCode: 400,

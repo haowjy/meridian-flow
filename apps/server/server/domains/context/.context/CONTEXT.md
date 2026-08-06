@@ -171,6 +171,9 @@ router resolves to a stable Work ID before dispatch.
   canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project
   through their Work and deliberately register in the live view, not a work-draft
   view: the ws live-room gate checks the live project manifest.
+- Work-scoped source provisioning and tree/content mutations lock and recheck the
+  owning Work in their transaction. Work deletion takes the same lifecycle lock,
+  so it cannot commit between authorization and a new scratch/upload mutation.
 - Cross-source moves preserve document identity and therefore preserve the same live
   project-manifest membership; source scope is storage location, not a second
   manifest namespace. The move commit must not rewrite document Yjs authority or journal rows.

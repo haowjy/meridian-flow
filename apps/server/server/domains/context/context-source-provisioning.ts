@@ -10,6 +10,8 @@
 import type { Database } from "@meridian/database";
 import { contextSources, projects } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
 import {
   type ContextDocumentMembershipObserver,
   DrizzleContextDocumentStore,
@@ -139,28 +141,32 @@ async function ensureWorkContextSource(
   workId: string,
   scheme: WorkScopedContextFsScheme,
 ): Promise<string> {
-  const existing = await findWorkContextSource(db, workId, scheme);
-  if (existing) return existing;
+  return runInDrizzleTransaction(db, async () => {
+    await requireLockedActiveWork(db, workId);
+    const activeDb = currentDrizzleDb(db) as Database;
+    const existing = await findWorkContextSource(activeDb, workId, scheme);
+    if (existing) return existing;
 
-  const [created] = await db
-    .insert(contextSources)
-    .values({
-      workId,
-      name: CONTEXT_SOURCE_NAMES[scheme],
-      slug: scheme,
-      scope: "work",
-      adapterType: "local",
-    })
-    .onConflictDoNothing({
-      target: [contextSources.workId, contextSources.slug],
-      where: sql`${contextSources.workId} IS NOT NULL AND ${contextSources.deletedAt} IS NULL`,
-    })
-    .returning({ id: contextSources.id });
-  if (created) return created.id;
+    const [created] = await activeDb
+      .insert(contextSources)
+      .values({
+        workId,
+        name: CONTEXT_SOURCE_NAMES[scheme],
+        slug: scheme,
+        scope: "work",
+        adapterType: "local",
+      })
+      .onConflictDoNothing({
+        target: [contextSources.workId, contextSources.slug],
+        where: sql`${contextSources.workId} IS NOT NULL AND ${contextSources.deletedAt} IS NULL`,
+      })
+      .returning({ id: contextSources.id });
+    if (created) return created.id;
 
-  const raced = await findWorkContextSource(db, workId, scheme);
-  if (!raced) throw new Error(`Failed to provision ${scheme} context source for Work ${workId}`);
-  return raced;
+    const raced = await findWorkContextSource(activeDb, workId, scheme);
+    if (!raced) throw new Error(`Failed to provision ${scheme} context source for Work ${workId}`);
+    return raced;
+  });
 }
 
 class SourceResolvedContextDocumentStore implements ContextDocumentStore {
@@ -171,7 +177,17 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly ensureSourceId: () => Promise<string>,
     private readonly findSourceId: () => Promise<string | null>,
     private readonly membershipObserver?: ContextDocumentMembershipObserver,
+    private readonly workId?: string,
   ) {}
+
+  private async mutate<T>(operation: (store: DrizzleContextDocumentStore) => Promise<T>) {
+    const workId = this.workId;
+    if (!workId) return operation(await this.sourceStore());
+    return runInDrizzleTransaction(this.db, async () => {
+      await requireLockedActiveWork(this.db, workId);
+      return operation(await this.sourceStore());
+    });
+  }
 
   private async sourceStore(): Promise<DrizzleContextDocumentStore> {
     this.sourceId ??= this.ensureSourceId();
@@ -187,7 +203,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async createFolder(parentId: string | null, name: string) {
-    return (await this.sourceStore()).createFolder(parentId, name);
+    return this.mutate((store) => store.createFolder(parentId, name));
   }
 
   async findDocument(folderId: string | null, name: string, extension: string) {
@@ -199,27 +215,27 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async recordDocumentMembership(documentId: string) {
-    return (await this.sourceStore()).recordDocumentMembership(documentId);
+    return this.mutate((store) => store.recordDocumentMembership(documentId));
   }
 
   async updateDocumentProjection(documentId: string, markdown: string) {
-    return (await this.sourceStore()).updateDocumentProjection(documentId, markdown);
+    return this.mutate((store) => store.updateDocumentProjection(documentId, markdown));
   }
 
   async upsertDocument(input: UpsertDocumentInput) {
-    return (await this.sourceStore()).upsertDocument(input);
+    return this.mutate((store) => store.upsertDocument(input));
   }
 
   async createDocumentRecordIfAbsent(input: UpsertDocumentInput) {
-    return (await this.sourceStore()).createDocumentRecordIfAbsent(input);
+    return this.mutate((store) => store.createDocumentRecordIfAbsent(input));
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput) {
-    return (await this.sourceStore()).createBinaryDocument(input);
+    return this.mutate((store) => store.createBinaryDocument(input));
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput) {
-    return (await this.sourceStore()).upsertBinaryDocument(input);
+    return this.mutate((store) => store.upsertBinaryDocument(input));
   }
 
   async contextSourceId() {
@@ -234,7 +250,13 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async transaction<T>(operation: () => Promise<T>) {
-    return (await this.sourceStore()).transaction(operation);
+    const workId = this.workId;
+    if (!workId) return (await this.sourceStore()).transaction(operation);
+    return runInDrizzleTransaction(this.db, async () => {
+      await requireLockedActiveWork(this.db, workId);
+      await this.sourceStore();
+      return operation();
+    });
   }
 
   async listFolders(parentId: string | null) {
@@ -272,5 +294,6 @@ export function createWorkContextDocumentStore(
     () => ensureWorkContextSource(db, workId, scheme),
     () => findWorkContextSource(db, workId, scheme),
     membershipObserver,
+    workId,
   );
 }

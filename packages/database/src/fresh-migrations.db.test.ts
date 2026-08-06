@@ -74,6 +74,52 @@ if (!enabled || !databaseUrl) {
         await target.end();
       }
     });
+    it("backfills active Work slugs without letting deleted Works reserve them", {
+      timeout: 90_000,
+    }, async () => {
+      const ids = {
+        user: "00000000-0000-4000-8000-000000000211",
+        project: "00000000-0000-4000-8000-000000000212",
+        deletedFirst: "00000000-0000-4000-8000-000000000213",
+        live: "00000000-0000-4000-8000-000000000214",
+        archived: "00000000-0000-4000-8000-000000000215",
+        deletedLast: "00000000-0000-4000-8000-000000000216",
+      };
+
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0070_opposite_white_queen",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email)
+            VALUES ('${ids.user}', 'work-slug-fixture', 'work-slug@test.invalid');
+            INSERT INTO projects (id, user_id, name, slug)
+            VALUES ('${ids.project}', '${ids.user}', 'Work slug fixture', 'work-slug-fixture');
+            INSERT INTO works (
+              id, project_id, created_by_user_id, name, status, created_at, deleted_at
+            ) VALUES
+              ('${ids.deletedFirst}', '${ids.project}', '${ids.user}', 'Book 2!', 'active',
+                '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
+              ('${ids.live}', '${ids.project}', '${ids.user}', 'Book 2?', 'active',
+                '2026-01-03T00:00:00Z', NULL),
+              ('${ids.archived}', '${ids.project}', '${ids.user}', 'Book 2.', 'archived',
+                '2026-01-04T00:00:00Z', NULL),
+              ('${ids.deletedLast}', '${ids.project}', '${ids.user}', 'Book 2#', 'active',
+                '2026-01-05T00:00:00Z', '2026-01-06T00:00:00Z');
+          `);
+        },
+        verify: async (target) => {
+          const rows = await target<{ id: string; slug: string }[]>`
+            SELECT id, slug FROM works WHERE project_id = ${ids.project}
+          `;
+          const slugs = new Map(rows.map((row) => [row.id, row.slug]));
+          expect(slugs.get(ids.live)).toBe("book-2");
+          expect(slugs.get(ids.archived)).toBe("book-2-2");
+          expect(slugs.get(ids.deletedFirst)).toBe("book-2");
+          expect(slugs.get(ids.deletedLast)).toBe("book-2");
+        },
+      });
+    });
     // Replays the entire migration chain into a fresh database: 10-22s alone,
     // and past the package's 30s default when parallel checkouts share the
     // one Postgres container. The budget is the replay's, not the assertion's.

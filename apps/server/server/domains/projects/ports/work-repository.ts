@@ -76,7 +76,7 @@ export interface WorkRepository {
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
   hasUnreviewedDraft(id: WorkId): Promise<boolean>;
-  /** Soft-deletes only when no live thread membership or unreviewed Work draft remains. */
+  /** Soft-deletes only when no live thread membership, draft, file, or folder remains. */
   softDelete(id: WorkId): Promise<void>;
   /** Restores a soft-deleted Work when its stable name and slug remain available. */
   restore(id: WorkId): Promise<Work>;
