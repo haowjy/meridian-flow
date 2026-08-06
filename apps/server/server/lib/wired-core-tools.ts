@@ -222,6 +222,17 @@ function modelContextResults<T extends { uri: string }>(
   return values.map((value) => ({ ...value, uri: modelContextUri(value.uri, context) }));
 }
 
+// Error payloads reach the model too: a canonical WorkId URI inside a
+// ContextError leaks the identity the @slug grammar exists to hide.
+function modelContextError(
+  error: ContextError,
+  context: ResolvedModelContextPort,
+): ToolErrorOutput {
+  return toolError(
+    typeof error.uri === "string" ? { ...error, uri: modelContextUri(error.uri, context) } : error,
+  );
+}
+
 function recordTouchInBackground(
   deps: ToolWiringDeps,
   documentId: string | undefined,
@@ -346,10 +357,11 @@ function isToolError(value: unknown): value is ToolErrorOutput {
 }
 
 async function resolveDocumentAddress(
-  port: ContextPort,
+  context: ResolvedModelContextPort,
   input: ModelDocumentWriteCommand,
   options: { deferTrackedDocumentSync?: boolean } = {},
 ): Promise<ResolvedDocumentAddress | ToolErrorOutput> {
+  const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(input.path);
   if (input.command === "create") {
     if (fragment) return toolError({ message: "create does not accept a #fragment in path" });
@@ -357,7 +369,7 @@ async function resolveDocumentAddress(
       basePath,
       options.deferTrackedDocumentSync ? { deferDocumentSync: true } : undefined,
     );
-    if (!ensured.ok) return toolError(ensured.error);
+    if (!ensured.ok) return modelContextError(ensured.error, context);
     return {
       documentId: ensured.value.documentId,
       filePath: basePath,
@@ -367,7 +379,7 @@ async function resolveDocumentAddress(
   }
 
   const ref = await port.stat(basePath);
-  if (!ref.ok) return toolError(ref.error);
+  if (!ref.ok) return modelContextError(ref.error, context);
   if (ref.value.kind !== "tracked") {
     return toolError({ message: `Cannot ${input.command} binary file: ${input.path}` });
   }
@@ -702,7 +714,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
 
-      const address = await resolveDocumentAddress(portOrError.port, parsed, {
+      const address = await resolveDocumentAddress(portOrError, parsed, {
         deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
       });
       if (isToolError(address)) return address;
@@ -776,7 +788,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.list(path);
-      if (!result.ok) return toolError(result.error);
+      if (!result.ok) return modelContextError(result.error, portOrError);
       return modelContextResults(result.value, portOrError);
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
@@ -785,7 +797,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.search(pattern, scope);
-      if (!result.ok) return toolError(result.error);
+      if (!result.ok) return modelContextError(result.error, portOrError);
       return modelContextResults(result.value, portOrError);
     },
     ask_user: askUserHandler,
