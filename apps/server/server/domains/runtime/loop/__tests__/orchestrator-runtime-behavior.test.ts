@@ -917,7 +917,7 @@ describe("runtime orchestrator behavior", () => {
       },
       modelRequestDebug: {
         captureEnabled: true,
-        record() {
+        capture() {
           throw new Error("debug store unavailable before gateway stream");
         },
         listByTurn() {
@@ -925,6 +925,9 @@ describe("runtime orchestrator behavior", () => {
         },
         listByThread() {
           return [];
+        },
+        retention() {
+          return { retainedRecords: 0, retainedBytes: 0, droppedRecords: 0, droppedBytes: 0 };
         },
       },
     });

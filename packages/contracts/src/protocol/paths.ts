@@ -197,14 +197,22 @@ export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): 
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
 }
 
+export type ModelRequestDebugQuery = {
+  turnId?: string;
+  iteration?: number;
+  gatewayCallId?: string;
+  latest?: boolean;
+};
+
 export function apiThreadModelRequestsDebugPath(
   threadId: string,
-  opts?: { turnId?: string },
+  opts?: ModelRequestDebugQuery,
 ): string {
   const search = new URLSearchParams();
-  if (opts?.turnId) {
-    search.set("turnId", opts.turnId);
-  }
+  if (opts?.turnId) search.set("turnId", opts.turnId);
+  if (opts?.iteration !== undefined) search.set("iteration", String(opts.iteration));
+  if (opts?.gatewayCallId) search.set("gatewayCallId", opts.gatewayCallId);
+  if (opts?.latest) search.set("latest", "1");
   const query = search.toString();
   return `${API_THREADS_PATH}/${threadId}/debug/model-requests${query ? `?${query}` : ""}`;
 }

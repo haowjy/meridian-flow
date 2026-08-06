@@ -1,30 +1,24 @@
-/**
- * Assembles a ModelRequestDebugRecord from the orchestrator's pre-stream state.
- */
-import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
+/** Builds the complete provider-neutral request record captured before dispatch. */
+import { createHash } from "node:crypto";
+import type {
+  ModelRequestDebugRecord,
+  ModelRequestDebugRequest,
+} from "@meridian/contracts/threads";
 import type { ResolvedSkill } from "../../packages/index.js";
-import type { FunctionTool, GenerateRequest, Message, Tool } from "../gateway/index.js";
-import { toJsonValue } from "../loop/streaming.js";
+import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
 import type { ToolRegistry } from "../tools/index.js";
 
-function textFromMessageContent(message: Message): string {
-  return message.content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text")
-    .map((part) => part.text)
-    .join("");
-}
-
-export function extractSystemMessageTexts(messages: Message[]): string[] {
-  return messages
-    .filter((message) => message.role === "system")
-    .map((message) => textFromMessageContent(message))
-    .filter((text) => text.length > 0);
+function serializeCanonicalRequest(request: GenerateRequest): string {
+  const { signal: _signal, correlation: _correlation, ...canonicalRequest } = request;
+  const serialized = JSON.stringify(canonicalRequest);
+  if (serialized === undefined) throw new Error("Model request debug capture expected an object");
+  return serialized;
 }
 
 function advertisedToolsMetadata(
   registry: ToolRegistry,
   tools: Tool[] | undefined,
-): ModelRequestDebugRecord["tools"] {
+): ModelRequestDebugRecord["toolRegistrations"] {
   if (!tools) return [];
   return tools
     .filter((tool): tool is FunctionTool => tool.type === "function")
@@ -45,7 +39,8 @@ function skillsMetadata(resolvedSkills: ResolvedSkill[]): ModelRequestDebugRecor
   }));
 }
 
-export function buildModelRequestDebugRecord(input: {
+export type ModelRequestDebugCaptureInput = {
+  gatewayCallId: string;
   threadId: string;
   turnId: string;
   iteration: number;
@@ -53,23 +48,35 @@ export function buildModelRequestDebugRecord(input: {
   request: GenerateRequest;
   resolvedSkills: ResolvedSkill[];
   toolRegistry: ToolRegistry;
-}): ModelRequestDebugRecord {
-  const nonSystemMessageCount = input.request.messages.filter(
-    (message) => message.role !== "system",
-  ).length;
+};
+
+export function buildModelRequestDebugRecord(
+  input: ModelRequestDebugCaptureInput,
+  maxRequestBytes: number,
+): ModelRequestDebugRecord {
+  const serializedRequest = serializeCanonicalRequest(input.request);
+  const requestBytes = Buffer.byteLength(serializedRequest, "utf8");
+  const request =
+    requestBytes > maxRequestBytes
+      ? null
+      : (JSON.parse(serializedRequest) as ModelRequestDebugRequest);
 
   return {
+    schema: "meridian.model-request-debug.v1",
+    gatewayCallId: input.gatewayCallId,
     threadId: input.threadId,
     turnId: input.turnId,
     iteration: input.iteration,
     requestedAt: new Date().toISOString(),
     agentSlug: input.agentSlug,
-    model: input.request.model ?? null,
-    provider: input.request.provider ?? null,
-    reasoning: input.request.reasoning != null ? toJsonValue(input.request.reasoning) : null,
-    systemMessages: extractSystemMessageTexts(input.request.messages),
+    requestDigest: createHash("sha256").update(serializedRequest).digest("hex"),
+    requestBytes,
+    capture:
+      request === null
+        ? { status: "omitted", reason: "request_too_large", maxRequestBytes }
+        : { status: "complete" },
+    request,
     skills: skillsMetadata(input.resolvedSkills),
-    tools: advertisedToolsMetadata(input.toolRegistry, input.request.tools),
-    messageCount: nonSystemMessageCount,
+    toolRegistrations: advertisedToolsMetadata(input.toolRegistry, input.request.tools),
   };
 }

@@ -1,6 +1,39 @@
 /** Fail-safe environment gate tests for debug-only server surfaces. */
 import { describe, expect, it } from "vitest";
-import { resolveObsVerbose, resolveRecentEventsEnabled } from "./env.js";
+import {
+  resolveModelRequestDebugCaptureEnabled,
+  resolveObsVerbose,
+  resolveRecentEventsEnabled,
+} from "./env.js";
+
+describe("resolveModelRequestDebugCaptureEnabled", () => {
+  it.each(["development", "test"])("enables capture in local %s", (rawNodeEnv) => {
+    expect(resolveModelRequestDebugCaptureEnabled({ rawNodeEnv, rawAppEnv: "dev" })).toBe(true);
+  });
+
+  it("allows the local override to disable capture", () => {
+    expect(
+      resolveModelRequestDebugCaptureEnabled({
+        rawNodeEnv: "development",
+        rawAppEnv: "dev",
+        debugCaptureOverride: "0",
+      }),
+    ).toBe(false);
+  });
+
+  it.each([
+    { rawNodeEnv: "production", rawAppEnv: "production" },
+    { rawNodeEnv: "production", rawAppEnv: "dev" },
+    { rawNodeEnv: "development", rawAppEnv: "staging" },
+  ])("cannot be enabled outside local dev/test: %o", (environment) => {
+    expect(
+      resolveModelRequestDebugCaptureEnabled({
+        ...environment,
+        debugCaptureOverride: "1",
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("resolveRecentEventsEnabled", () => {
   it.each(["development", "test"])("enables recent events in %s", (rawNodeEnv) => {

@@ -213,6 +213,8 @@ export interface GenerateRequest {
   signal?: AbortSignal;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {
+    /** Preallocated by callers that need to join request content to lifecycle evidence. */
+    gatewayCallId?: string;
     threadId?: string;
     turnId?: string;
     iteration?: number;

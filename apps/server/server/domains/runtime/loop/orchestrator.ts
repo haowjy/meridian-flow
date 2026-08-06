@@ -97,7 +97,6 @@ import type {
 } from "../../threads/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
-import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
@@ -915,7 +914,9 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
+      const gatewayCallId = crypto.randomUUID();
       request.correlation = {
+        gatewayCallId,
         threadId: input.threadId,
         turnId: currentAssistantTurn.id,
         iteration: iteration - 1,
@@ -949,17 +950,16 @@ async function* generateEvents(
       }
 
       try {
-        deps.modelRequestDebug.record(
-          buildModelRequestDebugRecord({
-            threadId: input.threadId,
-            turnId: currentAssistantTurn.id,
-            iteration: iteration - 1,
-            agentSlug: thread.currentAgent,
-            request,
-            resolvedSkills: built.resolvedSkills,
-            toolRegistry: deps.toolRegistry,
-          }),
-        );
+        deps.modelRequestDebug.capture({
+          gatewayCallId,
+          threadId: input.threadId,
+          turnId: currentAssistantTurn.id,
+          iteration: iteration - 1,
+          agentSlug: thread.currentAgent,
+          request,
+          resolvedSkills: built.resolvedSkills,
+          toolRegistry: deps.toolRegistry,
+        });
       } catch (cause) {
         eventSink.emit({
           timestamp: new Date().toISOString(),

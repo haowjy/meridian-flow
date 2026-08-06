@@ -266,7 +266,7 @@ export function createInstrumentedGateway(
   const instrumented: Gateway = {
     stream(request) {
       const startedAt = Date.now();
-      const gatewayCallId = crypto.randomUUID();
+      const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
       const observation = createStreamObservation({
         request,
@@ -284,7 +284,7 @@ export function createInstrumentedGateway(
 
     async generate(request) {
       const startedAt = Date.now();
-      const gatewayCallId = crypto.randomUUID();
+      const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
       let route = {
         provider: request.provider,

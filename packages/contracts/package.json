@@ -30,7 +30,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
     "typescript": "catalog:",
+    "unified": "^11.0.5",
     "vitest": "catalog:"
   }
 }

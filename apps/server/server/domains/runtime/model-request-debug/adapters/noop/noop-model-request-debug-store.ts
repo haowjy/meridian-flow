@@ -2,14 +2,17 @@
  * No-op ModelRequestDebugStore: satisfies the port when capture is disabled
  * (production default). Routes return 404 when captureEnabled is false.
  */
-import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
-
+import type {
+  ModelRequestDebugRecord,
+  ModelRequestDebugRetention,
+} from "@meridian/contracts/threads";
+import type { ModelRequestDebugCaptureInput } from "../../build-record.js";
 import type { ModelRequestDebugStore } from "../../ports/model-request-debug-store.js";
 
 export class NoopModelRequestDebugStore implements ModelRequestDebugStore {
   readonly captureEnabled = false;
 
-  record(_record: ModelRequestDebugRecord): void {
+  capture(_input: ModelRequestDebugCaptureInput): void {
     // intentionally empty
   }
 
@@ -19,6 +22,10 @@ export class NoopModelRequestDebugStore implements ModelRequestDebugStore {
 
   listByThread(_threadId: string): ModelRequestDebugRecord[] {
     return [];
+  }
+
+  retention(): ModelRequestDebugRetention {
+    return { retainedRecords: 0, retainedBytes: 0, droppedRecords: 0, droppedBytes: 0 };
   }
 }
 
