@@ -7,6 +7,7 @@ import type { TurnContextPreview } from "@meridian/contracts/threads";
 import type { PackageRepository } from "../domains/packages/index.js";
 import { loadThreadConversationContext } from "../domains/runtime/loop/fork-thread-context.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
+import type { WorkContextReader } from "../domains/runtime/loop/work-context.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import type { ToolExecutor, ToolRegistry } from "../domains/runtime/tools/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
@@ -20,6 +21,7 @@ export interface TurnContextPreviewRouteDeps {
   packageRepository: PackageRepository;
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
+  workContext: WorkContextReader;
 }
 
 export async function handleGetTurnContextPreview(
@@ -53,6 +55,7 @@ export async function handleGetTurnContextPreview(
     toolRegistry: deps.toolRegistry,
     baseTools: deps.toolExecutor.getDefinitions?.(),
     persistBake: false,
+    workContext: deps.workContext,
   });
 
   return {

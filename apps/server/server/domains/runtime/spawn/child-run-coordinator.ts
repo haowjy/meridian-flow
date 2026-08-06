@@ -25,6 +25,7 @@ import type {
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
+import type { WorkContextReader } from "../loop/work-context.js";
 import { modelInvocableSkillSlugs, renderSkillsSystemPromptSection } from "../tools/skill-tools.js";
 import type { HelperResultDelivery } from "./helper-result-delivery.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
@@ -59,6 +60,7 @@ export interface ChildRunCoordinatorDeps {
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
   billingSpendReader: BillingSpendReader;
+  workContext: WorkContextReader;
 }
 
 export interface ChildRunCoordinator {
@@ -174,6 +176,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
     const childAgent = childAgentContext.agent;
 
+    const workContext = await deps.workContext.renderForThread(input.parentThread.id as ThreadId);
     const child = await deps.repos.transaction(async () => {
       const created = await deps.repos.subagentThreads.createSubagent({
         userId: input.parentThread.userId,
@@ -186,6 +189,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         composedSystemPrompt: assembleComposedSystemPrompt({
           basePrompt: childAgent.body,
           skillsSystemPromptSection: renderSkillsSystemPromptSection(childAgentContext.skills),
+          workContext,
         }),
         bakedSkillSlugs: modelInvocableSkillSlugs(childAgentContext.skills),
         title: input.description ?? `${input.agentSlug} subagent`,

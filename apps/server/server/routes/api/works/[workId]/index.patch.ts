@@ -28,12 +28,16 @@ export default defineEventHandler(async (event) => {
   }
 
   await requireWorkOwner({ works: app.workRepo, projects: app.projectRepo }, workId, user.userId);
-  const work = await updateWork(app.workRepo, workId, {
-    name: body.name?.trim(),
-    goal: body.goal,
-    description: body.description,
-    status: body.status,
-  }).catch((error: unknown) => {
+  const work = await updateWork(
+    { works: app.workRepo, contextUpdates: app.systemUpdates },
+    workId,
+    {
+      name: body.name?.trim(),
+      goal: body.goal,
+      description: body.description,
+      status: body.status,
+    },
+  ).catch((error: unknown) => {
     if (error instanceof WorkNameConflictError) {
       throw createError({ statusCode: 409, message: error.message });
     }

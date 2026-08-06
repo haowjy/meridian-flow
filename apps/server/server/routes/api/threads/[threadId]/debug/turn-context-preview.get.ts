@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
       packageRepository: app.packageRepository,
       toolRegistry: app.toolRegistry,
       toolExecutor: app.toolExecutor,
+      workContext: app.workContext,
     },
     { threadId, userId: user.userId },
   );

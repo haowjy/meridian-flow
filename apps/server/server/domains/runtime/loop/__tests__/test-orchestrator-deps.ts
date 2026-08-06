@@ -102,6 +102,11 @@ export function createTestOrchestratorDeps(
       async rollbackResponse() {},
     },
     ...overrides,
+    workContext: overrides.workContext ?? {
+      async renderForThread() {
+        return "<work_context>\ntest\n</work_context>";
+      },
+    },
     creditLedger,
   };
 }

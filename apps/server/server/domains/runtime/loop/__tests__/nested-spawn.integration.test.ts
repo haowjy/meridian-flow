@@ -180,6 +180,11 @@ describe("nested spawn runtime (P2b gate)", () => {
         getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
       }),
       billingSpendReader: creditLedger,
+      workContext: {
+        async renderForThread() {
+          return "<work_context>\ntest\n</work_context>";
+        },
+      },
     });
 
     for (const registration of createSpawnToolRegistrations()) {

@@ -13,13 +13,15 @@ import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/docume
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
 
 describe("composed-system-prompt", () => {
-  it("assembles base prompt, skills section, document dialect, and URI guidance", () => {
+  it("assembles base prompt, skills section, Work context, document dialect, and URI guidance", () => {
     const composed = assembleComposedSystemPrompt({
       basePrompt: "Agent body.",
       skillsSystemPromptSection: `---\n${SKILLS_CATALOG_PROMPT_MARKER}\n- skill-one: Run\n---`,
+      workContext: "<work_context>\ncurrent: book-1\n</work_context>",
     });
     expect(composed).toContain("Agent body.");
     expect(composed).toContain(SKILLS_CATALOG_PROMPT_MARKER);
+    expect(composed).toContain("<work_context>\ncurrent: book-1\n</work_context>");
     expect(composed).toContain(DOCUMENT_DIALECT_CORE_INSTRUCTION);
     expect(composed).toContain(RUNTIME_URI_SYSTEM_INSTRUCTION);
     expect(bakedSkillSetAdvertisesInvoke(["skill-one"])).toBe(true);
