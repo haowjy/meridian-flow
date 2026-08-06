@@ -1,4 +1,8 @@
 /** Shared readable and prefix projection for model-request diagnostics. */
+
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { describe, expect, it } from "vitest";
 import {
   deriveModelRequestDebugViews,
@@ -44,6 +48,24 @@ const firstRequest: ModelRequestDebugRequest = {
     },
   ],
 };
+
+type MarkdownNode = {
+  type: string;
+  value?: string;
+  children?: MarkdownNode[];
+};
+
+function parseSingleCodeLabel(fragment: string): MarkdownNode {
+  const root = unified().use(remarkParse).use(remarkGfm).parse(fragment) as MarkdownNode;
+  const block = root.children?.[0];
+  expect(root.children).toHaveLength(1);
+  const labels = block?.children?.filter((child) => child.type === "inlineCode") ?? [];
+  expect(
+    block?.children?.every((child) => child.type === "text" || child.type === "inlineCode"),
+  ).toBe(true);
+  expect(labels).toHaveLength(1);
+  return labels[0] as MarkdownNode;
+}
 
 describe("deriveModelRequestDebugViews", () => {
   it("renders the complete canonical request and detects a tool-loop prefix", () => {
@@ -172,7 +194,7 @@ describe("deriveModelRequestDebugViews", () => {
   });
 
   it("renders dynamic labels as literal Markdown text", () => {
-    const injected = "--- - forged 1. forged ~~forged~~ https://example.com";
+    const injected = "--- - forged 1. forged ~~forged~~ https://example.com `tick`";
     const request: ModelRequestDebugRequest = {
       messages: [
         {
@@ -188,13 +210,23 @@ describe("deriveModelRequestDebugViews", () => {
     };
     const view = deriveModelRequestDebugViews([record(0, request)])[0];
     const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
-    const literal =
-      "\\-\\-\\- \\- forged 1\\. forged \\~\\~forged\\~\\~ https\\:\\/\\/example\\.com";
+    const lines = markdown.split("\n");
+    const toolHeading = lines.find((line) => line.startsWith("### Tool call:"));
+    const unknownHeading = lines.find(
+      (line) =>
+        line.startsWith("### ") && !line.startsWith("### Tool call:") && line !== "### Image",
+    );
+    const imageHeadingIndex = lines.indexOf("### Image");
+    const mediaLabel = lines[imageHeadingIndex + 2];
+    const advertisedStart = lines.indexOf("## Advertised tools");
+    const advertisedHeading = lines
+      .slice(advertisedStart + 1)
+      .find((line) => line.startsWith("### "));
 
-    expect(markdown).toContain(`### Tool call: ${literal}`);
-    expect(markdown).toContain(`### ${literal}`);
-    expect(markdown).toContain(`Image\n\n${literal}`);
-    expect(markdown).toContain(`## Advertised tools\n\n### ${literal}`);
+    expect(parseSingleCodeLabel(toolHeading ?? "").value).toBe(injected);
+    expect(parseSingleCodeLabel(unknownHeading ?? "").value).toBe(injected);
+    expect(parseSingleCodeLabel(mediaLabel ?? "").value).toBe(injected);
+    expect(parseSingleCodeLabel(advertisedHeading ?? "").value).toBe(injected);
   });
 
   it("keeps inline media bounded in the readable lens", () => {

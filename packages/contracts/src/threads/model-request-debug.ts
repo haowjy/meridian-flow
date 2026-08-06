@@ -196,25 +196,25 @@ function boundedReadablePart(
 
 function readableLabel(value: string, fallback: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
-  if (!normalized) return fallback;
+  const source = normalized || fallback;
+
+  const inlineCode = (label: string): string => {
+    let longestRun = 0;
+    for (const match of label.matchAll(/`+/g)) longestRun = Math.max(longestRun, match[0].length);
+    const fence = "`".repeat(longestRun + 1);
+    return `${fence} ${label} ${fence}`;
+  };
 
   let label = "";
   let truncated = false;
-  for (const character of normalized) {
-    const code = character.codePointAt(0) ?? 0;
-    const isAsciiPunctuation =
-      (code >= 0x21 && code <= 0x2f) ||
-      (code >= 0x3a && code <= 0x40) ||
-      (code >= 0x5b && code <= 0x60) ||
-      (code >= 0x7b && code <= 0x7e);
-    const escaped = isAsciiPunctuation ? `\\${character}` : character;
-    if (utf8Bytes(`${label}${escaped}…`) > MAX_READABLE_LABEL_BYTES) {
+  for (const character of source) {
+    if (utf8Bytes(inlineCode(`${label}${character}…`)) > MAX_READABLE_LABEL_BYTES) {
       truncated = true;
       break;
     }
-    label += escaped;
+    label += character;
   }
-  return truncated ? `${label}…` : label;
+  return inlineCode(truncated ? `${label}…` : label);
 }
 
 function fencedBody(body: string): string {
