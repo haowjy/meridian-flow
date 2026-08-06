@@ -926,6 +926,9 @@ describe("runtime orchestrator behavior", () => {
         listByThread() {
           return [];
         },
+        retention() {
+          return { retainedRecords: 0, retainedBytes: 0, droppedRecords: 0, droppedBytes: 0 };
+        },
       },
     });
 

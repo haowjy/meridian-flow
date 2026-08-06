@@ -1,30 +1,46 @@
-/**
- * Assembles a ModelRequestDebugRecord from the orchestrator's pre-stream state.
- */
-import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
+/** Builds the complete provider-neutral request record captured before dispatch. */
+import { createHash } from "node:crypto";
+import type {
+  JsonObject,
+  ModelRequestDebugRecord,
+  ModelRequestDebugRequest,
+} from "@meridian/contracts/threads";
 import type { ResolvedSkill } from "../../packages/index.js";
-import type { FunctionTool, GenerateRequest, Message, Tool } from "../gateway/index.js";
+import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
 import { toJsonValue } from "../loop/streaming.js";
 import type { ToolRegistry } from "../tools/index.js";
 
-function textFromMessageContent(message: Message): string {
-  return message.content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text")
-    .map((part) => part.text)
-    .join("");
+const UTF8_ENCODER = new TextEncoder();
+
+function jsonObject(value: unknown): JsonObject {
+  const serialized = toJsonValue(value);
+  if (typeof serialized !== "object" || serialized === null || Array.isArray(serialized)) {
+    throw new Error("Model request debug capture expected a JSON object");
+  }
+  return serialized;
 }
 
-export function extractSystemMessageTexts(messages: Message[]): string[] {
-  return messages
-    .filter((message) => message.role === "system")
-    .map((message) => textFromMessageContent(message))
-    .filter((text) => text.length > 0);
+function canonicalRequest(request: GenerateRequest): ModelRequestDebugRequest {
+  return jsonObject({
+    ...(request.model === undefined ? {} : { model: request.model }),
+    ...(request.provider === undefined ? {} : { provider: request.provider }),
+    messages: request.messages,
+    ...(request.tools === undefined ? {} : { tools: request.tools }),
+    ...(request.toolChoice === undefined ? {} : { toolChoice: request.toolChoice }),
+    ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
+    ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+    ...(request.topP === undefined ? {} : { topP: request.topP }),
+    ...(request.stopSequences === undefined ? {} : { stopSequences: request.stopSequences }),
+    ...(request.responseFormat === undefined ? {} : { responseFormat: request.responseFormat }),
+    ...(request.reasoning === undefined ? {} : { reasoning: request.reasoning }),
+    ...(request.providerOptions === undefined ? {} : { providerOptions: request.providerOptions }),
+  }) as ModelRequestDebugRequest;
 }
 
 function advertisedToolsMetadata(
   registry: ToolRegistry,
   tools: Tool[] | undefined,
-): ModelRequestDebugRecord["tools"] {
+): ModelRequestDebugRecord["toolRegistrations"] {
   if (!tools) return [];
   return tools
     .filter((tool): tool is FunctionTool => tool.type === "function")
@@ -46,6 +62,7 @@ function skillsMetadata(resolvedSkills: ResolvedSkill[]): ModelRequestDebugRecor
 }
 
 export function buildModelRequestDebugRecord(input: {
+  gatewayCallId: string;
   threadId: string;
   turnId: string;
   iteration: number;
@@ -54,22 +71,22 @@ export function buildModelRequestDebugRecord(input: {
   resolvedSkills: ResolvedSkill[];
   toolRegistry: ToolRegistry;
 }): ModelRequestDebugRecord {
-  const nonSystemMessageCount = input.request.messages.filter(
-    (message) => message.role !== "system",
-  ).length;
+  const request = canonicalRequest(input.request);
+  const serializedRequest = JSON.stringify(request);
 
   return {
+    schema: "meridian.model-request-debug.v1",
+    gatewayCallId: input.gatewayCallId,
     threadId: input.threadId,
     turnId: input.turnId,
     iteration: input.iteration,
     requestedAt: new Date().toISOString(),
     agentSlug: input.agentSlug,
-    model: input.request.model ?? null,
-    provider: input.request.provider ?? null,
-    reasoning: input.request.reasoning != null ? toJsonValue(input.request.reasoning) : null,
-    systemMessages: extractSystemMessageTexts(input.request.messages),
+    requestDigest: createHash("sha256").update(serializedRequest).digest("hex"),
+    requestBytes: UTF8_ENCODER.encode(serializedRequest).byteLength,
+    capture: { status: "complete" },
+    request,
     skills: skillsMetadata(input.resolvedSkills),
-    tools: advertisedToolsMetadata(input.toolRegistry, input.request.tools),
-    messageCount: nonSystemMessageCount,
+    toolRegistrations: advertisedToolsMetadata(input.toolRegistry, input.request.tools),
   };
 }

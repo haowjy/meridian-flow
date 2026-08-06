@@ -8,7 +8,7 @@ export {
   createNoopModelRequestDebugStore,
   NoopModelRequestDebugStore,
 } from "./adapters/noop/noop-model-request-debug-store.js";
-export { buildModelRequestDebugRecord, extractSystemMessageTexts } from "./build-record.js";
+export { buildModelRequestDebugRecord } from "./build-record.js";
 export {
   createModelRequestDebugStoreFromEnv,
   isModelRequestDebugCaptureEnabled,

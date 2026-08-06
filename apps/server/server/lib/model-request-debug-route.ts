@@ -33,5 +33,5 @@ export async function handleGetModelRequestDebugRecords(
     ? deps.modelRequestDebug.listByTurn(thread.id, input.turnId)
     : deps.modelRequestDebug.listByThread(thread.id);
 
-  return { records };
+  return { records, retention: deps.modelRequestDebug.retention() };
 }

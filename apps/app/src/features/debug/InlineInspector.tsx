@@ -438,8 +438,8 @@ export function InlineInspector() {
                     className="rounded border border-border-subtle bg-muted p-2"
                   >
                     <p className="mb-1 font-mono text-meta text-foreground">
-                      iter {record.iteration} · {record.agentSlug ?? "no agent"} ·{" "}
-                      {record.model ?? "default model"}
+                      iteration {record.iteration} ({record.agentSlug ?? "no agent"}) ({" "}
+                      {record.request?.model ?? "default model"})
                     </p>
                     <JsonTree value={record} className="max-h-none border-0 bg-transparent p-0" />
                   </div>

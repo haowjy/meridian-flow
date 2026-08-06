@@ -915,7 +915,9 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
+      const gatewayCallId = crypto.randomUUID();
       request.correlation = {
+        gatewayCallId,
         threadId: input.threadId,
         turnId: currentAssistantTurn.id,
         iteration: iteration - 1,
@@ -951,6 +953,7 @@ async function* generateEvents(
       try {
         deps.modelRequestDebug.record(
           buildModelRequestDebugRecord({
+            gatewayCallId,
             threadId: input.threadId,
             turnId: currentAssistantTurn.id,
             iteration: iteration - 1,

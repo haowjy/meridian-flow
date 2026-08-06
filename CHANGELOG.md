@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/server`, `packages/contracts`: dev model-request capture now retains the
+  complete provider-neutral request with a digest and hard record/byte bounds.
+  Prompt content stays in the owner-gated memory ring and never enters ordinary
+  diagnostic events or JSONL logs.
 - `apps/server`: diagnostic events are now capped at 8 KiB, error envelopes
   retain only safe identity fields, in-memory and pending buffers have byte as
   well as record limits, and local JSONL output rotates at 8 MiB with both
