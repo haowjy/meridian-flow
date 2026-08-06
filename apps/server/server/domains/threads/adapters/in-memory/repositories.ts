@@ -449,6 +449,22 @@ export function createInMemoryRepositories(
       const workId = primaryWorkIdForThread(threadId);
       return workId ? { workId } : null;
     },
+    async rebindPrimary(threadId, workId) {
+      const thread = threads.get(threadId);
+      if (!thread) throw new Error("Thread membership requires an existing thread");
+      if (options.works) {
+        const work = await options.works.findById(workId);
+        if (!work || work.deletedAt || work.projectId !== thread.projectId) {
+          throw new Error("Work is not available in this project");
+        }
+      }
+      const previousWorkId = primaryWorkIdForThread(threadId);
+      if (previousWorkId === workId) return { previousWorkId, changed: false };
+      if (previousWorkId) threadWorks.delete(membershipKey(threadId, previousWorkId));
+      threadWorks.delete(membershipKey(threadId, workId));
+      threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
+      return { previousWorkId, changed: true };
+    },
     async listByThread(threadId) {
       return [...threadWorks.values()]
         .filter((row) => row.threadId === threadId)

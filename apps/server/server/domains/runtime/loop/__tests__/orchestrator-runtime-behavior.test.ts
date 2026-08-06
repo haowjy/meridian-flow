@@ -84,6 +84,7 @@ async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway =
 function runnableCoreRegistrations() {
   const handler = async () => ({ ok: true });
   return createCoreToolRegistrations({
+    work: async () => ({ ok: true }),
     write: handler,
     ls: handler,
     search: handler,

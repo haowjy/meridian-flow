@@ -18,8 +18,8 @@ export interface CreateWorkInput {
 
 export interface UpdateWorkInput {
   name?: string;
-  goal?: string;
-  description?: string;
+  goal?: string | null;
+  description?: string | null;
 }
 
 export interface ListWorksOptions {

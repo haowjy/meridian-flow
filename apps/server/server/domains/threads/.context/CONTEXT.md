@@ -12,8 +12,8 @@ instead of the N:1 `threads.workId` column.
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
   responses with token/cost rollups.
 - **Thread↔Work membership** — `thread_works` join table (one primary per
-  thread). `threads.workId` column is **dropped**. Work-authority URIs resolve
-  through membership.
+  thread). `threads.workId` column is **dropped**. Membership is organizational;
+  same-project Work-authority URIs do not require membership.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
@@ -64,6 +64,7 @@ instead of the N:1 `threads.workId` column.
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
+| `ThreadWorksRepository` | Adds organizational memberships, reads the primary, and rebinds the primary membership in place under the thread row lock. Rebind accepts active or archived same-project Works and preserves exactly one primary. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 

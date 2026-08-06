@@ -26,6 +26,7 @@ import {
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   AgentEditAccess,
+  CollabDrafts,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
 } from "../domains/collab/index.js";
@@ -41,12 +42,22 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { WorkRepository } from "../domains/projects/index.js";
+import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
+import {
+  createWork,
+  deleteWork,
+  updateWork,
+  type WorkContextUpdates,
+  type WorkRepository,
+} from "../domains/projects/index.js";
 import {
   createCoreToolRegistrations,
   type InterruptToolHandlerContext,
   type ToolHandlerContext,
   type ToolRegistration,
+  type WorkCommand,
+  WorkCommandSchema,
+  workCommandCategory,
 } from "../domains/runtime/index.js";
 import type {
   ThreadRepository,
@@ -61,8 +72,11 @@ export interface ToolWiringDeps {
   contextPorts: UnifiedContextPortFactory;
   documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
-  threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "listByProject">;
+  threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
+  works: WorkRepository;
+  preferences: ProjectPreferencesRepository;
+  workContextUpdates: WorkContextUpdates;
+  drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
 }
@@ -115,7 +129,9 @@ const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "redo",
 ]);
 
-function toolError(error: ContextError | { message: string }): ToolErrorOutput {
+function toolError(
+  error: ContextError | ({ message: string; code?: string } & Record<string, unknown>),
+): ToolErrorOutput {
   if ("code" in error && typeof error.code === "string") {
     return { isError: true, output: meridianErrorFromStructuredToolOutput(error as JsonValue) };
   }
@@ -203,6 +219,52 @@ function writeSchemaError(error: {
       return path ? `${path}: ${issue.message}` : issue.message;
     })
     .join("; ");
+}
+
+function schemaError(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.join(".");
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join("; ");
+}
+
+function workReceipt(
+  command: WorkCommand,
+  line: string,
+  inverse?: Record<string, unknown>,
+): { workReceipt: Record<string, unknown> } {
+  return {
+    workReceipt: {
+      category: workCommandCategory(command),
+      line,
+      ...(inverse ? { inverse } : {}),
+    },
+  };
+}
+
+async function workBySlug(
+  deps: ToolWiringDeps,
+  projectId: string,
+  slug: string,
+): Promise<Awaited<ReturnType<WorkRepository["findById"]>> | ToolErrorOutput> {
+  const works = await deps.works.listByProject(projectId);
+  const work = works.find((candidate) => candidate.slug === slug) ?? null;
+  if (work) return work;
+  const validWorkSlugs = works
+    .filter((candidate) => candidate.status === "active")
+    .map((candidate) => candidate.slug);
+  return toolError({
+    code: "work_not_found",
+    message: `Unknown Work ${slug}. Valid active Work slugs: ${validWorkSlugs.join(", ") || "none"}`,
+    workSlug: slug,
+    validWorkSlugs,
+  });
+}
+
+function cleared(value: string | undefined): string | null | undefined {
+  return value === "" ? null : value;
 }
 
 function isToolError(value: unknown): value is ToolErrorOutput {
@@ -392,6 +454,119 @@ async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) 
 
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   return createCoreToolRegistrations({
+    work: async (input: unknown, ctx: ToolHandlerContext) => {
+      const parsed = WorkCommandSchema.safeParse(input);
+      if (!parsed.success) return toolError({ message: schemaError(parsed.error) });
+      const command = parsed.data;
+      const thread = await deps.threads.findById(ctx.threadId);
+      if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
+
+      try {
+        if (command.command === "list") {
+          const works = await deps.works.listByProject(thread.projectId, {
+            status: command.status ?? "active",
+          });
+          return works.map(({ slug, name, goal, status }) => ({ slug, name, goal, status }));
+        }
+
+        if (command.command === "create") {
+          const work = await createWork(
+            {
+              works: deps.works,
+              preferences: deps.preferences,
+              contextUpdates: deps.workContextUpdates,
+            },
+            thread.userId,
+            {
+              projectId: thread.projectId,
+              createdByUserId: thread.userId,
+              name: command.name,
+              goal: command.goal,
+              description: command.description,
+            },
+          );
+          return {
+            output: work,
+            metadata: workReceipt(command, `Created Work ${work.name}.`, {
+              command: "delete",
+              workId: work.id,
+            }),
+          };
+        }
+
+        const selected = await workBySlug(deps, thread.projectId, command.work);
+        if (isToolError(selected)) return selected;
+        if (!selected) return toolError({ message: `Unknown Work ${command.work}` });
+
+        if (command.command === "show") {
+          const [threads, drafts] = await Promise.all([
+            deps.threads.listByWork(thread.projectId, selected.id),
+            deps.drafts.draftReview.list({ projectId: thread.projectId, workId: selected.id }),
+          ]);
+          return { work: selected, recentThreads: threads.slice(0, 10), drafts };
+        }
+
+        if (command.command === "update") {
+          const updated = await updateWork(
+            { works: deps.works, contextUpdates: deps.workContextUpdates },
+            selected.id,
+            {
+              name: command.name,
+              goal: cleared(command.goal),
+              description: cleared(command.description),
+              status: command.status,
+            },
+          );
+          return {
+            output: updated,
+            metadata: workReceipt(command, `Updated Work ${updated.name}.`, {
+              command: "update",
+              workId: selected.id,
+              name: selected.name,
+              goal: selected.goal,
+              description: selected.description,
+              status: selected.status,
+            }),
+          };
+        }
+
+        if (command.command === "delete") {
+          await deleteWork(
+            { works: deps.works, contextUpdates: deps.workContextUpdates },
+            selected.id,
+          );
+          const deleted = await deps.works.findById(selected.id);
+          return {
+            output: deleted ?? selected,
+            metadata: workReceipt(command, `Deleted Work ${selected.name}.`, {
+              command: "restore",
+              workId: selected.id,
+            }),
+          };
+        }
+
+        const rebound = await deps.threadWorks.rebindPrimary(thread.id, selected.id);
+        if (rebound.changed && rebound.previousWorkId) {
+          const previous = await deps.works.findById(rebound.previousWorkId);
+          if (previous?.aiWriteMode === "draft") {
+            await deps.documentSync.agentEdit().invalidateThread("", thread.id);
+          }
+        }
+        if (thread.kind === "primary") {
+          await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, selected.id);
+        }
+        await deps.workContextUpdates.threadChanged(thread.id);
+        return {
+          output: selected,
+          metadata: workReceipt(command, `Switched this conversation to Work ${selected.name}.`, {
+            command: "switch",
+            workId: rebound.previousWorkId,
+          }),
+        };
+      } catch (error) {
+        return toolError({ message: error instanceof Error ? error.message : String(error) });
+      }
+    },
     write: async (input: unknown, ctx: ToolHandlerContext) => {
       const parsed = parseWriteToolInput(input);
       if (isToolError(parsed)) return parsed;

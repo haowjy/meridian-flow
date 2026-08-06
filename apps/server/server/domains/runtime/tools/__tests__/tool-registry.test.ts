@@ -6,11 +6,18 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 
-import { CORE_TOOL_NAMES, createCoreToolRegistrations, createToolRegistry } from "../index.js";
+import {
+  CORE_TOOL_NAMES,
+  createCoreToolRegistrations,
+  createToolRegistry,
+  WorkCommandSchema,
+  workCommandCategory,
+} from "../index.js";
 
 function coreRegistrations() {
   const handler = async () => ({ ok: true });
   return createCoreToolRegistrations({
+    work: async () => ({ ok: true }),
     write: handler,
     ls: handler,
     search: handler,
@@ -74,6 +81,24 @@ describe("createToolRegistry core tools", () => {
     expect(writeSchema.oneOf?.[0]?.properties).toMatchObject({
       overwrite: { description: expect.stringContaining("entire existing document") },
     });
+
+    const workSchema = registry.getRegistration("work")?.definition.inputSchema as {
+      oneOf?: Array<{
+        required?: string[];
+        additionalProperties?: boolean;
+        properties?: Record<string, unknown>;
+      }>;
+    };
+    expect(workSchema.oneOf?.map((variant) => variant.properties?.command)).toEqual(
+      ["list", "show", "create", "update", "delete", "switch"].map((command) => ({
+        type: "string",
+        const: command,
+      })),
+    );
+    for (const variant of workSchema.oneOf ?? []) {
+      expect(variant.required).toContain("command");
+      expect(variant.additionalProperties).toBe(false);
+    }
     expect(writeSchema.oneOf?.[1]?.properties).toMatchObject({
       in: {
         anyOf: expect.arrayContaining([
@@ -133,6 +158,14 @@ describe("createToolRegistry core tools", () => {
     expect(registry.getRegistration("bash")).toBeUndefined();
     expect(registry.getRegistration("read")).toBeUndefined();
     expect(registry.getRegistration("edit")).toBeUndefined();
+  });
+
+  it("keeps parser branches strict and categorizes receipt behavior", () => {
+    expect(WorkCommandSchema.safeParse({ command: "list", extra: true }).success).toBe(false);
+    expect(workCommandCategory({ command: "list" })).toBe("read");
+    expect(workCommandCategory({ command: "show", work: "drafting" })).toBe("read");
+    expect(workCommandCategory({ command: "create", name: "Drafting" })).toBe("mutate");
+    expect(workCommandCategory({ command: "switch", work: "drafting" })).toBe("binding");
   });
 
   it("publishes a satisfiable write schema for model tool calls", () => {

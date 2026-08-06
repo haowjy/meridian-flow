@@ -11,6 +11,7 @@ const USER_ID = "00000000-0000-4000-8000-000000000471";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000472";
 const THREAD_ID = "00000000-0000-4000-8000-000000000473";
 const WORK_ID = "00000000-0000-4000-8000-000000000474";
+const TARGET_WORK_ID = "00000000-0000-4000-8000-000000000475";
 const ADVISORY_KEY = 748_210_471;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
@@ -59,6 +60,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Race target",
         slug: "race-target",
+      });
+      await db.insert(schema.works).values({
+        id: TARGET_WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Rebound target",
+        slug: "rebound-target",
+        status: "archived",
+        archivedAt: new Date(),
       });
       await db.insert(schema.threads).values({
         id: THREAD_ID,
@@ -137,9 +147,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("replaces the primary membership, preserves one primary, and accepts archived targets", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      await threads.threadWorks.addMembership(THREAD_ID, TARGET_WORK_ID, false);
+
+      await expect(threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID)).resolves.toEqual({
+        previousWorkId: WORK_ID,
+        changed: true,
+      });
+      await expect(threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID)).resolves.toEqual({
+        previousWorkId: TARGET_WORK_ID,
+        changed: false,
+      });
+      await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual([
+        { workId: TARGET_WORK_ID, isPrimary: true },
+      ]);
+    });
+
     it("creates a root conversation without self-blocking when the project has no Work", async () => {
       await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
       await db.delete(schema.works).where(eq(schema.works.id, WORK_ID));
+      await db.delete(schema.works).where(eq(schema.works.id, TARGET_WORK_ID));
       const preferences = createDrizzleProjectPreferencesRepository({ db });
 
       const thread = await createThreadForProject(
