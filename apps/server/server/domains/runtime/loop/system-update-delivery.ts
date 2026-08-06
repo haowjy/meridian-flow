@@ -85,8 +85,9 @@ export function createSystemUpdateDelivery(deps: {
     // than creating a sibling and replacing active history.
     for (let attempt = 0; ; attempt += 1) {
       const context = await deps.workContext.renderForThread(threadId);
-      const leaf = await deps.repos.turns.getLatestByThread(threadId);
-      const expected = (leaf?.id as TurnId | undefined) ?? null;
+      const thread = await deps.repos.threads.findById(threadId);
+      if (!thread) throw new Error(`Thread not found: ${threadId}`);
+      const expected = (thread.activeLeafTurnId as TurnId | null) ?? null;
       const turn = localUserTurn(threadId, expected);
       const block = contentForBlockInput({
         turnId: turn.id,

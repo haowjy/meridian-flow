@@ -114,13 +114,16 @@ describe("wired work tool", () => {
       drafts: [{ draftId: "draft-1" }],
     });
     await expect(handler({ command: "create", name: "New Work" }, ctx)).resolves.toMatchObject({
-      metadata: { workReceipt: { category: "mutate", inverse: { command: "delete" } } },
+      metadata: {
+        workReceipt: { category: "mutate", inverse: { command: "delete" } },
+        workContextChanged: true,
+      },
     });
     await expect(
-      handler({ command: "update", work: target.slug, goal: "" }, ctx),
+      handler({ command: "update", work: target.slug, name: "Target Revised" }, ctx),
     ).resolves.toMatchObject({
-      output: { goal: null },
-      metadata: { workReceipt: { inverse: { command: "update" } } },
+      output: { name: "Target Revised" },
+      metadata: { workReceipt: { inverse: { command: "update" } }, workContextChanged: true },
     });
     await expect(handler({ command: "switch", work: target.slug }, ctx)).resolves.toMatchObject({
       metadata: { workReceipt: { category: "binding" } },
@@ -131,7 +134,7 @@ describe("wired work tool", () => {
     await expect(
       handler({ command: "delete", work: created.output.slug }, ctx),
     ).resolves.toMatchObject({
-      metadata: { workReceipt: { inverse: { command: "restore" } } },
+      metadata: { workReceipt: { inverse: { command: "restore" } }, workContextChanged: true },
     });
 
     const [listOutput, showOutput, switchResult] = await Promise.all([

@@ -788,9 +788,12 @@ describe("runtime loop integration", () => {
   });
 
   it.each([
-    ["primary", false],
-    ["subagent", true],
-  ] as const)("injects a switched Work update before the next %s model call", async (_kind, isSubagentThread) => {
+    ["switch", "primary", false],
+    ["switch", "subagent", true],
+    ["create", "primary", false],
+    ["update", "primary", false],
+    ["delete", "primary", false],
+  ] as const)("injects a %s Work update before the next %s model call", async (command, _kind, isSubagentThread) => {
     const requests: GenerateRequest[] = [];
     const results: GenerateResult[] = [
       {
@@ -799,7 +802,7 @@ describe("runtime loop integration", () => {
             type: "tool_use",
             toolCallId: "call-switch",
             toolName: "work",
-            input: { command: "switch", work: "target-work" },
+            input: { command, work: "target-work" },
           },
         ],
         toolCalls: [],

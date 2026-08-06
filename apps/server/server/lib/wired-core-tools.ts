@@ -556,10 +556,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           );
           return {
             output: modelWork(work),
-            metadata: workReceipt(command, `Created Work ${work.name}.`, {
-              command: "delete",
-              workId: work.id,
-            }),
+            metadata: {
+              ...workReceipt(command, `Created Work ${work.name}.`, {
+                command: "delete",
+                workId: work.id,
+              }),
+              workContextChanged: true,
+            },
           };
         }
 
@@ -596,14 +599,21 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           );
           return {
             output: modelWork(updated),
-            metadata: workReceipt(command, `Updated Work ${updated.name}.`, {
-              command: "update",
-              workId: selected.id,
-              name: selected.name,
-              goal: selected.goal,
-              description: selected.description,
-              status: selected.status,
-            }),
+            metadata: {
+              ...workReceipt(command, `Updated Work ${updated.name}.`, {
+                command: "update",
+                workId: selected.id,
+                name: selected.name,
+                goal: selected.goal,
+                description: selected.description,
+                status: selected.status,
+              }),
+              ...(selected.name !== updated.name ||
+              selected.goal !== updated.goal ||
+              selected.status !== updated.status
+                ? { workContextChanged: true }
+                : {}),
+            },
           };
         }
 
@@ -615,10 +625,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           const deleted = await deps.works.findById(selected.id);
           return {
             output: modelWork(deleted ?? selected),
-            metadata: workReceipt(command, `Deleted Work ${selected.name}.`, {
-              command: "restore",
-              workId: selected.id,
-            }),
+            metadata: {
+              ...workReceipt(command, `Deleted Work ${selected.name}.`, {
+                command: "restore",
+                workId: selected.id,
+              }),
+              workContextChanged: true,
+            },
           };
         }
 

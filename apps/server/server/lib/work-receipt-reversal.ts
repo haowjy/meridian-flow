@@ -1,4 +1,6 @@
 /** Executes durable Work receipt inverses through the thread reversal seam. */
+
+import type { ReversalOutcome, WorkReversalResult } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import {
@@ -15,11 +17,19 @@ type WorkReceiptReversalDeps = {
   contextUpdates: Pick<WorkContextUpdates, "projectChanged">;
 };
 
-export type WorkReceiptReversal = {
-  command: "restore";
-  workId: WorkId;
-  status: "restored";
-};
+export type WorkReceiptReversal = WorkReversalResult & { workId: WorkId };
+
+export function combineWorkReversalOutcome(
+  outcome: ReversalOutcome,
+  workReceipts: WorkReceiptReversal[],
+): ReversalOutcome {
+  if (workReceipts.length === 0) return outcome;
+  return {
+    ...outcome,
+    status: outcome.status === "nothing_to_undo" ? "reversed" : outcome.status,
+    workReceipts,
+  };
+}
 
 export async function reverseWorkReceipts(
   deps: WorkReceiptReversalDeps,
@@ -33,10 +43,29 @@ export async function reverseWorkReceipts(
   for (const block of await deps.blocks.listByTurn(input.turnId)) {
     const inverse = restoreInverse(block.content);
     if (!inverse) continue;
-    await restoreWork({ works: deps.works, contextUpdates: deps.contextUpdates }, inverse.workId);
-    results.push({ ...inverse, status: "restored" });
+    const work = await restoreWork(
+      { works: deps.works, contextUpdates: deps.contextUpdates },
+      inverse.workId,
+    );
+    results.push({ ...inverse, name: work.name, status: "restored" });
   }
   return results;
+}
+
+export async function getWorkReceiptReversalAvailability(
+  deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works">,
+  input: { threadId: ThreadId; turnId: TurnId },
+): Promise<{ undo: boolean; redo: false }> {
+  const turn = await deps.turns.findById(input.turnId);
+  if (!turn || turn.threadId !== input.threadId) return { undo: false, redo: false };
+
+  for (const block of await deps.blocks.listByTurn(input.turnId)) {
+    const inverse = restoreInverse(block.content);
+    if (!inverse) continue;
+    const work = await deps.works.findById(inverse.workId);
+    if (work?.deletedAt) return { undo: true, redo: false };
+  }
+  return { undo: false, redo: false };
 }
 
 function restoreInverse(content: JsonValue | null): { command: "restore"; workId: WorkId } | null {

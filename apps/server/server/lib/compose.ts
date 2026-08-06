@@ -558,6 +558,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     packageRepository: ports.packageRepository,
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
+    systemUpdateDelivery: systemUpdates,
     billingSpendReader: ports.billingSpendReader,
     workContext,
   });

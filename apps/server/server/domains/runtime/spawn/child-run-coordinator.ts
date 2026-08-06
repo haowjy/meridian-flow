@@ -24,6 +24,7 @@ import type {
 } from "../../threads/index.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
+import type { SystemUpdateDelivery } from "../loop/system-update-delivery.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import type { WorkContextReader } from "../loop/work-context.js";
 import { modelInvocableSkillSlugs, renderSkillsSystemPromptSection } from "../tools/skill-tools.js";
@@ -59,6 +60,7 @@ export interface ChildRunCoordinatorDeps {
   packageRepository: PackageRepository;
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
+  systemUpdateDelivery: Pick<SystemUpdateDelivery, "flush">;
   billingSpendReader: BillingSpendReader;
   workContext: WorkContextReader;
 }
@@ -331,6 +333,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       if (prepared.childRegistered) {
         deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
       }
+      await deps.systemUpdateDelivery.flush(prepared.child.id as ThreadId);
     }
 
     await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {

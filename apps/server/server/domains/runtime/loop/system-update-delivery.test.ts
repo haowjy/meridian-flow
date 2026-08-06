@@ -129,8 +129,10 @@ describe("createSystemUpdateDelivery", () => {
     const delivery = createSystemUpdateDelivery({
       repos: {
         turns: {
+          // These chronological rows share a timestamp and put the user row
+          // last. It is deliberately not the logical head.
           async getLatestByThread() {
-            return { id: headRead++ === 0 ? "old-head" : "new-turn-head" };
+            return { id: "same-time-user-turn", createdAt: "2026-08-06T12:00:00.000Z" };
           },
           async findById() {
             return null;
@@ -139,7 +141,15 @@ describe("createSystemUpdateDelivery", () => {
         },
         blocks: { async upsert() {} },
         modelResponses: {},
-        threads: { async updateActiveLeafTurn() {} },
+        threads: {
+          async findById() {
+            return {
+              id: threadId,
+              activeLeafTurnId: headRead++ === 0 ? "old-head" : "new-turn-head",
+            };
+          },
+          async updateActiveLeafTurn() {},
+        },
         async transaction(operation: () => Promise<unknown>) {
           return operation();
         },

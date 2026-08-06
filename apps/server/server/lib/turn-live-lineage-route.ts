@@ -9,12 +9,16 @@ import { parseContextUri } from "../domains/context/context/uri.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 import { requireRequestId } from "./request-id.js";
+import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
   projects: AppServices["projectRepo"];
   documentAccess: AppServices["documentAccess"];
   documentSync: AppServices["documentSync"];
+  blocks: AppServices["threadRepos"]["blocks"];
+  turns: AppServices["threadRepos"]["turns"];
+  works: AppServices["workRepo"];
 };
 
 export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLineageRouteServices {
@@ -23,6 +27,9 @@ export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLi
     projects: app.projectRepo,
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
+    blocks: app.threadRepos.blocks,
+    turns: app.threadRepos.turns,
+    works: app.workRepo,
   };
 }
 
@@ -44,9 +51,16 @@ export async function handleTurnLiveLineageRequest(
     threadId,
     userId: input.userId,
   });
+  const receipt = await deps.documentSync.getTurnReceiptChip(threadId, turnId);
+  const workAvailability = receipt
+    ? null
+    : await getWorkReceiptReversalAvailability(
+        { blocks: deps.blocks, turns: deps.turns, works: deps.works },
+        { threadId, turnId },
+      );
   return {
     documents: visibleDocuments.map(serializeLiveLineageDocument),
-    receipt: await deps.documentSync.getTurnReceiptChip(threadId, turnId),
+    receipt: workAvailability?.undo ? { state: "work-active", control: "undo" } : receipt,
   };
 }
 

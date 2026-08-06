@@ -34,10 +34,12 @@ function deps({
   documents = [manuscriptDraftDocument],
   canAccessDocument = async () => true,
   canAccessProjectDocument = async () => true,
+  receipt = { state: "branch-active", control: "undo" } as const,
 }: {
   documents?: EditedDocument[];
   canAccessDocument?: (documentId: string) => Promise<boolean>;
   canAccessProjectDocument?: (documentId: string) => Promise<boolean>;
+  receipt?: { state: "branch-active"; control: "undo" } | null;
 } = {}) {
   return {
     threads: {
@@ -62,12 +64,42 @@ function deps({
     },
     documentSync: {
       listEditedDocumentsForTurn: vi.fn(async () => documents),
-      getTurnReceiptChip: vi.fn(async () => ({ state: "branch-active", control: "undo" })),
+      getTurnReceiptChip: vi.fn(async () => receipt),
     },
+    turns: {
+      findById: vi.fn(async () => ({ id: turnId, threadId })),
+    },
+    blocks: { listByTurn: vi.fn(async () => []) },
+    works: { findById: vi.fn(async () => null) },
   };
 }
 
 describe("turn live-lineage route", () => {
+  it("reports an active Work restore receipt as undoable without edited documents", async () => {
+    const services = deps({ documents: [], receipt: null });
+    services.blocks.listByTurn.mockResolvedValueOnce([
+      {
+        content: {
+          metadata: {
+            workReceipt: {
+              inverse: { command: "restore", workId: "00000000-0000-4000-8000-000000000709" },
+            },
+          },
+        },
+      } as never,
+    ]);
+    services.works.findById.mockResolvedValueOnce({
+      deletedAt: "2026-08-06T12:00:00.000Z",
+    } as never);
+
+    await expect(
+      handleTurnLiveLineageRequest(services as never, { threadId, turnId, userId }),
+    ).resolves.toEqual({
+      documents: [],
+      receipt: { state: "work-active", control: "undo" },
+    });
+  });
+
   it("serializes draft-scope manuscript edits without requiring an upload row", async () => {
     await expect(
       handleTurnLiveLineageRequest(deps() as never, { threadId, turnId, userId }),

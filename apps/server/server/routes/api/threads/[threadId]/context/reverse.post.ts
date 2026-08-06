@@ -11,7 +11,10 @@ import { z } from "zod";
 import { ReverseThreadContextError } from "../../../../../domains/collab/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
-import { reverseWorkReceipts } from "../../../../../lib/work-receipt-reversal.js";
+import {
+  combineWorkReversalOutcome,
+  reverseWorkReceipts,
+} from "../../../../../lib/work-receipt-reversal.js";
 
 const reverseBodySchema = z.object({
   uri: z
@@ -48,7 +51,9 @@ export default defineEventHandler(async (event) => {
     const canReverseWorkReceipts =
       body.target !== undefined &&
       body.direction === "undo" &&
-      (outcome.status === "reversed" || outcome.status === "nothing_to_undo");
+      (outcome.status === "reversed" ||
+        outcome.status === "reconciled" ||
+        outcome.status === "nothing_to_undo");
     const workReceipts = canReverseWorkReceipts
       ? await reverseWorkReceipts(
           {
@@ -61,7 +66,7 @@ export default defineEventHandler(async (event) => {
         )
       : [];
     setResponseStatus(event, 200);
-    return { ...outcome, ...(workReceipts.length > 0 ? { workReceipts } : {}) };
+    return combineWorkReversalOutcome(outcome, workReceipts);
   } catch (error) {
     if (!(error instanceof ReverseThreadContextError)) throw error;
     throw createError({

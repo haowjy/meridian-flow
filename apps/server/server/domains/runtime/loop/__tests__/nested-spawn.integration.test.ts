@@ -3,9 +3,10 @@
  * resume same root turn → re-spawn → completed; depth/budget/cancel guards.
  */
 
+import type { ThreadId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import type {
@@ -154,6 +155,7 @@ describe("nested spawn runtime (P2b gate)", () => {
       eventSink: createInMemoryEventSink(),
     });
 
+    const flushSystemUpdates = vi.fn(async (_threadId: ThreadId) => {});
     const coordinator = createChildRunCoordinator({
       orchestrator: {
         runTurn: (input) => orchestrator.runTurn(input),
@@ -179,6 +181,7 @@ describe("nested spawn runtime (P2b gate)", () => {
         eventWriter,
         getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
       }),
+      systemUpdateDelivery: { flush: flushSystemUpdates },
       billingSpendReader: creditLedger,
       workContext: {
         async renderForThread() {
@@ -222,6 +225,7 @@ describe("nested spawn runtime (P2b gate)", () => {
       runner,
       creditLedger,
       interruptRegistry,
+      flushSystemUpdates,
     };
   }
 
@@ -326,7 +330,7 @@ describe("nested spawn runtime (P2b gate)", () => {
 
   it("parent spawns child, interrupt resumes same root turn, re-spawns to completion", async () => {
     const gateway = nestedRunGateway();
-    const { repos, eventWriter, orchestrator, thread, interruptRegistry } =
+    const { repos, eventWriter, orchestrator, thread, interruptRegistry, flushSystemUpdates } =
       await setupNestedRuntime(gateway);
 
     const handle = await orchestrator.runTurn({
@@ -364,6 +368,9 @@ describe("nested spawn runtime (P2b gate)", () => {
     );
     expect(childThreads).toHaveLength(2);
     expect(childThreads.every((row) => row.spawnStatus === "succeeded")).toBe(true);
+    expect(
+      flushSystemUpdates.mock.calls.map(([flushedThreadId]) => flushedThreadId).sort(),
+    ).toEqual(childThreads.map((row) => row.id).sort());
   });
 
   it("debits nested model calls and rolls up by root thread and agent", async () => {

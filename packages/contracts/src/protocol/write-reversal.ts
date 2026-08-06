@@ -26,7 +26,15 @@ export interface DocumentReversalResult {
   text?: string;
 }
 
+export interface WorkReversalResult {
+  command: "restore";
+  workId: string;
+  name: string;
+  status: "restored";
+}
+
 export interface ReversalOutcome {
   status: WriteStatus;
   documents: DocumentReversalResult[];
+  workReceipts?: WorkReversalResult[];
 }
