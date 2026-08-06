@@ -56,7 +56,7 @@ function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
 }
 
 function receivesWorkUpdates(thread: ThreadListItem): boolean {
-  return thread.status !== "archived";
+  return thread.status !== "archived" && thread.bakedSkillSlugs !== null;
 }
 
 export function createSystemUpdateDelivery(deps: {
@@ -101,6 +101,8 @@ export function createSystemUpdateDelivery(deps: {
 
   const delivery: SystemUpdateDelivery = {
     async threadChanged(threadId) {
+      const thread = await deps.repos.threads.findById(threadId);
+      if (!thread || thread.status === "archived" || thread.bakedSkillSlugs === null) return;
       const key = threadId as string;
       pending.add(key);
       if (!deps.isThreadRunning(threadId)) await delivery.flush(threadId);

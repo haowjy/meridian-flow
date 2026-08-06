@@ -71,9 +71,14 @@ describe("createSystemUpdateDelivery", () => {
         threads: {
           async listByProject() {
             return [
-              { id: activeId, status: "idle" },
-              { id: archivedId, status: "archived" },
+              { id: activeId, status: "idle", bakedSkillSlugs: [] },
+              { id: archivedId, status: "archived", bakedSkillSlugs: [] },
             ];
+          },
+          async findById(threadId: ThreadId) {
+            return threadId === activeId
+              ? { id: activeId, status: "idle", bakedSkillSlugs: [] }
+              : { id: archivedId, status: "archived", bakedSkillSlugs: [] };
           },
         },
       } as never,
@@ -89,5 +94,30 @@ describe("createSystemUpdateDelivery", () => {
 
     await delivery.projectChanged(projectId);
     expect(changed).toEqual([activeId]);
+  });
+
+  it("does not add an update before a thread has frozen its first prompt", async () => {
+    const threadId = "00000000-0000-4000-8000-000000000123" as ThreadId;
+    let contextReads = 0;
+    const delivery = createSystemUpdateDelivery({
+      repos: {
+        threads: {
+          async findById() {
+            return { status: "idle", bakedSkillSlugs: null };
+          },
+        },
+      } as never,
+      eventWriter: {} as never,
+      workContext: {
+        async renderForThread() {
+          contextReads += 1;
+          return "unused";
+        },
+      },
+      isThreadRunning: () => false,
+    });
+
+    await delivery.threadChanged(threadId);
+    expect(contextReads).toBe(0);
   });
 });
