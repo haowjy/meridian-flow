@@ -486,12 +486,20 @@ msgstr ""
 msgid "Checked recent changes"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Checked Works"
+msgstr ""
+
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking recent changes…"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Checking Works…"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -666,6 +674,18 @@ msgstr ""
 msgid "Couldn't check recent changes"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't check Works"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't create a Work"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't delete that Work"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -765,7 +785,15 @@ msgid "Couldn't search"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+msgid "Couldn't switch Works"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't update that Work"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -791,6 +819,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Create the document"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Created a Work"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Creating a Work…"
 msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
@@ -847,6 +883,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete table"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleted a Work"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleting a Work…"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
@@ -2386,6 +2430,14 @@ msgstr ""
 msgid "Switch work"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Switched Works"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Switching Works…"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
@@ -2819,6 +2871,14 @@ msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Updated a Work"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Updating a Work…"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts

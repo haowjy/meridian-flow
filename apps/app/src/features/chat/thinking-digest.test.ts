@@ -32,6 +32,7 @@ function tool(toolName: string, input: ToolView["input"]): ToolView {
     isError: false,
     message: null,
     streamedOutput: null,
+    metadata: null,
     keyBlock: {} as ToolView["keyBlock"],
   };
 }
