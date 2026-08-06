@@ -453,8 +453,16 @@ msgstr ""
 msgid "Centered"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed {count} Works"
+msgstr ""
+
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed 1 Work"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
@@ -2137,6 +2145,15 @@ msgstr ""
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Response complete"
 msgstr "回复完成"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Restored the Work."
+msgstr ""
+
+#. placeholder {0}: work.name
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Restored Work {0}."
+msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
