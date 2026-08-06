@@ -55,6 +55,22 @@ interface Dispatch extends ContextTreeDispatch {
   canonical: string;
 }
 
+const ENTRY_CREATION_DENIED_MESSAGE =
+  "This context scheme does not allow creating files or folders. Use scratch:// as the authoring space. uploads:// accepts files through upload intake.";
+
+function entryCreationDenied(uri: string): Result<never, ContextError> {
+  return Err({ code: "invalid_operation", uri, message: ENTRY_CREATION_DENIED_MESSAGE });
+}
+
+function crossSchemeCreationDenied(
+  source: Dispatch,
+  destination: Dispatch,
+): Result<never, ContextError> | null {
+  return source.scheme !== destination.scheme && !destination.adapter.capabilities.creatable
+    ? entryCreationDenied(destination.canonical)
+    : null;
+}
+
 function uriFor(scheme: ContextScheme, path: string, authority: string | null): string {
   return toCanonical(scheme, path, authority);
 }
@@ -226,6 +242,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
+      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
       return callAdapter(canonical, () => adapter.ensureTrackedDocument(path, options));
     },
 
@@ -238,6 +255,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
+      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
       return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
     },
 
@@ -295,6 +313,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         });
       }
 
+      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
       const created = await callAdapter(canonical, () =>
         adapter.createUntitledDocument(path, options),
       );
@@ -365,6 +384,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       ) {
         return Err({ code: "permission_denied", uri: destination.value.canonical });
       }
+      const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
+      if (creationDenied) return creationDenied;
       return treeMover.move(source.value, destination.value, options);
     },
 
@@ -373,6 +394,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!source.ok) return source;
       const destination = await resolve(destinationUri);
       if (!destination.ok) return destination;
+      const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
+      if (creationDenied) return creationDenied;
       return treeMover.commitWriterLocation(source.value, destination.value);
     },
 
@@ -392,6 +415,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
+      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
       return callAdapter(canonical, () => adapter.mkdir(path, options));
     },
 

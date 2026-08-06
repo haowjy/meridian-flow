@@ -35,6 +35,7 @@ import type {
   ContextTreeAdapter,
   SchemeCapabilities,
 } from "../../ports/context-adapter.js";
+import { schemeCapabilities } from "../../ports/context-adapter.js";
 import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
 import type {
   ContextCreateUntitledDocumentOptions,
@@ -154,7 +155,7 @@ function moveFiletypeTransition(
  */
 export class ContextFS implements ContextSchemeAdapter {
   readonly name: string;
-  readonly capabilities: SchemeCapabilities = { writable: true, searchable: true };
+  readonly capabilities: SchemeCapabilities;
 
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
@@ -170,6 +171,7 @@ export class ContextFS implements ContextSchemeAdapter {
   };
 
   constructor(deps: ContextFSDeps) {
+    this.capabilities = schemeCapabilities(deps.scheme);
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
     this.documentSync = deps.documentSync;

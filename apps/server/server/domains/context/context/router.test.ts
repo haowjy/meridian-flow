@@ -1,14 +1,52 @@
 /** Context router metadata propagation at the adapter-to-public-port boundary. */
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../shared/result.js";
-import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
+import { type ContextSchemeAdapter, schemeCapabilities } from "../ports/context-adapter.js";
+import type { ContextScheme } from "../ports/context-port.js";
 import { createContextPortRouter } from "./router.js";
+
+function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
+  return {
+    name: scheme,
+    capabilities: schemeCapabilities(scheme),
+    createTrackedDocument: vi.fn(async () => Ok({ documentId: "document-new" })),
+    mkdir: vi.fn(async () => Ok(undefined)),
+    writeBinary: vi.fn(async () => Ok({ documentId: "binary-new" })),
+    tree: {
+      inspectMovable: vi.fn(async (path: string) => {
+        if (path === "old.md") {
+          return Ok({
+            kind: "file" as const,
+            nodeId: "document-old",
+            sourceId: `${scheme}-source`,
+            path,
+            filetype: "markdown",
+          });
+        }
+        if (path === "") {
+          return Ok({
+            kind: "directory" as const,
+            nodeId: "__context_root__",
+            sourceId: `${scheme}-source`,
+            path,
+          });
+        }
+        return Ok(null);
+      }),
+      commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
+      commitPreparedMove: vi.fn(async (prepared) =>
+        Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
+      ),
+      commitPreparedDelete: vi.fn(async (token) => Ok({ deletedNodeId: token.nodeId })),
+    },
+  } as unknown as ContextSchemeAdapter;
+}
 
 describe("context router listings", () => {
   it("preserves provisional-name metadata", async () => {
     const adapter = {
       name: "manuscript",
-      capabilities: { writable: true, searchable: true },
+      capabilities: { writable: true, searchable: true, creatable: true },
       list: async () =>
         Ok([
           {
@@ -37,7 +75,7 @@ describe("context router untitled identity recovery", () => {
   it("returns the primary Work authority for a retry found in the base adapter map", async () => {
     const scratch = {
       name: "scratch",
-      capabilities: { writable: true, searchable: true },
+      capabilities: { writable: true, searchable: true, creatable: true },
       locateDocument: async (documentId: string) =>
         Ok({ documentId, path: "Untitled 1.md", name: "Untitled 1.md" }),
       createUntitledDocument: async (_path: string, options: { documentId: string }) =>
@@ -75,13 +113,13 @@ describe("context router untitled identity recovery", () => {
     const requestedCreate = vi.fn();
     const manuscript = {
       name: "manuscript",
-      capabilities: { writable: true, searchable: true },
+      capabilities: { writable: true, searchable: true, creatable: true },
       locateDocument: async () => Ok(null),
       createUntitledDocument: requestedCreate,
     } as unknown as ContextSchemeAdapter;
     const scratch = {
       name: "scratch",
-      capabilities: { writable: true, searchable: true },
+      capabilities: { writable: true, searchable: true, creatable: true },
       locateDocument: async (documentId: string) =>
         Ok({ documentId, path: "moved/Untitled 1.md", name: "Untitled 1.md" }),
       createUntitledDocument: async (_path: string, options: { documentId: string }) =>
@@ -115,5 +153,102 @@ describe("context router untitled identity recovery", () => {
       },
     });
     expect(requestedCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("context router scheme creation capabilities", () => {
+  const workId = "00000000-0000-4000-8000-000000000001";
+
+  function createPort() {
+    const scratch = writableAdapter("scratch");
+    const uploads = writableAdapter("uploads");
+    return {
+      scratch,
+      uploads,
+      port: createContextPortRouter({
+        adapters: new Map([
+          ["scratch", scratch],
+          ["uploads", uploads],
+        ]),
+        allowedAuthorities: new Set([workId]),
+        primaryWorkId: workId,
+      }),
+    };
+  }
+
+  it("rejects file and directory creation in uploads with an actionable error", async () => {
+    const { port, uploads } = createPort();
+    const expectedError = {
+      code: "invalid_operation",
+      message: expect.stringMatching(/scratch:\/\/.+authoring space/),
+    };
+
+    await expect(
+      port.createTrackedDocument(`uploads://${workId}/notes.md`, "notes"),
+    ).resolves.toMatchObject({ ok: false, error: expectedError });
+    await expect(port.mkdir(`uploads://${workId}/notes`)).resolves.toMatchObject({
+      ok: false,
+      error: expectedError,
+    });
+    expect(uploads.createTrackedDocument).not.toHaveBeenCalled();
+    expect(uploads.mkdir).not.toHaveBeenCalled();
+  });
+
+  it("allows file and directory creation in scratch", async () => {
+    const { port, scratch } = createPort();
+
+    await expect(
+      port.createTrackedDocument(`scratch://${workId}/notes.md`, "notes"),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(port.mkdir(`scratch://${workId}/notes`)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(scratch.createTrackedDocument).toHaveBeenCalledOnce();
+    expect(scratch.mkdir).toHaveBeenCalledOnce();
+  });
+
+  it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
+    const { port, uploads } = createPort();
+
+    await expect(
+      port.move(`scratch://${workId}/old.md`, `uploads://${workId}/old.md`),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_operation",
+        uri: `uploads://${workId}/old.md`,
+        message: expect.stringContaining("scratch://"),
+      },
+    });
+    await expect(
+      port.commitWriterLocation(`scratch://${workId}/old.md`, `uploads://${workId}/old.md`),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "invalid_operation", uri: `uploads://${workId}/old.md` },
+    });
+    await expect(
+      port.move(`uploads://${workId}/old.md`, `uploads://${workId}/renamed.md`),
+    ).resolves.toEqual({
+      ok: true,
+      value: { movedNodeId: "document-old", destinationPath: "renamed.md" },
+    });
+    expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
+  });
+
+  it("keeps binary upload intake available in uploads", async () => {
+    const { port, uploads } = createPort();
+    const options = {
+      storageUrl: "storage://upload",
+      mimeType: "image/png",
+      sizeBytes: 10,
+      fileType: "image" as const,
+    };
+
+    await expect(port.writeBinary(`uploads://${workId}/cover.png`, options)).resolves.toEqual({
+      ok: true,
+      value: { documentId: "binary-new" },
+    });
+    expect(uploads.writeBinary).toHaveBeenCalledOnce();
   });
 });

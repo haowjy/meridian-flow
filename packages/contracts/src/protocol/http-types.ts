@@ -6,6 +6,7 @@
 
 import {
   CONTEXT_URI_SCHEMES,
+  type ContextSchemeCapabilities,
   type ContextUriScheme,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
   type WorkScopedContextUriScheme,
@@ -296,6 +297,7 @@ export type ProjectContextTreeNode = ProjectContextTreeDirectory | ProjectContex
 export type ProjectContextTreeResponse = {
   projectId: string;
   scheme: ProjectContextTreeScheme;
+  capabilities: ContextSchemeCapabilities;
   tree: ProjectContextTreeDirectory;
 };
 

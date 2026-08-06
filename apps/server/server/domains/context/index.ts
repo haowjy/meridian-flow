@@ -38,6 +38,7 @@ export type {
   ContextSchemeAdapter,
   SchemeCapabilities,
 } from "./ports/context-adapter.js";
+export { schemeCapabilities } from "./ports/context-adapter.js";
 export type {
   ContextDocumentStore,
   ContextFolder,

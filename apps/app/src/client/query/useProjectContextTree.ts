@@ -1,3 +1,4 @@
+import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
   ProjectContextTreeDirectory,
   ProjectContextTreeScheme,
@@ -37,6 +38,7 @@ export function useProjectContextTree(
   options?: { enabled?: boolean; activeThreadId?: string | null; workId?: string | null },
 ): {
   tree: ProjectContextTreeDirectory | null;
+  capabilities: ContextSchemeCapabilities | null;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
@@ -52,6 +54,7 @@ export function useProjectContextTree(
 
   return {
     tree: data?.tree ?? null,
+    capabilities: data?.capabilities ?? null,
     isError,
     isFetching,
     refetch: () => {
