@@ -16,7 +16,7 @@ import {
 } from "../../../../../../lib/context-mutation-validation.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
-function parseBody(raw: unknown): RenameContextEntryRequest {
+export function parseRenameContextEntryBody(raw: unknown): RenameContextEntryRequest {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   const body = raw as Partial<RenameContextEntryRequest>;
@@ -28,7 +28,7 @@ function parseBody(raw: unknown): RenameContextEntryRequest {
 
 export default defineEventHandler(async (event) => {
   const { userId, scheme, workId, port } = await resolveContextRoute(event);
-  const body = parseBody(await readBody(event));
+  const body = parseRenameContextEntryBody(await readBody(event));
 
   // Build the destination path: same parent directory, new basename.
   const segments = body.path.split("/").filter(Boolean);

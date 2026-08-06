@@ -1580,6 +1580,10 @@ msgstr "Name is required"
 msgid "Names cannot be empty"
 msgstr "Names cannot be empty"
 
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot begin with '@'. That prefix identifies a Work"
+msgstr "Names cannot begin with '@'. That prefix identifies a Work"
+
 #. placeholder {0}: error.character ?? ""
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain '{0}'"

@@ -14,6 +14,32 @@ describe("context entry validation", () => {
   });
 
   it.each([
+    "@notes.md",
+    "Drafts/@notes.md",
+    "Drafts/@revision/notes.md",
+  ])("reserves authority-like segment in %j", (raw) => {
+    const result = raw.includes("/")
+      ? validateContextEntryPath(raw)
+      : validateContextEntryName(raw);
+    expect(result).toEqual({
+      ok: false,
+      reason: "name/reserved-authority-qualifier",
+      segment: raw.split("/").find((segment) => segment.startsWith("@")),
+    });
+  });
+
+  it("allows an at sign inside a name segment", () => {
+    expect(validateContextEntryName("notes@revision.md")).toEqual({
+      ok: true,
+      value: "notes@revision.md",
+    });
+    expect(validateContextEntryPath("Drafts/notes@revision.md")).toEqual({
+      ok: true,
+      value: "Drafts/notes@revision.md",
+    });
+  });
+
+  it.each([
     ["", "name/empty"],
     ["   ", "name/empty"],
     ["..", "name/reserved"],
