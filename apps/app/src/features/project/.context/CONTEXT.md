@@ -49,6 +49,18 @@ the persistent project tree, and account controls. The navigation rows are
 shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
 are desktop shell grammar.
 
+Home is also the live Work-management surface. It reads the Work collection
+and the writer's explicit current Work through TanStack Query, and owns create,
+switch, metadata, archive, restore, and guarded delete actions. Chat creation
+chooses and submits a Work; after creation a chat's Work is displayed as fact
+and cannot be changed by the client.
+
+The desktop left rail has one divider below destination navigation. Its
+Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
+with transparent headers. Scratch and Uploads resolve from the active thread's
+Work, whose real name appears in their header tooltip. Uploads is intake-only
+and exposes no file or folder creation affordances.
+
 ### Slot paints the material; surfaces must not
 
 Slot chrome is owned **entirely by the slot's `className`**
