@@ -6,7 +6,6 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const api = vi.hoisted(() => ({
   listProjectWorks: vi.fn(),
-  getCurrentWork: vi.fn(),
   updateWorkWriteMode: vi.fn(),
 }));
 
@@ -34,7 +33,6 @@ describe("Work client queries", () => {
 
   it("loads the complete Work catalog, including archived Works", async () => {
     api.listProjectWorks.mockResolvedValue({ works: [], defaultWorkId: "work-current" });
-    api.getCurrentWork.mockResolvedValue({ id: "work-current" });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const state: { value: ReturnType<typeof useWorks> | null } = { value: null };
 

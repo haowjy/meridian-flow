@@ -6,7 +6,6 @@ import {
   archiveWork,
   createProjectWork,
   deleteWork,
-  getCurrentWork,
   listProjectWorks,
   setCurrentWork,
   unarchiveWork,
@@ -25,21 +24,17 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     staleTime: 30_000,
     enabled,
   });
-  const current = useQuery({
-    queryKey: projectQueryKeys.currentWork(projectId),
-    queryFn: () => getCurrentWork(projectId),
-    staleTime: 30_000,
-    enabled,
-  });
+  const works = list.data?.works ?? (list.isError ? [] : null);
+  const currentWorkId = list.data?.defaultWorkId ?? null;
   return {
-    works: list.data?.works ?? (list.isError ? [] : null),
-    currentWork: current.data ?? null,
-    currentWorkId: current.data?.id ?? null,
+    works,
+    currentWork: works?.find((work) => work.id === currentWorkId) ?? null,
+    currentWorkId,
     // Context document placement historically calls this the default Work.
-    defaultWorkId: current.data?.id ?? null,
-    isError: list.isError || current.isError,
-    isFetching: list.isFetching || current.isFetching,
-    refetch: () => void Promise.all([list.refetch(), current.refetch()]),
+    defaultWorkId: currentWorkId,
+    isError: list.isError,
+    isFetching: list.isFetching,
+    refetch: () => void list.refetch(),
   };
 }
 
@@ -50,7 +45,6 @@ export function useDefaultWorkId(projectId: string): string | null {
 async function refreshWorks(client: QueryClient, projectId: string) {
   await Promise.all([
     client.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) }),
-    client.invalidateQueries({ queryKey: projectQueryKeys.currentWork(projectId) }),
     client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) }),
   ]);
 }

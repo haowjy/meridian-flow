@@ -58,8 +58,8 @@ and cannot be changed by the client.
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
 with transparent headers. Scratch and Uploads resolve from the active thread's
-Work, whose real name appears in their header tooltip. Uploads is intake-only
-and exposes no file or folder creation affordances.
+Work, whose real name appears in their header tooltip and accessible control
+name. Uploads is intake-only and exposes no file or folder creation affordances.
 
 ### Slot paints the material; surfaces must not
 

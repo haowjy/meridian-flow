@@ -30,8 +30,14 @@ export function useCreateChat(projectId: string, onSelectThread: (threadId: stri
 
   const createChat = (workId: string) => {
     if (mutation.isPending) return;
+    mutation.reset();
     mutation.mutate(workId);
   };
 
-  return { createChat, creating: mutation.isPending };
+  return {
+    createChat,
+    creating: mutation.isPending,
+    createError: mutation.error,
+    resetCreateError: mutation.reset,
+  };
 }

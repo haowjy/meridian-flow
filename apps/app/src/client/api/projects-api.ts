@@ -103,12 +103,6 @@ export async function listProjectWorks(
   });
 }
 
-export function getCurrentWork(projectId: string, init?: RequestInitOptions): Promise<Work> {
-  return getJson<Work>(urlFor(`${apiProjectPath(projectId)}/current-work`, init), {
-    headers: init?.headers,
-  });
-}
-
 export function createProjectWork(
   projectId: string,
   data: CreateWorkRequest,

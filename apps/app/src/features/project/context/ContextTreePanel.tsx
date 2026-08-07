@@ -273,6 +273,13 @@ function SchemeSection({
     <RailPaneHeader
       label={schemeLabel(scheme)}
       icon={schemeIcon(scheme)}
+      ariaLabel={
+        workName === null
+          ? undefined
+          : scheme === "scratch"
+            ? t`Scratch for Work ${workName}`
+            : t`Uploads for Work ${workName}`
+      }
       expanded={expanded}
       onExpandedChange={handleExpandedChange}
       actions={

@@ -29,6 +29,7 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import type React from "react";
 
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
 export function RailPaneHeader({
@@ -111,8 +112,8 @@ export function PaneHeaderActionButton({
   label: string;
 } & React.ComponentPropsWithoutRef<"button">) {
   return (
-    <button
-      type="button"
+    <IconButton
+      size="xs"
       title={label}
       aria-label={label}
       {...props}
@@ -120,10 +121,9 @@ export function PaneHeaderActionButton({
         event.stopPropagation();
         props.onClick?.(event);
       }}
-      // Action hover uses the rail's existing interaction token.
-      className="focus-ring flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+      className="size-5 rounded"
     >
       <Icon aria-hidden className="size-4" />
-    </button>
+    </IconButton>
   );
 }
