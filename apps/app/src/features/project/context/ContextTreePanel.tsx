@@ -8,27 +8,37 @@
  * single scroll surface — every section and row is natural-height, so blank
  * space pools at the very bottom and only the tree root scrolls. Rows are a
  * fixed twistie + kind-icon + label grid; the whole row is the primary action
- * (folders/sections toggle, files open). Project-scoped sections stack above a
- * work-boundary divider; work-scoped sections (Work Memory, Uploads) below it.
+ * (folders/sections toggle, files open). Every top-level section is a
+ * `RailPaneHeader` pane (headers are panes; everything inside a pane is tree
+ * rows), all flush full-width siblings in scheme order. Pane rhythm and labels,
+ * rather than stacked surface colors or repeated rules, separate them. The work-scoped
+ * schemes (Scratch, Uploads) included. There is no work header row (ruling
+ * 2026-08-06 "just get rid of it", superseding the work-title-as-marking
+ * model): the work marks itself via a tooltip on its panes' headers instead.
+ * Creation lives on the scheme panes.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import type { LucideIcon } from "lucide-react";
-import { ChevronRight, FilePlus, FolderPlus } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { FilePlus, FolderPlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
-import { schemeIcon, schemeLabel, visibleContextSchemes } from "./context-schemes";
+import {
+  schemeAllowsCreation,
+  schemeIcon,
+  schemeLabel,
+  visibleContextSchemes,
+} from "./context-schemes";
 import { type ContextFile, findContextFile } from "./context-tree";
+import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
@@ -54,8 +64,11 @@ export type ContextTreePanelProps = {
 /**
  * VS Code-style multi-scheme file tree. Each context scheme renders as a
  * collapsible top-level section with hover "New file / New folder" actions.
- * Sections fetch lazily — `useProjectContextTree` only runs once open — and the
- * section containing the active file auto-opens.
+ * Every section's tree query runs from rail mount — collapsed panes just
+ * don't render the data yet — so the first expand after a reload paints from
+ * cache instead of flashing a load. A selection landing in a section
+ * auto-opens it once; after that the user's toggle wins, even while the
+ * section holds the active doc.
  */
 export function ContextTreePanel({
   projectId,
@@ -77,52 +90,43 @@ export function ContextTreePanel({
   const workId = useContextWorkId(projectId, activeThreadId);
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);
-  const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
-  const workLabel = works?.find((work) => work.id === workId)?.name ?? t`Work`;
+  const currentWork = works?.find((work) => work.id === workId) ?? null;
 
-  return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto overflow-x-hidden pb-2">
-      {schemes.map((scheme) => (
-        <Fragment key={scheme}>
-          {scheme === firstWorkScoped ? <WorkBoundary label={workLabel} /> : null}
-          <SchemeSection
-            projectId={projectId}
-            activeThreadId={activeThreadId}
-            scheme={scheme}
-            activeScheme={activeScheme}
-            activePath={activePath}
-            defaultExpanded={scheme === schemes[0]}
-            onSelectFile={onSelectFile}
-            creating={
-              creating?.scheme === scheme
-                ? { kind: creating.kind, parentPath: creating.parentPath }
-                : null
-            }
-            onRequestCreate={(kind, parentPath) => onRequestCreate({ scheme, kind, parentPath })}
-            onCreateDone={onCreateDone}
-          />
-        </Fragment>
-      ))}
-    </div>
+  // The work-scoped panes passively follow the active chat's work (Jimmy's
+  // 2026-08-03 ruling) — switching threads is the only way the rail
+  // re-points. Work-scoped schemes only exist while a thread (and thus a
+  // work) is active; `workName` puts the work's name in those panes' hover
+  // tooltip, the rail's only work marking (ruling 2026-08-06).
+  const renderScheme = (scheme: ProjectContextTreeScheme) => (
+    <SchemeSection
+      key={scheme}
+      projectId={projectId}
+      activeThreadId={activeThreadId}
+      scheme={scheme}
+      activeScheme={activeScheme}
+      activePath={activePath}
+      defaultExpanded={scheme === schemes[0]}
+      workName={
+        isWorkScopedProjectContextScheme(scheme) ? (currentWork?.name ?? t`Loading Work`) : null
+      }
+      onSelectFile={onSelectFile}
+      creating={
+        creating?.scheme === scheme
+          ? { kind: creating.kind, parentPath: creating.parentPath }
+          : null
+      }
+      onRequestCreate={(kind, parentPath) => onRequestCreate({ scheme, kind, parentPath })}
+      onCreateDone={onCreateDone}
+    />
   );
-}
 
-/**
- * Hairline divider with a centered inset label naming the active work. Marks
- * the boundary below which sections are work-scoped (Work Memory, Uploads). The
- * label is a hover affordance for a future work switcher.
- */
-function WorkBoundary({ label }: { label: string }) {
   return (
-    <div className="relative mx-3 my-2 h-px shrink-0 bg-border-subtle">
-      <span className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 whitespace-nowrap bg-sidebar px-1.5 leading-none">
-        <span
-          title={t`Switch work`}
-          className="cursor-default rounded-sm px-0.5 text-meta text-muted-foreground transition-colors hover:bg-sidebar-accent hover:font-medium hover:text-foreground"
-        >
-          {label}
-        </span>
-      </span>
+    <div className="flex h-full min-h-0 w-full flex-col">
+      {/* The destination rows own the sidebar's single rule. Explorer panes
+          stay on one uninterrupted rail material beneath it. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
+        {schemes.map(renderScheme)}
+      </div>
     </div>
   );
 }
@@ -134,6 +138,7 @@ function SchemeSection({
   activeScheme,
   activePath,
   defaultExpanded,
+  workName,
   onSelectFile,
   creating,
   onRequestCreate,
@@ -145,17 +150,27 @@ function SchemeSection({
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   defaultExpanded: boolean;
+  /**
+   * Name of the work this pane belongs to, or null for project-scoped panes.
+   * Shown in the header's hover tooltip — since the work header row died
+   * (ruling 2026-08-06), this tooltip is how a work-scoped pane names its
+   * work.
+   */
+  workName: string | null;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onCreateDone: () => void;
 }) {
+  // `expanded` is the pane's only open state. Holding the active doc must
+  // NOT keep a pane open (Jimmy: "we should still be able to collapse"):
+  // selection and creation changes below expand it as one-shot events, so a
+  // later user collapse sticks until the user reopens it or a new selection
+  // lands inside.
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
   const activeLocationPath = activeScheme === scheme ? activePath : null;
-  const owns = activeLocationPath !== null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
-  const isOpen = expanded || owns || creating !== null || pendingOpenPath !== null;
 
   const revealPath = useCallback((path: string) => {
     const segments = path.split("/").filter(Boolean);
@@ -172,11 +187,15 @@ function SchemeSection({
   }, []);
 
   useEffect(() => {
-    if (activeLocationPath) revealPath(parentContextPath(activeLocationPath));
+    if (!activeLocationPath) return;
+    setExpanded(true);
+    revealPath(parentContextPath(activeLocationPath));
   }, [activeLocationPath, revealPath]);
 
   useEffect(() => {
-    if (creating) revealPath(creating.parentPath);
+    if (!creating) return;
+    setExpanded(true);
+    revealPath(creating.parentPath);
   }, [creating, revealPath]);
 
   const requestCreate = useCallback(
@@ -192,8 +211,12 @@ function SchemeSection({
     setExpandedPaths((current) => ({ ...current, [path]: !(current[path] ?? defaultOpen) }));
   }, []);
 
-  const { tree, isError, isFetching, refetch } = useProjectContextTree(projectId, scheme, {
-    enabled: isOpen,
+  // The query is unconditionally enabled: it prefetches at rail mount so the
+  // first expand paints from cache (work-scoped schemes still wait for their
+  // workId inside the hook). `pendingOpenPath` waits on the same always-live
+  // query so a just-created file can resolve and open; its onSelectFile then
+  // lands a new selection here, which re-expands via the effect above.
+  const { tree, isError, refetch } = useProjectContextTree(projectId, scheme, {
     activeThreadId,
   });
   useEffect(() => {
@@ -237,35 +260,75 @@ function SchemeSection({
     ],
   );
 
+  const handleExpandedChange = (next: boolean) => {
+    if (creating) onCreateDone();
+    setExpanded(next);
+  };
+
+  /* Work-scoped panes (Scratch, Uploads) share this header untouched: flush
+     full-width bands like their project-scoped siblings. Uploads carries no
+     create shelf (`schemeAllowsCreation`): it is intake only, so its one
+     action is Upload file. */
+  const header = (
+    <RailPaneHeader
+      label={schemeLabel(scheme)}
+      icon={schemeIcon(scheme)}
+      expanded={expanded}
+      onExpandedChange={handleExpandedChange}
+      actions={
+        schemeAllowsCreation(scheme) ? (
+          <>
+            <PaneHeaderActionButton
+              icon={FilePlus}
+              label={t`New file`}
+              onClick={() => requestCreate("file", "")}
+            />
+            <PaneHeaderActionButton
+              icon={FolderPlus}
+              label={t`New folder`}
+              onClick={() => requestCreate("folder", "")}
+            />
+          </>
+        ) : undefined
+      }
+    />
+  );
+
   return (
     <section>
-      <TreeSectionHeader
-        label={schemeLabel(scheme)}
-        icon={schemeIcon(scheme)}
-        expanded={isOpen}
-        onToggle={() => {
-          if (creating) onCreateDone();
-          setExpanded((previous) => !previous);
-        }}
-        onNewFile={() => requestCreate("file", "")}
-        onNewFolder={() => requestCreate("folder", "")}
-      />
-      {isOpen ? (
+      {workName === null ? (
+        header
+      ) : (
+        /* The work names itself here: with the work header row gone (ruling
+           2026-08-06), hovering or focusing a work-scoped pane header is how
+           the writer learns which work these files belong to. Plain-div
+           trigger: `RailPaneHeader` owns its root element and does not
+           forward refs/props, and Radix's default trigger is a <button>
+           (invalid around the header's own collapse button). The div adds no
+           box of its own; hover anywhere on the row (React focus events
+           bubble from the inner button) opens the tooltip without touching
+           collapse or the action shelf. */
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>{header}</div>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={4}>
+            <Trans>Work: "{workName}"</Trans>
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {expanded ? (
         <TreeEnvProvider value={env}>
           <div>
             <TreeChildren parentPath="" children={tree?.children ?? []} depth={1} />
+            {/* "No context files yet." is a claim about the tree, so it waits
+                for a RESOLVED tree. While the query is in flight with nothing
+                cached the pane body stays blank (no spinner) — prefetch at
+                mount makes that window nearly unhittable. */}
             {isError ? (
               <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-            ) : !tree ? (
-              isFetching ? (
-                <TreeLoadingSkeleton />
-              ) : creating?.parentPath !== "" ? (
-                <EmptyHint>
-                  <Trans>No context files yet.</Trans>
-                </EmptyHint>
-              ) : null
-            ) : tree.children.length === 0 && !creating ? (
-              <EmptyHint>
+            ) : tree && tree.children.length === 0 && !creating ? (
+              <EmptyHint depth={1}>
                 <Trans>No context files yet.</Trans>
               </EmptyHint>
             ) : null}
@@ -287,108 +350,13 @@ function parentContextPath(path: string): string {
   return separator <= 0 ? "" : path.slice(0, separator);
 }
 
-/**
- * Section disclosure header: a full-row disclosure control with sibling create
- * actions, so every interactive element has independent keyboard semantics.
- */
-function TreeSectionHeader({
-  label,
-  icon: Icon,
-  expanded,
-  onToggle,
-  onNewFile,
-  onNewFolder,
-}: {
-  label: string;
-  /** Scheme identity icon — contexts are sources, not folders. */
-  icon: LucideIcon;
-  expanded: boolean;
-  onToggle: () => void;
-  onNewFile: () => void;
-  onNewFolder: () => void;
-}) {
+function EmptyHint({ depth, children }: { depth: number; children: React.ReactNode }) {
   return (
-    <div className="group relative flex h-7 items-center hover:bg-sidebar-accent">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={onToggle}
-        className="focus-ring flex h-7 min-w-0 flex-1 items-center rounded-none pr-1 pl-1 text-left"
-      >
-        <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-          <ChevronRight
-            aria-hidden
-            className={cn("size-3 transition-transform", expanded && "rotate-90")}
-          />
-        </span>
-        <Icon aria-hidden className="mr-1 size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-xs tracking-wide text-muted-foreground">
-          {label}
-        </span>
-      </button>
-      {/* Absolutely positioned so the (idle-hidden) actions never steal label
-          width; on hover they sit over the label's end on the row's own tint. */}
-      <span className="absolute top-1/2 right-1 flex shrink-0 -translate-y-1/2 items-center gap-0.5 rounded bg-sidebar-accent pl-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-        <SectionActionButton icon={FilePlus} label={t`New file`} onClick={onNewFile} />
-        <SectionActionButton icon={FolderPlus} label={t`New folder`} onClick={onNewFolder} />
-      </span>
-    </div>
-  );
-}
-
-function SectionActionButton({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: typeof FilePlus;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-      // hover:bg-sidebar-accent (not bg-muted): the shelf-safe hover grammar —
-      // page-recess tints read light-on-light against the shelf's own tones.
-      className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+    <p
+      className="py-1.5 pr-2 text-xs text-ink-subtle"
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
-      <Icon aria-hidden className="size-3.5" />
-    </button>
-  );
-}
-
-function EmptyHint({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="py-1.5 pr-2 text-xs text-ink-subtle" style={{ paddingLeft: rowPaddingLeft(1) }}>
       {children}
     </p>
-  );
-}
-
-/** Placeholder rows echoing the tree's row geometry while files load. */
-function TreeLoadingSkeleton() {
-  return (
-    <div role="status">
-      <span className="sr-only">
-        <Trans>Loading files…</Trans>
-      </span>
-      <div aria-hidden>
-        {["w-24", "w-32", "w-20"].map((width) => (
-          <div
-            key={width}
-            className="flex h-7 items-center pr-2"
-            style={{ paddingLeft: rowPaddingLeft(1) }}
-          >
-            <Skeleton className={cn("h-3", width)} />
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
