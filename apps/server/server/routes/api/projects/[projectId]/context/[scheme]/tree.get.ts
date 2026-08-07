@@ -12,7 +12,7 @@ import {
   isWorkScopedBrowseScheme,
   workScopedBrowseUri,
 } from "../../../../../../domains/context/browse-layer-scheme.js";
-import type { FileEntry } from "../../../../../../domains/context/index.js";
+import { type FileEntry, schemeCapabilities } from "../../../../../../domains/context/index.js";
 import type { ContextPort } from "../../../../../../domains/context/ports/context-port.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
@@ -121,5 +121,5 @@ export async function buildProjectContextTree({
 }): Promise<ProjectContextTreeResponse> {
   const root = rootUri(scheme, workId);
   const tree = await buildDirectory(port, root, root, ROOT_NAMES[scheme]);
-  return { projectId, scheme, tree };
+  return { projectId, scheme, capabilities: schemeCapabilities(scheme), tree };
 }

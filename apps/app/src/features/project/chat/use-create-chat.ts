@@ -17,17 +17,27 @@ export function useCreateChat(projectId: string, onSelectThread: (threadId: stri
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () => createProjectThread(projectId, threadCreateAgentField(DEFAULT_AGENT_SLUG)),
+    mutationFn: (workId: string) =>
+      createProjectThread(projectId, {
+        ...threadCreateAgentField(DEFAULT_AGENT_SLUG),
+        workId,
+      }),
     onSuccess: async (thread) => {
       await invalidateProjectThreadData(queryClient, projectId);
       onSelectThread(thread.id);
     },
   });
 
-  const createChat = () => {
+  const createChat = (workId: string) => {
     if (mutation.isPending) return;
-    mutation.mutate();
+    mutation.reset();
+    mutation.mutate(workId);
   };
 
-  return { createChat, creating: mutation.isPending };
+  return {
+    createChat,
+    creating: mutation.isPending,
+    createError: mutation.error,
+    resetCreateError: mutation.reset,
+  };
 }

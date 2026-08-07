@@ -81,10 +81,3 @@ export type ExecutionSide = z.infer<typeof ExecutionSide>;
 
 export const DocumentRelationship = z.enum(["editing", "reading", "created"]);
 export type DocumentRelationship = z.infer<typeof DocumentRelationship>;
-
-export const WorkVisibility = z.enum(["private", "shared"]);
-export type WorkVisibility = z.infer<typeof WorkVisibility>;
-
-/** Whether a Work is durable or ephemeral scratch (GC/handoff deferred at launch). */
-export const WorkPersistence = z.enum(["persisted", "ephemeral"]);
-export type WorkPersistence = z.infer<typeof WorkPersistence>;

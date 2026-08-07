@@ -74,7 +74,7 @@ export function useChatsOverview(projectId: string): ChatsOverview {
   const { works } = useWorks(projectId);
 
   return useMemo(() => {
-    const workLabelById = new Map<string, string>((works ?? []).map((w: Work) => [w.id, w.title]));
+    const workLabelById = new Map<string, string>((works ?? []).map((w: Work) => [w.id, w.name]));
     return {
       rows: primaryThreads.map((thread) => toChatRow(thread, workLabelById)),
       workCount: works?.length ?? 0,

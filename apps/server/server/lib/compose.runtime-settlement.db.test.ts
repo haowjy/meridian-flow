@@ -48,7 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Runtime settlement",
+        name: "Runtime settlement",
         aiWriteMode: "direct",
       });
       await db.insert(schema.contextSources).values({

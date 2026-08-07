@@ -1,6 +1,5 @@
-import type { WorkVisibility } from "../enums.js";
-
 export type AiWriteMode = "direct" | "draft";
+export type WorkStatus = "active" | "archived";
 
 export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
 
@@ -10,8 +9,11 @@ export interface Work {
   id: WorkId;
   projectId: ProjectId;
   createdByUserId: UserId;
-  title: string;
-  visibility: WorkVisibility;
+  name: string;
+  goal: string | null;
+  description: string | null;
+  status: WorkStatus;
+  archivedAt: string | null;
   aiWriteMode: AiWriteMode;
   /**
    * the server's count of unpushed `branch_write_journal` rows across
@@ -30,6 +32,14 @@ export interface Work {
 
 export interface CreateWorkRequest {
   id?: WorkId;
-  title?: string;
-  visibility?: WorkVisibility;
+  name: string;
+  goal?: string;
+  description?: string;
+}
+
+export interface UpdateWorkRequest {
+  name?: string;
+  goal?: string;
+  description?: string;
+  status?: WorkStatus;
 }

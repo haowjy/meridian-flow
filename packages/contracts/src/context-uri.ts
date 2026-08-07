@@ -11,6 +11,17 @@ export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_S
 export const WORK_SCOPED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
 export type WorkScopedContextUriScheme = (typeof WORK_SCOPED_CONTEXT_URI_SCHEMES)[number];
 
+/** Server-declared operations available through a context scheme. */
+export interface ContextSchemeCapabilities {
+  readonly writable: boolean;
+  readonly searchable: boolean;
+  /**
+   * Whether context clients may create entries or directories. Binary upload
+   * intake is governed separately and may remain available when this is false.
+   */
+  readonly creatable: boolean;
+}
+
 const AUTHORITY_SCHEMES: ReadonlySet<ContextUriScheme> = new Set(WORK_SCOPED_CONTEXT_URI_SCHEMES);
 // Full UUID *shape* (8-4-4-4-12 alphanumeric groups) regardless of hex/version
 // validity — used to tell a typo'd Work id from a legitimate short folder name.

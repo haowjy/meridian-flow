@@ -157,7 +157,7 @@ export async function resetDatabase(): Promise<void> {
     id: WORK_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,
-    title: "Atomicity work",
+    name: "Atomicity work",
     aiWriteMode: "draft",
   });
   await db.insert(schema.contextSources).values({

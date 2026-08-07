@@ -37,6 +37,7 @@ export function mapThread(
     kind: row.kind as Thread["kind"],
     status: row.status as Thread["status"],
     title: row.title === "" ? null : row.title,
+    slug: row.slug,
     composedSystemPrompt: isFrozen ? (row.composedSystemPrompt ?? null) : null,
     bakedSkillSlugs: isFrozen ? (row.bakedSkillSlugs ?? []) : null,
     systemPrompt: isFrozen ? null : row.composedSystemPrompt,

@@ -1,2 +1,2 @@
-/** Shared work-repository constant: the default work title used by both adapters. */
-export const DEFAULT_WORK_TITLE = "Untitled Work";
+/** Shared work-repository constant: the default work name used by both adapters. */
+export const DEFAULT_WORK_NAME = "Untitled Work";

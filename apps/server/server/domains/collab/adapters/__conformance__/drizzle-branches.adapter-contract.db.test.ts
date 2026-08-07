@@ -77,6 +77,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const PROJECT_ID = "00000000-0000-4000-8000-000000000602";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000603";
     const WORK_ID = "00000000-0000-4000-8000-000000000604";
+    const NEXT_WORK_ID = "00000000-0000-4000-8000-000000000608";
     const DOC_ID = "00000000-0000-4000-8000-000000000605";
     const THREAD_ID = "00000000-0000-4000-8000-000000000606";
     const TURN_ID = "00000000-0000-4000-8000-000000000607";
@@ -172,7 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Branch Work",
+        name: "Branch Work",
       });
       await db.insert(contextSources).values({
         id: SOURCE_ID,
@@ -224,6 +225,63 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const resolved = await store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never);
       expect(resolved.doc.getText("content").toString()).toBe("existing upstream prose");
+    });
+
+    it("reseeds a clean thread peer under the reassigned primary Work", async () => {
+      const live = docWithText("live prose");
+      const oldPeer = await store.ensureThreadPeerBranch({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        liveDoc: live,
+      });
+      await db.insert(works).values({
+        id: NEXT_WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Next Work",
+      });
+      await db.transaction(async (tx) => {
+        await tx
+          .update(threadWorks)
+          .set({ isPrimary: false })
+          .where(eq(threadWorks.threadId, THREAD_ID));
+        await tx.insert(threadWorks).values({
+          threadId: THREAD_ID,
+          workId: NEXT_WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+      });
+
+      await expect(
+        store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never),
+      ).rejects.toMatchObject({ name: "BranchNotFoundError" });
+      const nextPeer = await store.ensureThreadPeerBranch({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        liveDoc: live,
+      });
+      const [oldRow, nextUpstream] = await Promise.all([
+        db
+          .select({ status: documentBranches.status })
+          .from(documentBranches)
+          .where(eq(documentBranches.id, oldPeer.branchId))
+          .then((rows) => rows[0]),
+        db
+          .select({ workId: documentBranches.workId })
+          .from(documentBranches)
+          .where(eq(documentBranches.id, nextPeer.upstreamBranchId ?? ""))
+          .then((rows) => rows[0]),
+      ]);
+
+      expect(nextPeer).toMatchObject({
+        workId: NEXT_WORK_ID,
+        threadId: THREAD_ID,
+        status: "active",
+      });
+      expect(nextPeer.branchId).not.toBe(oldPeer.branchId);
+      expect(oldRow?.status).toBe("closed");
+      expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
 
     it("seeds work-draft push policy from the work write mode", async () => {

@@ -70,7 +70,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Thread Head Work",
+        name: "Thread Head Work",
       });
       await db.insert(schema.threads).values({
         id: THREAD_ID,

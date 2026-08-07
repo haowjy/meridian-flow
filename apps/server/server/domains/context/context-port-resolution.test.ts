@@ -21,6 +21,7 @@ function thread(): Thread {
     kind: "primary",
     status: "active",
     title: "Custom project thread",
+    slug: null,
     currentAgent: null,
     activeLeafTurnId: null,
     parentThreadId: null,

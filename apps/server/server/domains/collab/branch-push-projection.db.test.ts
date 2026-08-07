@@ -90,7 +90,7 @@ describe("branch-push durable projection", () => {
       id: workId,
       projectId,
       createdByUserId: userId,
-      title: "Projection work",
+      name: "Projection work",
     });
     await db.insert(contextSources).values({
       id: sourceId,
@@ -276,7 +276,7 @@ describe("branch-push durable projection", () => {
       id: workId,
       projectId,
       createdByUserId: userId,
-      title: "Recovery work",
+      name: "Recovery work",
     });
     await db.insert(contextSources).values({
       id: sourceId,
@@ -461,7 +461,7 @@ describe("branch-push durable projection", () => {
       id: workId,
       projectId,
       createdByUserId: userId,
-      title: "Retry rollback work",
+      name: "Retry rollback work",
       updatedAt: old,
     });
     await db.insert(contextSources).values({

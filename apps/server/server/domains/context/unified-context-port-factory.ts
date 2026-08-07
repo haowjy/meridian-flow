@@ -97,7 +97,7 @@ export interface ManifestMembershipPort {
 
 const emptyWorkScopedAdapter: ContextSchemeAdapter = {
   name: "work-scoped (no active Work)",
-  capabilities: { writable: false, searchable: false },
+  capabilities: { writable: false, searchable: false, creatable: false },
   async stat() {
     return Ok(null);
   },

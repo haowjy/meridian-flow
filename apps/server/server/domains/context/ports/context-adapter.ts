@@ -4,6 +4,7 @@
  * tree mutation is exposed only through an optional atomic capability.
  * AdapterFault is scope-free and gets URI-enriched at the ContextPort boundary.
  */
+import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type { Result } from "../../../shared/result.js";
 import type {
   ContextCreateTrackedDocumentResult,
@@ -12,6 +13,7 @@ import type {
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
   ContextReadResult,
+  ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
   ContextWriteResult,
@@ -21,9 +23,18 @@ import type {
 import type { ContextLocationToken, PreparedContextMove } from "./context-tree-mutation-store.js";
 
 /** What a scheme adapter supports. Checked by the router before dispatch. */
-export interface SchemeCapabilities {
-  readonly writable: boolean;
-  readonly searchable: boolean;
+export type SchemeCapabilities = ContextSchemeCapabilities;
+
+export const CONTEXT_SCHEME_CAPABILITIES = {
+  manuscript: { writable: true, searchable: true, creatable: true },
+  kb: { writable: true, searchable: true, creatable: true },
+  user: { writable: true, searchable: true, creatable: true },
+  scratch: { writable: true, searchable: true, creatable: true },
+  uploads: { writable: true, searchable: true, creatable: false },
+} as const satisfies Readonly<Record<ContextScheme, SchemeCapabilities>>;
+
+export function schemeCapabilities(scheme: ContextScheme): SchemeCapabilities {
+  return CONTEXT_SCHEME_CAPABILITIES[scheme];
 }
 
 /**

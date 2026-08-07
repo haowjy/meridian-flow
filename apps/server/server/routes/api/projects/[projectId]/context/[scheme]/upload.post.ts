@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   if (!fileType)
     throw createError({ statusCode: 415, message: `Unsupported file type: ${mimeType}` });
   const rawPath = formText(parts, "path");
-  const path = parseContextMutationPath(rawPath ?? `uploads/${file.filename}`, "path");
+  const path = parseContextMutationPath(rawPath ?? file.filename, "path");
   const uri = toUri(scheme, path, workId);
   const existing = await port.stat(uri);
   if (existing.ok) throw createError({ statusCode: 409, message: `Path already exists: ${path}` });

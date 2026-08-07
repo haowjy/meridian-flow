@@ -5,6 +5,7 @@ import type { PackageRepository } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 import type { EventJournalWriter, InternalThreadRepositories } from "../domains/threads/index.js";
 import { AgentBindingNotFoundError } from "./thread-creation.js";
+import { MissingPrimaryWorkMembershipError } from "./work-attachment.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
@@ -23,6 +24,7 @@ export async function handoffThreadAgent(
   input: { threadId: string; userId: string; targetAgent: string | null; summary?: string | null },
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
+  const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
   await requireAgent(deps, source, input.targetAgent);
   const summary = input.summary?.trim() || (await programmaticSummary(deps, source.id));
   const target = await createDerivedPrimaryWithMembership(
@@ -30,14 +32,14 @@ export async function handoffThreadAgent(
     {
       userId: source.userId,
       projectId: source.projectId,
-      workId: source.workId as WorkId,
+      workId: sourceWorkId,
       parentThreadId: source.id as ThreadId,
       originType: "handoff",
       originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
       currentAgent: input.targetAgent,
       title: `Handoff from ${source.title ?? "thread"}`,
     },
-    source.workId as WorkId | null,
+    sourceWorkId,
   );
   await inheritEditingDocuments(deps, source, target);
   await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`);
@@ -61,6 +63,7 @@ export async function forkThreadAgent(
   },
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
+  const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
   await requireAgent(deps, source, input.targetAgent);
   const originTurnId = input.originTurnId ?? (await latestTurnId(deps, source.id));
   if (!originTurnId) throw new Error("Cannot fork a thread without an origin turn");
@@ -73,14 +76,14 @@ export async function forkThreadAgent(
     {
       userId: source.userId,
       projectId: source.projectId,
-      workId: source.workId as WorkId,
+      workId: sourceWorkId,
       parentThreadId: source.id as ThreadId,
       originType: "fork",
       originTurnId: originTurnId as TurnId,
       currentAgent: input.targetAgent,
       title: `Fork from ${source.title ?? "thread"}`,
     },
-    source.workId as WorkId | null,
+    sourceWorkId,
   );
   await inheritEditingDocuments(deps, source, target);
   await seedSystemTurn(deps, target, `Forked conversation through turn ${originTurnId}.`);
@@ -97,16 +100,22 @@ export async function forkThreadAgent(
 async function createDerivedPrimaryWithMembership(
   deps: ThreadAgentSwapDeps,
   input: Parameters<InternalThreadRepositories["threads"]["createDerivedPrimary"]>[0],
-  membershipWorkId: WorkId | null,
+  membershipWorkId: WorkId,
 ): Promise<Thread> {
-  if (!membershipWorkId) {
-    return deps.threads.createDerivedPrimary(input);
-  }
   return deps.transaction(async () => {
     const target = await deps.threads.createDerivedPrimary(input);
     await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
     return { ...target, workId: membershipWorkId };
   });
+}
+
+async function requirePrimaryWorkId(
+  deps: Pick<ThreadAgentSwapDeps, "threadWorks">,
+  threadId: string,
+): Promise<WorkId> {
+  const membership = await deps.threadWorks.findPrimary(threadId as ThreadId);
+  if (!membership) throw new MissingPrimaryWorkMembershipError(threadId);
+  return membership.workId;
 }
 
 async function requireOwnedSourceThread(

@@ -84,7 +84,7 @@ export async function runCrossWorkProbe(
     id: WORK_B_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,
-    title: "Work B",
+    name: "Work B",
     aiWriteMode: "draft",
   });
   await db.insert(schema.threads).values({

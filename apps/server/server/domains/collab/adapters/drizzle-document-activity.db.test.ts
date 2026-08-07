@@ -57,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Activity Work",
+        name: "Activity Work",
         updatedAt: OLD,
       });
       await db.insert(contextSources).values({

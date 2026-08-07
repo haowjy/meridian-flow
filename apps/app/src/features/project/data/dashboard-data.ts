@@ -132,7 +132,7 @@ export function groupProjectThreads(
       }, 0);
       workItems.push({
         id: work.id,
-        name: work.title.trim() || "Untitled Work",
+        name: work.name.trim() || "Untitled Work",
         threadIds: slice.map((t) => t.id),
         completedCount: completed,
         totalCount: total,

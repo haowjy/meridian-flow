@@ -10,6 +10,7 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { PackageRepository } from "../domains/packages/index.js";
+import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
@@ -30,6 +31,7 @@ export class AgentBindingNotFoundError extends Error {
 export interface CreateThreadForProjectDeps {
   projects: ProjectRepository;
   workRepo: WorkRepository;
+  preferences: ProjectPreferencesRepository;
   threads: ThreadRepositories["threads"];
   threadWorks: ThreadRepositories["threadWorks"];
   transaction: ThreadRepositories["transaction"];
@@ -97,7 +99,11 @@ export async function createThreadForProject(
       parentThreadId: args.parentThreadId,
     });
     resolvedWorkId = await resolveWorkMembership(
-      { workRepo: deps.workRepo, threadWorks: deps.threadWorks },
+      {
+        workRepo: deps.workRepo,
+        preferences: deps.preferences,
+        threadWorks: deps.threadWorks,
+      },
       {
         threadId: created.id,
         projectId: args.projectId,

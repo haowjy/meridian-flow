@@ -36,8 +36,9 @@ simplification.
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds `scratch://` context. A chat's Work
 is fixed at creation; outside creation, surfaces display Work and never control
-it. The schema is `works` + `thread_works`; the product currently creates one
-default Work per project.
+it. The schema is `works` + `thread_works`; every new project receives a
+concrete default Work, and writers can create and manage additional Works from
+Home.
 
 ## Agency
 

@@ -5,7 +5,8 @@
  * Actions: New file / New folder (open the inline create row nested at the
  * target folder), Rename (opens inline rename row), Delete (confirms then
  * deletes). Both the right-click menu and the kebab dropdown share the same
- * action dispatch — only the trigger differs.
+ * action dispatch — only the trigger differs. Schemes without in-tree
+ * creation (see `schemeAllowsCreation`) drop the create group.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -60,6 +61,15 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   },
 ];
 
+/**
+ * Per-scheme capability filter (`schemeAllowsCreation`): schemes without
+ * in-tree creation (uploads is intake only) drop the create group from both
+ * menus; manage actions always show.
+ */
+function visibleEntryActions(allowCreate: boolean): readonly EntryActionSpec[] {
+  return allowCreate ? ENTRY_ACTIONS : ENTRY_ACTIONS.filter((spec) => spec.group !== "create");
+}
+
 export type EntryActionTarget = {
   /** Display name of the entry (basename). */
   name: string;
@@ -72,9 +82,12 @@ export type EntryActionTarget = {
 
 export function ContextEntryMenu({
   children,
+  allowCreate,
   onAction,
 }: {
   children: React.ReactNode;
+  /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
+  allowCreate: boolean;
   onAction: (action: EntryAction) => void;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
@@ -86,7 +99,7 @@ export function ContextEntryMenu({
           onCloseAutoFocus={onCloseAutoFocus}
           className="z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
-          <ContextActionItems onAction={dispatch} />
+          <ContextActionItems allowCreate={allowCreate} onAction={dispatch} />
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
@@ -124,9 +137,12 @@ function useMenuActionDispatch(onAction: (action: EntryAction) => void) {
 // ─── Hover kebab button + dropdown ──────────────────────────────────────────
 
 export function EntryKebabButton({
+  allowCreate,
   onAction,
   className,
 }: {
+  /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
+  allowCreate: boolean;
   onAction: (action: EntryAction) => void;
   className?: string;
 }) {
@@ -154,7 +170,7 @@ export function EntryKebabButton({
         onCloseAutoFocus={onCloseAutoFocus}
         className="min-w-[8rem]"
       >
-        <DropdownActionItems onAction={dispatch} />
+        <DropdownActionItems allowCreate={allowCreate} onAction={dispatch} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -162,12 +178,19 @@ export function EntryKebabButton({
 
 // ─── Primitive-specific renderers over the shared action specification ─────
 
-function ContextActionItems({ onAction }: { onAction: (action: EntryAction) => void }) {
+function ContextActionItems({
+  allowCreate,
+  onAction,
+}: {
+  allowCreate: boolean;
+  onAction: (action: EntryAction) => void;
+}) {
+  const actions = visibleEntryActions(allowCreate);
   return (
     <>
-      {ENTRY_ACTIONS.map((spec, index) => {
+      {actions.map((spec, index) => {
         const Icon = spec.icon;
-        const startsGroup = index > 0 && ENTRY_ACTIONS[index - 1]?.group !== spec.group;
+        const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;
         return (
           <Fragment key={spec.action}>
             {startsGroup ? (
@@ -195,10 +218,17 @@ function ContextActionItems({ onAction }: { onAction: (action: EntryAction) => v
   );
 }
 
-function DropdownActionItems({ onAction }: { onAction: (action: EntryAction) => void }) {
-  return ENTRY_ACTIONS.map((spec, index) => {
+function DropdownActionItems({
+  allowCreate,
+  onAction,
+}: {
+  allowCreate: boolean;
+  onAction: (action: EntryAction) => void;
+}) {
+  const actions = visibleEntryActions(allowCreate);
+  return actions.map((spec, index) => {
     const Icon = spec.icon;
-    const startsGroup = index > 0 && ENTRY_ACTIONS[index - 1]?.group !== spec.group;
+    const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;
     return (
       <Fragment key={spec.action}>
         {startsGroup ? <DropdownMenuSeparator /> : null}

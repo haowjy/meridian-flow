@@ -1,6 +1,6 @@
 /**
  * api-route-ownership — predicates classifying request paths by owner: thread/
- * project/document/object-store/debug API paths proxied to `apps/server` vs
+ * project/Work/document/object-store/debug API paths proxied to `apps/server` vs
  * `/api/auth/*` paths owned by this app. Single source the dev proxy +
  * middleware consult for routing.
  *
@@ -22,6 +22,8 @@ export function isApiOwnedPath(pathname: string): boolean {
     pathname.startsWith("/api/threads/") ||
     pathname === "/api/projects" ||
     pathname.startsWith("/api/projects/") ||
+    pathname === "/api/works" ||
+    pathname.startsWith("/api/works/") ||
     pathname === "/api/documents" ||
     pathname.startsWith("/api/documents/") ||
     pathname === "/api/debug" ||

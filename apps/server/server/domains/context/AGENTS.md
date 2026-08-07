@@ -8,6 +8,11 @@ default to `manuscript://`.
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,
 never scheme-specific adapters directly.
 
+Scheme capabilities are declared once in `ports/context-adapter.ts` and enforced
+by the router. `uploads://` is writable upload intake but does not allow clients
+to create context entries or directories, so its binary intake is flat;
+`scratch://` is the Work authoring space and accepts nested intake paths.
+
 Text creation and writes must resolve the document filetype and use the collab
 document engine. Never seed Yjs by hand with an assumed markdown schema.
 

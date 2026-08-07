@@ -23,6 +23,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectBootstrapRepository } = await import(
       "../../domains/projects/index.js"
     );
+    const { createDrizzleRepositories } = await import(
+      "../../domains/threads/adapters/drizzle/index.js"
+    );
     const { useRollbackTestDatabase } = await import(
       "../../test-support/rollback-test-database.js"
     );
@@ -52,6 +55,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     async function provisionProject() {
       return createDrizzleProjectBootstrapRepository({
         db,
+        threads: createDrizzleRepositories(db).threads,
+        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: createBoundCollab(),
       }).ensureDefaultBootstrap(USER_ID as never);
     }

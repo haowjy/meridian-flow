@@ -73,6 +73,7 @@ function makeOptimisticThread(
     kind: "primary",
     status: "idle",
     title,
+    slug: null,
     currentAgent: null,
     activeLeafTurnId: null,
     parentThreadId: null,

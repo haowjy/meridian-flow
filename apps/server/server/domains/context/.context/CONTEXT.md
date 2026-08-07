@@ -68,6 +68,7 @@ with a single unified `ContextPort` that resolves durable project schemes
 |---|---|
 | `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, `delete`, `list`, `mkdir`, and `search`. No errors cross as throws. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
+| `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration. The tree HTTP response exposes the same object used by router enforcement. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. |
 | `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
@@ -88,6 +89,12 @@ with a single unified `ContextPort` that resolves durable project schemes
   selected Work's `scratch` source and serializes with its Work ID authority.
   Zero or multiple matches both resolve to `null`; resolution never guesses.
 - Router methods attach the canonical URI to every `ContextError`.
+- `uploads://` is intake, not an authoring workspace: tracked creation, untitled
+  allocation, directory creation, and cross-scheme move-in are rejected with an
+  actionable `invalid_operation`. Same-scheme moves and flat binary upload intake
+  stay available; nested intake paths are rejected because they would implicitly
+  create folders. `scratch://` remains fully writable and creatable, including
+  nested binary intake.
 - Writer-facing HTTP mutations use `context-mutation-validation.ts`, which delegates to the shared reason-coded path/name validators before constructing ContextPort URIs.
 - Adapter `Ok(null)` becomes `not_found`; `permission_denied`,
   `context_unavailable`, and `io_error` stay generic context/backing-store

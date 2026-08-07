@@ -48,6 +48,7 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         kind: "primary",
         status: "idle",
         title: null,
+        slug: null,
         composedSystemPrompt: null,
         bakedSkillSlugs: null,
         systemPrompt: null,

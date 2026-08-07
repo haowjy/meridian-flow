@@ -17,6 +17,7 @@ import {
   documents,
   documentYjsHeads,
   documentYjsUpdates,
+  threads,
   threadWorks,
   works,
 } from "@meridian/database/schema";
@@ -317,31 +318,46 @@ export function createDrizzleBranchStore(
     threadId: ThreadId;
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
-    const existing = await findActiveThreadPeer(input.documentId, input.threadId);
-    if (existing) return existing;
-    const workId = await findPrimaryWork(input.threadId);
-    const workDraft = await ensureWorkDraftBranch({
-      documentId: input.documentId,
-      workId,
-      liveDoc: input.liveDoc,
-    });
-    const upstreamDoc = materializeBranch(workDraft, input.threadId);
-    try {
-      return await insertBranch({
-        id: `branch_${randomUUID()}`,
+    return runInDrizzleTransaction(db, async () => {
+      await currentDrizzleDb(db)
+        .select({ id: threads.id })
+        .from(threads)
+        .where(eq(threads.id, input.threadId))
+        .for("update");
+      const workId = await findPrimaryWork(input.threadId);
+      const existing = await findActiveThreadPeer(input.documentId, input.threadId);
+      if (existing?.workId === workId) return existing;
+      if (existing) {
+        await currentDrizzleDb(db)
+          .update(documentBranches)
+          .set({ status: "closed", updatedAt: new Date() })
+          .where(
+            and(eq(documentBranches.id, existing.branchId), eq(documentBranches.status, "active")),
+          );
+      }
+      const workDraft = await ensureWorkDraftBranch({
         documentId: input.documentId,
-        kind: "thread_peer",
-        upstreamBranchId: workDraft.branchId,
         workId,
-        threadId: input.threadId,
-        pushPolicy: workDraft.pushPolicy,
-        status: "active",
-        ...(await replicatedSnapshotFrom(upstreamDoc)),
-        schemaVersion: workDraft.schemaVersion,
+        liveDoc: input.liveDoc,
       });
-    } finally {
-      upstreamDoc.destroy();
-    }
+      const upstreamDoc = materializeBranch(workDraft, input.threadId);
+      try {
+        return await insertBranch({
+          id: `branch_${randomUUID()}`,
+          documentId: input.documentId,
+          kind: "thread_peer",
+          upstreamBranchId: workDraft.branchId,
+          workId,
+          threadId: input.threadId,
+          pushPolicy: workDraft.pushPolicy,
+          status: "active",
+          ...(await replicatedSnapshotFrom(upstreamDoc)),
+          schemaVersion: workDraft.schemaVersion,
+        });
+      } finally {
+        upstreamDoc.destroy();
+      }
+    });
   }
 
   async function findActiveThreadPeer(
@@ -923,8 +939,13 @@ export function createDrizzleBranchStore(
     },
 
     async resolveThreadBranch(documentId, threadId): Promise<BranchState> {
+      const workId = await findPrimaryWork(threadId).catch((cause) => {
+        if (cause instanceof NoPrimaryWorkError)
+          throw new BranchNotFoundError(documentId, threadId);
+        throw cause;
+      });
       const row = await findActiveThreadPeer(documentId, threadId);
-      if (!row) throw new BranchNotFoundError(documentId, threadId);
+      if (!row || row.workId !== workId) throw new BranchNotFoundError(documentId, threadId);
       return {
         branchId: row.branchId,
         doc: materializeBranch(row, threadId),
@@ -978,7 +999,7 @@ export function createDrizzleBranchStore(
     },
 
     ensureThreadPeerBranch(input) {
-      return runInDrizzleTransaction(db, () => ensureThreadPeerBranch(input));
+      return ensureThreadPeerBranch(input);
     },
 
     discardActiveThreadPeerBranches(input) {

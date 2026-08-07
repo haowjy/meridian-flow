@@ -1,18 +1,35 @@
 /** GET /api/projects/[projectId]/works: lists works in an owned project. Depends on the auth gate, project ownership, and work repository. */
 import { serializeTransport } from "@meridian/contracts/protocol";
-import { defineEventHandler, getRouterParam } from "nitro/h3";
-import { requireProjectOwner, resolveDefaultWork } from "../../../../../domains/projects/index.js";
+import type { WorkStatus } from "@meridian/contracts/works";
+import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
+import { requireProjectOwner, resolveCurrentWork } from "../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { projectRepo, workRepo, documentSync } = app;
+  const { projectRepo, workRepo, documentSync, preferences } = app;
   const { userId } = user;
   const projectId = getRouterParam(event, "projectId") ?? "";
+  const rawStatus = getQuery(event).status;
+  if (
+    rawStatus !== undefined &&
+    rawStatus !== "active" &&
+    rawStatus !== "archived" &&
+    rawStatus !== "all"
+  ) {
+    throw createError({ statusCode: 400, message: "status must be active, archived, or all" });
+  }
+  const status = rawStatus ?? "active";
 
   const project = await requireProjectOwner({ projects: projectRepo }, projectId, userId);
-  const defaultWorkId = await resolveDefaultWork({ works: workRepo }, user, project);
-  const works = await workRepo.listByProject(projectId);
+  const currentWork = await resolveCurrentWork({ works: workRepo, preferences }, user, project);
+  const listedWorks = await workRepo.listByProject(
+    projectId,
+    status === "all" ? undefined : { status: status as WorkStatus },
+  );
+  const works = listedWorks.some((work) => work.id === currentWork.id)
+    ? listedWorks
+    : [currentWork, ...listedWorks];
   const enrichedWorks = await Promise.all(
     works.map(async (work) => ({
       ...work,
@@ -20,5 +37,5 @@ export default defineEventHandler(async (event) => {
     })),
   );
 
-  return serializeTransport({ works: enrichedWorks, defaultWorkId });
+  return serializeTransport({ works: enrichedWorks, defaultWorkId: currentWork.id });
 });
