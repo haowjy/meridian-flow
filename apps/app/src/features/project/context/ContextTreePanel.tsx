@@ -267,8 +267,8 @@ function SchemeSection({
 
   /* Work-scoped panes (Scratch, Uploads) share this header untouched: flush
      full-width bands like their project-scoped siblings. Uploads carries no
-     create shelf (`schemeAllowsCreation`): it is intake only, so its one
-     action is Upload file. */
+     create shelf (`schemeAllowsCreation`): it is intake only. Its real client
+     upload action is tracked in .context/TODO.md; never add a dead picker. */
   const header = (
     <RailPaneHeader
       label={schemeLabel(scheme)}
