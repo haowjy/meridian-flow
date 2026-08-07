@@ -21,8 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
-
-import { useCreateChat } from "../chat/use-create-chat";
+import { NewChatDialog } from "../chat/NewChatDialog";
 import { lifecycleDisplay } from "../lifecycle";
 import { relativeTime } from "../relative-time";
 import {
@@ -34,6 +33,7 @@ import {
   selectChatRows,
   useChatsOverview,
 } from "./chats-overview";
+import { WorksManager } from "./WorksManager";
 
 export type HomeScreenProps = {
   projectId: string;
@@ -139,7 +139,7 @@ export function HomeOverviewBody({
   createButtonClassName?: string;
 }) {
   const { rows, workCount, loaded } = useChatsOverview(projectId);
-  const { createChat, creating } = useCreateChat(projectId, onSelectThread);
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   const [filter, setFilter] = useState<ChatFilterKey>("all");
   const [sortKey, setSortKey] = useState<ChatSortKey>("updated");
@@ -187,16 +187,23 @@ export function HomeOverviewBody({
           <Button
             type="button"
             size="lg"
-            disabled={creating}
-            onClick={() => void createChat()}
+            onClick={() => setNewChatOpen(true)}
             className={createButtonClassName}
           >
             <Plus className="size-4" aria-hidden />
             <Trans>New chat</Trans>
           </Button>
+          <NewChatDialog
+            projectId={projectId}
+            open={newChatOpen}
+            onOpenChange={setNewChatOpen}
+            onSelectThread={onSelectThread}
+          />
         </header>
 
         <StatStrip stats={stats} />
+
+        <WorksManager projectId={projectId} />
 
         <div className="flex flex-wrap items-center gap-1.5">
           {CHAT_FILTERS.map((f) => (
