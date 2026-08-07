@@ -60,6 +60,10 @@ type RequestInitOptions = {
   keepalive?: boolean;
 };
 
+type ListProjectWorksOptions = RequestInitOptions & {
+  status?: "active" | "archived" | "all";
+};
+
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
@@ -90,10 +94,12 @@ export async function listProjectThreads(
 
 export async function listProjectWorks(
   projectId: string,
-  init?: RequestInitOptions,
+  options?: ListProjectWorksOptions,
 ): Promise<ListWorksResponse> {
-  return getJson<ListWorksResponse>(urlFor(apiProjectWorksPath(projectId), init), {
-    headers: init?.headers,
+  const path = apiProjectWorksPath(projectId);
+  const pathWithStatus = options?.status ? `${path}?status=${options.status}` : path;
+  return getJson<ListWorksResponse>(urlFor(pathWithStatus, options), {
+    headers: options?.headers,
   });
 }
 

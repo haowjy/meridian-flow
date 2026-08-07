@@ -1,3 +1,4 @@
+import type { ListWorksResponse } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -20,7 +21,7 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   const enabled = (options?.enabled ?? true) && !useIsProjectPendingCreation(projectId);
   const list = useQuery({
     queryKey: projectQueryKeys.works(projectId),
-    queryFn: () => listProjectWorks(projectId),
+    queryFn: () => listProjectWorks(projectId, { status: "all" }),
     staleTime: 30_000,
     enabled,
   });
@@ -91,18 +92,39 @@ export type UpdateWorkWriteModeMutationInput =
 
 export function useUpdateWorkWriteMode(projectId: string, workId: string | null) {
   const queryClient = useQueryClient();
+  const queryKey = projectQueryKeys.works(projectId);
   return useMutation({
     mutationFn: (input: UpdateWorkWriteModeMutationInput) => {
       if (!workId) throw new Error("Cannot update write mode before a work is loaded");
       return updateWorkWriteMode(projectId, workId, input);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       if (!workId) return;
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDrafts(projectId, workId),
-      });
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.all });
+      invalidateWorkPushQueries(queryClient, projectId, workId);
+      if (result.status !== "updated") return;
+      queryClient.setQueryData<ListWorksResponse>(queryKey, (current) =>
+        current
+          ? {
+              ...current,
+              works: current.works.map((work) =>
+                work.id === workId ? { ...work, aiWriteMode: result.aiWriteMode } : work,
+              ),
+            }
+          : current,
+      );
     },
+  });
+}
+
+function invalidateWorkPushQueries(
+  queryClient: QueryClient,
+  projectId: string,
+  workId: string,
+): void {
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
+  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.all });
+  void queryClient.invalidateQueries({
+    queryKey: ["projects", projectId, "works", workId, "documents"],
   });
 }
