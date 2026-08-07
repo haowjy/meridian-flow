@@ -79,6 +79,7 @@ import {
   cellDocPosition,
   cellElementAt,
   measureTableChrome,
+  nestedCellKeepsReveal,
   pointerHoldsTableChrome,
   sameTableChromeRects,
   type TableChromePiece,
@@ -164,10 +165,14 @@ export function TableChrome({ editor }: { editor: Editor }) {
    * away under a still hand is therefore released by the same mechanism that
    * releases every other lane, rather than by a branch here.
    *
-   * `holds` is the part only this lane knows. The grips live OUTSIDE the frame
-   * (Q6), so the pixels BETWEEN the frame and a grip belong to the reveal too;
-   * without them the travel to a grip crosses several pixels of nothing and
-   * fades out the control the writer is reaching for.
+   * `holds` and `reconcile` are the parts only this lane knows. The grips live
+   * OUTSIDE the frame (Q6), so the pixels BETWEEN the frame and a grip belong
+   * to the reveal too; without them the travel to a grip crosses several
+   * pixels of nothing and fades out the control the writer is reaching for
+   * (`holds`). For a table nested in another table's cell, those same pixels
+   * are on the OUTER cell rather than on nothing, so the probe hits fresh and
+   * the lane arbitrates: the inner cell keeps the reveal while the pointer is
+   * still on its hover surface (`reconcile`).
    *
    * The reading this lane hands over is a HOLD, not a position. The coordinator
    * keeps a lane's reading until the pointer moves again and re-delivers it
@@ -191,6 +196,20 @@ export function TableChrome({ editor }: { editor: Editor }) {
         const at = resolveNodeHold(editor.state, hold);
         const cell = at === null ? null : cellElementAt(editor.view, at.from);
         return cell !== null && pointerHoldsTableChrome(cell, x, y);
+      },
+      // A nested table's gap is `holds` territory that also HITS: the pixels
+      // beside the inner frame are on the OUTER table's cell, so the probe
+      // answers fresh and `holds` alone never gets a vote. Both holds resolve
+      // to the cells drawing them now — a held cell a peer took away resolves
+      // to nothing and concedes — and the nesting judgment is the same zone
+      // `holds` reads (`table-anchors.ts`).
+      reconcile: (held, hit, { x, y }) => {
+        const heldAt = resolveNodeHold(editor.state, held);
+        const heldCell = heldAt === null ? null : cellElementAt(editor.view, heldAt.from);
+        const hitAt = resolveNodeHold(editor.state, hit);
+        const hitCell = hitAt === null ? null : cellElementAt(editor.view, hitAt.from);
+        const keep = heldCell && hitCell && nestedCellKeepsReveal(heldCell, hitCell, x, y);
+        return keep ? held : hit;
       },
       onSettle: (hold) => {
         const at = hold === null ? null : resolveNodeHold(editor.state, hold);

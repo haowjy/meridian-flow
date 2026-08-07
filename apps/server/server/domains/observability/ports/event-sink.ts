@@ -19,6 +19,7 @@ export type {
  * so dev (local stdout/JSONL) and prod swaps stay at the composition root.
  */
 export interface EventSink {
+  /** Implementations are best-effort and must never throw into the caller. */
   emit(event: EventRecord): void;
   emitBatch(events: EventRecord[]): void;
   flush(): Promise<void>;

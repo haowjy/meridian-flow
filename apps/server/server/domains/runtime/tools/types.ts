@@ -243,6 +243,14 @@ export interface ToolRegistration {
   timeoutMs?: number;
   sequential?: boolean;
   capability?: "interrupt" | "spawn" | "return_result";
+  /** Maps executor-owned failures into a tool's model-facing result protocol. */
+  formatExecutionError?: (error: ToolExecutionError) => unknown;
+}
+
+export interface ToolExecutionError {
+  kind: "arguments_parse" | "timeout" | "abort" | "exception";
+  message: string;
+  arguments: unknown;
 }
 
 /**

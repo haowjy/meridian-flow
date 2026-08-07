@@ -13,6 +13,7 @@ import type {
   ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleErrorDetail,
+  UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "./types.js";
 import type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./write-reversal.js";
@@ -40,6 +41,7 @@ export interface CreateWriteToolOptions {
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
+  onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
   onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
   /** Stage live reversal projection until the host transaction commits. */
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;

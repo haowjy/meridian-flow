@@ -182,6 +182,59 @@ describe("hover anchors", () => {
     expect(grips).toBeNull();
   });
 
+  it("lets a lane keep its held target over a same-owner fresh hit it arbitrates away", () => {
+    const anchors = createHoverAnchors(immediate);
+    let grips: string | null = null;
+
+    // Nested tables share one top-level owner. Past x=100 the point is off the
+    // inner table's cells but still on the outer cell it is nested in, so the
+    // lane freshly hits "outer" while its reveal still holds "inner".
+    anchors.observe((x, y) => ({ x, y, element: {} as Element, onChrome: false }));
+    anchors.register({
+      id: "table",
+      probe: (at) =>
+        at.x < 100 ? { owner: BLOCK_A, value: "inner" } : { owner: BLOCK_A, value: "outer" },
+      holds: (_value, at) => at.x < 130,
+      reconcile: (held, hit, at) => (held === "inner" && at.x < 130 ? held : hit),
+      onSettle: (value) => {
+        grips = value as string | null;
+      },
+    });
+
+    anchors.pointerAt(0, 10);
+    expect(grips).toBe("inner");
+
+    // The gap beside the inner frame: a fresh outer hit, arbitrated away.
+    anchors.pointerAt(120, 10);
+    expect(grips).toBe("inner");
+
+    // Genuinely off the inner zone: the lane concedes and the outer hit wins.
+    anchors.pointerAt(200, 10);
+    expect(grips).toBe("outer");
+  });
+
+  it("hands the reveal to a same-owner fresh hit when the lane does not arbitrate", () => {
+    const anchors = createHoverAnchors(immediate);
+    let grips: string | null = null;
+
+    anchors.observe((x, y) => ({ x, y, element: {} as Element, onChrome: false }));
+    anchors.register({
+      id: "table",
+      probe: (at) =>
+        at.x < 100 ? { owner: BLOCK_A, value: "inner" } : { owner: BLOCK_A, value: "outer" },
+      holds: (_value, at) => at.x < 130,
+      onSettle: (value) => {
+        grips = value as string | null;
+      },
+    });
+
+    anchors.pointerAt(0, 10);
+    expect(grips).toBe("inner");
+
+    anchors.pointerAt(120, 10);
+    expect(grips).toBe("outer");
+  });
+
   it("forgets the pointer when the reading says the page is not this editor's", () => {
     const anchors = createHoverAnchors(immediate);
     let settled: string | null = null;

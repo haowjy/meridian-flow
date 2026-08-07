@@ -27,12 +27,9 @@
  *   never a dead end.
  * - i18n exception: DEV-only debug surface; inline English bypasses Lingui.
  */
-import type {
-  Block,
-  ModelRequestDebugRecord,
-  Turn,
-  TurnContextPreview,
-} from "@meridian/contracts/threads";
+
+import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
+import type { Block, Turn, TurnContextPreview } from "@meridian/contracts/threads";
 import { useEffect, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
 import {
@@ -44,6 +41,7 @@ import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { JsonTree } from "./JsonTree";
+import { ModelRequestInspector } from "./model-requests/ModelRequestInspector";
 
 type Hit = {
   kind: "turn" | "block" | "next-turn";
@@ -65,7 +63,7 @@ type TurnContextPreviewState =
 type ModelRequestsState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "loaded"; records: ModelRequestDebugRecord[] }
+  | { status: "loaded"; response: ModelRequestDebugListResponse }
   | { status: "disabled" }
   | { status: "error"; message: string };
 
@@ -283,7 +281,7 @@ export function InlineInspector() {
         ) {
           return;
         }
-        setModelRequests({ status: "loaded", records: response.records });
+        setModelRequests({ status: "loaded", response });
       })
       .catch((error: unknown) => {
         const current = hitRef.current;
@@ -425,25 +423,17 @@ export function InlineInspector() {
           {modelRequests.status === "loaded" ? (
             <div className="mb-3 space-y-2 border-b border-border pb-3">
               <p className={sectionLabelVariants({ variant: "group" })}>
-                model requests ({modelRequests.records.length})
+                model requests ({modelRequests.response.records.length})
               </p>
-              {modelRequests.records.length === 0 ? (
+              {modelRequests.response.records.length === 0 ? (
                 <p className="text-meta text-muted-foreground">
                   No captured requests for this turn.
                 </p>
               ) : (
-                modelRequests.records.map((record) => (
-                  <div
-                    key={`${record.turnId}:${record.iteration}:${record.requestedAt}`}
-                    className="rounded border border-border-subtle bg-muted p-2"
-                  >
-                    <p className="mb-1 font-mono text-meta text-foreground">
-                      iter {record.iteration} · {record.agentSlug ?? "no agent"} ·{" "}
-                      {record.model ?? "default model"}
-                    </p>
-                    <JsonTree value={record} className="max-h-none border-0 bg-transparent p-0" />
-                  </div>
-                ))
+                <ModelRequestInspector
+                  records={modelRequests.response.records}
+                  retention={modelRequests.response.retention}
+                />
               )}
             </div>
           ) : null}

@@ -22,6 +22,7 @@ export const env = createEnv({
 
 export const modelRequestDebugCaptureEnabled = resolveModelRequestDebugCaptureEnabled({
   rawNodeEnv: process.env.NODE_ENV,
+  rawAppEnv: env.APP_ENV,
   debugCaptureOverride: process.env.MODEL_REQUEST_DEBUG_CAPTURE,
 });
 
@@ -32,17 +33,23 @@ export const recentEventsEnabled = resolveRecentEventsEnabled({
 /**
  * Fail-safe model-request debug capture gate.
  *
- * Development/test capture by default; production requires an explicit
- * MODEL_REQUEST_DEBUG_CAPTURE opt-in. "0" always disables.
+ * Capture is structurally unavailable outside local development/test.
+ * MODEL_REQUEST_DEBUG_CAPTURE can disable it locally but cannot enable it in
+ * staging or production.
  */
 export function resolveModelRequestDebugCaptureEnabled(input: {
   rawNodeEnv?: string;
+  rawAppEnv?: string;
   debugCaptureOverride?: string;
 }): boolean {
-  if (input.debugCaptureOverride === "1" || input.debugCaptureOverride === "true") return true;
+  if (
+    (input.rawNodeEnv !== "development" && input.rawNodeEnv !== "test") ||
+    input.rawAppEnv !== "dev"
+  ) {
+    return false;
+  }
   if (input.debugCaptureOverride === "0" || input.debugCaptureOverride === "false") return false;
-  if (input.rawNodeEnv === "development" || input.rawNodeEnv === "test") return true;
-  return false;
+  return true;
 }
 
 /** Recent-event consumption is structurally unavailable outside local test/dev processes. */

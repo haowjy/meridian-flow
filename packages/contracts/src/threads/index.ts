@@ -269,7 +269,21 @@ export interface ModelResponse {
 }
 
 export * from "./golden/index.js";
-export type { ModelRequestDebugRecord } from "./model-request-debug.js";
+export type {
+  ModelRequestDebugCapture,
+  ModelRequestDebugMessage,
+  ModelRequestDebugRecord,
+  ModelRequestDebugRequest,
+  ModelRequestDebugRetention,
+  ModelRequestDebugSummary,
+  ModelRequestDebugView,
+  ModelRequestPrefix,
+} from "./model-request-debug.js";
+export {
+  deriveModelRequestDebugViews,
+  renderModelRequestDebugMarkdown,
+  summarizeModelRequestDebugView,
+} from "./model-request-debug.js";
 export type {
   BlockUpsertedRow,
   ModelResponseReceivedRow,

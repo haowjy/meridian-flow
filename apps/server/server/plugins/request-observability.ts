@@ -2,7 +2,11 @@
  * Request observability plugin: mints per-request correlation and emits one safe
  * global event for unexpected route failures and handled error statuses.
  */
-import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
+import {
+  emitEvent,
+  enterEventCorrelation,
+  unknownToEventPayload,
+} from "../domains/observability/index.js";
 import { getProcessEventSink } from "../lib/observability.js";
 import {
   createRequestObservabilityContext,
@@ -34,7 +38,11 @@ type NitroHookApp = {
 export default function requestObservabilityPlugin(app: unknown) {
   const nitroApp = app as NitroHookApp;
   nitroApp.hooks.hook("request", (event) => {
-    event.context.observability = createRequestObservabilityContext(event);
+    const context = createRequestObservabilityContext(event);
+    event.context.observability = context;
+    enterEventCorrelation({
+      traceId: context.traceId,
+    });
   });
 
   nitroApp.hooks.hook("error", (error, { event }) => {

@@ -4,6 +4,7 @@ import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
@@ -662,6 +663,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
 
   it("rejects journal failure before the transport can apply or acknowledge", async () => {
     const liveDocument = new Y.Doc({ gc: false });
+    const events = new RecentEventsBuffer();
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(async () => {
       throw new Error("database unavailable");
@@ -676,6 +678,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
+      eventSink: events,
       emitAgentEditInvariantViolation: () => undefined,
     });
     let appliedOrAcknowledged = false;
@@ -696,6 +699,9 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     expect(appliedOrAcknowledged).toBe(false);
     expect(persistence.getPersistenceQueueMetrics().queues).toEqual([
       expect.objectContaining({ documentId: DOCUMENT_ID, dropped: 1 }),
+    ]);
+    expect(events.query({ correlation: { documentId: DOCUMENT_ID } }).events).toEqual([
+      expect.objectContaining({ name: "persistence_append.failed" }),
     ]);
   });
 

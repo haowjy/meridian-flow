@@ -560,7 +560,7 @@ describe("computeEcho", () => {
     });
 
     expect(echo).toEqual([
-      { mode: "truncated", blocks: ["A|one two three four five six seven eight..."] },
+      { mode: "truncated", blocks: ["A|one two three four five six seven eight"] },
       { mode: "full", blocks: ["B|new center"] },
       { mode: "truncated", blocks: ["C|short context stays unchanged"] },
     ]);

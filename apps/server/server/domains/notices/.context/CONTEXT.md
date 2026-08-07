@@ -9,10 +9,11 @@ logical head.
 `NoticePort` records a typed, thread-scoped `NoticeInput` and destructively
 drains model delivery for that thread.
 
-Results are ordered by creation time and notice ID. The orchestrator drains immediately before every
-`gateway.stream()` call and injects a transient system message after context
-assembly. No notice is stored as a turn or block, rendered by `buildContext`, or
-allowed to own `activeLeafTurnId`.
+Results are ordered by creation time and notice ID. The orchestrator drains
+immediately before every `gateway.stream()` call. Pre-turn notices remain on the
+current writer message for the entire tool loop; notices created during the loop
+remain after the causal tool exchange. No notice is stored as a turn or block,
+rendered by `buildContext`, or allowed to own `activeLeafTurnId`.
 
 The domain contains only notices that affect a later model call: `undo` and
 `awareness_degraded`. Writer-facing change reporting belongs to Trail evidence,

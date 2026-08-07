@@ -1,4 +1,6 @@
 /** ContextFS-to-collab write routing and structured error coverage. */
+
+import { modelResult } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentMutationRejectedError } from "../../collab/domain/markdown-document.js";
 import type { MarkdownDocumentStore } from "../../collab/index.js";
@@ -12,6 +14,7 @@ describe("collab document sync", () => {
         status: "invalid_write",
         isError: true,
         text: "status: invalid_write",
+        result: modelResult({ command: "create", status: "invalid_write" }),
       });
     });
     const documentSync = { writeDocument } as unknown as MarkdownDocumentStore;

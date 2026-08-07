@@ -2,57 +2,97 @@
  * EventSink call-site helpers: timestamp stamping and JSON-natural error payloads
  * for observability records. Keeps emit shape consistent across domain migrations.
  */
-import { isMeridianError, meridianErrorToJson } from "@meridian/contracts/interrupt";
+import { isMeridianError } from "@meridian/contracts/interrupt";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
+import { safeMeridianErrorCode } from "./safe-event.js";
 
-const PG_QUERY_MAX = 1000;
+const ERROR_SCALAR_MAX = 128;
+const SAFE_ERROR_CLASSES = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+]);
+const SAFE_ERROR_CODES = new Set([
+  "EACCES",
+  "EADDRINUSE",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOENT",
+  "ENOTFOUND",
+  "EPIPE",
+  "ETIMEDOUT",
+]);
 
-/**
- * Pull the Postgres wire diagnostics off a postgres-js error so a driver failure
- * stops surfacing as a bare "Failed query". postgres-js exposes these as
- * snake_case fields plus a (non-enumerable, so spread-invisible) `query`; we read
- * them by name. Returns null when the error is not pg-shaped. Never throws — a
- * serializer must not mask the error it is reporting.
- */
-function postgresErrorFields(error: Error): Record<string, unknown> | null {
-  const pg = error as Error & Record<string, unknown>;
-  if (typeof pg.code !== "string" || pg.severity === undefined) return null;
-  const fields: Record<string, unknown> = { code: pg.code, severity: pg.severity };
-  const optional: ReadonlyArray<readonly [string, string]> = [
-    ["detail", "detail"],
-    ["hint", "hint"],
-    ["constraint", "constraint_name"],
-    ["column", "column_name"],
-    ["table", "table_name"],
-  ];
-  for (const [key, source] of optional) {
-    if (pg[source] !== undefined) fields[key] = pg[source];
+function ownDataValue(value: object, key: string): unknown {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
   }
-  const query = pg.query;
-  if (typeof query === "string") {
-    fields.query = query.length > PG_QUERY_MAX ? `${query.slice(0, PG_QUERY_MAX)}…` : query;
+}
+
+function safeErrorScalar(value: unknown): string | number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (
+    typeof value === "string" &&
+    value.length <= ERROR_SCALAR_MAX &&
+    (/^[A-Z0-9]{5}$/.test(value) || SAFE_ERROR_CODES.has(value))
+  ) {
+    return value;
   }
-  return fields;
+  return undefined;
+}
+
+function safeErrorClass(error: Error): string {
+  const name = ownDataValue(error, "name");
+  return typeof name === "string" && SAFE_ERROR_CLASSES.has(name) ? name : "Error";
 }
 
 export function unknownToEventPayload(error: unknown): Record<string, unknown> {
-  if (isMeridianError(error)) {
-    return { error: meridianErrorToJson(error) };
-  }
-  if (error instanceof Error) {
-    const payload: Record<string, unknown> = {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
-    const postgres = postgresErrorFields(error);
-    if (postgres) payload.postgres = postgres;
-    if (error.cause !== undefined) {
-      payload.cause = unknownToEventPayload(error.cause);
+  try {
+    if (isMeridianError(error)) {
+      const code = safeMeridianErrorCode(error.code);
+      return {
+        error: {
+          class: "MeridianError",
+          category: error.source,
+          ...(code !== undefined && { code }),
+          retryable: error.retryable,
+        },
+      };
     }
-    return payload;
+  } catch {
+    return { error: { class: "Error", category: "unexpected" } };
   }
-  return { error };
+  let nativeError = false;
+  try {
+    nativeError = error instanceof Error;
+  } catch {
+    return { error: { class: "Error", category: "unexpected" } };
+  }
+  if (nativeError) {
+    const native = error as Error;
+    const code = safeErrorScalar(ownDataValue(native, "code"));
+    const rawStatus = ownDataValue(native, "status") ?? ownDataValue(native, "statusCode");
+    const status =
+      typeof rawStatus === "number" && Number.isFinite(rawStatus) ? rawStatus : undefined;
+    const severity = ownDataValue(native, "severity");
+    return {
+      error: {
+        class: safeErrorClass(native),
+        category: severity === undefined ? "unexpected" : "database",
+        ...(code !== undefined && { code }),
+        ...(status !== undefined && { status }),
+      },
+    };
+  }
+  return { error: { class: typeof error, category: "unexpected" } };
 }
 
 export function emitEvent(

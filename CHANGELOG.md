@@ -18,6 +18,56 @@
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.
 
+- `apps/app`, `apps/server`, `packages/contracts`, `tools`: one dev-only model
+  context seam now serves the LLM Calls dashboard and `debug:model-context`
+  CLI. It retains the complete provider-neutral request with a digest and hard
+  record/byte bounds, then exposes shared Markdown, raw, and prefix views. The
+  dashboard leads with request identity and content while keeping hashes in
+  Debug; CLI JSON likewise returns requested evidence before bookkeeping.
+  Prompt content stays in the owner-gated memory ring and never enters ordinary
+  diagnostic events or JSONL logs.
+- `apps/server`: diagnostic events are now capped at 8 KiB, error envelopes
+  retain only safe identity fields, in-memory and pending buffers have byte as
+  well as record limits, and local JSONL output rotates at 8 MiB with both
+  14-day and 128 MiB retention ceilings. Loss summaries report records and
+  bytes, and debug queries can select an exact event ID.
+- `packages/agent-edit`, `apps/server`: unexpected write-dispatch failures now
+  notify the host with their original cause and safe operation identifiers
+  before returning the same sanitized `internal_error`; Meridian emits the
+  diagnostic through `EventSink`, and observer failures can never veto writes.
+- `apps/server`: HTTP requests and WebSocket connections now establish isolated
+  causal scopes that automatically enrich server diagnostics with their trace
+  IDs. Detached work retains its initiating scope, shared Yjs persistence mints
+  a fresh operation trace, and conflicting caller IDs are reported without
+  overriding the active boundary or blocking the operation.
+- `tools`, `apps/server`: `pnpm check` now blocks temporary debug probes and all
+  permanent server console calls. Existing server diagnostics use `EventSink`;
+  the marked console form remains available locally for one-off debugging but
+  cannot reach a push or merge.
+- `tools`: local agents can now run `pnpm debug:events -- --trace <id>` (or
+  pivot by event, thread, turn, document, or error code) to authenticate in
+  memory and receive deterministic bounded JSON from the current worktree's
+  Portless server. Compact output caps at 50 records and full output at 200.
+- `apps/server`: undo notices now stay with the current writer message through
+  every tool-loop call. Edit-awareness notices stay after the tool result that
+  caused them. Neither rewrites the frozen system prompt prefix.
+- `packages/agent-edit`, `apps/server`: agents can delete a block scope with the
+  explicit `delete` command. Stale runtimes now rebuild and apply the requested
+  edit instead of refusing destructive writes until the agent rereads; Yjs
+  merge, write receipts, and undo preserve the writer's recovery path.
+- `packages/agent-edit`, `apps/server`: every model-facing edit result now uses
+  the versioned `meridian.agent-edit.v1` JSON envelope. Logical block bodies,
+  hashes, exact-prefix context, concurrent edits, diffs, and reversal metadata
+  stay typed instead of sharing an ambiguous multiline text stream. Blocks with
+  the same extent and relation travel as one group, and full reads build text
+  and typed items in one batch pass. Hashes remain tool-internal targeting
+  tokens rather than writer-facing prose labels.
+- `apps/app`: a table nested in another table's cell now keeps its grip
+  chrome while the pointer travels to a grip. The gap beside the inner frame
+  no longer re-anchors hover to the outer table, so the inner table's row
+  menu, column menu, and add-column tab are clickable at any nesting depth.
+  Grips still follow the pointer cell to cell, and the outer table takes
+  over once the pointer leaves the inner table's hover zone.
 - `apps/app`, `apps/server`, `packages/markup`, `packages/prosemirror-schema`:
   table cells now hold full block content. Tables serialize as HTML every time
   while pipe-table imports still parse, and Enter in cell prose splits a
