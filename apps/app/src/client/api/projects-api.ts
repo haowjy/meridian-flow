@@ -50,6 +50,7 @@ import {
   type Work,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
+import type { CreateWorkRequest, UpdateWorkRequest } from "@meridian/contracts/works";
 
 import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
@@ -94,6 +95,68 @@ export async function listProjectWorks(
   return getJson<ListWorksResponse>(urlFor(apiProjectWorksPath(projectId), init), {
     headers: init?.headers,
   });
+}
+
+export function getCurrentWork(projectId: string, init?: RequestInitOptions): Promise<Work> {
+  return getJson<Work>(urlFor(`${apiProjectPath(projectId)}/current-work`, init), {
+    headers: init?.headers,
+  });
+}
+
+export function createProjectWork(
+  projectId: string,
+  data: CreateWorkRequest,
+  init?: RequestInitOptions,
+): Promise<Work> {
+  return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
+    headers: init?.headers,
+  });
+}
+
+export function setCurrentWork(
+  projectId: string,
+  workId: string,
+  init?: RequestInitOptions,
+): Promise<Work> {
+  return putJson<Work>(
+    urlFor(`${apiProjectPath(projectId)}/current-work`, init),
+    { workId },
+    {
+      headers: init?.headers,
+    },
+  );
+}
+
+export function updateWork(
+  workId: string,
+  data: UpdateWorkRequest,
+  init?: RequestInitOptions,
+): Promise<Work> {
+  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, { headers: init?.headers });
+}
+
+export function archiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
+  return postJson<Work>(
+    urlFor(`/api/works/${workId}/archive`, init),
+    {},
+    {
+      headers: init?.headers,
+    },
+  );
+}
+
+export function unarchiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
+  return postJson<Work>(
+    urlFor(`/api/works/${workId}/unarchive`, init),
+    {},
+    {
+      headers: init?.headers,
+    },
+  );
+}
+
+export function deleteWork(workId: string): Promise<void> {
+  return deleteRequest(`/api/works/${workId}`);
 }
 
 export async function getProjectWorkingSet(
