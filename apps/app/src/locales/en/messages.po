@@ -1425,7 +1425,6 @@ msgstr "Loading chats…"
 msgid "Loading file…"
 msgstr "Loading file…"
 
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Loading files…"
 msgstr "Loading files…"
@@ -1454,6 +1453,10 @@ msgstr "Loading signed image URL…"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Loading uploads…"
 msgstr "Loading uploads…"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Loading Work"
+msgstr "Loading Work"
 
 #: src/features/billing/UsageCard.tsx
 msgid "Loading…"
@@ -2375,8 +2378,8 @@ msgid "Switch screens or manage your account."
 msgstr "Switch screens or manage your account."
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Switch work"
-msgstr "Switch work"
+#~ msgid "Switch work"
+#~ msgstr "Switch work"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -2885,11 +2888,14 @@ msgstr "Where were we?"
 msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Work"
 msgstr "Work"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Work: \"{workName}\""
+msgstr "Work: \"{workName}\""
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"
