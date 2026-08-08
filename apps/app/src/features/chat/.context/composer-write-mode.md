@@ -11,6 +11,12 @@ either side of `thread → work` is absent, the control is not rendered. The
 independent chat composition root performs the same resolution for its thread.
 There is no first/default-Work fallback.
 
+`useComposerWorkBinding` owns Work interaction, mutation presentation, and
+Undo. `useThreadDurableProjections` owns transport projection, while
+`convergeThreadWorkBinding` owns all cache effects. `ComposerWorkControl`
+renders the measured inline/overflow entry only in the composer; headers remain
+chat identity surfaces.
+
 The same row owns the open chat's Work selector. At widths above 520px its
 controls read Agent, Draft / Auto-apply, then `Work: {name}`. At or below 520px,
 only Work moves behind an ellipsis; that single popover drills into the same

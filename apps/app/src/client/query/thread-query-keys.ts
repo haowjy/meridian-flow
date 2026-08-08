@@ -18,4 +18,6 @@ export const threadQueryKeys = {
   liveLineageRoot: (threadId: string) => ["threads", threadId, "live-lineage"] as const,
   liveLineage: (threadId: string, turnId: string) =>
     ["threads", threadId, "live-lineage", turnId] as const,
+  workProjectionCursor: (threadId: string) =>
+    ["threads", threadId, "work-projection-cursor"] as const,
 };

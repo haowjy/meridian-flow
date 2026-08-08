@@ -1057,7 +1057,7 @@ export function applyAguiEventToStore(
         return;
       }
       if (event.name === "meridian.usage" || event.name === "meridian.permission.denied") return;
-      // Change-trail signals are consumed by useThreadChangeTrails' own event
+      // Durable custom projections are consumed by useThreadDurableProjections' event
       // listener; falling through here rendered each one as an "Unknown
       // component" note under the digest for the duration of the turn.
       if (

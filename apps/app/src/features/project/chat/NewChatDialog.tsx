@@ -1,4 +1,4 @@
-/** Work picker shown only while creating a chat. Existing chats never move Works. */
+/** Work picker for choosing the initial binding while creating a chat. */
 import { Trans } from "@lingui/react/macro";
 import { useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";

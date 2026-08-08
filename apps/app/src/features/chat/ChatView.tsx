@@ -36,7 +36,7 @@ import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
-import { useThreadChangeTrails } from "./useThreadChangeTrails";
+import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
 
@@ -67,7 +67,7 @@ export function ChatView({
   historySettled,
 }: ChatViewProps) {
   const actions = useThreadActions();
-  const changeTrails = useThreadChangeTrails(threadId);
+  const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -158,32 +158,51 @@ export function ChatView({
             onSubmit={handleSubmit}
             onStop={handleStop}
             toolbarLeft={
-              <>
-                {threadStarted ? (
-                  <ComposerAgentControl
-                    projectId={projectId ?? null}
-                    mode="readonly"
-                    selectedSlug={composerAgentSlug}
-                  />
-                ) : (
-                  <ComposerAgentControl
-                    projectId={projectId ?? null}
-                    mode="interactive"
-                    selectedSlug={composerAgentSlug}
-                    onSelectedSlugChange={setDraftAgentSlug}
-                  />
-                )}
-                {projectId && activeWork ? (
-                  <>
-                    <ComposerWriteModeControl projectId={projectId} work={activeWork} />
-                    <ComposerWorkControl
-                      projectId={projectId}
-                      threadId={threadId}
-                      work={activeWork}
-                    />
-                  </>
-                ) : null}
-              </>
+              projectId && activeWork ? (
+                <ComposerWorkControl
+                  projectId={projectId}
+                  threadId={threadId}
+                  work={activeWork}
+                  primaryControls={[
+                    {
+                      id: "agent",
+                      priority: 100,
+                      node: threadStarted ? (
+                        <ComposerAgentControl
+                          projectId={projectId}
+                          mode="readonly"
+                          selectedSlug={composerAgentSlug}
+                        />
+                      ) : (
+                        <ComposerAgentControl
+                          projectId={projectId}
+                          mode="interactive"
+                          selectedSlug={composerAgentSlug}
+                          onSelectedSlugChange={setDraftAgentSlug}
+                        />
+                      ),
+                    },
+                    {
+                      id: "write-mode",
+                      priority: 90,
+                      node: <ComposerWriteModeControl projectId={projectId} work={activeWork} />,
+                    },
+                  ]}
+                />
+              ) : threadStarted ? (
+                <ComposerAgentControl
+                  projectId={projectId ?? null}
+                  mode="readonly"
+                  selectedSlug={composerAgentSlug}
+                />
+              ) : (
+                <ComposerAgentControl
+                  projectId={projectId ?? null}
+                  mode="interactive"
+                  selectedSlug={composerAgentSlug}
+                  onSelectedSlugChange={setDraftAgentSlug}
+                />
+              )
             }
           />
         </div>

@@ -161,9 +161,6 @@ export class ThreadRunScenario {
     options: {
       append?: (request: AppendRequest) => Promise<SendMessageResponse>;
       snapshot?: (threadId: string) => Promise<ThreadSnapshotResponse>;
-      onWorkContextChanged?: ConstructorParameters<
-        typeof ThreadRunController
-      >[0]["onWorkContextChanged"];
     } = {},
   ) {
     this.append = options.append ?? (async () => defaultSendResponse());
@@ -183,7 +180,6 @@ export class ThreadRunScenario {
         this.snapshotRequests.push(data.threadId);
         return this.snapshot(data.threadId);
       },
-      onWorkContextChanged: options.onWorkContextChanged,
     });
   }
 

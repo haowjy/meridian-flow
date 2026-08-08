@@ -93,6 +93,7 @@ describe("WorksManager actions", () => {
       defaultWorkId: "work-a",
       isError: false,
       isFetching: false,
+      status: "ready",
       refetch: vi.fn(),
     });
     vi.mocked(queryHooks.useWorkMutations).mockReturnValue({

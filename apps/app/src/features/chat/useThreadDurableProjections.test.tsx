@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChangeTrailShell } from "@/client/change-trails";
-import { useThreadChangeTrails } from "./useThreadChangeTrails";
+import { useThreadDurableProjections } from "./useThreadDurableProjections";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -54,9 +54,9 @@ const shell = (trailId: string): ChangeTrailShell => ({
 let cleanup: (() => void) | undefined;
 
 function mount() {
-  const seen: ReturnType<typeof useThreadChangeTrails>[] = [];
+  const seen: ReturnType<typeof useThreadDurableProjections>[] = [];
   function Probe() {
-    seen.push(useThreadChangeTrails("thread-1"));
+    seen.push(useThreadDurableProjections({ threadId: "thread-1", projectId: "project-1" }));
     return null;
   }
   const container = document.createElement("div");
@@ -84,7 +84,7 @@ afterEach(() => {
   mocks.listChangeTrailShells.mockReset();
 });
 
-describe("useThreadChangeTrails", () => {
+describe("useThreadDurableProjections", () => {
   it("converges under a gap burst instead of starving on superseded requests", async () => {
     // Each list request is held open so the burst lands while one is in flight —
     // the exact shape that used to leave the map permanently empty.
@@ -113,8 +113,8 @@ describe("useThreadChangeTrails", () => {
     });
 
     expect(mocks.listChangeTrailShells).toHaveBeenCalledTimes(2);
-    expect(Object.keys(view.latest()?.byId ?? {})).toEqual(["trail-1", "trail-2"]);
-    expect(view.latest()?.gapPending).toBe(false);
+    expect(Object.keys(view.latest()?.changeTrails.byId ?? {})).toEqual(["trail-1", "trail-2"]);
+    expect(view.latest()?.changeTrails.gapPending).toBe(false);
   });
 
   it("leaves in-flight change-trail detail alone across a gap", async () => {
