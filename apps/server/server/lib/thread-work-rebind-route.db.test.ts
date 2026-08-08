@@ -34,7 +34,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { handleRebindThreadWorkRequest } = await import("./thread-work-rebind-route.js");
     const { default: interruptErrorHandler } = await import("./interrupt-error-handler.js");
-    const { rebindThreadWork } = await import("../domains/threads/domain/rebind-thread-work.js");
     const { createDrizzleThreadRunOwnership } = await import(
       "../domains/runtime/adapters/drizzle-thread-run-ownership.js"
     );
@@ -59,39 +58,57 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("excludes a writer rebind while another server instance owns the run", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const preferences = createDrizzleProjectPreferencesRepository({ db });
+      const projects = createDrizzleProjectRepository({ db });
       const modelInstance = createDrizzleThreadRunOwnership(db);
       const writerInstance = createDrizzleThreadRunOwnership(db);
       const modelClaim = await modelInstance.tryAcquire(THREAD_ID);
       expect(modelClaim).not.toBeNull();
 
-      expect(await writerInstance.tryAcquire(THREAD_ID)).toBeNull();
-      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
-        workId: WORK_ID,
-      });
-
-      await modelClaim?.release();
-      const writerClaim = await writerInstance.tryAcquire(THREAD_ID);
-      expect(writerClaim).not.toBeNull();
       try {
-        await threads.transaction(() =>
-          rebindThreadWork(
+        let thrown: unknown;
+        try {
+          await handleRebindThreadWorkRequest(
             {
               threads: threads.threads,
               threadWorks: threads.threadWorks,
+              projects,
               works,
               preferences,
               obligations: threads.workContextDeliveries,
+              workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+              transaction: threads.transaction,
+              runOwnership: writerInstance,
             },
-            {
-              threadId: THREAD_ID,
-              targetWorkId: TARGET_WORK_ID,
-              preferenceUserId: USER_ID,
-            },
-          ),
-        );
+            { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
+          );
+        } catch (cause) {
+          thrown = cause;
+        }
+        const response = interruptErrorHandler(thrown, {});
+        expect(response?.status).toBe(409);
+        await expect(response?.json()).resolves.toMatchObject({
+          error: { code: "thread_busy" },
+        });
+        await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+          workId: WORK_ID,
+        });
       } finally {
-        await writerClaim?.release();
+        await modelClaim?.release();
       }
+      await handleRebindThreadWorkRequest(
+        {
+          threads: threads.threads,
+          threadWorks: threads.threadWorks,
+          projects,
+          works,
+          preferences,
+          obligations: threads.workContextDeliveries,
+          workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+          transaction: threads.transaction,
+          runOwnership: writerInstance,
+        },
+        { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
+      );
 
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: TARGET_WORK_ID,

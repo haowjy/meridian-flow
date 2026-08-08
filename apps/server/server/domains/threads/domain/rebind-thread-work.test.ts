@@ -31,7 +31,12 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
 }
 
 function fixture(
-  options: { kind?: Thread["kind"]; target?: Work | null; sameTarget?: boolean } = {},
+  options: {
+    kind?: Thread["kind"];
+    target?: Work | null;
+    sameTarget?: boolean;
+    missingPrimary?: boolean;
+  } = {},
 ) {
   const source = work(SOURCE_ID, "Source");
   const target = options.target === undefined ? work(TARGET_ID, "Target") : options.target;
@@ -58,6 +63,7 @@ function fixture(
       },
       threadWorks: {
         rebindPrimary: async (_threadId: ThreadId, workId: WorkId) => {
+          if (options.missingPrimary) return { previousWorkId: null, changed: true };
           const previousWorkId = currentId;
           const changed = previousWorkId !== workId;
           currentId = workId;
@@ -71,7 +77,7 @@ function fixture(
 }
 
 describe("rebindThreadWork", () => {
-  it("commits one exact receipt, primary preference, and delivered context refresh", async () => {
+  it("commits one exact receipt, primary preference, and context-refresh enqueue", async () => {
     const h = fixture();
     const result = await rebindThreadWork(h.deps, {
       threadId: THREAD_ID,
@@ -142,5 +148,23 @@ describe("rebindThreadWork", () => {
       ).rejects.toBeInstanceOf(RebindThreadWorkError);
       expect(h.enqueueThread).not.toHaveBeenCalled();
     }
+  });
+
+  it("preserves missing-primary identity from the binding transition", async () => {
+    const h = fixture({ missingPrimary: true });
+
+    await expect(
+      rebindThreadWork(h.deps, {
+        threadId: THREAD_ID,
+        targetWorkId: TARGET_ID,
+        preferenceUserId: USER_ID,
+      }),
+    ).rejects.toMatchObject({
+      name: "RebindThreadWorkError",
+      reason: "missing_primary",
+      threadId: THREAD_ID,
+    });
+    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
+    expect(h.enqueueThread).not.toHaveBeenCalled();
   });
 });

@@ -26,6 +26,8 @@ describe("orchestrator event projector tool calls", () => {
       metadata: {
         kind: "system_update",
         section: "work_context",
+        projectId: "00000000-0000-4000-8000-000000000001",
+        workId: "00000000-0000-4000-8000-000000000002",
       },
     };
 

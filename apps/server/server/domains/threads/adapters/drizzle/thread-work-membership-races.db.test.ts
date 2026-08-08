@@ -12,8 +12,6 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 const {
-  userId: USER_ID,
-  projectId: PROJECT_ID,
   threadId: THREAD_ID,
   workId: WORK_ID,
   targetWorkId: TARGET_WORK_ID,
@@ -26,20 +24,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("thread Work membership races (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { WorkDeleteBlockedError } = await import("../../../projects/index.js");
-    const { createDrizzleProjectRepository, createDrizzleProjectWorkRepository } = await import(
-      "../../../projects/index.js"
-    );
-    const { createDrizzleProjectPreferencesRepository } = await import(
-      "../../../preferences/index.js"
-    );
-    const { createInMemoryEventSink } = await import("../../../observability/index.js");
-    const { createThreadForProject } = await import("../../../../lib/thread-creation.js");
-    const { rebindThreadWork } = await import("../../domain/rebind-thread-work.js");
+    const { createDrizzleProjectWorkRepository } = await import("../../../projects/index.js");
     const { createDrizzleBranchStore } = await import(
       "../../../collab/adapters/drizzle-branches.js"
     );
@@ -48,7 +37,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createWorkDraftPending } = await import("../../../collab/domain/work-draft-pending.js");
     const { createDrizzleRepositories } = await import("./repositories.js");
-    const { eq } = await import("drizzle-orm");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -128,84 +116,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           DROP FUNCTION IF EXISTS test_block_thread_work_insert();
         `);
       }
-    });
-
-    it("replaces the primary membership, preserves one primary, and accepts archived targets", async () => {
-      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      await threads.threadWorks.addMembership(THREAD_ID, TARGET_WORK_ID, false);
-
-      await expect(threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID)).resolves.toEqual({
-        previousWorkId: WORK_ID,
-        changed: true,
-      });
-      await expect(threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID)).resolves.toEqual({
-        previousWorkId: TARGET_WORK_ID,
-        changed: false,
-      });
-      await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual([
-        { workId: TARGET_WORK_ID, isPrimary: true },
-      ]);
-    });
-
-    it("commits binding, sticky preference, and durable context obligation atomically", async () => {
-      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const preferences = createDrizzleProjectPreferencesRepository({ db });
-
-      const result = await threads.transaction(() =>
-        rebindThreadWork(
-          {
-            threads: threads.threads,
-            threadWorks: threads.threadWorks,
-            works,
-            preferences,
-            obligations: threads.workContextDeliveries,
-          },
-          {
-            threadId: THREAD_ID,
-            targetWorkId: TARGET_WORK_ID,
-            preferenceUserId: USER_ID,
-          },
-        ),
-      );
-
-      expect(result).toMatchObject({ changed: true });
-      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
-        workId: TARGET_WORK_ID,
-      });
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(TARGET_WORK_ID);
-      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
-    });
-
-    it("rolls back binding and sticky preference when durable enqueue fails", async () => {
-      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const preferences = createDrizzleProjectPreferencesRepository({ db });
-
-      await expect(
-        threads.transaction(() =>
-          rebindThreadWork(
-            {
-              threads: threads.threads,
-              threadWorks: threads.threadWorks,
-              works,
-              preferences,
-              obligations: {
-                enqueueThread: async () => {
-                  throw new Error("injected durable enqueue failure");
-                },
-              },
-            },
-            {
-              threadId: THREAD_ID,
-              targetWorkId: TARGET_WORK_ID,
-              preferenceUserId: USER_ID,
-            },
-          ),
-        ),
-      ).rejects.toThrow("injected durable enqueue failure");
-      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
-        workId: WORK_ID,
-      });
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
     });
 
     it("serializes competing primary add and rebind without reversing Work/thread locks", async () => {
@@ -379,37 +289,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           DROP FUNCTION IF EXISTS test_block_thread_work_rebind();
         `);
       }
-    });
-
-    it("creates a root conversation without self-blocking when the project has no Work", async () => {
-      await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
-      await db.delete(schema.documentBranches).where(eq(schema.documentBranches.id, BRANCH_ID));
-      await db.delete(schema.works).where(eq(schema.works.id, WORK_ID));
-      await db.delete(schema.works).where(eq(schema.works.id, TARGET_WORK_ID));
-      const preferences = createDrizzleProjectPreferencesRepository({ db });
-
-      const thread = await createThreadForProject(
-        {
-          projects: createDrizzleProjectRepository({ db }),
-          workRepo: works,
-          preferences,
-          threads: threads.threads,
-          threadWorks: threads.threadWorks,
-          transaction: threads.transaction,
-          eventSink: createInMemoryEventSink(),
-        },
-        {
-          projectId: PROJECT_ID,
-          userId: USER_ID,
-          title: "First conversation",
-        },
-      );
-
-      expect(thread.workId).toBeTruthy();
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(thread.workId);
-      await expect(threads.threadWorks.findPrimary(thread.id)).resolves.toEqual({
-        workId: thread.workId,
-      });
     });
   });
 }

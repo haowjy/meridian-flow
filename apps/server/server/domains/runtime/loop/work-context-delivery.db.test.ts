@@ -25,7 +25,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createWork } = await import("../../projects/create-work.js");
     const { createDrizzleProjectWorkRepository } = await import("../../projects/index.js");
     const { restoreWork } = await import("../../projects/delete-work.js");
-    const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+    const {
+      createDrizzleEventJournalReader,
+      createDrizzleEventJournalWriter,
+      createThreadEventHub,
+    } = await import("../../threads/index.js");
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createWorkContextDelivery } = await import("./work-context-delivery.js");
@@ -229,7 +233,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           async finalizeGeneratorFailure() {},
         },
         eventSink: createInMemoryEventSink(),
-        hub: { headSeq: async () => 0n } as never,
+        hub: createThreadEventHub({
+          journalReader: createDrizzleEventJournalReader(db),
+          journalWriter: createDrizzleEventJournalWriter(db),
+          eventSink: createInMemoryEventSink(),
+        }),
         repos: { turns: createDrizzleRepositories(db).turns },
         runOwnership: createDrizzleThreadRunOwnership(db),
       });

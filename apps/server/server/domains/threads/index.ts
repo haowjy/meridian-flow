@@ -18,9 +18,7 @@ export {
 } from "./domain/orchestrator-event-projector.js";
 export { projectReadModelEvent } from "./domain/read-model-projector.js";
 export {
-  type RebindThreadWorkDeps,
   RebindThreadWorkError,
-  type RebindThreadWorkErrorReason,
   type RebindThreadWorkInput,
   rebindThreadWork,
 } from "./domain/rebind-thread-work.js";

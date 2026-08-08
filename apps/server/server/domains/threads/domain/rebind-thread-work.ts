@@ -14,7 +14,7 @@ import type {
   WorkContextDeliveryRepository,
 } from "../ports/repositories.js";
 
-export type RebindThreadWorkErrorReason = "unavailable" | "missing_primary";
+type RebindThreadWorkErrorReason = "unavailable" | "missing_primary";
 
 export class RebindThreadWorkError extends Error {
   constructor(
@@ -28,7 +28,7 @@ export class RebindThreadWorkError extends Error {
   }
 }
 
-export interface RebindThreadWorkDeps {
+interface RebindThreadWorkDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   works: Pick<WorkRepository, "findById">;
