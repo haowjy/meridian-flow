@@ -7,7 +7,8 @@ import type {
   WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
-
+import { isMeridianApiError } from "@/client/api/http-client";
+import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
 import { rebindThreadWork } from "@/client/api/threads-api";
 import { projectQueryKeys } from "./project-query-keys";
 import { patchThreadInProjectCaches } from "./project-thread-cache";
@@ -82,16 +83,43 @@ export function convergeProjectedThreadWork(
 export function useRebindThreadWork(projectId: string, threadId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (workId: string) => rebindThreadWork(threadId, { workId }),
-    onSuccess: (result) => convergeThreadWork(client, projectId, result),
-    onError: () => {
-      // A response can be lost after the server commits. Re-read both sides of
-      // the projection before the UI describes the outcome or permits retry.
-      void Promise.all([
-        client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) }),
-        client.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) }),
-        client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) }),
-      ]);
+    mutationFn: async (workId: string) => {
+      try {
+        return await rebindThreadWork(threadId, { workId });
+      } catch (cause) {
+        // Structured API failures are authoritative refusals. Transport and
+        // decoding failures are ambiguous because the write may have committed.
+        if (isMeridianApiError(cause)) throw cause;
+
+        const [threads] = await Promise.all([
+          client.fetchQuery({
+            queryKey: projectQueryKeys.threads(projectId),
+            queryFn: () => listProjectThreads(projectId),
+            staleTime: 0,
+          }),
+          client.fetchQuery({
+            queryKey: projectQueryKeys.works(projectId),
+            queryFn: () => listProjectWorks(projectId, { status: "all" }),
+            staleTime: 0,
+          }),
+          client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) }),
+        ]);
+        throw new ThreadWorkReconciliationError(
+          cause,
+          threads.find((thread) => thread.id === threadId)?.workId === workId,
+        );
+      }
     },
+    onSuccess: (result) => convergeThreadWork(client, projectId, result),
   });
+}
+
+export class ThreadWorkReconciliationError extends Error {
+  readonly committed: boolean;
+
+  constructor(cause: unknown, committed: boolean) {
+    super("Thread Work mutation outcome reconciled", { cause });
+    this.name = "ThreadWorkReconciliationError";
+    this.committed = committed;
+  }
 }
