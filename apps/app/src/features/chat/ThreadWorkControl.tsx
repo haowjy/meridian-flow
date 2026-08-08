@@ -40,6 +40,7 @@ export function ThreadWorkControl({
   const [error, setError] = useState<string | null>(null);
   const [undoWorkId, setUndoWorkId] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const choiceRefs = useRef(new Map<string, HTMLButtonElement>());
   const previousWorkIdRef = useRef(work.id);
   const locallyCommittedWorkIdRef = useRef<string | null>(null);
   const titleId = useId();
@@ -47,6 +48,11 @@ export function ThreadWorkControl({
   const { works, refetch } = useWorks(projectId);
   const mutation = useRebindThreadWork(projectId, threadId);
   const { announce, announceError } = useAnnouncement();
+
+  useEffect(() => {
+    if (!open || mutation.isPending || !error || !targetId) return;
+    requestAnimationFrame(() => choiceRefs.current.get(targetId)?.focus());
+  }, [error, mutation.isPending, open, targetId]);
 
   useEffect(() => {
     if (previousWorkIdRef.current !== work.id) {
@@ -101,9 +107,11 @@ export function ThreadWorkControl({
       let message: string;
       if (isMeridianApiError(cause) && cause.code === "thread_busy") {
         message = t`Wait for this response to finish, then try again.`;
-      } else if (isMeridianApiError(cause) && cause.status === 409) {
+      } else if (isMeridianApiError(cause) && cause.code === "work_unavailable") {
         message = t`That Work is no longer available. Choose another Work.`;
         refetch();
+      } else if (isMeridianApiError(cause) && cause.code === "thread_work_missing") {
+        message = t`This chat's current Work could not be found. Refresh the page and try again.`;
       } else if (cause instanceof ThreadWorkReconciliationError) {
         message = t`The Work did not change. Try again.`;
       } else {
@@ -138,6 +146,7 @@ export function ThreadWorkControl({
       pending={mutation.isPending}
       error={error}
       onChoose={choose}
+      choiceRefs={choiceRefs.current}
     />
   );
 
@@ -204,6 +213,7 @@ function WorkChoices({
   pending,
   error,
   onChoose,
+  choiceRefs,
 }: {
   works: Work[];
   currentWorkId: string;
@@ -211,6 +221,7 @@ function WorkChoices({
   pending: boolean;
   error: string | null;
   onChoose: (work: Work) => void;
+  choiceRefs: Map<string, HTMLButtonElement>;
 }) {
   const active = works.filter((work) => work.status === "active");
   const archived = works.filter((work) => work.status === "archived");
@@ -219,14 +230,14 @@ function WorkChoices({
       <WorkSection
         works={active}
         label={t`Active works`}
-        {...{ currentWorkId, targetId, pending, error, onChoose }}
+        {...{ currentWorkId, targetId, pending, error, onChoose, choiceRefs }}
       />
       {archived.length ? (
         <WorkSection
           works={archived}
           label={t`Archived works`}
           archived
-          {...{ currentWorkId, targetId, pending, error, onChoose }}
+          {...{ currentWorkId, targetId, pending, error, onChoose, choiceRefs }}
         />
       ) : null}
     </div>
@@ -242,6 +253,7 @@ function WorkSection({
   pending,
   error,
   onChoose,
+  choiceRefs,
 }: {
   works: Work[];
   label: string;
@@ -251,6 +263,7 @@ function WorkSection({
   pending: boolean;
   error: string | null;
   onChoose: (work: Work) => void;
+  choiceRefs: Map<string, HTMLButtonElement>;
 }) {
   return (
     <section aria-label={label}>
@@ -261,6 +274,10 @@ function WorkSection({
           const changing = work.id === targetId && pending;
           return (
             <button
+              ref={(node) => {
+                if (node) choiceRefs.set(work.id, node);
+                else choiceRefs.delete(work.id);
+              }}
               key={work.id}
               type="button"
               disabled={pending}

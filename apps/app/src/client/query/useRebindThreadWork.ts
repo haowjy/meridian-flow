@@ -91,27 +91,39 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
         // decoding failures are ambiguous because the write may have committed.
         if (isMeridianApiError(cause)) throw cause;
 
-        const [threads] = await Promise.all([
-          client.fetchQuery({
-            queryKey: projectQueryKeys.threads(projectId),
-            queryFn: () => listProjectThreads(projectId),
-            staleTime: 0,
-          }),
-          client.fetchQuery({
-            queryKey: projectQueryKeys.works(projectId),
-            queryFn: () => listProjectWorks(projectId, { status: "all" }),
-            staleTime: 0,
-          }),
-          client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) }),
-        ]);
-        throw new ThreadWorkReconciliationError(
-          cause,
-          threads.find((thread) => thread.id === threadId)?.workId === workId,
-        );
+        const committed = await reconcileThreadWorkMutation(client, projectId, threadId, workId);
+        throw new ThreadWorkReconciliationError(cause, committed);
       }
     },
     onSuccess: (result) => convergeThreadWork(client, projectId, result),
   });
+}
+
+/** Read the binding causally after an ambiguous mutation, never through query deduplication. */
+export async function reconcileThreadWorkMutation(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+  workId: string,
+): Promise<boolean> {
+  const threadsKey = projectQueryKeys.threads(projectId);
+  const worksKey = projectQueryKeys.works(projectId);
+
+  // A query that started before the mutation cannot be allowed to populate the
+  // cache after this point. The direct reads below are deliberately outside
+  // fetchQuery so TanStack cannot return an existing retryer promise.
+  await Promise.all([
+    client.cancelQueries({ queryKey: threadsKey }),
+    client.cancelQueries({ queryKey: worksKey }),
+  ]);
+  const [threads, works] = await Promise.all([
+    listProjectThreads(projectId),
+    listProjectWorks(projectId, { status: "all" }),
+  ]);
+  client.setQueryData(threadsKey, threads);
+  client.setQueryData(worksKey, works);
+  await client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
+  return threads.find((thread) => thread.id === threadId)?.workId === workId;
 }
 
 export class ThreadWorkReconciliationError extends Error {

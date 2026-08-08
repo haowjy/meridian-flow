@@ -1,9 +1,20 @@
 import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { RebindThreadWorkResponse } from "@meridian/contracts/works";
 import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "./project-query-keys";
-import { convergeProjectedThreadWork, convergeThreadWork } from "./useRebindThreadWork";
+import {
+  convergeProjectedThreadWork,
+  convergeThreadWork,
+  reconcileThreadWorkMutation,
+} from "./useRebindThreadWork";
+
+const { listProjectThreads, listProjectWorks } = vi.hoisted(() => ({
+  listProjectThreads: vi.fn(),
+  listProjectWorks: vi.fn(),
+}));
+
+vi.mock("@/client/api/projects-api", () => ({ listProjectThreads, listProjectWorks }));
 
 describe("convergeThreadWork", () => {
   it("patches binding and primary preference before invalidation refetches", () => {
@@ -63,5 +74,33 @@ describe("convergeProjectedThreadWork", () => {
     expect(
       client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0],
     ).toMatchObject({ workId: "work-b", work: { id: "work-b", title: "B" } });
+  });
+});
+
+describe("reconcileThreadWorkMutation", () => {
+  it("classifies from a fresh post-failure read instead of an older in-flight query", async () => {
+    const client = new QueryClient();
+    let resolveOld!: (threads: ThreadListItem[]) => void;
+    const oldRequest = new Promise<ThreadListItem[]>((resolve) => {
+      resolveOld = resolve;
+    });
+    const oldFetch = client.fetchQuery({
+      queryKey: projectQueryKeys.threads("project-1"),
+      queryFn: () => oldRequest,
+    });
+    listProjectThreads.mockResolvedValue([
+      { id: "thread-1", projectId: "project-1", workId: "work-b" },
+    ]);
+    listProjectWorks.mockResolvedValue({ defaultWorkId: "work-b", works: [] });
+
+    const reconciliation = reconcileThreadWorkMutation(client, "project-1", "thread-1", "work-b");
+    resolveOld([{ id: "thread-1", projectId: "project-1", workId: "work-a" } as ThreadListItem]);
+
+    await expect(reconciliation).resolves.toBe(true);
+    await expect(oldFetch).rejects.toBeDefined();
+    expect(
+      client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0]?.workId,
+    ).toBe("work-b");
+    expect(listProjectThreads).toHaveBeenCalledOnce();
   });
 });

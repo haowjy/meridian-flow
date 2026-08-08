@@ -2873,6 +2873,10 @@ msgstr ""
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr ""
 
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "This chat's current Work could not be found. Refresh the page and try again."
+msgstr ""
+
 #. placeholder {0}: work.name
 #: src/features/chat/ThreadWorkControl.tsx
 msgid "This chat's Work changed to {0}"
