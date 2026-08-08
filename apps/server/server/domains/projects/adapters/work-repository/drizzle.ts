@@ -189,11 +189,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async softDelete(id: WorkId): Promise<void> {
       const existing = await findWorkById(id);
       if (!existing || existing.deletedAt) return;
-      if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
 
       await runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
         if ((await lockWorkLifecycle(db, id)) !== "active") return;
+        if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
 
         const [membership] = await activeDb
           .select({ threadId: threadWorks.threadId })

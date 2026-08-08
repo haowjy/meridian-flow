@@ -33,6 +33,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createInMemoryEventSink } = await import("../../../observability/index.js");
     const { createThreadForProject } = await import("../../../../lib/thread-creation.js");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { createDrizzleBranchStore } = await import(
+      "../../../collab/adapters/drizzle-branches.js"
+    );
+    const { createDrizzleWorkDraftPendingStore } = await import(
+      "../../../collab/adapters/drizzle-branch-push.js"
+    );
+    const { createWorkDraftPending } = await import("../../../collab/domain/work-draft-pending.js");
     const { createDrizzleRepositories } = await import("./repositories.js");
     const { eq } = await import("drizzle-orm");
 
@@ -40,10 +47,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
     const threads = createDrizzleRepositories(db);
+    const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
+      hasUnreviewedDraft: async (workId) => (await draftPending.count(workId)) > 0,
     });
+    const branches = createDrizzleBranchStore(db, undefined);
+    const CONTEXT_ID = "00000000-0000-4000-8000-000000000476";
+    const DOCUMENT_ID = "00000000-0000-4000-8000-000000000477";
+    const BRANCH_ID = "branch_work_lifecycle_race";
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -77,6 +89,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Race thread",
         kind: "primary",
         status: "idle",
+      });
+      await db.insert(schema.contextSources).values({
+        id: CONTEXT_ID,
+        projectId: PROJECT_ID,
+        name: "Project context",
+        slug: "project-context",
+      });
+      await db.insert(schema.documents).values({
+        id: DOCUMENT_ID,
+        contextSourceId: CONTEXT_ID,
+        name: "Draft target",
+      });
+      await db.insert(schema.documentBranches).values({
+        id: BRANCH_ID,
+        documentId: DOCUMENT_ID,
+        kind: "work_draft",
+        workId: WORK_ID,
+        state: Buffer.alloc(0),
+        stateVector: Buffer.alloc(0),
       });
     });
 
@@ -164,6 +195,131 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("serializes competing primary add and rebind without reversing Work/thread locks", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      await control.unsafe(`
+        CREATE FUNCTION test_block_primary_demote() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_primary_demote
+        BEFORE UPDATE ON thread_works
+        FOR EACH ROW WHEN (OLD.is_primary AND NOT NEW.is_primary)
+        EXECUTE FUNCTION test_block_primary_demote();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+
+      try {
+        const add = threads.threadWorks.addMembership(THREAD_ID, TARGET_WORK_ID, true);
+        await waitForLock("advisory");
+        const rebind = threads.threadWorks.rebindPrimary(THREAD_ID, WORK_ID);
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await Promise.all([add, rebind]);
+        await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual([
+          { workId: WORK_ID, isPrimary: true },
+        ]);
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_primary_demote ON thread_works;
+          DROP FUNCTION IF EXISTS test_block_primary_demote();
+        `);
+      }
+    });
+
+    it("blocks deletion when a draft transition takes the lifecycle lock first", async () => {
+      await control.unsafe(`
+        CREATE FUNCTION test_block_draft_insert() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_draft_insert
+        BEFORE INSERT ON branch_write_journal
+        FOR EACH ROW EXECUTE FUNCTION test_block_draft_insert();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+      try {
+        const draft = branches.appendJournal?.({
+          branchId: BRANCH_ID,
+          generation: 1,
+          updateData: new Uint8Array([1]),
+          source: "agent",
+        });
+        if (!draft) throw new Error("Branch journal append is unavailable");
+        await waitForLock("advisory");
+        const deletion = works.softDelete(WORK_ID).then(
+          () => ({ status: "fulfilled" as const }),
+          (reason: unknown) => ({ status: "rejected" as const, reason }),
+        );
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await draft;
+        const result = await deletion;
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected") {
+          expect(result.reason).toMatchObject({ reason: "drafts" });
+        }
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_draft_insert ON branch_write_journal;
+          DROP FUNCTION IF EXISTS test_block_draft_insert();
+        `);
+      }
+    });
+
+    it("deletes first and then refuses a draft transition under that Work", async () => {
+      await control.unsafe(`
+        CREATE FUNCTION test_block_work_delete() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_work_delete
+        BEFORE UPDATE ON works
+        FOR EACH ROW WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)
+        EXECUTE FUNCTION test_block_work_delete();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+      try {
+        const deletion = works.softDelete(WORK_ID);
+        await waitForLock("advisory");
+        const draft = branches.appendJournal?.({
+          branchId: BRANCH_ID,
+          generation: 1,
+          updateData: new Uint8Array([1]),
+          source: "agent",
+        });
+        if (!draft) throw new Error("Branch journal append is unavailable");
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await deletion;
+        await expect(draft).rejects.toThrow(`Work not found: ${WORK_ID}`);
+        await expect(draftPending.count(WORK_ID)).resolves.toBe(0);
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_work_delete ON works;
+          DROP FUNCTION IF EXISTS test_block_work_delete();
+        `);
+      }
+    });
+
     it("serializes rebind before target deletion and then blocks the delete", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       await control.unsafe(`
@@ -214,6 +370,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("creates a root conversation without self-blocking when the project has no Work", async () => {
       await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
+      await db.delete(schema.documentBranches).where(eq(schema.documentBranches.id, BRANCH_ID));
       await db.delete(schema.works).where(eq(schema.works.id, WORK_ID));
       await db.delete(schema.works).where(eq(schema.works.id, TARGET_WORK_ID));
       const preferences = createDrizzleProjectPreferencesRepository({ db });

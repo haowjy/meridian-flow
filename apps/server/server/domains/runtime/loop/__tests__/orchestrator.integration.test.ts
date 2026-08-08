@@ -62,12 +62,17 @@ describe("runtime loop integration", () => {
     workWriteMode?: Parameters<typeof createOrchestrator>[0]["workWriteMode"],
     enableSystemUpdates = false,
     orchestratorOverrides: Partial<Parameters<typeof createOrchestrator>[0]> = {},
+    systemUpdateDeliveryFactory?: (
+      repos: ReturnType<typeof createInMemoryRepositories>,
+      eventWriter: ReturnType<typeof createInMemoryEventJournalWriter>,
+    ) => Parameters<typeof createOrchestrator>[0]["systemUpdateDelivery"],
   ) {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     configureRepos?.(repos);
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const eventWriter = createInMemoryEventJournalWriter();
+    const systemUpdateDelivery = systemUpdateDeliveryFactory?.(repos, eventWriter);
     const interruptRegistry = createInterruptRegistry();
     const gateway =
       gatewayOverride ??
@@ -105,6 +110,7 @@ describe("runtime loop integration", () => {
         ...(workWriteMode ? { workWriteMode } : {}),
         creditLedger,
         ...orchestratorOverrides,
+        ...(systemUpdateDelivery ? { systemUpdateDelivery } : {}),
         ...(enableSystemUpdates
           ? {
               systemUpdateDelivery: createSystemUpdateDelivery({
@@ -898,6 +904,14 @@ describe("runtime loop integration", () => {
         provider: "stub",
       },
       {
+        content: [{ type: "tool_use", toolCallId: "write-2", toolName: "mock_write", input: {} }],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
         content: [{ type: "text", text: "done" }],
         toolCalls: [],
         finishReason: "end_turn",
@@ -907,19 +921,23 @@ describe("runtime loop integration", () => {
       },
     ]);
     let currentWork = "source";
+    let writeIndex = 0;
     const registry = createToolRegistry();
     for (const [name, handler] of [
       [
         "mock_write",
-        async () => ({
-          output: { ok: true },
-          metadata: {
-            stagedWrite: true,
-            documentId: "doc-1",
-            writeId: "write-1",
-            settlementId: "settlement-1",
-          },
-        }),
+        async () => {
+          writeIndex += 1;
+          return {
+            output: { ok: true },
+            metadata: {
+              stagedWrite: true,
+              documentId: `doc-${writeIndex}`,
+              writeId: `write-${writeIndex}`,
+              settlementId: `settlement-${writeIndex}`,
+            },
+          };
+        },
       ],
       [
         "work",
@@ -951,18 +969,20 @@ describe("runtime loop integration", () => {
             const result = {
               status: "committed" as const,
               receipts:
-                currentWork === "source"
+                currentWork === "source" || writeIndex >= 2
                   ? [
                       {
-                        documentId: "doc-1",
+                        documentId: currentWork === "source" ? "doc-1" : "doc-2",
                         receipt: {
-                          writeId: "write-1",
-                          settlementId: "settlement-1",
+                          writeId: currentWork === "source" ? "write-1" : "write-2",
+                          settlementId: currentWork === "source" ? "settlement-1" : "settlement-2",
                           result: modelResult({
                             command: "insert",
                             status: "success",
                             phase: "committed",
-                            payload: { write: { id: "write-1" } },
+                            payload: {
+                              write: { id: currentWork === "source" ? "write-1" : "write-2" },
+                            },
                           }),
                         },
                       },
@@ -982,8 +1002,134 @@ describe("runtime loop integration", () => {
       await orchestrator.runTurn({ threadId: thread.id, userText: "write then switch" }),
     );
 
-    expect(settlements.map(({ work }) => work)).toEqual(["source", "target"]);
+    expect(settlements.map(({ work }) => work)).toEqual(["source", "target", "target"]);
     expect(settlements[0]?.responseId).not.toBe(settlements[1]?.responseId);
+    expect(settlements[1]?.responseId).not.toBe(settlements[2]?.responseId);
+  });
+
+  it("persists pending Work context delivery and recovers it at the turn boundary", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway = gatewayFromResults([
+      {
+        content: [
+          {
+            type: "tool_use",
+            toolCallId: "switch-pending",
+            toolName: "work",
+            input: { command: "switch", work: "target" },
+          },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [{ type: "text", text: "continued with pending context" }],
+        toolCalls: [],
+        finishReason: "end_turn",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const capturingGateway: Gateway = {
+      ...gateway,
+      async *stream(request) {
+        requests.push(request);
+        yield* gateway.stream(request);
+      },
+    };
+    const registry = createToolRegistry();
+    registry.register({
+      source: "core",
+      definition: {
+        type: "function",
+        name: "work",
+        description: "Work",
+        inputSchema: { type: "object" },
+      },
+      execution: {
+        type: "server",
+        handler: async () => ({
+          output: { slug: "target" },
+          metadata: { workContextChanged: true },
+        }),
+      },
+    });
+    let running = true;
+    let delivery: ReturnType<typeof createSystemUpdateDelivery> | undefined;
+    const { repos, eventWriter, orchestrator, projectId } = await setupOrchestrator(
+      createToolExecutor(registry),
+      capturingGateway,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      {},
+      (deliveryRepos, deliveryWriter) => {
+        const actual = createSystemUpdateDelivery({
+          repos: deliveryRepos,
+          eventWriter: deliveryWriter,
+          workContext: {
+            async renderForThread() {
+              return "<work_context>current: target</work_context>";
+            },
+          },
+          isThreadRunning: () => running,
+        });
+        delivery = actual;
+        return {
+          ...actual,
+          async deliverNow() {
+            throw new Error("Work context update exhausted 3 CAS retries");
+          },
+        };
+      },
+    );
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    const events = await collectEvents(
+      await orchestrator.runTurn({ threadId: thread.id, userText: "switch" }),
+    );
+
+    const pending = {
+      contextUpdate: {
+        status: "pending",
+        message: "Work context update exhausted 3 CAS retries",
+      },
+    };
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1]?.messages)).toContain('"status":"pending"');
+    const toolResultEvents = events.filter(
+      (event): event is Extract<OrchestratorEvent, { type: "tool.result" }> =>
+        event.type === "tool.result" && event.toolCallId === "switch-pending",
+    );
+    expect(toolResultEvents.at(-1)?.output).toMatchObject(pending);
+    const blocks = await repos.blocks.listByThread(thread.id);
+    expect(blocks.find((block) => block.blockType === "tool_result")?.content).toMatchObject({
+      output: pending,
+      metadata: { workContextDelivery: "pending" },
+    });
+    const replay = await eventWriter.readAfter(thread.id, 0n);
+    const replayedResult = replay
+      .map((entry) => entry.payload)
+      .filter(
+        (event): event is Extract<OrchestratorEvent, { type: "tool.result" }> =>
+          event.type === "tool.result" && event.toolCallId === "switch-pending",
+      )
+      .at(-1);
+    expect(replayedResult?.output).toMatchObject(pending);
+
+    running = false;
+    if (!delivery) throw new Error("System update delivery was not composed");
+    await delivery.flush(thread.id);
+    const recoveredTurns = await repos.turns.listByThread(thread.id);
+    expect(recoveredTurns.at(-1)?.metadata).toMatchObject({
+      kind: "system_update",
+      section: "work_context",
+    });
   });
 
   it("suspends on a mock interrupt without re-entering the gateway, then resumes on response", async () => {

@@ -63,8 +63,10 @@ This domain is not the full project CRUD surface; that lives in
 - Work deletion refuses live thread memberships, unreviewed drafts, and live
   files or folders in Work-owned context sources. Empty provisioned sources do
   not block deletion. Work-owned context mutations and deletion serialize on the
-  Work lifecycle row lock. Restore refuses rather than clobbering a reclaimed
-  active name or slug.
+  Work lifecycle row lock; the draft predicate is evaluated inside the deleting
+  transaction after that lock. Reviewable branch-journal creation and redo use
+  the same lifecycle boundary. Restore refuses rather than clobbering a
+  reclaimed active name or slug.
 
 ## Relationship to `domains/projects`
 

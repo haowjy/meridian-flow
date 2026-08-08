@@ -9,7 +9,14 @@
  */
 
 import type { TreeBudget } from "@meridian/contracts/spawn";
-import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
+import type {
+  Block,
+  JsonObject,
+  JsonValue,
+  OrchestratorEvent,
+  Thread,
+  Turn,
+} from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
@@ -50,6 +57,17 @@ export type ToolDispatchResult =
       cancelled?: false;
     }
   | { events: OrchestratorEvent[]; cancelled: true };
+
+function pendingWorkContextOutput(output: JsonValue, message: string): JsonObject {
+  const result =
+    output !== null && typeof output === "object" && !Array.isArray(output)
+      ? output
+      : { result: output };
+  return {
+    ...result,
+    contextUpdate: { status: "pending", message },
+  };
+}
 
 export async function dispatchToolCall(
   deps: ToolDispatchDeps,
@@ -202,6 +220,8 @@ export async function dispatchToolCall(
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
   events.push(...persistedToolResult.events);
+  let resultBlock = persistedToolResult.result;
+  let resultMetadata = execResult.metadata;
   if (execResult.metadata?.workContextChanged === true && deps.systemUpdateDelivery) {
     try {
       const update = await deps.systemUpdateDelivery.deliverNow(ctx.state.threadId);
@@ -209,22 +229,62 @@ export async function dispatchToolCall(
       ctx.state.allBlocks.push(update.block);
       events.push(...update.events);
     } catch (error) {
-      // The binding is already committed and its tool result is durable. Keep
-      // that success honest; turn-boundary recovery will retry the queued
-      // update and the receipt carries a warning for the continuing model.
-      const metadata = execResult.metadata as Record<string, unknown>;
-      metadata.workContextWarning =
+      const message =
         error instanceof Error ? error.message : "Work context refresh will retry after this turn.";
       await deps.systemUpdateDelivery.threadChanged(ctx.state.threadId).catch(() => undefined);
+      const output = pendingWorkContextOutput(execResult.output, message);
+      const metadata: JsonObject = {
+        ...execResult.metadata,
+        workContextDelivery: "pending",
+        workContextWarning: message,
+      };
+      const patched = await persistAndAppendEvents(
+        deps.persistenceDeps,
+        ctx.state.threadId,
+        async () => {
+          const block = contentForBlockInput({
+            id: persistedToolResult.result.id,
+            turnId: ctx.state.currentTurn.id,
+            ...(stagedWrite ? { responseId: ctx.responseId } : {}),
+            blockType: "tool_result",
+            sequence: persistedToolResult.result.sequence,
+            content: {
+              toolCallId: execResult.toolCallId,
+              output,
+              ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
+              metadata,
+            },
+            status: "complete",
+          });
+          return {
+            result: localBlockFromEvent(block),
+            events: [
+              { type: "block.upserted" as const, block },
+              {
+                type: "tool.result" as const,
+                toolCallId: execResult.toolCallId,
+                output,
+                isError: execResult.isError,
+                metadata,
+              },
+            ],
+          };
+        },
+      );
+      const blockIndex = ctx.state.allBlocks.findIndex((block) => block.id === patched.result.id);
+      if (blockIndex >= 0) ctx.state.allBlocks[blockIndex] = patched.result;
+      resultBlock = patched.result;
+      resultMetadata = metadata;
+      events.push(...patched.events);
     }
   }
   return {
     events,
-    block: persistedToolResult.result,
-    ...(execResult.metadata
+    block: resultBlock,
+    ...(resultMetadata
       ? {
           metadata: {
-            ...execResult.metadata,
+            ...resultMetadata,
           },
         }
       : {}),
