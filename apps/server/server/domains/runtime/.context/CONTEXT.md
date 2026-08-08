@@ -45,7 +45,7 @@ skeleton and delegates the moving parts.
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, skills catalog, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
-| `work-context.ts` / `system-update-delivery.ts` | Renders the current Work plus the 20 most recently active sibling Works. Work-list changes queue one tagged user-role transcript turn per live thread whose prompt is already frozen; the mutating thread receives that update immediately after its durable tool result so the same turn continues with fresh context, while other running threads flush at completion. Unfrozen threads read fresh state at their first bake. |
+| `work-context.ts` / `system-update-delivery.ts` | Renders the current Work plus the 20 most recently active sibling Works. Every Work-list change queues all eligible live threads, including unfrozen threads, so a concurrent first bake cannot freeze stale context without leaving a durable refresh. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
@@ -167,10 +167,13 @@ facet.
   rebuilt for Work metadata or lifecycle changes. The refreshed block is a
   durable `<system_update>` user-role turn. Every Work or primary-binding
   mutation coalesces a durable per-thread obligation in its business
-  transaction. Delivery renders current state under the thread-head transition
-  and deletes the obligation only in the transaction that commits the update
-  and its journal events. Tool-result pending metadata is presentation only;
-  process recreation and retry recover from the obligation.
+  transaction, whether or not the first prompt has frozen. Delivery renders
+  current state under the thread-head transition and deletes the obligation only
+  in the transaction that commits the update and its journal events. A
+  post-commit wake and the startup/poll sweep drain idle obligations without
+  becoming part of mutation success. Competing delivery claims hydrate the one
+  committed update into a running orchestrator. Tool-result pending metadata is
+  presentation only; process recreation and retry recover from the obligation.
 - **Registry names are global.** Duplicate registration names throw.
 - **Gateway terminal outcome needs causal evidence.** The instrumented `stream.close` `outcome` is `ok`/`error`/`cancelled`. A failure becomes `cancelled` only with causal abort evidence: the thrown error is `signal.reason` or an `AbortError`. Message text alone (`"Aborted"`, `"Request aborted"`) is **not** evidence — a provider failing independently after an abort stays `error`, and `sleep`/cancel paths reject with `signal.reason` (or a synthesized `AbortError`) so their failures carry identity. A thrown error's string `.code` populates both the `stream.close` payload `errorCode` and `correlation.errorCode`.
 

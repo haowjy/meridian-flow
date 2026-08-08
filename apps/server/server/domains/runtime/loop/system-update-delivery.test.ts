@@ -53,6 +53,7 @@ async function pendingDeliveryFixture() {
         },
       },
       isThreadRunning: () => false,
+      schedulePostCommit() {},
     });
   await repos.workContextDeliveries.enqueueThread(thread.id);
   return { repos, thread, pendingBlock, eventWriter, createDelivery };
@@ -86,6 +87,7 @@ describe("createSystemUpdateDelivery", () => {
         },
       },
       isThreadRunning: () => running,
+      schedulePostCommit() {},
     });
 
     await delivery.threadChanged(thread.id);
@@ -141,6 +143,7 @@ describe("createSystemUpdateDelivery", () => {
       eventWriter: {} as never,
       workContext: {} as never,
       isThreadRunning: () => true,
+      schedulePostCommit() {},
     });
 
     await delivery.projectChanged(project.id);
@@ -148,7 +151,7 @@ describe("createSystemUpdateDelivery", () => {
     await expect(repos.workContextDeliveries.isPending(archived.id)).resolves.toBe(false);
   });
 
-  it("does not add an update before a thread has frozen its first prompt", async () => {
+  it("keeps an obligation when a Work changes before the first prompt freezes", async () => {
     const projects = createInMemoryProjectRepository();
     const project = await projects.create({ userId: "user-1", title: "Serial" });
     const repos = createInMemoryRepositories({ projects });
@@ -162,10 +165,52 @@ describe("createSystemUpdateDelivery", () => {
       eventWriter: {} as never,
       workContext: {} as never,
       isThreadRunning: () => false,
+      schedulePostCommit() {},
     });
 
     await delivery.threadChanged(thread.id);
+    await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(true);
+  });
+
+  it("wakes an idle thread after enqueue without making the caller flush", async () => {
+    const { repos, thread } = await pendingDeliveryFixture();
+    const scheduled: Promise<void>[] = [];
+    const delivery = createSystemUpdateDelivery({
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      workContext: {
+        async renderForThread() {
+          return "<work_context>fresh</work_context>";
+        },
+      },
+      isThreadRunning: () => false,
+      schedulePostCommit(task) {
+        scheduled.push(task());
+      },
+    });
+
+    await delivery.threadChanged(thread.id);
+    await Promise.all(scheduled);
+
     await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(false);
+    const updates = (await repos.turns.listByThread(thread.id)).filter((turn) => {
+      const metadata = turn.metadata ?? null;
+      return isJsonObject(metadata) && metadata.kind === "system_update";
+    });
+    expect(updates).toHaveLength(1);
+  });
+
+  it("sweeps obligations after the delivery owner is recreated", async () => {
+    const { repos, thread, createDelivery } = await pendingDeliveryFixture();
+
+    await createDelivery().sweep();
+
+    await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(false);
+    const updates = (await repos.turns.listByThread(thread.id)).filter((turn) => {
+      const metadata = turn.metadata ?? null;
+      return isJsonObject(metadata) && metadata.kind === "system_update";
+    });
+    expect(updates).toHaveLength(1);
   });
 
   it("retries from the new active head when a concurrent turn start wins", async () => {
@@ -229,6 +274,7 @@ describe("createSystemUpdateDelivery", () => {
         },
       },
       isThreadRunning: () => true,
+      schedulePostCommit() {},
     });
 
     const update = await delivery.deliverNow(threadId);

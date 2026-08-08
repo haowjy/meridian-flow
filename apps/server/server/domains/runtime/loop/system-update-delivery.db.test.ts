@@ -28,6 +28,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createSystemUpdateDelivery } = await import("./system-update-delivery.js");
+    const { createWorkContextReader } = await import("./work-context.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -68,6 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
         isThreadRunning: () => false,
+        schedulePostCommit() {},
       });
     }
 
@@ -149,6 +151,68 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         delivery(second).beforeTurn(THREAD_ID),
       ]);
 
+      await expect(first.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
+      await expect(first.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+    });
+
+    it("leaves a durable refresh when a Work changes between first render and freeze", async () => {
+      const repos = createDrizzleRepositories(db);
+      const works = createDrizzleProjectWorkRepository({
+        db,
+        hasUnreviewedDraft: async () => false,
+      });
+      const work = await works.create({
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Old Work Name",
+        goal: "Old goal",
+      });
+      await repos.threadWorks.addMembership(THREAD_ID, work.id, true);
+      await db
+        .update(schema.threads)
+        .set({ bakedSkillSlugs: null, composedSystemPrompt: null })
+        .where(eq(schema.threads.id, THREAD_ID));
+      const workContext = createWorkContextReader({ works, threadWorks: repos.threadWorks });
+
+      const staleRenderedContext = await workContext.renderForThread(THREAD_ID);
+      expect(staleRenderedContext).toContain("Old Work Name");
+      await repos.transaction(async () => {
+        await works.update(work.id, { name: "New Work Name", goal: "New goal" });
+        await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
+      });
+      await repos.threads.bakeComposedSystemPrompt(THREAD_ID, {
+        composedSystemPrompt: staleRenderedContext,
+        bakedSkillSlugs: [],
+      });
+
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await createSystemUpdateDelivery({
+        repos,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        workContext,
+        isThreadRunning: () => false,
+        schedulePostCommit() {},
+      }).beforeTurn(THREAD_ID);
+
+      const turns = await repos.turns.listByThread(THREAD_ID);
+      const blocks = await repos.blocks.listByTurn(turns.at(-1)?.id ?? "");
+      expect(blocks[0]?.textContent).toContain("New Work Name");
+      expect(blocks[0]?.textContent).not.toContain("Old Work Name");
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+    });
+
+    it("hydrates a competing deliverNow claim as idempotent success", async () => {
+      const first = createDrizzleRepositories(db);
+      const second = createDrizzleRepositories(db);
+      await first.workContextDeliveries.enqueueThread(THREAD_ID);
+
+      const [firstResult, secondResult] = await Promise.all([
+        delivery(first).deliverNow(THREAD_ID),
+        delivery(second).deliverNow(THREAD_ID),
+      ]);
+
+      expect(firstResult.turn.id).toBe(secondResult.turn.id);
+      expect(firstResult.block.id).toBe(secondResult.block.id);
       await expect(first.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
       await expect(first.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
     });

@@ -14,6 +14,8 @@ import type { WorkContextReader } from "./work-context.js";
 
 export interface SystemUpdateDelivery extends WorkContextUpdates {
   flush(threadId: ThreadId): Promise<void>;
+  /** Drain every durable obligation visible to this process. */
+  sweep(): Promise<void>;
   /** Claim durable pending delivery before a new writer turn starts. */
   beforeTurn(threadId: ThreadId): Promise<void>;
   /** Persist an update at the current head and return its local context rows. */
@@ -79,6 +81,8 @@ export function createSystemUpdateDelivery(deps: {
   eventWriter: EventJournalWriter;
   workContext: WorkContextReader;
   isThreadRunning(threadId: ThreadId): boolean;
+  /** Schedule a non-blocking wake after the caller's business transaction commits. */
+  schedulePostCommit(task: () => Promise<void>): void;
 }): SystemUpdateDelivery {
   const flushChains = new Map<string, Promise<void>>();
 
@@ -173,6 +177,22 @@ export function createSystemUpdateDelivery(deps: {
     }
   }
 
+  async function hydrateCommittedUpdate(threadId: ThreadId) {
+    const turns = await deps.repos.turns.listByThread(threadId);
+    const turn = [...turns].reverse().find((candidate) => {
+      const metadata = candidate.metadata ?? null;
+      return (
+        isJsonObject(metadata) &&
+        metadata.kind === "system_update" &&
+        metadata.section === "work_context"
+      );
+    });
+    if (!turn) return null;
+    const blocks = await deps.repos.blocks.listByTurn(turn.id);
+    const block = blocks.find((candidate) => candidate.blockType === "text");
+    return block ? { turn, block, events: [] as OrchestratorEvent[] } : null;
+  }
+
   async function flushUnlocked(threadId: ThreadId): Promise<void> {
     if (deps.isThreadRunning(threadId)) return;
     await append(threadId);
@@ -180,17 +200,25 @@ export function createSystemUpdateDelivery(deps: {
 
   const delivery: SystemUpdateDelivery = {
     async threadChanged(threadId) {
-      await deps.repos.workContextDeliveries.enqueueThread(threadId);
+      const threadIds = await deps.repos.workContextDeliveries.enqueueThread(threadId);
+      deps.schedulePostCommit(() =>
+        Promise.all(threadIds.map((id) => delivery.flush(id))).then(() => undefined),
+      );
     },
 
     async projectChanged(projectId) {
-      await deps.repos.workContextDeliveries.enqueueProject(projectId);
+      const threadIds = await deps.repos.workContextDeliveries.enqueueProject(projectId);
+      deps.schedulePostCommit(() =>
+        Promise.all(threadIds.map((id) => delivery.flush(id))).then(() => undefined),
+      );
     },
 
     async deliverNow(threadId) {
       const update = await append(threadId);
-      if (!update) throw new Error("Work context delivery unexpectedly produced no update");
-      return update;
+      if (update) return update;
+      const committed = await hydrateCommittedUpdate(threadId);
+      if (committed) return committed;
+      throw new Error("Work context delivery unexpectedly produced no update");
     },
 
     async beforeTurn(threadId) {
@@ -208,6 +236,11 @@ export function createSystemUpdateDelivery(deps: {
       } finally {
         if (flushChains.get(key) === settled) flushChains.delete(key);
       }
+    },
+
+    async sweep() {
+      const threadIds = await deps.repos.workContextDeliveries.listPendingThreadIds();
+      await Promise.all(threadIds.map((threadId) => delivery.flush(threadId)));
     },
   };
   return delivery;

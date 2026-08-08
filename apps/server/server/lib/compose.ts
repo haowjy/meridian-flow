@@ -48,6 +48,7 @@ import {
   type EventQuery,
   type EventSink,
   emitEvent,
+  unknownToEventPayload,
 } from "../domains/observability/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
@@ -133,6 +134,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
+import { runAfterDrizzleCommit } from "../shared/drizzle-transaction.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -535,6 +537,18 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: threadEventHub,
     workContext,
     isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
+    schedulePostCommit(task) {
+      runAfterDrizzleCommit(() => {
+        void task().catch((cause) => {
+          emitEvent(ports.eventSink, {
+            level: "error",
+            source: "runtime.system-update-delivery",
+            name: "wake.failed",
+            payload: unknownToEventPayload(cause),
+          });
+        });
+      });
+    },
   });
   const childRunCoordinator = createChildRunCoordinator({
     orchestrator: runTurnProxy,
@@ -678,6 +692,7 @@ export function createInMemoryAppServices(): AppServices {
     async threadChanged() {},
     async flush() {},
     async beforeTurn() {},
+    async sweep() {},
     async deliverNow() {
       throw new Error("in-memory Work context is not configured");
     },

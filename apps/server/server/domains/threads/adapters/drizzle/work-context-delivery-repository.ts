@@ -1,7 +1,7 @@
 /** Drizzle persistence for coalesced Work-context delivery obligations. */
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { WorkContextDeliveryRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
@@ -25,30 +25,33 @@ export function createDrizzleWorkContextDeliveryRepository(
       const [thread] = await currentDrizzleDb(db)
         .select({ id: schema.threads.id })
         .from(schema.threads)
-        .where(
-          and(
-            eq(schema.threads.id, threadId),
-            ne(schema.threads.status, "archived"),
-            // A thread without a frozen prompt reads current Work state at its first bake.
-            isNotNull(schema.threads.bakedSkillSlugs),
-          ),
-        )
+        .where(and(eq(schema.threads.id, threadId), ne(schema.threads.status, "archived")))
         .limit(1);
-      if (thread) await enqueue([thread.id as ThreadId]);
+      const threadIds = thread ? [thread.id as ThreadId] : [];
+      await enqueue(threadIds);
+      return threadIds;
     },
 
     async enqueueProject(projectId: ProjectId) {
       const rows = await currentDrizzleDb(db)
         .select({ id: schema.threads.id })
         .from(schema.threads)
-        .where(
-          and(
-            eq(schema.threads.projectId, projectId),
-            ne(schema.threads.status, "archived"),
-            isNotNull(schema.threads.bakedSkillSlugs),
-          ),
-        );
-      await enqueue(rows.map(({ id }) => id as ThreadId));
+        .where(and(eq(schema.threads.projectId, projectId), ne(schema.threads.status, "archived")));
+      const threadIds = rows.map(({ id }) => id as ThreadId);
+      await enqueue(threadIds);
+      return threadIds;
+    },
+
+    async listPendingThreadIds() {
+      const rows = await currentDrizzleDb(db)
+        .select({ threadId: schema.workContextDeliveryObligations.threadId })
+        .from(schema.workContextDeliveryObligations)
+        .innerJoin(
+          schema.threads,
+          eq(schema.threads.id, schema.workContextDeliveryObligations.threadId),
+        )
+        .where(ne(schema.threads.status, "archived"));
+      return rows.map(({ threadId }) => threadId as ThreadId);
     },
 
     async isPending(threadId) {

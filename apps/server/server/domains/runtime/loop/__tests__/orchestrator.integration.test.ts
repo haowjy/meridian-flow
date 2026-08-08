@@ -128,6 +128,7 @@ describe("runtime loop integration", () => {
                   },
                 },
                 isThreadRunning: () => true,
+                schedulePostCommit() {},
               }),
             }
           : {}),
@@ -877,7 +878,8 @@ describe("runtime loop integration", () => {
       undefined,
       true,
     );
-    enqueueWorkContext = (threadId) => repos.workContextDeliveries.enqueueThread(threadId);
+    enqueueWorkContext = (threadId) =>
+      repos.workContextDeliveries.enqueueThread(threadId).then(() => undefined);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
     await collectEvents(
       await orchestrator.runTurn({
@@ -1104,6 +1106,7 @@ describe("runtime loop integration", () => {
             },
           },
           isThreadRunning: () => running,
+          schedulePostCommit() {},
         });
         delivery = actual;
         return {
@@ -1114,7 +1117,8 @@ describe("runtime loop integration", () => {
         };
       },
     );
-    enqueueWorkContext = (threadId) => repos.workContextDeliveries.enqueueThread(threadId);
+    enqueueWorkContext = (threadId) =>
+      repos.workContextDeliveries.enqueueThread(threadId).then(() => undefined);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
     const events = await collectEvents(
       await orchestrator.runTurn({ threadId: thread.id, userText: "switch" }),

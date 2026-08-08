@@ -169,7 +169,7 @@ export function createInMemoryRepositories(
   let transactionTail: Promise<void> = Promise.resolve();
 
   function receivesWorkContextUpdate(thread: Thread | undefined): thread is Thread {
-    return !!thread && thread.status !== "archived" && thread.bakedSkillSlugs !== null;
+    return !!thread && thread.status !== "archived";
   }
 
   function nextSlug(projectId: string, title: string | null | undefined): string | null {
@@ -779,6 +779,7 @@ export function createInMemoryRepositories(
     workContextDeliveries: {
       async enqueueThread(threadId) {
         if (receivesWorkContextUpdate(threads.get(threadId))) workContextDeliveries.add(threadId);
+        return workContextDeliveries.has(threadId) ? [threadId] : [];
       },
       async enqueueProject(projectId: ProjectId) {
         for (const thread of threads.values()) {
@@ -786,6 +787,14 @@ export function createInMemoryRepositories(
             workContextDeliveries.add(thread.id);
           }
         }
+        return [...workContextDeliveries].filter(
+          (threadId) => threads.get(threadId)?.projectId === projectId,
+        ) as ThreadId[];
+      },
+      async listPendingThreadIds() {
+        return [...workContextDeliveries].filter((threadId) =>
+          receivesWorkContextUpdate(threads.get(threadId)),
+        ) as ThreadId[];
       },
       async isPending(threadId) {
         return workContextDeliveries.has(threadId);
