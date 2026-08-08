@@ -75,7 +75,7 @@ instead of the N:1 `threads.workId` column.
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships, reads the primary, and rebinds the primary membership through one Work-before-thread critical section. Rebind accepts active or archived same-project Works and preserves exactly one primary. |
-| `applyRebindThreadWorkTransition` / `rebindThreadWork` | Transaction-composable transition above `rebindPrimary`, plus the public transactional/delivery command; binding, preference, and targeted durable obligation have one policy owner. |
+| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, preference, receipt, and targeted durable obligation have one policy owner. Actor adapters own transaction and post-commit delivery. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
