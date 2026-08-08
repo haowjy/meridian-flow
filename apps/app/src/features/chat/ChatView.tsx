@@ -23,14 +23,11 @@ import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
-import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { displayThreadTitle } from "@/lib/thread-title";
-
+import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
-import { ComposerWorkControl } from "./ComposerWorkControl";
-import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
@@ -146,7 +143,7 @@ export function ChatView({
       title={pageTitle}
       surfaceRef={chatSurfaceRef}
       footer={
-        <div data-debug-composer={threadId} className="@container">
+        <div data-debug-composer={threadId}>
           {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
@@ -159,58 +156,25 @@ export function ChatView({
             onStop={handleStop}
             toolbarLeft={
               projectId && activeWork ? (
-                <ComposerWorkControl
+                <ChatComposerToolbar
                   projectId={projectId}
                   threadId={threadId}
                   work={activeWork}
-                  primaryControls={[
-                    {
-                      id: "agent",
-                      priority: 300,
-                      inline: threadStarted ? (
-                        <ComposerAgentControl
-                          projectId={projectId}
-                          mode="readonly"
-                          selectedSlug={composerAgentSlug}
-                        />
-                      ) : (
-                        <ComposerAgentControl
-                          projectId={projectId}
-                          mode="interactive"
-                          selectedSlug={composerAgentSlug}
-                          onSelectedSlugChange={setDraftAgentSlug}
-                        />
-                      ),
-                      overflow: {
-                        ariaLabel: `Agent ${composerAgentSlug}`,
-                        label: "Agent",
-                        value: composerAgentSlug,
-                      },
-                    },
-                    {
-                      id: "write-mode",
-                      priority: 200,
-                      inline: <ComposerWriteModeControl projectId={projectId} work={activeWork} />,
-                      overflow: {
-                        ariaLabel: `Write mode ${activeWork.aiWriteMode}`,
-                        label: "Write mode",
-                        value: activeWork.aiWriteMode === "draft" ? "Draft" : "Auto-apply",
-                      },
-                    },
-                  ]}
+                  agentSlug={composerAgentSlug}
+                  readonlyAgent={threadStarted}
+                  onAgentChange={setDraftAgentSlug}
                 />
               ) : threadStarted ? (
-                <ComposerAgentControl
+                <AgentOnlyComposerToolbar
                   projectId={projectId ?? null}
-                  mode="readonly"
-                  selectedSlug={composerAgentSlug}
+                  readonlyAgent
+                  agentSlug={composerAgentSlug}
                 />
               ) : (
-                <ComposerAgentControl
+                <AgentOnlyComposerToolbar
                   projectId={projectId ?? null}
-                  mode="interactive"
-                  selectedSlug={composerAgentSlug}
-                  onSelectedSlugChange={setDraftAgentSlug}
+                  agentSlug={composerAgentSlug}
+                  onAgentChange={setDraftAgentSlug}
                 />
               )
             }

@@ -13,22 +13,20 @@ const request = (target = work("b"), intent: "change" | "undo" = "change"): Work
   target,
   previousWorkId: "a",
   intent,
-  origin: "direct-panel",
+  origin: "panel",
   observedProjection: "none",
 });
 
 describe("composer Work binding reducer", () => {
-  it("contains dismissal while changing and migrates the active surface", () => {
+  it("contains dismissal while changing", () => {
     let state = initialComposerWorkBindingState(work("a"));
-    state = reduceComposerWorkBinding(state, { type: "surface.opened", surface: "direct" });
+    state = reduceComposerWorkBinding(state, { type: "panel.opened" });
     state = reduceComposerWorkBinding(state, {
       type: "change.started",
       request: request(),
       message: "pending",
     });
-    expect(reduceComposerWorkBinding(state, { type: "surface.dismissed" })).toBe(state);
-    state = reduceComposerWorkBinding(state, { type: "layout.changed", layout: "overflow" });
-    expect(state.view).toMatchObject({ kind: "changing", surface: "overflow", page: "works" });
+    expect(reduceComposerWorkBinding(state, { type: "panel.dismissed" })).toBe(state);
   });
 
   it.each(["confirmed", "reconciled"])("uses one commit path for %s success", () => {

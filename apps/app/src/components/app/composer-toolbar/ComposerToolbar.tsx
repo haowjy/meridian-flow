@@ -1,9 +1,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { ComposerToolbarControl } from "./types";
 import { useMeasuredComposerToolbar } from "./useMeasuredComposerToolbar";
@@ -16,18 +16,30 @@ export function ComposerToolbar({
   ariaLabel: string;
 }) {
   const { root, probe, controlRef, layout } = useMeasuredComposerToolbar(controls);
-  const [open, setOpen] = useState(false);
-  const [page, setPage] = useState<string | null>(null);
+  const [rootOpen, setRootOpen] = useState(false);
+  const backToRoot = useRef(false);
   const overflow = controls.filter(({ id }) => layout.overflowIds.includes(id));
-  const active = overflow.find(({ id }) => id === page);
+  const openControl = controls.find(
+    (control) => control.overflow.kind === "panel" && control.overflow.panel.open,
+  );
+  const overflowPanel = overflow.find(({ id }) => id === openControl?.id);
+  const activePanel =
+    overflowPanel?.overflow.kind === "panel" ? overflowPanel.overflow.panel : null;
+
   useEffect(() => {
-    if (!overflow.length) {
-      setOpen(false);
-      setPage(null);
-    } else if (page && !overflow.some(({ id }) => id === page)) setPage(null);
-  }, [overflow.length, page]);
-  const busy = active?.overflow.busy === true;
-  const dismissible = active?.overflow.canDismiss !== false;
+    if (activePanel) setRootOpen(true);
+    else if (openControl) setRootOpen(false);
+    if (!overflow.length) setRootOpen(false);
+  }, [activePanel, openControl, overflow.length]);
+
+  const requestPanelOpen = (control: ComposerToolbarControl) => {
+    if (control.overflow.kind !== "panel") return;
+    if (openControl && openControl.id !== control.id && openControl.overflow.kind === "panel") {
+      if (!openControl.overflow.panel.canDismiss) return;
+      openControl.overflow.panel.onRequestDismiss();
+    }
+    control.overflow.panel.onRequestOpen();
+  };
   return (
     <div
       ref={root}
@@ -37,28 +49,46 @@ export function ComposerToolbar({
     >
       {controls.map((control) => {
         const hidden = layout.overflowIds.includes(control.id);
+        const panel = control.overflow.kind === "panel" ? control.overflow.panel : null;
         return (
-          <span
+          <Popover
             key={control.id}
-            ref={controlRef(control.id)}
-            inert={hidden ? true : undefined}
-            aria-hidden={hidden || undefined}
-            className={cn(
-              "inline-flex w-max flex-none",
-              hidden && "pointer-events-none invisible absolute left-0 top-0",
-            )}
+            open={!hidden && panel?.open === true}
+            onOpenChange={(next) => {
+              if (!panel) return;
+              if (next) requestPanelOpen(control);
+              else if (panel.canDismiss) panel.onRequestDismiss();
+            }}
           >
-            {control.inline}
-          </span>
+            <PopoverAnchor asChild>
+              <span
+                ref={controlRef(control.id)}
+                inert={hidden ? true : undefined}
+                aria-hidden={hidden || undefined}
+                className={cn(
+                  "inline-flex w-max flex-none",
+                  hidden && "pointer-events-none invisible absolute left-0 top-0",
+                )}
+              >
+                {control.inline({
+                  open: panel?.open ?? false,
+                  busy: panel?.busy ?? false,
+                  requestOpen: () => requestPanelOpen(control),
+                  requestDismiss: () => panel?.onRequestDismiss(),
+                })}
+              </span>
+            </PopoverAnchor>
+            {panel ? <ToolbarContent panel={panel} host="inline" /> : null}
+          </Popover>
         );
       })}
       {overflow.length ? (
         <Popover
-          open={open}
+          open={rootOpen}
           onOpenChange={(next) => {
-            if (!next && !dismissible) return;
-            setOpen(next);
-            if (!next) setPage(null);
+            if (!next && activePanel && !activePanel.canDismiss) return;
+            setRootOpen(next);
+            if (!next && activePanel) activePanel.onRequestDismiss();
           }}
         >
           <PopoverTrigger asChild>
@@ -67,7 +97,7 @@ export function ComposerToolbar({
               size="icon-lg"
               type="button"
               aria-label={t`More composer controls`}
-              aria-busy={busy}
+              aria-busy={activePanel?.busy}
             >
               <Ellipsis className="size-4" aria-hidden />
             </Button>
@@ -75,61 +105,74 @@ export function ComposerToolbar({
           <PopoverContent
             align="start"
             side="top"
-            aria-busy={busy}
+            aria-busy={activePanel?.busy}
+            data-page={activePanel ? "panel" : "root"}
             className={cn(
               "composer-overflow-surface flex flex-col overflow-hidden",
-              active?.overflow.size === "picker" ? "w-80 p-3" : "w-56 p-1",
+              activePanel?.size === "picker"
+                ? "[--composer-overflow-page-size:20rem] p-3"
+                : "[--composer-overflow-page-size:14rem] p-1",
             )}
             onEscapeKeyDown={(event) => {
-              if (!dismissible) event.preventDefault();
+              if (activePanel && !activePanel.canDismiss) event.preventDefault();
             }}
             onPointerDownOutside={(event) => {
-              if (!dismissible) event.preventDefault();
+              if (activePanel && !activePanel.canDismiss) event.preventDefault();
+            }}
+            onCloseAutoFocus={(event) => {
+              if (activePanel && !activePanel.canDismiss) event.preventDefault();
             }}
           >
-            {active ? (
+            {activePanel && overflowPanel ? (
               <>
                 <Button
                   variant="quiet"
                   className="mb-1 min-h-11 justify-start"
-                  disabled={busy}
+                  disabled={activePanel.busy}
                   onClick={() => {
-                    active.overflow.onBack?.();
-                    setPage(null);
+                    if (!activePanel.canDismiss) return;
+                    backToRoot.current = true;
+                    activePanel.onRequestDismiss();
                   }}
                 >
                   <ArrowLeft className="size-4" aria-hidden />
                   <Trans>Back</Trans>
                 </Button>
-                {active.overflow.panel}
+                {activePanel.render({
+                  host: "overflow",
+                  requestDismiss: activePanel.onRequestDismiss,
+                })}
               </>
             ) : (
               <ul>
-                {overflow.map((control) => (
-                  <li key={control.id}>
-                    <Button
-                      variant="ghost"
-                      className="min-h-11 w-full justify-start gap-2 px-2"
-                      aria-label={control.overflow.ariaLabel}
-                      onClick={() => {
-                        if (control.overflow.panel) {
-                          control.overflow.onOpen?.();
-                          setPage(control.id);
+                {overflow.map((control) => {
+                  const item = control.overflow.item;
+                  return (
+                    <li key={control.id}>
+                      <Button
+                        variant="ghost"
+                        className="min-h-11 w-full justify-start gap-2 px-2"
+                        aria-label={item.ariaLabel}
+                        disabled={
+                          openControl?.overflow.kind === "panel" &&
+                          !openControl.overflow.panel.canDismiss
                         }
-                      }}
-                    >
-                      <span className="shrink-0">{control.overflow.label}</span>
-                      {control.overflow.value ? (
-                        <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-                          {control.overflow.value}
-                        </span>
-                      ) : null}
-                      {control.overflow.panel ? (
-                        <ChevronRight className="size-4 shrink-0" aria-hidden />
-                      ) : null}
-                    </Button>
-                  </li>
-                ))}
+                        onClick={() => requestPanelOpen(control)}
+                      >
+                        {item.icon}
+                        <span className="shrink-0">{item.label}</span>
+                        {item.value ? (
+                          <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+                            {item.value}
+                          </span>
+                        ) : null}
+                        {control.overflow.kind === "panel" ? (
+                          <ChevronRight className="size-4 shrink-0" aria-hidden />
+                        ) : null}
+                      </Button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </PopoverContent>
@@ -148,5 +191,39 @@ export function ComposerToolbar({
         <Ellipsis className="size-4" />
       </Button>
     </div>
+  );
+}
+
+function ToolbarContent({
+  panel,
+  host,
+}: {
+  panel: Extract<ComposerToolbarControl["overflow"], { kind: "panel" }>["panel"];
+  host: "inline" | "overflow";
+}) {
+  return (
+    <PopoverContent
+      align="start"
+      side="top"
+      aria-label={panel.ariaLabel}
+      aria-busy={panel.busy}
+      className={cn(
+        "composer-overflow-surface flex flex-col overflow-hidden p-3",
+        panel.size === "picker"
+          ? "[--composer-overflow-page-size:20rem]"
+          : "[--composer-overflow-page-size:14rem]",
+      )}
+      onEscapeKeyDown={(event) => {
+        if (!panel.canDismiss) event.preventDefault();
+      }}
+      onPointerDownOutside={(event) => {
+        if (!panel.canDismiss) event.preventDefault();
+      }}
+      onCloseAutoFocus={(event) => {
+        if (panel.open) event.preventDefault();
+      }}
+    >
+      {panel.render({ host, requestDismiss: panel.onRequestDismiss })}
+    </PopoverContent>
   );
 }

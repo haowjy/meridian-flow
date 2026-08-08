@@ -17,15 +17,13 @@ Undo. `useThreadDurableProjections` owns transport projection, while
 renders the measured inline/overflow entry only in the composer; headers remain
 chat identity surfaces.
 
-The same row owns the open chat's Work selector. At widths above 520px its
-controls read Agent, Draft / Auto-apply, then `Work: {name}`. At or below 520px,
-only Work moves behind an ellipsis; that single popover drills into the same
-searchable active/archive list and returns with Back. The threshold is a
-container query on the existing composer boundary, not a viewport measurement,
-so docks collapse based on their actual space. Chat headers display only chat
-identity and never mount another Work control. `ComposerWorkControl` alone owns
-mutation, receipt/Undo, error, focus-return, and live-convergence state for both
-entry paths.
+The row passes Agent, Draft / Auto-apply, and Work descriptors to the shared
+measured `ComposerToolbar`. It observes the actual flex allocation left beside
+Send and every mounted control's intrinsic width. Controls move behind one
+compact ellipsis in Work, write-mode, then Agent order. Feature controllers
+retain their state while the framework migrates their panel between inline and
+overflow hosts. Chat headers display only chat identity. The Work controller
+owns mutation, receipt/Undo, error, and live-convergence state, never placement.
 
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an

@@ -9,7 +9,6 @@ import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement } from "@/client/stores";
 import {
   type ComposerWorkBindingState,
-  type ComposerWorkSurface,
   initialComposerWorkBindingState,
   reduceComposerWorkBinding,
   type WorkBindingFailure,
@@ -24,14 +23,11 @@ export type ComposerWorkBindingController = {
   undoWork: Work | null;
   busy: boolean;
   canDismiss: boolean;
-  setLayout(layout: "direct" | "overflow"): void;
-  open(surface: ComposerWorkSurface): void;
+  open(): void;
   requestDismiss(): void;
-  openWorks(): void;
-  openOverflowRoot(): void;
   changeQuery(query: string): void;
   choose(work: Work): void;
-  undo(surface: ComposerWorkSurface): void;
+  undo(): void;
   retryCatalog(): void;
 };
 
@@ -75,7 +71,7 @@ export function useComposerWorkBinding({
   const run = useCallback(
     async (target: Work, intent: "change" | "undo", origin: WorkBindingRequest["origin"]) => {
       if (mutation.isPending || target.id === state.observed.id) {
-        if (target.id === state.observed.id) dispatch({ type: "surface.dismissed" });
+        if (target.id === state.observed.id) dispatch({ type: "panel.dismissed" });
         return;
       }
       const request: WorkBindingRequest = {
@@ -174,9 +170,6 @@ export function useComposerWorkBinding({
     pending: busy,
     failure: state.view.kind === "refused" ? state.view.failure : null,
   };
-  const setLayout = useCallback((layout: "direct" | "overflow") => {
-    dispatch({ type: "layout.changed", layout });
-  }, []);
   return {
     state,
     catalog,
@@ -184,23 +177,12 @@ export function useComposerWorkBinding({
     undoWork,
     busy,
     canDismiss: !busy,
-    setLayout,
-    open: (surface) => dispatch({ type: "surface.opened", surface }),
-    requestDismiss: () => dispatch({ type: "surface.dismissed" }),
-    openWorks: () => dispatch({ type: "overflow.worksOpened" }),
-    openOverflowRoot: () => dispatch({ type: "overflow.rootOpened" }),
+    open: () => dispatch({ type: "panel.opened" }),
+    requestDismiss: () => dispatch({ type: "panel.dismissed" }),
     changeQuery: (query) => dispatch({ type: "query.changed", query }),
-    choose: (target) =>
-      void run(
-        target,
-        "change",
-        state.view.kind !== "closed" && state.view.surface === "overflow"
-          ? "overflow-panel"
-          : "direct-panel",
-      ),
-    undo: (surface) => {
-      if (undoWork)
-        void run(undoWork, "undo", surface === "overflow" ? "overflow-undo" : "direct-undo");
+    choose: (target) => void run(target, "change", "panel"),
+    undo: () => {
+      if (undoWork) void run(undoWork, "undo", "undo");
     },
     retryCatalog: worksQuery.refetch,
   };

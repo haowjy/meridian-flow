@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Pending-draft signal and review resolution entry for the composer mode control. */
 import type { Work } from "@meridian/contracts/protocol";
+import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -42,7 +43,23 @@ vi.mock("@/components/ui/popover", () => ({
   PopoverTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
 }));
 
-const { ComposerWriteModeControl } = await import("./ComposerWriteModeControl");
+const { useComposerWriteModeToolbarControl } = await import("./ComposerWriteModeControl");
+
+function Harness({ work }: { work: Work }) {
+  const control = useComposerWriteModeToolbarControl({ projectId: "project-1", work });
+  const panel = control.overflow.kind === "panel" ? control.overflow.panel : null;
+  return (
+    <>
+      {control.inline({
+        open: panel?.open ?? false,
+        busy: panel?.busy ?? false,
+        requestOpen: () => panel?.onRequestOpen(),
+        requestDismiss: () => panel?.onRequestDismiss(),
+      })}
+      {panel?.render({ host: "overflow", requestDismiss: panel.onRequestDismiss })}
+    </>
+  );
+}
 
 describe("ComposerWriteModeControl", () => {
   beforeEach(() => {
@@ -90,38 +107,32 @@ describe("ComposerWriteModeControl", () => {
   });
 
   it("signals pending drafts without disabling Auto-apply and opens the shared review flow", async () => {
-    await withReactRoot(
-      <ComposerWriteModeControl projectId="project-1" work={draftWork()} />,
-      () => {
-        expect(document.body.textContent).toContain("Draft(2)");
-        const draft = radio("draft");
-        const direct = radio("direct");
-        expect(draft.getAttribute("aria-description")).toBe("2 changes waiting for review");
-        expect(direct.disabled).toBe(false);
+    await withReactRoot(<Harness work={draftWork()} />, async () => {
+      expect(document.body.textContent).toContain("Draft(2)");
+      const draft = radio("draft");
+      const direct = radio("direct");
+      expect(direct.disabled).toBe(false);
 
-        button("Review changes").click();
-        expect(openAiDraft).toHaveBeenCalledWith(
-          expect.objectContaining({
-            documentId: "document-alpha",
-            contextPath: "work://manuscript/alpha.md",
-          }),
-          "draft-alpha",
-        );
-      },
-    );
+      await act(async () => direct.click());
+      button("Review changes").click();
+      expect(openAiDraft).toHaveBeenCalledWith(
+        expect.objectContaining({
+          documentId: "document-alpha",
+          contextPath: "work://manuscript/alpha.md",
+        }),
+        "draft-alpha",
+      );
+    });
   });
 
   it("labels Review as checking while the reviewable projection is loading", async () => {
     workDraftGroups = null;
 
-    await withReactRoot(
-      <ComposerWriteModeControl projectId="project-1" work={draftWork()} />,
-      () => {
-        const checking = button("Checking pending changes…");
-        expect(checking.disabled).toBe(true);
-        expect(radio("direct").disabled).toBe(false);
-      },
-    );
+    await withReactRoot(<Harness work={draftWork()} />, async () => {
+      await act(async () => radio("direct").click());
+      expect(button("Checking pending changes…").disabled).toBe(true);
+      expect(radio("direct").disabled).toBe(false);
+    });
   });
 });
 

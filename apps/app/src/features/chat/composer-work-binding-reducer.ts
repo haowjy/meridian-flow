@@ -2,9 +2,6 @@
 import type { Work } from "@meridian/contracts/works";
 import type { NormalizedCommit } from "@/client/query/useRebindThreadWork";
 
-export type ComposerWorkLayout = "direct" | "overflow";
-export type ComposerWorkSurface = "direct" | "overflow";
-export type OverflowPage = "root" | "works";
 export type WorkBindingFailure =
   | { kind: "thread_busy" }
   | { kind: "work_unavailable" }
@@ -16,23 +13,19 @@ export type WorkBindingRequest = {
   target: Work;
   previousWorkId: string;
   intent: "change" | "undo";
-  origin: "direct-panel" | "overflow-panel" | "direct-undo" | "overflow-undo";
+  origin: "panel" | "undo";
   observedProjection: "none" | "target" | "other";
 };
 export type WorkBindingView =
   | { kind: "closed" }
-  | { kind: "browsing"; surface: ComposerWorkSurface; page: OverflowPage; query: string }
+  | { kind: "browsing"; query: string }
   | {
       kind: "changing";
-      surface: ComposerWorkSurface | null;
-      page: OverflowPage;
       query: string;
       request: WorkBindingRequest;
     }
   | {
       kind: "refused";
-      surface: ComposerWorkSurface;
-      page: "works";
       query: string;
       targetId: string;
       failure: WorkBindingFailure;
@@ -41,7 +34,6 @@ export type ComposerWorkBindingEffect =
   | { id: string; type: "announce" | "announceError"; message: string }
   | { id: string; type: "catalog.refetch" };
 export type ComposerWorkBindingState = {
-  layout: ComposerWorkLayout | null;
   observed: { id: string; name: string };
   expectedLocalWorkId: string | null;
   undo: { workId: string; resultWorkId: string } | null;
@@ -49,11 +41,8 @@ export type ComposerWorkBindingState = {
   effects: ComposerWorkBindingEffect[];
 };
 export type ComposerWorkBindingEvent =
-  | { type: "layout.changed"; layout: ComposerWorkLayout }
-  | { type: "surface.opened"; surface: ComposerWorkSurface }
-  | { type: "surface.dismissed" }
-  | { type: "overflow.worksOpened" }
-  | { type: "overflow.rootOpened" }
+  | { type: "panel.opened" }
+  | { type: "panel.dismissed" }
   | { type: "query.changed"; query: string }
   | { type: "change.started"; request: WorkBindingRequest; message: string }
   | { type: "change.committed"; requestId: string; commit: NormalizedCommit; message: string }
@@ -64,7 +53,6 @@ export type ComposerWorkBindingEvent =
   | { type: "effects.consumed"; ids: string[] };
 
 export const initialComposerWorkBindingState = (work: Work): ComposerWorkBindingState => ({
-  layout: null,
   observed: { id: work.id, name: work.name },
   expectedLocalWorkId: null,
   undo: null,
@@ -82,42 +70,18 @@ const effect = (
 });
 const activeRequest = (state: ComposerWorkBindingState, requestId: string) =>
   state.view.kind === "changing" && state.view.request.id === requestId;
-const migrate = (view: WorkBindingView, layout: ComposerWorkLayout): WorkBindingView => {
-  if (view.kind === "closed") return view;
-  const surface = layout;
-  if (view.kind === "changing") return { ...view, surface, page: "works" };
-  if (view.kind === "refused") return { ...view, surface };
-  return { ...view, surface, page: "works" };
-};
-
 export function reduceComposerWorkBinding(
   state: ComposerWorkBindingState,
   event: ComposerWorkBindingEvent,
 ): ComposerWorkBindingState {
   switch (event.type) {
-    case "layout.changed":
-      if (state.layout === event.layout) return state;
-      return { ...state, layout: event.layout, view: migrate(state.view, event.layout) };
-    case "surface.opened":
+    case "panel.opened":
       return {
         ...state,
-        view: {
-          kind: "browsing",
-          surface: event.surface,
-          page: event.surface === "overflow" ? "root" : "works",
-          query: "",
-        },
+        view: { kind: "browsing", query: "" },
       };
-    case "surface.dismissed":
+    case "panel.dismissed":
       return state.view.kind === "changing" ? state : { ...state, view: { kind: "closed" } };
-    case "overflow.worksOpened":
-      return state.view.kind === "browsing"
-        ? { ...state, view: { ...state.view, page: "works", query: "" } }
-        : state;
-    case "overflow.rootOpened":
-      return state.view.kind === "browsing" && state.view.surface === "overflow"
-        ? { ...state, view: { ...state.view, page: "root" } }
-        : state;
     case "query.changed":
       return state.view.kind === "closed"
         ? state
@@ -128,8 +92,6 @@ export function reduceComposerWorkBinding(
         undo: null,
         view: {
           kind: "changing",
-          surface: state.view.kind === "closed" ? null : state.view.surface,
-          page: "works",
           query: state.view.kind === "closed" ? "" : state.view.query,
           request: event.request,
         },
@@ -168,8 +130,6 @@ export function reduceComposerWorkBinding(
         expectedLocalWorkId: null,
         view: {
           kind: "refused",
-          surface: state.view.surface ?? state.layout ?? "direct",
-          page: "works",
           query: state.view.query,
           targetId: state.view.request.target.id,
           failure,

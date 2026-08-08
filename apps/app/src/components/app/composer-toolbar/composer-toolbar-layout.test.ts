@@ -2,9 +2,21 @@ import { describe, expect, it } from "vitest";
 import { resolveComposerToolbarLayout } from "./composer-toolbar-layout";
 
 const controls = [
-  { id: "agent", priority: 300, overflow: { ariaLabel: "Agent", label: "Agent" } },
-  { id: "write-mode", priority: 200, overflow: { ariaLabel: "Write mode", label: "Write mode" } },
-  { id: "work", priority: 100, overflow: { ariaLabel: "Work", label: "Work" } },
+  {
+    id: "agent",
+    priority: 300,
+    overflow: { kind: "status" as const, item: { ariaLabel: "Agent", label: "Agent" } },
+  },
+  {
+    id: "write-mode",
+    priority: 200,
+    overflow: { kind: "status" as const, item: { ariaLabel: "Write mode", label: "Write mode" } },
+  },
+  {
+    id: "work",
+    priority: 100,
+    overflow: { kind: "status" as const, item: { ariaLabel: "Work", label: "Work" } },
+  },
 ];
 const widths = new Map([
   ["agent", 80],
