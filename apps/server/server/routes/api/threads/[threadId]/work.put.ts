@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
         isPending: (threadId) => app.repos.workContextDeliveries.isPending(threadId),
       },
       transaction: app.repos.transaction,
-      isThreadRunning: (threadId) => app.runner.isThreadRunning(threadId),
+      runOwnership: app.runOwnership,
     },
     {
       threadId: getRouterParam(event, "threadId") ?? "",

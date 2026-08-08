@@ -5,6 +5,8 @@ import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/ru
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
+import { ThreadWorkUnavailableError } from "../domains/threads/index.js";
+import interruptErrorHandler from "./interrupt-error-handler.js";
 import {
   handleRebindThreadWorkRequest,
   parseRebindThreadWorkRequest,
@@ -24,6 +26,8 @@ function routeFixture(
     owner?: UserId;
     sameTarget?: boolean;
     flushFailure?: boolean;
+    rebindFailure?: Error;
+    missingPrimary?: boolean;
   } = {},
 ) {
   const thread = {
@@ -72,9 +76,13 @@ function routeFixture(
       },
       threadWorks: {
         rebindPrimary: async (_threadId: ThreadId, workId: WorkId) => {
+          if (options.rebindFailure) throw options.rebindFailure;
           const previousWorkId = current;
           current = workId;
-          return { previousWorkId, changed: previousWorkId !== workId };
+          return {
+            previousWorkId: options.missingPrimary ? null : previousWorkId,
+            changed: previousWorkId !== workId,
+          };
         },
       },
       preferences: { setCurrentWorkId: vi.fn(async () => {}) },
@@ -89,7 +97,9 @@ function routeFixture(
         isPending: async () => pending,
       },
       transaction: async <T>(operation: () => Promise<T>) => operation(),
-      isThreadRunning: () => options.running ?? false,
+      runOwnership: {
+        tryAcquire: async () => (options.running ? null : { release: vi.fn(async () => {}) }),
+      },
     },
   };
 }
@@ -112,9 +122,52 @@ describe("thread Work rebind writer adapter", () => {
       }),
     ).rejects.toMatchObject({
       statusCode: 409,
-      data: { code: "thread_busy", retryable: true },
+      data: {
+        __meridianInterruptEnvelope: {
+          kind: "error",
+          error: { code: "thread_busy", source: "system", retryable: true },
+        },
+      },
     });
     expect(h.deps.preferences.setCurrentWorkId).not.toHaveBeenCalled();
+  });
+
+  it("holds the run claim across the transaction and releases before delivery", async () => {
+    const h = routeFixture();
+    let claimed = false;
+    const order: string[] = [];
+    const runOwnership = {
+      async tryAcquire() {
+        if (claimed) return null;
+        claimed = true;
+        order.push("claim");
+        return {
+          async release() {
+            claimed = false;
+            order.push("release");
+          },
+        };
+      },
+    };
+    const transaction = async <T>(operation: () => Promise<T>) => {
+      order.push("transaction");
+      expect(await runOwnership.tryAcquire()).toBeNull();
+      return operation();
+    };
+    const originalFlush = h.deps.contextUpdates.flush;
+    h.deps.contextUpdates.flush = async () => {
+      expect(claimed).toBe(false);
+      order.push("delivery");
+      await originalFlush();
+    };
+
+    await handleRebindThreadWorkRequest({ ...h.deps, runOwnership, transaction } as never, {
+      threadId: THREAD_ID,
+      userId: USER_ID,
+      body: { workId: TARGET_ID },
+    });
+
+    expect(order).toEqual(["claim", "transaction", "release", "delivery"]);
   });
 
   it("returns the shared receipt and truthful delivery status", async () => {
@@ -173,5 +226,61 @@ describe("thread Work rebind writer adapter", () => {
         }),
       ).rejects.toMatchObject({ statusCode: 404 });
     }
+  });
+
+  it("serializes structured conflicts through the canonical HTTP envelope", async () => {
+    const cases = [
+      {
+        fixture: routeFixture({ deletedTarget: true }),
+        status: 404,
+        code: "not_found",
+      },
+      {
+        fixture: routeFixture({ running: true }),
+        status: 409,
+        code: "thread_busy",
+      },
+      {
+        fixture: routeFixture({ missingPrimary: true }),
+        status: 409,
+        code: "missing_primary_work",
+      },
+      {
+        fixture: routeFixture({ rebindFailure: new ThreadWorkUnavailableError() }),
+        status: 404,
+        code: "not_found",
+      },
+    ];
+
+    for (const entry of cases) {
+      let thrown: unknown;
+      try {
+        await handleRebindThreadWorkRequest(entry.fixture.deps as never, {
+          threadId: THREAD_ID,
+          userId: USER_ID,
+          body: { workId: TARGET_ID },
+        });
+      } catch (cause) {
+        thrown = cause;
+      }
+      const response = interruptErrorHandler(thrown, {});
+      expect(response?.status).toBe(entry.status);
+      await expect(response?.json()).resolves.toMatchObject({
+        kind: "error",
+        error: { code: entry.code, source: "system" },
+      });
+    }
+  });
+
+  it("does not conceal arbitrary database failures", async () => {
+    const failure = new Error("database connection lost");
+    const h = routeFixture({ rebindFailure: failure });
+    await expect(
+      handleRebindThreadWorkRequest(h.deps as never, {
+        threadId: THREAD_ID,
+        userId: USER_ID,
+        body: { workId: TARGET_ID },
+      }),
+    ).rejects.toBe(failure);
   });
 });

@@ -8,6 +8,8 @@ export const WORK_CONTEXT_ACTIVE_LIMIT = 20;
 
 export interface WorkContextReader {
   renderForThread(threadId: ThreadId): Promise<string>;
+  /** Authoritative current Work for client-visible convergence projections. */
+  currentForThread?(threadId: ThreadId): Promise<Work>;
 }
 
 function oneLine(value: string | null): string {
@@ -51,14 +53,19 @@ export function createWorkContextReader(deps: {
   works: Pick<WorkRepository, "findById" | "listByProject">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
 }): WorkContextReader {
+  async function currentForThread(threadId: ThreadId): Promise<Work> {
+    const primary = await deps.threadWorks.findPrimary(threadId);
+    if (!primary) throw new Error(`Thread has no primary Work: ${threadId}`);
+    const current = await deps.works.findById(primary.workId);
+    if (!current || current.deletedAt) {
+      throw new Error(`Thread primary Work is unavailable: ${threadId}`);
+    }
+    return current;
+  }
   return {
+    currentForThread,
     async renderForThread(threadId) {
-      const primary = await deps.threadWorks.findPrimary(threadId);
-      if (!primary) throw new Error(`Thread has no primary Work: ${threadId}`);
-      const current = await deps.works.findById(primary.workId);
-      if (!current || current.deletedAt) {
-        throw new Error(`Thread primary Work is unavailable: ${threadId}`);
-      }
+      const current = await currentForThread(threadId);
       const activeWorks = await deps.works.listByProject(current.projectId, { status: "active" });
       return renderWorkContext({ current, activeWorks });
     },

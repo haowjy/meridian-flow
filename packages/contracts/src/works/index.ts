@@ -65,10 +65,13 @@ export interface RebindThreadWorkResponse {
   contextUpdate: WorkContextUpdateStatus;
 }
 
-export interface ThreadBusyErrorResponse {
-  code: "thread_busy";
-  message: string;
-  retryable: true;
+/** Live AG-UI projection emitted after a durable Work-context update commits. */
+export const WORK_CONTEXT_PROJECTION_EVENT = "meridian.work_context.changed" as const;
+
+export interface WorkContextProjectionSignal {
+  threadId: import("../ids.js").ThreadId;
+  projectId: ProjectId;
+  workId: WorkId;
 }
 
 export * from "./receipts.js";

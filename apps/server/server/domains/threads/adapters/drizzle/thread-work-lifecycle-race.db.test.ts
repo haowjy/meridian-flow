@@ -32,7 +32,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createInMemoryEventSink } = await import("../../../observability/index.js");
     const { createThreadForProject } = await import("../../../../lib/thread-creation.js");
-    const { rebindThreadWork } = await import("../../domain/rebind-thread-work.js");
+    const { applyRebindThreadWorkTransition, rebindThreadWork } = await import(
+      "../../domain/rebind-thread-work.js"
+    );
+    const { createDrizzleThreadRunOwnership } = await import(
+      "../../../runtime/adapters/drizzle-thread-run-ownership.js"
+    );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import(
       "../../../collab/adapters/drizzle-branches.js"
@@ -228,6 +233,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(TARGET_WORK_ID);
       await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+    });
+
+    it("excludes a writer rebind while another server instance owns the run", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+      const modelInstance = createDrizzleThreadRunOwnership(db);
+      const writerInstance = createDrizzleThreadRunOwnership(db);
+      const modelClaim = await modelInstance.tryAcquire(THREAD_ID);
+      expect(modelClaim).not.toBeNull();
+
+      expect(await writerInstance.tryAcquire(THREAD_ID)).toBeNull();
+      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: WORK_ID,
+      });
+
+      await modelClaim?.release();
+      const writerClaim = await writerInstance.tryAcquire(THREAD_ID);
+      expect(writerClaim).not.toBeNull();
+      try {
+        await threads.transaction(() =>
+          applyRebindThreadWorkTransition(
+            {
+              threads: threads.threads,
+              threadWorks: threads.threadWorks,
+              works,
+              preferences,
+              contextUpdates: {
+                threadChanged: (threadId) =>
+                  threads.workContextDeliveries.enqueueThread(threadId).then(() => undefined),
+              },
+            },
+            {
+              threadId: THREAD_ID,
+              targetWorkId: TARGET_WORK_ID,
+              preferenceUserId: USER_ID,
+            },
+          ),
+        );
+      } finally {
+        await writerClaim?.release();
+      }
+
+      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: TARGET_WORK_ID,
+      });
     });
 
     it("rolls back binding and sticky preference when durable enqueue fails", async () => {

@@ -16,6 +16,7 @@ import type {
   ThreadWorksRepository,
   TurnRepository,
 } from "../domains/threads/index.js";
+import { applyRebindThreadWorkTransition } from "../domains/threads/index.js";
 
 type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
@@ -24,7 +25,7 @@ type WorkReceiptReversalDeps = {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "lockPrimary" | "rebindPrimary">;
   preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
   works: WorkRepository;
-  contextUpdates: Pick<WorkContextUpdates, "projectChanged">;
+  contextUpdates: Pick<WorkContextUpdates, "projectChanged" | "threadChanged">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -82,7 +83,7 @@ export async function reverseWorkReceipts(
           continue;
         }
         await applyStep(deps, context.thread, step.receipt, input.direction);
-        changedProjects.add(context.thread.projectId);
+        if (step.receipt.operation !== "switch") changedProjects.add(context.thread.projectId);
         applied.push(
           result(step.receipt, step.command, input.direction === "undo" ? "reversed" : "redone"),
         );
@@ -274,10 +275,11 @@ async function applyStep(
     else await deps.works.softDelete(receipt.workId);
   } else {
     const target = direction === "undo" ? switchTarget(receipt) : receipt.workId;
-    await deps.threadWorks.rebindPrimary(thread.id, target);
-    if (thread.kind === "primary") {
-      await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, target);
-    }
+    await applyRebindThreadWorkTransition(deps, {
+      threadId: thread.id,
+      targetWorkId: target,
+      preferenceUserId: thread.userId,
+    });
   }
 }
 

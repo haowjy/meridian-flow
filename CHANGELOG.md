@@ -28,6 +28,11 @@
   receipt, and durable context refresh commit together; busy conversations
   return a retryable conflict and pending delivery remains a successful,
   truthful response.
+- `apps/server`, `packages/contracts`: writer Work rebinds now share the
+  cross-process model-turn claim, serialize structured conflicts through the
+  canonical Meridian error envelope, reuse one transaction-composable binding
+  transition for receipt reversal, and publish committed Work identity through
+  the existing journal/AG-UI stream for live client convergence.
 - `apps/server`: new conversations attach by explicit Work, parent Work, writer
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.

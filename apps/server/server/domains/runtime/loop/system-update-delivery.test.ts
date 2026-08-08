@@ -82,6 +82,9 @@ describe("createSystemUpdateDelivery", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       workContext: {
+        async currentForThread() {
+          return { id: workId, projectId: project.id } as never;
+        },
         async renderForThread() {
           return `<work_context>\ncurrent: ${currentWork}\n</work_context>`;
         },
@@ -103,7 +106,12 @@ describe("createSystemUpdateDelivery", () => {
     expect(turns[0]).toMatchObject({
       role: "user",
       status: "complete",
-      metadata: { kind: "system_update", section: "work_context" },
+      metadata: {
+        kind: "system_update",
+        section: "work_context",
+        projectId: project.id,
+        workId,
+      },
     });
     const blocks = await repos.blocks.listByTurn(turns[0]?.id ?? "");
     expect(blocks[0]?.textContent).toBe(

@@ -57,8 +57,10 @@ The shipped route surface covers:
 - Global thread list/create, snapshot, delete, turn cancel, model-request debug,
   and turn-context preview.
 - Authenticated `PUT /api/threads/:threadId/work` rebinds an idle owned thread
-  through the shared thread-domain command. Running threads return retryable
-  `thread_busy`; unavailable or unauthorized resources remain concealed.
+  through the shared thread-domain transition while holding the same
+  cross-process run claim as model turns. Running threads return canonical,
+  retryable `thread_busy`; unavailable or unauthorized resources remain
+  concealed. The claim is released before ordinary post-commit context delivery.
 - Project document-link resolution for wikilinks, `manuscript://`/`work://`
   scheme links, and paths relative to a containing document.
 - First-party package catalog, builtin agent catalog, readiness, and unknown
@@ -121,6 +123,12 @@ WsServerMessage { type: "event", threadId, seq: string, event }
 
 The projector is stateful: it tracks the current turn to pair stream deltas with
 the correct run/message IDs.
+
+Committed Work-context system turns also project a typed
+`meridian.work_context.changed` custom event with authoritative thread, project,
+and Work IDs. The underlying user-role system turn stays hidden from chat while
+subscribed clients can converge their server projections through the ordinary
+journal/AG-UI cursor path.
 
 ## WebSocket auth & resilience
 

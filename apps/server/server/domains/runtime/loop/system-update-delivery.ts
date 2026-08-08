@@ -30,7 +30,11 @@ export interface SystemUpdateDelivery extends WorkContextUpdates {
   ): Promise<{ turn: Turn; block: Block; events: OrchestratorEvent[] }>;
 }
 
-function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
+function localUserTurn(
+  threadId: ThreadId,
+  prevTurnId: TurnId | null,
+  projection?: { projectId: string; workId: string },
+): Turn {
   const now = toIsoString(new Date());
   return {
     id: crypto.randomUUID(),
@@ -64,7 +68,7 @@ function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
     error: null,
     requestParams: null,
     responseMetadata: null,
-    metadata: { kind: "system_update", section: "work_context" },
+    metadata: { kind: "system_update", section: "work_context", ...projection },
     createdAt: now,
     completedAt: now,
     blocks: [],
@@ -158,7 +162,14 @@ export function createSystemUpdateDelivery(deps: {
               await deps.repos.blocks.listByThread(threadId),
             );
             const context = await deps.workContext.renderForThread(threadId);
-            const turn = localUserTurn(threadId, expected);
+            const currentWork = await deps.workContext.currentForThread?.(threadId);
+            const turn = localUserTurn(
+              threadId,
+              expected,
+              currentWork
+                ? { projectId: currentWork.projectId, workId: currentWork.id }
+                : undefined,
+            );
             const block = contentForBlockInput({
               turnId: turn.id,
               blockType: "text",
