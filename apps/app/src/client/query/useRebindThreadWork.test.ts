@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
 import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { RebindThreadWorkResponse } from "@meridian/contracts/works";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
@@ -8,12 +11,19 @@ import {
   convergeThreadWorkBinding,
   readStableThreadWorkBinding,
 } from "./thread-work-binding-cache";
+import { useRebindThreadWork } from "./useRebindThreadWork";
 
-const { listProjectThreads, listProjectWorks } = vi.hoisted(() => ({
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
+
+const { listProjectThreads, listProjectWorks, rebindThreadWork } = vi.hoisted(() => ({
   listProjectThreads: vi.fn(),
   listProjectWorks: vi.fn(),
+  rebindThreadWork: vi.fn(),
 }));
 vi.mock("@/client/api/projects-api", () => ({ listProjectThreads, listProjectWorks }));
+vi.mock("@/client/api/threads-api", () => ({ rebindThreadWork }));
 
 const response = {
   threadId: "thread-1",
@@ -92,5 +102,69 @@ describe("thread Work binding convergence", () => {
       }),
     ).resolves.toMatchObject({ workId: "work-c" });
     expect(listProjectThreads).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let delayed mutation B roll back later projection C or offer stale Undo", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    client.setQueryData(projectQueryKeys.threads("project-1"), [
+      { id: "thread-1", projectId: "project-1", workId: "work-a" },
+    ]);
+    client.setQueryData(projectQueryKeys.works("project-1"), {
+      defaultWorkId: "work-a",
+      works: [
+        { id: "work-a", name: "A" },
+        { id: "work-b", name: "B" },
+        { id: "work-c", name: "C" },
+      ],
+    });
+    let resolveMutation: ((result: RebindThreadWorkResponse) => void) | undefined;
+    rebindThreadWork.mockReturnValue(
+      new Promise<RebindThreadWorkResponse>((resolve) => {
+        resolveMutation = resolve;
+      }),
+    );
+    listProjectThreads.mockResolvedValue([
+      { id: "thread-1", projectId: "project-1", workId: "work-c" },
+    ]);
+    listProjectWorks.mockResolvedValue({
+      defaultWorkId: "work-c",
+      works: [{ id: "work-c", name: "C" }],
+    });
+
+    let mutateAsync: ReturnType<typeof useRebindThreadWork>["mutateAsync"] | undefined;
+    function Probe() {
+      mutateAsync = useRebindThreadWork("project-1", "thread-1").mutateAsync;
+      return null;
+    }
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    act(() => root.render(createElement(QueryClientProvider, { client }, createElement(Probe))));
+
+    let pending!: ReturnType<NonNullable<typeof mutateAsync>>;
+    await act(async () => {
+      pending = mutateAsync?.({
+        targetWorkId: "work-b",
+        previousWorkId: "work-a",
+      }) as typeof pending;
+      await Promise.resolve();
+    });
+    expect(rebindThreadWork).toHaveBeenCalledOnce();
+    convergeThreadWorkBinding(client, {
+      source: "projected",
+      seq: "3",
+      signal: { projectId: "project-1", threadId: "thread-1", workId: "work-c" },
+    });
+    await act(async () => resolveMutation?.(response));
+
+    await expect(pending).resolves.toMatchObject({
+      kind: "superseded",
+      requestedWorkId: "work-b",
+      currentWork: { id: "work-c" },
+    });
+    expect(await pending).not.toHaveProperty("undoWorkId");
+    expect(
+      client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0]?.workId,
+    ).toBe("work-c");
+    act(() => root.unmount());
   });
 });

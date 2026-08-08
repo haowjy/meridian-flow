@@ -1,10 +1,14 @@
 /** Convergence proofs for the thread-mounted trail subscription. */
 // @vitest-environment jsdom
+import { EventType } from "@meridian/contracts/protocol";
+import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChangeTrailShell } from "@/client/change-trails";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 
 (
@@ -133,5 +137,44 @@ describe("useThreadDurableProjections", () => {
     });
 
     expect(client.getQueryData(detailKey)).toEqual([{ changeId: "change-1" }]);
+  });
+
+  it("applies one typed Work projection once and ignores duplicate journal delivery", async () => {
+    mocks.listChangeTrailShells.mockResolvedValue([]);
+    const view = mount();
+    await act(async () => {});
+    const client = view.queryClient();
+    client.setQueryData(projectQueryKeys.works("project-1"), {
+      defaultWorkId: "work-a",
+      works: [{ id: "work-c", name: "C" }],
+    });
+    client.setQueryData(projectQueryKeys.threads("project-1"), [
+      { id: "thread-1", projectId: "project-1", workId: "work-a" },
+    ]);
+    const setQueryData = vi.spyOn(client, "setQueryData");
+    const delivery = {
+      seq: "9",
+      event: {
+        type: EventType.CUSTOM,
+        name: WORK_CONTEXT_PROJECTION_EVENT,
+        value: { threadId: "thread-1", projectId: "project-1", workId: "work-c" },
+      },
+    };
+
+    await act(async () => {
+      mocks.handlers?.onEvent(delivery);
+      mocks.handlers?.onEvent(delivery);
+    });
+
+    expect(client.getQueryData(threadQueryKeys.workProjectionCursor("thread-1"))).toEqual({
+      seq: "9",
+      workId: "work-c",
+    });
+    expect(
+      setQueryData.mock.calls.filter(
+        ([key]) =>
+          JSON.stringify(key) === JSON.stringify(threadQueryKeys.workProjectionCursor("thread-1")),
+      ),
+    ).toHaveLength(1);
   });
 });

@@ -179,6 +179,7 @@ export function ComposerToolbar({
           <PopoverContent
             align="start"
             side="top"
+            aria-label={activePanel?.ariaLabel ?? t`More composer controls`}
             aria-busy={activePanel?.busy}
             data-page={activePanel ? "panel" : "root"}
             className={cn(
