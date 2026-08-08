@@ -2729,7 +2729,11 @@ msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
 
 #: src/features/chat/ThreadWorkControl.tsx
-msgid "The change could not be confirmed. Refreshing this chat's Work."
+#~ msgid "The change could not be confirmed. Refreshing this chat's Work."
+#~ msgstr ""
+
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "The change could not be confirmed. Try again."
 msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
@@ -2762,6 +2766,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage wasn't specific enough."
+msgstr ""
+
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "The Work did not change. Try again."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -2850,6 +2858,7 @@ msgid "This chapter was opened in a newer version of Meridian. Refresh to keep w
 msgstr ""
 
 #. placeholder {0}: result.work.name
+#. placeholder {0}: target.name
 #: src/features/chat/ThreadWorkControl.tsx
 msgid "This chat now uses {0}."
 msgstr ""

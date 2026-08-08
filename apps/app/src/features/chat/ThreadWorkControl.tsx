@@ -5,7 +5,10 @@ import type { Work } from "@meridian/contracts/protocol";
 import { Check, LoaderCircle } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
-import { useRebindThreadWork } from "@/client/query/useRebindThreadWork";
+import {
+  ThreadWorkReconciliationError,
+  useRebindThreadWork,
+} from "@/client/query/useRebindThreadWork";
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement } from "@/client/stores";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -65,11 +68,13 @@ export function ThreadWorkControl({
     }
     setTargetId(target.id);
     setError(null);
+    locallyCommittedWorkIdRef.current = target.id;
     announce(t`Changing work to ${target.name}`);
     try {
       const result = await mutation.mutateAsync(target.id);
       setTargetId(null);
       if (!result.changed) {
+        locallyCommittedWorkIdRef.current = null;
         setOpen(false);
         return;
       }
@@ -84,15 +89,25 @@ export function ThreadWorkControl({
       );
       requestAnimationFrame(() => triggerRef.current?.focus());
     } catch (cause) {
+      if (cause instanceof ThreadWorkReconciliationError && cause.committed) {
+        setTargetId(null);
+        setError(null);
+        setOpen(false);
+        announce(t`This chat now uses ${target.name}.`);
+        requestAnimationFrame(() => triggerRef.current?.focus());
+        return;
+      }
+      locallyCommittedWorkIdRef.current = null;
       let message: string;
       if (isMeridianApiError(cause) && cause.code === "thread_busy") {
         message = t`Wait for this response to finish, then try again.`;
       } else if (isMeridianApiError(cause) && cause.status === 409) {
         message = t`That Work is no longer available. Choose another Work.`;
         refetch();
+      } else if (cause instanceof ThreadWorkReconciliationError) {
+        message = t`The Work did not change. Try again.`;
       } else {
-        message = t`The change could not be confirmed. Refreshing this chat's Work.`;
-        refetch();
+        message = t`The change could not be confirmed. Try again.`;
       }
       setError(message);
       announceError(message);
@@ -134,13 +149,13 @@ export function ThreadWorkControl({
           <SheetContent
             side="bottom"
             className="max-h-[80svh] w-full rounded-t-xl pb-[max(1rem,env(safe-area-inset-bottom))]"
-            aria-describedby={descriptionId}
+            aria-modal="true"
           >
             <SheetHeader>
-              <SheetTitle id={titleId}>
+              <SheetTitle>
                 <Trans>Change work for this chat</Trans>
               </SheetTitle>
-              <SheetDescription id={descriptionId}>
+              <SheetDescription>
                 <Trans>Currently {work.name}</Trans>
               </SheetDescription>
             </SheetHeader>
