@@ -40,6 +40,8 @@ export function ComposerToolbar({
   const rootRows = useRef(new Map<string, HTMLButtonElement>());
   const overflowTrigger = useRef<HTMLButtonElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const view = deriveToolbarView(state);
   const overflow = controls.filter((c) => state.layout.overflowIds.includes(c.id));
   const surfacePanel = state.surface.kind === "panel" ? state.surface.panel : null;
@@ -84,33 +86,46 @@ export function ComposerToolbar({
     },
     terminalClose: () => dispatch({ type: "panel.terminalClose", panel: session }),
   });
-  useLayoutEffect(() => {
-    const intent = state.focus;
+  const executePendingFocus = useCallback(() => {
+    const currentState = stateRef.current;
+    const intent = currentState.focus;
     if (!intent) return;
     const target = intent.target;
     let node: HTMLElement | null | undefined;
     if (target.kind === "panel.initial")
       node =
-        controls.find((c) => c.id === target.panel.controlId && c.overflow.kind === "panel")
-          ?.overflow.kind === "panel"
+        controlsRef.current.find(
+          (c) => c.id === target.panel.controlId && c.overflow.kind === "panel",
+        )?.overflow.kind === "panel"
           ? (
-              controls.find((c) => c.id === target.panel.controlId)?.overflow as Extract<
+              controlsRef.current.find((c) => c.id === target.panel.controlId)?.overflow as Extract<
                 ComposerToolbarControl["overflow"],
                 { kind: "panel" }
               >
             ).panel.initialFocusRef.current
           : null;
     else if (target.kind === "control.visibleTrigger")
-      node = state.layout.inlineIds.includes(target.controlId)
+      node = currentState.layout.inlineIds.includes(target.controlId)
         ? inlineTriggers.current.get(target.controlId)
         : overflowTrigger.current;
     else if (target.kind === "root.row")
       node = rootRows.current.get(target.controlId) ?? content.current;
     else if (target.kind === "overflow.trigger") node = overflowTrigger.current;
     else node = content.current;
-    node?.focus({ preventScroll: true });
-    dispatch({ type: "focus.executed", token: intent.token });
-  }, [state.focus, state.layout.inlineIds, controls]);
+    if (!node) return;
+    node.focus({ preventScroll: true });
+    dispatchBase({ type: "focus.executed", token: intent.token });
+  }, []);
+  const contentRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      content.current = node;
+      if (node && stateRef.current.surface.kind !== "closed") executePendingFocus();
+    },
+    [executePendingFocus],
+  );
+  useLayoutEffect(() => {
+    if (state.surface.kind !== "closed") executePendingFocus();
+  }, [state.focus, state.layout.inlineIds, state.surface.kind, executePendingFocus]);
   return (
     <Popover
       open={view.kind !== "closed"}
@@ -197,7 +212,7 @@ export function ComposerToolbar({
       <PopoverAnchor virtualRef={virtualRef} />
       {view.kind !== "closed" ? (
         <PopoverContent
-          ref={content}
+          ref={contentRef}
           tabIndex={-1}
           align="start"
           side="top"
@@ -232,7 +247,10 @@ export function ComposerToolbar({
             else dispatch({ type: "root.dismissRequested", cause: "outside" });
           }}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          onCloseAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            executePendingFocus();
+          }}
         >
           {state.surface.kind === "panel" && panel ? (
             <>

@@ -57,6 +57,8 @@ const interactiveOverflow = (
   layout: ComposerToolbarLayout,
 ) =>
   layout.overflowIds.filter((id) => controls.find((c) => c.id === id)?.overflow.kind === "panel");
+const allOverflow = (controls: readonly ComposerToolbarControl[], layout: ComposerToolbarLayout) =>
+  layout.overflowIds.filter((id) => controls.some((control) => control.id === id));
 const withFocus = (state: NavigationState, target: FocusTarget): NavigationState => ({
   ...state,
   focus: { token: state.nextFocusToken, target },
@@ -100,6 +102,7 @@ export function reduceNavigation(
   controls: readonly ComposerToolbarControl[],
 ): NavigationState {
   const overflow = interactiveOverflow(controls, state.layout);
+  const overflowControls = allOverflow(controls, state.layout);
   const validPanel = (id: string) =>
     controls.some((c) => c.id === id && c.overflow.kind === "panel");
   switch (event.type) {
@@ -114,7 +117,7 @@ export function reduceNavigation(
         return state.surface.lock === "nondismissible" ? state : closePanel(state);
       if (state.surface.kind === "root")
         return withFocus({ ...state, surface: { kind: "closed" } }, { kind: "overflow.trigger" });
-      if (!overflow.length) return state;
+      if (!overflowControls.length) return state;
       return withFocus(
         { ...state, surface: { kind: "root", cursorId: overflow[0] ?? null } },
         overflow[0] ? { kind: "root.row", controlId: overflow[0] } : { kind: "root.content" },
@@ -168,12 +171,13 @@ export function reduceNavigation(
       const previous = state.layout;
       const next = { ...state, layout: event.layout };
       const nextOverflow = interactiveOverflow(controls, event.layout);
+      const nextOverflowControls = allOverflow(controls, event.layout);
       if (state.surface.kind === "panel") {
         const id = state.surface.panel.controlId;
         if (!validPanel(id))
           return withFocus(
             { ...next, surface: { kind: "closed" } },
-            nextOverflow.length
+            nextOverflowControls.length
               ? { kind: "overflow.trigger" }
               : { kind: "control.visibleTrigger", controlId: event.layout.inlineIds[0] ?? id },
           );
@@ -186,7 +190,7 @@ export function reduceNavigation(
             { ...next, surface: { kind: "closed" } },
             { kind: "control.visibleTrigger", controlId: cursor },
           );
-        if (!nextOverflow.length)
+        if (!nextOverflowControls.length)
           return withFocus(
             { ...next, surface: { kind: "closed" } },
             cursor

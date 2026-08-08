@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: responsive composer controls now keep one reducer-owned Radix
+  surface across navigation and resize, including deterministic focus and
+  readonly status-only overflow.
 - `apps/app`: the composer now lets writers search and change an idle chat's
   Work from one responsive selector, including archived targets, cache
   convergence, retry guidance, announcements, and direct Undo.
