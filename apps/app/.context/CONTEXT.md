@@ -57,11 +57,17 @@ Two interfaces are the only paths between the visual layer and the substrate:
 - **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
   thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
   (cache-only today, no PATCH endpoint) rather than on the thread store.
-- **`useRebindThreadWork`** (`src/client/query/useRebindThreadWork.ts`) — the
-  typed writer rebind seam. It patches the thread binding and, when applicable,
-  current Work preference together before invalidating Work-scoped projections.
-  `ThreadWorkControl` consumes it in every chat-header placement; components do
-  not retain a parallel selected Work.
+- **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
+  reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
+  `convergeThreadWorkBinding` owns cache effects and
+  `useThreadDurableProjections` owns the persistent transport subscription. See
+  [`features/chat/.context/composer-write-mode.md`](src/features/chat/.context/composer-write-mode.md).
+- **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
+  reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
+  `convergeThreadWorkBinding` is the one cache-effect boundary, while
+  `useThreadDurableProjections` is the one persistent transport owner. See
+  [`features/chat/.context/composer-write-mode.md`](src/features/chat/.context/composer-write-mode.md)
+  for placement and interaction ownership.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
   `useWorks` also exposes the server-resolved `defaultWorkId`; `useDefaultWorkId`

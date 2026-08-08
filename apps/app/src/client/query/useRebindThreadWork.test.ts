@@ -1,143 +1,96 @@
 import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { RebindThreadWorkResponse } from "@meridian/contracts/works";
-import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "./project-query-keys";
+import { threadQueryKeys } from "./thread-query-keys";
 import {
-  convergeProjectedThreadWork,
-  convergeThreadWork,
-  reconcileThreadWorkMutation,
-} from "./useRebindThreadWork";
+  convergeThreadWorkBinding,
+  readStableThreadWorkBinding,
+} from "./thread-work-binding-cache";
 
 const { listProjectThreads, listProjectWorks } = vi.hoisted(() => ({
   listProjectThreads: vi.fn(),
   listProjectWorks: vi.fn(),
 }));
-
 vi.mock("@/client/api/projects-api", () => ({ listProjectThreads, listProjectWorks }));
 
-describe("convergeThreadWork", () => {
-  it("patches binding and primary preference before invalidation refetches", () => {
+const response = {
+  threadId: "thread-1",
+  previousWorkId: "work-a",
+  work: { id: "work-b", name: "B" },
+  changed: true,
+  preferenceChanged: true,
+  receipt: { inverse: { command: "switch", workId: "work-a" } },
+} as RebindThreadWorkResponse;
+
+describe("thread Work binding convergence", () => {
+  it("ignores an older projection cursor", () => {
+    const client = new QueryClient();
+    client.setQueryData(projectQueryKeys.works("project-1"), {
+      defaultWorkId: "work-a",
+      works: [response.work],
+    });
+    convergeThreadWorkBinding(client, {
+      source: "projected",
+      seq: "12",
+      signal: { projectId: "project-1", threadId: "thread-1", workId: "work-b" },
+    });
+    convergeThreadWorkBinding(client, {
+      source: "projected",
+      seq: "11",
+      signal: { projectId: "project-1", threadId: "thread-1", workId: "work-a" },
+    });
+    expect(client.getQueryData(threadQueryKeys.workProjectionCursor("thread-1"))).toEqual({
+      seq: "12",
+      workId: "work-b",
+    });
+  });
+
+  it("patches confirmed binding and preference synchronously", () => {
     const client = new QueryClient();
     client.setQueryData(projectQueryKeys.threads("project-1"), [
-      {
-        id: "thread-1",
-        projectId: "project-1",
-        workId: "work-a",
-        work: { id: "work-a", title: "A" },
-      },
+      { id: "thread-1", workId: "work-a" },
     ]);
     client.setQueryData(projectQueryKeys.works("project-1"), {
       defaultWorkId: "work-a",
-      works: [{ id: "work-b", name: "B" }],
+      works: [response.work],
     });
-
-    convergeThreadWork(client, "project-1", {
-      threadId: "thread-1",
-      previousWorkId: "work-a",
-      work: { id: "work-b", name: "B" },
-      changed: true,
-      preferenceChanged: true,
-      receipt: {},
-      contextUpdate: "delivered",
-    } as RebindThreadWorkResponse);
-
+    convergeThreadWorkBinding(client, {
+      source: "confirmed",
+      projectId: "project-1",
+      result: response,
+    });
     expect(
-      client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0],
-    ).toMatchObject({
-      workId: "work-b",
-      work: { id: "work-b", title: "B" },
-    });
+      client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0].workId,
+    ).toBe("work-b");
     expect(
       client.getQueryData<ListWorksResponse>(projectQueryKeys.works("project-1"))?.defaultWorkId,
     ).toBe("work-b");
   });
-});
 
-describe("convergeProjectedThreadWork", () => {
-  it("patches an externally changed binding from the cached catalog", () => {
+  it("retries a causal read when a projection arrives during the first read", async () => {
     const client = new QueryClient();
-    client.setQueryData(projectQueryKeys.threads("project-1"), [
-      { id: "thread-1", projectId: "project-1", workId: "work-a" },
-    ]);
-    client.setQueryData(projectQueryKeys.works("project-1"), {
-      defaultWorkId: "work-a",
-      works: [{ id: "work-b", name: "B" }],
+    listProjectThreads
+      .mockImplementationOnce(async () => {
+        client.setQueryData(threadQueryKeys.workProjectionCursor("thread-1"), {
+          seq: "2",
+          workId: "work-c",
+        });
+        return [{ id: "thread-1", projectId: "project-1", workId: "work-b" }];
+      })
+      .mockResolvedValue([{ id: "thread-1", projectId: "project-1", workId: "work-c" }]);
+    listProjectWorks.mockResolvedValue({
+      defaultWorkId: "work-c",
+      works: [{ id: "work-c", name: "C" }],
     });
-
-    convergeProjectedThreadWork(client, {
-      threadId: "thread-1",
-      projectId: "project-1",
-      workId: "work-b",
-    });
-
-    expect(
-      client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0],
-    ).toMatchObject({ workId: "work-b", work: { id: "work-b", title: "B" } });
-  });
-});
-
-describe("reconcileThreadWorkMutation", () => {
-  it("classifies from a fresh post-failure read instead of an older in-flight query", async () => {
-    const client = new QueryClient();
-    let resolveOld!: (threads: ThreadListItem[]) => void;
-    const oldRequest = new Promise<ThreadListItem[]>((resolve) => {
-      resolveOld = resolve;
-    });
-    const oldFetch = client.fetchQuery({
-      queryKey: projectQueryKeys.threads("project-1"),
-      queryFn: () => oldRequest,
-    });
-    listProjectThreads.mockResolvedValue([
-      { id: "thread-1", projectId: "project-1", workId: "work-b" },
-    ]);
-    listProjectWorks.mockResolvedValue({ defaultWorkId: "work-b", works: [] });
-
-    const reconciliation = reconcileThreadWorkMutation(client, "project-1", "thread-1", "work-b");
-    resolveOld([{ id: "thread-1", projectId: "project-1", workId: "work-a" } as ThreadListItem]);
-
-    await expect(reconciliation).resolves.toBe(true);
-    await expect(oldFetch).rejects.toBeDefined();
-    expect(
-      client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0]?.workId,
-    ).toBe("work-b");
-    expect(listProjectThreads).toHaveBeenCalledOnce();
-  });
-
-  it("does not cancel an in-flight descendant Work query", async () => {
-    const client = new QueryClient();
-    let resolveDrafts!: (drafts: string[]) => void;
-    const draftsRequest = new Promise<string[]>((resolve) => {
-      resolveDrafts = resolve;
-    });
-    const draftsKey = projectQueryKeys.workDrafts("project-1", "work-a");
-    const observer = new QueryObserver(client, {
-      queryKey: draftsKey,
-      queryFn: () => draftsRequest,
-    });
-    const unsubscribe = observer.subscribe(() => {});
-
-    listProjectThreads.mockResolvedValue([
-      { id: "thread-1", projectId: "project-1", workId: "work-b" },
-    ]);
-    listProjectWorks.mockResolvedValue({ defaultWorkId: "work-b", works: [] });
-
     await expect(
-      reconcileThreadWorkMutation(client, "project-1", "thread-1", "work-b"),
-    ).resolves.toBe(true);
-    expect(observer.getCurrentResult()).toMatchObject({
-      status: "pending",
-      fetchStatus: "fetching",
-    });
-
-    resolveDrafts(["draft-1"]);
-    await vi.waitFor(() => {
-      expect(observer.getCurrentResult()).toMatchObject({
-        status: "success",
-        fetchStatus: "idle",
-        data: ["draft-1"],
-      });
-    });
-    unsubscribe();
+      readStableThreadWorkBinding(client, {
+        projectId: "project-1",
+        threadId: "thread-1",
+        previousWorkId: "work-a",
+      }),
+    ).resolves.toMatchObject({ workId: "work-c" });
+    expect(listProjectThreads).toHaveBeenCalledTimes(2);
   });
 });

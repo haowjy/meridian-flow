@@ -7,11 +7,9 @@
  * now the direct transport controller.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
 
 import { useThreadTransport } from "@/client/providers/TransportProvider";
-import { convergeProjectedThreadWork } from "@/client/query/useRebindThreadWork";
 import { useThreadActions } from "@/client/stores";
 
 import { ThreadRunController } from "./ThreadRunController";
@@ -29,15 +27,9 @@ export function useMeridianAgent(): ThreadRunController {
 export function MeridianCopilotProvider({ children }: { children: ReactNode }) {
   const transport = useThreadTransport();
   const actions = useThreadActions();
-  const queryClient = useQueryClient();
   const controller = useMemo(
-    () =>
-      new ThreadRunController({
-        transport,
-        actions,
-        onWorkContextChanged: (signal) => convergeProjectedThreadWork(queryClient, signal),
-      }),
-    [actions, queryClient, transport],
+    () => new ThreadRunController({ transport, actions }),
+    [actions, transport],
   );
 
   useEffect(() => {

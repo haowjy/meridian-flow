@@ -1,6 +1,7 @@
 import type { ListWorksResponse } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import {
   archiveWork,
@@ -26,6 +27,16 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   });
   const works = list.data?.works ?? (list.isError ? [] : null);
   const currentWorkId = list.data?.defaultWorkId ?? null;
+  const refetch = useCallback(() => void list.refetch(), [list.refetch]);
+  const status = !enabled
+    ? "disabled"
+    : list.isError
+      ? "error"
+      : !list.data
+        ? "loading"
+        : list.data.works.length === 0
+          ? "empty"
+          : "ready";
   return {
     works,
     currentWork: works?.find((work) => work.id === currentWorkId) ?? null,
@@ -34,7 +45,8 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     defaultWorkId: currentWorkId,
     isError: list.isError,
     isFetching: list.isFetching,
-    refetch: () => void list.refetch(),
+    status: status as "disabled" | "error" | "loading" | "empty" | "ready",
+    refetch,
   };
 }
 

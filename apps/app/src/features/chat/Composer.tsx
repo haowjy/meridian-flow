@@ -166,9 +166,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       />
 
       <div className="mt-1 flex items-center gap-2">
-        {toolbarLeft}
-
-        <div className="flex-1" />
+        <div className="min-w-0 flex-1">{toolbarLeft}</div>
 
         <Button
           type="button"

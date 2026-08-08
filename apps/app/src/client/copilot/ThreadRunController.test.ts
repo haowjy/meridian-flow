@@ -102,25 +102,6 @@ function serverUserTurnFrom(optimisticTurn: Turn, serverTurnId: string): Turn {
 }
 
 describe("ThreadRunController", () => {
-  it("projects typed Work-context changes without adding a transcript block", () => {
-    const onWorkContextChanged = vi.fn();
-    const scenario = new ThreadRunScenario({ onWorkContextChanged });
-    scenario.controller.resume("thread_1");
-
-    scenario.emit({
-      type: EventType.CUSTOM,
-      name: "meridian.work_context.changed",
-      value: { threadId: "thread_1", projectId: "project_1", workId: "work_2" },
-    });
-
-    expect(onWorkContextChanged).toHaveBeenCalledWith({
-      threadId: "thread_1",
-      projectId: "project_1",
-      workId: "work_2",
-    });
-    expect(scenario.turns()).toEqual([]);
-  });
-
   it("waits for admission, subscribes from the receipt, and records the completed transcript", async () => {
     const scenario = new ThreadRunScenario();
     scenario.disconnectAdmission();

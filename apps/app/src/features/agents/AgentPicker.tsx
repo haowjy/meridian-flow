@@ -24,48 +24,58 @@ export type AgentPickerProps = {
 };
 
 export function AgentPicker({ status, selectedSlug, onSelect, trigger }: AgentPickerProps) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent align="start" className="w-80 p-0">
+        <AgentPickerPanel status={status} selectedSlug={selectedSlug} onSelect={onSelect} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function AgentPickerPanel({
+  status,
+  selectedSlug,
+  onSelect,
+}: Omit<AgentPickerProps, "trigger">) {
   const agents = status.agents ?? [];
   const installed = agents.filter((agent) => agent.source === "package" || agent.source === "user");
   const builtins = agents.filter((agent) => agent.source === "builtin");
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
-        <div className="flex max-h-[min(60vh,24rem)] flex-col overflow-y-auto p-1">
-          {status.status === "loading" || status.status === "disabled" ? (
-            <PickerHint>
-              <Trans>Loading agents…</Trans>
-            </PickerHint>
-          ) : status.status === "error" ? (
-            <ErrorHint onRetry={status.refetch} />
-          ) : status.status === "empty" ? (
-            <PickerHint>
-              <Trans>No agents available.</Trans>
-            </PickerHint>
-          ) : (
-            <>
-              {installed.length > 0 ? (
-                <AgentGroup
-                  title={t`Installed`}
-                  agents={installed}
-                  selectedSlug={selectedSlug}
-                  onSelect={onSelect}
-                />
-              ) : null}
-              {builtins.length > 0 ? (
-                <AgentGroup
-                  title={t`Built-in`}
-                  agents={builtins}
-                  selectedSlug={selectedSlug}
-                  onSelect={onSelect}
-                />
-              ) : null}
-            </>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <div className="app-scroll flex min-h-0 flex-col overflow-y-auto p-1">
+      {status.status === "loading" || status.status === "disabled" ? (
+        <PickerHint>
+          <Trans>Loading agents…</Trans>
+        </PickerHint>
+      ) : status.status === "error" ? (
+        <ErrorHint onRetry={status.refetch} />
+      ) : status.status === "empty" ? (
+        <PickerHint>
+          <Trans>No agents available.</Trans>
+        </PickerHint>
+      ) : (
+        <>
+          {installed.length > 0 ? (
+            <AgentGroup
+              title={t`Installed`}
+              agents={installed}
+              selectedSlug={selectedSlug}
+              onSelect={onSelect}
+            />
+          ) : null}
+          {builtins.length > 0 ? (
+            <AgentGroup
+              title={t`Built-in`}
+              agents={builtins}
+              selectedSlug={selectedSlug}
+              onSelect={onSelect}
+            />
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 

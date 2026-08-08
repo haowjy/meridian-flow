@@ -6,6 +6,37 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
+export function isProjectWorkDerivedKey(
+  queryKey: readonly unknown[],
+  projectId: string,
+  workIds?: ReadonlySet<string>,
+): boolean {
+  if (queryKey[0] !== "projects" || queryKey[1] !== projectId || queryKey[2] !== "works") {
+    return false;
+  }
+  const workId = queryKey[3];
+  if (typeof workId !== "string" || (workIds && !workIds.has(workId))) return false;
+  return queryKey[4] === "drafts" || (queryKey[4] === "documents" && queryKey.includes("draft"));
+}
+
+export function isWorkScopedProjectContextTreeKey(
+  queryKey: readonly unknown[],
+  projectId: string,
+  workIds?: ReadonlySet<string>,
+): boolean {
+  if (
+    queryKey.length !== 6 ||
+    queryKey[0] !== "projects" ||
+    queryKey[1] !== projectId ||
+    queryKey[2] !== "context" ||
+    queryKey[5] !== "tree"
+  ) {
+    return false;
+  }
+  const workId = queryKey[4];
+  return typeof workId === "string" && (!workIds || workIds.has(workId));
+}
+
 export function isProjectContextTreeKey(queryKey: readonly unknown[], projectId: string): boolean {
   return (
     (queryKey.length === 5 || queryKey.length === 6) &&

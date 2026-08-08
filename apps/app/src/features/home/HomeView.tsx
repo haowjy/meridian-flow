@@ -4,7 +4,7 @@ import { MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
-import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
+import { AgentOnlyComposerToolbar } from "@/features/chat/ChatComposerToolbar";
 import { Composer } from "@/features/chat/Composer";
 import { useComposerNewProject } from "@/features/chat/useComposerNewProject";
 import { useStartIndependentChat } from "@/features/chat/useStartIndependentChat";
@@ -34,11 +34,10 @@ export function HomeView() {
           placeholder={t`Start writing…`}
           onSubmit={(text) => handleSubmit(text, selectedAgentSlug)}
           toolbarLeft={
-            <ComposerAgentControl
+            <AgentOnlyComposerToolbar
               projectId={null}
-              mode="interactive"
-              selectedSlug={selectedAgentSlug}
-              onSelectedSlugChange={setSelectedAgentSlug}
+              agentSlug={selectedAgentSlug}
+              onAgentChange={setSelectedAgentSlug}
             />
           }
         />
