@@ -109,7 +109,6 @@ describe("ComposerWriteModeControl", () => {
   it("signals pending drafts without disabling Auto-apply and opens the shared review flow", async () => {
     await withReactRoot(<Harness work={draftWork()} />, async () => {
       expect(document.body.textContent).toContain("Draft(2)");
-      const draft = radio("draft");
       const direct = radio("direct");
       expect(direct.disabled).toBe(false);
 

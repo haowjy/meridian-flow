@@ -72,7 +72,7 @@ msgstr ""
 msgid "{0, plural, one {# pending change} other {# pending changes}}"
 msgstr ""
 
-#. placeholder {0}: serverPendingCount ?? 0
+#. placeholder {0}: count ?? 0
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 msgstr ""
@@ -174,8 +174,8 @@ msgid "{name} source"
 msgstr ""
 
 #: src/features/chat/ComposerWriteModeControl.tsx
-msgid "{pendingChangeCount} changes waiting for review"
-msgstr ""
+#~ msgid "{pendingChangeCount} changes waiting for review"
+#~ msgstr ""
 
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
@@ -286,12 +286,17 @@ msgstr ""
 msgid "After"
 msgstr ""
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Agent"
+msgstr ""
+
 #: src/features/home/PackageShowcase.tsx
 msgid "Agent Packages"
 msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/AgentSelector.tsx
+#: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {0}"
 msgstr ""
 
@@ -305,6 +310,11 @@ msgstr ""
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "AI write mode"
+msgstr ""
+
+#. placeholder {0}: value === "draft" ? "Draft" : "Auto-apply"
+#: src/features/chat/ComposerWriteModeControl.tsx
+msgid "AI write mode: {0}"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -391,7 +401,7 @@ msgstr ""
 msgid "auto-selected"
 msgstr ""
 
-#: src/features/chat/MeasuredComposerToolbar.tsx
+#: src/components/app/composer-toolbar/ComposerToolbar.tsx
 msgid "Back"
 msgstr ""
 
@@ -593,6 +603,15 @@ msgstr ""
 msgid "Choose a Work for this chat"
 msgstr ""
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose agent"
+msgstr ""
+
+#. placeholder {0}: agent.name
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose agent, currently {0}"
+msgstr ""
+
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
 msgstr ""
@@ -692,8 +711,8 @@ msgid "Completed"
 msgstr ""
 
 #: src/features/chat/MeasuredComposerToolbar.tsx
-msgid "Composer settings"
-msgstr ""
+#~ msgid "Composer settings"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
@@ -941,8 +960,8 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/ComposerWorkControl.tsx
-msgid "Currently {0}"
-msgstr ""
+#~ msgid "Currently {0}"
+#~ msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
 #~ msgid "Currently {workName}"
@@ -1710,9 +1729,13 @@ msgstr ""
 msgid "More"
 msgstr ""
 
-#: src/features/chat/MeasuredComposerToolbar.tsx
-msgid "More composer settings"
+#: src/components/app/composer-toolbar/ComposerToolbar.tsx
+msgid "More composer controls"
 msgstr ""
+
+#: src/features/chat/MeasuredComposerToolbar.tsx
+#~ msgid "More composer settings"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
@@ -3001,8 +3024,12 @@ msgid "This week"
 msgstr "本周"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
-msgid "This Work has {serverPendingCount, plural, one {# AI change} other {# AI changes}} in draft. Auto-apply stays off until every draft is applied or discarded."
+msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 msgstr ""
+
+#: src/features/chat/ComposerWriteModeControl.tsx
+#~ msgid "This Work has {serverPendingCount, plural, one {# AI change} other {# AI changes}} in draft. Auto-apply stays off until every draft is applied or discarded."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
@@ -3212,6 +3239,7 @@ msgstr "我们说到哪儿了？"
 msgid "Why this is marked merged"
 msgstr ""
 
+#: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Work"
@@ -3255,6 +3283,10 @@ msgstr ""
 #: src/features/chat/placeholders.ts
 msgid "Write away"
 msgstr "开始写吧"
+
+#: src/features/chat/ComposerWriteModeControl.tsx
+msgid "Write mode"
+msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Writing…"
