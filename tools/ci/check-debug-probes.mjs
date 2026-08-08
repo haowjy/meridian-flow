@@ -12,7 +12,8 @@ const SEARCH_ROOTS = [
   "apps/www/src",
   "packages",
 ];
-const PATTERNS = [/TEMP-DEBUG/, /\[temp-debug:/, /console\.log\(/, /console\.debug\(/];
+const TEMPORARY_PATTERNS = [/TEMP-DEBUG/, /\[temp-debug:/, /console\.log\(/, /console\.debug\(/];
+const SERVER_CONSOLE_PATTERN = /console\.(info|warn|error)\(/;
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"]);
 const EXCLUDED_PARTS = new Set([
   "node_modules",
@@ -55,7 +56,11 @@ const findings = [];
 for (const filePath of SEARCH_ROOTS.flatMap(walk)) {
   const lines = readFileSync(filePath, "utf8").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
-    if (PATTERNS.some((pattern) => pattern.test(line))) {
+    const isServerSource = filePath.startsWith(path.join("apps", "server", "server"));
+    if (
+      TEMPORARY_PATTERNS.some((pattern) => pattern.test(line)) ||
+      (isServerSource && SERVER_CONSOLE_PATTERN.test(line))
+    ) {
       findings.push(`${filePath}:${index + 1}:${line}`);
     }
   }
@@ -68,12 +73,14 @@ if (findings.length === 0) {
 console.error("Temporary console/debug statements remain in product source.");
 console.error("");
 console.error(
-  "Delete them before pushing, or convert useful server signals into durable observability via EventSink.",
+  "Delete temporary probes, or convert reusable server signals into durable observability via EventSink.",
 );
 console.error("");
 console.error("Allowed temporary form while diagnosing:");
 console.error("  // TEMP-DEBUG: remove before push");
 console.error('  console.log("[temp-debug:<area>]", { ...safeMetadata });');
+console.error("");
+console.error("Permanent console calls are not allowed in server product source.");
 console.error("");
 console.error("Matches:");
 console.error(findings.join("\n"));

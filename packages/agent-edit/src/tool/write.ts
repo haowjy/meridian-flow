@@ -166,9 +166,30 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
     }
 
-    const result = await dispatch(validCommand, session, context).catch((cause: unknown) =>
-      writeError(cause),
-    );
+    let result: Awaited<ReturnType<typeof dispatch>>;
+    try {
+      result = await dispatch(validCommand, session, context);
+    } catch (cause) {
+      try {
+        options.onUnexpectedWriteError?.({
+          cause,
+          command: validCommand.command,
+          ...("documentId" in validCommand && validCommand.documentId
+            ? { documentId: validCommand.documentId }
+            : "document_id" in validCommand && validCommand.document_id
+              ? { documentId: validCommand.document_id }
+              : {}),
+          sessionId: session.id,
+          threadId: session.threadId,
+          ...(context.turnId ? { turnId: context.turnId } : {}),
+          ...(context.responseId ? { responseId: context.responseId } : {}),
+          ...(toolUseId ? { toolUseId } : {}),
+        });
+      } catch {
+        // Host diagnostics must never change the model-facing write outcome.
+      }
+      result = writeError(cause);
+    }
     const outcome = toOutcome(validCommand.command, result);
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);

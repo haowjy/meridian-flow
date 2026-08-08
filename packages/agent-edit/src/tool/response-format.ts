@@ -5,9 +5,16 @@ import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
 import { splitHashline } from "../model/hashline.js";
 import type { TurnDiffResult } from "../ports/turn-diff-query.js";
-import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
-import type { DestructiveSweepReport } from "./mutation-commit.js";
+import type { InternalWriteResult } from "./internal-result.js";
+import {
+  type AgentEditBlockGroup,
+  modelBlockItem,
+  modelConcurrentResult,
+  modelResult,
+} from "./model-result.js";
+import type { DestructiveSweepReport, SyncedMutationSummary } from "./mutation-commit.js";
 import type {
+  UndoRedoOutcome,
   WriteCommandName,
   WriteErrorDetail,
   WriteErrorStatus,
@@ -27,6 +34,13 @@ export interface ApplySuccessResponseInput {
   awarenessDegraded?: boolean;
 }
 
+export interface ReversalSuccessResponseInput {
+  direction: "undo" | "redo";
+  status: UndoRedoOutcome;
+  targetCount?: number;
+  sync: SyncedMutationSummary;
+}
+
 export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult {
   if (diff?.changes.length === 0 && diff.sharedEffects) {
     const provisional =
@@ -36,7 +50,7 @@ export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult
     return result(
       "success",
       `status: success\n\nNo turn-owned changes; thread-shared effects exist for this turn's documents.${provisional}`,
-      { phase: "committed" },
+      { phase: "committed", model: { diff } },
     );
   }
   if (!diff || diff.changes.length === 0) {
@@ -47,7 +61,7 @@ export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult
     return result(
       "success",
       `status: success\n\nNo settled changes for this turn yet.${provisional}`,
-      { phase: "committed" },
+      { phase: "committed", model: { diff } },
     );
   }
 
@@ -75,7 +89,7 @@ export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult
     }
   }
 
-  return result("success", lines.join("\n"), { phase: "committed" });
+  return result("success", lines.join("\n"), { phase: "committed", model: { diff } });
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -107,16 +121,75 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     metaLines.push("destructive awareness degraded after durable recovery; re-read required");
   }
 
-  const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
-  if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+  const text = [metaLines.join("\n"), ...(echoLines.length > 0 ? [echoLines.join("\n")] : [])].join(
+    "\n\n",
+  );
+  const blocks = echoGroups(input.echo);
+  if (input.lateSweep) {
+    const swept = input.lateSweep.capturedDeletedBodies ?? [];
+    if (swept.length > 0) {
+      blocks.push({
+        extent: "full",
+        relation: "swept",
+        items: swept.map(({ hash, body }) => ({ hash, body })),
+      });
+    }
+  }
 
   return {
     status: "success",
     phase: input.phase,
-    text: content.map((block) => block.text).join("\n\n"),
-    content,
+    text,
+    model: {
+      ...(input.writeId || (input.deletedBlocks && input.deletedBlocks.length > 0)
+        ? {
+            write: {
+              ...(input.writeId ? { id: input.writeId } : {}),
+              ...(input.deletedBlocks && input.deletedBlocks.length > 0
+                ? { deletedHashes: [...input.deletedBlocks] }
+                : {}),
+            },
+          }
+        : {}),
+      ...(echoLines.length > 0 || input.lateSweep ? { blocks } : {}),
+      ...(input.concurrentEdits
+        ? { concurrent: modelConcurrentResult(input.concurrentEdits) }
+        : {}),
+      ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
+    },
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),
+  };
+}
+
+export function formatReversalSuccess(input: ReversalSuccessResponseInput): InternalWriteResult {
+  const metaLines = [`status: ${input.status}`];
+  if (input.targetCount && input.targetCount > 0) {
+    metaLines.push(`${input.direction}: ${input.targetCount} edit(s)`);
+  }
+  if (input.sync.concurrentEdits) {
+    metaLines.push(...formatConcurrent(input.sync.concurrentEdits));
+  }
+
+  const echoLines = input.sync.echo
+    .flatMap((hunk) => hunk.blocks)
+    .filter((line) => line.length > 0);
+  const text = [metaLines.join("\n"), ...(echoLines.length > 0 ? [echoLines.join("\n")] : [])].join(
+    "\n\n",
+  );
+  return {
+    status: input.status,
+    text,
+    model: {
+      reversal: {
+        direction: input.direction,
+        count: input.targetCount ?? 0,
+      },
+      ...(echoLines.length > 0 ? { blocks: echoGroups(input.sync.echo) } : {}),
+      ...(input.sync.concurrentEdits
+        ? { concurrent: modelConcurrentResult(input.sync.concurrentEdits) }
+        : {}),
+    },
   };
 }
 
@@ -133,23 +206,34 @@ export function status(
   message?: string,
   options: { error?: WriteErrorDetail } = {},
 ): InternalWriteResult {
-  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`, options);
+  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`, {
+    ...options,
+    ...(message ? { model: { message } } : {}),
+  });
 }
 
 export function result(
   status: "success",
   text: string,
-  options: { phase: WriteSuccessPhase; error?: WriteErrorDetail },
+  options: {
+    phase: WriteSuccessPhase;
+    error?: WriteErrorDetail;
+    model?: InternalWriteResult["model"];
+  },
 ): InternalWriteResult;
 export function result(
   status: Exclude<WriteStatus, "success">,
   text: string,
-  options?: { error?: WriteErrorDetail },
+  options?: { error?: WriteErrorDetail; model?: InternalWriteResult["model"] },
 ): InternalWriteResult;
 export function result(
   status: WriteStatus,
   text: string,
-  options: { phase?: WriteSuccessPhase; error?: WriteErrorDetail } = {},
+  options: {
+    phase?: WriteSuccessPhase;
+    error?: WriteErrorDetail;
+    model?: InternalWriteResult["model"];
+  } = {},
 ): InternalWriteResult {
   if (status === "success") {
     if (!options.phase) {
@@ -160,20 +244,39 @@ export function result(
       phase: options.phase,
       text,
       ...(options.error ? { error: options.error } : {}),
+      ...(options.model ? { model: options.model } : {}),
     };
   }
-  return { status, text, ...(options.error ? { error: options.error } : {}) };
+  return {
+    status,
+    text,
+    ...(options.error ? { error: options.error } : {}),
+    ...(options.model ? { model: options.model } : {}),
+  };
 }
 
 export function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
+  const model =
+    result.status === "success"
+      ? modelResult({
+          command,
+          status: "success",
+          phase: result.phase,
+          ...(result.model ? { payload: result.model } : {}),
+        })
+      : modelResult({
+          command,
+          status: result.status,
+          ...(result.model ? { payload: result.model } : {}),
+        });
   const base = {
     command,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
+    result: model,
     text: result.text,
-    ...(result.content ? { content: result.content } : {}),
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };
@@ -181,7 +284,22 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
   return { ...base, status: result.status };
 }
 
-export function formatConcurrent(
+function echoGroups(echo: readonly ApplyEchoHunk[]): AgentEditBlockGroup[] {
+  const groups: AgentEditBlockGroup[] = [];
+  for (const hunk of echo) {
+    const serialized = hunk.blocks.filter((block) => block.length > 0);
+    if (serialized.length === 0) continue;
+    const items = serialized.map(modelBlockItem);
+    groups.push(
+      hunk.mode === "full"
+        ? { extent: "full", relation: "changed", items }
+        : { extent: "prefix", relation: "context", items },
+    );
+  }
+  return groups;
+}
+
+function formatConcurrent(
   info: ConcurrentEditInfo,
   options: { excludeHashes?: ReadonlySet<string> } = {},
 ): string[] {

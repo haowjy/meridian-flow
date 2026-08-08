@@ -612,7 +612,7 @@ function truncateWords(text: string, maxWords = 8): string {
   if (words.length <= maxWords) return text;
   const lastWord = words[maxWords - 1];
   const end = (lastWord?.index ?? 0) + (lastWord?.[0].length ?? 0);
-  return `${text.slice(0, end)}...`;
+  return text.slice(0, end);
 }
 
 function orderedHashes(

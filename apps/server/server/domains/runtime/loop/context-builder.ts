@@ -278,9 +278,45 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-export function noticeSystemMessage(notices: readonly Notice[]): Message | null {
+export function attachNoticesToLatestUserMessage(
+  messages: readonly Message[],
+  notices: readonly Notice[],
+): Message[] {
   const content = formatNotices(notices);
-  return content ? system(content) : null;
+  if (!content) return [...messages];
+
+  const updated = [...messages];
+  const notice = text(`\n\nMeridian context for this message:\n${content}`);
+  for (let index = updated.length - 1; index >= 0; index--) {
+    const message = updated[index];
+    if (message?.role !== "user") continue;
+    updated[index] = {
+      ...message,
+      content: [...message.content, notice],
+    };
+    return updated;
+  }
+
+  throw new Error("Cannot attach pre-turn notices without a writer message");
+}
+
+export function insertPostToolNotices(
+  messages: readonly Message[],
+  notices: readonly Notice[],
+  afterMessageCount: number,
+): Message[] {
+  const content = formatNotices(notices);
+  if (!content) return [...messages];
+  if (afterMessageCount < 0 || afterMessageCount > messages.length) {
+    throw new Error("Post-tool notice anchor is outside the model request");
+  }
+
+  const updated = [...messages];
+  updated.splice(afterMessageCount, 0, {
+    role: "user",
+    content: [text(`Meridian context after the preceding edits:\n${content}`)],
+  });
+  return updated;
 }
 
 export function formatNotices(notices: readonly Notice[]): string {

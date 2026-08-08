@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   type Box,
   measureTableChrome,
+  nestedCellKeepsReveal,
   type TableChromePiece,
   tableChromePieces,
   tableHoverZone,
@@ -158,6 +159,75 @@ function inside(zone: Box, piece: TableChromePiece): boolean {
     piece.top + piece.height <= zone.bottom
   );
 }
+
+describe("a nested table's reveal against the outer cell it is drawn in", () => {
+  // The bug this states: the gap beside a NESTED table's frame is on no cell
+  // of that table, so the hit test there answers with the outer cell — a
+  // fresh hit that re-anchored every grip to the outer table while the writer
+  // was mid-travel to an inner grip. The held cell outranks that hit exactly
+  // while the pointer is on the inner table's own hover surface.
+
+  /** Outer 300..900 × 100..500, inner 430..700 × 270..400 (zone 409..727 ×
+      251..415), innermost 480..650 × 300..370 (zone 459..677 × 281..385). */
+  function nestedTables() {
+    const outer = stubbedBox(document.createElement("table"), viewportBox(300, 100, 900, 500));
+    const outerCell = document.createElement("td");
+    const inner = stubbedBox(document.createElement("table"), viewportBox(430, 270, 700, 400));
+    const innerCellA = document.createElement("td");
+    const innerCellB = document.createElement("td");
+    const innermost = stubbedBox(document.createElement("table"), viewportBox(480, 300, 650, 370));
+    const innermostCell = document.createElement("td");
+
+    appendRow(innermost, [innermostCell]);
+    innerCellB.append(innermost);
+    appendRow(inner, [innerCellA, innerCellB]);
+    outerCell.append(inner);
+    appendRow(outer, [outerCell]);
+    return { outerCell, innerCellA, innerCellB, innermostCell };
+  }
+
+  function appendRow(table: HTMLElement, cells: HTMLElement[]) {
+    const row = document.createElement("tr");
+    row.append(...cells);
+    table.append(row);
+  }
+
+  it("keeps the inner cell while the pointer is in the gap its grips hang in", () => {
+    const { outerCell, innerCellA } = nestedTables();
+    // Left of the inner frame (row grip's gap), above it (column grip's), and
+    // right of it (add-column tab's): all outside the frame, all on the outer
+    // cell, all part of the inner reveal.
+    expect(nestedCellKeepsReveal(innerCellA, outerCell, 420, 330)).toBe(true);
+    expect(nestedCellKeepsReveal(innerCellA, outerCell, 500, 260)).toBe(true);
+    expect(nestedCellKeepsReveal(innerCellA, outerCell, 710, 330)).toBe(true);
+  });
+
+  it("concedes to the outer cell once the pointer leaves the inner zone", () => {
+    const { outerCell, innerCellA } = nestedTables();
+    expect(nestedCellKeepsReveal(innerCellA, outerCell, 400, 330)).toBe(false);
+    expect(nestedCellKeepsReveal(innerCellA, outerCell, 500, 240)).toBe(false);
+  });
+
+  it("never outranks another cell of the same table, so grips follow the pointer", () => {
+    const { innerCellA, innerCellB } = nestedTables();
+    // The point is well inside the shared table's zone; the fresh cell still
+    // wins, or the grips would freeze on the first cell hovered.
+    expect(nestedCellKeepsReveal(innerCellA, innerCellB, 500, 330)).toBe(false);
+  });
+
+  it("never outranks a DEEPER cell, so hovering a nested table moves the reveal inward", () => {
+    const { innerCellA, outerCell } = nestedTables();
+    expect(nestedCellKeepsReveal(outerCell, innerCellA, 500, 330)).toBe(false);
+  });
+
+  it("outranks any ancestor, not just the parent, from any depth", () => {
+    const { outerCell, innermostCell } = nestedTables();
+    // Depth 3 against depth 1: held while in the innermost zone, conceded
+    // one pixel past it.
+    expect(nestedCellKeepsReveal(innermostCell, outerCell, 465, 330)).toBe(true);
+    expect(nestedCellKeepsReveal(innermostCell, outerCell, 458, 330)).toBe(false);
+  });
+});
 
 describe("the surface a revealed table chrome is held by", () => {
   const table: Box = { left: 328, top: 140, right: 856, bottom: 190 };

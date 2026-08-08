@@ -17,6 +17,7 @@ try {
 
 export default defineConfig({
   scanDirs: ["server"],
+  experimental: { asyncContext: true },
   rolldownConfig: {
     watch: {
       exclude: [repoLogsGlob],

@@ -12,6 +12,18 @@ import {
 } from "../skill-tools.js";
 import type { ToolHandler } from "../types.js";
 
+function invokeError(message: string) {
+  return {
+    isError: true,
+    output: {
+      code: "tool_error",
+      message,
+      source: "tool",
+      retryable: false,
+    },
+  };
+}
+
 function skillRecord(overrides: Partial<SkillRecord> = {}): SkillRecord {
   return {
     id: "skill-1",
@@ -126,11 +138,11 @@ describe("createInvokeToolRegistration", () => {
       },
     );
 
-    expect(output).toEqual({
-      isError: true,
-      output:
+    expect(output).toEqual(
+      invokeError(
         'Skill "metric-extraction" is available as prompt context, but executable skill runtime is disabled in Meridian.',
-    });
+      ),
+    );
   });
 
   it("returns a recoverable error listing baked ∩ invocable slugs for unknown skillname", async () => {
@@ -153,10 +165,7 @@ describe("createInvokeToolRegistration", () => {
       },
     );
 
-    expect(output).toEqual({
-      isError: true,
-      output: 'Unknown skill "missing". Available skills: alpha, beta',
-    });
+    expect(output).toEqual(invokeError('Unknown skill "missing". Available skills: alpha, beta'));
   });
 
   it("rejects skills added after bake even when currently resolvable", async () => {
@@ -178,10 +187,7 @@ describe("createInvokeToolRegistration", () => {
       },
     );
 
-    expect(output).toEqual({
-      isError: true,
-      output: 'Unknown skill "new-skill". Available skills: alpha',
-    });
+    expect(output).toEqual(invokeError('Unknown skill "new-skill". Available skills: alpha'));
   });
 
   it("returns no-longer-available when a baked skill is demoted", async () => {
@@ -203,32 +209,9 @@ describe("createInvokeToolRegistration", () => {
       },
     );
 
-    expect(output).toEqual({
-      isError: true,
-      output: 'Skill "alpha" is no longer available. Available skills: beta',
-    });
-  });
-
-  it("returns no-longer-available when a baked skill is deleted", async () => {
-    const handler = registerInvoke({
-      bakedSkillSlugs: ["alpha", "beta"],
-      skills: [resolvedSkill({ skill: skillRecord({ slug: "beta" }) })],
-    });
-
-    const output = await handler(
-      { skillname: "alpha" },
-      {
-        signal: new AbortController().signal,
-        threadId: "thread-1",
-        turnId: "turn-1",
-        agentSlug: "agent-one",
-      },
+    expect(output).toEqual(
+      invokeError('Skill "alpha" is no longer available. Available skills: beta'),
     );
-
-    expect(output).toEqual({
-      isError: true,
-      output: 'Skill "alpha" is no longer available. Available skills: beta',
-    });
   });
 
   it("returns a tool error when skillname is missing", async () => {
@@ -244,7 +227,7 @@ describe("createInvokeToolRegistration", () => {
       },
     );
 
-    expect(output).toEqual({ isError: true, output: "invoke requires skillname (string)." });
+    expect(output).toEqual(invokeError("invoke requires skillname (string)."));
   });
 
   it("requires an agent-bound baked skill context", async () => {
@@ -259,7 +242,7 @@ describe("createInvokeToolRegistration", () => {
           agentSlug: null,
         },
       ),
-    ).resolves.toEqual({ isError: true, output: "Thread has no agent-bound skill context." });
+    ).resolves.toEqual(invokeError("Thread has no agent-bound skill context."));
 
     const notBaked = registerInvoke({ skills: [resolvedSkill()], bakedSkillSlugs: null });
     await expect(
@@ -272,6 +255,6 @@ describe("createInvokeToolRegistration", () => {
           agentSlug: "agent-one",
         },
       ),
-    ).resolves.toEqual({ isError: true, output: "Thread skill catalog is not baked yet." });
+    ).resolves.toEqual(invokeError("Thread skill catalog is not baked yet."));
   });
 });

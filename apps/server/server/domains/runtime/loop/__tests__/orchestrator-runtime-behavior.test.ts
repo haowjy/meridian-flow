@@ -3,6 +3,7 @@
  * cancellation, and tool dispatch boundaries without involving real providers.
  */
 
+import { modelResult } from "@meridian/agent-edit/integration";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -22,6 +23,7 @@ import {
 } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
+import { toJsonValue } from "../streaming.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestNoticePort, createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -51,6 +53,12 @@ function textGateway(): Gateway {
       provider: "stub",
     },
   ]);
+}
+
+function messageText(message: GenerateRequest["messages"][number] | undefined): string {
+  return (
+    message?.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") ?? ""
+  );
 }
 
 async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway = textGateway()) {
@@ -135,7 +143,9 @@ describe("runtime orchestrator behavior", () => {
         async executeTool(call: { id: string }) {
           return {
             toolCallId: call.id,
-            output: [{ type: "text" as const, text: "status: success" }],
+            output: toJsonValue(
+              modelResult({ command: "replace", status: "success", phase: "staged" }),
+            ),
             metadata: {
               documentId: "doc-1",
               stagedWrite: true,
@@ -159,7 +169,12 @@ describe("runtime orchestrator behavior", () => {
                 receipt: {
                   writeId: "w1",
                   settlementId: "write-1",
-                  content: [{ type: "text", text: "status: success" }],
+                  result: modelResult({
+                    command: "replace",
+                    status: "success",
+                    phase: "committed",
+                    payload: { write: { id: "w1" } },
+                  }),
                 },
               },
             ],
@@ -175,8 +190,9 @@ describe("runtime orchestrator behavior", () => {
     );
 
     const persistedAfterCrash = JSON.stringify(await repos.blocks.listByThread(thread.id));
-    expect(persistedAfterCrash).toContain("status: success");
-    expect(persistedAfterCrash).not.toContain("pending_commit");
+    expect(persistedAfterCrash).toContain('"status":"success"');
+    expect(persistedAfterCrash).toContain('"schema":"meridian.agent-edit.v1"');
+    expect(persistedAfterCrash).not.toContain('"phase":"staged"');
 
     const resumedRequests: GenerateRequest[] = [];
     const resumedGateway: Gateway = {
@@ -191,8 +207,8 @@ describe("runtime orchestrator behavior", () => {
         createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
-    expect(JSON.stringify(resumedRequests[0]?.messages)).toContain("status: success");
-    expect(JSON.stringify(resumedRequests[0]?.messages)).not.toContain("pending_commit");
+    expect(JSON.stringify(resumedRequests[0]?.messages)).toContain('"status":"success"');
+    expect(JSON.stringify(resumedRequests[0]?.messages)).not.toContain('"phase":"staged"');
   });
 
   it("reconciles a pre-commit crash to a typed rejection before the next model request", async () => {
@@ -216,7 +232,9 @@ describe("runtime orchestrator behavior", () => {
         async executeTool(call: { id: string }) {
           return {
             toolCallId: call.id,
-            output: [{ type: "text" as const, text: "status: success" }],
+            output: toJsonValue(
+              modelResult({ command: "replace", status: "success", phase: "staged" }),
+            ),
             metadata: {
               documentId: "doc-1",
               stagedWrite: true,
@@ -250,7 +268,9 @@ describe("runtime orchestrator behavior", () => {
         }),
       ).runTurn({ threadId: thread.id, userText: "write" }),
     );
-    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).toContain("pending_commit");
+    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).toContain(
+      '"phase":"staged"',
+    );
 
     const resumedRequests: GenerateRequest[] = [];
     const resumedGateway: Gateway = {
@@ -266,11 +286,12 @@ describe("runtime orchestrator behavior", () => {
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
     const resumedContext = JSON.stringify(resumedRequests[0]?.messages);
-    expect(resumedContext).toContain("status: internal_error");
+    expect(resumedContext).toContain('"schema":"meridian.agent-edit.v1"');
+    expect(resumedContext).toContain('"status":"internal_error"');
     expect(resumedContext).toContain("Write did not land");
-    expect(resumedContext).not.toContain("pending_commit");
+    expect(resumedContext).not.toContain('"phase":"staged"');
     expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).not.toContain(
-      "pending_commit",
+      '"phase":"staged"',
     );
   });
 
@@ -505,10 +526,21 @@ describe("runtime orchestrator behavior", () => {
                 receipt: {
                   writeId: "w1",
                   settlementId: "write-1",
-                  content: [
-                    { type: "text" as const, text: "status: success\nwrite id: w1" },
-                    { type: "text" as const, text: "final1|Final settled line." },
-                  ],
+                  result: modelResult({
+                    command: "replace",
+                    status: "success",
+                    phase: "committed",
+                    payload: {
+                      write: { id: "w1" },
+                      blocks: [
+                        {
+                          extent: "full",
+                          relation: "changed",
+                          items: [{ hash: "final1", body: "Final settled line." }],
+                        },
+                      ],
+                    },
+                  }),
                 },
               },
             ],
@@ -548,9 +580,9 @@ describe("runtime orchestrator behavior", () => {
     );
 
     const secondRequest = JSON.stringify(requests[1]?.messages);
-    expect(secondRequest).toContain("concurrent edits:\\n  human:");
-    expect(secondRequest).toContain("abcd|Human changed line.");
-    expect(secondRequest).toContain("final1|Final settled line.");
+    expect(secondRequest).toContain('"origin":"human"');
+    expect(secondRequest).toContain('"hash":"abcd","body":"Human changed line."');
+    expect(secondRequest).toContain('"hash":"final1","body":"Final settled line."');
     expect(secondRequest).not.toContain("Old speculative line.");
     expect(secondRequest).not.toContain("New speculative line.");
   });
@@ -624,7 +656,12 @@ describe("runtime orchestrator behavior", () => {
               receipt: {
                 writeId: "w1",
                 settlementId,
-                content: [{ type: "text" as const, text: `settled ${settlementId}` }],
+                result: modelResult({
+                  command: "replace",
+                  status: "success",
+                  phase: "committed",
+                  payload: { write: { id: "w1" }, message: `settled ${settlementId}` },
+                }),
               },
             })),
             concurrentEdits: [],
@@ -656,11 +693,21 @@ describe("runtime orchestrator behavior", () => {
     expect(persistedResults).toEqual([
       {
         toolCallId: "write-first",
-        output: [{ type: "text", text: "settled write-first" }],
+        output: modelResult({
+          command: "replace",
+          status: "success",
+          phase: "committed",
+          payload: { write: { id: "w1" }, message: "settled write-first" },
+        }),
       },
       {
         toolCallId: "write-second",
-        output: [{ type: "text", text: "settled write-second" }],
+        output: modelResult({
+          command: "replace",
+          status: "success",
+          phase: "committed",
+          payload: { write: { id: "w1" }, message: "settled write-second" },
+        }),
       },
     ]);
     const secondRequest = JSON.stringify(requests[1]?.messages);
@@ -676,12 +723,17 @@ describe("runtime orchestrator behavior", () => {
       ...gatewayStubDefaults,
       async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
         requests.push(request);
-        if (requests.length === 1) {
+        if (requests.length <= 3) {
           yield {
             type: "end",
             result: {
               content: [
-                { type: "tool_use", toolCallId: "call-write", toolName: "write", input: {} },
+                {
+                  type: "tool_use",
+                  toolCallId: `call-write-${requests.length}`,
+                  toolName: "write",
+                  input: {},
+                },
               ],
               toolCalls: [],
               finishReason: "tool_use",
@@ -739,6 +791,7 @@ describe("runtime orchestrator behavior", () => {
       drainCount += 1;
       return drain(threadId);
     };
+    let commitCount = 0;
     const deps = createTestOrchestratorDeps({
       gateway,
       repos,
@@ -750,15 +803,29 @@ describe("runtime orchestrator behavior", () => {
       },
       responseWrites: {
         async commitResponse() {
-          await notices.record({
-            kind: "awareness_degraded",
-            scope: { kind: "thread", threadId: thread.id },
-            message: "Document awareness degraded",
-            data: {
-              documentId: "00000000-0000-4000-8000-000000000002",
-              documentName: "chapter-2.md",
-            },
-          });
+          commitCount += 1;
+          if (commitCount === 1) {
+            await notices.record({
+              kind: "undo",
+              scope: { kind: "thread", threadId: thread.id },
+              message: "",
+              data: {
+                writeHandles: ["w1"],
+                uri: "manuscript://chapter-1.md",
+                direction: "redo",
+              },
+            });
+          } else if (commitCount === 2) {
+            await notices.record({
+              kind: "awareness_degraded",
+              scope: { kind: "thread", threadId: thread.id },
+              message: "Document awareness degraded",
+              data: {
+                documentId: "00000000-0000-4000-8000-000000000002",
+                documentName: "chapter-2.md",
+              },
+            });
+          }
           return { status: "committed", receipts: [], concurrentEdits: [] };
         },
         async rollbackResponse() {},
@@ -770,14 +837,57 @@ describe("runtime orchestrator behavior", () => {
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
     );
 
-    expect(drainCount).toBe(2);
-    expect(requests).toHaveLength(2);
-    expect(JSON.stringify(requests[0]?.messages)).toContain(
+    expect(drainCount).toBe(4);
+    expect(requests).toHaveLength(4);
+    const firstSystemMessages = requests[0]?.messages.filter(
+      (message) => message.role === "system",
+    );
+    const firstWriterMessage = requests[0]?.messages
+      .filter((message) => message.role === "user")
+      .at(-1);
+    expect(firstSystemMessages).toHaveLength(1);
+    expect(messageText(firstWriterMessage)).toContain(
+      "continue\n\nMeridian context for this message",
+    );
+    expect(messageText(firstWriterMessage)).toContain(
       "The writer reversed the following edits before this message",
     );
-    expect(JSON.stringify(requests[1]?.messages)).toContain(
+    const noticeSystemMessages = requests[2]?.messages.filter(
+      (message) => message.role === "system",
+    );
+    const noticeMessages = requests[2]?.messages ?? [];
+    const noticeWriterMessages = noticeMessages.filter((message) => message.role === "user");
+    const initiatingWriterMessage = noticeWriterMessages.find((message) =>
+      messageText(message).includes("continue"),
+    );
+    const postToolContextMessage = noticeWriterMessages.at(-1);
+    if (!postToolContextMessage) throw new Error("expected post-tool notice context");
+    expect(noticeSystemMessages).toHaveLength(1);
+    expect(noticeSystemMessages).toEqual(firstSystemMessages);
+    expect(JSON.stringify(firstSystemMessages)).not.toContain(
+      "The writer reversed the following edits",
+    );
+    expect(JSON.stringify(noticeSystemMessages)).not.toContain(
       "could not verify whether concurrent writer content was preserved",
     );
+    expect(messageText(initiatingWriterMessage)).toContain(
+      "The writer reversed the following edits before this message",
+    );
+    expect(messageText(initiatingWriterMessage)).not.toContain(
+      "could not verify whether concurrent writer content was preserved",
+    );
+    expect(messageText(postToolContextMessage)).not.toContain("continue");
+    expect(messageText(postToolContextMessage)).toContain(
+      "Meridian context after the preceding edits",
+    );
+    expect(messageText(postToolContextMessage)).toContain(
+      "could not verify whether concurrent writer content was preserved",
+    );
+    const toolResultIndex = noticeMessages.findIndex((message) =>
+      message.content.some((part) => part.type === "tool_result"),
+    );
+    expect(noticeMessages.indexOf(postToolContextMessage)).toBeGreaterThan(toolResultIndex);
+    expect(requests[3]?.messages.slice(0, noticeMessages.length)).toEqual(noticeMessages);
   });
 
   it("does not let debug capture failure prevent a notice-bearing model call", async () => {
@@ -808,7 +918,7 @@ describe("runtime orchestrator behavior", () => {
       },
       modelRequestDebug: {
         captureEnabled: true,
-        record() {
+        capture() {
           throw new Error("debug store unavailable before gateway stream");
         },
         listByTurn() {
@@ -816,6 +926,9 @@ describe("runtime orchestrator behavior", () => {
         },
         listByThread() {
           return [];
+        },
+        retention() {
+          return { retainedRecords: 0, retainedBytes: 0, droppedRecords: 0, droppedBytes: 0 };
         },
       },
     });

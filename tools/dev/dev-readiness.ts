@@ -34,7 +34,7 @@ function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function portlessCa(): string[] | undefined {
+export function portlessCa(): string[] | undefined {
   if (!fs.existsSync(PORTLESS_CA_PATH)) return undefined;
   return [...tls.rootCertificates, fs.readFileSync(PORTLESS_CA_PATH, "utf8")];
 }

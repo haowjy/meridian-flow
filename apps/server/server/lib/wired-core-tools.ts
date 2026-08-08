@@ -4,14 +4,18 @@
  */
 
 import type {
+  AgentEditResultCommand,
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
   WriteCommand,
+  WriteErrorStatus,
 } from "@meridian/agent-edit/integration";
 import {
+  agentEditResultCommand,
   type DocumentAddress,
   formatDocumentFile,
+  modelResult,
   splitDocumentFile,
   WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
@@ -85,6 +89,10 @@ export interface ToolWiringDeps {
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
+type WriteToolErrorOutput = {
+  isError: true;
+  output: ReturnType<typeof modelResult>;
+};
 type DiffWriteCommand = Extract<WriteCommand, { command: "diff" }>;
 type DocumentWriteCommand = Exclude<WriteCommand, DiffWriteCommand>;
 type ModelDocumentWriteCommand = {
@@ -148,6 +156,7 @@ const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
   "insert",
   "replace",
+  "delete",
   "undo",
   "redo",
 ]);
@@ -159,6 +168,17 @@ function toolError(
     return { isError: true, output: meridianErrorFromStructuredToolOutput(error as JsonValue) };
   }
   return { isError: true, output: meridianErrorFromTool(error.message) };
+}
+
+function writeToolError(
+  command: AgentEditResultCommand,
+  message: string,
+  status: WriteErrorStatus = "invalid_write",
+): WriteToolErrorOutput {
+  return {
+    isError: true,
+    output: modelResult({ command, status, payload: { message } }),
+  };
 }
 
 async function resolveContextPort(
@@ -266,28 +286,31 @@ function asRecord(input: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function parseWriteToolInput(input: unknown): ModelWriteCommand | ToolErrorOutput {
+function parseWriteToolInput(input: unknown): ModelWriteCommand | WriteToolErrorOutput {
   const record = asRecord(input);
-  if (!record) return toolError({ message: "write input must be an object" });
+  const resultCommand = agentEditResultCommand(input);
+  if (!record) return writeToolError(resultCommand, "write input must be an object");
 
   if (record.command === "diff") {
     const parsed = WriteCommandSchema.safeParse(record);
-    if (!parsed.success) return toolError({ message: writeSchemaError(parsed.error) });
+    if (!parsed.success) return writeToolError(resultCommand, writeSchemaError(parsed.error));
     if (parsed.data.command !== "diff") {
-      return toolError({ message: "Invalid diff command" });
+      return writeToolError(resultCommand, "Invalid diff command");
     }
     return parsed.data;
   }
 
   const { path, ...packageInput } = record;
   if (typeof path !== "string" || path.length === 0) {
-    return toolError({ message: "path is required" });
+    return writeToolError(resultCommand, "path is required");
   }
 
   const parsed = WriteCommandSchema.safeParse({ ...packageInput, file: path });
-  if (!parsed.success) return toolError({ message: writeSchemaError(parsed.error) });
+  if (!parsed.success) return writeToolError(resultCommand, writeSchemaError(parsed.error));
 
-  if (parsed.data.command === "diff") return toolError({ message: "diff does not accept path" });
+  if (parsed.data.command === "diff") {
+    return writeToolError(resultCommand, "diff does not accept path");
+  }
   const { file: _file, documentId: _documentId, tool_use_id: _toolUseId, ...command } = parsed.data;
   return { ...command, path } as ModelWriteCommand;
 }
@@ -347,7 +370,7 @@ function cleared(value: string | undefined): string | null | undefined {
   return value === "" ? null : value;
 }
 
-function isToolError(value: unknown): value is ToolErrorOutput {
+function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorOutput {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -360,16 +383,19 @@ async function resolveDocumentAddress(
   context: ResolvedModelContextPort,
   input: ModelDocumentWriteCommand,
   options: { deferTrackedDocumentSync?: boolean } = {},
-): Promise<ResolvedDocumentAddress | ToolErrorOutput> {
+): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(input.path);
   if (input.command === "create") {
-    if (fragment) return toolError({ message: "create does not accept a #fragment in path" });
+    if (fragment)
+      return writeToolError(input.command, "create does not accept a #fragment in path");
     const ensured = await port.ensureTrackedDocument(
       basePath,
       options.deferTrackedDocumentSync ? { deferDocumentSync: true } : undefined,
     );
-    if (!ensured.ok) return modelContextError(ensured.error, context);
+    if (!ensured.ok) {
+      return writeToolError(input.command, modelContextErrorMessage(ensured.error, context));
+    }
     return {
       documentId: ensured.value.documentId,
       filePath: basePath,
@@ -379,18 +405,30 @@ async function resolveDocumentAddress(
   }
 
   const ref = await port.stat(basePath);
-  if (!ref.ok) return modelContextError(ref.error, context);
+  if (!ref.ok) {
+    return writeToolError(
+      input.command,
+      modelContextErrorMessage(ref.error, context),
+      ref.error.code === "not_found" ? "document_not_found" : "invalid_write",
+    );
+  }
   if (ref.value.kind !== "tracked") {
-    return toolError({ message: `Cannot ${input.command} binary file: ${input.path}` });
+    return writeToolError(input.command, `Cannot ${input.command} binary file: ${input.path}`);
   }
   if (!ref.value.documentId) {
-    return toolError({ message: `Document id missing for ${input.path}` });
+    return writeToolError(input.command, `Document id missing for ${input.path}`);
   }
   return {
     documentId: ref.value.documentId,
     filePath: basePath,
     ...(fragment === undefined ? {} : { fragment }),
   };
+}
+
+function modelContextErrorMessage(error: ContextError, context: ResolvedModelContextPort): string {
+  return contextErrorMessage(
+    typeof error.uri === "string" ? { ...error, uri: modelContextUri(error.uri, context) } : error,
+  );
 }
 
 function contextErrorMessage(error: ContextError): string {
@@ -707,12 +745,14 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           tool_use_id: ctx.toolCallId,
         });
         return outcome.isError
-          ? toolError({ message: outcome.text })
-          : { output: outcome.content ?? outcome.text };
+          ? { isError: true, output: outcome.result }
+          : { output: outcome.result };
       }
 
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
-      if ("isError" in portOrError) return portOrError;
+      if ("isError" in portOrError) {
+        return writeToolError(parsed.command, portOrError.output.message);
+      }
 
       const address = await resolveDocumentAddress(portOrError, parsed, {
         deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
@@ -740,18 +780,22 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               documentId: address.documentId,
             });
           } catch (error) {
-            return toolError({
-              message: `Failed to discard staged create for ${parsed.path}: ${
+            return writeToolError(
+              parsed.command,
+              `Failed to discard staged create for ${parsed.path}: ${
                 error instanceof Error ? error.message : String(error)
               }`,
-            });
+              "internal_error",
+            );
           }
         }
-        return toolError({ message: outcome.text });
+        return { isError: true, output: outcome.result };
       }
       if (stagedCreate) {
         const responseId = ctx.responseId;
-        if (responseId === undefined) return toolError({ message: "Missing staged response id" });
+        if (responseId === undefined) {
+          return writeToolError(parsed.command, "Missing staged response id", "internal_error");
+        }
         deps.responseWrites.trackStagedCreate({
           responseId,
           port: portOrError.port,
@@ -765,12 +809,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         ctx.responseId !== undefined &&
         (parsed.command === "create" ||
           parsed.command === "insert" ||
-          parsed.command === "replace");
+          parsed.command === "replace" ||
+          parsed.command === "delete");
       if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
         await refreshProjectionAfterToolWrite(deps, address.documentId, ctx);
       }
       return {
-        output: outcome.content ?? outcome.text,
+        output: outcome.result,
         ...(stagedWrite
           ? {
               metadata: {

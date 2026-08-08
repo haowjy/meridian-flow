@@ -51,7 +51,7 @@ export async function loadProjectRouteData(projectId: string): Promise<ProjectRo
   const init = ssrApiRequestInit();
   const [threads, works, workingSet] = await Promise.allSettled([
     listProjectThreads(projectId, init),
-    listProjectWorks(projectId, init),
+    listProjectWorks(projectId, { ...init, status: "all" }),
     getProjectWorkingSet(projectId, init),
   ]);
 

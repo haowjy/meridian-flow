@@ -34,6 +34,7 @@ type AgentEditObservability = Pick<
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
+  | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
 >;
 

@@ -2,18 +2,34 @@
 
 ## Tool surface
 
-`write()` returns a structured `WriteOutcome { command, status, isError, text }`
-(`src/tool/types.ts`). The host routing layer reads the structured envelope; the
-LLM-facing response is the plain `text` field (status line + echo + content).
+`write()` returns host metadata plus one canonical model result:
+`WriteOutcome { command, status, isError, text, result }` (`src/tool/types.ts`).
+`result` is the versioned `meridian.agent-edit.v1` JSON envelope and is the only
+representation sent to the LLM. `text` is host-facing diagnostic text, not a
+second model protocol. Block groups carry shared semantics as
+`{ extent, relation, items: [{ hash, body }] }`, so multiline bodies cannot
+collide with adjacent blocks without repeating metadata on every item. The only
+group kinds are full `document`, `changed`, or `swept` bodies and prefix
+`context`; concurrent bodies and tombstones live under `concurrent.runs`, where
+their placement already conveys the concurrent relation. Full and outline reads
+derive diagnostic text and typed items from one batch serialization. Hashes are
+model/tool targeting tokens: expose them in tool arguments and results, never as
+labels or quoted prefixes in writer-facing prose unless the writer asks for
+protocol detail.
+
+The result lifecycle is discriminated: `status: "success"` requires
+`phase: "staged" | "committed"`, while every non-success status excludes
+`phase`. Hosts must use the exported `isAgentEditResult` guard when recognizing
+persisted results rather than inferring validity from the schema string alone.
 `idempotency` is provided by `tool_use_id`, but provider tool ids are
 response-local: cache and durable attempt ids scope them by `responseId`, or by
 `turnId` when no response id exists. Same-response retries return the cached
-text; a later response that reuses the same provider id must dispatch as a new
-write.
+outcome; a later response that reuses the same provider id must dispatch as a
+new write.
 
 ### Response commit lifecycle
 
-Passing `WriteContext.responseId` makes `create` / `insert` / `replace` apply to
+Passing `WriteContext.responseId` makes `create` / `insert` / `replace` / `delete` apply to
 the session runtime immediately while `ResponseCommitter` buffers the exact
 updates and mutation metadata that will be committed. Per-write echoes therefore
 initially reflect cumulative response-local state; `commitResponse` returns
@@ -97,6 +113,9 @@ the server response owner.
 Within a session, idempotency keys are scoped by response id, then turn id; with
 neither, the session is the fallback scope.
 `onIdempotencyHit` reports `{ toolUseId, scopeKind, scopeId, sessionId, outcome }`.
+Unexpected dispatch failures call `onUnexpectedWriteError` with the original
+cause plus safe command, document, session, thread, turn, response, and tool-use
+identifiers before collapsing to the unchanged model-facing `internal_error`.
 Response lifecycle observers receive explicit committer transitions; discarded
 mutation claims surface through `onResponseClaimDiscarded` and
 `ResponseCommitResult.discardedClaims`. Observer exceptions never change
@@ -114,9 +133,11 @@ paths so accidental UUID interpolation fails loudly.
 
 ## v1 simplifications (deferred, documented for discoverability)
 
-- **Tool versioning** deferred (GH issue #68). Seam kept clean — pure
-  resolvers, stable `ResolvedEdit`, version-agnostic apply layer. No version
-  pinning until a v2 exists.
+- **Command-contract version selection and thread pinning** deferred (GH
+  issue #68). This is distinct from the shipped `meridian.agent-edit.v1` result
+  envelope. The seam stays clean through pure resolvers, stable `ResolvedEdit`,
+  and a version-agnostic apply layer; no command-contract pinning is needed until
+  a second command version exists.
 - **Read auto-budget/truncation** deferred. Current `read` returns full
   content. Thread-level context management is not yet implemented.
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
@@ -135,8 +156,12 @@ commit/recovery, and create lifecycle.
 
 ### Write handles and selective reversal
 
-Every successful mutating write returns a short handle line (`write id: w<N>`) in the metadata block. The ordinal is allocated per `(document, thread)`, persisted on the mutation row, and never reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable idempotency id in mutation metadata; `w<N>` is the model-facing range key.
+Every successful mutating result carries `write: { id: "w<N>" }`. The ordinal
+is allocated per `(document, thread)`, persisted on the mutation row, and never
+reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable
+idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 
-Undo/redo echoes use the same two-block result format as writes: metadata first, echo lines second.
+Undo/redo use the same versioned result envelope as writes, with typed reversal
+metadata and block records.
 
 Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`from` + `to`), newest N (`last`), or all (`all`). The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.

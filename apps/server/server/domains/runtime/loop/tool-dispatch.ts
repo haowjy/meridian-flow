@@ -165,9 +165,7 @@ export async function dispatchToolCall(
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
-  const persistedOutput = stagedWrite
-    ? [{ type: "text" as const, text: "status: pending_commit\n\nWrite has not landed yet." }]
-    : execResult.output;
+  const persistedOutput = execResult.output;
   const persistedMetadata = execResult.metadata;
 
   const persistedToolResult = await persistAndAppendEvents(

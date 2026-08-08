@@ -74,7 +74,7 @@ async function main(): Promise<void> {
 
     const repos = {
       projects: createDrizzleProjectRepository({ db }),
-      works: createDrizzleWorkRepository({ db }),
+      works: createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false }),
       ...createDrizzleRepositories(db),
     };
 

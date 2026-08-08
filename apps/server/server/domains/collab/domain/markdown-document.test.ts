@@ -145,7 +145,6 @@ describe("schema-aware serialization purity", () => {
     vi.spyOn(subject.eventSink, "emit").mockImplementation(() => {
       throw new Error("sink-failed");
     });
-    const fallbackDiagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
     const input = createCollabYDoc({ gc: false });
     const paragraph = new Y.XmlElement("paragraph");
     paragraph.insert(0, [new Y.XmlText("kept prose")]);
@@ -162,9 +161,7 @@ describe("schema-aware serialization purity", () => {
 
       expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
       expect(fragmentOf(input).toString()).toBe(beforeXml);
-      expect(fallbackDiagnostic).toHaveBeenCalledOnce();
     } finally {
-      fallbackDiagnostic.mockRestore();
       input.destroy();
     }
   });

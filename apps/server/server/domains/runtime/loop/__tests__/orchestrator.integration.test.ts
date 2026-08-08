@@ -4,6 +4,7 @@
  * tool, permission, and journal behavior stay aligned across the loop boundary.
  */
 
+import { modelResult } from "@meridian/agent-edit/integration";
 import { EventType } from "@meridian/contracts/protocol";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -957,7 +958,12 @@ describe("runtime loop integration", () => {
                         receipt: {
                           writeId: "write-1",
                           settlementId: "settlement-1",
-                          content: [],
+                          result: modelResult({
+                            command: "insert",
+                            status: "success",
+                            phase: "committed",
+                            payload: { write: { id: "write-1" } },
+                          }),
                         },
                       },
                     ]

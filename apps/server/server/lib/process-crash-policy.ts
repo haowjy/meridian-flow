@@ -3,26 +3,17 @@
  * and uncaught-exception (log + delayed exit) handlers. Idempotent via a
  * global Symbol singleton guard — calling twice is harmless.
  */
-import { type EventSink, emitEvent } from "../domains/observability/index.js";
+import {
+  type EventSink,
+  emitEvent,
+  unknownToEventPayload,
+} from "../domains/observability/index.js";
 
 const PROCESS_CRASH_POLICY_KEY = Symbol.for("meridian.api.process-crash-policy.v1");
 
 type ProcessCrashPolicyGlobal = typeof globalThis & {
   [PROCESS_CRASH_POLICY_KEY]?: true;
 };
-
-function describeReason(reason: unknown): Record<string, unknown> {
-  if (reason instanceof Error) {
-    return {
-      name: reason.name,
-      message: reason.message,
-      stack: reason.stack,
-      cause: reason.cause instanceof Error ? describeReason(reason.cause) : reason.cause,
-    };
-  }
-
-  return { value: reason };
-}
 
 function logProcessFault(
   eventSink: EventSink,
@@ -41,7 +32,7 @@ function logProcessFault(
       // THROWS on invalid config — if a bad env caused the crash, importing it here
       // would throw again and swallow the diagnostic. A best-effort annotation only.
       nodeEnv: process.env.NODE_ENV,
-      reason: describeReason(reason),
+      ...unknownToEventPayload(reason),
       ...context,
     },
   });
@@ -61,9 +52,8 @@ export function installApiProcessCrashPolicy(options: { eventSink: EventSink }):
    * forget touch record) should never bring the server down. The rejections
    * are still logged as errors for debugging.
    */
-  process.on("unhandledRejection", (reason, promise) => {
+  process.on("unhandledRejection", (reason) => {
     logProcessFault(eventSink, "unhandledRejection", reason, {
-      promise: String(promise),
       action: "logged_continue",
     });
   });

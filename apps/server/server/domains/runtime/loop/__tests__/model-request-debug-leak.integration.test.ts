@@ -119,7 +119,7 @@ describe("model-request debug prompt leak guard", () => {
 
     const debugRecords = modelRequestDebug.listByTurn(thread.id, handle.assistantTurnId);
     expect(debugRecords.length).toBeGreaterThanOrEqual(1);
-    expect(debugRecords[0]?.systemMessages.join("\n")).toContain(LEAK_PROBE_MARKER);
+    expect(serialized(debugRecords[0]?.request)).toContain(LEAK_PROBE_MARKER);
 
     expectMarkerAbsent("orchestrator yield stream", orchestratorEvents);
     expectMarkerAbsent("event journal", eventWriter.getEvents(thread.id));

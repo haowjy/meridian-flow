@@ -1,5 +1,6 @@
 import { encodeWsServerMessage, WS_CLOSE } from "@meridian/contracts/protocol";
 import { defineWebSocketHandler } from "nitro";
+import { getProcessEventSink } from "../../../lib/observability.js";
 import {
   createThreadWebSocketSession,
   type WsAuthenticatedContext,
@@ -36,18 +37,22 @@ function disposePeer(peer: WsPeer, event: "close" | "error" = "close"): void {
 
 export default defineWebSocketHandler(() => ({
   async upgrade(request) {
-    const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-thread-route" });
+    const auth = await resolveWsUpgradeAuth(request, {
+      logPrefix: "ws-thread-route",
+      eventSink: getProcessEventSink(),
+    });
     if (auth.kind === "deferred-close") {
       return {
         context: { kind: "deferred-close", close: auth.close } satisfies ThreadWsRouteContext,
       };
     }
     return {
-      context: {
+      context: Object.freeze({
         kind: "authenticated",
         app: auth.app,
         userId: auth.userId,
-      } satisfies ThreadWsRouteContext,
+        traceId: auth.traceId,
+      } satisfies ThreadWsRouteContext),
     };
   },
 

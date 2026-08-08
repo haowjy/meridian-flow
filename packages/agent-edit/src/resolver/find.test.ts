@@ -6,8 +6,8 @@ import { findTextMatches } from "./find.js";
 import type { BlockScope } from "./scope.js";
 
 describe("findTextMatches", () => {
-  it("matches a single-line body when the needle includes a read hash prefix", () => {
-    const result = findInBodies(["The heavens rumbled..."], "63bf|The heavens rumbled...");
+  it("matches an exact single-line body", () => {
+    const result = findInBodies(["The heavens rumbled..."], "The heavens rumbled...");
 
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.message);
@@ -20,9 +20,9 @@ describe("findTextMatches", () => {
     });
   });
 
-  it("drops a pure hash marker line from a pasted multi-line block", () => {
+  it("matches an exact multiline body", () => {
     const body = "The heavens rumbled...\nThen silence.";
-    const result = findInBodies([body], `63bf|\n${body}`);
+    const result = findInBodies([body], body);
 
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.message);
@@ -33,8 +33,8 @@ describe("findTextMatches", () => {
     });
   });
 
-  it("matches two single-line blocks separated by read hash prefixes", () => {
-    const result = findInBodies(["First.", "Second."], "63bf|First.\nde0e|Second.");
+  it("matches exact bodies across blocks", () => {
+    const result = findInBodies(["First.", "Second."], "First.\n\nSecond.");
 
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.message);
@@ -47,22 +47,8 @@ describe("findTextMatches", () => {
     });
   });
 
-  it("preserves soft breaks inside a hash-prefixed multi-line block", () => {
-    const body = "Line A\nLine B";
-    const result = findInBodies([body], `63bf|\n${body}`);
-
-    expect(result).toMatchObject({ ok: true });
-    if (!result.ok) throw new Error(result.message);
-    expect(result.matches[0]).toMatchObject({
-      startIndex: 0,
-      endIndex: 0,
-      rangeSource: body,
-      matchEnd: body.length,
-    });
-  });
-
-  it("keeps an empty block in the middle of a hash-prefixed multi-block needle", () => {
-    const result = findInBodies(["A", "", "B"], "63bf|A\na1b2|\nde0e|B");
+  it("keeps an empty block in the middle of an exact multi-block needle", () => {
+    const result = findInBodies(["A", "", "B"], "A\n\n\n\nB");
 
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.message);
@@ -74,17 +60,7 @@ describe("findTextMatches", () => {
     });
   });
 
-  it("returns not_found for a needle that is only an empty read-format block", () => {
-    const result = findInBodies([""], "a1b2|");
-
-    expect(result).toMatchObject({
-      ok: false,
-      code: "not_found",
-      message: 'Could not find "a1b2|" in the selected scope',
-    });
-  });
-
-  it("does not reconstruct when the first line is not a read marker", () => {
+  it("does not reinterpret mixed prose and hash-shaped lines", () => {
     const result = findInBodies(["tail"], "Plain text\nde0e|tail");
 
     expect(result).toMatchObject({
@@ -92,15 +68,6 @@ describe("findTextMatches", () => {
       code: "not_found",
       message: 'Could not find "Plain text\nde0e|tail" in the selected scope',
     });
-  });
-
-  it("matches a read-format needle containing markdown escape characters literally", () => {
-    const body = "He whispered **not bold** and `code|pipe`.";
-    const result = findInBodies([body], `63bf|${body}`);
-
-    expect(result).toMatchObject({ ok: true });
-    if (!result.ok) throw new Error(result.message);
-    expect(result.matches[0]).toMatchObject({ rangeSource: body });
   });
 
   it("keeps raw document pipes literal", () => {
@@ -122,18 +89,8 @@ describe("findTextMatches", () => {
     });
   });
 
-  it("returns not_found when a reconstructed hash-prefixed needle still has no body match", () => {
-    const result = findInBodies(["Present body"], "63bf|Missing body");
-
-    expect(result).toMatchObject({
-      ok: false,
-      code: "not_found",
-      message: 'Could not find "63bf|Missing body" in the selected scope',
-    });
-  });
-
-  it("preserves ambiguity after reconstructing a hash-prefixed needle", () => {
-    const result = findInBodies(["Echo", "Echo"], "63bf|Echo");
+  it("preserves ambiguity for an exact needle", () => {
+    const result = findInBodies(["Echo", "Echo"], "Echo");
 
     expect(result).toMatchObject({
       ok: false,

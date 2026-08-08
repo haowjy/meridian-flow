@@ -2,6 +2,11 @@
 
 import { parseWsServerMessage } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { InMemoryEventSink } from "../../domains/observability/adapters/in-memory/in-memory-event-sink.js";
+import {
+  CorrelatingEventSink,
+  runWithEventCorrelation,
+} from "../../domains/observability/causal-context.js";
 import { createThreadWebSocketSession, type WsPeer } from "../ws-thread-handler.js";
 
 const VALID_ID = "00000000-0000-0000-0000-000000000001";
@@ -484,5 +489,58 @@ describe("malformed WebSocket thread IDs", () => {
 
     expect(requireOwnedThread).toHaveBeenCalledWith(CANONICAL_THREAD_ID, VALID_ID);
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("re-enters the immutable connection trace for delayed subscription delivery", async () => {
+    const evidence = new InMemoryEventSink();
+    const eventSink = new CorrelatingEventSink(evidence);
+    let deliver: ((entry: { seq: bigint; event: never }) => void) | undefined;
+    let failSend = false;
+    const peer = {
+      request: new Request("https://app.localhost/api/threads/ws"),
+      context: {
+        userId: VALID_ID,
+        traceId: "connection-trace",
+        app: {
+          eventSink,
+          threadRuntime: {
+            requireOwnedThread: vi.fn(),
+            liveState: vi.fn(async () => ({
+              threadId: CANONICAL_THREAD_ID,
+              status: "idle",
+              runningTurnId: null,
+              currentAgent: null,
+              resumeAfterSeq: "0",
+            })),
+          },
+          threadEventHub: {
+            catchupAndSubscribe: vi.fn(async (_threadId, _watermark, listener) => {
+              deliver = listener;
+              return { catchup: [], hitReplayLimit: false, unsubscribe: vi.fn() };
+            }),
+          },
+          hub: { headSeq: vi.fn(async () => 0n) },
+          runner: {},
+        },
+      },
+      send: vi.fn(() => {
+        if (failSend) throw new Error("socket closed");
+      }),
+      close: vi.fn(),
+    } as unknown as WsPeer;
+
+    await createThreadWebSocketSession(peer).onMessage(
+      JSON.stringify({ type: "subscribe", threadId: CANONICAL_THREAD_ID }),
+    );
+    failSend = true;
+    runWithEventCorrelation({ traceId: "publisher-trace" }, () =>
+      deliver?.({ seq: 1n, event: {} as never }),
+    );
+
+    expect(evidence.events.at(-1)).toMatchObject({
+      source: "wire.thread_ws",
+      name: "send.failed",
+      correlation: { traceId: "connection-trace" },
+    });
   });
 });

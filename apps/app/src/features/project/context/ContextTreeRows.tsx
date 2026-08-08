@@ -14,6 +14,7 @@ import {
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
+import { schemeAllowsCreation } from "./context-schemes";
 import type { ContextFile, ContextNode } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
 import { useCreateEntryForm } from "./use-create-entry-form";
@@ -151,9 +152,10 @@ function DirRow({
     );
   }
 
+  const allowCreate = schemeAllowsCreation(env.scheme);
   return (
     <>
-      <ContextEntryMenu onAction={handleAction}>
+      <ContextEntryMenu allowCreate={allowCreate} onAction={handleAction}>
         {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
         <div
           role="button"
@@ -168,7 +170,7 @@ function DirRow({
           <Twistie expanded={isOpen} />
           <RowIcon icon={isOpen ? FolderOpen : Folder} />
           <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
-          <EntryKebabButton onAction={handleAction} />
+          <EntryKebabButton allowCreate={allowCreate} onAction={handleAction} />
         </div>
       </ContextEntryMenu>
       {isOpen ? (
@@ -215,8 +217,9 @@ function FileRow({
   }
 
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
+  const allowCreate = schemeAllowsCreation(env.scheme);
   return (
-    <ContextEntryMenu onAction={handleAction}>
+    <ContextEntryMenu allowCreate={allowCreate} onAction={handleAction}>
       {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
       <div
         role="button"
@@ -224,15 +227,19 @@ function FileRow({
         onClick={select}
         onKeyDown={activateOnKey(select)}
         className={cn(
-          "group focus-ring flex h-7 items-center pr-1 text-sm hover:bg-sidebar-accent",
-          active ? "bg-sidebar-accent font-medium text-foreground" : "text-foreground",
+          "group focus-ring flex h-7 items-center pr-1 text-sm",
+          /* Hover is inactive-only: the active row holds its paper tone
+             (white-is-active). */
+          active
+            ? "bg-sidebar-accent font-medium text-foreground"
+            : "text-foreground hover:bg-sidebar-accent",
         )}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
-        <EntryKebabButton onAction={handleAction} />
+        <EntryKebabButton allowCreate={allowCreate} onAction={handleAction} />
       </div>
     </ContextEntryMenu>
   );

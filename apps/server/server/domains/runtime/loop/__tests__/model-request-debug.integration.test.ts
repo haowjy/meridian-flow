@@ -1,6 +1,5 @@
 /**
- * Orchestrator model-request debug capture: records per gateway call with turn,
- * iteration, agent, and verbatim system prompts.
+ * Orchestrator model-request debug capture: complete canonical request per call.
  */
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -31,7 +30,7 @@ describe("orchestrator model-request debug capture", () => {
     await mock.close();
   });
 
-  it("records at least one debug row per assistant turn with system prompts", async () => {
+  it("records the complete request and joins it to the gateway call", async () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "WB" });
@@ -101,13 +100,19 @@ describe("orchestrator model-request debug capture", () => {
     expect(records.length).toBeGreaterThanOrEqual(1);
     const first = records[0];
     expect(first).toMatchObject({
+      schema: "meridian.model-request-debug.v1",
       threadId: thread.id,
       turnId: handle.assistantTurnId,
       iteration: 0,
       agentSlug: "agent-one",
+      capture: { status: "complete" },
     });
-    expect(first?.systemMessages.join("\n")).toContain("You are a helpful assistant.");
-    expect(first?.systemMessages.join("\n")).toContain("chapter-debug");
-    expect(first?.messageCount).toBeGreaterThanOrEqual(1);
+    expect(first?.gatewayCallId).toEqual(expect.any(String));
+    expect(first?.requestDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(first?.requestBytes).toBeGreaterThan(0);
+    expect(JSON.stringify(first?.request?.messages[0])).toContain("You are a helpful assistant.");
+    expect(JSON.stringify(first?.request?.messages[0])).not.toContain("chapter-debug");
+    expect(JSON.stringify(first?.request)).toContain("hello");
+    expect(JSON.stringify(first?.request)).toContain("chapter-debug");
   });
 });

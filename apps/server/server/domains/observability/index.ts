@@ -13,6 +13,13 @@ export {
 export { createNoopEventSink, NoopEventSink } from "./adapters/noop/noop-event-sink.js";
 export { RecentEventsBuffer } from "./adapters/recent/recent-events-buffer.js";
 export { createTeeEventSink, TeeEventSink } from "./adapters/tee/tee-event-sink.js";
+export {
+  CorrelatingEventSink,
+  currentEventCorrelation,
+  type EventCorrelationScope,
+  enterEventCorrelation,
+  runWithEventCorrelation,
+} from "./causal-context.js";
 export { emitEvent, unknownToEventPayload } from "./emit-event.js";
 export {
   type EventQuery,
@@ -28,4 +35,9 @@ export type {
   EventSink,
   TraceStreamRef,
 } from "./ports/event-sink.js";
-export { safeSnippet, sanitizeEventRecord } from "./safe-event.js";
+export {
+  MAX_EVENT_RECORD_BYTES,
+  safeSnippet,
+  sanitizeEventRecord,
+  serializedEventBytes,
+} from "./safe-event.js";

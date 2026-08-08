@@ -67,6 +67,11 @@ msgstr "'.' and '..' cannot be used as names"
 msgid "(also {0})"
 msgstr "(also {0})"
 
+#. placeholder {0}: work.unpushedChangeCount
+#: src/features/project/home/WorksManager.tsx
+msgid "{0, plural, one {# pending change} other {# pending changes}}"
+msgstr "{0, plural, one {# pending change} other {# pending changes}}"
+
 #. placeholder {0}: serverPendingCount ?? 0
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
@@ -242,6 +247,10 @@ msgstr "Account settings."
 msgid "Actions"
 msgstr "Actions"
 
+#: src/features/project/home/WorksManager.tsx
+msgid "Active"
+msgstr "Active"
+
 #: src/features/chat/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
@@ -333,6 +342,18 @@ msgstr "Apply all"
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
+
+#: src/features/project/home/WorksManager.tsx
+msgid "Archive"
+msgstr "Archive"
+
+#: src/features/project/home/WorksManager.tsx
+msgid "Archived"
+msgstr "Archived"
+
+#: src/features/project/chat/NewChatDialog.tsx
+msgid "Archived current Work"
+msgstr "Archived current Work"
 
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
@@ -430,6 +451,7 @@ msgstr "Can't undo"
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/home/WorksManager.tsx
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -526,9 +548,17 @@ msgstr "Choose a home"
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
 
+#: src/features/project/chat/NewChatDialog.tsx
+msgid "Choose a Work for this chat"
+msgstr "Choose a Work for this chat"
+
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
 msgstr "Choose an option"
+
+#: src/features/project/home/WorksManager.tsx
+msgid "Choose the context for new writing and chats."
+msgstr "Choose the context for new writing and chats."
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
@@ -756,6 +786,11 @@ msgstr "Couldn't load this result."
 msgid "Couldn't load uploads."
 msgstr "Couldn't load uploads."
 
+#: src/features/project/chat/NewChatDialog.tsx
+#: src/features/project/home/WorksManager.tsx
+msgid "Couldn't load Works."
+msgstr "Couldn't load Works."
+
 #: src/components/app/QueryErrorRow.tsx
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
@@ -869,6 +904,7 @@ msgstr "Default alignment"
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/home/WorksManager.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
 msgstr "Delete"
@@ -912,6 +948,10 @@ msgstr "Demo image"
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "Describe the picture for a reader who cannot see it"
 msgstr "Describe the picture for a reader who cannot see it"
+
+#: src/features/project/home/WorksManager.tsx
+msgid "Description"
+msgstr "Description"
 
 #: src/routes/dev-login.tsx
 msgid "Dev login"
@@ -1011,6 +1051,11 @@ msgstr "Drop image to insert it"
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Duplicate"
 msgstr "Duplicate"
+
+#. placeholder {0}: work.name
+#: src/features/project/home/WorksManager.tsx
+msgid "Edit {0}"
+msgstr "Edit {0}"
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
@@ -1189,6 +1234,10 @@ msgstr "Form payload is malformed."
 #: src/features/chat/placeholders.ts
 msgid "Go ahead"
 msgstr "Go ahead"
+
+#: src/features/project/home/WorksManager.tsx
+msgid "Goal"
+msgstr "Goal"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
@@ -1477,7 +1526,6 @@ msgstr "Loading chats…"
 msgid "Loading file…"
 msgstr "Loading file…"
 
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Loading files…"
 msgstr "Loading files…"
@@ -1506,6 +1554,15 @@ msgstr "Loading signed image URL…"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Loading uploads…"
 msgstr "Loading uploads…"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Loading Work"
+msgstr "Loading Work"
+
+#: src/features/project/chat/NewChatDialog.tsx
+#: src/features/project/home/WorksManager.tsx
+msgid "Loading Works…"
+msgstr "Loading Works…"
 
 #: src/features/billing/UsageCard.tsx
 msgid "Loading…"
@@ -1623,6 +1680,10 @@ msgstr "Must be at least {value}"
 msgid "Must be at most {value}"
 msgstr "Must be at most {value}"
 
+#: src/features/project/home/WorksManager.tsx
+msgid "Name"
+msgstr "Name"
+
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
@@ -1695,6 +1756,10 @@ msgstr "New reply since you last opened"
 msgid "New tab"
 msgstr "New tab"
 
+#: src/features/project/home/WorksManager.tsx
+msgid "New Work"
+msgstr "New Work"
+
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr "No agents available."
@@ -1739,6 +1804,11 @@ msgstr "No fields required; confirm to continue."
 msgid "No files uploaded yet."
 msgstr "No files uploaded yet."
 
+#: src/features/project/chat/NewChatDialog.tsx
+#: src/features/project/home/WorksManager.tsx
+msgid "No goal yet"
+msgstr "No goal yet"
+
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"
 msgstr "No matching chats"
@@ -1762,6 +1832,14 @@ msgstr "No projects yet."
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
 msgstr "No results yet."
+
+#: src/features/project/chat/NewChatDialog.tsx
+msgid "No Work is available for a new chat."
+msgstr "No Work is available for a new chat."
+
+#: src/features/project/home/WorksManager.tsx
+msgid "No Works yet."
+msgstr "No Works yet."
 
 #: src/routes/__root.tsx
 msgid "Not Found"
@@ -2223,6 +2301,10 @@ msgstr "Running"
 msgid "Save name and location"
 msgstr "Save name and location"
 
+#: src/features/project/home/WorksManager.tsx
+msgid "Save Work"
+msgstr "Save Work"
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
 msgstr "Saved locally (offline)"
@@ -2234,6 +2316,10 @@ msgstr "scene break"
 #: src/features/project/context/context-schemes.ts
 msgid "Scratch"
 msgstr "Scratch"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Scratch for Work {workName}"
+msgstr "Scratch for Work {workName}"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Search chats"
@@ -2444,8 +2530,8 @@ msgid "Switch screens or manage your account."
 msgstr "Switch screens or manage your account."
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Switch work"
-msgstr "Switch work"
+#~ msgid "Switch work"
+#~ msgstr "Switch work"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Switched Works"
@@ -2820,6 +2906,8 @@ msgstr "Try a web address, a document path, or [[a document name]]."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/project/chat/NewChatDialog.tsx
+#: src/features/project/home/WorksManager.tsx
 msgid "Try again"
 msgstr "Try again"
 
@@ -2847,6 +2935,10 @@ msgstr "ul"
 #: src/core/editor/diagrams/diagram-render-state.ts
 msgid "Unable to render diagram"
 msgstr "Unable to render diagram"
+
+#: src/features/project/home/WorksManager.tsx
+msgid "Unarchive"
+msgstr "Unarchive"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
@@ -2929,6 +3021,10 @@ msgstr "Uploading elsewhere…"
 msgid "Uploads"
 msgstr "Uploads"
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Uploads for Work {workName}"
+msgstr "Uploads for Work {workName}"
+
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
 msgid "Usage"
@@ -2970,15 +3066,31 @@ msgstr "Where were we?"
 msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Work"
 msgstr "Work"
 
+#: src/features/project/home/WorksManager.tsx
+msgid "Work details"
+msgstr "Work details"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Work: \"{workName}\""
+msgstr "Work: \"{workName}\""
+
+#. placeholder {0}: activeWork.name
+#: src/features/project/ChatPaneController.tsx
+msgid "Work: {0}"
+msgstr "Work: {0}"
+
 #: src/features/project/lifecycle.ts
 msgid "Working…"
 msgstr "Working…"
+
+#: src/features/project/home/WorksManager.tsx
+msgid "Works"
+msgstr "Works"
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx

@@ -58,9 +58,8 @@ export interface RuntimeStore {
     session: ActorSession,
     docId: string,
     commandName: WriteCommand["command"],
+    runtime: RuntimeDocumentState,
     filePath?: string,
-    runtime?: RuntimeDocumentState,
-    options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
 }
@@ -71,10 +70,6 @@ export interface RuntimeEvictOptions {
 
 export interface RuntimeRestoreOptions {
   filePath?: string;
-}
-
-export interface RuntimeSyncOptions {
-  rejectOnStale?: boolean;
 }
 
 export function createRuntimeStore(deps: {
@@ -264,20 +259,10 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     commandName: WriteCommand["command"],
+    runtime: RuntimeDocumentState,
     filePath = docId,
-    runtime?: RuntimeDocumentState,
-    options: RuntimeSyncOptions = {},
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
-    if (staleLiveDocs.has(docId) && runtime) {
-      if (options.rejectOnStale) {
-        return {
-          ok: false,
-          response: {
-            status: "not_found",
-            text: `status: not_found\n\nDocument changed since your last read; a whole-scope replace/delete with no \`find\` is unsafe against a moved target. Run write(command="read", file="${filePath}") and retry.`,
-          },
-        };
-      }
+    if (staleLiveDocs.has(docId)) {
       const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
         filePath,
       });
@@ -288,21 +273,11 @@ export function createRuntimeStore(deps: {
     const state = session.documents.get(docId);
     if (state) return { ok: true, stateVector: state.stateVector };
 
-    if (runtime) {
-      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
-        filePath,
-      });
-      if (isInternalWriteResult(restored)) return { ok: false, response: restored };
-      return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
-    }
-
-    return {
-      ok: false,
-      response: {
-        status: "not_found",
-        text: `status: not_found\n\nNo synced snapshot for ${filePath}. Run write(command="read", file="${filePath}") to re-sync.`,
-      },
-    };
+    const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
+      filePath,
+    });
+    if (isInternalWriteResult(restored)) return { ok: false, response: restored };
+    return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
   }
 
   function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
