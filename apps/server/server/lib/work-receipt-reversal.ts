@@ -9,14 +9,15 @@ import {
   type WorkReceiptState,
 } from "@meridian/contracts/works";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import type { WorkContextUpdates, WorkRepository } from "../domains/projects/index.js";
+import type { WorkContextDelivery, WorkRepository } from "../domains/projects/index.js";
 import type {
   BlockRepository,
   ThreadRepository,
   ThreadWorksRepository,
   TurnRepository,
+  WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
-import { applyRebindThreadWorkTransition } from "../domains/threads/index.js";
+import { rebindThreadWork } from "../domains/threads/index.js";
 
 type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
@@ -25,7 +26,8 @@ type WorkReceiptReversalDeps = {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "lockPrimary" | "rebindPrimary">;
   preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
   works: WorkRepository;
-  contextUpdates: Pick<WorkContextUpdates, "projectChanged" | "threadChanged">;
+  workContextDelivery: Pick<WorkContextDelivery, "projectChanged" | "deliverAfterCommit">;
+  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -72,6 +74,7 @@ export async function reverseWorkReceipts(
   if (!context) return [];
   const ordered = orderReceipts(context.receipts, input.direction);
   const changedProjects = new Set<string>();
+  let threadContextChanged = false;
   try {
     const results = await deps.transaction(async () => {
       await lockReceiptState(deps, ordered, context.thread);
@@ -82,17 +85,26 @@ export async function reverseWorkReceipts(
           applied.push(result(step.receipt, step.command, "unavailable", step.message));
           continue;
         }
-        await applyStep(deps, context.thread, step.receipt, input.direction);
-        if (step.receipt.operation !== "switch") changedProjects.add(context.thread.projectId);
+        const changedThreadContext = await applyStep(
+          deps,
+          context.thread,
+          step.receipt,
+          input.direction,
+        );
+        if (changedThreadContext) threadContextChanged = true;
+        else if (step.receipt.operation !== "switch") changedProjects.add(context.thread.projectId);
         applied.push(
           result(step.receipt, step.command, input.direction === "undo" ? "reversed" : "redone"),
         );
       }
       await Promise.all(
-        [...changedProjects].map((projectId) => deps.contextUpdates.projectChanged(projectId)),
+        [...changedProjects].map((projectId) => deps.workContextDelivery.projectChanged(projectId)),
       );
       return applied;
     });
+    if (threadContextChanged) {
+      await deps.workContextDelivery.deliverAfterCommit(input.threadId);
+    }
     return results;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -253,7 +265,7 @@ async function applyStep(
   thread: Thread,
   receipt: WorkReceipt,
   direction: Direction,
-): Promise<void> {
+): Promise<boolean> {
   if (receipt.operation === "create") {
     if (direction === "undo") {
       await deps.works.softDelete(receipt.workId);
@@ -275,12 +287,14 @@ async function applyStep(
     else await deps.works.softDelete(receipt.workId);
   } else {
     const target = direction === "undo" ? switchTarget(receipt) : receipt.workId;
-    await applyRebindThreadWorkTransition(deps, {
+    const rebound = await rebindThreadWork(deps, {
       threadId: thread.id,
       targetWorkId: target,
       preferenceUserId: thread.userId,
     });
+    return rebound.changed;
   }
+  return false;
 }
 
 async function applyState(works: WorkRepository, workId: WorkId, state: WorkReceiptState) {

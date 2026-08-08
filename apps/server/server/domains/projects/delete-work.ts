@@ -2,11 +2,11 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import type { WorkRepository } from "./ports/work-repository.js";
-import type { WorkContextUpdates } from "./work-context-updates.js";
+import type { WorkContextDelivery } from "./work-context-delivery.js";
 
 type Deps = {
   works: WorkRepository;
-  contextUpdates: Pick<WorkContextUpdates, "projectChanged">;
+  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
 };
 
 export type DeleteWorkTransition = { before: Work | null; after: Work | null; changed: boolean };
@@ -25,7 +25,7 @@ export async function deleteWorkTransition(
     await deps.works.softDelete(workId);
     const after = await deps.works.findById(workId);
     const transition = { before, after, changed: !!after?.deletedAt };
-    if (transition.changed) await deps.contextUpdates.projectChanged(before.projectId);
+    if (transition.changed) await deps.workContextDelivery.projectChanged(before.projectId);
     return transition;
   });
   return transition;
@@ -36,7 +36,7 @@ export async function restoreWork(deps: Deps, workId: WorkId): Promise<Work> {
     const before = await deps.works.lockById(workId);
     if (!before) throw new Error(`Work not found: ${workId}`);
     const work = before.deletedAt ? await deps.works.restore(workId) : before;
-    if (before.deletedAt) await deps.contextUpdates.projectChanged(work.projectId);
+    if (before.deletedAt) await deps.workContextDelivery.projectChanged(work.projectId);
     return work;
   });
 }

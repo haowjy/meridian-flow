@@ -43,9 +43,12 @@ function harness(receipts: WorkReceipt[]) {
         rebindPrimary,
       },
       preferences: { setCurrentWorkId },
-      contextUpdates: {
+      workContextDelivery: {
         projectChanged: vi.fn(async () => {}),
-        threadChanged: vi.fn(async () => {}),
+        deliverAfterCommit: vi.fn(async () => "delivered" as const),
+      },
+      obligations: {
+        enqueueThread: vi.fn(async (threadId) => [threadId]),
       },
       transaction: works.transaction,
       blocks: {
@@ -135,7 +138,7 @@ describe("Work receipt reversal", () => {
           transactionActive = false;
         }
       });
-    h.deps.contextUpdates.projectChanged.mockImplementation(async () => {
+    h.deps.workContextDelivery.projectChanged.mockImplementation(async () => {
       expect(transactionActive).toBe(true);
     });
 
@@ -347,8 +350,9 @@ describe("Work receipt reversal", () => {
     });
     expect(h.rebindPrimary).toHaveBeenNthCalledWith(1, THREAD_ID, b.id);
     expect(h.rebindPrimary).toHaveBeenNthCalledWith(2, THREAD_ID, a.id);
-    expect(h.deps.contextUpdates.threadChanged).toHaveBeenCalledTimes(2);
-    expect(h.deps.contextUpdates.projectChanged).not.toHaveBeenCalled();
+    expect(h.deps.obligations.enqueueThread).toHaveBeenCalledTimes(2);
+    expect(h.deps.workContextDelivery.deliverAfterCommit).toHaveBeenCalledOnce();
+    expect(h.deps.workContextDelivery.projectChanged).not.toHaveBeenCalled();
   });
 
   it("undoes and redoes a mixed update then delete sequence", async () => {

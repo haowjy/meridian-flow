@@ -69,7 +69,13 @@ describe("assembleNextTurnContext", () => {
       persistBake: false,
       workContext: {
         async renderForThread() {
-          return "<work_context>\ntest\n</work_context>";
+          return {
+            text: "<work_context>\ntest\n</work_context>",
+            current: {
+              projectId: "00000000-0000-0000-0000-000000000001",
+              workId: "00000000-0000-0000-0000-000000000002",
+            },
+          };
         },
       },
     });
@@ -102,7 +108,13 @@ describe("assembleNextTurnContext", () => {
       persistBake: true,
       workContext: {
         async renderForThread() {
-          return "<work_context>\ntest\n</work_context>";
+          return {
+            text: "<work_context>\ntest\n</work_context>",
+            current: {
+              projectId: "00000000-0000-0000-0000-000000000001",
+              workId: "00000000-0000-0000-0000-000000000002",
+            },
+          };
         },
       },
       async bakeComposedSystemPrompt(_threadId, input) {
@@ -138,7 +150,13 @@ describe("assembleNextTurnContext", () => {
       persistBake: true,
       workContext: {
         async renderForThread() {
-          return "<work_context>\ntest\n</work_context>";
+          return {
+            text: "<work_context>\ntest\n</work_context>",
+            current: {
+              projectId: "00000000-0000-0000-0000-000000000001",
+              workId: "00000000-0000-0000-0000-000000000002",
+            },
+          };
         },
       },
       async bakeComposedSystemPrompt(_threadId, input) {

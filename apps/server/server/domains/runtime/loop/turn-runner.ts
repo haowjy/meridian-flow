@@ -33,6 +33,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { WorkContextDelivery } from "../../projects/index.js";
 import {
   type ThreadEventHub,
   type TurnRepository,
@@ -40,7 +41,6 @@ import {
 } from "../../threads/index.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { RunTurnPort } from "./run-turn-port.js";
-import type { SystemUpdateDelivery } from "./system-update-delivery.js";
 import {
   createInMemoryThreadRunOwnership,
   type ThreadRunClaim,
@@ -91,8 +91,7 @@ export function createTurnRunner(deps: {
   repos: { turns: TurnRepository };
   eventSink: EventSink;
   helperResultDelivery?: Pick<HelperResultDelivery, "flush">;
-  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "beforeTurn"> &
-    Partial<Pick<SystemUpdateDelivery, "flush" | "flushOwned">>;
+  workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
   runOwnership?: ThreadRunOwnership;
 }) {
   const eventSink = deps.eventSink;
@@ -193,7 +192,7 @@ export function createTurnRunner(deps: {
         assertConnectionTokenLive(input.connectionToken);
 
         const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
-        await deps.systemUpdateDelivery?.beforeTurn(input.threadId);
+        await deps.workContextDelivery.beforeTurn(input.threadId);
 
         const handle = await deps.orchestrator.runTurn({
           threadId: input.threadId,
@@ -246,11 +245,7 @@ export function createTurnRunner(deps: {
               await deps.helperResultDelivery?.flush(input.threadId);
             } finally {
               try {
-                if (deps.systemUpdateDelivery?.flushOwned) {
-                  await deps.systemUpdateDelivery.flushOwned(input.threadId);
-                } else {
-                  await deps.systemUpdateDelivery?.flush?.(input.threadId);
-                }
+                await deps.workContextDelivery.flushOwned(input.threadId);
               } finally {
                 await claim.release();
                 childRunRegistry.abortChildrenOf(input.threadId);

@@ -46,6 +46,7 @@ describe("turn-runner generator failure", () => {
       }),
     );
     const runner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator,
       hub,
       repos: { turns: repos.turns },

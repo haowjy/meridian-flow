@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
     {
       works: app.workRepo,
       preferences: app.preferences,
-      contextUpdates: app.systemUpdates,
+      workContextDelivery: app.workContextDelivery,
     },
     user.userId,
     {

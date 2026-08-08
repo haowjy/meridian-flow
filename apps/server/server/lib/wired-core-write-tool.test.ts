@@ -136,12 +136,10 @@ describe("wired write tool", () => {
       },
       works,
       preferences: {} as never,
-      workContextUpdates: {
+      workContextDelivery: {
         projectChanged: async () => {},
-        threadChanged: async () => {},
-        flush: async () => {},
-        isPending: async () => false,
       },
+      obligations: { enqueueThread: async (threadId) => [threadId] },
       drafts: { draftReview: { list: async () => [] } } as never,
       contextPorts: { forProject: () => port, forWork: () => port },
       documentSync: {
@@ -151,6 +149,7 @@ describe("wired write tool", () => {
       },
       responseWrites: { trackStagedCreate: () => {} },
       eventSink: createInMemoryEventSink(),
+      transaction: async (operation) => operation(),
     });
     const handler = (name: "write" | "ls" | "search") => {
       const registration = registrations.find((candidate) => candidate.definition.name === name);
@@ -364,12 +363,10 @@ function wiredWriteHandler(input: {
     },
     works: { listByProject: async () => [] } as never,
     preferences: {} as never,
-    workContextUpdates: {
+    workContextDelivery: {
       projectChanged: async () => {},
-      threadChanged: async () => {},
-      flush: async () => {},
-      isPending: async () => false,
     },
+    obligations: { enqueueThread: async (threadId) => [threadId] },
     drafts: { draftReview: { list: async () => [] } } as never,
     contextPorts: { forProject: () => port, forWork: () => port },
     documentSync: {
@@ -379,6 +376,7 @@ function wiredWriteHandler(input: {
     },
     responseWrites: { trackStagedCreate: () => {} },
     eventSink: createInMemoryEventSink(),
+    transaction: async (operation) => operation(),
   });
   if (writeRegistration?.definition.name !== "write") {
     throw new Error("missing wired write registration");

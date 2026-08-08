@@ -18,6 +18,7 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
@@ -25,14 +26,13 @@ import type { InterruptSession, InterruptTurnState } from "./interrupt-session.j
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import type { ReturnResultCompleter } from "./run-turn-port.js";
-import type { SystemUpdateDelivery } from "./system-update-delivery.js";
 
 export interface ToolDispatchDeps {
   toolExecutor: ToolExecutor;
   childRunCoordinator: ChildRunCoordinator;
   eventSink: EventSink;
   persistenceDeps: PersistenceDeps;
-  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow">;
+  workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
 }
 
 export interface ToolDispatchContext {
@@ -222,9 +222,9 @@ export async function dispatchToolCall(
   events.push(...persistedToolResult.events);
   let resultBlock = persistedToolResult.result;
   let resultMetadata = execResult.metadata;
-  if (execResult.metadata?.workContextChanged === true && deps.systemUpdateDelivery) {
+  if (execResult.metadata?.workContextChanged === true) {
     try {
-      const update = await deps.systemUpdateDelivery.deliverNow(ctx.state.threadId);
+      const update = await deps.workContextDelivery.deliverNow(ctx.state.threadId);
       ctx.allTurns.push(update.turn);
       ctx.state.allBlocks.push(update.block);
       events.push(...update.events);

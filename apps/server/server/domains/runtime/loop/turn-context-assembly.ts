@@ -89,7 +89,7 @@ export async function assembleNextTurnContext(
       });
       systemPrompt = thread.composedSystemPrompt ?? "";
     } else {
-      const workContext = await input.workContext.renderForThread(thread.id as ThreadId);
+      const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
       const bakedPrompt = rebakeComposedSystemPrompt({
         basePrompt: thread.systemPrompt ?? agentContext.agentBody ?? null,
         skillsSystemPromptSection: agentContext.skillsSystemPromptSection,

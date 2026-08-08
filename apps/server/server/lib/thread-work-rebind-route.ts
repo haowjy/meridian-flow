@@ -5,18 +5,21 @@ import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import type { ProjectRepository, WorkRepository } from "../domains/projects/index.js";
+import {
+  type ProjectRepository,
+  type WorkContextDelivery,
+  WorkLifecycleUnavailableError,
+  type WorkRepository,
+} from "../domains/projects/index.js";
 import type { ThreadRunOwnership } from "../domains/runtime/index.js";
 import {
-  applyRebindThreadWorkTransition,
-  finishRebindThreadWork,
-  MissingPrimaryWorkMembershipError,
+  RebindThreadWorkError,
+  rebindThreadWork,
   requireThreadOwner,
   type ThreadRepository,
-  type ThreadWorkContextUpdates,
-  ThreadWorkRebindTargetUnavailableError,
-  ThreadWorkRebindUnavailableError,
+  ThreadWorkProjectMismatchError,
   type ThreadWorksRepository,
+  type WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
@@ -24,10 +27,11 @@ import { requireRequestId } from "./request-id.js";
 export interface ThreadWorkRebindRouteDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
-  projects: ProjectRepository;
+  projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findById">;
   preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
-  contextUpdates: ThreadWorkContextUpdates;
+  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
+  workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   runOwnership: ThreadRunOwnership;
 }
@@ -73,39 +77,50 @@ export async function handleRebindThreadWorkRequest(
       409,
     );
   }
-  let transition: Awaited<ReturnType<typeof applyRebindThreadWorkTransition>>;
+  let transition: Awaited<ReturnType<typeof rebindThreadWork>>;
   try {
     transition = await deps.transaction(() =>
-      applyRebindThreadWorkTransition(deps, {
+      rebindThreadWork(deps, {
         threadId: thread.id,
         targetWorkId: input.body.workId,
         preferenceUserId: input.userId,
       }),
     );
   } catch (cause) {
-    if (cause instanceof ThreadWorkRebindUnavailableError) {
+    if (cause instanceof RebindThreadWorkError && cause.reason === "unavailable") {
       throwHttpInterrupt(meridianErrorFromSystem("not_found", "Thread or Work not found"), 404);
     }
-    if (cause instanceof ThreadWorkRebindTargetUnavailableError) {
-      throwHttpInterrupt(
-        meridianError({
-          code: "work_unavailable",
-          message: "That Work is no longer available. Refresh Works and choose another.",
-          source: "system",
-          details: { refresh: "works" },
-        }),
-        409,
-      );
-    }
-    if (cause instanceof MissingPrimaryWorkMembershipError) {
+    if (cause instanceof RebindThreadWorkError && cause.reason === "missing_primary") {
       throwHttpInterrupt(
         meridianErrorFromSystem("thread_work_missing", "Conversation has no current Work"),
         409,
       );
     }
+    if (cause instanceof WorkLifecycleUnavailableError) {
+      if (cause.workId === input.body.workId) {
+        throwHttpInterrupt(
+          meridianError({
+            code: "work_unavailable",
+            message: "That Work is no longer available. Refresh Works and choose another.",
+            source: "system",
+            details: { refresh: "works" },
+          }),
+          409,
+        );
+      }
+      throwHttpInterrupt(
+        meridianErrorFromSystem("thread_work_missing", "Conversation has no current Work"),
+        409,
+      );
+    }
+    if (cause instanceof ThreadWorkProjectMismatchError) {
+      throwHttpInterrupt(meridianErrorFromSystem("not_found", "Thread or Work not found"), 404);
+    }
     throw cause;
   } finally {
     await claim.release();
   }
-  return finishRebindThreadWork(deps.contextUpdates, transition);
+  if (!transition.changed) return { ...transition, contextUpdate: "not_required" };
+  const contextUpdate = await deps.workContextDelivery.deliverAfterCommit(transition.threadId);
+  return { ...transition, contextUpdate };
 }

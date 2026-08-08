@@ -28,7 +28,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-    const { createSystemUpdateDelivery } = await import("./system-update-delivery.js");
+    const { createWorkContextDelivery } = await import("./work-context-delivery.js");
     const { createTurnRunner } = await import("./turn-runner.js");
     const { createDrizzleThreadRunOwnership } = await import(
       "../adapters/drizzle-thread-run-ownership.js"
@@ -76,12 +76,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       eventWriter = createDrizzleEventJournalWriter(db),
       runOwnership = sharedRunOwnership,
     ) {
-      return createSystemUpdateDelivery({
+      return createWorkContextDelivery({
         repos,
         eventWriter,
         workContext: {
           async renderForThread() {
-            return "<work_context>current state</work_context>";
+            return {
+              text: "<work_context>current state</work_context>",
+              current: {
+                projectId: "00000000-0000-0000-0000-000000000001",
+                workId: "00000000-0000-0000-0000-000000000002",
+              },
+            };
           },
         },
         isThreadRunning: () => false,
@@ -121,7 +127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           works,
           preferences: createDrizzleProjectPreferencesRepository({ db }),
-          contextUpdates: delivery(repos),
+          workContextDelivery: delivery(repos),
         },
         USER_ID,
         {
@@ -131,19 +137,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       );
       const failingWriter = {
+        ...createDrizzleEventJournalWriter(db),
         async appendEvent() {
           throw new Error("journal unavailable");
         },
       };
 
-      await expect(delivery(repos, failingWriter as never).beforeTurn(THREAD_ID)).rejects.toThrow(
+      await expect(delivery(repos, failingWriter).beforeTurn(THREAD_ID)).rejects.toThrow(
         "journal unavailable",
       );
       await expect(works.findById(created.id)).resolves.toMatchObject({
         name: "Committed Home Work",
       });
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
-      await expect(delivery(repos, failingWriter as never).beforeTurn(THREAD_ID)).rejects.toThrow(
+      await expect(delivery(repos, failingWriter).beforeTurn(THREAD_ID)).rejects.toThrow(
         "journal unavailable",
       );
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
@@ -155,7 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ value: count() })
         .from(schema.eventJournal)
         .where(eq(schema.eventJournal.threadId, THREAD_ID));
-      expect(events?.value).toBe(2);
+      expect(events?.value).toBe(3);
     });
 
     it("admits one update across concurrent process claims", async () => {
@@ -209,6 +216,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("runs one primary turn across concurrent starts on the same production adapter", async () => {
       let runTurnCalls = 0;
       const runner = createTurnRunner({
+        workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
         orchestrator: {
           async runTurn() {
             runTurnCalls += 1;
@@ -288,18 +296,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const workContext = createWorkContextReader({ works, threadWorks: repos.threadWorks });
 
       const staleRenderedContext = await workContext.renderForThread(THREAD_ID);
-      expect(staleRenderedContext).toContain("Old Work Name");
+      expect(staleRenderedContext.text).toContain("Old Work Name");
       await repos.transaction(async () => {
         await works.update(work.id, { name: "New Work Name", goal: "New goal" });
         await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
       });
       await repos.threads.bakeComposedSystemPrompt(THREAD_ID, {
-        composedSystemPrompt: staleRenderedContext,
+        composedSystemPrompt: staleRenderedContext.text,
         bakedSkillSlugs: [],
       });
 
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
-      await createSystemUpdateDelivery({
+      await createWorkContextDelivery({
         repos,
         eventWriter: createDrizzleEventJournalWriter(db),
         workContext,
@@ -356,7 +364,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = restoreWork(
         {
           works,
-          contextUpdates: {
+          workContextDelivery: {
             async projectChanged(projectId) {
               firstEnqueues += 1;
               await repos.workContextDeliveries.enqueueProject(projectId);
@@ -371,7 +379,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const second = restoreWork(
         {
           works,
-          contextUpdates: {
+          workContextDelivery: {
             async projectChanged(projectId) {
               secondEnqueues += 1;
               await repos.workContextDeliveries.enqueueProject(projectId);

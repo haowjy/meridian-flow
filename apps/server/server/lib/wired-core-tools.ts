@@ -52,7 +52,7 @@ import {
   createWork,
   deleteWorkTransition,
   updateWorkTransition,
-  type WorkContextUpdates,
+  type WorkContextDelivery,
   WorkDeleteBlockedError,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -67,8 +67,9 @@ import type {
   ThreadRepository,
   ThreadWorksRepository,
   TurnDocumentTouchRepository,
+  WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
-import { rebindThreadWork, type ThreadWorkContextUpdates } from "../domains/threads/index.js";
+import { rebindThreadWork } from "../domains/threads/index.js";
 
 export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 
@@ -80,11 +81,12 @@ export interface ToolWiringDeps {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   preferences: ProjectPreferencesRepository;
-  workContextUpdates: WorkContextUpdates & ThreadWorkContextUpdates;
+  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
+  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
-  transaction?<T>(operation: () => Promise<T>): Promise<T>;
+  transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
@@ -591,7 +593,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             {
               works: deps.works,
               preferences: deps.preferences,
-              contextUpdates: deps.workContextUpdates,
+              workContextDelivery: deps.workContextDelivery,
             },
             thread.userId,
             {
@@ -642,7 +644,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "update") {
           const transition = await updateWorkTransition(
-            { works: deps.works, contextUpdates: deps.workContextUpdates },
+            { works: deps.works, workContextDelivery: deps.workContextDelivery },
             selected.id,
             {
               name: command.name,
@@ -678,7 +680,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "delete") {
           const transition = await deleteWorkTransition(
-            { works: deps.works, contextUpdates: deps.workContextUpdates },
+            { works: deps.works, workContextDelivery: deps.workContextDelivery },
             selected.id,
           );
           const before = transition.before ?? selected;
@@ -701,20 +703,21 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           };
         }
 
-        const rebound = await rebindThreadWork(
-          {
-            threads: deps.threads,
-            threadWorks: deps.threadWorks,
-            works: deps.works,
-            preferences: deps.preferences,
-            contextUpdates: deps.workContextUpdates,
-            transaction: deps.transaction ?? deps.works.transaction.bind(deps.works),
-          },
-          {
-            threadId: thread.id,
-            targetWorkId: selected.id,
-            preferenceUserId: thread.userId,
-          },
+        const rebound = await deps.transaction(() =>
+          rebindThreadWork(
+            {
+              threads: deps.threads,
+              threadWorks: deps.threadWorks,
+              works: deps.works,
+              preferences: deps.preferences,
+              obligations: deps.obligations,
+            },
+            {
+              threadId: thread.id,
+              targetWorkId: selected.id,
+              preferenceUserId: thread.userId,
+            },
+          ),
         );
         return {
           output: modelWork(rebound.work),

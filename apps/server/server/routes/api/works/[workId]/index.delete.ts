@@ -19,7 +19,10 @@ export default defineEventHandler(async (event) => {
   );
   if (!work.deletedAt) {
     try {
-      await deleteWork({ works: app.workRepo, contextUpdates: app.systemUpdates }, workId);
+      await deleteWork(
+        { works: app.workRepo, workContextDelivery: app.workContextDelivery },
+        workId,
+      );
     } catch (error) {
       if (error instanceof WorkDeleteBlockedError) {
         throw createError({ statusCode: 409, message: error.message });

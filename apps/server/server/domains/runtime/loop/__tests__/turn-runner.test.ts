@@ -11,6 +11,7 @@ describe("createTurnRunner", () => {
   it("captures resume position before setup and snapshot floor after setup", async () => {
     const heads = [10n, 20n];
     const runner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           return {
@@ -47,6 +48,7 @@ describe("createTurnRunner", () => {
     });
     let runTurnCalls = 0;
     const runner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           runTurnCalls += 1;
@@ -83,6 +85,7 @@ describe("createTurnRunner", () => {
   it("admits one concurrent start even when ownership acquisition is reentrant", async () => {
     let runTurnCalls = 0;
     const runner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           runTurnCalls += 1;
@@ -130,11 +133,11 @@ describe("createTurnRunner", () => {
       eventSink: createInMemoryEventSink(),
       hub: { headSeq: async () => 0n } as never,
       repos: { turns: { findById: async () => null } as never },
-      systemUpdateDelivery: {
+      workContextDelivery: {
         async beforeTurn() {
           order.push("recover-update");
         },
-        async flush() {},
+        async flushOwned() {},
       },
     });
 
@@ -145,6 +148,7 @@ describe("createTurnRunner", () => {
 
   it("does not abort background children during parent turn cleanup", async () => {
     const runner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           return {
@@ -185,6 +189,7 @@ describe("createTurnRunner", () => {
   it("refuses to start a turn when the connection token closed before startTurn", async () => {
     let runTurnCalled = false;
     const runner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           runTurnCalled = true;

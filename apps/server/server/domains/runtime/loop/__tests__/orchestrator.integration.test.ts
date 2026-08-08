@@ -44,7 +44,7 @@ import {
   type PermissionGate,
   resolveProfile,
 } from "../permissions/index.js";
-import { createSystemUpdateDelivery } from "../system-update-delivery.js";
+import { createWorkContextDelivery } from "../work-context-delivery.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -66,19 +66,19 @@ describe("runtime loop integration", () => {
     configureRepos?: (repos: ReturnType<typeof createInMemoryRepositories>) => void,
     projectPreferences?: Parameters<typeof createOrchestrator>[0]["projectPreferences"],
     workWriteMode?: Parameters<typeof createOrchestrator>[0]["workWriteMode"],
-    enableSystemUpdates = false,
+    enableWorkContextDelivery = false,
     orchestratorOverrides: Partial<Parameters<typeof createOrchestrator>[0]> = {},
-    systemUpdateDeliveryFactory?: (
+    workContextDeliveryFactory?: (
       repos: ReturnType<typeof createInMemoryRepositories>,
       eventWriter: ReturnType<typeof createInMemoryEventJournalWriter>,
-    ) => Parameters<typeof createOrchestrator>[0]["systemUpdateDelivery"],
+    ) => Parameters<typeof createOrchestrator>[0]["workContextDelivery"],
   ) {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     configureRepos?.(repos);
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const eventWriter = createInMemoryEventJournalWriter();
-    const systemUpdateDelivery = systemUpdateDeliveryFactory?.(repos, eventWriter);
+    const workContextDelivery = workContextDeliveryFactory?.(repos, eventWriter);
     const interruptRegistry = createInterruptRegistry();
     const gateway =
       gatewayOverride ??
@@ -116,15 +116,21 @@ describe("runtime loop integration", () => {
         ...(workWriteMode ? { workWriteMode } : {}),
         creditLedger,
         ...orchestratorOverrides,
-        ...(systemUpdateDelivery ? { systemUpdateDelivery } : {}),
-        ...(enableSystemUpdates
+        ...(workContextDelivery ? { workContextDelivery } : {}),
+        ...(enableWorkContextDelivery
           ? {
-              systemUpdateDelivery: createSystemUpdateDelivery({
+              workContextDelivery: createWorkContextDelivery({
                 repos,
                 eventWriter,
                 workContext: {
                   async renderForThread() {
-                    return "<work_context>\ncurrent: target-work\n</work_context>";
+                    return {
+                      text: "<work_context>\ncurrent: target-work\n</work_context>",
+                      current: {
+                        projectId: "00000000-0000-0000-0000-000000000001",
+                        workId: "00000000-0000-0000-0000-000000000002",
+                      },
+                    };
                   },
                 },
                 isThreadRunning: () => true,
@@ -1086,7 +1092,7 @@ describe("runtime loop integration", () => {
       },
     });
     let running = true;
-    let delivery: ReturnType<typeof createSystemUpdateDelivery> | undefined;
+    let delivery: ReturnType<typeof createWorkContextDelivery> | undefined;
     const { repos, eventWriter, orchestrator, projectId } = await setupOrchestrator(
       createToolExecutor(registry),
       capturingGateway,
@@ -1097,12 +1103,18 @@ describe("runtime loop integration", () => {
       false,
       {},
       (deliveryRepos, deliveryWriter) => {
-        const actual = createSystemUpdateDelivery({
+        const actual = createWorkContextDelivery({
           repos: deliveryRepos,
           eventWriter: deliveryWriter,
           workContext: {
             async renderForThread() {
-              return "<work_context>current: target</work_context>";
+              return {
+                text: "<work_context>current: target</work_context>",
+                current: {
+                  projectId: "00000000-0000-0000-0000-000000000001",
+                  workId: "00000000-0000-0000-0000-000000000002",
+                },
+              };
             },
           },
           isThreadRunning: () => running,
@@ -1155,7 +1167,7 @@ describe("runtime loop integration", () => {
 
     running = false;
     if (!delivery) throw new Error("System update delivery was not composed");
-    await delivery.flush(thread.id);
+    await delivery.deliverAfterCommit(thread.id);
     const recoveredTurns = await repos.turns.listByThread(thread.id);
     expect(recoveredTurns.at(-1)?.metadata).toMatchObject({
       kind: "system_update",

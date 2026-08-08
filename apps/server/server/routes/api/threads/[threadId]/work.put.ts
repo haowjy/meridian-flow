@@ -16,11 +16,8 @@ export default defineEventHandler(async (event) => {
       projects: app.projectRepo,
       works: app.workRepo,
       preferences: app.preferences,
-      contextUpdates: {
-        threadChanged: (threadId) => app.systemUpdates.threadChanged(threadId),
-        flush: (threadId) => app.systemUpdates.flush(threadId),
-        isPending: (threadId) => app.repos.workContextDeliveries.isPending(threadId),
-      },
+      obligations: app.repos.workContextDeliveries,
+      workContextDelivery: app.workContextDelivery,
       transaction: app.repos.transaction,
       runOwnership: app.runOwnership,
     },

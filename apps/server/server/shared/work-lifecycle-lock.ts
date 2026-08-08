@@ -2,20 +2,10 @@
 import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { currentDrizzleDb } from "./drizzle-transaction.js";
 
 export type LockedWorkLifecycle = "active" | "deleted" | "missing";
-
-/** A lifecycle row was authoritatively absent after taking its database lock. */
-export class WorkLifecycleUnavailableError extends Error {
-  constructor(
-    readonly workId: string,
-    readonly state: Exclude<LockedWorkLifecycle, "active">,
-  ) {
-    super(`Work not found: ${workId}`);
-    this.name = "WorkLifecycleUnavailableError";
-  }
-}
 
 export async function lockWorkLifecycle(
   db: Database,

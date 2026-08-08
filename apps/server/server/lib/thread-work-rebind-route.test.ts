@@ -5,11 +5,12 @@ import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/ru
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
-import { ThreadWorkUnavailableError } from "../domains/threads/index.js";
+import { WorkLifecycleUnavailableError } from "../domains/projects/index.js";
 import interruptErrorHandler from "./interrupt-error-handler.js";
 import {
   handleRebindThreadWorkRequest,
   parseRebindThreadWorkRequest,
+  type ThreadWorkRebindRouteDeps,
 } from "./thread-work-rebind-route.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000201" as ThreadId;
@@ -65,7 +66,6 @@ function routeFixture(
     deletedAt: options.deletedTarget ? "now" : null,
   };
   let current = options.sameTarget ? TARGET_ID : SOURCE_ID;
-  let pending = false;
   return {
     deps: {
       threads: { findById: async () => thread },
@@ -86,21 +86,22 @@ function routeFixture(
         },
       },
       preferences: { setCurrentWorkId: vi.fn(async () => {}) },
-      contextUpdates: {
-        threadChanged: async () => {
-          pending = true;
+      obligations: {
+        enqueueThread: async () => {
+          return [THREAD_ID];
         },
-        flush: async () => {
-          if (options.flushFailure) throw new Error("delivery unavailable");
-          pending = false;
+      },
+      workContextDelivery: {
+        deliverAfterCommit: async () => {
+          if (options.flushFailure) return "pending" as const;
+          return "delivered" as const;
         },
-        isPending: async () => pending,
       },
       transaction: async <T>(operation: () => Promise<T>) => operation(),
       runOwnership: {
         tryAcquire: async () => (options.running ? null : { release: vi.fn(async () => {}) }),
       },
-    },
+    } satisfies ThreadWorkRebindRouteDeps,
   };
 }
 
@@ -115,7 +116,7 @@ describe("thread Work rebind writer adapter", () => {
   it("returns a retryable structured busy conflict without mutating", async () => {
     const h = routeFixture({ running: true });
     await expect(
-      handleRebindThreadWorkRequest(h.deps as never, {
+      handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
         body: { workId: TARGET_ID },
@@ -154,18 +155,21 @@ describe("thread Work rebind writer adapter", () => {
       expect(await runOwnership.tryAcquire()).toBeNull();
       return operation();
     };
-    const originalFlush = h.deps.contextUpdates.flush;
-    h.deps.contextUpdates.flush = async () => {
+    const originalDelivery = h.deps.workContextDelivery.deliverAfterCommit;
+    h.deps.workContextDelivery.deliverAfterCommit = async () => {
       expect(claimed).toBe(false);
       order.push("delivery");
-      await originalFlush();
+      return originalDelivery();
     };
 
-    await handleRebindThreadWorkRequest({ ...h.deps, runOwnership, transaction } as never, {
-      threadId: THREAD_ID,
-      userId: USER_ID,
-      body: { workId: TARGET_ID },
-    });
+    await handleRebindThreadWorkRequest(
+      { ...h.deps, runOwnership, transaction },
+      {
+        threadId: THREAD_ID,
+        userId: USER_ID,
+        body: { workId: TARGET_ID },
+      },
+    );
 
     expect(order).toEqual(["claim", "transaction", "release", "delivery"]);
   });
@@ -173,7 +177,7 @@ describe("thread Work rebind writer adapter", () => {
   it("returns the shared receipt and truthful delivery status", async () => {
     const h = routeFixture({ flushFailure: true });
     await expect(
-      handleRebindThreadWorkRequest(h.deps as never, {
+      handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
         body: { workId: TARGET_ID },
@@ -193,7 +197,7 @@ describe("thread Work rebind writer adapter", () => {
   it("returns changed false for an idle same-target retry", async () => {
     const h = routeFixture({ sameTarget: true });
     await expect(
-      handleRebindThreadWorkRequest(h.deps as never, {
+      handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
         body: { workId: TARGET_ID },
@@ -219,7 +223,7 @@ describe("thread Work rebind writer adapter", () => {
     ];
     for (const h of cases) {
       await expect(
-        handleRebindThreadWorkRequest(h.deps as never, {
+        handleRebindThreadWorkRequest(h.deps, {
           threadId: THREAD_ID,
           userId: USER_ID,
           body: { workId: TARGET_ID },
@@ -246,7 +250,9 @@ describe("thread Work rebind writer adapter", () => {
         code: "thread_work_missing",
       },
       {
-        fixture: routeFixture({ rebindFailure: new ThreadWorkUnavailableError() }),
+        fixture: routeFixture({
+          rebindFailure: new WorkLifecycleUnavailableError(TARGET_ID, "deleted"),
+        }),
         status: 409,
         code: "work_unavailable",
         details: { refresh: "works" },
@@ -256,7 +262,7 @@ describe("thread Work rebind writer adapter", () => {
     for (const entry of cases) {
       let thrown: unknown;
       try {
-        await handleRebindThreadWorkRequest(entry.fixture.deps as never, {
+        await handleRebindThreadWorkRequest(entry.fixture.deps, {
           threadId: THREAD_ID,
           userId: USER_ID,
           body: { workId: TARGET_ID },
@@ -281,7 +287,7 @@ describe("thread Work rebind writer adapter", () => {
     const failure = new Error("database connection lost");
     const h = routeFixture({ rebindFailure: failure });
     await expect(
-      handleRebindThreadWorkRequest(h.deps as never, {
+      handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
         body: { workId: TARGET_ID },
