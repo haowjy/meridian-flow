@@ -6,6 +6,17 @@ import { currentDrizzleDb } from "./drizzle-transaction.js";
 
 export type LockedWorkLifecycle = "active" | "deleted" | "missing";
 
+/** A lifecycle row was authoritatively absent after taking its database lock. */
+export class WorkLifecycleUnavailableError extends Error {
+  constructor(
+    readonly workId: string,
+    readonly state: Exclude<LockedWorkLifecycle, "active">,
+  ) {
+    super(`Work not found: ${workId}`);
+    this.name = "WorkLifecycleUnavailableError";
+  }
+}
+
 export async function lockWorkLifecycle(
   db: Database,
   workId: string,
@@ -21,7 +32,6 @@ export async function lockWorkLifecycle(
 }
 
 export async function requireLockedActiveWork(db: Database, workId: string): Promise<void> {
-  if ((await lockWorkLifecycle(db, workId)) !== "active") {
-    throw new Error(`Work not found: ${workId}`);
-  }
+  const state = await lockWorkLifecycle(db, workId);
+  if (state !== "active") throw new WorkLifecycleUnavailableError(workId, state);
 }

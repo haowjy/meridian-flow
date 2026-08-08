@@ -21,6 +21,14 @@ export class ThreadWorkRebindUnavailableError extends Error {
   }
 }
 
+/** The preflight target disappeared while the lifecycle locks were acquired. */
+export class ThreadWorkRebindTargetUnavailableError extends Error {
+  constructor() {
+    super("Work is no longer available");
+    this.name = "ThreadWorkRebindTargetUnavailableError";
+  }
+}
+
 export class MissingPrimaryWorkMembershipError extends Error {
   constructor() {
     super("Conversation has no current Work");
@@ -122,7 +130,7 @@ export async function applyRebindThreadWorkTransition(
     rebound = await deps.threadWorks.rebindPrimary(thread.id, requestedTarget.id);
   } catch (cause) {
     if (cause instanceof ThreadWorkUnavailableError) {
-      throw new ThreadWorkRebindUnavailableError();
+      throw new ThreadWorkRebindTargetUnavailableError();
     }
     throw cause;
   }
@@ -132,9 +140,8 @@ export async function applyRebindThreadWorkTransition(
     deps.works.findById(rebound.previousWorkId),
     deps.works.findById(requestedTarget.id),
   ]);
-  if (!previousWork || !targetWork || targetWork.deletedAt) {
-    throw new ThreadWorkRebindUnavailableError();
-  }
+  if (!previousWork || previousWork.deletedAt) throw new MissingPrimaryWorkMembershipError();
+  if (!targetWork || targetWork.deletedAt) throw new ThreadWorkRebindTargetUnavailableError();
 
   const preferenceChanged = rebound.changed && thread.kind === "primary";
   if (preferenceChanged) {

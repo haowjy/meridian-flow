@@ -27,6 +27,7 @@ export {
   type RebindThreadWorkTransitionDeps,
   rebindThreadWork,
   type ThreadWorkContextUpdates,
+  ThreadWorkRebindTargetUnavailableError,
   ThreadWorkRebindUnavailableError,
   type ThreadWorkTransitionContextUpdates,
 } from "./domain/rebind-thread-work.js";

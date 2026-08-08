@@ -36,6 +36,9 @@
   canonical Meridian error envelope, reuse one transaction-composable binding
   transition for receipt reversal, and publish committed Work identity through
   the existing journal/AG-UI stream for live client convergence.
+- `apps/server`: Work-rebind preflight concealment, lifecycle conflicts, missing
+  primary integrity failures, and infrastructure failures now remain distinct
+  through the repository, domain, and serialized HTTP boundaries.
 - `apps/server`: new conversations attach by explicit Work, parent Work, writer
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.

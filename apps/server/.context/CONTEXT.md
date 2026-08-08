@@ -59,8 +59,10 @@ The shipped route surface covers:
 - Authenticated `PUT /api/threads/:threadId/work` rebinds an idle owned thread
   through the shared thread-domain transition while holding the same
   cross-process run claim as model turns. Running threads return canonical,
-  retryable `thread_busy`; unavailable or unauthorized resources remain
-  concealed. The claim is released before ordinary post-commit context delivery.
+  retryable `thread_busy`; unavailable or unauthorized resources found during
+  preflight remain concealed. A target lost under the lifecycle lock returns a
+  refreshable conflict, while integrity and infrastructure failures stay
+  distinct. The claim is released before ordinary post-commit context delivery.
 - Project document-link resolution for wikilinks, `manuscript://`/`work://`
   scheme links, and paths relative to a containing document.
 - First-party package catalog, builtin agent catalog, readiness, and unknown
