@@ -30,21 +30,22 @@ export async function updateWorkTransition(
   const result = await deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
     if (!before || before.deletedAt) throw new Error(`Work not found: ${workId}`);
-    let work = await deps.works.update(workId, {
-      name: input.name,
-      goal: input.goal,
-      description: input.description,
-    });
-    if (input.status === "archived") work = await deps.works.archive(workId);
-    if (input.status === "active") work = await deps.works.unarchive(workId);
+    const requested = {
+      name: input.name === undefined ? before.name : input.name.trim(),
+      goal: input.goal === undefined ? before.goal : input.goal,
+      description: input.description === undefined ? before.description : input.description,
+      status: input.status ?? before.status,
+    };
+    const changed =
+      before.name !== requested.name ||
+      before.goal !== requested.goal ||
+      before.description !== requested.description ||
+      before.status !== requested.status;
+    const work = changed ? await deps.works.update(workId, requested) : before;
     return {
       before,
       after: work,
-      changed:
-        before.name !== work.name ||
-        before.goal !== work.goal ||
-        before.description !== work.description ||
-        before.status !== work.status,
+      changed,
       contextChanged:
         before.name !== work.name || before.goal !== work.goal || before.status !== work.status,
     };

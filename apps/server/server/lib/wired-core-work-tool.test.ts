@@ -226,6 +226,43 @@ describe("wired work tool", () => {
     });
   });
 
+  it("emits no inverse or projection invalidation for a content-identical update", async () => {
+    const fixture = await setup();
+    const original = await fixture.works.findById(fixture.target.id);
+
+    await expect(
+      fixture.handler(
+        {
+          command: "update",
+          work: fixture.target.slug,
+          name: fixture.target.name,
+          goal: "",
+          description: "",
+          status: fixture.target.status,
+        },
+        toolContext(),
+      ),
+    ).resolves.toMatchObject({
+      output: {
+        name: fixture.target.name,
+        goal: null,
+        description: null,
+        status: fixture.target.status,
+        updatedAt: original?.updatedAt,
+        lastActivityAt: original?.lastActivityAt,
+      },
+      metadata: {
+        workReceipt: {
+          operation: "update",
+          changed: false,
+          inverse: null,
+        },
+      },
+    });
+    expect(fixture.threadChanged).not.toHaveBeenCalled();
+    expect(fixture.invalidateThread).not.toHaveBeenCalled();
+  });
+
   it("captures a concurrent update as the exact before state", async () => {
     const fixture = await setup();
     const lockById = fixture.works.lockById.bind(fixture.works);

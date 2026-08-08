@@ -166,6 +166,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.goal !== undefined) patch.goal = input.goal;
       if (input.description !== undefined) patch.description = input.description;
+      if (input.status !== undefined) {
+        patch.status = input.status;
+        patch.archivedAt = input.status === "archived" ? new Date() : null;
+      }
       try {
         return await updateWork(id, patch);
       } catch (cause) {

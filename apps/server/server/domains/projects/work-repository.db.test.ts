@@ -133,6 +133,139 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(commandDelete).resolves.toMatchObject({ changed: false });
     });
 
+    it("makes identical locked updates storage no-ops and applies real changes once", async () => {
+      const work = await works.create({
+        projectId: PROJECT_ID,
+        name: "Semantic state",
+        goal: "Finish it",
+        description: "Private notes",
+      });
+      const deps = { works, contextUpdates: { async projectChanged() {} } };
+      await control.unsafe(`
+        CREATE SEQUENCE test_work_update_count;
+        CREATE FUNCTION test_count_work_update() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM nextval('test_work_update_count');
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_count_work_update
+        BEFORE UPDATE ON works
+        FOR EACH ROW EXECUTE FUNCTION test_count_work_update();
+      `);
+
+      async function updateCount(): Promise<number> {
+        const [row] = await control<{ last_value: string; is_called: boolean }[]>`
+          SELECT last_value::text, is_called FROM test_work_update_count
+        `;
+        return row?.is_called ? Number(row.last_value) : 0;
+      }
+
+      try {
+        const identical = await updateWorkTransition(deps, work.id, {
+          name: " Semantic state ",
+          goal: "Finish it",
+          description: "Private notes",
+          status: "active",
+        });
+        expect(identical).toEqual({ before: work, after: work, changed: false });
+        await expect(updateCount()).resolves.toBe(0);
+
+        await expect(updateWorkTransition(deps, work.id, {})).resolves.toMatchObject({
+          changed: false,
+          after: { goal: "Finish it", description: "Private notes" },
+        });
+        await expect(updateCount()).resolves.toBe(0);
+
+        let releaseLock!: () => void;
+        let hasLock!: () => void;
+        const lockGate = new Promise<void>((resolve) => {
+          releaseLock = resolve;
+        });
+        const locked = new Promise<void>((resolve) => {
+          hasLock = resolve;
+        });
+        const holder = works.transaction(async () => {
+          await works.lockById(work.id);
+          hasLock();
+          await lockGate;
+        });
+        await locked;
+        const concurrent = [
+          updateWorkTransition(deps, work.id, { name: "Semantic state", status: "active" }),
+          updateWorkTransition(deps, work.id, {
+            goal: "Finish it",
+            description: "Private notes",
+          }),
+        ];
+        await waitForLock("transactionid");
+        releaseLock();
+        await holder;
+        await expect(Promise.all(concurrent)).resolves.toMatchObject([
+          { changed: false },
+          { changed: false },
+        ]);
+        await expect(updateCount()).resolves.toBe(0);
+
+        const cleared = await updateWorkTransition(deps, work.id, {
+          goal: null,
+          description: null,
+        });
+        expect(cleared).toMatchObject({
+          before: { goal: "Finish it", description: "Private notes" },
+          after: { goal: null, description: null },
+          changed: true,
+        });
+        await expect(updateCount()).resolves.toBe(1);
+
+        const archived = await updateWorkTransition(deps, work.id, { status: "archived" });
+        expect(archived).toMatchObject({ after: { status: "archived" }, changed: true });
+        await expect(updateCount()).resolves.toBe(2);
+        await expect(
+          updateWorkTransition(deps, work.id, { status: "archived" }),
+        ).resolves.toMatchObject({ changed: false });
+        await expect(updateCount()).resolves.toBe(2);
+
+        const unarchived = await updateWorkTransition(deps, work.id, { status: "active" });
+        expect(unarchived).toMatchObject({
+          before: { status: "archived" },
+          after: { status: "active", archivedAt: null },
+          changed: true,
+        });
+        await expect(updateCount()).resolves.toBe(3);
+
+        const beforeRealChange = unarchived.after;
+        const realChange = await updateWorkTransition(deps, work.id, {
+          name: "Revised semantic state",
+          goal: "New goal",
+          description: "New notes",
+        });
+        expect(realChange).toMatchObject({
+          before: {
+            name: beforeRealChange.name,
+            goal: beforeRealChange.goal,
+            description: beforeRealChange.description,
+          },
+          after: {
+            name: "Revised semantic state",
+            goal: "New goal",
+            description: "New notes",
+          },
+          changed: true,
+        });
+        expect(realChange.after.updatedAt).not.toBe(beforeRealChange.updatedAt);
+        expect(realChange.after.lastActivityAt).toBe(realChange.after.updatedAt);
+        await expect(updateCount()).resolves.toBe(4);
+      } finally {
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_count_work_update ON works;
+          DROP FUNCTION IF EXISTS test_count_work_update();
+          DROP SEQUENCE IF EXISTS test_work_update_count;
+        `);
+      }
+    });
+
     it("restores a deleted Work unless its name or slug was reclaimed", async () => {
       const available = await works.create({ projectId: PROJECT_ID, name: "Available" });
       await works.softDelete(available.id);

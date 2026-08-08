@@ -20,6 +20,8 @@ export interface UpdateWorkInput {
   name?: string;
   goal?: string | null;
   description?: string | null;
+  /** Applies lifecycle state in the same write as metadata. */
+  status?: WorkStatus;
 }
 
 export interface ListWorksOptions {

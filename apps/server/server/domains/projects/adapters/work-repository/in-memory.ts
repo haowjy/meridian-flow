@@ -112,8 +112,13 @@ export function createInMemoryWorkRepository(
       }
       if (input.goal !== undefined) row.goal = input.goal;
       if (input.description !== undefined) row.description = input.description;
-      row.updatedAt = now();
-      row.lastActivityAt = row.updatedAt;
+      const timestamp = now();
+      if (input.status !== undefined) {
+        row.status = input.status;
+        row.archivedAt = input.status === "archived" ? timestamp : null;
+      }
+      row.updatedAt = timestamp;
+      row.lastActivityAt = timestamp;
       return { ...row };
     },
 

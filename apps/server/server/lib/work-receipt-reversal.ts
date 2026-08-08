@@ -286,9 +286,8 @@ async function applyState(works: WorkRepository, workId: WorkId, state: WorkRece
     name: state.name,
     goal: state.goal,
     description: state.description,
+    status: state.status,
   });
-  if (state.status === "archived") await works.archive(workId);
-  else await works.unarchive(workId);
 }
 
 function switchTarget(receipt: WorkReceipt): WorkId {
