@@ -204,7 +204,7 @@ export function ComposerWorkControl({
         <PopoverContent
           align="start"
           aria-busy={mutation.isPending}
-          className="flex max-h-[min(var(--radix-popover-content-available-height),calc(100svh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1rem))] w-80 flex-col overflow-hidden p-3"
+          className="work-selector-popover flex w-80 flex-col overflow-hidden p-3"
           aria-label={t`Composer settings`}
           onEscapeKeyDown={(event) => {
             if (mutation.isPending) event.preventDefault();
@@ -296,7 +296,7 @@ function WorkPopover({
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         align="start"
-        className="flex max-h-[min(var(--radix-popover-content-available-height),calc(100svh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1rem))] w-80 flex-col overflow-hidden p-3"
+        className="work-selector-popover flex w-80 flex-col overflow-hidden p-3"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
       >
@@ -342,7 +342,7 @@ function WorkChoices({
   const active = filtered.filter((work) => work.status === "active");
   const archived = filtered.filter((work) => work.status === "archived");
   const searchId = useId();
-  const navigate = (event: KeyboardEvent<HTMLFieldSetElement>) => {
+  const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     const rows = [
       ...event.currentTarget.querySelectorAll<HTMLButtonElement>("section button:not(:disabled)"),
@@ -361,7 +361,10 @@ function WorkChoices({
     rows[next]?.focus();
   };
   return (
-    <fieldset
+    // biome-ignore lint/a11y/useSemanticElements: fieldset's intrinsic min-content sizing prevents the bounded results scrollport.
+    <div
+      role="group"
+      aria-label={t`Change work for this chat`}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 border-0 p-0"
       onKeyDown={navigate}
     >
@@ -402,7 +405,7 @@ function WorkChoices({
           </p>
         ) : null}
       </div>
-    </fieldset>
+    </div>
   );
 }
 

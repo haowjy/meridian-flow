@@ -340,8 +340,9 @@ describe("ComposerWorkControl", () => {
         expect(results).not.toBeNull();
         expect(results?.querySelectorAll("section button")).toHaveLength(13);
         expect(
-          document.querySelector('[class*="radix-popover-content-available-height"]'),
+          document.querySelector('[role="group"][aria-label="Change work for this chat"]'),
         ).not.toBeNull();
+        expect(document.querySelector(".work-selector-popover")).not.toBeNull();
       },
     );
   });
