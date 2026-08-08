@@ -64,11 +64,14 @@ describe("wired work tool", () => {
       },
       works: works as never,
       preferences,
-      workContextUpdates: {
+      workContextDelivery: {
         projectChanged: async () => {},
-        threadChanged,
-        flush: async () => {},
-        isPending: async () => false,
+      },
+      obligations: {
+        enqueueThread: async (threadId) => {
+          await threadChanged();
+          return [threadId];
+        },
       },
       drafts: { draftReview: { list: async () => [{ draftId: "draft-1" }] } } as never,
       contextPorts: {} as never,
@@ -77,6 +80,7 @@ describe("wired work tool", () => {
       } as never,
       responseWrites: { trackStagedCreate: () => {} } as never,
       eventSink: createInMemoryEventSink(),
+      transaction: async (operation) => operation(),
     });
     const registration = registrations.find((candidate) => candidate.definition.name === "work");
     if (registration?.execution.type !== "server") throw new Error("missing work");

@@ -26,12 +26,21 @@ describe("orchestrator event projector tool calls", () => {
       metadata: {
         kind: "system_update",
         section: "work_context",
-        projectId: "00000000-0000-4000-8000-000000000001",
-        workId: "00000000-0000-4000-8000-000000000002",
       },
     };
 
-    expect(projectOrchestratorEvents([{ type: "turn.created", turn }])).toEqual([
+    expect(
+      projectOrchestratorEvents([
+        { type: "turn.created", turn },
+        {
+          type: "work_context.changed",
+          turnId: turn.id,
+          threadId: GOLDEN_THREAD_ID,
+          projectId: "00000000-0000-4000-8000-000000000001",
+          workId: "00000000-0000-4000-8000-000000000002",
+        },
+      ]),
+    ).toEqual([
       {
         type: EventType.CUSTOM,
         name: WORK_CONTEXT_PROJECTION_EVENT,

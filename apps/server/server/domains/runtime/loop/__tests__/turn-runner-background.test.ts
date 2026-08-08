@@ -6,6 +6,7 @@ import { noopFinalizeGeneratorFailure } from "./test-gateway.js";
 describe("createTurnRunner background child registry", () => {
   function runner() {
     return createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           return {
@@ -79,6 +80,7 @@ describe("createTurnRunner background child registry", () => {
     });
     const flushes: string[] = [];
     const childRunner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           return {
@@ -115,6 +117,7 @@ describe("createTurnRunner background child registry", () => {
     });
     const background = new AbortController();
     const childRunner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         async runTurn() {
           return {

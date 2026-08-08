@@ -12,7 +12,7 @@ describe("Work context update triggers", () => {
   it("emits once after each successful create, delete, and restore command", async () => {
     const works = createInMemoryWorkRepository();
     const changed: string[] = [];
-    const contextUpdates = {
+    const workContextDelivery = {
       async projectChanged(projectId: string) {
         changed.push(projectId);
       },
@@ -21,13 +21,13 @@ describe("Work context update triggers", () => {
       {
         works,
         preferences: createInMemoryProjectPreferencesRepository(),
-        contextUpdates,
+        workContextDelivery,
       },
       USER_ID,
       { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Book 2" },
     );
-    await deleteWork({ works, contextUpdates }, work.id);
-    await restoreWork({ works, contextUpdates }, work.id);
+    await deleteWork({ works, workContextDelivery }, work.id);
+    await restoreWork({ works, workContextDelivery }, work.id);
 
     expect(changed).toEqual([PROJECT_ID, PROJECT_ID, PROJECT_ID]);
   });

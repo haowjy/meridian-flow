@@ -66,6 +66,7 @@ export type PriceSource = "computed" | "provider_reported" | "configured_rate" |
  * deferred names are reserved here until their producer and payload contract land.
  */
 export type JournalEventType =
+  | "work_context.changed"
   /** PRODUCED NOW — real orchestrator/hub producers exist today. */
   | "turn.created"
   | "turn.completed"
@@ -288,6 +289,7 @@ export type {
   BlockUpsertedRow,
   ModelResponseReceivedRow,
   OrchestratorEvent,
+  WorkContextChangedEvent,
 } from "./orchestrator-events.js";
 export type { ThreadAttention, ThreadListItem, ThreadListWork } from "./projections.js";
 export type {

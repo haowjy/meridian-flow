@@ -3,11 +3,7 @@ import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
-import {
-  rebindThreadWork,
-  type ThreadWorkContextUpdates,
-  ThreadWorkRebindUnavailableError,
-} from "./rebind-thread-work.js";
+import { RebindThreadWorkError, rebindThreadWork } from "./rebind-thread-work.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000101" as ThreadId;
 const SOURCE_ID = "00000000-0000-4000-8000-000000000102" as WorkId;
@@ -35,31 +31,13 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
 }
 
 function fixture(
-  options: {
-    kind?: Thread["kind"];
-    target?: Work | null;
-    pending?: boolean;
-    flushFailure?: boolean;
-    sameTarget?: boolean;
-  } = {},
+  options: { kind?: Thread["kind"]; target?: Work | null; sameTarget?: boolean } = {},
 ) {
   const source = work(SOURCE_ID, "Source");
   const target = options.target === undefined ? work(TARGET_ID, "Target") : options.target;
   let currentId = options.sameTarget ? TARGET_ID : SOURCE_ID;
-  let pending = options.pending ?? false;
   const setCurrentWorkId = vi.fn(async () => {});
-  const threadChanged = vi.fn(async () => {
-    pending = true;
-  });
-  const flush = vi.fn(async () => {
-    if (options.flushFailure) throw new Error("delivery unavailable");
-    pending = false;
-  });
-  const contextUpdates: ThreadWorkContextUpdates = {
-    threadChanged,
-    flush,
-    isPending: async () => pending,
-  };
+  const enqueueThread = vi.fn(async () => [THREAD_ID]);
   const thread = {
     id: THREAD_ID,
     projectId: "project-1",
@@ -71,8 +49,7 @@ function fixture(
     source,
     target,
     setCurrentWorkId,
-    threadChanged,
-    flush,
+    enqueueThread,
     deps: {
       threads: { findById: async () => thread },
       works: {
@@ -88,8 +65,7 @@ function fixture(
         },
       },
       preferences: { setCurrentWorkId },
-      contextUpdates,
-      transaction: async <T>(operation: () => Promise<T>) => operation(),
+      obligations: { enqueueThread },
     },
   };
 }
@@ -109,7 +85,6 @@ describe("rebindThreadWork", () => {
       work: { id: TARGET_ID, name: "Target" },
       changed: true,
       preferenceChanged: true,
-      contextUpdate: "delivered",
       receipt: {
         operation: "switch",
         category: "binding",
@@ -120,8 +95,7 @@ describe("rebindThreadWork", () => {
       },
     });
     expect(h.setCurrentWorkId).toHaveBeenCalledWith(PREFERENCE_USER_ID, "project-1", TARGET_ID);
-    expect(h.threadChanged).toHaveBeenCalledOnce();
-    expect(h.flush).toHaveBeenCalledOnce();
+    expect(h.enqueueThread).toHaveBeenCalledOnce();
   });
 
   it("keeps same-target retries side-effect free with no inverse", async () => {
@@ -135,12 +109,10 @@ describe("rebindThreadWork", () => {
     expect(result).toMatchObject({
       changed: false,
       preferenceChanged: false,
-      contextUpdate: "not_required",
       receipt: { changed: false, inverse: null },
     });
     expect(h.setCurrentWorkId).not.toHaveBeenCalled();
-    expect(h.threadChanged).not.toHaveBeenCalled();
-    expect(h.flush).not.toHaveBeenCalled();
+    expect(h.enqueueThread).not.toHaveBeenCalled();
   });
 
   it("does not change sticky preference for subagent threads", async () => {
@@ -152,17 +124,6 @@ describe("rebindThreadWork", () => {
     });
     expect(result.preferenceChanged).toBe(false);
     expect(h.setCurrentWorkId).not.toHaveBeenCalled();
-  });
-
-  it("returns pending without failing a committed rebind when delivery fails", async () => {
-    const h = fixture({ flushFailure: true });
-    await expect(
-      rebindThreadWork(h.deps, {
-        threadId: THREAD_ID,
-        targetWorkId: TARGET_ID,
-        preferenceUserId: USER_ID,
-      }),
-    ).resolves.toMatchObject({ changed: true, contextUpdate: "pending" });
   });
 
   it("rejects missing, deleted, and cross-project targets before mutation", async () => {
@@ -178,8 +139,8 @@ describe("rebindThreadWork", () => {
           targetWorkId: TARGET_ID,
           preferenceUserId: USER_ID,
         }),
-      ).rejects.toBeInstanceOf(ThreadWorkRebindUnavailableError);
-      expect(h.threadChanged).not.toHaveBeenCalled();
+      ).rejects.toBeInstanceOf(RebindThreadWorkError);
+      expect(h.enqueueThread).not.toHaveBeenCalled();
     }
   });
 });

@@ -45,7 +45,7 @@ skeleton and delegates the moving parts.
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, skills catalog, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
-| `work-context.ts` / `system-update-delivery.ts` | Renders the current Work plus the 20 most recently active sibling Works. Every Work-list change queues all eligible live threads, including unfrozen threads, so a concurrent first bake cannot freeze stale context without leaving a durable refresh. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. A PostgreSQL session advisory claim identifies the owning server across processes for the full run. |
+| `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
@@ -173,7 +173,10 @@ facet.
   mutation coalesces a durable per-thread obligation in its business
   transaction, whether or not the first prompt has frozen. Delivery renders
   current state under the thread-head transition and deletes the obligation only
-  in the transaction that commits the update and its journal events. A
+  in the transaction that commits the update and its typed
+  `work_context.changed` journal event. Direct writer mutations conservatively
+  finish through one non-throwing `deliverAfterCommit`; in-run tool dispatch is
+  the sole `deliverNow` owner. A
   post-commit wake and the startup/poll sweep drain idle obligations without
   becoming part of mutation success. Competing delivery claims hydrate the one
   committed update into a running orchestrator. A sweep must first claim durable

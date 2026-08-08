@@ -1,65 +1,40 @@
 /** Canonical thread Work-rebind command shared by model and writer adapters. */
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type {
-  RebindThreadWorkResponse,
+  RebindThreadWorkResult,
   Work,
   WorkReceipt,
   WorkReceiptState,
 } from "@meridian/contracts/works";
 import type { ProjectPreferencesRepository } from "../../preferences/index.js";
-import type { WorkRepository } from "../../projects/index.js";
-import {
-  type ThreadRepository,
-  type ThreadWorksRepository,
-  ThreadWorkUnavailableError,
+import { WorkLifecycleUnavailableError, type WorkRepository } from "../../projects/index.js";
+import type {
+  ThreadRepository,
+  ThreadWorksRepository,
+  WorkContextDeliveryRepository,
 } from "../ports/repositories.js";
 
-export class ThreadWorkRebindUnavailableError extends Error {
-  constructor() {
-    super("Thread or Work not found");
-    this.name = "ThreadWorkRebindUnavailableError";
+export type RebindThreadWorkErrorReason = "unavailable" | "missing_primary";
+
+export class RebindThreadWorkError extends Error {
+  constructor(
+    readonly reason: RebindThreadWorkErrorReason,
+    readonly threadId: ThreadId,
+  ) {
+    super(
+      reason === "unavailable" ? "Thread or Work not found" : "Conversation has no current Work",
+    );
+    this.name = "RebindThreadWorkError";
   }
 }
-
-/** The preflight target disappeared while the lifecycle locks were acquired. */
-export class ThreadWorkRebindTargetUnavailableError extends Error {
-  constructor() {
-    super("Work is no longer available");
-    this.name = "ThreadWorkRebindTargetUnavailableError";
-  }
-}
-
-export class MissingPrimaryWorkMembershipError extends Error {
-  constructor() {
-    super("Conversation has no current Work");
-    this.name = "MissingPrimaryWorkMembershipError";
-  }
-}
-
-export interface ThreadWorkContextUpdates {
-  /** Enqueues the durable obligation in the ambient business transaction. */
-  threadChanged(threadId: ThreadId): Promise<void>;
-  /** Best-effort post-commit delivery. */
-  flush(threadId: ThreadId): Promise<void>;
-  isPending(threadId: ThreadId): Promise<boolean>;
-}
-
-export type ThreadWorkTransitionContextUpdates = Pick<ThreadWorkContextUpdates, "threadChanged">;
 
 export interface RebindThreadWorkDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   works: Pick<WorkRepository, "findById">;
   preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
-  contextUpdates: ThreadWorkContextUpdates;
-  transaction<T>(operation: () => Promise<T>): Promise<T>;
+  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
 }
-
-export type RebindThreadWorkTransitionDeps = Omit<
-  RebindThreadWorkDeps,
-  "transaction" | "contextUpdates"
-> & { contextUpdates: ThreadWorkTransitionContextUpdates };
-export type RebindThreadWorkTransition = Omit<RebindThreadWorkResponse, "contextUpdate">;
 
 export interface RebindThreadWorkInput {
   threadId: ThreadId;
@@ -89,28 +64,11 @@ function receipt(previousWork: Work, targetWork: Work, changed: boolean): WorkRe
   };
 }
 
-export async function finishRebindThreadWork(
-  contextUpdates: ThreadWorkContextUpdates,
-  transition: RebindThreadWorkTransition,
-): Promise<RebindThreadWorkResponse> {
-  if (!transition.changed) return { ...transition, contextUpdate: "not_required" };
-  try {
-    await contextUpdates.flush(transition.threadId);
-  } catch {
-    // The durable obligation is the authority. Delivery errors cannot turn a
-    // committed binding transition into a failed request.
-  }
-  return {
-    ...transition,
-    contextUpdate: (await contextUpdates.isPending(transition.threadId)) ? "pending" : "delivered",
-  };
-}
-
-/** Applies the complete binding transition inside the caller's ambient transaction. */
-export async function applyRebindThreadWorkTransition(
-  deps: RebindThreadWorkTransitionDeps,
+/** Applies the complete binding transition inside the caller-owned transaction. */
+export async function rebindThreadWork(
+  deps: RebindThreadWorkDeps,
   input: RebindThreadWorkInput,
-): Promise<RebindThreadWorkTransition> {
+): Promise<RebindThreadWorkResult> {
   const [thread, requestedTarget] = await Promise.all([
     deps.threads.findById(input.threadId),
     deps.works.findById(input.targetWorkId),
@@ -122,26 +80,24 @@ export async function applyRebindThreadWorkTransition(
     requestedTarget.deletedAt ||
     requestedTarget.projectId !== thread.projectId
   ) {
-    throw new ThreadWorkRebindUnavailableError();
+    throw new RebindThreadWorkError("unavailable", input.threadId);
   }
 
-  let rebound: Awaited<ReturnType<ThreadWorksRepository["rebindPrimary"]>>;
-  try {
-    rebound = await deps.threadWorks.rebindPrimary(thread.id, requestedTarget.id);
-  } catch (cause) {
-    if (cause instanceof ThreadWorkUnavailableError) {
-      throw new ThreadWorkRebindTargetUnavailableError();
-    }
-    throw cause;
+  const rebound = await deps.threadWorks.rebindPrimary(thread.id, requestedTarget.id);
+  if (!rebound.previousWorkId) {
+    throw new RebindThreadWorkError("missing_primary", input.threadId);
   }
-  if (!rebound.previousWorkId) throw new MissingPrimaryWorkMembershipError();
 
   const [previousWork, targetWork] = await Promise.all([
     deps.works.findById(rebound.previousWorkId),
     deps.works.findById(requestedTarget.id),
   ]);
-  if (!previousWork || previousWork.deletedAt) throw new MissingPrimaryWorkMembershipError();
-  if (!targetWork || targetWork.deletedAt) throw new ThreadWorkRebindTargetUnavailableError();
+  if (!previousWork || previousWork.deletedAt) {
+    throw new RebindThreadWorkError("missing_primary", input.threadId);
+  }
+  if (!targetWork || targetWork.deletedAt) {
+    throw new WorkLifecycleUnavailableError(requestedTarget.id, targetWork ? "deleted" : "missing");
+  }
 
   const preferenceChanged = rebound.changed && thread.kind === "primary";
   if (preferenceChanged) {
@@ -151,7 +107,7 @@ export async function applyRebindThreadWorkTransition(
       targetWork.id,
     );
   }
-  if (rebound.changed) await deps.contextUpdates.threadChanged(thread.id);
+  if (rebound.changed) await deps.obligations.enqueueThread(thread.id);
 
   return {
     threadId: thread.id as ThreadId,
@@ -161,16 +117,4 @@ export async function applyRebindThreadWorkTransition(
     preferenceChanged,
     receipt: receipt(previousWork, targetWork, rebound.changed),
   };
-}
-
-/**
- * Rebinds one thread in a single transaction with sticky-primary preference
- * and durable context-refresh obligation, then attempts delivery after commit.
- */
-export async function rebindThreadWork(
-  deps: RebindThreadWorkDeps,
-  input: RebindThreadWorkInput,
-): Promise<RebindThreadWorkResponse> {
-  const transition = await deps.transaction(() => applyRebindThreadWorkTransition(deps, input));
-  return finishRebindThreadWork(deps.contextUpdates, transition);
 }

@@ -3,7 +3,7 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work, WorkStatus } from "@meridian/contracts/works";
 import type { UpdateWorkInput, WorkRepository } from "./ports/work-repository.js";
-import type { WorkContextUpdates } from "./work-context-updates.js";
+import type { WorkContextDelivery } from "./work-context-delivery.js";
 
 export type UpdateWorkCommandInput = UpdateWorkInput & { status?: WorkStatus };
 export type WorkTransition = { before: Work; after: Work; changed: boolean };
@@ -11,7 +11,7 @@ export type WorkTransition = { before: Work; after: Work; changed: boolean };
 export async function updateWork(
   deps: {
     works: WorkRepository;
-    contextUpdates: Pick<WorkContextUpdates, "projectChanged">;
+    workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
   },
   workId: WorkId,
   input: UpdateWorkCommandInput,
@@ -22,7 +22,7 @@ export async function updateWork(
 export async function updateWorkTransition(
   deps: {
     works: WorkRepository;
-    contextUpdates: Pick<WorkContextUpdates, "projectChanged">;
+    workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
   },
   workId: WorkId,
   input: UpdateWorkCommandInput,
@@ -49,7 +49,7 @@ export async function updateWorkTransition(
       contextChanged:
         before.name !== work.name || before.goal !== work.goal || before.status !== work.status,
     };
-    if (result.contextChanged) await deps.contextUpdates.projectChanged(work.projectId);
+    if (result.contextChanged) await deps.workContextDelivery.projectChanged(work.projectId);
     return result;
   });
   return { before: result.before, after: result.after, changed: result.changed };

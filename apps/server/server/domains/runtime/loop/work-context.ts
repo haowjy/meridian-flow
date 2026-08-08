@@ -1,15 +1,18 @@
 /** Renders and resolves the frozen model-facing Work context block. */
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
 import type { ThreadWorksRepository } from "../../threads/index.js";
 
 export const WORK_CONTEXT_ACTIVE_LIMIT = 20;
 
+export interface RenderedWorkContext {
+  text: string;
+  current: { projectId: ProjectId; workId: WorkId };
+}
+
 export interface WorkContextReader {
-  renderForThread(threadId: ThreadId): Promise<string>;
-  /** Authoritative current Work for client-visible convergence projections. */
-  currentForThread?(threadId: ThreadId): Promise<Work>;
+  renderForThread(threadId: ThreadId): Promise<RenderedWorkContext>;
 }
 
 function oneLine(value: string | null): string {
@@ -63,11 +66,13 @@ export function createWorkContextReader(deps: {
     return current;
   }
   return {
-    currentForThread,
     async renderForThread(threadId) {
       const current = await currentForThread(threadId);
       const activeWorks = await deps.works.listByProject(current.projectId, { status: "active" });
-      return renderWorkContext({ current, activeWorks });
+      return {
+        text: renderWorkContext({ current, activeWorks }),
+        current: { projectId: current.projectId, workId: current.id },
+      };
     },
   };
 }

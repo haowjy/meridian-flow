@@ -38,7 +38,7 @@ describe("POST /api/projects/:projectId/works", () => {
           create: async () => created,
         },
         preferences: { setCurrentWorkId },
-        systemUpdates: { projectChanged },
+        workContextDelivery: { projectChanged },
       },
     } as never);
     const event = {

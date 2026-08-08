@@ -3,8 +3,10 @@
  * Why independent: Durable thread events are a shared contract between the orchestrator, event journal, thread event hub, and AG-UI projector.
  */
 
+import type { TurnId } from "../ids.js";
 import type { AskRequest, MeridianError } from "../interrupt/index.js";
 import type { AgentReport, SpawnResult } from "../spawn/index.js";
+import type { WorkContextProjectionSignal } from "../works/index.js";
 import type {
   BlockStatus,
   BlockType,
@@ -47,7 +49,13 @@ export interface BlockUpsertedRow {
 }
 
 /** Produced orchestrator events persisted as event_journal payloads and replayed to live projections. */
+export type WorkContextChangedEvent = {
+  type: "work_context.changed";
+  turnId: TurnId;
+} & WorkContextProjectionSignal;
+
 export type OrchestratorEvent =
+  | WorkContextChangedEvent
   | { type: "turn.created"; turn: Turn }
   | {
       type: "stream.delta";

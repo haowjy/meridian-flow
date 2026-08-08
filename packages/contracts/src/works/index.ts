@@ -55,13 +55,16 @@ export interface RebindThreadWorkRequest {
 export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 
 /** Authoritative result shared by writer and model Work-rebind adapters. */
-export interface RebindThreadWorkResponse {
+export interface RebindThreadWorkResult {
   threadId: import("../ids.js").ThreadId;
   previousWorkId: WorkId;
   work: Work;
   changed: boolean;
   preferenceChanged: boolean;
   receipt: WorkReceipt;
+}
+
+export interface RebindThreadWorkResponse extends RebindThreadWorkResult {
   contextUpdate: WorkContextUpdateStatus;
 }
 

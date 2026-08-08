@@ -29,4 +29,4 @@ export type {
   UsageRecorder,
   WorkContextDeliveryRepository,
 } from "./repositories.js";
-export { ThreadWorkUnavailableError } from "./repositories.js";
+export { ThreadWorkProjectMismatchError } from "./repositories.js";

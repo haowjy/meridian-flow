@@ -95,6 +95,11 @@ export function createTestOrchestratorDeps(
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     notices: createTestNoticePort(),
     activeDocuments,
+    workContextDelivery: overrides.workContextDelivery ?? {
+      async deliverNow() {
+        throw new Error("No Work-context delivery expected");
+      },
+    },
     responseWrites: {
       async commitResponse() {
         return { status: "committed", receipts: [], concurrentEdits: [] };
@@ -104,7 +109,13 @@ export function createTestOrchestratorDeps(
     ...overrides,
     workContext: overrides.workContext ?? {
       async renderForThread() {
-        return "<work_context>\ntest\n</work_context>";
+        return {
+          text: "<work_context>\ntest\n</work_context>",
+          current: {
+            projectId: "00000000-0000-0000-0000-000000000001",
+            workId: "00000000-0000-0000-0000-000000000002",
+          },
+        };
       },
     },
     creditLedger,

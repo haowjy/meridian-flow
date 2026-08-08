@@ -14,6 +14,7 @@ import type {
 import { blockPlainText, type Thread } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
 import type { PackageRepository } from "../../packages/index.js";
+import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
   BlockRepository,
   EventJournalWriter,
@@ -24,7 +25,6 @@ import type {
 } from "../../threads/index.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
-import type { SystemUpdateDelivery } from "../loop/system-update-delivery.js";
 import {
   createInMemoryThreadRunOwnership,
   type ThreadRunClaim,
@@ -65,7 +65,7 @@ export interface ChildRunCoordinatorDeps {
   packageRepository: PackageRepository;
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
-  systemUpdateDelivery: Partial<Pick<SystemUpdateDelivery, "flush" | "flushOwned">>;
+  workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
   runOwnership?: ThreadRunOwnership;
   billingSpendReader: BillingSpendReader;
   workContext: WorkContextReader;
@@ -186,7 +186,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
     const childAgent = childAgentContext.agent;
 
-    const workContext = await deps.workContext.renderForThread(input.parentThread.id as ThreadId);
+    const workContext = (await deps.workContext.renderForThread(input.parentThread.id as ThreadId))
+      .text;
     const child = await deps.repos.transaction(async () => {
       const created = await deps.repos.subagentThreads.createSubagent({
         userId: input.parentThread.userId,
@@ -345,11 +346,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         try {
           if (prepared.childRegistered) {
             try {
-              if (deps.systemUpdateDelivery.flushOwned) {
-                await deps.systemUpdateDelivery.flushOwned(prepared.child.id as ThreadId);
-              } else {
-                await deps.systemUpdateDelivery.flush?.(prepared.child.id as ThreadId);
-              }
+              await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
             } finally {
               deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
             }

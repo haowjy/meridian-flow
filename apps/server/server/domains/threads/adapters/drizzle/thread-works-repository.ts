@@ -6,13 +6,10 @@ import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { requireLockedActiveWork } from "../../../../shared/work-lifecycle-lock.js";
 import {
-  requireLockedActiveWork,
-  WorkLifecycleUnavailableError,
-} from "../../../../shared/work-lifecycle-lock.js";
-import {
+  ThreadWorkProjectMismatchError,
   type ThreadWorksRepository,
-  ThreadWorkUnavailableError,
 } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
@@ -53,12 +50,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             ...new Set([targetWorkId, ...(currentWorkId ? [currentWorkId] : [])]),
           ].sort();
           for (const workId of workIds) {
-            try {
-              await requireLockedActiveWork(db, workId);
-            } catch (cause) {
-              if (!(cause instanceof WorkLifecycleUnavailableError)) throw cause;
-              throw new ThreadWorkUnavailableError();
-            }
+            await requireLockedActiveWork(db, workId);
           }
 
           const [thread] = await activeDb
@@ -89,7 +81,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             .from(schema.works)
             .where(eq(schema.works.id, targetWorkId));
           if (!target || target.projectId !== thread.projectId) {
-            throw new ThreadWorkUnavailableError();
+            throw new ThreadWorkProjectMismatchError(targetWorkId);
           }
           return operation({
             activeDb,

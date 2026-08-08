@@ -18,18 +18,11 @@ export {
 } from "./domain/orchestrator-event-projector.js";
 export { projectReadModelEvent } from "./domain/read-model-projector.js";
 export {
-  applyRebindThreadWorkTransition,
-  finishRebindThreadWork,
-  MissingPrimaryWorkMembershipError,
   type RebindThreadWorkDeps,
+  RebindThreadWorkError,
+  type RebindThreadWorkErrorReason,
   type RebindThreadWorkInput,
-  type RebindThreadWorkTransition,
-  type RebindThreadWorkTransitionDeps,
   rebindThreadWork,
-  type ThreadWorkContextUpdates,
-  ThreadWorkRebindTargetUnavailableError,
-  ThreadWorkRebindUnavailableError,
-  type ThreadWorkTransitionContextUpdates,
 } from "./domain/rebind-thread-work.js";
 export {
   TurnStartConflictError,

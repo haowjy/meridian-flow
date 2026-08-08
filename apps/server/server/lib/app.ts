@@ -42,11 +42,11 @@ async function createAppServices(): Promise<AppServices> {
         payload: unknownToEventPayload(cause),
       });
     });
-  const sweepSystemUpdates = () =>
-    void app.systemUpdates.sweep().catch((cause) => {
+  const sweepWorkContext = () =>
+    void app.workContextDelivery.sweep().catch((cause) => {
       emitEvent(eventSink, {
         level: "error",
-        source: "runtime.system-update-delivery",
+        source: "runtime.work-context-delivery",
         name: "sweep.failed",
         payload: unknownToEventPayload(cause),
       });
@@ -58,11 +58,11 @@ async function createAppServices(): Promise<AppServices> {
     eventSink,
   });
   drain();
-  sweepSystemUpdates();
+  sweepWorkContext();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need
   // no in-process callback to survive a crash or a different server process.
   setInterval(drain, CHANGE_TRAIL_POLL_MS).unref();
-  setInterval(sweepSystemUpdates, SYSTEM_UPDATE_SWEEP_MS).unref();
+  setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS).unref();
   return app;
 }
 

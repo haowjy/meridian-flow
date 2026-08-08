@@ -126,9 +126,8 @@ describe("nested spawn runtime (P2b gate)", () => {
     gateway: Gateway,
     budget = createDefaultTreeBudget(),
     options: {
-      systemUpdateDelivery?: {
-        flush?(threadId: ThreadId): Promise<void>;
-        flushOwned?(threadId: ThreadId): Promise<void>;
+      workContextDelivery?: {
+        flushOwned(threadId: ThreadId): Promise<void>;
       };
       runOwnership?: ThreadRunOwnership;
     } = {},
@@ -157,6 +156,7 @@ describe("nested spawn runtime (P2b gate)", () => {
 
     let orchestrator: ReturnType<typeof createOrchestrator>;
     const runner = createTurnRunner({
+      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
       orchestrator: {
         runTurn: (input) => orchestrator.runTurn(input),
         finalizeGeneratorFailure: (input) => orchestrator.finalizeGeneratorFailure(input),
@@ -166,7 +166,7 @@ describe("nested spawn runtime (P2b gate)", () => {
       eventSink: createInMemoryEventSink(),
     });
 
-    const flushSystemUpdates = vi.fn(async (_threadId: ThreadId) => {});
+    const flushWorkContext = vi.fn(async (_threadId: ThreadId) => {});
     const coordinator = createChildRunCoordinator({
       orchestrator: {
         runTurn: (input) => orchestrator.runTurn(input),
@@ -192,12 +192,18 @@ describe("nested spawn runtime (P2b gate)", () => {
         eventWriter,
         getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
       }),
-      systemUpdateDelivery: options.systemUpdateDelivery ?? { flush: flushSystemUpdates },
+      workContextDelivery: options.workContextDelivery ?? { flushOwned: flushWorkContext },
       runOwnership: options.runOwnership,
       billingSpendReader: creditLedger,
       workContext: {
         async renderForThread() {
-          return "<work_context>\ntest\n</work_context>";
+          return {
+            text: "<work_context>\ntest\n</work_context>",
+            current: {
+              projectId: "00000000-0000-0000-0000-000000000001",
+              workId: "00000000-0000-0000-0000-000000000002",
+            },
+          };
         },
       },
     });
@@ -237,7 +243,7 @@ describe("nested spawn runtime (P2b gate)", () => {
       runner,
       creditLedger,
       interruptRegistry,
-      flushSystemUpdates,
+      flushWorkContext,
       coordinator,
     };
   }
@@ -343,7 +349,7 @@ describe("nested spawn runtime (P2b gate)", () => {
 
   it("parent spawns child, interrupt resumes same root turn, re-spawns to completion", async () => {
     const gateway = nestedRunGateway();
-    const { repos, eventWriter, orchestrator, thread, interruptRegistry, flushSystemUpdates } =
+    const { repos, eventWriter, orchestrator, thread, interruptRegistry, flushWorkContext } =
       await setupNestedRuntime(gateway);
 
     const handle = await orchestrator.runTurn({
@@ -381,9 +387,9 @@ describe("nested spawn runtime (P2b gate)", () => {
     );
     expect(childThreads).toHaveLength(2);
     expect(childThreads.every((row) => row.spawnStatus === "succeeded")).toBe(true);
-    expect(
-      flushSystemUpdates.mock.calls.map(([flushedThreadId]) => flushedThreadId).sort(),
-    ).toEqual(childThreads.map((row) => row.id).sort());
+    expect(flushWorkContext.mock.calls.map(([flushedThreadId]) => flushedThreadId).sort()).toEqual(
+      childThreads.map((row) => row.id).sort(),
+    );
   });
 
   it("unregisters a completed child and releases ownership when its update flush fails", async () => {
@@ -419,7 +425,7 @@ describe("nested spawn runtime (P2b gate)", () => {
       createDefaultTreeBudget(),
       {
         runOwnership,
-        systemUpdateDelivery: {
+        workContextDelivery: {
           async flushOwned() {
             throw flushError;
           },
