@@ -168,7 +168,7 @@ export interface OrchestratorDeps {
   interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
   helperResultDelivery?: HelperResultDelivery;
-  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow" | "threadChanged">;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow">;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;

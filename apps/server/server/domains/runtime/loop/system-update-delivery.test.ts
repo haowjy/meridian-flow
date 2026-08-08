@@ -7,7 +7,51 @@ import {
   createInMemoryRepositories,
   TurnStartConflictError,
 } from "../../threads/index.js";
+import { isJsonObject } from "./block-helpers.js";
 import { createSystemUpdateDelivery } from "./system-update-delivery.js";
+
+async function pendingDeliveryFixture() {
+  const projects = createInMemoryProjectRepository();
+  const project = await projects.create({ userId: "user-1", title: "Serial" });
+  const repos = createInMemoryRepositories({ projects });
+  const thread = await repos.threads.create({
+    userId: "user-1",
+    projectId: project.id,
+    title: "Chapter",
+  });
+  const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
+  const pendingBlock = await repos.blocks.create({
+    turnId: turn.id,
+    blockType: "tool_result",
+    sequence: 0,
+    content: {
+      toolCallId: "work-call",
+      output: {
+        schema: "meridian.work.v1",
+        result: { slug: "target" },
+        contextUpdate: { status: "pending", message: "retry me" },
+      },
+      metadata: {
+        workContextChanged: true,
+        workContextDelivery: "pending",
+        workContextWarning: "retry me",
+      },
+    },
+  });
+  const eventWriter = createInMemoryEventJournalWriter();
+  const createDelivery = (writer = eventWriter) =>
+    createSystemUpdateDelivery({
+      repos,
+      eventWriter: writer,
+      workContext: {
+        async renderForThread() {
+          return "<work_context>current: target</work_context>";
+        },
+      },
+      isThreadRunning: () => false,
+    });
+  return { repos, thread, pendingBlock, eventWriter, createDelivery };
+}
 
 describe("createSystemUpdateDelivery", () => {
   it("appends one tagged user-role message after coalesced changes without rebaking", async () => {
@@ -139,7 +183,12 @@ describe("createSystemUpdateDelivery", () => {
           },
           async create() {},
         },
-        blocks: { async upsert() {} },
+        blocks: {
+          async upsert() {},
+          async listByThread() {
+            return [];
+          },
+        },
         modelResponses: {},
         threads: {
           async findById() {
@@ -177,5 +226,72 @@ describe("createSystemUpdateDelivery", () => {
     const update = await delivery.deliverNow(threadId);
     expect(expectedHeads).toEqual(["old-head", "new-turn-head"]);
     expect(update.turn.prevTurnId).toBe("new-turn-head");
+  });
+
+  it("recovers a persisted pending marker after the delivery instance is recreated", async () => {
+    const { repos, thread, pendingBlock, createDelivery } = await pendingDeliveryFixture();
+
+    await createDelivery().flush(thread.id);
+
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(turns.at(-1)?.metadata).toEqual({ kind: "system_update", section: "work_context" });
+    const acknowledged = await repos.blocks.findById(pendingBlock.id);
+    expect(acknowledged?.content).toMatchObject({
+      output: { schema: "meridian.work.v1", result: { slug: "target" } },
+      metadata: { workContextDelivery: "delivered" },
+    });
+    expect(JSON.stringify(acknowledged?.content)).not.toContain('"status":"pending"');
+  });
+
+  it("keeps delivery pending through two consecutive append failures", async () => {
+    const { repos, thread, pendingBlock, eventWriter, createDelivery } =
+      await pendingDeliveryFixture();
+    let failuresRemaining = 2;
+    const failingWriter = {
+      ...eventWriter,
+      async appendEvent(...args: Parameters<typeof eventWriter.appendEvent>) {
+        if (failuresRemaining > 0) {
+          failuresRemaining -= 1;
+          throw new Error("journal unavailable");
+        }
+        return eventWriter.appendEvent(...args);
+      },
+    };
+    const delivery = createDelivery(failingWriter);
+
+    await expect(delivery.flush(thread.id)).rejects.toThrow("journal unavailable");
+    await expect(delivery.flush(thread.id)).rejects.toThrow("journal unavailable");
+    expect(await repos.blocks.findById(pendingBlock.id)).toMatchObject({
+      content: { metadata: { workContextDelivery: "pending" } },
+    });
+
+    await delivery.flush(thread.id);
+    expect(await repos.blocks.findById(pendingBlock.id)).toMatchObject({
+      content: { metadata: { workContextDelivery: "delivered" } },
+    });
+  });
+
+  it("serializes concurrent recovery claims and acknowledges exactly once", async () => {
+    const { repos, thread, eventWriter, createDelivery } = await pendingDeliveryFixture();
+    const firstProcess = createDelivery();
+    const secondProcess = createDelivery();
+
+    await Promise.all([firstProcess.beforeTurn(thread.id), secondProcess.beforeTurn(thread.id)]);
+
+    const updates = (await repos.turns.listByThread(thread.id)).filter(
+      (turn) =>
+        turn.metadata !== undefined &&
+        isJsonObject(turn.metadata) &&
+        turn.metadata.kind === "system_update",
+    );
+    expect(updates).toHaveLength(1);
+    const replay = await eventWriter.readAfter(thread.id, 0n);
+    const deliveryResults = replay.filter(
+      (entry) => entry.payload.type === "tool.result" && entry.payload.toolCallId === "work-call",
+    );
+    expect(deliveryResults).toHaveLength(1);
+    expect(deliveryResults[0]?.payload).toMatchObject({
+      metadata: { workContextDelivery: "delivered" },
+    });
   });
 });

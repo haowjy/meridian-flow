@@ -168,8 +168,10 @@ facet.
   durable `<system_update>` user-role turn, coalesced while a turn is running.
   If immediate delivery exhausts its head-CAS retries, the tool result is
   durably upserted with `contextUpdate.status = "pending"` and matching host
-  metadata before the provider continues; the queued turn-boundary flush still
-  appends the eventual update.
+  metadata before the provider continues. Turn-boundary delivery discovers that
+  persisted marker after process recreation, serializes on the thread-head
+  transition, and acknowledges the tool result only in the same transaction that
+  commits the eventual update and its journal events.
 - **Registry names are global.** Duplicate registration names throw.
 - **Gateway terminal outcome needs causal evidence.** The instrumented `stream.close` `outcome` is `ok`/`error`/`cancelled`. A failure becomes `cancelled` only with causal abort evidence: the thrown error is `signal.reason` or an `AbortError`. Message text alone (`"Aborted"`, `"Request aborted"`) is **not** evidence — a provider failing independently after an abort stays `error`, and `sleep`/cancel paths reject with `signal.reason` (or a synthesized `AbortError`) so their failures carry identity. A thrown error's string `.code` populates both the `stream.close` payload `errorCode` and `correlation.errorCode`.
 

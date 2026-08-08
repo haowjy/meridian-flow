@@ -1141,6 +1141,26 @@ describe("runtime loop integration", () => {
       kind: "system_update",
       section: "work_context",
     });
+    const recoveredResult = (await repos.blocks.listByThread(thread.id)).find(
+      (block) => block.blockType === "tool_result",
+    );
+    expect(recoveredResult?.content).toMatchObject({
+      output: { slug: "target" },
+      metadata: { workContextDelivery: "delivered", workReceipt },
+    });
+    expect(JSON.stringify(recoveredResult?.content)).not.toContain('"status":"pending"');
+    const recoveredReplay = await eventWriter.readAfter(thread.id, 0n);
+    const acknowledgedResult = recoveredReplay
+      .map((entry) => entry.payload)
+      .filter(
+        (event): event is Extract<OrchestratorEvent, { type: "tool.result" }> =>
+          event.type === "tool.result" && event.toolCallId === "switch-pending",
+      )
+      .at(-1);
+    expect(acknowledgedResult).toMatchObject({
+      output: { slug: "target" },
+      metadata: { workContextDelivery: "delivered", workReceipt },
+    });
   });
 
   it("suspends on a mock interrupt without re-entering the gateway, then resumes on response", async () => {

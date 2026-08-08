@@ -85,7 +85,7 @@ export function createTurnRunner(deps: {
   repos: { turns: TurnRepository };
   eventSink: EventSink;
   helperResultDelivery?: Pick<HelperResultDelivery, "flush">;
-  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "flush">;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "beforeTurn" | "flush">;
 }) {
   const eventSink = deps.eventSink;
   const running = new Map<ThreadId, RunningTurn>();
@@ -174,6 +174,7 @@ export function createTurnRunner(deps: {
         assertConnectionTokenLive(input.connectionToken);
 
         const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
+        await deps.systemUpdateDelivery?.beforeTurn(input.threadId);
 
         const handle = await deps.orchestrator.runTurn({
           threadId: input.threadId,

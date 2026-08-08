@@ -32,7 +32,7 @@ export interface ToolDispatchDeps {
   childRunCoordinator: ChildRunCoordinator;
   eventSink: EventSink;
   persistenceDeps: PersistenceDeps;
-  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow" | "threadChanged">;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow">;
 }
 
 export interface ToolDispatchContext {
@@ -231,7 +231,6 @@ export async function dispatchToolCall(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Work context refresh will retry after this turn.";
-      await deps.systemUpdateDelivery.threadChanged(ctx.state.threadId).catch(() => undefined);
       const output = pendingWorkContextOutput(execResult.output, message);
       const metadata: JsonObject = {
         ...execResult.metadata,

@@ -80,6 +80,36 @@ describe("createTurnRunner", () => {
     expect(runTurnCalls).toBe(1);
   });
 
+  it("recovers pending system updates before assembling the next turn", async () => {
+    const order: string[] = [];
+    const runner = createTurnRunner({
+      orchestrator: {
+        async runTurn() {
+          order.push("run-turn");
+          return {
+            userTurnId: "turn-user",
+            assistantTurnId: "turn-assistant",
+            events: emptyEvents(),
+          };
+        },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
+      },
+      eventSink: createInMemoryEventSink(),
+      hub: { headSeq: async () => 0n } as never,
+      repos: { turns: { findById: async () => null } as never },
+      systemUpdateDelivery: {
+        async beforeTurn() {
+          order.push("recover-update");
+        },
+        async flush() {},
+      },
+    });
+
+    await runner.startTurn({ threadId: "thread-1", userText: "continue" });
+
+    expect(order).toEqual(["recover-update", "run-turn"]);
+  });
+
   it("does not abort background children during parent turn cleanup", async () => {
     const runner = createTurnRunner({
       orchestrator: {

@@ -517,6 +517,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       },
     },
     systemUpdateDelivery: {
+      async beforeTurn(threadId) {
+        await systemUpdates?.beforeTurn(threadId);
+      },
       async flush(threadId) {
         await systemUpdates?.flush(threadId);
       },
@@ -674,6 +677,7 @@ export function createInMemoryAppServices(): AppServices {
     async projectChanged() {},
     async threadChanged() {},
     async flush() {},
+    async beforeTurn() {},
     async deliverNow() {
       throw new Error("in-memory Work context is not configured");
     },
