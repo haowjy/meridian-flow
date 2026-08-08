@@ -96,6 +96,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     transaction<T>(operation: () => Promise<T>): Promise<T> {
       return runInDrizzleTransaction(db, operation);
     },
+    async lockById(id: WorkId): Promise<Work | null> {
+      if (!isUuid(id)) return null;
+      await lockWorkLifecycle(db, id);
+      return findWorkById(id);
+    },
     async create(input: CreateWorkInput): Promise<Work> {
       return runInDrizzleTransaction(db, async () => {
         const id = input.id ?? crypto.randomUUID();

@@ -244,6 +244,8 @@ export interface ThreadWorksRepository {
     threadId: ThreadId,
     workId: WorkId,
   ): Promise<{ previousWorkId: WorkId | null; changed: boolean }>;
+  /** Locks the thread after callers have acquired any Work lifecycle locks. */
+  lockPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
 }

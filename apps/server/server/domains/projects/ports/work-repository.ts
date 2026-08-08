@@ -68,6 +68,8 @@ export class WorkRestoreConflictError extends Error {
  */
 export interface WorkRepository {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  /** Locks the Work lifecycle row for the ambient transaction, then returns it. */
+  lockById(id: WorkId): Promise<Work | null>;
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
   /** Lists most recently updated first. */
