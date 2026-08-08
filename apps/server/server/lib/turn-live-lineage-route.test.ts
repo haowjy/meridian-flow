@@ -7,6 +7,7 @@ const projectId = "00000000-0000-4000-8000-000000000701" as ProjectId;
 const threadId = "00000000-0000-4000-8000-000000000702" as ThreadId;
 const turnId = "00000000-0000-4000-8000-000000000703" as TurnId;
 const userId = "00000000-0000-4000-8000-000000000704" as UserId;
+const workId = "00000000-0000-4000-8000-000000000709";
 const draftDocumentId = "00000000-0000-4000-8000-000000000705";
 const liveDocumentId = "00000000-0000-4000-8000-000000000706";
 const inaccessibleDocumentId = "00000000-0000-4000-8000-000000000707";
@@ -86,19 +87,34 @@ describe("turn live-lineage route", () => {
               operation: "delete",
               category: "mutate",
               changed: true,
-              workId: "00000000-0000-4000-8000-000000000709",
+              workId,
               workName: "Revision",
               before: { name: "Revision", goal: null, description: null, status: "active" },
               after: null,
-              inverse: { command: "restore", workId: "00000000-0000-4000-8000-000000000709" },
+              inverse: { command: "restore", workId },
             },
           },
         },
       } as never,
     ]);
-    services.works.findById.mockResolvedValueOnce({
-      deletedAt: "2026-08-06T12:00:00.000Z",
-    } as never);
+    services.works.listByProject.mockResolvedValueOnce([
+      {
+        id: workId,
+        projectId,
+        createdByUserId: userId,
+        name: "Revision",
+        slug: "revision",
+        goal: null,
+        description: null,
+        status: "active",
+        archivedAt: null,
+        aiWriteMode: "direct",
+        createdAt: "2026-08-06T11:00:00.000Z",
+        updatedAt: "2026-08-06T12:00:00.000Z",
+        lastActivityAt: "2026-08-06T12:00:00.000Z",
+        deletedAt: "2026-08-06T12:00:00.000Z",
+      },
+    ] as never);
 
     await expect(
       handleTurnLiveLineageRequest(services as never, { threadId, turnId, userId }),
