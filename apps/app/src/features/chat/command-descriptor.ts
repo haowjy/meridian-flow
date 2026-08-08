@@ -42,6 +42,7 @@ import {
   type WriteMode,
   workReceipt,
 } from "./tool-command";
+import { workReceiptLine } from "./work-receipt-copy";
 
 /**
  * A row title split the way the timeline renders it: the command leads at full
@@ -117,7 +118,8 @@ function truncatePattern(pattern: string): string {
  * carried no receipt (in flight, a failure, or an older server).
  */
 function workTenses(tool: ToolView, active: string, complete: string): ToolActivityVocabulary {
-  const line = workReceipt(tool)?.line.replace(/\.$/, "");
+  const receipt = workReceipt(tool);
+  const line = receipt ? workReceiptLine(receipt) : null;
   return { active: { verb: active }, complete: { verb: line || complete } };
 }
 

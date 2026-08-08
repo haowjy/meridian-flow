@@ -63,14 +63,24 @@ describe("command classification", () => {
   // A result-only view (provider dropped the tool_use half) has no input; the
   // receipt's category is then the server's own classification.
   it.each([
-    ["read", "work-read"],
-    ["binding", "work-switch"],
-    ["mutate", "work-update"],
-  ])("classifies a result-only work view from its receipt category %s", (category, expected) => {
+    ["switch", "binding", "work-switch"],
+    ["update", "mutate", "work-update"],
+  ])("classifies a result-only %s receipt", (operation, category, expected) => {
     const tool = toolView({
       toolName: "work",
       input: null,
-      metadata: { workReceipt: { category, line: "Updated Work Tournament arc." } },
+      metadata: {
+        workReceipt: {
+          operation,
+          category,
+          changed: false,
+          workId: "w1",
+          workName: "Tournament arc",
+          before: null,
+          after: null,
+          inverse: null,
+        },
+      },
     });
     expect(toolCommand(tool)).toBe(expected);
   });
@@ -81,22 +91,22 @@ describe("command classification", () => {
 });
 
 describe("work receipts", () => {
-  it("reads category, line, and inverse off the result metadata", () => {
+  it("reads the shared structured receipt off result metadata", () => {
+    const receipt = {
+      operation: "delete",
+      category: "mutate",
+      changed: true,
+      workId: "w1",
+      workName: "Tournament arc",
+      before: { name: "Tournament arc", goal: null, description: null, status: "active" },
+      after: null,
+      inverse: { command: "restore", workId: "w1" },
+    };
     const tool = toolView({
       toolName: "work",
-      metadata: {
-        workReceipt: {
-          category: "mutate",
-          line: "Deleted Work Tournament arc.",
-          inverse: { command: "restore", workId: "w1" },
-        },
-      },
+      metadata: { workReceipt: receipt },
     });
-    expect(workReceipt(tool)).toEqual({
-      category: "mutate",
-      line: "Deleted Work Tournament arc.",
-      inverse: { command: "restore", workId: "w1" },
-    });
+    expect(workReceipt(tool)).toEqual(receipt);
   });
 
   it("refuses a malformed receipt rather than rendering from it", () => {
@@ -106,14 +116,14 @@ describe("work receipts", () => {
     ).toBeNull();
     expect(
       workReceipt(
-        toolView({ toolName: "work", metadata: { workReceipt: { category: "mutate", line: "" } } }),
+        toolView({ toolName: "work", metadata: { workReceipt: { operation: "delete" } } }),
       ),
     ).toBeNull();
     expect(
       workReceipt(
         toolView({
           toolName: "work",
-          metadata: { workReceipt: { category: "surprise", line: "Did something." } },
+          metadata: { workReceipt: { operation: "surprise" } },
         }),
       ),
     ).toBeNull();
@@ -139,11 +149,15 @@ describe("turnWorkReceipts", () => {
 
   it("collects every work receipt a turn's durable blocks carry, in order", () => {
     const deleteReceipt = {
+      operation: "delete",
       category: "mutate",
-      line: "Deleted Work Tournament arc.",
+      changed: true,
+      workId: "w1",
+      workName: "Tournament arc",
+      before: { name: "Tournament arc", goal: null, description: null, status: "active" },
+      after: null,
       inverse: { command: "restore", workId: "w1" },
     };
-    const readReceipt = { category: "read", line: "Checked Works." };
     const receipts = turnWorkReceipts([
       block(0, "text", null),
       block(1, "tool_use", {
@@ -164,14 +178,11 @@ describe("turnWorkReceipts", () => {
       block(4, "tool_result", {
         toolCallId: "call_2",
         output: {},
-        metadata: { workReceipt: readReceipt },
+        metadata: {},
       }),
     ]);
 
-    expect(receipts).toEqual([
-      { category: "mutate", line: "Deleted Work Tournament arc.", inverse: deleteReceipt.inverse },
-      { category: "read", line: "Checked Works.", inverse: null },
-    ]);
+    expect(receipts).toEqual([deleteReceipt]);
   });
 
   it("finds no receipts on a turn without work results", () => {

@@ -21,7 +21,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { type RestoredWork, type ReversalDirection, restoredWorks } from "@/client/api/reverse-api";
+import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ import { DraftStatsLabel } from "./draft-stats";
 import type { WorkReceipt } from "./tool-command";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
+import { workReceiptLine } from "./work-receipt-copy";
 
 export type TurnEditDocument = {
   documentId?: string;
@@ -66,7 +67,7 @@ export function hasTurnEditsReceiptContent(
 ): boolean {
   return (
     hasTurnEditsReceiptDocuments(documents, changeTrail) ||
-    workReceipts.some((receipt) => receipt.inverse !== null)
+    workReceipts.some((receipt) => receipt.changed)
   );
 }
 
@@ -113,7 +114,7 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen. Receipts without an inverse (reads) are process, not
   // outcome, and never reach this card.
-  const reversibleWorkReceipts = workReceipts.filter((receipt) => receipt.inverse !== null);
+  const reversibleWorkReceipts = workReceipts.filter((receipt) => receipt.changed);
   // Chrome counts, never names. A document name here would sit inside the
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in
@@ -156,7 +157,7 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      const restored = restoredWorks(outcome);
+      const restored = successfulWorkReversals(outcome);
       const status = refusedReversalStatus(outcome.status);
       // A Work-only turn has no document half, so its "nothing to undo" is a
       // fact about documents that were never part of the claim. With a Work
@@ -167,7 +168,7 @@ export function TurnEditsReceipt({
         (status === "nothing_to_undo" || status === "nothing_to_redo");
       const refusal = status && !documentHalfEmpty ? status : null;
       setCommandRefusal(refusal ? { direction, status: refusal } : null);
-      setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(restoredWorkLine))] : null);
+      setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
       if (refusal || restored.length > 0) setExpanded(true);
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
@@ -292,12 +293,9 @@ export function TurnEditsReceipt({
           {reversibleWorkReceipts.length > 0 ? (
             <ul className="flex flex-col">
               {reversibleWorkReceipts.map((workRow, index) => (
-                <li key={`${index}:${workRow.line}`}>
-                  {/* The server's factual line, worn like the tool row wears
-                      it: verbatim minus the terminal period. Work rows are
-                      records, not doors — nothing here navigates. */}
+                <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
                   <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
-                    {workRow.line.replace(/\.$/, "")}
+                    {workReceiptLine(workRow)}
                   </span>
                 </li>
               ))}
@@ -533,6 +531,8 @@ function workCountLabel(count: number) {
 
 /** One receipt-style line per restored Work. The server names the Work when it
  * can; without a name the sentence stays factual instead of guessing one. */
-function restoredWorkLine(work: RestoredWork): string {
-  return work.name ? t`Restored Work ${work.name}.` : t`Restored the Work.`;
+function reversedWorkLine(work: { name: string; status: string }): string {
+  return work.status === "redone"
+    ? t`Redid change to Work ${work.name}.`
+    : t`Undid change to Work ${work.name}.`;
 }

@@ -70,7 +70,8 @@ function deps({
       findById: vi.fn(async () => ({ id: turnId, threadId })),
     },
     blocks: { listByTurn: vi.fn(async () => []) },
-    works: { findById: vi.fn(async () => null) },
+    works: { findById: vi.fn(async () => null), listByProject: vi.fn(async () => []) },
+    threadWorks: { findPrimary: vi.fn(async () => null) },
   };
 }
 
@@ -82,6 +83,13 @@ describe("turn live-lineage route", () => {
         content: {
           metadata: {
             workReceipt: {
+              operation: "delete",
+              category: "mutate",
+              changed: true,
+              workId: "00000000-0000-4000-8000-000000000709",
+              workName: "Revision",
+              before: { name: "Revision", goal: null, description: null, status: "active" },
+              after: null,
               inverse: { command: "restore", workId: "00000000-0000-4000-8000-000000000709" },
             },
           },

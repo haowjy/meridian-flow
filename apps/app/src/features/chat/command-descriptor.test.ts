@@ -80,8 +80,14 @@ describe("work command phrases", () => {
       input: { command: "switch", work: "tournament-arc" },
       metadata: {
         workReceipt: {
+          operation: "switch",
           category: "binding",
-          line: "Switched this conversation to Work Tournament arc.",
+          changed: true,
+          workId: "w1",
+          workName: "Tournament arc",
+          before: null,
+          after: null,
+          inverse: { command: "switch", workId: "w0" },
         },
       },
     });

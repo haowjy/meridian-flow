@@ -136,8 +136,13 @@ describe("orchestrator event projector tool calls", () => {
         output: { slug: "revision" },
         metadata: {
           workReceipt: {
+            operation: "delete",
             category: "mutate",
-            line: "Deleted Work Revision.",
+            changed: true,
+            workId: "work-1",
+            workName: "Revision",
+            before: { name: "Revision", goal: null, description: null, status: "active" },
+            after: null,
             inverse: { command: "restore", workId: "work-1" },
           },
         },
@@ -150,8 +155,13 @@ describe("orchestrator event projector tool calls", () => {
         toolCallId: "call-work",
         metadata: {
           workReceipt: {
+            operation: "delete",
             category: "mutate",
-            line: "Deleted Work Revision.",
+            changed: true,
+            workId: "work-1",
+            workName: "Revision",
+            before: { name: "Revision", goal: null, description: null, status: "active" },
+            after: null,
             inverse: { command: "restore", workId: "work-1" },
           },
         },

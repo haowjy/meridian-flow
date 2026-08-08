@@ -28,7 +28,7 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { Work } from "@meridian/contracts/works";
+import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
   CollabDrafts,
@@ -61,9 +61,7 @@ import {
   type InterruptToolHandlerContext,
   type ToolHandlerContext,
   type ToolRegistration,
-  type WorkCommand,
   WorkCommandSchema,
-  workCommandCategory,
 } from "../domains/runtime/index.js";
 import type {
   ThreadRepository,
@@ -335,17 +333,12 @@ function schemaError(error: { issues: Array<{ path: PropertyKey[]; message: stri
     .join("; ");
 }
 
-function workReceipt(
-  command: WorkCommand,
-  line: string,
-  inverse?: Record<string, unknown>,
-): { workReceipt: Record<string, unknown> } {
+function receiptState(work: Work): WorkReceiptState {
   return {
-    workReceipt: {
-      category: workCommandCategory(command),
-      line,
-      ...(inverse ? { inverse } : {}),
-    },
+    name: work.name,
+    goal: work.goal,
+    description: work.description,
+    status: work.status,
   };
 }
 
@@ -589,6 +582,10 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "create") {
+          const previousCurrentWorkId = await deps.preferences.getCurrentWorkId(
+            thread.userId,
+            thread.projectId,
+          );
           const work = await createWork(
             {
               works: deps.works,
@@ -607,10 +604,16 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           return {
             output: modelWork(work),
             metadata: {
-              ...workReceipt(command, `Created Work ${work.name}.`, {
-                command: "delete",
+              workReceipt: {
+                operation: "create",
+                category: "mutate",
+                changed: true,
                 workId: work.id,
-              }),
+                workName: work.name,
+                before: null,
+                after: receiptState(work),
+                inverse: { command: "delete", workId: work.id, previousCurrentWorkId },
+              } satisfies WorkReceipt,
               workContextChanged: true,
             },
           };
@@ -647,17 +650,26 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               status: command.status,
             },
           );
+          const changed =
+            selected.name !== updated.name ||
+            selected.goal !== updated.goal ||
+            selected.description !== updated.description ||
+            selected.status !== updated.status;
           return {
             output: modelWork(updated),
             metadata: {
-              ...workReceipt(command, `Updated Work ${updated.name}.`, {
-                command: "update",
-                workId: selected.id,
-                name: selected.name,
-                goal: selected.goal,
-                description: selected.description,
-                status: selected.status,
-              }),
+              workReceipt: {
+                operation: "update",
+                category: "mutate",
+                changed,
+                workId: updated.id,
+                workName: updated.name,
+                before: receiptState(selected),
+                after: receiptState(updated),
+                inverse: changed
+                  ? { command: "update", workId: selected.id, state: receiptState(selected) }
+                  : null,
+              } satisfies WorkReceipt,
               ...(selected.name !== updated.name ||
               selected.goal !== updated.goal ||
               selected.status !== updated.status
@@ -676,10 +688,16 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           return {
             output: modelWork(deleted ?? selected),
             metadata: {
-              ...workReceipt(command, `Deleted Work ${selected.name}.`, {
-                command: "restore",
+              workReceipt: {
+                operation: "delete",
+                category: "mutate",
+                changed: true,
                 workId: selected.id,
-              }),
+                workName: selected.name,
+                before: receiptState(selected),
+                after: null,
+                inverse: { command: "restore", workId: selected.id },
+              } satisfies WorkReceipt,
               workContextChanged: true,
             },
           };
@@ -689,16 +707,24 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         if (current?.workId === selected.id) {
           return {
             output: modelWork(selected),
-            metadata: workReceipt(
-              command,
-              `This conversation is already using Work ${selected.name}.`,
-              {
-                command: "switch",
+            metadata: {
+              workReceipt: {
+                operation: "switch",
+                category: "binding",
+                changed: false,
                 workId: selected.id,
-              },
-            ),
+                workName: selected.name,
+                before: receiptState(selected),
+                after: receiptState(selected),
+                inverse: null,
+              } satisfies WorkReceipt,
+            },
           };
         }
+        if (!current) return toolError({ message: "Conversation has no current Work" });
+        const previousWork = await deps.works.findById(current.workId);
+        if (!previousWork)
+          return toolError({ message: "Conversation's current Work was not found" });
 
         // The membership and primary-thread preference are one committed
         // decision. Both adapters join the ambient repository transaction.
@@ -714,10 +740,16 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         return {
           output: modelWork(selected),
           metadata: {
-            ...workReceipt(command, `Switched this conversation to Work ${selected.name}.`, {
-              command: "switch",
-              workId: rebound.previousWorkId,
-            }),
+            workReceipt: {
+              operation: "switch",
+              category: "binding",
+              changed: true,
+              workId: selected.id,
+              workName: selected.name,
+              before: receiptState(previousWork),
+              after: receiptState(selected),
+              inverse: { command: "switch", workId: rebound.previousWorkId ?? current.workId },
+            } satisfies WorkReceipt,
             workContextChanged: true,
           },
         };

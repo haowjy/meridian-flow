@@ -13,6 +13,7 @@
  * presentation and no React in its imports.
  */
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
+import { parseWorkReceipt, type WorkReceipt } from "@meridian/contracts/works";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 
 export type WriteMode = "direct" | "draft";
@@ -63,19 +64,10 @@ export function toolCommand(tool: ToolView): ToolCommand {
  * inverse that would put things back. Produced by the server tool handler and
  * carried on the tool result's metadata; absent for reads and failures.
  */
-export type WorkReceipt = {
-  category: "read" | "mutate" | "binding";
-  line: string;
-  inverse: Record<string, JsonValue> | null;
-};
+export type { WorkReceipt } from "@meridian/contracts/works";
 
 export function workReceipt(tool: ToolView): WorkReceipt | null {
-  const receipt = recordValue(tool.metadata?.workReceipt);
-  if (!receipt) return null;
-  const { category, line } = receipt;
-  if (category !== "read" && category !== "mutate" && category !== "binding") return null;
-  if (typeof line !== "string" || line.length === 0) return null;
-  return { category, line, inverse: recordValue(receipt.inverse) };
+  return parseWorkReceipt(tool.metadata?.workReceipt);
 }
 
 /**
@@ -113,7 +105,9 @@ function workToolCommand(tool: ToolView): ToolCommand {
   return "work-update";
 }
 
-function workCategoryFromInput(command: string | undefined): WorkReceipt["category"] | null {
+function workCategoryFromInput(
+  command: string | undefined,
+): WorkReceipt["category"] | "read" | null {
   switch (command) {
     case "list":
     case "show":
@@ -127,12 +121,6 @@ function workCategoryFromInput(command: string | undefined): WorkReceipt["catego
     default:
       return null;
   }
-}
-
-function recordValue(value: JsonValue | null | undefined): Record<string, JsonValue> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, JsonValue>)
-    : null;
 }
 
 function writeCommand(input: Record<string, JsonValue>): ToolCommand {

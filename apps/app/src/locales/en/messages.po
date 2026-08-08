@@ -355,6 +355,11 @@ msgstr "Archived"
 msgid "Archived current Work"
 msgstr "Archived current Work"
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.archived"
+msgstr "Archived Work {name}"
+
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
@@ -868,6 +873,11 @@ msgstr "Create the document"
 msgid "Created a Work"
 msgstr "Created a Work"
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.created"
+msgstr "Created Work {name}"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Creating a Work…"
 msgstr "Creating a Work…"
@@ -879,6 +889,10 @@ msgstr "Creating…"
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 msgid "Current block type"
 msgstr "Current block type"
+
+#: src/features/project/chat/NewChatDialog.tsx
+msgid "Current Work"
+msgstr "Current Work"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
@@ -932,6 +946,11 @@ msgstr "Delete table"
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
 msgstr "Deleted a Work"
+
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.deleted"
+msgstr "Deleted Work {name}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
@@ -2129,6 +2148,11 @@ msgstr "Reconnecting… attempt {0}"
 msgid "Redid"
 msgstr "Redid"
 
+#. placeholder {0}: work.name
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Redid change to Work {0}."
+msgstr "Redid change to Work {0}."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Redo"
@@ -2225,13 +2249,13 @@ msgid "Response complete"
 msgstr "Response complete"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Restored the Work."
-msgstr "Restored the Work."
+#~ msgid "Restored the Work."
+#~ msgstr "Restored the Work."
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Restored Work {0}."
-msgstr "Restored Work {0}."
+#~ msgid "Restored Work {0}."
+#~ msgstr "Restored Work {0}."
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
@@ -2533,6 +2557,11 @@ msgstr "Switch screens or manage your account."
 #~ msgid "Switch work"
 #~ msgstr "Switch work"
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.switched"
+msgstr "Switched this conversation to Work {name}"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Switched Works"
 msgstr "Switched Works"
@@ -2781,6 +2810,11 @@ msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-ch
 msgid "This column is already at the edge."
 msgstr "This column is already at the edge."
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.alreadyCurrent"
+msgstr "This conversation is already using Work {name}"
+
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
 msgstr "This device"
@@ -2940,9 +2974,19 @@ msgstr "Unable to render diagram"
 msgid "Unarchive"
 msgstr "Unarchive"
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.unarchived"
+msgstr "Unarchived Work {name}"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr "Undid"
+
+#. placeholder {0}: work.name
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undid change to Work {0}."
+msgstr "Undid change to Work {0}."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2985,6 +3029,11 @@ msgstr "Updated"
 #: src/features/chat/command-descriptor.ts
 msgid "Updated a Work"
 msgstr "Updated a Work"
+
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.updated"
+msgstr "Updated Work {name}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Updating a Work…"
@@ -3071,6 +3120,11 @@ msgstr "Why this is marked merged"
 msgid "Work"
 msgstr "Work"
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.upToDate"
+msgstr "Work {name} was already up to date"
+
 #: src/features/project/home/WorksManager.tsx
 msgid "Work details"
 msgstr "Work details"
@@ -3081,6 +3135,7 @@ msgstr "Work: \"{workName}\""
 
 #. placeholder {0}: activeWork.name
 #: src/features/project/ChatPaneController.tsx
+#: src/features/project/mobile/MobileTopBar.tsx
 msgid "Work: {0}"
 msgstr "Work: {0}"
 

@@ -43,7 +43,13 @@ export default defineEventHandler(async (event) => {
       user.userId,
     );
     return getWorkReceiptReversalAvailability(
-      { blocks: services.blocks, turns: services.turns, works: services.works },
+      {
+        blocks: services.blocks,
+        turns: services.turns,
+        works: services.works,
+        threads: services.threads,
+        threadWorks: services.threadWorks,
+      },
       { threadId, turnId: requireRequestId(target, "target") },
     );
   }

@@ -44,11 +44,25 @@ function turn(): Turn {
 
 const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
 const deletedWorkReceipt = {
+  operation: "delete",
   category: "mutate",
-  line: "Deleted Work Side quests.",
+  changed: true,
+  workId: "work-1",
+  workName: "Side quests",
+  before: { name: "Side quests", goal: null, description: null, status: "active" },
+  after: null,
   inverse: { command: "restore", workId: "work-1" },
 } as const;
-const readWorkReceipt = { category: "read", line: "Checked Works.", inverse: null } as const;
+const readWorkReceipt = {
+  operation: "switch",
+  category: "binding",
+  changed: false,
+  workId: "work-1",
+  workName: "Side quests",
+  before: null,
+  after: null,
+  inverse: null,
+} as const;
 const settledTrail = {
   trailId: "trail-1",
   owner: { kind: "turn", threadId: "thread-1", turnId: "turn-1" },
@@ -371,14 +385,16 @@ describe("TurnEditsReceipt Work receipts", () => {
   it("reads a restored Work as success even when the document half had nothing to undo", async () => {
     mutateAsyncMock.mockResolvedValueOnce({
       status: "nothing_to_undo",
-      workReceipts: [{ command: "restore", workId: "work-1", status: "restored" }],
+      workReceipts: [
+        { command: "restore", workId: "work-1", name: "Side quests", status: "reversed" },
+      ],
     });
     await withInteractiveCard(
       { documents: [], workReceipts: [deletedWorkReceipt] },
       async (card) => {
         await card.click("Undo");
 
-        expect(document.body.textContent).toContain("Restored the Work.");
+        expect(document.body.textContent).toContain("Undid change to Work Side quests.");
         expect(document.body.textContent).not.toContain("Undo is no longer available.");
       },
     );
@@ -388,7 +404,7 @@ describe("TurnEditsReceipt Work receipts", () => {
     mutateAsyncMock.mockResolvedValueOnce({
       status: "reversed",
       workReceipts: [
-        { command: "restore", workId: "work-1", name: "Side quests", status: "restored" },
+        { command: "restore", workId: "work-1", name: "Side quests", status: "reversed" },
       ],
     });
     await withInteractiveCard(
@@ -396,7 +412,7 @@ describe("TurnEditsReceipt Work receipts", () => {
       async (card) => {
         await card.click("Undo");
 
-        expect(document.body.textContent).toContain("Restored Work Side quests.");
+        expect(document.body.textContent).toContain("Undid change to Work Side quests.");
       },
     );
   });
@@ -405,7 +421,7 @@ describe("TurnEditsReceipt Work receipts", () => {
     mutateAsyncMock.mockResolvedValueOnce({
       status: "partial",
       workReceipts: [
-        { command: "restore", workId: "work-1", name: "Side quests", status: "restored" },
+        { command: "restore", workId: "work-1", name: "Side quests", status: "reversed" },
       ],
     });
     await withInteractiveCard(
@@ -413,7 +429,7 @@ describe("TurnEditsReceipt Work receipts", () => {
       async (card) => {
         await card.click("Undo");
 
-        expect(document.body.textContent).toContain("Restored Work Side quests.");
+        expect(document.body.textContent).toContain("Undid change to Work Side quests.");
         expect(document.body.textContent).toContain("Only part of this change could be reversed.");
       },
     );

@@ -1041,6 +1041,16 @@ describe("runtime loop integration", () => {
         yield* gateway.stream(request);
       },
     };
+    const workReceipt = {
+      operation: "switch",
+      category: "binding",
+      changed: true,
+      workId: "work-target",
+      workName: "Target",
+      before: null,
+      after: null,
+      inverse: { command: "switch", workId: "work-source" },
+    } as const;
     const registry = createToolRegistry();
     registry.register({
       source: "core",
@@ -1054,7 +1064,7 @@ describe("runtime loop integration", () => {
         type: "server",
         handler: async () => ({
           output: { slug: "target" },
-          metadata: { workContextChanged: true },
+          metadata: { workContextChanged: true, workReceipt },
         }),
       },
     });
@@ -1110,7 +1120,7 @@ describe("runtime loop integration", () => {
     const blocks = await repos.blocks.listByThread(thread.id);
     expect(blocks.find((block) => block.blockType === "tool_result")?.content).toMatchObject({
       output: pending,
-      metadata: { workContextDelivery: "pending" },
+      metadata: { workContextDelivery: "pending", workReceipt },
     });
     const replay = await eventWriter.readAfter(thread.id, 0n);
     const replayedResult = replay
@@ -1121,6 +1131,7 @@ describe("runtime loop integration", () => {
       )
       .at(-1);
     expect(replayedResult?.output).toMatchObject(pending);
+    expect(replayedResult?.metadata).toMatchObject({ workReceipt });
 
     running = false;
     if (!delivery) throw new Error("System update delivery was not composed");

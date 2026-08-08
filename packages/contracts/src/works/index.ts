@@ -45,3 +45,5 @@ export interface UpdateWorkRequest {
   description?: string;
   status?: WorkStatus;
 }
+
+export * from "./receipts.js";

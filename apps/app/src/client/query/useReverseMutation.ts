@@ -10,9 +10,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   type ReverseDocumentInput,
   type ReverseTurnInput,
-  restoredWorks,
   reverseDocument,
   reverseTurn,
+  successfulWorkReversals,
 } from "@/client/api/reverse-api";
 import { invalidateProjectThreadData } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
@@ -31,7 +31,7 @@ export function useReverseTurnMutation(threadId: string) {
     onSuccess: (outcome) => {
       // A restored Work must reappear in the sidebar and rail without a
       // reload, so its project's works and thread bindings refetch together.
-      if (restoredWorks(outcome).length === 0) return;
+      if (successfulWorkReversals(outcome).length === 0) return;
       const projectId = queryClient.getQueryData<ThreadSnapshotResponse>(
         threadQueryKeys.snapshot(threadId),
       )?.thread.projectId;
