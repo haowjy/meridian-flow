@@ -1,4 +1,6 @@
 /** Authenticated reversal command transport for thread context. */
+
+import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
   createError,
@@ -50,23 +52,39 @@ export default defineEventHandler(async (event) => {
     });
     const canReverseWorkReceipts =
       body.target !== undefined &&
-      body.direction === "undo" &&
       (outcome.status === "reversed" ||
         outcome.status === "reconciled" ||
-        outcome.status === "nothing_to_undo");
-    const workReceipts = canReverseWorkReceipts
-      ? await reverseWorkReceipts(
-          {
-            blocks: app.threadRepos.blocks,
-            turns: app.threadRepos.turns,
-            works: app.works,
-            contextUpdates: app.systemUpdates,
-          },
-          { threadId, turnId, direction: body.direction },
-        )
-      : [];
+        outcome.status === "nothing_to_undo" ||
+        outcome.status === "nothing_to_redo" ||
+        outcome.status === "partial" ||
+        outcome.status === "partial_failure");
+    let workReceipts = [];
+    try {
+      workReceipts = canReverseWorkReceipts
+        ? await reverseWorkReceipts(
+            {
+              blocks: app.threadRepos.blocks,
+              turns: app.threadRepos.turns,
+              threads: app.threadRepos.threads,
+              threadWorks: app.threadRepos.threadWorks,
+              works: app.works,
+              preferences: app.preferences,
+              contextUpdates: app.systemUpdates,
+              transaction: app.threadRepos.transaction,
+            },
+            { threadId, turnId, direction: body.direction },
+          )
+        : [];
+    } catch {
+      setResponseStatus(event, 200);
+      return {
+        ...outcome,
+        status: "partial_failure",
+        workError: "execution_failed",
+      } satisfies ReversalOutcome;
+    }
     setResponseStatus(event, 200);
-    return combineWorkReversalOutcome(outcome, workReceipts);
+    return combineWorkReversalOutcome(outcome, workReceipts, body.direction);
   } catch (error) {
     if (!(error instanceof ReverseThreadContextError)) throw error;
     throw createError({

@@ -7,6 +7,7 @@ export type TurnReceiptState =
   | "branch-active"
   | "branch-reversed"
   | "work-active"
+  | "work-reversed"
   | "rollback-pending"
   | "cant_undo_dependent"
   | "expired";
@@ -23,7 +24,8 @@ export type TurnReceiptStateStore = {
 };
 
 export function controlForTurnReceiptState(state: TurnReceiptState): TurnReceiptControl {
-  if (state === "live-reversed" || state === "branch-reversed") return "redo";
+  if (state === "live-reversed" || state === "branch-reversed" || state === "work-reversed")
+    return "redo";
   if (state === "live-active" || state === "branch-active" || state === "work-active")
     return "undo";
   return "view_change";

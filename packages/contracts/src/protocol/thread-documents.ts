@@ -69,6 +69,7 @@ export type TurnReceiptState =
   | "branch-active"
   | "branch-reversed"
   | "work-active"
+  | "work-reversed"
   | "rollback-pending"
   | "cant_undo_dependent"
   | "expired";

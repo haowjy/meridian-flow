@@ -29,7 +29,7 @@ export interface ThreadCachePort {
   /**
    * Invalidate the persisted projections for a terminal turn: the thread
    * snapshot and, when the owning project is known, Work draft-review lists,
-   * its thread list, and the project's context trees.
+   * its Work catalog, thread list, and context trees.
    */
   invalidateThread(threadId: string, projectId: string | null): void;
 }
@@ -52,6 +52,7 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
         void client.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
         if (projectId) {
           void client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
+          void client.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
           void client.invalidateQueries({
             predicate: (query) =>
               query.queryKey[0] === "projects" &&

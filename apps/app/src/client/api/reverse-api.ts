@@ -6,7 +6,11 @@
  * non-error outcomes that still use HTTP 200, so callers must branch on
  * `status` rather than treating a resolved fetch as success.
  */
-import { apiThreadContextReversePath, type ReversalOutcome } from "@meridian/contracts/protocol";
+import {
+  apiThreadContextReversePath,
+  type ReversalOutcome,
+  type WorkReversalResult,
+} from "@meridian/contracts/protocol";
 
 import { postJson } from "./http-client";
 
@@ -45,29 +49,8 @@ export function reverseTurn(threadId: string, input: ReverseTurnInput): Promise<
 
 /** A Work the reverse endpoint reports as put back. `name` is the writer-facing
  * Work name when the server sends one; `null` when it only sent an id. */
-export type RestoredWork = { name: string | null };
-
-const RESTORED_WORK_STATUSES = new Set(["restored", "reversed", "success"]);
-
-/**
- * The Works a reversal outcome reports as restored.
- *
- * The endpoint's Work half is newer than its document half and its wire shape
- * is still settling server-side, so every read of it funnels through this one
- * function: a field rename is a one-line fix here instead of a scavenger hunt.
- * Missing or malformed entries parse as "no Works restored", never as an error.
- */
-export function restoredWorks(outcome: ReversalOutcome): RestoredWork[] {
-  const carrier = outcome as unknown as Record<string, unknown>;
-  const entries = carrier.workReceipts ?? carrier.works;
-  if (!Array.isArray(entries)) return [];
-  const restored: RestoredWork[] = [];
-  for (const entry of entries) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const record = entry as Record<string, unknown>;
-    if (typeof record.status !== "string" || !RESTORED_WORK_STATUSES.has(record.status)) continue;
-    const name = record.name ?? record.workName;
-    restored.push({ name: typeof name === "string" && name.length > 0 ? name : null });
-  }
-  return restored;
+export function successfulWorkReversals(outcome: ReversalOutcome): WorkReversalResult[] {
+  return (outcome.workReceipts ?? []).filter(
+    (result) => result.status === "reversed" || result.status === "redone",
+  );
 }

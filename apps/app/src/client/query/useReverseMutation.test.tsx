@@ -147,7 +147,7 @@ describe("useReverseTurnMutation", () => {
     reverseTurnMock.mockResolvedValue({
       status: "reversed",
       documents: [],
-      workReceipts: [{ command: "restore", workId: "w1", status: "restored" }],
+      workReceipts: [{ command: "restore", workId: "w1", name: "Arc", status: "reversed" }],
     });
 
     try {

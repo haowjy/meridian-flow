@@ -119,7 +119,12 @@ describe("wired work tool", () => {
     });
     await expect(handler({ command: "create", name: "New Work" }, ctx)).resolves.toMatchObject({
       metadata: {
-        workReceipt: { category: "mutate", inverse: { command: "delete" } },
+        workReceipt: {
+          operation: "create",
+          category: "mutate",
+          changed: true,
+          inverse: { command: "delete" },
+        },
         workContextChanged: true,
       },
     });
@@ -127,10 +132,13 @@ describe("wired work tool", () => {
       handler({ command: "update", work: target.slug, name: "Target Revised" }, ctx),
     ).resolves.toMatchObject({
       output: { name: "Target Revised" },
-      metadata: { workReceipt: { inverse: { command: "update" } }, workContextChanged: true },
+      metadata: {
+        workReceipt: { operation: "update", changed: true, inverse: { command: "update" } },
+        workContextChanged: true,
+      },
     });
     await expect(handler({ command: "switch", work: target.slug }, ctx)).resolves.toMatchObject({
-      metadata: { workReceipt: { category: "binding" } },
+      metadata: { workReceipt: { operation: "switch", category: "binding", changed: true } },
     });
     const created = (await handler({ command: "create", name: "Delete Me" }, ctx)) as {
       output: { slug: string };
@@ -138,7 +146,10 @@ describe("wired work tool", () => {
     await expect(
       handler({ command: "delete", work: created.output.slug }, ctx),
     ).resolves.toMatchObject({
-      metadata: { workReceipt: { inverse: { command: "restore" } }, workContextChanged: true },
+      metadata: {
+        workReceipt: { operation: "delete", changed: true, inverse: { command: "restore" } },
+        workContextChanged: true,
+      },
     });
 
     const [listOutput, showOutput, switchResult] = await Promise.all([
@@ -158,7 +169,10 @@ describe("wired work tool", () => {
       handler({ command: "show", work: "missing" }, toolContext()),
     ).resolves.toMatchObject({
       isError: true,
-      output: { code: "work_not_found", details: { validWorkSlugs: ["current", "target"] } },
+      output: {
+        code: "work_not_found",
+        details: { validWorkSlugs: expect.arrayContaining(["current", "target"]) },
+      },
     });
     await expect(
       handler({ command: "list", unexpected: true }, toolContext()),
@@ -201,7 +215,11 @@ describe("wired work tool", () => {
     await fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext());
     await expect(
       fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext()),
-    ).resolves.not.toMatchObject({ metadata: { workContextChanged: true } });
+    ).resolves.toMatchObject({
+      metadata: {
+        workReceipt: { operation: "switch", changed: false, inverse: null },
+      },
+    });
     expect(fixture.threadChanged).not.toHaveBeenCalled();
   });
 });

@@ -115,9 +115,14 @@ describe("work tool renderer", () => {
       input: { command: "create", name: "Tournament arc" },
       metadata: {
         workReceipt: {
+          operation: "create",
           category: "mutate",
-          line: "Created Work Tournament arc.",
-          inverse: { command: "delete", workId: "w1" },
+          changed: true,
+          workId: "w1",
+          workName: "Tournament arc",
+          before: null,
+          after: { name: "Tournament arc", goal: null, description: null, status: "active" },
+          inverse: { command: "delete", workId: "w1", previousCurrentWorkId: null },
         },
       },
     });

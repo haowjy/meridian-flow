@@ -19,6 +19,7 @@ type TurnLiveLineageRouteServices = {
   blocks: AppServices["threadRepos"]["blocks"];
   turns: AppServices["threadRepos"]["turns"];
   works: AppServices["workRepo"];
+  threadWorks: AppServices["threadRepos"]["threadWorks"];
 };
 
 export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLineageRouteServices {
@@ -30,6 +31,7 @@ export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLi
     blocks: app.threadRepos.blocks,
     turns: app.threadRepos.turns,
     works: app.workRepo,
+    threadWorks: app.threadRepos.threadWorks,
   };
 }
 
@@ -52,15 +54,24 @@ export async function handleTurnLiveLineageRequest(
     userId: input.userId,
   });
   const receipt = await deps.documentSync.getTurnReceiptChip(threadId, turnId);
-  const workAvailability = receipt
-    ? null
-    : await getWorkReceiptReversalAvailability(
-        { blocks: deps.blocks, turns: deps.turns, works: deps.works },
-        { threadId, turnId },
-      );
+  const workAvailability = await getWorkReceiptReversalAvailability(
+    {
+      blocks: deps.blocks,
+      turns: deps.turns,
+      works: deps.works,
+      threads: deps.threads,
+      threadWorks: deps.threadWorks,
+    },
+    { threadId, turnId },
+  );
+  const workReceipt = workAvailability.undo
+    ? ({ state: "work-active", control: "undo" } as const)
+    : workAvailability.redo
+      ? ({ state: "work-reversed", control: "redo" } as const)
+      : null;
   return {
     documents: visibleDocuments.map(serializeLiveLineageDocument),
-    receipt: workAvailability?.undo ? { state: "work-active", control: "undo" } : receipt,
+    receipt: receipt ?? workReceipt,
   };
 }
 

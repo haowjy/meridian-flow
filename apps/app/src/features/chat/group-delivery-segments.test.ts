@@ -22,9 +22,14 @@ function block(sequence: number, blockType: Block["blockType"], content: Block["
 
 it("carries tool_result metadata onto the paired tool view", () => {
   const receipt = {
+    operation: "create",
     category: "mutate",
-    line: "Created Work Tournament arc.",
-    inverse: { command: "delete", workId: "w1" },
+    changed: true,
+    workId: "w1",
+    workName: "Tournament arc",
+    before: null,
+    after: { name: "Tournament arc", goal: null, description: null, status: "active" },
+    inverse: { command: "delete", workId: "w1", previousCurrentWorkId: null },
   };
   const segments = groupDeliverySegments([
     block(0, "tool_use", {
