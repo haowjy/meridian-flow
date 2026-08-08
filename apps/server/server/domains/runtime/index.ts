@@ -1,6 +1,7 @@
 /** Barrel: re-exports the runtime domain's public surface — the gateway, the orchestrator loop, the permission model, the turn runner, and the tool registry/executor. */
 export type { OrchestratorEvent } from "@meridian/contracts/threads";
 export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+export { createDrizzleThreadRunOwnership } from "./adapters/drizzle-thread-run-ownership.js";
 export * from "./gateway/index.js";
 export {
   createNoopInterruptArtifactFlushPort,
@@ -24,6 +25,11 @@ export {
   createSystemUpdateDelivery,
   type SystemUpdateDelivery,
 } from "./loop/system-update-delivery.js";
+export {
+  createInMemoryThreadRunOwnership,
+  type ThreadRunClaim,
+  type ThreadRunOwnership,
+} from "./loop/thread-run-ownership.js";
 export {
   type ChildRunRegistry,
   createTurnRunner,

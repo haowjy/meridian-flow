@@ -74,6 +74,7 @@ represented as a fully-typed slot:
 | `toolRegistry` | runtime | Name-keyed tool registration map |
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
 | `modelRequestDebug` | runtime | Env-selected model request debug store |
+| `runOwnership` | runtime | One PostgreSQL advisory-lock session per server process; owns live thread runs across replicas |
 
 ## Tool wiring
 

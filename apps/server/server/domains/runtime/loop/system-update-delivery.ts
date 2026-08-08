@@ -10,10 +10,16 @@ import {
 } from "../../threads/index.js";
 import { contentForBlockInput, isJsonObject, localBlockFromEvent } from "./block-helpers.js";
 import { persistAndAppendTurnStartEvents } from "./persistence.js";
+import {
+  createInMemoryThreadRunOwnership,
+  type ThreadRunOwnership,
+} from "./thread-run-ownership.js";
 import type { WorkContextReader } from "./work-context.js";
 
 export interface SystemUpdateDelivery extends WorkContextUpdates {
   flush(threadId: ThreadId): Promise<void>;
+  /** Flush while the caller retains the durable run claim through completion. */
+  flushOwned(threadId: ThreadId): Promise<void>;
   /** Drain every durable obligation visible to this process. */
   sweep(): Promise<void>;
   /** Claim durable pending delivery before a new writer turn starts. */
@@ -81,9 +87,11 @@ export function createSystemUpdateDelivery(deps: {
   eventWriter: EventJournalWriter;
   workContext: WorkContextReader;
   isThreadRunning(threadId: ThreadId): boolean;
+  runOwnership?: ThreadRunOwnership;
   /** Schedule a non-blocking wake after the caller's business transaction commits. */
   schedulePostCommit(task: () => Promise<void>): void;
 }): SystemUpdateDelivery {
+  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
   const flushChains = new Map<string, Promise<void>>();
 
   function pendingPresentationBlocks(blocks: Block[]): Block[] {
@@ -195,7 +203,13 @@ export function createSystemUpdateDelivery(deps: {
 
   async function flushUnlocked(threadId: ThreadId): Promise<void> {
     if (deps.isThreadRunning(threadId)) return;
-    await append(threadId);
+    const claim = await runOwnership.tryAcquire(threadId);
+    if (!claim) return;
+    try {
+      await append(threadId);
+    } finally {
+      await claim.release();
+    }
   }
 
   const delivery: SystemUpdateDelivery = {
@@ -236,6 +250,10 @@ export function createSystemUpdateDelivery(deps: {
       } finally {
         if (flushChains.get(key) === settled) flushChains.delete(key);
       }
+    },
+
+    async flushOwned(threadId) {
+      await append(threadId);
     },
 
     async sweep() {

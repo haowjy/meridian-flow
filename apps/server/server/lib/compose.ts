@@ -77,6 +77,7 @@ import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
   createChildRunCoordinator,
+  createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
   createHelperResultDelivery,
   createInstrumentedGateway,
@@ -94,6 +95,7 @@ import {
   type RunTurnPort,
   resolveProfile,
   type SystemUpdateDelivery,
+  type ThreadRunOwnership,
   type ToolExecutor,
   type ToolRegistry,
   type TurnRunner,
@@ -235,6 +237,7 @@ export type ProductionAppPorts = {
   documentAccess: DocumentAccessPort;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
+  runOwnership: ThreadRunOwnership;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -299,6 +302,7 @@ export async function createProductionAppPorts(input: {
   });
   const db = input.db;
   const threadRepos = createDrizzleRepositories(db);
+  const runOwnership = createDrizzleThreadRunOwnership(db);
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -401,6 +405,7 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
+    runOwnership,
     gateway,
     threadRepos,
     journalReader,
@@ -513,6 +518,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     hub: threadEventHub,
     repos: { turns: ports.threadRepos.turns },
     eventSink: ports.eventSink,
+    runOwnership: ports.runOwnership,
     helperResultDelivery: {
       async flush(threadId) {
         await helperResultDelivery?.flush(threadId);
@@ -522,8 +528,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       async beforeTurn(threadId) {
         await systemUpdates?.beforeTurn(threadId);
       },
-      async flush(threadId) {
-        await systemUpdates?.flush(threadId);
+      async flushOwned(threadId) {
+        await systemUpdates?.flushOwned(threadId);
       },
     },
   });
@@ -537,6 +543,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: threadEventHub,
     workContext,
     isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
+    runOwnership: ports.runOwnership,
     schedulePostCommit(task) {
       runAfterDrizzleCommit(() => {
         void task().catch((cause) => {
@@ -576,6 +583,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
     systemUpdateDelivery: systemUpdates,
+    runOwnership: ports.runOwnership,
     billingSpendReader: ports.billingSpendReader,
     workContext,
   });
@@ -691,6 +699,7 @@ export function createInMemoryAppServices(): AppServices {
     async projectChanged() {},
     async threadChanged() {},
     async flush() {},
+    async flushOwned() {},
     async beforeTurn() {},
     async sweep() {},
     async deliverNow() {

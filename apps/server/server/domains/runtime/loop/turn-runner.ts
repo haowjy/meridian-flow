@@ -41,6 +41,11 @@ import {
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { RunTurnPort } from "./run-turn-port.js";
 import type { SystemUpdateDelivery } from "./system-update-delivery.js";
+import {
+  createInMemoryThreadRunOwnership,
+  type ThreadRunClaim,
+  type ThreadRunOwnership,
+} from "./thread-run-ownership.js";
 
 export type TurnRunner = ReturnType<typeof createTurnRunner>;
 
@@ -64,6 +69,7 @@ export interface ChildRunRegistry {
 type RunningTurn = {
   controller: AbortController;
   assistantTurnId?: TurnId;
+  claim?: ThreadRunClaim;
 };
 
 type ChildRun = {
@@ -85,9 +91,12 @@ export function createTurnRunner(deps: {
   repos: { turns: TurnRepository };
   eventSink: EventSink;
   helperResultDelivery?: Pick<HelperResultDelivery, "flush">;
-  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "beforeTurn" | "flush">;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "beforeTurn"> &
+    Partial<Pick<SystemUpdateDelivery, "flush" | "flushOwned">>;
+  runOwnership?: ThreadRunOwnership;
 }) {
   const eventSink = deps.eventSink;
+  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
   const running = new Map<ThreadId, RunningTurn>();
   /** WS peers currently connected; a token not in this set cannot authorize a new turn start. */
   const liveConnectionTokens = new Set<string>();
@@ -115,7 +124,12 @@ export function createTurnRunner(deps: {
     },
     markChildTurn(childThreadId, assistantTurnId) {
       const child = childRuns.get(childThreadId);
-      if (child) running.set(childThreadId, { controller: child.controller, assistantTurnId });
+      if (child) {
+        running.set(childThreadId, {
+          controller: child.controller,
+          assistantTurnId,
+        });
+      }
     },
     abortChild(childThreadId) {
       this.abortChildrenOf(childThreadId, { includeBackground: true });
@@ -167,8 +181,11 @@ export function createTurnRunner(deps: {
       assertConnectionTokenLive(input.connectionToken);
 
       const controller = new AbortController();
+      const claim = await runOwnership.tryAcquire(input.threadId);
+      if (!claim) throw new TurnStartConflictError(input.threadId, "already_running");
       running.set(input.threadId, {
         controller,
+        claim,
       });
       try {
         assertConnectionTokenLive(input.connectionToken);
@@ -190,6 +207,7 @@ export function createTurnRunner(deps: {
         running.set(input.threadId, {
           controller,
           assistantTurnId: handle.assistantTurnId,
+          claim,
         });
 
         void (async () => {
@@ -222,9 +240,20 @@ export function createTurnRunner(deps: {
             });
           } finally {
             running.delete(input.threadId);
-            await deps.helperResultDelivery?.flush(input.threadId);
-            await deps.systemUpdateDelivery?.flush(input.threadId);
-            childRunRegistry.abortChildrenOf(input.threadId);
+            try {
+              await deps.helperResultDelivery?.flush(input.threadId);
+            } finally {
+              try {
+                if (deps.systemUpdateDelivery?.flushOwned) {
+                  await deps.systemUpdateDelivery.flushOwned(input.threadId);
+                } else {
+                  await deps.systemUpdateDelivery?.flush?.(input.threadId);
+                }
+              } finally {
+                await claim.release();
+                childRunRegistry.abortChildrenOf(input.threadId);
+              }
+            }
           }
         })();
 
@@ -236,6 +265,7 @@ export function createTurnRunner(deps: {
         };
       } catch (error) {
         running.delete(input.threadId);
+        await claim.release();
         throw error;
       }
     },

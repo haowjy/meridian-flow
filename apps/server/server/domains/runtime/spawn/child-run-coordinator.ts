@@ -25,6 +25,11 @@ import type {
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import type { SystemUpdateDelivery } from "../loop/system-update-delivery.js";
+import {
+  createInMemoryThreadRunOwnership,
+  type ThreadRunClaim,
+  type ThreadRunOwnership,
+} from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import type { WorkContextReader } from "../loop/work-context.js";
 import { modelInvocableSkillSlugs, renderSkillsSystemPromptSection } from "../tools/skill-tools.js";
@@ -60,7 +65,8 @@ export interface ChildRunCoordinatorDeps {
   packageRepository: PackageRepository;
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
-  systemUpdateDelivery: Pick<SystemUpdateDelivery, "flush">;
+  systemUpdateDelivery: Partial<Pick<SystemUpdateDelivery, "flush" | "flushOwned">>;
+  runOwnership?: ThreadRunOwnership;
   billingSpendReader: BillingSpendReader;
   workContext: WorkContextReader;
 }
@@ -86,6 +92,7 @@ type PreparedChild = {
   child: Thread;
   childController: AbortController;
   childRegistered: boolean;
+  runClaim: ThreadRunClaim;
 };
 
 async function synthesizeIncompleteReport(
@@ -119,6 +126,7 @@ async function synthesizeIncompleteReport(
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
+  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
   const pendingReports = new Map<string, AgentReport>();
 
   function createReturnResultCompleter(childThreadId: ThreadId): ReturnResultCompleter {
@@ -215,6 +223,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     });
 
     const childController = new AbortController();
+    const runClaim = await runOwnership.tryAcquire(child.id as ThreadId);
+    if (!runClaim) throw new Error(`Child thread already has an active run: ${child.id}`);
     let childRegistered = false;
     if (options.background) {
       deps.childRunRegistry.registerBackgroundChild(
@@ -239,7 +249,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       );
       childRegistered = true;
     }
-    return { child, childController, childRegistered };
+    return { child, childController, childRegistered, runClaim };
   }
 
   async function driveChild(input: SpawnChildInput, prepared: PreparedChild): Promise<SpawnResult> {
@@ -329,11 +339,22 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
         includeBackground: true,
       });
-      await deps.helperResultDelivery.markIdleAndFlush(prepared.child.id as ThreadId);
-      if (prepared.childRegistered) {
-        deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
+      try {
+        await deps.helperResultDelivery.markIdleAndFlush(prepared.child.id as ThreadId);
+      } finally {
+        try {
+          if (prepared.childRegistered) {
+            if (deps.systemUpdateDelivery.flushOwned) {
+              await deps.systemUpdateDelivery.flushOwned(prepared.child.id as ThreadId);
+            } else {
+              await deps.systemUpdateDelivery.flush?.(prepared.child.id as ThreadId);
+            }
+            deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
+          }
+        } finally {
+          await prepared.runClaim.release();
+        }
       }
-      await deps.systemUpdateDelivery.flush(prepared.child.id as ThreadId);
     }
 
     await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {

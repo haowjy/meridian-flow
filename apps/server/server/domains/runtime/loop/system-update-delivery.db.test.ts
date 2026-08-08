@@ -28,10 +28,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createSystemUpdateDelivery } = await import("./system-update-delivery.js");
+    const { createDrizzleThreadRunOwnership } = await import(
+      "../adapters/drizzle-thread-run-ownership.js"
+    );
     const { createWorkContextReader } = await import("./work-context.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
+    const sharedRunOwnership = createDrizzleThreadRunOwnership(db);
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -59,6 +63,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     function delivery(
       repos: ReturnType<typeof createDrizzleRepositories>,
       eventWriter = createDrizzleEventJournalWriter(db),
+      runOwnership = sharedRunOwnership,
     ) {
       return createSystemUpdateDelivery({
         repos,
@@ -69,6 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
         isThreadRunning: () => false,
+        runOwnership,
         schedulePostCommit() {},
       });
     }
@@ -131,7 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
 
-      await delivery(createDrizzleRepositories(db)).beforeTurn(THREAD_ID);
+      await delivery(createDrizzleRepositories(db)).sweep();
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
       await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
       const [events] = await db
@@ -153,6 +159,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(first.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
       await expect(first.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+    });
+
+    it("leaves a remote obligation with its live owner, then owner completion appends once", async () => {
+      const ownerRepos = createDrizzleRepositories(db);
+      const remoteRepos = createDrizzleRepositories(db);
+      const ownerOwnership = createDrizzleThreadRunOwnership(db);
+      const remoteOwnership = createDrizzleThreadRunOwnership(db);
+      const ownerClaim = await ownerOwnership.tryAcquire(THREAD_ID);
+      expect(ownerClaim).not.toBeNull();
+      await ownerRepos.workContextDeliveries.enqueueThread(THREAD_ID);
+
+      await delivery(remoteRepos, createDrizzleEventJournalWriter(db), remoteOwnership).sweep();
+
+      await expect(remoteRepos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await expect(remoteRepos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(0);
+
+      const ownerDelivery = delivery(
+        ownerRepos,
+        createDrizzleEventJournalWriter(db),
+        ownerOwnership,
+      );
+      await ownerDelivery.flushOwned(THREAD_ID);
+      const turns = await ownerRepos.turns.listByThread(THREAD_ID);
+      expect(turns).toHaveLength(1);
+      const blocks = await ownerRepos.blocks.listByTurn(turns[0]?.id ?? "");
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]?.textContent).toContain("<work_context>current state</work_context>");
+      await expect(ownerRepos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+
+      await ownerClaim?.release();
+      await delivery(remoteRepos, createDrizzleEventJournalWriter(db), remoteOwnership).sweep();
+      await expect(ownerRepos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
     });
 
     it("leaves a durable refresh when a Work changes between first render and freeze", async () => {
