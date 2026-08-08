@@ -41,9 +41,9 @@ describe("thread context-port resolution", () => {
     const resolution = await resolveThreadContext(
       {
         threads: { findById: async () => thread() },
-        threadWorks: {
-          findPrimary: async () => ({ workId: WORK_ID }),
-          listByThread: async () => [{ workId: WORK_ID, isPrimary: true }],
+        threadWorks: { findPrimary: async () => ({ workId: WORK_ID }) },
+        works: {
+          listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
         },
       },
       THREAD_ID,
@@ -71,8 +71,13 @@ describe("project recovery context-port resolution", () => {
   it("authorizes every active Work while keeping the requested Work primary", async () => {
     const calls: Array<{ workId: string; authorities: string[] }> = [];
     const contextPorts = {
-      forWork: (workId: string, _projectId: string, _userId: string, authorities: Set<string>) => {
-        calls.push({ workId, authorities: [...authorities] });
+      forWork: (
+        workId: string,
+        _projectId: string,
+        _userId: string,
+        authorities: ReadonlyMap<string, string>,
+      ) => {
+        calls.push({ workId, authorities: [...authorities.keys()] });
         return {} as ContextPort;
       },
       forProject: () => {
@@ -84,9 +89,11 @@ describe("project recovery context-port resolution", () => {
       deps: {
         contextPorts,
         works: {
-          findById: async () => null,
           listByProject: async () =>
-            ["work-1", "work-2"].map((id) => ({ id })) as Awaited<
+            ["work-1", "work-2"].map((id, index) => ({
+              id,
+              slug: `work-${index + 1}`,
+            })) as Awaited<
               ReturnType<import("../projects/index.js").WorkRepository["listByProject"]>
             >,
         },

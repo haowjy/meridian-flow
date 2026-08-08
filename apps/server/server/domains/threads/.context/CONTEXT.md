@@ -12,8 +12,8 @@ instead of the N:1 `threads.workId` column.
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
   responses with token/cost rollups.
 - **Thread↔Work membership** — `thread_works` join table (one primary per
-  thread). `threads.workId` column is **dropped**. Work-authority URIs resolve
-  through membership.
+  thread). `threads.workId` column is **dropped**. Membership is organizational;
+  same-project Work-authority URIs do not require membership.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
@@ -64,7 +64,7 @@ instead of the N:1 `threads.workId` column.
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
-| `reassignThreadPrimaryWork` | Validates the target Work, then under the thread’s primary-Work lock checks D18 (no unreviewed draft in the old primary Work) and atomically flips primary membership. |
+| `ThreadWorksRepository` | Adds organizational memberships, reads the primary, and rebinds the primary membership through one Work-before-thread critical section. Rebind accepts active or archived same-project Works and preserves exactly one primary. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -163,9 +163,11 @@ contract shapes.
   non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
   Collisions use `-2`, `-3`, and later mutations never regenerate the handle;
   untitled threads keep `slug = null`.
-- **Primary Work reassignment is serialized.** The thread-row lock covers reading
-  the old primary Work, D18’s unreviewed-draft guard, and the membership flip, so
-  concurrent moves cannot each validate a stale primary Work.
+- **Work membership mutation is serialized.** Primary additions and rebinds lock
+  the current and target Works in canonical id order before the thread row;
+  non-primary additions lock their target Work before the thread. A changed
+  primary snapshot retries the whole transaction. This prevents deletion races,
+  opposite lock orders, and concurrent moves validating stale primary state.
 - Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
 - Hot cache is bounded at 500 events; older events fall through to journal

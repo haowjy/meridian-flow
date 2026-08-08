@@ -11,6 +11,7 @@ import {
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import {
   type BranchJournalReadStore,
@@ -219,10 +220,14 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitTurnRedo(input) {
-      return runInDrizzleTransaction(db, async () => {
-        await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
-        await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
-      });
+      return runWithActiveWorkDrafts(
+        db,
+        { branchIds: input.journalRows.map((row) => row.branchId) },
+        async () => {
+          await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
+          await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
+        },
+      );
     },
 
     async commitPushBatch(input) {
@@ -294,7 +299,7 @@ export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicySt
 export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
   return {
     async listReviewableEvidenceForWork(workId) {
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select({
           branchId: documentBranches.id,
           documentId: documentBranches.documentId,

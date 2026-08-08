@@ -46,6 +46,11 @@ The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review
 surface.
 
+Work mutation rows consume the shared structured receipt contract. The server
+supplies operation, identity, before/after facts, and a typed inverse; this
+surface maps those facts through the active Lingui catalog. Idempotent receipts
+remain factual activity but do not claim a change or mount this card.
+
 `TurnEditsReceipt` renders every authorized trail change in ordinal order. The
 one-shot *Open conversation* reveal only expands the receipt and emphasizes the
 target row; it does not change which rows are mounted.

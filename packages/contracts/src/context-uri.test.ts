@@ -35,4 +35,45 @@ describe("parseContextUri", () => {
     const parsed = parseContextUri(reference);
     expect(parsed.ok && parsed.value.canonical).toBe("manuscript://chapters/Chapter 1.md");
   });
+
+  it("parses one Work qualifier without resolving its raw slug", () => {
+    expect(parseContextUri("scratch://@Revision-Pass/notes.md")).toEqual({
+      ok: true,
+      value: {
+        scheme: "scratch",
+        authority: "Revision-Pass",
+        path: "notes.md",
+        canonical: "scratch://@Revision-Pass/notes.md",
+      },
+    });
+  });
+
+  it("rejects qualifier chains instead of reading the second qualifier as a name", () => {
+    expect(parseContextUri("scratch://@other-project/@revision-pass/notes.md")).toEqual({
+      ok: false,
+      error: {
+        uri: "scratch://@other-project/@revision-pass/notes.md",
+        reason: 'Authority qualifier chains are not yet supported for scheme "scratch"',
+      },
+    });
+  });
+
+  it("recognizes qualifier chains through normalized separators", () => {
+    expect(parseContextUri("scratch:////@other-project//@revision-pass/notes.md")).toMatchObject({
+      ok: false,
+      error: { reason: expect.stringContaining("not yet supported") },
+    });
+  });
+
+  it("treats an unmarked UUID-shaped segment as a legal filename", () => {
+    expect(
+      parseContextUri("scratch://00000000-0000-4000-8000-000000000001/notes.md"),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        authority: null,
+        path: "00000000-0000-4000-8000-000000000001/notes.md",
+      },
+    });
+  });
 });

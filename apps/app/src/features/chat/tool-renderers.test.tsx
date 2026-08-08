@@ -40,6 +40,7 @@ function writeToolView(overrides: Partial<ToolView> = {}): ToolView {
     isError: false,
     message: null,
     streamedOutput: null,
+    metadata: null,
     keyBlock: { id: "b1", type: "tool_result", sequence: 1 } as unknown as Block,
     ...overrides,
   };
@@ -102,6 +103,55 @@ describe("unknown tool renderer", () => {
     });
 
     expect(rendererFor(tool.toolName).title(tool)).toBe("Return result");
+  });
+});
+
+describe("work tool renderer", () => {
+  const renderer = rendererFor("work");
+
+  it("renders the receipt line as the row, in Work names", () => {
+    const tool = writeToolView({
+      toolName: "work",
+      input: { command: "create", name: "Tournament arc" },
+      metadata: {
+        workReceipt: {
+          operation: "create",
+          category: "mutate",
+          changed: true,
+          workId: "w1",
+          workName: "Tournament arc",
+          before: null,
+          after: { name: "Tournament arc", goal: null, description: null, status: "active" },
+          inverse: { command: "delete", workId: "w1", previousCurrentWorkId: null },
+        },
+      },
+    });
+    expect(titleText(renderer.title(tool))).toBe("Created Work Tournament arc");
+    // A successful receipt is the whole story: no chevron behind it.
+    expect(renderer.expand?.(tool)).toBeNull();
+  });
+
+  it("keeps reads to the minimal generic row", () => {
+    const tool = writeToolView({ toolName: "work", input: { command: "list" } });
+    expect(titleText(renderer.title(tool))).toBe("Checked Works");
+    expect(renderer.expand?.(tool)).toBeNull();
+  });
+
+  it("renders a failure as its own claim with the structured message behind it", () => {
+    const tool = writeToolView({
+      toolName: "work",
+      input: { command: "delete", work: "tournament-arc" },
+      isError: true,
+      output: {
+        code: "work_delete_blocked",
+        source: "tool",
+        message: "Work Tournament arc still holds notes. Move or delete them first.",
+        retryable: false,
+      },
+    });
+    expect(titleText(renderer.title(tool))).toBe("Couldn&#x27;t delete that Work");
+    const expand = expandMarkup(renderer.expand?.(tool));
+    expect(expand).toContain("Work Tournament arc still holds notes.");
   });
 });
 

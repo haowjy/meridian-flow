@@ -21,11 +21,6 @@ export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
-export {
-  InvalidThreadWorkTargetError,
-  PendingDraftWorkReassignmentError,
-  reassignThreadPrimaryWork,
-} from "./domain/work-reassignment.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export { requireThreadOwner } from "./thread-access.js";

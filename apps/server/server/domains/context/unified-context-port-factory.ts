@@ -53,7 +53,7 @@ export interface UnifiedContextPortFactory {
     workId: string,
     projectId: string,
     userId: string,
-    allowedAuthorities: ReadonlySet<string>,
+    workAuthorities: ReadonlyMap<string, string>,
     threadId?: string | null,
     responseId?: string | null,
   ): ContextPort;
@@ -213,7 +213,7 @@ type ContextPortBuildScope =
       workId: string;
       projectId: string;
       userId: string;
-      allowedAuthorities: ReadonlySet<string>;
+      workAuthorities: ReadonlyMap<string, string>;
       threadId?: string | null;
       responseId?: string | null;
     };
@@ -261,7 +261,7 @@ function buildUnifiedContextPort(input: {
       scope.kind === "work"
         ? new Map(WORK_SCOPED_CONTEXTFS_SCHEMES.map((scheme) => [scheme, scope.workId]))
         : undefined,
-    allowedAuthorities: scope.kind === "work" ? scope.allowedAuthorities : undefined,
+    workAuthorities: scope.kind === "work" ? scope.workAuthorities : undefined,
     primaryWorkId: scope.kind === "work" ? scope.workId : undefined,
     resolveWorkAdapters:
       scope.kind === "work"
@@ -372,14 +372,14 @@ export function createInMemoryUnifiedContextPortFactory(
     forProject(projectId, userId) {
       return portForProject(projectId, userId);
     },
-    forWork(workId, projectId, userId, allowedAuthorities, threadId, responseId) {
+    forWork(workId, projectId, userId, workAuthorities, threadId, responseId) {
       return buildUnifiedContextPort({
         scope: {
           kind: "work",
           workId,
           projectId,
           userId,
-          allowedAuthorities,
+          workAuthorities,
           threadId,
           responseId,
         },
@@ -417,14 +417,14 @@ export function createProductionUnifiedContextPortFactory(options: {
     forProject(projectId, userId) {
       return portForProject(projectId, userId);
     },
-    forWork(workId, projectId, userId, allowedAuthorities, threadId, responseId) {
+    forWork(workId, projectId, userId, workAuthorities, threadId, responseId) {
       return buildUnifiedContextPort({
         scope: {
           kind: "work",
           workId,
           projectId,
           userId,
-          allowedAuthorities,
+          workAuthorities,
           threadId,
           responseId,
         },

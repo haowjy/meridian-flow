@@ -126,6 +126,49 @@ describe("orchestrator event projector tool calls", () => {
     ).toBe(false);
   });
 
+  it("delivers host result metadata beside the AG-UI tool result", () => {
+    const turnId = "turn_tool_result_metadata";
+    const [, ...rest] = projectOrchestratorEvents([
+      { type: "turn.created", turn: goldenAssistantTurn(turnId, GOLDEN_THREAD_ID) },
+      {
+        type: "tool.result",
+        toolCallId: "call-work",
+        output: { slug: "revision" },
+        metadata: {
+          workReceipt: {
+            operation: "delete",
+            category: "mutate",
+            changed: true,
+            workId: "work-1",
+            workName: "Revision",
+            before: { name: "Revision", goal: null, description: null, status: "active" },
+            after: null,
+            inverse: { command: "restore", workId: "work-1" },
+          },
+        },
+      },
+    ]);
+
+    expect(rest).toEqual([
+      expect.objectContaining({
+        type: EventType.TOOL_CALL_RESULT,
+        toolCallId: "call-work",
+        metadata: {
+          workReceipt: {
+            operation: "delete",
+            category: "mutate",
+            changed: true,
+            workId: "work-1",
+            workName: "Revision",
+            before: { name: "Revision", goal: null, description: null, status: "active" },
+            after: null,
+            inverse: { command: "restore", workId: "work-1" },
+          },
+        },
+      }),
+    ]);
+  });
+
   it("closes reasoning before a tool-call frontier and resumes with positional reasoning ids", () => {
     const assistantTurnId = "turn_reasoning_tool_reasoning";
     const toolCallId = "call_reasoning_frontier";

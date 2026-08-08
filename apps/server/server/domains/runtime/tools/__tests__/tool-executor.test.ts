@@ -93,6 +93,7 @@ describe("createToolExecutor", () => {
       },
     );
     const registrations = createCoreToolRegistrations({
+      work: async () => ({ ok: true }),
       write: async (input: unknown, context: ToolHandlerContext) => {
         const outcome = await harness.core.write(input as never, {
           threadId: context.threadId,
@@ -232,6 +233,7 @@ describe("createToolExecutor", () => {
         });
         return "late result";
       },
+      work: async () => ({}),
       ls: async () => ({}),
       search: async () => ({}),
       ask_user: async () => ({}),

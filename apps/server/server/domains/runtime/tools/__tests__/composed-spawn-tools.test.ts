@@ -30,6 +30,7 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
     const registry = createToolRegistry({
       registrations: [
         ...createCoreToolRegistrations({
+          work: coreHandler,
           write: coreHandler,
           ls: coreHandler,
           search: coreHandler,

@@ -58,6 +58,7 @@ export function MobileProject(props: MobileProjectProps) {
         activeScreen={props.activeScreen}
         projectId={props.projectId}
         activeThreadId={props.activeThreadId}
+        activeWork={props.activeWork}
         onSelectThread={props.onSelectThread}
         title={props.resultsOpen ? t`Results` : undefined}
         onOpenDrawer={() => setDrawerOpen(true)}

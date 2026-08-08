@@ -77,7 +77,7 @@ export function resolveContextReadPath(
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }
-  const prefix = isWorkScopedBrowseScheme(scheme) ? `${scheme}://${workId}/` : `${scheme}://`;
+  const prefix = `${scheme}://`;
   const normalizedPath = uri.slice(prefix.length);
   const segments = normalizedPath.split("/").filter(Boolean);
   if (!segments.at(-1))

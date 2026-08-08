@@ -22,6 +22,7 @@ import { createDrizzleThreadWorksRepository } from "./thread-works-repository.js
 import { createDrizzleTurnDocumentTouchRepository } from "./turn-document-touch-repository.js";
 import { createDrizzleTurnRepository, lockThreadForTurnTransition } from "./turn-repository.js";
 import { createDrizzleUsageRecorder } from "./usage-recorder.js";
+import { createDrizzleWorkContextDeliveryRepository } from "./work-context-delivery-repository.js";
 
 export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTransaction };
 
@@ -35,6 +36,7 @@ export function createDrizzleRepositories(db: DrizzleDatabase): InternalThreadRe
     modelResponses: createDrizzleModelResponseRepository(db),
     threadDocuments: createDrizzleThreadDocumentRepository(db),
     documentTouches: createDrizzleTurnDocumentTouchRepository(db),
+    workContextDeliveries: createDrizzleWorkContextDeliveryRepository(db),
     transaction(operation) {
       return runInDrizzleTransaction(db, operation);
     },

@@ -26,6 +26,13 @@ export type ToolView = {
    * `null` when the wire never produced a delta.
    */
   streamedOutput: string | null;
+  /**
+   * Server-authored result metadata persisted beside the output — never
+   * model-authored. Carried as `content.metadata` on the durable tool_result
+   * block and as `metadata` on the live `tool.result` event; this is where
+   * the `work` tool's receipt (`metadata.workReceipt`) rides.
+   */
+  metadata: Record<string, JsonValue> | null;
   /** Render identity source: the `tool_use` block, or a stray `tool_result` when no use exists. */
   keyBlock: Block;
 };
@@ -43,6 +50,7 @@ type ToolFields = {
   isError: boolean;
   message: string | null;
   streamedOutput: string | null;
+  metadata: Record<string, JsonValue> | null;
 };
 
 export function groupDeliverySegments(blocks: Block[]): DeliverySegment[] {
@@ -91,6 +99,7 @@ function toToolView(block: Block): ToolView {
     isError: fields.isError,
     message: fields.message,
     streamedOutput: fields.streamedOutput,
+    metadata: fields.metadata,
     keyBlock: block,
   };
 }
@@ -155,6 +164,7 @@ function mergeToolResult(view: ToolView, resultBlock: Block): void {
   if (fields.streamedOutput && fields.streamedOutput.length > 0) {
     view.streamedOutput = fields.streamedOutput;
   }
+  if (fields.metadata) view.metadata = fields.metadata;
 }
 
 function toolResultOnlyView(block: Block): ToolView {
@@ -168,6 +178,7 @@ function toolResultOnlyView(block: Block): ToolView {
     isError: fields.isError,
     message: fields.message,
     streamedOutput: fields.streamedOutput,
+    metadata: fields.metadata,
     keyBlock: block,
   };
 }
@@ -185,12 +196,23 @@ function readToolFields(content: Record<string, JsonValue>): ToolFields {
     isError: booleanField(content, "isError") ?? false,
     message: stringField(content, "message"),
     streamedOutput: stringField(content, "streamedOutput"),
+    metadata: recordField(content, "metadata"),
   };
 }
 
 function stringField(content: Record<string, JsonValue>, key: string): string | null {
   const value = content[key];
   return typeof value === "string" ? value : null;
+}
+
+function recordField(
+  content: Record<string, JsonValue>,
+  key: string,
+): Record<string, JsonValue> | null {
+  const value = content[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, JsonValue>)
+    : null;
 }
 
 function booleanField(content: Record<string, JsonValue>, key: string): boolean | null {

@@ -44,7 +44,8 @@ skeleton and delegates the moving parts.
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
-| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, skills catalog, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
+| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, skills catalog, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
+| `work-context.ts` / `system-update-delivery.ts` | Renders the current Work plus the 20 most recently active sibling Works. Every Work-list change queues all eligible live threads, including unfrozen threads, so a concurrent first bake cannot freeze stale context without leaving a durable refresh. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. A PostgreSQL session advisory claim identifies the owning server across processes for the full run. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
@@ -65,7 +66,7 @@ adapters (for example no-op sinks), not by omitted deps.
 | `ToolRegistry` | Name-keyed map. Duplicate names throw immediately. `getDefinitions()` advertises only server-executable registrations whose `advertise !== false`. |
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
-| Core handlers | Algorithms live under `tools/core-handlers/`; composition wires them through `lib/wired-core-tools.ts`. |
+| Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skill tools | One statically registered `invoke` dispatcher (`source: "skill"`, `advertise: false`) with schema `{ skillname }` only (`additionalProperties: false`). First turn attempt atomically bakes model-invocable skill catalogs (slug + description rows) into `composedSystemPrompt` and persists `bakedSkillSlugs` via compare-and-swap (`bakeComposedSystemPrompt` while `bakedSkillSlugs` is null); concurrent losers use the winner's frozen prompt. `invoke` advertisement on later turns follows the persisted slug set (non-empty → advertise). Dispatch enforces: `skillname` ∈ baked set (added-after-bake → unknown); still model-invocable and resolvable (demoted/deleted → no-longer-available). Extra invoke properties from frozen prompts are ignored; skills read project workspace context, not call-time params. Error listings = baked ∩ currently-invocable. Subagent threads bake both fields at creation (empty set when no skills). |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
@@ -161,7 +162,24 @@ facet.
   overlap may elevate receiving-writer-specific session marks. Trail evidence
   stays lifecycle-neutral and read-only.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
-  already active for that thread.
+  already active or being claimed for that thread. The PostgreSQL adapter also
+  rejects same-process reentry because session advisory locks themselves are
+  reentrant. Production runners hold the cross-process claim through completion
+  delivery; a crashed process loses its session claim, so startup recovery can
+  safely take over orphaned work.
+- **Work context updates preserve prompt identity** — a frozen prompt is never
+  rebuilt for Work metadata or lifecycle changes. The refreshed block is a
+  durable `<system_update>` user-role turn. Every Work or primary-binding
+  mutation coalesces a durable per-thread obligation in its business
+  transaction, whether or not the first prompt has frozen. Delivery renders
+  current state under the thread-head transition and deletes the obligation only
+  in the transaction that commits the update and its journal events. A
+  post-commit wake and the startup/poll sweep drain idle obligations without
+  becoming part of mutation success. Competing delivery claims hydrate the one
+  committed update into a running orchestrator. A sweep must first claim durable
+  run ownership and therefore leaves a remote live runner's obligation intact;
+  the owner flushes it before releasing its claim. Tool-result pending metadata is
+  presentation only; process recreation and retry recover from the obligation.
 - **Registry names are global.** Duplicate registration names throw.
 - **Gateway terminal outcome needs causal evidence.** The instrumented `stream.close` `outcome` is `ok`/`error`/`cancelled`. A failure becomes `cancelled` only with causal abort evidence: the thrown error is `signal.reason` or an `AbortError`. Message text alone (`"Aborted"`, `"Request aborted"`) is **not** evidence — a provider failing independently after an abort stays `error`, and `sleep`/cancel paths reject with `signal.reason` (or a synthesized `AbortError`) so their failures carry identity. A thrown error's string `.code` populates both the `stream.close` payload `errorCode` and `correlation.errorCode`.
 

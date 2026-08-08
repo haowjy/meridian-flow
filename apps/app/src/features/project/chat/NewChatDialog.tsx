@@ -69,6 +69,11 @@ export function NewChatDialog({
               >
                 <span>
                   <span className="block font-medium">{work.name}</span>
+                  {work.id === currentWorkId ? (
+                    <span className="sr-only">
+                      <Trans>Current Work</Trans>
+                    </span>
+                  ) : null}
                   <span className="block font-normal text-meta opacity-80">
                     {work.goal || <Trans>No goal yet</Trans>}
                   </span>

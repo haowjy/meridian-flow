@@ -4,7 +4,9 @@
  * tool, permission, and journal behavior stay aligned across the loop boundary.
  */
 
+import { modelResult } from "@meridian/agent-edit/integration";
 import { EventType } from "@meridian/contracts/protocol";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -27,7 +29,12 @@ import {
   mockProviderConfig,
   type StreamEvent,
 } from "../../gateway/index.js";
-import type { InterruptToolHandlerContext, ToolExecutor, ToolHandler } from "../../tools/index.js";
+import type {
+  InterruptToolHandlerContext,
+  ToolExecutor,
+  ToolHandler,
+  ToolHandlerContext,
+} from "../../tools/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
@@ -37,6 +44,7 @@ import {
   type PermissionGate,
   resolveProfile,
 } from "../permissions/index.js";
+import { createSystemUpdateDelivery } from "../system-update-delivery.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -58,12 +66,19 @@ describe("runtime loop integration", () => {
     configureRepos?: (repos: ReturnType<typeof createInMemoryRepositories>) => void,
     projectPreferences?: Parameters<typeof createOrchestrator>[0]["projectPreferences"],
     workWriteMode?: Parameters<typeof createOrchestrator>[0]["workWriteMode"],
+    enableSystemUpdates = false,
+    orchestratorOverrides: Partial<Parameters<typeof createOrchestrator>[0]> = {},
+    systemUpdateDeliveryFactory?: (
+      repos: ReturnType<typeof createInMemoryRepositories>,
+      eventWriter: ReturnType<typeof createInMemoryEventJournalWriter>,
+    ) => Parameters<typeof createOrchestrator>[0]["systemUpdateDelivery"],
   ) {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     configureRepos?.(repos);
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const eventWriter = createInMemoryEventJournalWriter();
+    const systemUpdateDelivery = systemUpdateDeliveryFactory?.(repos, eventWriter);
     const interruptRegistry = createInterruptRegistry();
     const gateway =
       gatewayOverride ??
@@ -100,6 +115,23 @@ describe("runtime loop integration", () => {
         },
         ...(workWriteMode ? { workWriteMode } : {}),
         creditLedger,
+        ...orchestratorOverrides,
+        ...(systemUpdateDelivery ? { systemUpdateDelivery } : {}),
+        ...(enableSystemUpdates
+          ? {
+              systemUpdateDelivery: createSystemUpdateDelivery({
+                repos,
+                eventWriter,
+                workContext: {
+                  async renderForThread() {
+                    return "<work_context>\ncurrent: target-work\n</work_context>";
+                  },
+                },
+                isThreadRunning: () => true,
+                schedulePostCommit() {},
+              }),
+            }
+          : {}),
       }),
     );
     return { repos, eventWriter, orchestrator, projectId: project.id, interruptRegistry };
@@ -767,6 +799,388 @@ describe("runtime loop integration", () => {
 
     const threadAfter = await repos.threads.findById(thread.id);
     expect(threadAfter?.status).toBe("idle");
+  });
+
+  it.each([
+    ["switch", "primary", false],
+    ["switch", "subagent", true],
+    ["create", "primary", false],
+    ["update", "primary", false],
+    ["delete", "primary", false],
+  ] as const)("injects a %s Work update before the next %s model call", async (command, _kind, isSubagentThread) => {
+    const requests: GenerateRequest[] = [];
+    const results: GenerateResult[] = [
+      {
+        content: [
+          {
+            type: "tool_use",
+            toolCallId: "call-switch",
+            toolName: "work",
+            input: { command, work: "target-work" },
+          },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [{ type: "text", text: "continued" }],
+        toolCalls: [],
+        finishReason: "end_turn",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ];
+    let resultIndex = 0;
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request) {
+        requests.push(request);
+        const result = results[resultIndex++];
+        if (!result) throw new Error("unexpected model call");
+        yield { type: "end", result };
+      },
+      async generate() {
+        throw new Error("unused");
+      },
+    };
+    const registry = createToolRegistry();
+    const workTool = {
+      type: "function" as const,
+      name: "work",
+      description: "Work",
+      inputSchema: { type: "object" as const },
+    };
+    let enqueueWorkContext = async (_threadId: ThreadId) => {};
+    registry.register({
+      source: "core",
+      definition: workTool,
+      execution: {
+        type: "server",
+        handler: async (_input: unknown, ctx: ToolHandlerContext) => {
+          await enqueueWorkContext(ctx.threadId);
+          return {
+            output: { slug: "target-work" },
+            metadata: { workContextChanged: true },
+          };
+        },
+      },
+    });
+    const { repos, orchestrator, projectId } = await setupOrchestrator(
+      createToolExecutor(registry),
+      gateway,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    enqueueWorkContext = (threadId) =>
+      repos.workContextDeliveries.enqueueThread(threadId).then(() => undefined);
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    await collectEvents(
+      await orchestrator.runTurn({
+        threadId: thread.id,
+        userText: "switch",
+        tools: [workTool],
+        isSubagentThread,
+      }),
+    );
+
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1]?.messages)).toContain("current: target-work");
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(turns.some((turn) => JSON.stringify(turn.metadata).includes("system_update"))).toBe(
+      true,
+    );
+  });
+
+  it("settles staged writes before switching and rotates the post-switch edit scope", async () => {
+    const gateway = gatewayFromResults([
+      {
+        content: [
+          { type: "tool_use", toolCallId: "write-1", toolName: "mock_write", input: {} },
+          {
+            type: "tool_use",
+            toolCallId: "switch-1",
+            toolName: "work",
+            input: { command: "switch", work: "target" },
+          },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [{ type: "tool_use", toolCallId: "write-2", toolName: "mock_write", input: {} }],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [{ type: "text", text: "done" }],
+        toolCalls: [],
+        finishReason: "end_turn",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    let currentWork = "source";
+    let writeIndex = 0;
+    const registry = createToolRegistry();
+    for (const [name, handler] of [
+      [
+        "mock_write",
+        async () => {
+          writeIndex += 1;
+          return {
+            output: { ok: true },
+            metadata: {
+              stagedWrite: true,
+              documentId: `doc-${writeIndex}`,
+              writeId: `write-${writeIndex}`,
+              settlementId: `settlement-${writeIndex}`,
+            },
+          };
+        },
+      ],
+      [
+        "work",
+        async () => {
+          currentWork = "target";
+          return { output: { slug: "target" }, metadata: { workContextChanged: true } };
+        },
+      ],
+    ] as const) {
+      registry.register({
+        source: "core",
+        definition: { type: "function", name, description: name, inputSchema: { type: "object" } },
+        execution: { type: "server", handler },
+      });
+    }
+    const settlements: Array<{ responseId: string; work: string }> = [];
+    const { repos, orchestrator, projectId } = await setupOrchestrator(
+      createToolExecutor(registry),
+      gateway,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      {
+        responseWrites: {
+          async commitResponse(responseId, _ctx, beforeCommit) {
+            settlements.push({ responseId, work: currentWork });
+            const result = {
+              status: "committed" as const,
+              receipts:
+                currentWork === "source" || writeIndex >= 2
+                  ? [
+                      {
+                        documentId: currentWork === "source" ? "doc-1" : "doc-2",
+                        receipt: {
+                          writeId: currentWork === "source" ? "write-1" : "write-2",
+                          settlementId: currentWork === "source" ? "settlement-1" : "settlement-2",
+                          result: modelResult({
+                            command: "insert",
+                            status: "success",
+                            phase: "committed",
+                            payload: {
+                              write: { id: currentWork === "source" ? "write-1" : "write-2" },
+                            },
+                          }),
+                        },
+                      },
+                    ]
+                  : [],
+              concurrentEdits: [],
+            };
+            await beforeCommit(result);
+            return result;
+          },
+          async rollbackResponse() {},
+        },
+      },
+    );
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    await collectEvents(
+      await orchestrator.runTurn({ threadId: thread.id, userText: "write then switch" }),
+    );
+
+    expect(settlements.map(({ work }) => work)).toEqual(["source", "target", "target"]);
+    expect(settlements[0]?.responseId).not.toBe(settlements[1]?.responseId);
+    expect(settlements[1]?.responseId).not.toBe(settlements[2]?.responseId);
+  });
+
+  it("persists pending Work context delivery and recovers it at the turn boundary", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway = gatewayFromResults([
+      {
+        content: [
+          {
+            type: "tool_use",
+            toolCallId: "switch-pending",
+            toolName: "work",
+            input: { command: "switch", work: "target" },
+          },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [{ type: "text", text: "continued with pending context" }],
+        toolCalls: [],
+        finishReason: "end_turn",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const capturingGateway: Gateway = {
+      ...gateway,
+      async *stream(request) {
+        requests.push(request);
+        yield* gateway.stream(request);
+      },
+    };
+    const workReceipt = {
+      operation: "switch",
+      category: "binding",
+      changed: true,
+      workId: "work-target",
+      workName: "Target",
+      before: null,
+      after: null,
+      inverse: { command: "switch", workId: "work-source" },
+    } as const;
+    const registry = createToolRegistry();
+    let enqueueWorkContext = async (_threadId: ThreadId) => {};
+    registry.register({
+      source: "core",
+      definition: {
+        type: "function",
+        name: "work",
+        description: "Work",
+        inputSchema: { type: "object" },
+      },
+      execution: {
+        type: "server",
+        handler: async (_input: unknown, ctx: ToolHandlerContext) => {
+          await enqueueWorkContext(ctx.threadId);
+          return {
+            output: { slug: "target" },
+            metadata: { workContextChanged: true, workReceipt },
+          };
+        },
+      },
+    });
+    let running = true;
+    let delivery: ReturnType<typeof createSystemUpdateDelivery> | undefined;
+    const { repos, eventWriter, orchestrator, projectId } = await setupOrchestrator(
+      createToolExecutor(registry),
+      capturingGateway,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      {},
+      (deliveryRepos, deliveryWriter) => {
+        const actual = createSystemUpdateDelivery({
+          repos: deliveryRepos,
+          eventWriter: deliveryWriter,
+          workContext: {
+            async renderForThread() {
+              return "<work_context>current: target</work_context>";
+            },
+          },
+          isThreadRunning: () => running,
+          schedulePostCommit() {},
+        });
+        delivery = actual;
+        return {
+          ...actual,
+          async deliverNow() {
+            throw new Error("Work context update exhausted 3 CAS retries");
+          },
+        };
+      },
+    );
+    enqueueWorkContext = (threadId) =>
+      repos.workContextDeliveries.enqueueThread(threadId).then(() => undefined);
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    const events = await collectEvents(
+      await orchestrator.runTurn({ threadId: thread.id, userText: "switch" }),
+    );
+
+    const pending = {
+      contextUpdate: {
+        status: "pending",
+        message: "Work context update exhausted 3 CAS retries",
+      },
+    };
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1]?.messages)).toContain('"status":"pending"');
+    const toolResultEvents = events.filter(
+      (event): event is Extract<OrchestratorEvent, { type: "tool.result" }> =>
+        event.type === "tool.result" && event.toolCallId === "switch-pending",
+    );
+    expect(toolResultEvents.at(-1)?.output).toMatchObject(pending);
+    const blocks = await repos.blocks.listByThread(thread.id);
+    expect(blocks.find((block) => block.blockType === "tool_result")?.content).toMatchObject({
+      output: pending,
+      metadata: { workContextDelivery: "pending", workReceipt },
+    });
+    const replay = await eventWriter.readAfter(thread.id, 0n);
+    const replayedResult = replay
+      .map((entry) => entry.payload)
+      .filter(
+        (event): event is Extract<OrchestratorEvent, { type: "tool.result" }> =>
+          event.type === "tool.result" && event.toolCallId === "switch-pending",
+      )
+      .at(-1);
+    expect(replayedResult?.output).toMatchObject(pending);
+    expect(replayedResult?.metadata).toMatchObject({ workReceipt });
+
+    running = false;
+    if (!delivery) throw new Error("System update delivery was not composed");
+    await delivery.flush(thread.id);
+    const recoveredTurns = await repos.turns.listByThread(thread.id);
+    expect(recoveredTurns.at(-1)?.metadata).toMatchObject({
+      kind: "system_update",
+      section: "work_context",
+    });
+    const recoveredResult = (await repos.blocks.listByThread(thread.id)).find(
+      (block) => block.blockType === "tool_result",
+    );
+    expect(recoveredResult?.content).toMatchObject({
+      output: { slug: "target" },
+      metadata: { workContextDelivery: "delivered", workReceipt },
+    });
+    expect(JSON.stringify(recoveredResult?.content)).not.toContain('"status":"pending"');
+    const recoveredReplay = await eventWriter.readAfter(thread.id, 0n);
+    const acknowledgedResult = recoveredReplay
+      .map((entry) => entry.payload)
+      .filter(
+        (event): event is Extract<OrchestratorEvent, { type: "tool.result" }> =>
+          event.type === "tool.result" && event.toolCallId === "switch-pending",
+      )
+      .at(-1);
+    expect(acknowledgedResult).toMatchObject({
+      output: { slug: "target" },
+      metadata: { workContextDelivery: "delivered", workReceipt },
+    });
   });
 
   it("suspends on a mock interrupt without re-entering the gateway, then resumes on response", async () => {

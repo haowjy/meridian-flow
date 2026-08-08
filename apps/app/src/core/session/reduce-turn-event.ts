@@ -170,6 +170,10 @@ function toolBlock(args: {
   // the authoritative final tool result. Kept past completion so the card can
   // still show the streamed log alongside the structured result.
   streamedOutput?: string | null;
+  // Server-authored result metadata (e.g. the work receipt). Mirrors the
+  // durable block's `content.metadata` so live and cold-loaded tool views
+  // read the same field.
+  metadata?: Record<string, JsonValue> | null;
 }): Block {
   return baseBlock({
     id: args.id,
@@ -185,6 +189,7 @@ function toolBlock(args: {
       message: typeof args.message === "string" ? args.message : null,
       isError: args.isError ?? false,
       streamedOutput: typeof args.streamedOutput === "string" ? args.streamedOutput : null,
+      metadata: args.metadata ?? null,
     },
     provider: args.toolName,
     providerData: { tool: args.toolName },
@@ -206,6 +211,7 @@ function preservedToolFields(content: Record<string, JsonValue>): {
   // Intentionally kept past completion — the structured `output` is what the
   // card's preview consumes, but the streamed buffer remains visible in details.
   streamedOutput: string | null;
+  metadata: Record<string, JsonValue> | null;
 } {
   return {
     input: content.input ?? null,
@@ -213,7 +219,31 @@ function preservedToolFields(content: Record<string, JsonValue>): {
     message: typeof content.message === "string" ? content.message : null,
     isError: toolIsErrorFromContent(content),
     streamedOutput: typeof content.streamedOutput === "string" ? content.streamedOutput : null,
+    metadata: recordContentField(content, "metadata"),
   };
+}
+
+function recordContentField(
+  content: Record<string, JsonValue>,
+  key: string,
+): Record<string, JsonValue> | null {
+  const value = content[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, JsonValue>)
+    : null;
+}
+
+/**
+ * Server-authored result metadata riding the live `tool.result` event (the
+ * AG-UI TOOL_CALL_RESULT schema is passthrough, so the field survives the
+ * protocol parse). Same shape as the durable block's `content.metadata` —
+ * this is how the work receipt reaches a live turn before reload.
+ */
+function toolResultEventMetadata(event: object): Record<string, JsonValue> | null {
+  const value = (event as Record<string, unknown>).metadata;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, JsonValue>)
+    : null;
 }
 
 function opaqueBlock(args: {
@@ -893,6 +923,7 @@ export function applyAguiEventToStore(
       if (!turn) return;
       const existingTool = blockById(turn, `tool-${event.toolCallId}`);
       const content = existingTool ? blockContentRecord(existingTool) : {};
+      const resultMetadata = toolResultEventMetadata(event);
       store.upsertAssistantBlock(
         threadId,
         turn.id,
@@ -906,6 +937,7 @@ export function applyAguiEventToStore(
           status: "complete",
           output: parseToolOutput(event.content),
           isError: toolIsErrorFromContent(content),
+          ...(resultMetadata ? { metadata: resultMetadata } : {}),
         }),
       );
       return;

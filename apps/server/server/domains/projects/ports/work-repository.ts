@@ -18,8 +18,10 @@ export interface CreateWorkInput {
 
 export interface UpdateWorkInput {
   name?: string;
-  goal?: string;
-  description?: string;
+  goal?: string | null;
+  description?: string | null;
+  /** Applies lifecycle state in the same write as metadata. */
+  status?: WorkStatus;
 }
 
 export interface ListWorksOptions {
@@ -29,12 +31,14 @@ export interface ListWorksOptions {
 }
 
 export class WorkDeleteBlockedError extends Error {
-  constructor(public readonly reason: "threads" | "drafts") {
-    super(
-      reason === "threads"
-        ? "Work cannot be deleted while it has conversations"
-        : "Work cannot be deleted while it has an unreviewed draft",
-    );
+  constructor(public readonly reason: "threads" | "drafts" | "documents" | "folders") {
+    const messages = {
+      threads: "Work cannot be deleted while it has conversations",
+      drafts: "Work cannot be deleted while it has an unreviewed draft",
+      documents: "Work cannot be deleted while its scratch or uploads contain files",
+      folders: "Work cannot be deleted while its scratch or uploads contain folders",
+    } as const;
+    super(messages[reason]);
     this.name = "WorkDeleteBlockedError";
   }
 }
@@ -43,6 +47,17 @@ export class WorkNameConflictError extends Error {
   constructor() {
     super("A Work with this name already exists in the project");
     this.name = "WorkNameConflictError";
+  }
+}
+
+export class WorkRestoreConflictError extends Error {
+  constructor(public readonly reason: "name" | "slug") {
+    super(
+      reason === "name"
+        ? "Work cannot be restored because its name is now in use"
+        : "Work cannot be restored because its slug is now in use",
+    );
+    this.name = "WorkRestoreConflictError";
   }
 }
 
@@ -55,6 +70,8 @@ export class WorkNameConflictError extends Error {
  */
 export interface WorkRepository {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  /** Locks the Work lifecycle row for the ambient transaction, then returns it. */
+  lockById(id: WorkId): Promise<Work | null>;
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
   /** Lists most recently updated first. */
@@ -63,8 +80,10 @@ export interface WorkRepository {
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
   hasUnreviewedDraft(id: WorkId): Promise<boolean>;
-  /** Soft-deletes only when no live thread membership or unreviewed Work draft remains. */
+  /** Soft-deletes only when no live thread membership, draft, file, or folder remains. */
   softDelete(id: WorkId): Promise<void>;
+  /** Restores a soft-deleted Work when its stable name and slug remain available. */
+  restore(id: WorkId): Promise<Work>;
   /**
    * Provision a concretely named Work only when the project has none. Current
    * selection policy belongs to resolveCurrentWork.

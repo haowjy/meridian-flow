@@ -8,6 +8,7 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { parseRequestId } from "@meridian/contracts/request-id";
 
 export type ContextUri = Omit<ParsedContextUri, "path" | "canonical"> & {
   path: string;
@@ -18,6 +19,8 @@ export type ContextRouteTarget = {
   path: string;
   workId: string | null;
 };
+
+export type ActiveWorkHandle = { id: string; slug: string };
 
 export function parseContextUri(uri: string): ContextUri | null {
   const parsed = parseUnifiedContextUri(uri);
@@ -34,8 +37,11 @@ export function contextUriFromWritePath(path: string): string {
 
 export function contextRouteTargetFromUri(
   uri: string,
-  activeWorkId: string | null,
+  activeWork: ActiveWorkHandle | null,
 ): ContextRouteTarget | null {
+  const persisted = persistedWorkRouteTarget(uri, activeWork);
+  if (persisted !== undefined) return persisted;
+
   const parsed = parseContextUri(uri);
   if (!parsed) return null;
 
@@ -43,15 +49,31 @@ export function contextRouteTargetFromUri(
     return { scheme: parsed.scheme, path: parsed.path, workId: null };
   }
 
-  // Bare work URIs (no authority) resolve against the displayed work; an explicit
-  // authority must match it.
-  const workId = parsed.authority ?? activeWorkId;
-  if (!workId || (parsed.authority && parsed.authority !== activeWorkId)) return null;
-  return { scheme: parsed.scheme, path: parsed.path, workId };
+  // URI navigation never changes the displayed Work. A qualifier is routable
+  // here only when it names that already-active Work.
+  if (!activeWork || (parsed.authority && parsed.authority !== activeWork.slug)) return null;
+  return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
 }
 
-export function canOpenContextUri(uri: string, activeWorkId: string | null): boolean {
-  return contextRouteTargetFromUri(uri, activeWorkId) !== null;
+/** Stable persisted context locations use Work IDs, not the LLM-facing `@slug` grammar. */
+function persistedWorkRouteTarget(
+  uri: string,
+  activeWork: ActiveWorkHandle | null,
+): ContextRouteTarget | null | undefined {
+  const match = uri.trim().match(/^(scratch|uploads):\/\/([^/]+)(?:\/(.*))?$/);
+  if (!match) return undefined;
+  const workId = parseRequestId(match[2]);
+  if (!workId) return undefined;
+  if (!activeWork || workId !== activeWork.id) return null;
+  return {
+    scheme: match[1] as ProjectContextTreeScheme,
+    path: formatContextPath(match[3] ?? ""),
+    workId,
+  };
+}
+
+export function canOpenContextUri(uri: string, activeWork: ActiveWorkHandle | null): boolean {
+  return contextRouteTargetFromUri(uri, activeWork) !== null;
 }
 
 function formatContextPath(value: string): string {

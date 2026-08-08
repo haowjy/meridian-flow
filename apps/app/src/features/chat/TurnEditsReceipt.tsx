@@ -1,5 +1,5 @@
 /**
- * TurnEditsReceipt — the compact per-turn receipt for what a turn edited.
+ * TurnEditsReceipt — the compact per-turn receipt for what a turn changed.
  *
  * INVARIANT: record, not control panel — no draft affordance may be added here.
  * Review / Apply / Discard belong to the composer-attached DraftDock. Undo/Redo
@@ -7,6 +7,11 @@
  * The header counts documents and carries durable word deltas — it never
  * names one (names are doors, and chrome carries no doors); expanding lists
  * each document as a navigable row in the same bordered card.
+ *
+ * A turn's changes have two halves: document edits and Work mutations. A Work
+ * receipt carrying an inverse is as much this card's business as an edited
+ * chapter — a Work-only delete must still offer Undo, and a reversal that
+ * restored a Work must read as the success it was.
  *
  * Turn lineage owns Undo authority. Authorized trail detail owns durable row
  * evidence and navigation.
@@ -16,7 +21,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import type { ReversalDirection } from "@/client/api/reverse-api";
+import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
@@ -26,8 +31,10 @@ import { useChatContextNavigation, useChatContextRoutability } from "./ChatConte
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
 import { DraftStatsLabel } from "./draft-stats";
+import type { WorkReceipt } from "./tool-command";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
+import { workReceiptLine } from "./work-receipt-copy";
 
 export type TurnEditDocument = {
   documentId?: string;
@@ -36,7 +43,7 @@ export type TurnEditDocument = {
   scope: "live" | "draft";
 };
 
-export function hasTurnEditsReceiptDocuments(
+function hasTurnEditsReceiptDocuments(
   documents: TurnEditDocument[],
   changeTrail?: ChangeTrailShell,
 ): boolean {
@@ -46,11 +53,31 @@ export function hasTurnEditsReceiptDocuments(
   );
 }
 
+/**
+ * Whether this turn has a receipt to show at all: committed document edits,
+ * or a Work receipt whose inverse makes the turn reversible. Both callers
+ * (`AssistantTurn`'s render gate and this component's own null return) must
+ * ask the same predicate, or a Work-only turn passes one gate and fails the
+ * other.
+ */
+export function hasTurnEditsReceiptContent(
+  documents: TurnEditDocument[],
+  changeTrail: ChangeTrailShell | undefined,
+  workReceipts: readonly WorkReceipt[],
+): boolean {
+  return (
+    hasTurnEditsReceiptDocuments(documents, changeTrail) ||
+    workReceipts.some((receipt) => receipt.changed)
+  );
+}
+
 export type TurnEditsReceiptProps = {
   threadId: string;
   turn: Turn;
   documents: TurnEditDocument[];
   receipt: TurnReceiptChip | null;
+  /** Work receipts carried by this turn's tool results (`turnWorkReceipts`). */
+  workReceipts?: readonly WorkReceipt[];
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
 };
@@ -60,6 +87,7 @@ export function TurnEditsReceipt({
   turn,
   documents,
   receipt,
+  workReceipts = [],
   changeTrail,
   navigateToChange,
 }: TurnEditsReceiptProps) {
@@ -70,6 +98,7 @@ export function TurnEditsReceipt({
   const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
+  const [restoredNotices, setRestoredNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
@@ -81,6 +110,11 @@ export function TurnEditsReceipt({
   // receipt?" decision in name only — filtering first made its scope check dead
   // here while `AssistantTurn` still depends on it.
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
+  // Reversible Work receipts are receipt content in their own right: their
+  // lines list as rows, and their presence is what keeps a Work-only turn's
+  // Undo on screen. Receipts without an inverse (reads) are process, not
+  // outcome, and never reach this card.
+  const reversibleWorkReceipts = workReceipts.filter((receipt) => receipt.changed);
   // Chrome counts, never names. A document name here would sit inside the
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in
@@ -116,16 +150,26 @@ export function TurnEditsReceipt({
     if (receipt?.control !== "view_change") setCommandRefusal(null);
   }, [receipt?.control]);
 
-  if (!hasEditedDocuments) return null;
+  if (!hasTurnEditsReceiptContent(documents, changeTrail, workReceipts)) return null;
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
+      const restored = successfulWorkReversals(outcome);
       const status = refusedReversalStatus(outcome.status);
-      setCommandRefusal(status ? { direction, status } : null);
-      if (status) setExpanded(true);
+      // A Work-only turn has no document half, so its "nothing to undo" is a
+      // fact about documents that were never part of the claim. With a Work
+      // restored, repeating it would report a successful restore as refusal.
+      const documentHalfEmpty =
+        !hasEditedDocuments &&
+        restored.length > 0 &&
+        (status === "nothing_to_undo" || status === "nothing_to_redo");
+      const refusal = status && !documentHalfEmpty ? status : null;
+      setCommandRefusal(refusal ? { direction, status: refusal } : null);
+      setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
+      if (refusal || restored.length > 0) setExpanded(true);
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
       // is the only thing that can report it, so it says so here rather than
@@ -171,7 +215,9 @@ export function TurnEditsReceipt({
           </span>
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate font-medium text-prose-foreground">
-              {documentCountLabel(headerDocumentCount)}
+              {headerDocumentCount > 0
+                ? documentCountLabel(headerDocumentCount)
+                : workCountLabel(reversibleWorkReceipts.length)}
             </span>
             {wordStats ? (
               <span className="ml-2 shrink-0">
@@ -206,6 +252,16 @@ export function TurnEditsReceipt({
       </div>
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t py-1">
+          {restoredNotices?.map((notice) => (
+            <p
+              key={notice}
+              className="px-3 py-2 pl-9 text-prose-foreground"
+              data-work-restored
+              role="status"
+            >
+              {notice}
+            </p>
+          ))}
           {guardCopy ? (
             <p className="px-3 py-2 pl-9 text-ink-muted" data-undo-unavailable-reason role="status">
               {guardCopy}
@@ -221,7 +277,7 @@ export function TurnEditsReceipt({
               onOpenContextUri={openContextUri}
               canOpenContextUri={canOpenContextUri}
             />
-          ) : (
+          ) : liveDocuments.length > 0 ? (
             <ul className="flex flex-col">
               {liveDocuments.map((doc) => (
                 <li key={doc.uri}>
@@ -233,7 +289,18 @@ export function TurnEditsReceipt({
                 </li>
               ))}
             </ul>
-          )}
+          ) : null}
+          {reversibleWorkReceipts.length > 0 ? (
+            <ul className="flex flex-col">
+              {reversibleWorkReceipts.map((workRow, index) => (
+                <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
+                  <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+                    {workReceiptLine(workRow)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -454,4 +521,18 @@ function DocumentRow({
 
 function documentCountLabel(count: number) {
   return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
+}
+
+/** The Work-only header: same counting grammar as documents, wearing the
+ * writer's own word for the entity the turn changed. */
+function workCountLabel(count: number) {
+  return count === 1 ? <Trans>Changed 1 Work</Trans> : <Trans>Changed {count} Works</Trans>;
+}
+
+/** One receipt-style line per restored Work. The server names the Work when it
+ * can; without a name the sentence stays factual instead of guessing one. */
+function reversedWorkLine(work: { name: string; status: string }): string {
+  return work.status === "redone"
+    ? t`Redid change to Work ${work.name}.`
+    : t`Undid change to Work ${work.name}.`;
 }

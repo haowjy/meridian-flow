@@ -21,9 +21,10 @@ This domain is not the full project CRUD surface; that lives in
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
-| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes Works; delete is guarded by live thread memberships and unreviewed drafts. Its `transaction` boundary keeps compound Work commands atomic. |
-| `createWork(user, input)` | Creates a Work and selects it as that writer’s current Work in the same transaction. |
-| `updateWork(workId, input)` | Applies metadata edits and an optional archive/unarchive lifecycle transition in one transaction. |
+| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
+| `createWork(user, input)` | Creates a Work, selects it as that writer’s current Work, and durably enqueues affected thread Work context in the same transaction. |
+| `updateWorkTransition(workId, input)` | Locks the Work lifecycle row, compares normalized requested semantic fields, and applies metadata and archive state in one write only when they differ. It returns exact before/after/changed facts used by receipts; `updateWork` projects its final Work for routes. |
+| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. |
 | `resolveCurrentWork(user, project)` | Reads the saved preference. Only a null or dangling selection falls back to newest active Work, newest archived Work, then concrete default creation; it persists that fallback with CAS and retries if another selection won. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 
@@ -57,6 +58,15 @@ This domain is not the full project CRUD surface; that lives in
   would otherwise omit it.
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`.
+- Work slugs are stable project-unique handles assigned at creation. Rename does
+  not change a slug; soft deletion releases both active name and slug uniqueness.
+- Work deletion refuses live thread memberships, unreviewed drafts, and live
+  files or folders in Work-owned context sources. Empty provisioned sources do
+  not block deletion. Work-owned context mutations and deletion serialize on the
+  Work lifecycle row lock; the draft predicate is evaluated inside the deleting
+  transaction after that lock. Reviewable branch-journal creation and redo use
+  the same lifecycle boundary. Restore refuses rather than clobbering a
+  reclaimed active name or slug.
 
 ## Relationship to `domains/projects`
 

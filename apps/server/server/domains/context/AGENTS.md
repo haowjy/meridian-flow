@@ -8,6 +8,11 @@ default to `manuscript://`.
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,
 never scheme-specific adapters directly.
 
+Wire-qualified Work URIs use `@slug`. Context resolution loads the non-deleted
+same-project Work slug map once, and the router converts a qualifier to the
+stable Work ID before adapter dispatch. `thread_works` membership selects the
+thread's primary Work but never grants context access.
+
 Scheme capabilities are declared once in `ports/context-adapter.ts` and enforced
 by the router. `uploads://` is writable upload intake but does not allow clients
 to create context entries or directories, so its binary intake is flat;

@@ -65,6 +65,8 @@ describe("NewChatDialog Work eligibility", () => {
         expect(document.body.textContent).toContain("Active A");
         expect(document.body.textContent).toContain("Archived Current");
         expect(document.body.textContent).not.toContain("Archived B");
+        expect(buttonContaining("Archived Current").textContent).toContain("Current Work");
+        expect(buttonContaining("Active A").textContent).not.toContain("Current Work");
         buttonContaining("Archived Current").click();
         expect(createChat).toHaveBeenCalledWith("archived-current");
       },

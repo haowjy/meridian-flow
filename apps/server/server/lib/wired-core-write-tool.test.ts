@@ -1,84 +1,20 @@
-import {
-  type AgentEditCore,
-  modelResult,
-  type ResponseCommitSuccessResult,
-} from "@meridian/agent-edit/integration";
+/** Context and URI write wiring protocol coverage. */
+import type { AgentEditCore } from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
-import type { ContextPort } from "../domains/context/index.js";
-import { createInMemoryEventSink } from "../domains/observability/index.js";
-import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import {
-  createAgentEditResponseWriteLifecycle,
-  createWiredCoreToolRegistrations,
-} from "./wired-core-tools.js";
+  type ContextPort,
+  type ContextSchemeAdapter,
+  createContextPortRouter,
+} from "../domains/context/index.js";
+import { createInMemoryEventSink } from "../domains/observability/index.js";
+import { createInMemoryWorkRepository } from "../domains/projects/index.js";
+import type { ToolHandlerContext } from "../domains/runtime/index.js";
+import { Ok } from "../shared/result.js";
+import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
 
 type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unknown>;
-
-function agentEditCoreWithCommit(commitResult: ResponseCommitSuccessResult): AgentEditCore {
-  return {
-    write: async () => ({
-      command: "read",
-      status: "success",
-      phase: "committed",
-      isError: false,
-      text: "",
-      result: modelResult({ command: "read", status: "success", phase: "committed" }),
-    }),
-    recover: async () => {},
-    commitResponse: async () => commitResult,
-    rollbackResponse: async () => ({
-      status: "rolledBack",
-      responseId: commitResult.responseId,
-      stagedCreates: { committed: [], discarded: [] },
-    }),
-    hasResponseDocument: () => false,
-    withResponseDocument: async () => null,
-    responseDocuments: () => ({ staged: [], created: [] }),
-    getAvailability: async () => ({ undo: false, redo: false }),
-    undo: async () => ({
-      command: "undo",
-      status: "nothing_to_undo",
-      isError: false,
-      text: "",
-      result: modelResult({ command: "undo", status: "nothing_to_undo" }),
-    }),
-    redo: async () => ({
-      command: "redo",
-      status: "nothing_to_redo",
-      isError: false,
-      text: "",
-      result: modelResult({ command: "redo", status: "nothing_to_redo" }),
-    }),
-    reverse: async (input) => ({
-      command: input.direction,
-      status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
-      isError: false,
-      text: "",
-      result: modelResult({
-        command: input.direction,
-        status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
-      }),
-    }),
-    invalidateThread: async () => {},
-  };
-}
-
-function responseFinalizerWithCommit(commitResult: ResponseCommitSuccessResult) {
-  return {
-    finalizeResponseCommit: async () => ({
-      status: "committed" as const,
-      documents: commitResult.documents,
-      stagedCreates: commitResult.stagedCreates,
-    }),
-    finalizeResponseRollback: async () => ({
-      stagedCreates: { committed: [], discarded: [] },
-    }),
-    resolveThreadWriteMode: async () => "direct" as const,
-  };
-}
-
 function noopResponseFinalizer() {
   return {
     finalizeResponseCommit: async () => ({
@@ -92,200 +28,164 @@ function noopResponseFinalizer() {
     resolveThreadWriteMode: async () => "direct" as const,
   };
 }
+describe("wired write tool", () => {
+  it("enforces reserved @ names through the model write path", async () => {
+    const ensureTrackedDocument = vi.fn(async () =>
+      Ok({ documentId: "00000000-0000-4000-8000-000000000031" }),
+    );
+    const adapter = {
+      name: "scratch",
+      capabilities: { writable: true, searchable: true, creatable: true },
+      stat: async () => Ok(null),
+      ensureTrackedDocument,
+    } as unknown as ContextSchemeAdapter;
+    const port = createContextPortRouter({ adapters: new Map([["scratch", adapter]]) });
+    const write = wiredWriteHandler({
+      documentId: "00000000-0000-4000-8000-000000000031",
+      filePath: "scratch://notes/@evil.md",
+      core: createWriteToolHarness({}).core,
+      port,
+    });
 
-describe("agent-edit response write lifecycle", () => {
-  it("commits response through the collab finalizer and maps concurrent edits", async () => {
-    const finalized: string[] = [];
-    const commitResult: ResponseCommitSuccessResult = {
-      status: "committed",
-      responseId: "response-1",
-      documentCount: 1,
-      updateCount: 1,
-      documents: [
-        {
-          documentId: "doc-1",
-          updateCount: 1,
-          receipts: [
-            {
-              writeId: "w1",
-              settlementId: "write-1",
-              result: modelResult({
-                command: "replace",
-                status: "success",
-                phase: "committed",
-                payload: { write: { id: "w1" } },
-              }),
-            },
-          ],
-          concurrentEdits: { human: ["abcd"], agent: [], runs: [] },
-          lateSweep: {
-            affectedBlockHashes: ["abcd"],
-            capturedDeletedBodies: [{ hash: "abcd", body: "Writer body." }],
-            sweptContent: true,
-            beforeContentRef: 42,
-          },
-        },
-      ],
-      stagedCreates: { committed: [], discarded: [] },
-    };
-    const lifecycle = createAgentEditResponseWriteLifecycle({
-      documentSync: {
-        agentEdit: () => asThreadPeerAgentEditCore(agentEditCoreWithCommit(commitResult)),
-        refreshDocumentProjection: async () => {
-          throw new Error("response lifecycle should not refresh projections directly");
-        },
-        finalizeResponseCommit: async (responseId, ctx) => {
-          const result = await agentEditCoreWithCommit(commitResult).commitResponse(responseId);
-          if (result.status !== "committed") throw new Error("expected committed response");
-          for (const document of result.documents) {
-            finalized.push(`${responseId}:${document.documentId}:${ctx.threadId}:${ctx.turnId}`);
-          }
+    await expect(
+      write(
+        { command: "create", path: "scratch://notes/@evil.md", content: "blocked" },
+        toolContext(),
+      ),
+    ).resolves.toMatchObject({
+      isError: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "create",
+        status: "invalid_write",
+      },
+    });
+    expect(ensureTrackedDocument).not.toHaveBeenCalled();
+  });
+
+  it("round-trips qualified ls and search result URIs directly into write read", async () => {
+    const currentId = "00000000-0000-4000-8000-000000000021";
+    const targetId = "00000000-0000-4000-8000-000000000022";
+    const documentId = "00000000-0000-4000-8000-000000000023";
+    const works = createInMemoryWorkRepository();
+    await works.create({
+      id: currentId,
+      projectId: "project-a",
+      createdByUserId: "user-a",
+      name: "Current",
+    });
+    await works.create({
+      id: targetId,
+      projectId: "project-a",
+      createdByUserId: "user-a",
+      name: "Target",
+    });
+    const receivedUris: string[] = [];
+    const port = {
+      ...contextPortFor(documentId, "scratch://@target/notes.md"),
+      stat: async (uri: string) => {
+        receivedUris.push(uri);
+        if (uri.endsWith("/missing.md")) {
           return {
-            status: "committed",
-            documents: result.documents,
-            stagedCreates: result.stagedCreates,
+            ok: false as const,
+            error: { code: "not_found" as const, uri: `scratch://${targetId}/missing.md` },
           };
-        },
-        finalizeResponseRollback: async () => ({
-          stagedCreates: { committed: [], discarded: [] },
-        }),
-      },
-    });
-
-    await expect(
-      lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual({
-      status: "committed",
-      receipts: [
-        {
-          documentId: "doc-1",
-          receipt: {
-            writeId: "w1",
-            settlementId: "write-1",
-            result: modelResult({
-              command: "replace",
-              status: "success",
-              phase: "committed",
-              payload: { write: { id: "w1" } },
-            }),
+        }
+        return {
+          ok: true as const,
+          value: {
+            kind: "tracked" as const,
+            uri,
+            documentId,
+            filetype: "markdown" as const,
+            schemaType: "document" as const,
           },
-        },
-      ],
-      concurrentEdits: [
-        { documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [], runs: [] } },
-      ],
-    });
-
-    expect(finalized).toEqual(["response-1:doc-1:thread-1:turn-1"]);
-  });
-
-  it("commits response when there are no concurrent edits", async () => {
-    const lifecycle = createAgentEditResponseWriteLifecycle({
-      documentSync: {
-        agentEdit: () =>
-          asThreadPeerAgentEditCore(
-            agentEditCoreWithCommit({
-              status: "committed",
-              responseId: "response-1",
-              documentCount: 1,
-              updateCount: 1,
-              documents: [{ documentId: "doc-1", updateCount: 1, receipts: [] }],
-              stagedCreates: { committed: [], discarded: [] },
-            }),
-          ),
-        refreshDocumentProjection: async () => {},
-        ...responseFinalizerWithCommit({
-          status: "committed",
-          responseId: "response-1",
-          documentCount: 1,
-          updateCount: 1,
-          documents: [{ documentId: "doc-1", updateCount: 1, receipts: [] }],
-          stagedCreates: { committed: [], discarded: [] },
-        }),
+        };
       },
+      list: async () => ({
+        ok: true as const,
+        value: [
+          {
+            kind: "file" as const,
+            uri: `scratch://${targetId}/notes.md`,
+            documentId,
+            editable: true as const,
+            readonly: false,
+            filetype: "markdown" as const,
+            schemaType: "document" as const,
+          },
+        ],
+      }),
+      search: async () => ({
+        ok: true as const,
+        value: [
+          {
+            uri: `scratch://${targetId}/notes.md`,
+            matches: [],
+            matchCount: 1,
+          },
+        ],
+      }),
+    } satisfies ContextPort;
+    const harness = createWriteToolHarness({ [documentId]: "Sibling notes" });
+    const registrations = createWiredCoreToolRegistrations({
+      threads: { findById: async () => thread() } as never,
+      threadWorks: {
+        findPrimary: async () => ({ workId: currentId }),
+        rebindPrimary: async () => ({ previousWorkId: currentId, changed: false }),
+      },
+      works,
+      preferences: {} as never,
+      workContextUpdates: { projectChanged: async () => {}, threadChanged: async () => {} },
+      drafts: { draftReview: { list: async () => [] } } as never,
+      contextPorts: { forProject: () => port, forWork: () => port },
+      documentSync: {
+        agentEdit: () => asThreadPeerAgentEditCore(harness.core),
+        refreshDocumentProjection: async () => {},
+        ...noopResponseFinalizer(),
+      },
+      responseWrites: { trackStagedCreate: () => {} },
+      eventSink: createInMemoryEventSink(),
     });
+    const handler = (name: "write" | "ls" | "search") => {
+      const registration = registrations.find((candidate) => candidate.definition.name === name);
+      if (registration?.execution.type !== "server") throw new Error(`missing ${name}`);
+      return registration.execution.handler as TestWriteHandler;
+    };
 
+    const listed = (await handler("ls")({ path: "scratch://@target" }, toolContext())) as Array<{
+      uri: string;
+    }>;
+    const searched = (await handler("search")(
+      { pattern: "notes", scope: "scratch://@target" },
+      toolContext(),
+    )) as Array<{ uri: string }>;
+    expect(listed[0]?.uri).toBe("scratch://@target/notes.md");
+    expect(searched[0]?.uri).toBe("scratch://@target/notes.md");
     await expect(
-      lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual({ status: "committed", receipts: [], concurrentEdits: [] });
-  });
-
-  it("surfaces draft_closed as an explicit response commit result", async () => {
-    const lifecycle = createAgentEditResponseWriteLifecycle({
-      documentSync: {
-        agentEdit: () =>
-          asThreadPeerAgentEditCore(
-            agentEditCoreWithCommit({
-              status: "committed",
-              responseId: "response-closed",
-              documentCount: 0,
-              updateCount: 0,
-              documents: [],
-              stagedCreates: { committed: [], discarded: [] },
-            }),
-          ),
-        refreshDocumentProjection: async () => {},
-        finalizeResponseCommit: async () => ({
-          status: "draft_closed" as const,
-          responseId: "response-closed",
-          mode: "draft" as const,
-          documents: [],
-          stagedCreates: { committed: [], discarded: [] },
-        }),
-        finalizeResponseRollback: async () => ({
-          stagedCreates: { committed: [], discarded: [] },
-        }),
-      },
-    });
-
+      writeText(handler("write"), { command: "read", path: listed[0]?.uri }, toolContext()),
+    ).resolves.toContain("Sibling notes");
     await expect(
-      lifecycle.commitResponse("response-closed", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual({
-      status: "draft_closed",
-      responseId: "response-closed",
-      mode: "draft",
-    });
-  });
-  it("passes thread and turn context into response rollback finalization", async () => {
-    const calls: Array<{ responseId: string; threadId: string; turnId: string }> = [];
-    const lifecycle = createAgentEditResponseWriteLifecycle({
-      documentSync: {
-        agentEdit: () =>
-          asThreadPeerAgentEditCore(
-            agentEditCoreWithCommit({
-              status: "committed",
-              responseId: "response-rollback",
-              documentCount: 0,
-              updateCount: 0,
-              documents: [],
-              stagedCreates: { committed: [], discarded: [] },
-            }),
-          ),
-        refreshDocumentProjection: async () => {},
-        finalizeResponseCommit: async () => ({
-          status: "committed" as const,
-          documents: [],
-          stagedCreates: { committed: [], discarded: [] },
-        }),
-        finalizeResponseRollback: async (responseId, ctx) => {
-          calls.push({ responseId, threadId: ctx.threadId, turnId: ctx.turnId });
-          return { stagedCreates: { committed: [], discarded: [] } };
-        },
+      writeText(handler("write"), { command: "read", path: searched[0]?.uri }, toolContext()),
+    ).resolves.toContain("Sibling notes");
+    await expect(
+      handler("write")({ command: "read", path: "scratch://@target/missing.md" }, toolContext()),
+    ).resolves.toMatchObject({
+      isError: true,
+      output: {
+        schema: "meridian.agent-edit.v1",
+        command: "read",
+        status: "document_not_found",
+        message: "not_found: scratch://@target/missing.md",
       },
     });
-
-    await lifecycle.rollbackResponse("response-rollback", {
-      threadId: "thread-rollback",
-      turnId: "turn-rollback",
-    });
-
-    expect(calls).toEqual([
-      { responseId: "response-rollback", threadId: "thread-rollback", turnId: "turn-rollback" },
+    expect(receivedUris).toEqual([
+      "scratch://@target/notes.md",
+      "scratch://@target/notes.md",
+      "scratch://@target/missing.md",
     ]);
   });
-});
 
-describe("wired write tool", () => {
   it("keeps boundary failures in the versioned write result contract", async () => {
     const documentId = crypto.randomUUID();
     const filePath = "chapter.md";
@@ -444,11 +344,23 @@ async function seededWiredWrite() {
   return { write, filePath, ctx };
 }
 
-function wiredWriteHandler(input: { documentId: string; filePath: string; core: AgentEditCore }) {
-  const port = contextPortFor(input.documentId, input.filePath);
+function wiredWriteHandler(input: {
+  documentId: string;
+  filePath: string;
+  core: AgentEditCore;
+  port?: ContextPort;
+}) {
+  const port = input.port ?? contextPortFor(input.documentId, input.filePath);
   const [writeRegistration] = createWiredCoreToolRegistrations({
     threads: { findById: async () => thread() } as never,
-    threadWorks: { findPrimary: async () => null, listByThread: async () => [] },
+    threadWorks: {
+      findPrimary: async () => null,
+      rebindPrimary: async () => ({ previousWorkId: null, changed: true }),
+    },
+    works: { listByProject: async () => [] } as never,
+    preferences: {} as never,
+    workContextUpdates: { projectChanged: async () => {}, threadChanged: async () => {} },
+    drafts: { draftReview: { list: async () => [] } } as never,
     contextPorts: { forProject: () => port, forWork: () => port },
     documentSync: {
       agentEdit: () => asThreadPeerAgentEditCore(input.core),

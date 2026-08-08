@@ -20,6 +20,7 @@ import {
   FilePlus2,
   FolderTree,
   History,
+  Layers,
   List,
   type LucideIcon,
   PenLine,
@@ -39,7 +40,9 @@ import {
   toolCommand,
   toolInputObject,
   type WriteMode,
+  workReceipt,
 } from "./tool-command";
+import { workReceiptLine } from "./work-receipt-copy";
 
 /**
  * A row title split the way the timeline renders it: the command leads at full
@@ -105,6 +108,19 @@ function tenses(active: string, complete: string): ToolActivityVocabulary {
 /** Search patterns are the model's words; a long one must not run the row. */
 function truncatePattern(pattern: string): string {
   return pattern.length <= 60 ? pattern : `${pattern.slice(0, 59).trimEnd()}…`;
+}
+
+/**
+ * A Work command's tenses. The complete tense is the server's receipt line —
+ * the factual record of what happened, written in Work names — worn as the
+ * row title. Rows carry no terminal punctuation, so the sentence's period is
+ * dropped; everything else is verbatim. The client verb covers a result that
+ * carried no receipt (in flight, a failure, or an older server).
+ */
+function workTenses(tool: ToolView, active: string, complete: string): ToolActivityVocabulary {
+  const receipt = workReceipt(tool);
+  const line = receipt ? workReceiptLine(receipt) : null;
+  return { active: { verb: active }, complete: { verb: line || complete } };
 }
 
 const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
@@ -203,6 +219,46 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
       return tenses(t`Invoking the ${skill} skill…`, t`Invoked the ${skill} skill`);
     },
     failureVerb: () => t`Couldn't run that skill`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
+  // Work commands manage the writer's Works, never their manuscript, and the
+  // whole family wears the Work glyph (Layers — the same mark that rides
+  // beside every Work name). Within the family the verb carries the
+  // distinction; the glyph answers the icon column's real question, which is
+  // whether the agent touched the book.
+  "work-read": {
+    Icon: Layers,
+    phrases: () => tenses(t`Checking Works…`, t`Checked Works`),
+    failureVerb: () => t`Couldn't check Works`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
+  "work-create": {
+    Icon: Layers,
+    phrases: (tool) => workTenses(tool, t`Creating a Work…`, t`Created a Work`),
+    failureVerb: () => t`Couldn't create a Work`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
+  "work-update": {
+    Icon: Layers,
+    phrases: (tool) => workTenses(tool, t`Updating a Work…`, t`Updated a Work`),
+    failureVerb: () => t`Couldn't update that Work`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
+  "work-delete": {
+    Icon: Layers,
+    phrases: (tool) => workTenses(tool, t`Deleting a Work…`, t`Deleted a Work`),
+    failureVerb: () => t`Couldn't delete that Work`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
+  "work-switch": {
+    Icon: Layers,
+    phrases: (tool) => workTenses(tool, t`Switching Works…`, t`Switched Works`),
+    failureVerb: () => t`Couldn't switch Works`,
     pathlessTitle: null,
     expand: "renderer",
   },

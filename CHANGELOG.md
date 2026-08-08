@@ -22,6 +22,13 @@
 - `apps/server`: new conversations attach by explicit Work, parent Work, writer
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.
+- `apps/server`, `packages/database`: Work and conversation-binding mutations
+  now enqueue one coalesced durable context refresh per live thread, including
+  threads racing their first prompt bake. Refresh append and acknowledgement
+  commit atomically, post-commit wakes and startup sweeps drain idle work,
+  cross-server run ownership keeps sweeps out of live remote turns without
+  admitting same-process reentry, competing claims hydrate the committed
+  update, and completion cleanup remains recoverable when delivery fails.
 
 - `apps/app`, `apps/server`, `packages/contracts`, `tools`: one dev-only model
   context seam now serves the LLM Calls dashboard and `debug:model-context`

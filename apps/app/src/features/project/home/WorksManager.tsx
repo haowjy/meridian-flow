@@ -90,6 +90,7 @@ export function WorksManager({ projectId }: { projectId: string }) {
             >
               <button
                 type="button"
+                aria-pressed={work.id === currentWorkId}
                 className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={mutation.isPending}
                 onClick={() => runAction({ type: "switch", workId: work.id })}

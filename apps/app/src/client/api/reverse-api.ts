@@ -6,7 +6,11 @@
  * non-error outcomes that still use HTTP 200, so callers must branch on
  * `status` rather than treating a resolved fetch as success.
  */
-import { apiThreadContextReversePath, type ReversalOutcome } from "@meridian/contracts/protocol";
+import {
+  apiThreadContextReversePath,
+  type ReversalOutcome,
+  type WorkReversalResult,
+} from "@meridian/contracts/protocol";
 
 import { postJson } from "./http-client";
 
@@ -41,4 +45,12 @@ export function reverseTurn(threadId: string, input: ReverseTurnInput): Promise<
     target: input.turnId,
     direction: input.direction,
   });
+}
+
+/** A Work the reverse endpoint reports as put back. `name` is the writer-facing
+ * Work name when the server sends one; `null` when it only sent an id. */
+export function successfulWorkReversals(outcome: ReversalOutcome): WorkReversalResult[] {
+  return (outcome.workReceipts ?? []).filter(
+    (result) => result.status === "reversed" || result.status === "redone",
+  );
 }

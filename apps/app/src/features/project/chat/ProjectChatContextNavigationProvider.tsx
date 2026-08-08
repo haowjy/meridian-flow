@@ -30,29 +30,29 @@ type SelectContextPath = (
 
 export function ProjectChatContextNavigationProvider({
   projectId,
-  activeWorkId,
+  activeWork,
   onSelectContextPath,
   children,
 }: {
   projectId: string;
-  activeWorkId: string | null;
+  activeWork: { id: string; slug: string } | null;
   onSelectContextPath?: SelectContextPath;
   children: ReactNode;
 }) {
-  const doorOpened = usePassageDoors(projectId, activeWorkId);
+  const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
       if (!onSelectContextPath) return;
-      const target = contextRouteTargetFromUri(uri, activeWorkId);
+      const target = contextRouteTargetFromUri(uri, activeWork);
       if (!target) return;
       onSelectContextPath(target.path, target.scheme);
       doorOpened(target, passage);
     },
-    [activeWorkId, doorOpened, onSelectContextPath],
+    [activeWork, doorOpened, onSelectContextPath],
   );
   const canOpenContextUri = useCallback(
-    (uri: string) => isContextUriRoutable(uri, activeWorkId),
-    [activeWorkId],
+    (uri: string) => isContextUriRoutable(uri, activeWork),
+    [activeWork],
   );
 
   return (

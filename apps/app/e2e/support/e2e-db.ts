@@ -75,8 +75,8 @@ export async function seedProjectFixture(
       VALUES (${projectId}, ${input.userId}, ${title}, ${`e2e-${projectId}`}, false)
     `;
     await tx`
-      INSERT INTO works (id, project_id, created_by_user_id, title)
-      VALUES (${workId}, ${projectId}, ${input.userId}, 'Main Arc')
+      INSERT INTO works (id, project_id, created_by_user_id, name, slug)
+      VALUES (${workId}, ${projectId}, ${input.userId}, 'Main Arc', 'main-arc')
     `;
     await tx`
       INSERT INTO threads (id, project_id, created_by_user_id, title, kind, status)

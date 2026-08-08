@@ -193,6 +193,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         projectId,
         createdByUserId: userId,
         name: "Book 1",
+        slug: "book-1",
       })
       .returning({ id: works.id });
     if (!work) throw new Error("Failed to create default work");
@@ -441,6 +442,7 @@ export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } fro
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
 export { resolveCurrentWork } from "./current-work.js";
+export { deleteWork, deleteWorkTransition, restoreWork } from "./delete-work.js";
 export type {
   CreateProjectInput,
   ListProjectsOptions,
@@ -459,7 +461,17 @@ export {
   WorkDeleteBlockedError,
   WorkNameConflictError,
   type WorkRepository,
+  WorkRestoreConflictError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
-export { type UpdateWorkCommandInput, updateWork } from "./update-work.js";
+export {
+  type UpdateWorkCommandInput,
+  updateWork,
+  updateWorkTransition,
+  type WorkTransition,
+} from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
+export {
+  noopWorkContextUpdates,
+  type WorkContextUpdates,
+} from "./work-context-updates.js";

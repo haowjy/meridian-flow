@@ -84,7 +84,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: collab,
         manifestMembership: collab,
       });
-      const port = contextPorts.forWork(workId, projectId, USER_ID, new Set([workId]));
+      const port = contextPorts.forWork(
+        workId,
+        projectId,
+        USER_ID,
+        new Map([["current-work", workId]]),
+      );
 
       await expect(
         createUntitledContextDocument({
@@ -120,9 +125,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(
-        port.move(`scratch://${workId}/Untitled 1.md`, `scratch://${workId}/Opening scene.md`, {
-          origin: { type: "human", userId: USER_ID },
-        }),
+        port.move(
+          `scratch://@current-work/Untitled 1.md`,
+          `scratch://@current-work/Opening scene.md`,
+          {
+            origin: { type: "human", userId: USER_ID },
+          },
+        ),
       ).resolves.toMatchObject({ ok: true });
       await expect(treeResponse()).resolves.toMatchObject({
         tree: {
@@ -163,7 +172,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             collab.recordManifestDocumentDeleted(documentId, view),
         },
       });
-      const port = contextPorts.forWork(workId, projectId, USER_ID, new Set([workId]));
+      const port = contextPorts.forWork(
+        workId,
+        projectId,
+        USER_ID,
+        new Map([["current-work", workId]]),
+      );
       const create = () =>
         createUntitledContextDocument({
           port,
@@ -196,7 +210,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: collab,
         manifestMembership: collab,
       });
-      const port = contextPorts.forWork(workId, projectId, USER_ID, new Set([workId]));
+      const port = contextPorts.forWork(
+        workId,
+        projectId,
+        USER_ID,
+        new Map([["current-work", workId]]),
+      );
 
       await expect(
         createUntitledContextDocument({

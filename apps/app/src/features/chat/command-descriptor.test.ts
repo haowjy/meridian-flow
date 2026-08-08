@@ -20,6 +20,7 @@ function toolView(overrides: Partial<ToolView> = {}): ToolView {
     isError: false,
     message: null,
     streamedOutput: null,
+    metadata: null,
     keyBlock: { id: "b1", type: "tool_result", sequence: 1 } as unknown as Block,
     ...overrides,
   };
@@ -72,6 +73,49 @@ describe("the verb table", () => {
   });
 });
 
+describe("work command phrases", () => {
+  it("wears the receipt line as the complete tense, without its period", () => {
+    const tool = toolView({
+      toolName: "work",
+      input: { command: "switch", work: "tournament-arc" },
+      metadata: {
+        workReceipt: {
+          operation: "switch",
+          category: "binding",
+          changed: true,
+          workId: "w1",
+          workName: "Tournament arc",
+          before: null,
+          after: null,
+          inverse: { command: "switch", workId: "w0" },
+        },
+      },
+    });
+    expect(phrases(tool)).toEqual({
+      active: "Switching Works…",
+      complete: "Switched this conversation to Work Tournament arc",
+    });
+  });
+
+  it("falls back to the client verb when no receipt arrived", () => {
+    expect(
+      phrases(toolView({ toolName: "work", input: { command: "create", name: "Tournament arc" } })),
+    ).toEqual({
+      active: "Creating a Work…",
+      complete: "Created a Work",
+    });
+  });
+
+  it("keeps reads to one minimal generic row", () => {
+    for (const command of ["list", "show"]) {
+      expect(phrases(toolView({ toolName: "work", input: { command } }))).toEqual({
+        active: "Checking Works…",
+        complete: "Checked Works",
+      });
+    }
+  });
+});
+
 describe("announcements match the visible row", () => {
   it("announces the folder an ls call actually explored", () => {
     // The shipped divergence: the row read `Exploring characters…` while the
@@ -109,6 +153,11 @@ describe("every command carries a full descriptor", () => {
     "search",
     "list",
     "invoke",
+    "work-read",
+    "work-create",
+    "work-update",
+    "work-delete",
+    "work-switch",
     "unknown",
   ];
   const SAMPLE: Record<ToolCommand, ToolView> = {
@@ -122,6 +171,23 @@ describe("every command carries a full descriptor", () => {
     search: toolView({ toolName: "search", input: { pattern: "Elara" } }),
     list: toolView({ toolName: "ls", input: {} }),
     invoke: toolView({ toolName: "invoke", input: { skillname: "outline" } }),
+    "work-read": toolView({ toolName: "work", input: { command: "list" } }),
+    "work-create": toolView({
+      toolName: "work",
+      input: { command: "create", name: "Tournament arc" },
+    }),
+    "work-update": toolView({
+      toolName: "work",
+      input: { command: "update", work: "tournament-arc" },
+    }),
+    "work-delete": toolView({
+      toolName: "work",
+      input: { command: "delete", work: "tournament-arc" },
+    }),
+    "work-switch": toolView({
+      toolName: "work",
+      input: { command: "switch", work: "tournament-arc" },
+    }),
     unknown: toolView({ toolName: "return_result" }),
   };
 
@@ -142,8 +208,17 @@ describe("every command carries a full descriptor", () => {
     }
   });
 
-  it("gives each command its own glyph", () => {
-    const glyphs = COMMANDS.map((command) => descriptorFor(SAMPLE[command]).Icon);
-    expect(new Set(glyphs).size).toBe(COMMANDS.length);
+  // The Work family deliberately shares one glyph: the Work mark rides every
+  // writer-visible Work label, and the verbs carry the distinction within the
+  // family. Every command outside the family keeps its own glyph.
+  it("gives each command its own glyph, with the Work family sharing the Work mark", () => {
+    const workCommands = COMMANDS.filter((command) => command.startsWith("work-"));
+    const otherCommands = COMMANDS.filter((command) => !command.startsWith("work-"));
+    const otherGlyphs = otherCommands.map((command) => descriptorFor(SAMPLE[command]).Icon);
+    expect(new Set(otherGlyphs).size).toBe(otherCommands.length);
+    const workGlyphs = new Set(workCommands.map((command) => descriptorFor(SAMPLE[command]).Icon));
+    expect(workGlyphs.size).toBe(1);
+    const [workMark] = workGlyphs;
+    expect(otherGlyphs).not.toContain(workMark);
   });
 });

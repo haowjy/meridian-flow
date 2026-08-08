@@ -36,6 +36,7 @@ import {
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import {
   type AppendBranchJournalInput,
   assertReadableBranch,
@@ -650,32 +651,36 @@ export function createDrizzleBranchStore(
             if (present) map.set(documentId, { present: true });
             else map.delete(documentId);
             const updateData = Y.encodeStateAsUpdate(doc, before);
-            const persisted = await runInDrizzleTransaction(db, async () => {
-              const updated = await updateBranchSnapshot({
-                branchId: branch.branchId,
-                expectedGeneration: branch.generation,
-                expectedStateVector: branch.stateVector,
-                expectedState: branch.state,
-                state: Y.encodeStateAsUpdate(doc),
-                stateVector: Y.encodeStateVector(doc),
-              });
-              if (!updated) return false;
-              await currentDrizzleDb(db)
-                .insert(branchWriteJournal)
-                .values({
+            const persisted = await runWithActiveWorkDrafts(
+              db,
+              { workIds: [view.workId] },
+              async () => {
+                const updated = await updateBranchSnapshot({
                   branchId: branch.branchId,
-                  generation: branch.generation,
-                  updateData: Buffer.from(updateData),
-                  draftBaseUpdateSeq: draftBaseForBranch(branch.branchId),
-                  source: "agent",
-                  updateMeta: {
-                    kind: "manifest_membership",
-                    present,
-                    documentId,
-                  },
+                  expectedGeneration: branch.generation,
+                  expectedStateVector: branch.stateVector,
+                  expectedState: branch.state,
+                  state: Y.encodeStateAsUpdate(doc),
+                  stateVector: Y.encodeStateVector(doc),
                 });
-              return true;
-            });
+                if (!updated) return false;
+                await currentDrizzleDb(db)
+                  .insert(branchWriteJournal)
+                  .values({
+                    branchId: branch.branchId,
+                    generation: branch.generation,
+                    updateData: Buffer.from(updateData),
+                    draftBaseUpdateSeq: draftBaseForBranch(branch.branchId),
+                    source: "agent",
+                    updateMeta: {
+                      kind: "manifest_membership",
+                      present,
+                      documentId,
+                    },
+                  });
+                return true;
+              },
+            );
             if (persisted) {
               return { workDraftBranchId: branch.branchId, policy: branch.pushPolicy };
             }
@@ -738,44 +743,48 @@ export function createDrizzleBranchStore(
       // runInDrizzleTransaction joins ambient transactions. Do not wrap the
       // agent write path in a larger app-level transaction unless floor ordering
       // is re-audited: branch journal ids must commit while this mutex is held.
-      return await runInDrizzleTransaction(db, async () => {
-        const peerPersisted = await updateBranchSnapshot({
-          branchId: peer.branchId,
-          expectedGeneration: peer.generation,
-          expectedStateVector: peer.stateVector,
-          expectedState: peer.state,
-          state: peerState,
-          stateVector: peerStateVector,
-        });
-        if (!peerPersisted) throw new BranchMutationRollback();
-
-        const workPersisted = await updateBranchSnapshot({
-          branchId: work.branchId,
-          expectedGeneration: work.generation,
-          expectedStateVector: work.stateVector,
-          expectedState: work.state,
-          state: workState,
-          stateVector: workStateVector,
-        });
-        if (!workPersisted) throw new BranchMutationRollback();
-
-        await currentDrizzleDb(db)
-          .insert(branchWriteJournal)
-          .values({
-            branchId: work.branchId,
-            generation: work.generation,
-            updateData: Buffer.from(updateData),
-            draftBaseUpdateSeq: draftBaseForBranch(work.branchId),
-            source: "agent",
-            threadId: input.threadId,
-            updateMeta: {
-              kind: "manifest_membership",
-              present: input.present,
-              documentId: input.documentId,
-            },
+      return await runWithActiveWorkDrafts(
+        db,
+        { branchIds: [input.workDraftBranchId] },
+        async () => {
+          const peerPersisted = await updateBranchSnapshot({
+            branchId: peer.branchId,
+            expectedGeneration: peer.generation,
+            expectedStateVector: peer.stateVector,
+            expectedState: peer.state,
+            state: peerState,
+            stateVector: peerStateVector,
           });
-        return { workDraftBranchId: work.branchId, policy: work.pushPolicy };
-      }).catch((cause) => {
+          if (!peerPersisted) throw new BranchMutationRollback();
+
+          const workPersisted = await updateBranchSnapshot({
+            branchId: work.branchId,
+            expectedGeneration: work.generation,
+            expectedStateVector: work.stateVector,
+            expectedState: work.state,
+            state: workState,
+            stateVector: workStateVector,
+          });
+          if (!workPersisted) throw new BranchMutationRollback();
+
+          await currentDrizzleDb(db)
+            .insert(branchWriteJournal)
+            .values({
+              branchId: work.branchId,
+              generation: work.generation,
+              updateData: Buffer.from(updateData),
+              draftBaseUpdateSeq: draftBaseForBranch(work.branchId),
+              source: "agent",
+              threadId: input.threadId,
+              updateMeta: {
+                kind: "manifest_membership",
+                present: input.present,
+                documentId: input.documentId,
+              },
+            });
+          return { workDraftBranchId: work.branchId, policy: work.pushPolicy };
+        },
+      ).catch((cause) => {
         if (cause instanceof BranchMutationRollback) return null;
         throw cause;
       });
@@ -824,7 +833,7 @@ export function createDrizzleBranchStore(
     },
 
     async commitBranchMutation(input: CommitBranchMutationInput) {
-      return runInDrizzleTransaction(db, async () => {
+      return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
         if (input.journal && input.journal.generation !== input.expectedGeneration) {
           throw new BranchMutationRollback();
         }
@@ -922,20 +931,22 @@ export function createDrizzleBranchStore(
     },
 
     async appendJournal(input: AppendBranchJournalInput) {
-      await currentDrizzleDb(db)
-        .insert(branchWriteJournal)
-        .values({
-          branchId: input.branchId,
-          generation: input.generation,
-          updateData: Buffer.from(input.updateData),
-          draftBaseUpdateSeq: draftBaseForBranch(input.branchId),
-          source: input.source,
-          wId: input.wId ?? null,
-          threadId: input.threadId ?? null,
-          turnId: input.turnId ?? null,
-          actorUserId: input.actorUserId ?? null,
-          updateMeta: input.updateMeta ?? null,
-        });
+      await runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
+        await currentDrizzleDb(db)
+          .insert(branchWriteJournal)
+          .values({
+            branchId: input.branchId,
+            generation: input.generation,
+            updateData: Buffer.from(input.updateData),
+            draftBaseUpdateSeq: draftBaseForBranch(input.branchId),
+            source: input.source,
+            wId: input.wId ?? null,
+            threadId: input.threadId ?? null,
+            turnId: input.turnId ?? null,
+            actorUserId: input.actorUserId ?? null,
+            updateMeta: input.updateMeta ?? null,
+          });
+      });
     },
 
     async resolveThreadBranch(documentId, threadId): Promise<BranchState> {

@@ -1,7 +1,5 @@
 /** Shared parser, canonicalizer, and presentation-neutral derivations for context URIs. */
 
-import { parseRequestId } from "./request-id.js";
-
 export const CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "scratch", "uploads"] as const;
 export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
 
@@ -22,14 +20,12 @@ export interface ContextSchemeCapabilities {
   readonly creatable: boolean;
 }
 
-const AUTHORITY_SCHEMES: ReadonlySet<ContextUriScheme> = new Set(WORK_SCOPED_CONTEXT_URI_SCHEMES);
-// Full UUID *shape* (8-4-4-4-12 alphanumeric groups) regardless of hex/version
-// validity — used to tell a typo'd Work id from a legitimate short folder name.
-const UUID_SHAPE_PATTERN = /^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$/i;
+/** An unresolved Work handle exactly as it appeared after `@` on the wire. */
+export type WorkSlugAuthority = string & { readonly __brand: "WorkSlugAuthority" };
 
 export interface ParsedContextUri {
   scheme: ContextUriScheme;
-  authority: string | null;
+  authority: WorkSlugAuthority | null;
   /** Normalized path: no edge slash, empty or `.` segments, or repeated slashes. */
   path: string;
   canonical: string;
@@ -38,7 +34,7 @@ export interface ParsedContextUri {
 type ContextUriParseError = { ok: false; error: { uri: string; reason: string } };
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
-  | { ok: true; value: { authority: string | null; rawPath: string } }
+  | { ok: true; value: { authority: WorkSlugAuthority | null; rawPath: string } }
   | ContextUriParseError;
 
 export interface ParseContextUriOptions {
@@ -104,7 +100,11 @@ export function parseContextUri(
       scheme,
       authority: authorityResult.value.authority,
       path,
-      canonical: canonicalContextUri(scheme, path, authorityResult.value.authority),
+      canonical: canonicalContextUri(
+        scheme,
+        path,
+        authorityResult.value.authority ? `@${authorityResult.value.authority}` : null,
+      ),
     },
   };
 }
@@ -134,29 +134,31 @@ function parseAuthorityPrefix(
   rawPath: string,
   rawUri: string,
 ): AuthorityParseResult {
-  if (!rawPath || rawPath.startsWith("/")) return { ok: true, value: { authority: null, rawPath } };
+  if (!rawPath) return { ok: true, value: { authority: null, rawPath } };
 
-  const [firstSegment = "", ...remainingSegments] = rawPath.split("/");
-  const authority = parseRequestId(firstSegment);
-  if (!authority) {
-    // Reject only segments with the full UUID shape that fail the wire grammar
-    // (a real mistyped Work id). Short folder names like "2024-assets" are not
-    // UUID-shaped and parse as ordinary path segments.
-    if (
-      AUTHORITY_SCHEMES.has(scheme) &&
-      remainingSegments.length > 0 &&
-      UUID_SHAPE_PATTERN.test(firstSegment)
-    ) {
-      return invalidContextUri(rawUri, `Invalid Work authority "${firstSegment}"`);
-    }
-    return { ok: true, value: { authority: null, rawPath } };
+  const segments = rawPath.split("/").filter((segment) => segment !== "" && segment !== ".");
+  const qualifiers: string[] = [];
+  while (segments[0]?.startsWith("@")) qualifiers.push(segments.shift() ?? "");
+  if (qualifiers.length === 0) return { ok: true, value: { authority: null, rawPath } };
+  if (qualifiers.some((qualifier) => qualifier.length === 1)) {
+    return invalidContextUri(rawUri, "Work authority qualifier must include a slug after @");
   }
-  if (!AUTHORITY_SCHEMES.has(scheme)) {
-    return invalidContextUri(rawUri, `Scheme "${scheme}" does not support Work authority`);
+  if (qualifiers.length > 1) {
+    return invalidContextUri(
+      rawUri,
+      `Authority qualifier chains are not yet supported for scheme "${scheme}"`,
+    );
   }
+  if (!(WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme)) {
+    return invalidContextUri(
+      rawUri,
+      `Scheme "${scheme}" does not yet support authority qualifiers`,
+    );
+  }
+  const authority = qualifiers[0]?.slice(1) as WorkSlugAuthority;
   return {
     ok: true,
-    value: { authority, rawPath: remainingSegments.join("/") },
+    value: { authority, rawPath: segments.join("/") },
   };
 }
 

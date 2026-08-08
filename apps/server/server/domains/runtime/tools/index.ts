@@ -18,6 +18,10 @@ export {
   type CoreToolHandlers,
   type CoreToolName,
   createCoreToolRegistrations,
+  type WorkCommand,
+  type WorkCommandCategory,
+  WorkCommandSchema,
+  workCommandCategory,
 } from "./core-tools.js";
 export {
   createInvokeToolRegistration,

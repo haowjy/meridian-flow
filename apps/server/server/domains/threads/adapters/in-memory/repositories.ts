@@ -6,7 +6,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -163,10 +163,14 @@ export function createInMemoryRepositories(
   const threadDocuments = new Map<string, ThreadDocument>();
   const documentTouches = new Map<string, TurnDocumentTouch>();
   const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
+  const workContextDeliveries = new Set<string>();
   const lastOpenedByThreadUser = new Map<string, string>();
-  const primaryWorkLockTails = new Map<string, Promise<void>>();
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
+
+  function receivesWorkContextUpdate(thread: Thread | undefined): thread is Thread {
+    return !!thread && thread.status !== "archived";
+  }
 
   function nextSlug(projectId: string, title: string | null | undefined): string | null {
     return uniqueThreadSlug(
@@ -418,22 +422,6 @@ export function createInMemoryRepositories(
   };
 
   const threadWorksRepo: ThreadWorksRepository = {
-    async withPrimaryWorkLock(threadId, operation) {
-      const previous = primaryWorkLockTails.get(threadId) ?? Promise.resolve();
-      let release!: () => void;
-      const hold = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const tail = previous.then(() => hold);
-      primaryWorkLockTails.set(threadId, tail);
-      await previous;
-      try {
-        return await operation(await threadWorksRepo.findPrimary(threadId));
-      } finally {
-        release();
-        if (primaryWorkLockTails.get(threadId) === tail) primaryWorkLockTails.delete(threadId);
-      }
-    },
     async addMembership(threadId, workId, isPrimary) {
       const thread = threads.get(threadId);
       if (!thread) throw new Error("Thread membership requires an existing thread");
@@ -465,6 +453,26 @@ export function createInMemoryRepositories(
     async findPrimary(threadId) {
       const workId = primaryWorkIdForThread(threadId);
       return workId ? { workId } : null;
+    },
+    async lockPrimary(threadId) {
+      const workId = primaryWorkIdForThread(threadId);
+      return workId ? { workId } : null;
+    },
+    async rebindPrimary(threadId, workId) {
+      const thread = threads.get(threadId);
+      if (!thread) throw new Error("Thread membership requires an existing thread");
+      if (options.works) {
+        const work = await options.works.findById(workId);
+        if (!work || work.deletedAt || work.projectId !== thread.projectId) {
+          throw new Error("Work is not available in this project");
+        }
+      }
+      const previousWorkId = primaryWorkIdForThread(threadId);
+      if (previousWorkId === workId) return { previousWorkId, changed: false };
+      if (previousWorkId) threadWorks.delete(membershipKey(threadId, previousWorkId));
+      threadWorks.delete(membershipKey(threadId, workId));
+      threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
+      return { previousWorkId, changed: true };
     },
     async listByThread(threadId) {
       return [...threadWorks.values()]
@@ -768,6 +776,36 @@ export function createInMemoryRepositories(
     modelResponses: modelResponseRepo,
     threadDocuments: threadDocumentRepo,
     documentTouches: documentTouchRepo,
+    workContextDeliveries: {
+      async enqueueThread(threadId) {
+        if (receivesWorkContextUpdate(threads.get(threadId))) workContextDeliveries.add(threadId);
+        return workContextDeliveries.has(threadId) ? [threadId] : [];
+      },
+      async enqueueProject(projectId: ProjectId) {
+        for (const thread of threads.values()) {
+          if (thread.projectId === projectId && receivesWorkContextUpdate(thread)) {
+            workContextDeliveries.add(thread.id);
+          }
+        }
+        return [...workContextDeliveries].filter(
+          (threadId) => threads.get(threadId)?.projectId === projectId,
+        ) as ThreadId[];
+      },
+      async listPendingThreadIds() {
+        return [...workContextDeliveries].filter((threadId) =>
+          receivesWorkContextUpdate(threads.get(threadId)),
+        ) as ThreadId[];
+      },
+      async isPending(threadId) {
+        return workContextDeliveries.has(threadId);
+      },
+      async lockPending(threadId) {
+        return workContextDeliveries.has(threadId);
+      },
+      async acknowledge(threadId) {
+        workContextDeliveries.delete(threadId);
+      },
+    },
     async transaction(operation) {
       if (transactionContext.getStore()) return operation();
 
@@ -790,6 +828,7 @@ export function createInMemoryRepositories(
           const threadDocumentsSnapshot = new Map(threadDocuments);
           const documentTouchesSnapshot = new Map(documentTouches);
           const threadWorksSnapshot = new Map(threadWorks);
+          const workContextDeliveriesSnapshot = new Set(workContextDeliveries);
           try {
             return await operation();
           } catch (error) {
@@ -807,6 +846,10 @@ export function createInMemoryRepositories(
             for (const entry of documentTouchesSnapshot) documentTouches.set(...entry);
             threadWorks.clear();
             for (const entry of threadWorksSnapshot) threadWorks.set(...entry);
+            workContextDeliveries.clear();
+            for (const threadId of workContextDeliveriesSnapshot) {
+              workContextDeliveries.add(threadId);
+            }
             throw error;
           }
         });

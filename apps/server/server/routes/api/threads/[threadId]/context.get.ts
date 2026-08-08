@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
       contextPorts: app.contextPorts,
       threads: app.threadRepos.threads,
       threadWorks: app.threadRepos.threadWorks,
+      works: app.workRepo,
     },
     { threadId, userId: user.userId, uri },
   );

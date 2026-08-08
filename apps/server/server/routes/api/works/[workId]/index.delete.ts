@@ -1,6 +1,10 @@
 /** Soft-deletes an empty Work, preserving D17's conversation and draft guards. */
 import { createError, defineEventHandler, getRouterParam, setResponseStatus } from "nitro/h3";
-import { requireWorkOwner, WorkDeleteBlockedError } from "../../../../domains/projects/index.js";
+import {
+  deleteWork,
+  requireWorkOwner,
+  WorkDeleteBlockedError,
+} from "../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
 
@@ -15,7 +19,7 @@ export default defineEventHandler(async (event) => {
   );
   if (!work.deletedAt) {
     try {
-      await app.workRepo.softDelete(workId);
+      await deleteWork({ works: app.workRepo, contextUpdates: app.systemUpdates }, workId);
     } catch (error) {
       if (error instanceof WorkDeleteBlockedError) {
         throw createError({ statusCode: 409, message: error.message });

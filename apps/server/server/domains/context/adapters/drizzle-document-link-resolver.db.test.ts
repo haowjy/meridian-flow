@@ -49,6 +49,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: DOCUMENT_LINK_CONTRACT_IDS.project,
         createdByUserId: USER_ID,
         name: "Resolver Work",
+        slug: "resolver-work",
       });
       await db.insert(contextSources).values([
         {

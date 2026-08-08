@@ -4,10 +4,12 @@ import type { Database } from "@meridian/database";
 import {
   contentDocumentKindSql,
   contentDocumentPredicate,
+  contextSources,
   documents,
   folders,
+  works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
@@ -475,6 +477,15 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       // mutex while unique indexes remain the final guard against non-mutator writes.
       await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`context-tree:${sourceId}`}))`);
     }
+    const lockedWorks = await db
+      .select({ id: works.id, deletedAt: works.deletedAt })
+      .from(works)
+      .innerJoin(contextSources, eq(contextSources.workId, works.id))
+      .where(inArray(contextSources.id, uniqueIds))
+      .orderBy(works.id)
+      .for("update", { of: works });
+    const unavailable = lockedWorks.find((work) => work.deletedAt !== null);
+    if (unavailable) throw new Error(`Work not found: ${unavailable.id}`);
   }
 
   private async findDirectFolder(

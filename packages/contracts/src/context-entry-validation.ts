@@ -4,6 +4,7 @@ export type ContextEntryValidationReason =
   | "name/empty"
   | "name/invalid-character"
   | "name/reserved"
+  | "name/reserved-authority-qualifier"
   | "path/empty-segment"
   | "path/unknown-root"
   | "path/trailing-separator";
@@ -25,6 +26,13 @@ const INVALID_NAME_CHARACTER = /[/\\:*?"<>|]/;
 export function validateContextEntryName(raw: string): ContextEntryValidationResult {
   const value = raw.trim();
   if (!value) return { ok: false, reason: "name/empty" };
+  if (value.startsWith("@")) {
+    return {
+      ok: false,
+      reason: "name/reserved-authority-qualifier",
+      segment: value,
+    };
+  }
   if (value === "." || value === "..") {
     return { ok: false, reason: "name/reserved", segment: value };
   }

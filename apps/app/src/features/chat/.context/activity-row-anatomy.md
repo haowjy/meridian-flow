@@ -80,7 +80,10 @@ distinction, and doors add weight to the parameter. Two layers answer it:
 
 1. **One glyph per command, not per tool.** The icon column is already an
    aligned channel; bound to the command it becomes scannable. The glyph
-   carries **shape only**, at one neutral tone for every command.
+   carries **shape only**, at one neutral tone for every command. One
+   deliberate exception: the `work` command family shares the Work mark
+   (`Layers`), because the mark's job is to say "this touched your Works,
+   not your book" and the verb carries the rest.
 2. **Type.** Command at `--ink`/500, parameter at `--muted`/400.
 
 **Row chrome is tone-flat, deliberately.** The chip is a place to put the
