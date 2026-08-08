@@ -17,16 +17,20 @@ export function ComposerToolbar({
 }) {
   const { root, probe, controlRef, layout } = useMeasuredComposerToolbar(controls);
   const [rootOpen, setRootOpen] = useState(false);
-  const backToRoot = useRef(false);
+  const [suppressedPanelId, setSuppressedPanelId] = useState<string | null>(null);
+  const drillingIn = useRef(false);
   const overflow = controls.filter(({ id }) => layout.overflowIds.includes(id));
   const openControl = controls.find(
     (control) => control.overflow.kind === "panel" && control.overflow.panel.open,
   );
-  const overflowPanel = overflow.find(({ id }) => id === openControl?.id);
+  const overflowPanel = overflow.find(
+    ({ id }) => id === openControl?.id && id !== suppressedPanelId,
+  );
   const activePanel =
     overflowPanel?.overflow.kind === "panel" ? overflowPanel.overflow.panel : null;
 
   useEffect(() => {
+    if (!openControl) setSuppressedPanelId(null);
     if (activePanel) setRootOpen(true);
     else if (openControl) setRootOpen(false);
     if (!overflow.length) setRootOpen(false);
@@ -34,9 +38,14 @@ export function ComposerToolbar({
 
   const requestPanelOpen = (control: ComposerToolbarControl) => {
     if (control.overflow.kind !== "panel") return;
+    setSuppressedPanelId(null);
     if (openControl && openControl.id !== control.id && openControl.overflow.kind === "panel") {
       if (!openControl.overflow.panel.canDismiss) return;
       openControl.overflow.panel.onRequestDismiss();
+    }
+    if (layout.overflowIds.includes(control.id)) {
+      drillingIn.current = true;
+      setRootOpen(true);
     }
     control.overflow.panel.onRequestOpen();
   };
@@ -86,6 +95,10 @@ export function ComposerToolbar({
         <Popover
           open={rootOpen}
           onOpenChange={(next) => {
+            if (!next && drillingIn.current) {
+              drillingIn.current = false;
+              return;
+            }
             if (!next && activePanel && !activePanel.canDismiss) return;
             setRootOpen(next);
             if (!next && activePanel) activePanel.onRequestDismiss();
@@ -131,7 +144,9 @@ export function ComposerToolbar({
                   disabled={activePanel.busy}
                   onClick={() => {
                     if (!activePanel.canDismiss) return;
-                    backToRoot.current = true;
+                    drillingIn.current = true;
+                    setRootOpen(true);
+                    setSuppressedPanelId(overflowPanel.id);
                     activePanel.onRequestDismiss();
                   }}
                 >
