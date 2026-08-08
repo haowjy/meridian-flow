@@ -9,7 +9,7 @@ const { mutateAsync, announce, announceError, shell } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   announce: vi.fn(),
   announceError: vi.fn(),
-  shell: { phone: false, pending: false },
+  shell: { pending: false },
 }));
 const active = {
   id: "work-a",
@@ -34,8 +34,7 @@ vi.mock("@/client/query/useRebindThreadWork", async (importOriginal) => ({
   useRebindThreadWork: () => ({ mutateAsync, isPending: shell.pending }),
 }));
 vi.mock("@/client/stores", () => ({ useAnnouncement: () => ({ announce, announceError }) }));
-vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => shell.phone }));
-const { ThreadWorkControl } = await import("./ThreadWorkControl");
+const { ComposerWorkControl } = await import("./ComposerWorkControl");
 
 async function openDesktopPicker() {
   const trigger = document.querySelector<HTMLButtonElement>(
@@ -44,20 +43,69 @@ async function openDesktopPicker() {
   await act(async () => trigger?.click());
 }
 
-describe("ThreadWorkControl", () => {
+describe("ComposerWorkControl", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.defineProperty(window, "localStorage", {
       configurable: true,
       value: { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn(), clear: vi.fn() },
     });
-    shell.phone = false;
     shell.pending = false;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);
       return 0;
     });
   });
+  it("offers searchable Work choices", async () => {
+    await withReactRoot(
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      async () => {
+        await openDesktopPicker();
+        const search = document.querySelector<HTMLInputElement>('input[type="search"]');
+        expect(search?.getAttribute("placeholder")).toBe("Search works");
+        await act(async () => {
+          if (!search) return;
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+          setter?.call(search, "ascension");
+          search.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        expect(document.body.textContent).toContain("Jade Path");
+        expect(document.body.textContent).not.toContain("Old outline");
+        await act(async () => {
+          if (!search) return;
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+          setter?.call(search, "missing");
+          search.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        expect(document.body.textContent).toContain("No works match your search.");
+      },
+    );
+  });
+
+  it("drills into and back from the same Work list in the overflow surface", async () => {
+    await withReactRoot(
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      async () => {
+        const overflow = document.querySelector<HTMLButtonElement>(
+          'button[aria-label="More composer settings"]',
+        );
+        await act(async () => overflow?.click());
+        const workEntry = [
+          ...document.querySelectorAll<HTMLButtonElement>('[data-slot="popover-content"] button'),
+        ].find((button) => button.textContent === "Work: Jade Path");
+        await act(async () => workEntry?.click());
+        expect(document.querySelectorAll('input[type="search"]')).toHaveLength(1);
+        expect(document.body.textContent).toContain("Old outline, Archived");
+        const back = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+          button.textContent?.includes("Back"),
+        );
+        await act(async () => back?.click());
+        expect(document.querySelector('input[type="search"]')).toBeNull();
+        expect(document.body.textContent).toContain("Work: Jade Path");
+      },
+    );
+  });
+
   it("labels current and archived Works and commits a choice immediately", async () => {
     mutateAsync.mockResolvedValue({
       changed: true,
@@ -66,7 +114,7 @@ describe("ThreadWorkControl", () => {
       receipt: { inverse: { command: "switch", workId: active.id } },
     });
     await withReactRoot(
-      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
       async () => {
         const trigger = document.querySelector(
           'button[aria-label="Change work for this chat, currently Jade Path"]',
@@ -95,7 +143,7 @@ describe("ThreadWorkControl", () => {
       }),
     );
     await withReactRoot(
-      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
       async () => {
         await openDesktopPicker();
         const archivedButton = [...document.querySelectorAll("button")].find((button) =>
@@ -117,7 +165,7 @@ describe("ThreadWorkControl", () => {
     mutateAsync.mockRejectedValue(new ThreadWorkReconciliationError(new TypeError("lost"), true));
 
     await withReactRoot(
-      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
       async () => {
         const trigger = document.querySelector(
           'button[aria-label="Change work for this chat, currently Jade Path"]',
@@ -137,7 +185,7 @@ describe("ThreadWorkControl", () => {
     const { ThreadWorkReconciliationError } = await import("@/client/query/useRebindThreadWork");
     mutateAsync.mockRejectedValue(new ThreadWorkReconciliationError(new TypeError("lost"), false));
     await withReactRoot(
-      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
       async () => {
         await openDesktopPicker();
         const archivedButton = [...document.querySelectorAll("button")].find((button) =>
@@ -165,7 +213,7 @@ describe("ThreadWorkControl", () => {
       }),
     );
     await withReactRoot(
-      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
       async () => {
         await openDesktopPicker();
         const archivedButton = [...document.querySelectorAll("button")].find((button) =>
@@ -191,7 +239,7 @@ describe("ThreadWorkControl", () => {
         }),
     );
     await withReactRoot(
-      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      <ComposerWorkControl projectId="project-1" threadId="thread-1" work={active} />,
       async () => {
         await openDesktopPicker();
         const archivedButton = [...document.querySelectorAll("button")].find((button) =>
@@ -202,33 +250,6 @@ describe("ThreadWorkControl", () => {
         expect(choiceButtons.every((button) => button.disabled)).toBe(true);
         expect(archivedButton?.textContent).toContain("Changing work");
         await act(async () => finish());
-      },
-    );
-  });
-
-  it("renders the phone picker through the real Sheet control contract", async () => {
-    shell.phone = true;
-    await withReactRoot(
-      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
-      async () => {
-        const trigger = document.querySelector(
-          'button[aria-label="Change work for this chat, currently Jade Path"]',
-        ) as HTMLButtonElement;
-        await act(async () => {
-          trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        });
-
-        const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
-        expect(dialog).not.toBeNull();
-        expect(trigger.getAttribute("aria-controls")).toBe(dialog?.id);
-        expect(dialog?.getAttribute("aria-modal")).toBe("true");
-        expect(
-          document.getElementById(dialog?.getAttribute("aria-labelledby") ?? "")?.textContent,
-        ).toContain("Change work for this chat");
-        expect(dialog?.className).toContain("w-full");
-        expect(dialog?.className).toContain("safe-area-inset-bottom");
-        const close = dialog?.querySelector<HTMLButtonElement>("button.absolute");
-        expect(close?.className).toContain("size-11");
       },
     );
   });

@@ -29,6 +29,7 @@ import { displayThreadTitle } from "@/lib/thread-title";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
+import { ComposerWorkControl } from "./ComposerWorkControl";
 import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
@@ -173,7 +174,14 @@ export function ChatView({
                   />
                 )}
                 {projectId && activeWork ? (
-                  <ComposerWriteModeControl projectId={projectId} work={activeWork} />
+                  <>
+                    <ComposerWriteModeControl projectId={projectId} work={activeWork} />
+                    <ComposerWorkControl
+                      projectId={projectId}
+                      threadId={threadId}
+                      work={activeWork}
+                    />
+                  </>
                 ) : null}
               </>
             }

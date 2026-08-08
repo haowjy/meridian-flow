@@ -11,6 +11,16 @@ either side of `thread → work` is absent, the control is not rendered. The
 independent chat composition root performs the same resolution for its thread.
 There is no first/default-Work fallback.
 
+The same row owns the open chat's Work selector. At widths above 520px its
+controls read Agent, Draft / Auto-apply, then `Work: {name}`. At or below 520px,
+only Work moves behind an ellipsis; that single popover drills into the same
+searchable active/archive list and returns with Back. The threshold is a
+container query on the existing composer boundary, not a viewport measurement,
+so docks collapse based on their actual space. Chat headers display only chat
+identity and never mount another Work control. `ComposerWorkControl` alone owns
+mutation, receipt/Undo, error, focus-return, and live-convergence state for both
+entry paths.
+
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an
 unconfirmed request; the server-vended count of reviewable content branches is

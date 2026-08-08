@@ -12,14 +12,11 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@/features/chat/ChatThreadHeader", () => ({
   ChatThreadTitle: () => <button type="button">A thread</button>,
 }));
-vi.mock("@/features/chat/ThreadWorkControl", () => ({
-  ThreadWorkControl: ({ work }: { work: Work }) => <span>Work: {work.name}</span>,
-}));
 
 const { MobileTopBar } = await import("./MobileTopBar");
 
 describe("MobileTopBar chat identity", () => {
-  it("shows the resolved Work as an inert fact", async () => {
+  it("keeps the Work control out of the phone header", async () => {
     await withReactRoot(
       <MobileTopBar
         activeScreen="chat"
@@ -30,7 +27,7 @@ describe("MobileTopBar chat identity", () => {
         onOpenDrawer={() => undefined}
       />,
       () => {
-        expect(document.querySelector("header")?.textContent).toContain("Work: The Jade Path");
+        expect(document.querySelector("header")?.textContent).not.toContain("Work: The Jade Path");
         expect(
           [...document.querySelectorAll("button")].map((button) => button.textContent),
         ).not.toContain("Work: The Jade Path");

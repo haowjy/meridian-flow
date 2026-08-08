@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-- `apps/app`: chat headers now let writers change an idle chat's Work without
-  leaving it, including archived targets, cache convergence, retry guidance,
-  announcements, mobile bottom-sheet behavior, and direct Undo.
+- `apps/app`: the composer now lets writers search and change an idle chat's
+  Work from one responsive selector, including archived targets, cache
+  convergence, retry guidance, announcements, and direct Undo.
 - `apps/app`: Work changes now preserve the mounted chat/editor session,
   decode canonical server refusals, and converge other-tab and LLM changes
   through the existing live thread projection.

@@ -16,7 +16,6 @@
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
-import { ThreadWorkControl } from "@/features/chat/ThreadWorkControl";
 import { cn } from "@/lib/utils";
 import { DockShell } from "../dock/DockShell";
 import { PaneTitle } from "../PaneTitle";
@@ -84,9 +83,6 @@ export function ChatSurface({
                 threadId={threadId}
                 onSelectThread={onSelectThread}
               />
-              {activeWork ? (
-                <ThreadWorkControl projectId={projectId} threadId={threadId} work={activeWork} />
-              ) : null}
             </div>
           ) : (
             <PaneTitle>

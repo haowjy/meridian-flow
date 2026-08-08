@@ -129,7 +129,7 @@ msgid "{0} source copied"
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "{0}, Archived"
 msgstr ""
 
@@ -256,7 +256,7 @@ msgstr ""
 msgid "Active"
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Active works"
 msgstr ""
 
@@ -369,7 +369,7 @@ msgstr ""
 msgid "workReceipt.archived"
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Archived works"
 msgstr ""
 
@@ -389,6 +389,10 @@ msgstr ""
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
 msgid "auto-selected"
+msgstr ""
+
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "Back"
 msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
@@ -493,12 +497,12 @@ msgstr ""
 msgid "Centered"
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Change work for this chat"
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Change work for this chat, currently {0}"
 msgstr ""
 
@@ -518,12 +522,12 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Changing work"
 msgstr ""
 
 #. placeholder {0}: target.name
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Changing work to {0}"
 msgstr ""
 
@@ -684,6 +688,10 @@ msgstr ""
 
 #: src/features/project/lifecycle.ts
 msgid "Completed"
+msgstr ""
+
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "Composer settings"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -921,7 +929,7 @@ msgstr ""
 msgid "Current block type"
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Current for this chat"
 msgstr ""
 
@@ -931,7 +939,11 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/ThreadWorkControl.tsx
-msgid "Currently {0}"
+#~ msgid "Currently {0}"
+#~ msgstr ""
+
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "Currently {workName}"
 msgstr ""
 
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1695,6 +1707,10 @@ msgstr ""
 msgid "More"
 msgstr ""
 
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "More composer settings"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr ""
@@ -1894,6 +1910,10 @@ msgstr ""
 
 #: src/features/project/chat/NewChatDialog.tsx
 msgid "No Work is available for a new chat."
+msgstr ""
+
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "No works match your search."
 msgstr ""
 
 #: src/features/project/home/WorksManager.tsx
@@ -2393,6 +2413,10 @@ msgstr ""
 msgid "Search papers, extract findings, and synthesize a summary across sources."
 msgstr ""
 
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "Search works"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Searched"
 msgstr "已搜索"
@@ -2704,7 +2728,7 @@ msgstr ""
 msgid "That skill isn't available in this chat."
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "That Work is no longer available. Choose another Work."
 msgstr ""
 
@@ -2732,7 +2756,7 @@ msgstr ""
 #~ msgid "The change could not be confirmed. Refreshing this chat's Work."
 #~ msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "The change could not be confirmed. Try again."
 msgstr ""
 
@@ -2768,7 +2792,7 @@ msgstr ""
 msgid "The requested passage wasn't specific enough."
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "The Work did not change. Try again."
 msgstr ""
 
@@ -2859,12 +2883,12 @@ msgstr ""
 
 #. placeholder {0}: result.work.name
 #. placeholder {0}: target.name
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "This chat now uses {0}."
 msgstr ""
 
 #. placeholder {0}: result.work.name
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "This chat now uses {0}. New chats will use it too."
 msgstr ""
 
@@ -2873,12 +2897,12 @@ msgstr ""
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "This chat's current Work could not be found. Refresh the page and try again."
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "This chat's Work changed to {0}"
 msgstr ""
 
@@ -3064,7 +3088,7 @@ msgstr ""
 msgid "Undid change to Work {0}."
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Undo"
@@ -3076,6 +3100,10 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo is no longer available."
+msgstr ""
+
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "Undo Work change"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3160,7 +3188,7 @@ msgstr ""
 msgid "User"
 msgstr ""
 
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Wait for this response to finish, then try again."
 msgstr ""
 
@@ -3215,7 +3243,7 @@ msgid "Work: \"{workName}\""
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/chat/ThreadWorkControl.tsx
+#: src/features/chat/ComposerWorkControl.tsx
 msgid "Work: {0}"
 msgstr ""
 

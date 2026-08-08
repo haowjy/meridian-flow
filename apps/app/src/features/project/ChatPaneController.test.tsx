@@ -12,17 +12,14 @@ vi.mock("@/features/chat/ChatThreadHeader", () => ({
     <button type="button">{threadId}</button>
   ),
 }));
-vi.mock("@/features/chat/ThreadWorkControl", () => ({
-  ThreadWorkControl: ({ work }: { work: Work }) => <span>Work: {work.name}</span>,
-}));
 vi.mock("./shell/PaneHeader", () => ({
   PaneHeader: ({ title }: { title: React.ReactNode }) => <header>{title}</header>,
 }));
 
 const { ChatPaneController } = await import("./ChatPaneController");
 
-describe("ChatPaneController Work fact", () => {
-  it("shows the resolved Work as inert text and changes it with the selected chat", async () => {
+describe("ChatPaneController chat identity", () => {
+  it("keeps Work controls out of the header when the selected chat changes", async () => {
     let select: ((next: { threadId: string; work: Work }) => void) | null = null;
     function Harness() {
       const [active, setActive] = useState({
@@ -43,13 +40,13 @@ describe("ChatPaneController Work fact", () => {
     }
 
     await withReactRoot(<Harness />, async () => {
-      expect(document.body.textContent).toContain("Work: Revision A");
+      expect(document.body.textContent).not.toContain("Work: Revision A");
       expect(buttons().some((button) => button.textContent?.includes("Revision A"))).toBe(false);
 
       await act(async () => {
         select?.({ threadId: "thread-b", work: workFixture("work-b", "Revision B") });
       });
-      expect(document.body.textContent).toContain("Work: Revision B");
+      expect(document.body.textContent).not.toContain("Work: Revision B");
       expect(document.body.textContent).not.toContain("Revision A");
       expect(buttons().some((button) => button.textContent?.includes("Revision B"))).toBe(false);
     });

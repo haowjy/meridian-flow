@@ -20,7 +20,6 @@ import type { ReactNode } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
-import { ThreadWorkControl } from "@/features/chat/ThreadWorkControl";
 import { cn } from "@/lib/utils";
 import type { ProjectViewProps } from "../ProjectView";
 
@@ -40,7 +39,6 @@ export function MobileTopBar({
   activeScreen,
   projectId,
   activeThreadId,
-  activeWork,
   onSelectThread,
   onOpenDrawer,
   breadcrumb,
@@ -73,21 +71,11 @@ export function MobileTopBar({
         >
           {breadcrumb ??
             (activeScreen === "chat" && activeThreadId && !title ? (
-              <div className="flex min-w-0 flex-col items-center">
-                <ChatThreadTitle
-                  projectId={projectId}
-                  threadId={activeThreadId}
-                  onSelectThread={onSelectThread}
-                />
-                {activeWork ? (
-                  <ThreadWorkControl
-                    projectId={projectId}
-                    threadId={activeThreadId}
-                    work={activeWork}
-                    compact
-                  />
-                ) : null}
-              </div>
+              <ChatThreadTitle
+                projectId={projectId}
+                threadId={activeThreadId}
+                onSelectThread={onSelectThread}
+              />
             ) : (
               <div className="truncate text-sm font-semibold text-foreground">
                 {title ?? <Trans>Project</Trans>}

@@ -9,7 +9,6 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
-import { ThreadWorkControl } from "@/features/chat/ThreadWorkControl";
 
 import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -26,7 +25,6 @@ export type ChatPaneControllerProps = {
 export function ChatPaneController({
   projectId,
   threadId,
-  activeWork,
   sidebarToggle,
   contextToggle,
   onSelectThread,
@@ -44,9 +42,6 @@ export function ChatPaneController({
               // active-tab chip so the page continues up into the band.
               variant="tab"
             />
-            {activeWork ? (
-              <ThreadWorkControl projectId={projectId} threadId={threadId} work={activeWork} />
-            ) : null}
           </div>
         ) : (
           <PaneTitle>
