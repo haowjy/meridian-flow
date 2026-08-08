@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- `apps/app`: the composer now lets writers search and change an idle chat's
+  Work from one responsive selector, including archived targets, cache
+  convergence, retry guidance, announcements, and direct Undo.
+- `apps/app`: Work changes now preserve the mounted chat/editor session,
+  decode canonical server refusals, and converge other-tab and LLM changes
+  through the existing live thread projection.
+
 - `apps/app`: Home now manages active and archived Works through the live API,
   and new chats require a Work before creation. The project explorer exposes
   thread-scoped Scratch and Uploads on one flat left rail; Uploads remains
@@ -17,8 +24,21 @@
 - `apps/server`: projects with multiple active Works now list normally instead
   of failing the Work collection request.
 - `apps/server`: Work create, edit, archive, restore, delete, current selection,
-  thread listing, and conversation move routes are available. Moving a
-  conversation waits until its pending draft is reviewed.
+  and thread listing routes are available.
+- `apps/server`, `packages/contracts`: idle owned conversations can now rebind
+  to another Work through an idempotent writer endpoint and the same canonical
+  command used by the LLM Work tool. Binding, primary-thread preference,
+  receipt, and durable context refresh commit together; busy conversations
+  return a retryable conflict and pending delivery remains a successful,
+  truthful response.
+- `apps/server`, `packages/contracts`: writer Work rebinds now share the
+  cross-process model-turn claim, serialize structured conflicts through the
+  canonical Meridian error envelope, reuse one transaction-composable binding
+  transition for receipt reversal, and publish committed Work identity through
+  the existing journal/AG-UI stream for live client convergence.
+- `apps/server`: Work-rebind preflight concealment, lifecycle conflicts, missing
+  primary integrity failures, and infrastructure failures now remain distinct
+  through the repository, domain, and serialized HTTP boundaries.
 - `apps/server`: new conversations attach by explicit Work, parent Work, writer
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.

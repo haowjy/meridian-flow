@@ -168,6 +168,10 @@ export function apiThreadPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}`;
 }
 
+export function apiThreadWorkPath(threadId: string): string {
+  return `${apiThreadPath(threadId)}/work`;
+}
+
 export function apiThreadMessagePath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/messages`;
 }

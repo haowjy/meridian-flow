@@ -77,11 +77,13 @@ export function ChatSurface({
         onClose={onCloseDock}
         threadSelect={
           threadId ? (
-            <ChatThreadTitle
-              projectId={projectId}
-              threadId={threadId}
-              onSelectThread={onSelectThread}
-            />
+            <div className="flex min-w-0 items-center gap-2">
+              <ChatThreadTitle
+                projectId={projectId}
+                threadId={threadId}
+                onSelectThread={onSelectThread}
+              />
+            </div>
           ) : (
             <PaneTitle>
               <Trans>Chat</Trans>

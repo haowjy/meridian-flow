@@ -64,7 +64,12 @@ describe("wired work tool", () => {
       },
       works: works as never,
       preferences,
-      workContextUpdates: { projectChanged: async () => {}, threadChanged },
+      workContextUpdates: {
+        projectChanged: async () => {},
+        threadChanged,
+        flush: async () => {},
+        isPending: async () => false,
+      },
       drafts: { draftReview: { list: async () => [{ draftId: "draft-1" }] } } as never,
       contextPorts: {} as never,
       documentSync: {

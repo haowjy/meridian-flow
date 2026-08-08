@@ -250,6 +250,14 @@ export interface ThreadWorksRepository {
   listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
 }
 
+/** A membership target or locked lifecycle row is unavailable to the caller. */
+export class ThreadWorkUnavailableError extends Error {
+  constructor() {
+    super("Work is not available in this project");
+    this.name = "ThreadWorkUnavailableError";
+  }
+}
+
 export interface TurnDocumentTouch {
   id: string;
   turnId: TurnId;

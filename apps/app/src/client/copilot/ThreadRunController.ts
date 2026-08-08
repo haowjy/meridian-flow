@@ -7,6 +7,10 @@
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
 import { EventType } from "@meridian/contracts/protocol";
+import {
+  WORK_CONTEXT_PROJECTION_EVENT,
+  type WorkContextProjectionSignal,
+} from "@meridian/contracts/works";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
   appendUserMessage,
@@ -41,6 +45,7 @@ export type ThreadRunControllerOptions = {
   actions: ThreadStoreActions;
   appendUserMessageFn?: AppendUserMessageFn;
   getThreadSnapshotFn?: GetThreadSnapshotFn;
+  onWorkContextChanged?: (signal: WorkContextProjectionSignal) => void;
 };
 
 type ActiveRun = {
@@ -72,6 +77,7 @@ export class ThreadRunController {
   private readonly actions: ThreadStoreActions;
   private readonly appendUserMessageFn: AppendUserMessageFn;
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
+  private readonly onWorkContextChanged?: (signal: WorkContextProjectionSignal) => void;
 
   private activeRun: ActiveRun | null = null;
   private admissionInFlight = false;
@@ -85,6 +91,7 @@ export class ThreadRunController {
     this.actions = options.actions;
     this.appendUserMessageFn = options.appendUserMessageFn ?? appendUserMessage;
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
+    this.onWorkContextChanged = options.onWorkContextChanged;
   }
 
   async submit(threadId: string, text: string, options: SubmitOptions = {}): Promise<void> {
@@ -233,6 +240,20 @@ export class ThreadRunController {
             if (this.abortRequested) {
               this.abortRequested = false;
               this.requestCancel(threadId, effectiveEvent.runId);
+            }
+          }
+
+          if (
+            effectiveEvent.type === EventType.CUSTOM &&
+            effectiveEvent.name === WORK_CONTEXT_PROJECTION_EVENT
+          ) {
+            const value = effectiveEvent.value as Partial<WorkContextProjectionSignal>;
+            if (
+              typeof value?.threadId === "string" &&
+              typeof value.projectId === "string" &&
+              typeof value.workId === "string"
+            ) {
+              this.onWorkContextChanged?.(value as WorkContextProjectionSignal);
             }
           }
 

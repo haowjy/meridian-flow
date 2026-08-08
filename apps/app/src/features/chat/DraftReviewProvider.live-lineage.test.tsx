@@ -307,7 +307,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     });
   });
 
-  it("remounts the review session when the Work identity changes", async () => {
+  it("retargets the review session without remounting chat children", async () => {
     let switchWork: (() => void) | null = null;
 
     function ScopedHarness() {
@@ -323,8 +323,8 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     await withReactRoot(<ScopedHarness />, async () => {
       expect(controllerMounts).toBe(1);
       await act(async () => switchWork?.());
-      expect(controllerUnmounts).toBe(1);
-      expect(controllerMounts).toBe(2);
+      expect(controllerUnmounts).toBe(0);
+      expect(controllerMounts).toBe(1);
     });
   });
 });

@@ -80,6 +80,7 @@ import {
   createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
   createHelperResultDelivery,
+  createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
   createInvokeToolRegistration,
   createLateBindRunTurnPort,
@@ -182,6 +183,7 @@ export type AppServices = {
   workingSet: WorkingSetRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
+  runOwnership: ThreadRunOwnership;
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
@@ -484,6 +486,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       async threadChanged(threadId) {
         await systemUpdates?.threadChanged(threadId);
       },
+      async flush(threadId) {
+        await systemUpdates?.flush(threadId);
+      },
+      async isPending(threadId) {
+        return ports.threadRepos.workContextDeliveries.isPending(threadId);
+      },
     },
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
@@ -656,6 +664,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workingSet: ports.workingSet,
     orchestrator,
     runner,
+    runOwnership: ports.runOwnership,
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,
@@ -688,6 +697,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     env: {},
   });
+  const runOwnership = createInMemoryThreadRunOwnership();
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
   const unavailableWorkContext: WorkContextReader = {
@@ -980,6 +990,7 @@ export function createInMemoryAppServices(): AppServices {
         return "not_found" as const;
       },
     },
+    runOwnership,
     toolRegistry: {
       getDefinitions() {
         return [];

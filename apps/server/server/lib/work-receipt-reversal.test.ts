@@ -43,7 +43,10 @@ function harness(receipts: WorkReceipt[]) {
         rebindPrimary,
       },
       preferences: { setCurrentWorkId },
-      contextUpdates: { projectChanged: vi.fn(async () => {}) },
+      contextUpdates: {
+        projectChanged: vi.fn(async () => {}),
+        threadChanged: vi.fn(async () => {}),
+      },
       transaction: works.transaction,
       blocks: {
         listByTurn: async () =>
@@ -344,6 +347,8 @@ describe("Work receipt reversal", () => {
     });
     expect(h.rebindPrimary).toHaveBeenNthCalledWith(1, THREAD_ID, b.id);
     expect(h.rebindPrimary).toHaveBeenNthCalledWith(2, THREAD_ID, a.id);
+    expect(h.deps.contextUpdates.threadChanged).toHaveBeenCalledTimes(2);
+    expect(h.deps.contextUpdates.projectChanged).not.toHaveBeenCalled();
   });
 
   it("undoes and redoes a mixed update then delete sequence", async () => {

@@ -11,7 +11,20 @@
 import type { Turn } from "@meridian/contracts/protocol";
 
 export function isVisibleChatTurn(turn: Turn): boolean {
-  if (turn.role === "user" || turn.role === "assistant") return true;
+  if (turn.role === "user") {
+    const metadata = turn.metadata;
+    if (
+      metadata &&
+      typeof metadata === "object" &&
+      !Array.isArray(metadata) &&
+      metadata.kind === "system_update" &&
+      metadata.section === "work_context"
+    ) {
+      return false;
+    }
+    return true;
+  }
+  if (turn.role === "assistant") return true;
   if (turn.role === "compaction") return false;
   // system turns: visible only if they carry at least one custom block
   return turn.blocks.some((block) => block.blockType === "custom");

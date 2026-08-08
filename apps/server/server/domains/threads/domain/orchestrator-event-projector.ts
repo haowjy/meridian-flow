@@ -11,6 +11,10 @@
 import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
 import { type AGUIEvent, EventSchemas, EventType } from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
+import {
+  WORK_CONTEXT_PROJECTION_EVENT,
+  type WorkContextProjectionSignal,
+} from "@meridian/contracts/works";
 
 const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
@@ -113,7 +117,32 @@ export function createOrchestratorEventProjector() {
   function project(event: OrchestratorEvent): AGUIEvent[] {
     switch (event.type) {
       case "turn.created": {
-        if (event.turn.role !== "assistant") return [];
+        if (event.turn.role !== "assistant") {
+          const metadata = event.turn.metadata;
+          if (
+            metadata &&
+            typeof metadata === "object" &&
+            !Array.isArray(metadata) &&
+            metadata.kind === "system_update" &&
+            metadata.section === "work_context" &&
+            typeof metadata.projectId === "string" &&
+            typeof metadata.workId === "string"
+          ) {
+            const signal = {
+              threadId: event.turn.threadId,
+              projectId: metadata.projectId,
+              workId: metadata.workId,
+            } as WorkContextProjectionSignal;
+            return [
+              parseAguiEvent({
+                type: EventType.CUSTOM,
+                name: WORK_CONTEXT_PROJECTION_EVENT,
+                value: signal,
+              }),
+            ];
+          }
+          return [];
+        }
         state.activeRunId = event.turn.id;
         state.activeThreadId = event.turn.threadId;
         state.nextBlockSequence = event.turn.blocks.length;

@@ -6,8 +6,6 @@
  * sidebar/context rail reopen controls reachable above that surface.
  */
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/works";
-
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 
 import { PaneTitle } from "./PaneTitle";
@@ -16,7 +14,6 @@ import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 export type ChatPaneControllerProps = {
   projectId: string;
   threadId: string | null;
-  activeWork: Work | null;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
   onSelectThread: (threadId: string) => void;
@@ -25,7 +22,6 @@ export type ChatPaneControllerProps = {
 export function ChatPaneController({
   projectId,
   threadId,
-  activeWork,
   sidebarToggle,
   contextToggle,
   onSelectThread,
@@ -43,11 +39,6 @@ export function ChatPaneController({
               // active-tab chip so the page continues up into the band.
               variant="tab"
             />
-            {activeWork ? (
-              <span className="shrink-0 text-meta text-muted-foreground">
-                <Trans>Work: {activeWork.name}</Trans>
-              </span>
-            ) : null}
           </div>
         ) : (
           <PaneTitle>

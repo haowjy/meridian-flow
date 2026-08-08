@@ -51,12 +51,7 @@ export function DraftReviewProvider({
   children,
 }: DraftReviewProviderProps) {
   return (
-    <DraftReviewScope
-      key={`${projectId ?? ""}\0${workId ?? ""}`}
-      projectId={projectId}
-      workId={workId}
-      threadId={threadId}
-    >
+    <DraftReviewScope projectId={projectId} workId={workId} threadId={threadId}>
       {children}
     </DraftReviewScope>
   );

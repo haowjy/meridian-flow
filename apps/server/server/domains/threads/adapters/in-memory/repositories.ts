@@ -35,6 +35,7 @@ import type {
   UpdateSpawnLifecycleInput,
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
+import { ThreadWorkUnavailableError } from "../../ports/repositories.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
 // ledger are the money truth. Keep this local float helper out of billing
@@ -428,10 +429,10 @@ export function createInMemoryRepositories(
       if (options.works) {
         const work = await options.works.findById(workId);
         if (!work || work.deletedAt || work.id !== workId) {
-          throw new Error("Work is not available in this project");
+          throw new ThreadWorkUnavailableError();
         }
         if (work.projectId !== thread.projectId) {
-          throw new Error("Work is not available in this project");
+          throw new ThreadWorkUnavailableError();
         }
       }
       const snapshot = new Map(threadWorks);

@@ -13,11 +13,36 @@ import {
   goldenAssistantTurn,
   SIMPLE_TOOL_TURN_ORCHESTRATOR,
 } from "@meridian/contracts/threads";
+import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
 
 import { projectOrchestratorEvents } from "./orchestrator-event-projector.js";
 
 describe("orchestrator event projector tool calls", () => {
+  it("projects committed Work-context system turns without exposing transcript content", () => {
+    const turn = {
+      ...goldenAssistantTurn("system-turn", GOLDEN_THREAD_ID),
+      role: "user" as const,
+      metadata: {
+        kind: "system_update",
+        section: "work_context",
+        projectId: "00000000-0000-4000-8000-000000000001",
+        workId: "00000000-0000-4000-8000-000000000002",
+      },
+    };
+
+    expect(projectOrchestratorEvents([{ type: "turn.created", turn }])).toEqual([
+      {
+        type: EventType.CUSTOM,
+        name: WORK_CONTEXT_PROJECTION_EVENT,
+        value: {
+          threadId: GOLDEN_THREAD_ID,
+          projectId: "00000000-0000-4000-8000-000000000001",
+          workId: "00000000-0000-4000-8000-000000000002",
+        },
+      },
+    ]);
+  });
   it("parents tool calls to the active assistant message before activity snapshots", () => {
     const events = projectOrchestratorEvents(SIMPLE_TOOL_TURN_ORCHESTRATOR);
 

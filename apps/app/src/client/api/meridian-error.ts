@@ -57,5 +57,12 @@ export function meridianApiErrorFromPayload(
     return new MeridianApiError(wrapped.error, status);
   }
 
+  // Nitro/H3 serializes `createError({ data: envelope })` under `data` while
+  // retaining its own status/message fields at the top level.
+  const h3 = payload as { data?: unknown };
+  if (isMeridianError(h3.data)) {
+    return new MeridianApiError(h3.data, status);
+  }
+
   return null;
 }

@@ -276,6 +276,16 @@
   @apply min-h-0 flex-1 overflow-y-auto overscroll-y-contain;
 }
 
+/* Radix supplies the collision-aware bound after positioning. The fallback keeps
+   the selector bounded before that custom property exists and in short mobile
+   viewports, including safe-area insets. */
+@utility work-selector-popover {
+  max-height: min(
+    var(--radix-popover-content-available-height, 100svh),
+    calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem)
+  );
+}
+
 @utility main-pane {
   @apply min-w-0 max-w-full overflow-x-hidden;
 }
