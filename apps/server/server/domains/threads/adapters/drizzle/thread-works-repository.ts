@@ -11,31 +11,89 @@ import type { ThreadWorksRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadWorksRepository {
+  class MembershipSnapshotChanged extends Error {}
+
+  async function mutateMembership<T>(
+    threadId: ThreadId,
+    targetWorkId: WorkId,
+    changesPrimary: boolean,
+    operation: (input: {
+      activeDb: ReturnType<typeof currentDrizzleDb>;
+      projectId: ProjectId;
+      currentWorkId: WorkId | null;
+    }) => Promise<T>,
+  ): Promise<T> {
+    for (;;) {
+      try {
+        return await runInDrizzleTransaction(db, async () => {
+          const activeDb = currentDrizzleDb(db);
+          const [snapshot] = changesPrimary
+            ? await activeDb
+                .select({ workId: schema.threadWorks.workId })
+                .from(schema.threadWorks)
+                .where(
+                  and(
+                    eq(schema.threadWorks.threadId, threadId),
+                    eq(schema.threadWorks.isPrimary, true),
+                  ),
+                )
+                .limit(1)
+            : [];
+          const currentWorkId = (snapshot?.workId as WorkId | undefined) ?? null;
+
+          // Work rows are the outer lifecycle lock. Sorting makes concurrent
+          // primary changes acquire the old and target Works canonically.
+          const workIds = [
+            ...new Set([targetWorkId, ...(currentWorkId ? [currentWorkId] : [])]),
+          ].sort();
+          for (const workId of workIds) await requireLockedActiveWork(db, workId);
+
+          const [thread] = await activeDb
+            .select({ projectId: schema.threads.projectId })
+            .from(schema.threads)
+            .where(eq(schema.threads.id, threadId))
+            .for("update");
+          if (!thread) throw new Error("Thread membership requires an existing thread");
+
+          if (changesPrimary) {
+            const [lockedCurrent] = await activeDb
+              .select({ workId: schema.threadWorks.workId })
+              .from(schema.threadWorks)
+              .where(
+                and(
+                  eq(schema.threadWorks.threadId, threadId),
+                  eq(schema.threadWorks.isPrimary, true),
+                ),
+              )
+              .limit(1);
+            if ((lockedCurrent?.workId ?? null) !== currentWorkId) {
+              throw new MembershipSnapshotChanged();
+            }
+          }
+
+          const [target] = await activeDb
+            .select({ projectId: schema.works.projectId })
+            .from(schema.works)
+            .where(eq(schema.works.id, targetWorkId));
+          if (!target || target.projectId !== thread.projectId) {
+            throw new Error("Work is not available in this project");
+          }
+          return operation({
+            activeDb,
+            projectId: thread.projectId as ProjectId,
+            currentWorkId,
+          });
+        });
+      } catch (cause) {
+        if (cause instanceof MembershipSnapshotChanged) continue;
+        throw cause;
+      }
+    }
+  }
+
   return {
     async addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void> {
-      return runInDrizzleTransaction(db, async () => {
-        const activeDb = currentDrizzleDb(db);
-        const [thread] = await activeDb
-          .select({ projectId: schema.threads.projectId })
-          .from(schema.threads)
-          .where(eq(schema.threads.id, threadId))
-          .for("update");
-        if (!thread) {
-          throw new Error("Thread membership requires an existing thread");
-        }
-
-        const [work] = await activeDb
-          .select({ projectId: schema.works.projectId, deletedAt: schema.works.deletedAt })
-          .from(schema.works)
-          .where(eq(schema.works.id, workId))
-          .for("update");
-        if (!work || work.deletedAt) {
-          throw new Error("Work is not available in this project");
-        }
-        if (work.projectId !== thread.projectId) {
-          throw new Error("Work is not available in this project");
-        }
-
+      return mutateMembership(threadId, workId, isPrimary, async ({ activeDb, projectId }) => {
         if (isPrimary) {
           await activeDb
             .update(schema.threadWorks)
@@ -53,73 +111,52 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
           .values({
             threadId,
             workId,
-            projectId: thread.projectId as ProjectId,
+            projectId,
             isPrimary,
           })
           .onConflictDoUpdate({
             target: [schema.threadWorks.threadId, schema.threadWorks.workId],
-            set: { projectId: thread.projectId, isPrimary },
+            set: { projectId, isPrimary },
           });
       });
     },
 
     async rebindPrimary(threadId, workId) {
-      return runInDrizzleTransaction(db, async () => {
-        const activeDb = currentDrizzleDb(db);
-        // Work lifecycle always precedes thread membership locking. Deletion
-        // takes the same Work lock, so it cannot pass its membership check
-        // while a rebind to that Work is in flight.
-        await requireLockedActiveWork(db, workId);
-        const [thread] = await activeDb
-          .select({ projectId: schema.threads.projectId })
-          .from(schema.threads)
-          .where(eq(schema.threads.id, threadId))
-          .for("update");
-        if (!thread) throw new Error("Thread membership requires an existing thread");
+      return mutateMembership(
+        threadId,
+        workId,
+        true,
+        async ({ activeDb, projectId, currentWorkId }) => {
+          if (currentWorkId === workId) {
+            return { previousWorkId: currentWorkId, changed: false };
+          }
 
-        const [work] = await activeDb
-          .select({ projectId: schema.works.projectId, deletedAt: schema.works.deletedAt })
-          .from(schema.works)
-          .where(eq(schema.works.id, workId));
-        if (!work || work.deletedAt || work.projectId !== thread.projectId) {
-          throw new Error("Work is not available in this project");
-        }
-
-        const [current] = await activeDb
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(
-            and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.isPrimary, true)),
-          );
-        if (current?.workId === workId) {
-          return { previousWorkId: current.workId, changed: false };
-        }
-
-        await activeDb
-          .delete(schema.threadWorks)
-          .where(
-            and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.workId, workId)),
-          );
-        if (current) {
           await activeDb
-            .update(schema.threadWorks)
-            .set({ workId, projectId: thread.projectId })
+            .delete(schema.threadWorks)
             .where(
-              and(
-                eq(schema.threadWorks.threadId, threadId),
-                eq(schema.threadWorks.isPrimary, true),
-              ),
+              and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.workId, workId)),
             );
-        } else {
-          await activeDb.insert(schema.threadWorks).values({
-            threadId,
-            workId,
-            projectId: thread.projectId as ProjectId,
-            isPrimary: true,
-          });
-        }
-        return { previousWorkId: current?.workId ?? null, changed: true };
-      });
+          if (currentWorkId) {
+            await activeDb
+              .update(schema.threadWorks)
+              .set({ workId, projectId })
+              .where(
+                and(
+                  eq(schema.threadWorks.threadId, threadId),
+                  eq(schema.threadWorks.isPrimary, true),
+                ),
+              );
+          } else {
+            await activeDb.insert(schema.threadWorks).values({
+              threadId,
+              workId,
+              projectId,
+              isPrimary: true,
+            });
+          }
+          return { previousWorkId: currentWorkId, changed: true };
+        },
+      );
     },
 
     async findPrimary(threadId: ThreadId) {
