@@ -8,12 +8,14 @@ import {
   type ThreadRepositories,
   TurnStartConflictError,
 } from "../../threads/index.js";
-import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { contentForBlockInput, isJsonObject, localBlockFromEvent } from "./block-helpers.js";
 import { persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { WorkContextReader } from "./work-context.js";
 
 export interface SystemUpdateDelivery extends WorkContextUpdates {
   flush(threadId: ThreadId): Promise<void>;
+  /** Recover durable pending delivery before a new writer turn starts. */
+  beforeTurn(threadId: ThreadId): Promise<void>;
   /** Persist an update at the current head and return its local context rows. */
   deliverNow(
     threadId: ThreadId,
@@ -79,35 +81,90 @@ export function createSystemUpdateDelivery(deps: {
   const pending = new Set<string>();
   const flushChains = new Map<string, Promise<void>>();
 
-  async function append(threadId: ThreadId) {
+  function pendingDeliveryBlocks(blocks: Block[]): Block[] {
+    return blocks.filter((block) => {
+      if (block.blockType !== "tool_result" || !isJsonObject(block.content)) {
+        return false;
+      }
+      const metadata = block.content.metadata;
+      return isJsonObject(metadata) && metadata.workContextDelivery === "pending";
+    });
+  }
+
+  function acknowledgedBlockEvents(block: Block): OrchestratorEvent[] {
+    if (!isJsonObject(block.content)) return [];
+    const content = block.content;
+    const output = isJsonObject(content.output) ? content.output : null;
+    const metadata = isJsonObject(content.metadata) ? content.metadata : {};
+    const { contextUpdate: _contextUpdate, ...deliveredOutput } = output ?? {};
+    const { workContextWarning: _warning, ...deliveredMetadata } = metadata;
+    const acknowledgedMetadata = {
+      ...deliveredMetadata,
+      workContextDelivery: "delivered",
+    };
+    const acknowledged = contentForBlockInput({
+      id: block.id,
+      turnId: block.turnId as TurnId,
+      ...(block.responseId ? { responseId: block.responseId } : {}),
+      blockType: "tool_result",
+      sequence: block.sequence,
+      content: {
+        ...content,
+        output: deliveredOutput,
+        metadata: acknowledgedMetadata,
+      },
+      status: block.status,
+    });
+    return [
+      { type: "block.upserted", block: acknowledged },
+      {
+        type: "tool.result",
+        toolCallId: typeof content.toolCallId === "string" ? content.toolCallId : block.id,
+        output: deliveredOutput,
+        ...(typeof content.isError === "boolean" ? { isError: content.isError } : {}),
+        metadata: acknowledgedMetadata,
+      },
+    ];
+  }
+
+  async function append(threadId: ThreadId, requirePending = false) {
     // The database head is the concurrency invariant. A racing turn start may
     // win between this read and transition; retry from its new head rather
     // than creating a sibling and replacing active history.
     for (let attempt = 0; ; attempt += 1) {
-      const context = await deps.workContext.renderForThread(threadId);
       const thread = await deps.repos.threads.findById(threadId);
       if (!thread) throw new Error(`Thread not found: ${threadId}`);
       const expected = (thread.activeLeafTurnId as TurnId | null) ?? null;
-      const turn = localUserTurn(threadId, expected);
-      const block = contentForBlockInput({
-        turnId: turn.id,
-        blockType: "text",
-        sequence: 0,
-        textContent: `<system_update>\n${context}\n</system_update>`,
-        status: "complete",
-      });
-      const events: OrchestratorEvent[] = [
-        { type: "turn.created", turn },
-        { type: "block.upserted", block },
-      ];
       try {
         const persisted = await persistAndAppendTurnStartEvents(
           deps,
           threadId,
           expected,
-          async () => ({ result: { turn, block: localBlockFromEvent(block) }, events }),
+          async () => {
+            const pendingBlocks = pendingDeliveryBlocks(
+              await deps.repos.blocks.listByThread(threadId),
+            );
+            if (requirePending && pendingBlocks.length === 0) {
+              return { result: null, events: [] };
+            }
+            const context = await deps.workContext.renderForThread(threadId);
+            const turn = localUserTurn(threadId, expected);
+            const block = contentForBlockInput({
+              turnId: turn.id,
+              blockType: "text",
+              sequence: 0,
+              textContent: `<system_update>\n${context}\n</system_update>`,
+              status: "complete",
+            });
+            const events: OrchestratorEvent[] = [
+              { type: "turn.created", turn },
+              { type: "block.upserted", block },
+              ...pendingBlocks.flatMap(acknowledgedBlockEvents),
+            ];
+            return { result: { turn, block: localBlockFromEvent(block) }, events };
+          },
         );
-        return { ...persisted.result, events: persisted.events };
+        return persisted.result ? { ...persisted.result, events: persisted.events } : null;
       } catch (error) {
         if (!(error instanceof TurnStartConflictError) || attempt >= 2) throw error;
       }
@@ -116,12 +173,12 @@ export function createSystemUpdateDelivery(deps: {
 
   async function flushUnlocked(threadId: ThreadId): Promise<void> {
     const key = threadId as string;
-    if (!pending.delete(key)) return;
+    const queuedInMemory = pending.delete(key);
     if (deps.isThreadRunning(threadId)) {
-      pending.add(key);
+      if (queuedInMemory) pending.add(key);
       return;
     }
-    await append(threadId);
+    await append(threadId, !queuedInMemory);
   }
 
   const delivery: SystemUpdateDelivery = {
@@ -142,21 +199,25 @@ export function createSystemUpdateDelivery(deps: {
 
     async deliverNow(threadId) {
       pending.delete(threadId as string);
-      return append(threadId);
+      const update = await append(threadId);
+      if (!update) throw new Error("Work context delivery unexpectedly produced no update");
+      return update;
+    },
+
+    async beforeTurn(threadId) {
+      await append(threadId, true);
     },
 
     async flush(threadId) {
       const key = threadId as string;
       const previous = flushChains.get(key) ?? Promise.resolve();
       const next = previous.then(() => flushUnlocked(threadId));
-      flushChains.set(
-        key,
-        next.catch(() => undefined),
-      );
+      const settled = next.catch(() => undefined);
+      flushChains.set(key, settled);
       try {
         await next;
       } finally {
-        if (flushChains.get(key) === next) flushChains.delete(key);
+        if (flushChains.get(key) === settled) flushChains.delete(key);
       }
     },
   };
