@@ -105,7 +105,6 @@ export function ThreadWorkControl({
       type="button"
       aria-label={t`Change work for this chat, currently ${work.name}`}
       aria-expanded={open}
-      aria-controls={open ? titleId : undefined}
       aria-busy={mutation.isPending}
       className={cn(
         "focus-ring max-w-full truncate rounded-sm text-muted-foreground transition-colors hover:text-foreground",
@@ -134,7 +133,7 @@ export function ThreadWorkControl({
           <SheetTrigger asChild>{trigger}</SheetTrigger>
           <SheetContent
             side="bottom"
-            className="max-h-[80svh] rounded-t-xl pb-[env(safe-area-inset-bottom)]"
+            className="max-h-[80svh] w-full rounded-t-xl pb-[max(1rem,env(safe-area-inset-bottom))]"
             aria-describedby={descriptionId}
           >
             <SheetHeader>
@@ -151,7 +150,12 @@ export function ThreadWorkControl({
       ) : (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-          <PopoverContent align="start" className="w-80 p-3" aria-describedby={descriptionId}>
+          <PopoverContent
+            align="start"
+            className="w-80 p-3"
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
+          >
             <h2 id={titleId} className="font-semibold">
               <Trans>Change work for this chat</Trans>
             </h2>
@@ -277,7 +281,7 @@ function WorkSection({
           );
         })}
       </div>
-      {error ? (
+      {error && works.some((work) => work.id === targetId) ? (
         <p id={`${targetId}-error`} role="alert" className="mt-2 text-xs text-destructive">
           {error}
         </p>

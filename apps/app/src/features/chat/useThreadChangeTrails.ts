@@ -1,5 +1,9 @@
 /** Thread-mounted trail subscription; unlike the run controller it remains after RUN_FINISHED. */
 import { EventType } from "@meridian/contracts/protocol";
+import {
+  WORK_CONTEXT_PROJECTION_EVENT,
+  type WorkContextProjectionSignal,
+} from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -9,6 +13,7 @@ import {
   reconcileTrailShells,
 } from "@/client/change-trails";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
+import { convergeProjectedThreadWork } from "@/client/query/useRebindThreadWork";
 
 type TrailEventValue = {
   threadId: string;
@@ -93,6 +98,17 @@ export function useThreadChangeTrails(threadId: string) {
     void reconcile(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ event }) => {
+        if (event.type === EventType.CUSTOM && event.name === WORK_CONTEXT_PROJECTION_EVENT) {
+          const value = event.value as Partial<WorkContextProjectionSignal>;
+          if (
+            value.threadId === threadId &&
+            typeof value.projectId === "string" &&
+            typeof value.workId === "string"
+          ) {
+            convergeProjectedThreadWork(queryClient, value as WorkContextProjectionSignal);
+          }
+          return;
+        }
         if (
           event.type !== EventType.CUSTOM ||
           (event.name !== "meridian.turn_change_trail.updated" &&

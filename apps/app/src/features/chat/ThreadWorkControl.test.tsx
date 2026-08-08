@@ -1,6 +1,7 @@
 import type { Work } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MeridianApiError } from "@/client/api/meridian-error";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const { mutateAsync, announce, announceError } = vi.hoisted(() => ({
@@ -63,6 +64,32 @@ describe("ThreadWorkControl", () => {
         await act(async () => archivedButton?.click());
         expect(mutateAsync).toHaveBeenCalledWith("work-b");
         expect(document.body.textContent).toContain("Undo");
+      },
+    );
+  });
+
+  it("renders one structured refusal associated only with its target row", async () => {
+    mutateAsync.mockRejectedValue(
+      new MeridianApiError({
+        code: "thread_busy",
+        message: "Busy",
+        retryable: true,
+        source: "system",
+      }),
+    );
+    await withReactRoot(
+      <ThreadWorkControl projectId="project-1" threadId="thread-1" work={active} />,
+      async () => {
+        const archivedButton = [...document.querySelectorAll("button")].find((button) =>
+          button.textContent?.includes("Old outline"),
+        );
+        await act(async () => archivedButton?.click());
+
+        const alerts = document.querySelectorAll('[role="alert"]');
+        expect(alerts).toHaveLength(1);
+        expect(alerts[0]?.textContent).toContain("Wait for this response to finish");
+        expect(archivedButton?.getAttribute("aria-describedby")).toBe(alerts[0]?.id);
+        expect(announceError).toHaveBeenCalledOnce();
       },
     );
   });

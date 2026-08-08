@@ -92,11 +92,9 @@ export function ContextTreePanel({
   const { works } = useWorks(projectId);
   const currentWork = works?.find((work) => work.id === workId) ?? null;
 
-  // The work-scoped panes passively follow the active chat's work (Jimmy's
-  // 2026-08-03 ruling) — switching threads is the only way the rail
-  // re-points. Work-scoped schemes only exist while a thread (and thus a
-  // work) is active; `workName` puts the work's name in those panes' hover
-  // tooltip, the rail's only work marking (ruling 2026-08-06).
+  // Work-scoped panes follow the active thread's authoritative binding,
+  // whether it changed through navigation, a writer rebind, or an LLM rebind.
+  // `workName` puts that scope in the panes' hover tooltip.
   const renderScheme = (scheme: ProjectContextTreeScheme) => (
     <SchemeSection
       key={scheme}
