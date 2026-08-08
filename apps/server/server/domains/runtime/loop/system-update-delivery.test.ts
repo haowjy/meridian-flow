@@ -1,5 +1,5 @@
 /** System updates reuse transcript turns and coalesce while a model turn is active. */
-import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import {
@@ -18,6 +18,10 @@ async function pendingDeliveryFixture() {
     userId: "user-1",
     projectId: project.id,
     title: "Chapter",
+  });
+  await repos.threads.bakeComposedSystemPrompt(thread.id, {
+    composedSystemPrompt: "Frozen prompt",
+    bakedSkillSlugs: [],
   });
   const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
   const pendingBlock = await repos.blocks.create({
@@ -50,6 +54,7 @@ async function pendingDeliveryFixture() {
       },
       isThreadRunning: () => false,
     });
+  await repos.workContextDeliveries.enqueueThread(thread.id);
   return { repos, thread, pendingBlock, eventWriter, createDelivery };
 }
 
@@ -71,12 +76,13 @@ describe("createSystemUpdateDelivery", () => {
       bakedSkillSlugs: [],
     });
     let running = true;
+    let currentWork = "book-1";
     const delivery = createSystemUpdateDelivery({
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       workContext: {
         async renderForThread() {
-          return "<work_context>\ncurrent: book-1\n</work_context>";
+          return `<work_context>\ncurrent: ${currentWork}\n</work_context>`;
         },
       },
       isThreadRunning: () => running,
@@ -86,6 +92,7 @@ describe("createSystemUpdateDelivery", () => {
     await delivery.threadChanged(thread.id);
     expect(await repos.turns.listByThread(thread.id)).toEqual([]);
 
+    currentWork = "book-2";
     running = false;
     await delivery.flush(thread.id);
 
@@ -98,7 +105,7 @@ describe("createSystemUpdateDelivery", () => {
     });
     const blocks = await repos.blocks.listByTurn(turns[0]?.id ?? "");
     expect(blocks[0]?.textContent).toBe(
-      "<system_update>\n<work_context>\ncurrent: book-1\n</work_context>\n</system_update>",
+      "<system_update>\n<work_context>\ncurrent: book-2\n</work_context>\n</system_update>",
     );
     await expect(repos.threads.findById(thread.id)).resolves.toMatchObject({
       composedSystemPrompt: "Frozen prompt",
@@ -107,63 +114,58 @@ describe("createSystemUpdateDelivery", () => {
   });
 
   it("targets live project threads but not archived threads", async () => {
-    const projectId = "00000000-0000-4000-8000-000000000120" as ProjectId;
-    const activeId = "00000000-0000-4000-8000-000000000121" as ThreadId;
-    const archivedId = "00000000-0000-4000-8000-000000000122" as ThreadId;
-    const changed: string[] = [];
+    const projects = createInMemoryProjectRepository();
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const repos = createInMemoryRepositories({ projects });
+    const active = await repos.threads.create({
+      userId: "user-1",
+      projectId: project.id,
+      title: "Active",
+    });
+    const archived = await repos.threads.create({
+      userId: "user-1",
+      projectId: project.id,
+      title: "Archived",
+    });
+    await repos.threads.bakeComposedSystemPrompt(active.id, {
+      composedSystemPrompt: "Frozen",
+      bakedSkillSlugs: [],
+    });
+    await repos.threads.bakeComposedSystemPrompt(archived.id, {
+      composedSystemPrompt: "Frozen",
+      bakedSkillSlugs: [],
+    });
+    await repos.threads.updateStatus(archived.id, "archived");
     const delivery = createSystemUpdateDelivery({
-      repos: {
-        threads: {
-          async listByProject() {
-            return [
-              { id: activeId, status: "idle", bakedSkillSlugs: [] },
-              { id: archivedId, status: "archived", bakedSkillSlugs: [] },
-            ];
-          },
-          async findById(threadId: ThreadId) {
-            return threadId === activeId
-              ? { id: activeId, status: "idle", bakedSkillSlugs: [] }
-              : { id: archivedId, status: "archived", bakedSkillSlugs: [] };
-          },
-        },
-      } as never,
+      repos,
       eventWriter: {} as never,
       workContext: {} as never,
       isThreadRunning: () => true,
     });
-    const original = delivery.threadChanged;
-    delivery.threadChanged = async (threadId) => {
-      changed.push(threadId);
-      await original(threadId);
-    };
 
-    await delivery.projectChanged(projectId);
-    expect(changed).toEqual([activeId]);
+    await delivery.projectChanged(project.id);
+    await expect(repos.workContextDeliveries.isPending(active.id)).resolves.toBe(true);
+    await expect(repos.workContextDeliveries.isPending(archived.id)).resolves.toBe(false);
   });
 
   it("does not add an update before a thread has frozen its first prompt", async () => {
-    const threadId = "00000000-0000-4000-8000-000000000123" as ThreadId;
-    let contextReads = 0;
+    const projects = createInMemoryProjectRepository();
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const repos = createInMemoryRepositories({ projects });
+    const thread = await repos.threads.create({
+      userId: "user-1",
+      projectId: project.id,
+      title: "Unfrozen",
+    });
     const delivery = createSystemUpdateDelivery({
-      repos: {
-        threads: {
-          async findById() {
-            return { status: "idle", bakedSkillSlugs: null };
-          },
-        },
-      } as never,
+      repos,
       eventWriter: {} as never,
-      workContext: {
-        async renderForThread() {
-          contextReads += 1;
-          return "unused";
-        },
-      },
+      workContext: {} as never,
       isThreadRunning: () => false,
     });
 
-    await delivery.threadChanged(threadId);
-    expect(contextReads).toBe(0);
+    await delivery.threadChanged(thread.id);
+    await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(false);
   });
 
   it("retries from the new active head when a concurrent turn start wins", async () => {
@@ -190,6 +192,12 @@ describe("createSystemUpdateDelivery", () => {
           },
         },
         modelResponses: {},
+        workContextDeliveries: {
+          async lockPending() {
+            return true;
+          },
+          async acknowledge() {},
+        },
         threads: {
           async findById() {
             return {
@@ -228,19 +236,17 @@ describe("createSystemUpdateDelivery", () => {
     expect(update.turn.prevTurnId).toBe("new-turn-head");
   });
 
-  it("recovers a persisted pending marker after the delivery instance is recreated", async () => {
+  it("recovers a durable obligation after the delivery instance is recreated", async () => {
     const { repos, thread, pendingBlock, createDelivery } = await pendingDeliveryFixture();
 
     await createDelivery().flush(thread.id);
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.at(-1)?.metadata).toEqual({ kind: "system_update", section: "work_context" });
-    const acknowledged = await repos.blocks.findById(pendingBlock.id);
-    expect(acknowledged?.content).toMatchObject({
-      output: { schema: "meridian.work.v1", result: { slug: "target" } },
-      metadata: { workContextDelivery: "delivered" },
+    await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(false);
+    await expect(repos.blocks.findById(pendingBlock.id)).resolves.toMatchObject({
+      content: { metadata: { workContextDelivery: "delivered" } },
     });
-    expect(JSON.stringify(acknowledged?.content)).not.toContain('"status":"pending"');
   });
 
   it("keeps delivery pending through two consecutive append failures", async () => {
@@ -261,12 +267,14 @@ describe("createSystemUpdateDelivery", () => {
 
     await expect(delivery.flush(thread.id)).rejects.toThrow("journal unavailable");
     await expect(delivery.flush(thread.id)).rejects.toThrow("journal unavailable");
-    expect(await repos.blocks.findById(pendingBlock.id)).toMatchObject({
+    await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(true);
+    await expect(repos.blocks.findById(pendingBlock.id)).resolves.toMatchObject({
       content: { metadata: { workContextDelivery: "pending" } },
     });
 
     await delivery.flush(thread.id);
-    expect(await repos.blocks.findById(pendingBlock.id)).toMatchObject({
+    await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(false);
+    await expect(repos.blocks.findById(pendingBlock.id)).resolves.toMatchObject({
       content: { metadata: { workContextDelivery: "delivered" } },
     });
   });
@@ -286,12 +294,12 @@ describe("createSystemUpdateDelivery", () => {
     );
     expect(updates).toHaveLength(1);
     const replay = await eventWriter.readAfter(thread.id, 0n);
-    const deliveryResults = replay.filter(
-      (entry) => entry.payload.type === "tool.result" && entry.payload.toolCallId === "work-call",
-    );
-    expect(deliveryResults).toHaveLength(1);
-    expect(deliveryResults[0]?.payload).toMatchObject({
-      metadata: { workContextDelivery: "delivered" },
-    });
+    expect(replay.filter((entry) => entry.payload.type === "turn.created")).toHaveLength(1);
+    expect(
+      replay.filter(
+        (entry) => entry.payload.type === "tool.result" && entry.payload.toolCallId === "work-call",
+      ),
+    ).toHaveLength(1);
+    await expect(repos.workContextDeliveries.isPending(thread.id)).resolves.toBe(false);
   });
 });

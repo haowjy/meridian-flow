@@ -34,6 +34,7 @@ if (!enabled || !databaseUrl) {
         "0068_search_tool_rename",
         "0069_multi_work_v1",
         "0070_opposite_white_queen",
+        "0071_shallow_karnak",
       ]);
       for (let index = 1; index < tail.length; index += 1) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
@@ -46,12 +47,13 @@ if (!enabled || !databaseUrl) {
         const rows = await target<{ table_name: string }[]>`
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal')
+              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal', 'work_context_delivery_obligations')
           `;
         expect(rows.map((row) => row.table_name).sort()).toEqual([
           "branch_write_journal",
           "change_trail_document_occurrences",
           "turn_trail_work",
+          "work_context_delivery_obligations",
         ]);
         const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name

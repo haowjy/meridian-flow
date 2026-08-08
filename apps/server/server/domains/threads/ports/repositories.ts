@@ -264,6 +264,16 @@ export interface TurnDocumentTouchRepository {
   listThreadIdsByDocument(documentId: string): Promise<ThreadId[]>;
 }
 
+/** Durable, coalesced delivery state for model-visible Work context refreshes. */
+export interface WorkContextDeliveryRepository {
+  enqueueThread(threadId: ThreadId): Promise<void>;
+  enqueueProject(projectId: ProjectId): Promise<void>;
+  isPending(threadId: ThreadId): Promise<boolean>;
+  /** Locks the obligation for the ambient delivery transaction. */
+  lockPending(threadId: ThreadId): Promise<boolean>;
+  acknowledge(threadId: ThreadId): Promise<void>;
+}
+
 export type ThreadRepositories = {
   threads: ThreadRepository;
   threadWorks: ThreadWorksRepository;
@@ -272,6 +282,7 @@ export type ThreadRepositories = {
   modelResponses: ModelResponseRepository;
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
+  workContextDeliveries: WorkContextDeliveryRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Serializes a complete turn-start transition on the thread and rejects

@@ -6,6 +6,7 @@
 
 import { modelResult } from "@meridian/agent-edit/integration";
 import { EventType } from "@meridian/contracts/protocol";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -28,7 +29,12 @@ import {
   mockProviderConfig,
   type StreamEvent,
 } from "../../gateway/index.js";
-import type { InterruptToolHandlerContext, ToolExecutor, ToolHandler } from "../../tools/index.js";
+import type {
+  InterruptToolHandlerContext,
+  ToolExecutor,
+  ToolHandler,
+  ToolHandlerContext,
+} from "../../tools/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
@@ -847,15 +853,19 @@ describe("runtime loop integration", () => {
       description: "Work",
       inputSchema: { type: "object" as const },
     };
+    let enqueueWorkContext = async (_threadId: ThreadId) => {};
     registry.register({
       source: "core",
       definition: workTool,
       execution: {
         type: "server",
-        handler: async () => ({
-          output: { slug: "target-work" },
-          metadata: { workContextChanged: true },
-        }),
+        handler: async (_input: unknown, ctx: ToolHandlerContext) => {
+          await enqueueWorkContext(ctx.threadId);
+          return {
+            output: { slug: "target-work" },
+            metadata: { workContextChanged: true },
+          };
+        },
       },
     });
     const { repos, orchestrator, projectId } = await setupOrchestrator(
@@ -867,6 +877,7 @@ describe("runtime loop integration", () => {
       undefined,
       true,
     );
+    enqueueWorkContext = (threadId) => repos.workContextDeliveries.enqueueThread(threadId);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
     await collectEvents(
       await orchestrator.runTurn({
@@ -1052,6 +1063,7 @@ describe("runtime loop integration", () => {
       inverse: { command: "switch", workId: "work-source" },
     } as const;
     const registry = createToolRegistry();
+    let enqueueWorkContext = async (_threadId: ThreadId) => {};
     registry.register({
       source: "core",
       definition: {
@@ -1062,10 +1074,13 @@ describe("runtime loop integration", () => {
       },
       execution: {
         type: "server",
-        handler: async () => ({
-          output: { slug: "target" },
-          metadata: { workContextChanged: true, workReceipt },
-        }),
+        handler: async (_input: unknown, ctx: ToolHandlerContext) => {
+          await enqueueWorkContext(ctx.threadId);
+          return {
+            output: { slug: "target" },
+            metadata: { workContextChanged: true, workReceipt },
+          };
+        },
       },
     });
     let running = true;
@@ -1099,6 +1114,7 @@ describe("runtime loop integration", () => {
         };
       },
     );
+    enqueueWorkContext = (threadId) => repos.workContextDeliveries.enqueueThread(threadId);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
     const events = await collectEvents(
       await orchestrator.runTurn({ threadId: thread.id, userText: "switch" }),

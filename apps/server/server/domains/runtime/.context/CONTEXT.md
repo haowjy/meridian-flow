@@ -165,13 +165,12 @@ facet.
   already active for that thread.
 - **Work context updates preserve prompt identity** — a frozen prompt is never
   rebuilt for Work metadata or lifecycle changes. The refreshed block is a
-  durable `<system_update>` user-role turn, coalesced while a turn is running.
-  If immediate delivery exhausts its head-CAS retries, the tool result is
-  durably upserted with `contextUpdate.status = "pending"` and matching host
-  metadata before the provider continues. Turn-boundary delivery discovers that
-  persisted marker after process recreation, serializes on the thread-head
-  transition, and acknowledges the tool result only in the same transaction that
-  commits the eventual update and its journal events.
+  durable `<system_update>` user-role turn. Every Work or primary-binding
+  mutation coalesces a durable per-thread obligation in its business
+  transaction. Delivery renders current state under the thread-head transition
+  and deletes the obligation only in the transaction that commits the update
+  and its journal events. Tool-result pending metadata is presentation only;
+  process recreation and retry recover from the obligation.
 - **Registry names are global.** Duplicate registration names throw.
 - **Gateway terminal outcome needs causal evidence.** The instrumented `stream.close` `outcome` is `ok`/`error`/`cancelled`. A failure becomes `cancelled` only with causal abort evidence: the thrown error is `signal.reason` or an `AbortError`. Message text alone (`"Aborted"`, `"Request aborted"`) is **not** evidence — a provider failing independently after an abort stays `error`, and `sleep`/cancel paths reject with `signal.reason` (or a synthesized `AbortError`) so their failures carry identity. A thrown error's string `.code` populates both the `stream.close` payload `errorCode` and `correlation.errorCode`.
 

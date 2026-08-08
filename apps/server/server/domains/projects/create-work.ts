@@ -17,8 +17,8 @@ export async function createWork(
   const work = await deps.works.transaction(async () => {
     const work = await deps.works.create(input);
     await deps.preferences.setCurrentWorkId(userId, input.projectId, work.id);
+    await deps.contextUpdates.projectChanged(work.projectId);
     return work;
   });
-  await deps.contextUpdates.projectChanged(work.projectId);
   return work;
 }

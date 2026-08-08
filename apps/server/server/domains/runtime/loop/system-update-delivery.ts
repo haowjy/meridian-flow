@@ -1,6 +1,6 @@
 /** Queues refreshed Work context and appends it as a user-role transcript turn. */
-import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, OrchestratorEvent, ThreadListItem, Turn } from "@meridian/contracts/threads";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { WorkContextUpdates } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import {
@@ -14,7 +14,7 @@ import type { WorkContextReader } from "./work-context.js";
 
 export interface SystemUpdateDelivery extends WorkContextUpdates {
   flush(threadId: ThreadId): Promise<void>;
-  /** Recover durable pending delivery before a new writer turn starts. */
+  /** Claim durable pending delivery before a new writer turn starts. */
   beforeTurn(threadId: ThreadId): Promise<void>;
   /** Persist an update at the current head and return its local context rows. */
   deliverNow(
@@ -65,43 +65,39 @@ function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
   };
 }
 
-function receivesWorkUpdates(thread: ThreadListItem): boolean {
-  return thread.status !== "archived" && thread.bakedSkillSlugs !== null;
-}
-
 export function createSystemUpdateDelivery(deps: {
   repos: Pick<
     ThreadRepositories,
-    "blocks" | "modelResponses" | "threads" | "transaction" | "turns" | "runTurnStartTransition"
+    | "blocks"
+    | "modelResponses"
+    | "threads"
+    | "transaction"
+    | "turns"
+    | "runTurnStartTransition"
+    | "workContextDeliveries"
   >;
   eventWriter: EventJournalWriter;
   workContext: WorkContextReader;
   isThreadRunning(threadId: ThreadId): boolean;
 }): SystemUpdateDelivery {
-  const pending = new Set<string>();
   const flushChains = new Map<string, Promise<void>>();
 
-  function pendingDeliveryBlocks(blocks: Block[]): Block[] {
+  function pendingPresentationBlocks(blocks: Block[]): Block[] {
     return blocks.filter((block) => {
-      if (block.blockType !== "tool_result" || !isJsonObject(block.content)) {
-        return false;
-      }
+      if (block.blockType !== "tool_result" || !isJsonObject(block.content)) return false;
       const metadata = block.content.metadata;
       return isJsonObject(metadata) && metadata.workContextDelivery === "pending";
     });
   }
 
-  function acknowledgedBlockEvents(block: Block): OrchestratorEvent[] {
+  function acknowledgedPresentationEvents(block: Block): OrchestratorEvent[] {
     if (!isJsonObject(block.content)) return [];
     const content = block.content;
     const output = isJsonObject(content.output) ? content.output : null;
     const metadata = isJsonObject(content.metadata) ? content.metadata : {};
     const { contextUpdate: _contextUpdate, ...deliveredOutput } = output ?? {};
     const { workContextWarning: _warning, ...deliveredMetadata } = metadata;
-    const acknowledgedMetadata = {
-      ...deliveredMetadata,
-      workContextDelivery: "delivered",
-    };
+    const acknowledgedMetadata = { ...deliveredMetadata, workContextDelivery: "delivered" };
     const acknowledged = contentForBlockInput({
       id: block.id,
       turnId: block.turnId as TurnId,
@@ -127,7 +123,7 @@ export function createSystemUpdateDelivery(deps: {
     ];
   }
 
-  async function append(threadId: ThreadId, requirePending = false) {
+  async function append(threadId: ThreadId) {
     // The database head is the concurrency invariant. A racing turn start may
     // win between this read and transition; retry from its new head rather
     // than creating a sibling and replacing active history.
@@ -141,12 +137,14 @@ export function createSystemUpdateDelivery(deps: {
           threadId,
           expected,
           async () => {
-            const pendingBlocks = pendingDeliveryBlocks(
-              await deps.repos.blocks.listByThread(threadId),
-            );
-            if (requirePending && pendingBlocks.length === 0) {
+            if (!(await deps.repos.workContextDeliveries.lockPending(threadId))) {
               return { result: null, events: [] };
             }
+            // This metadata is model-facing status only. The obligation above
+            // is the sole recovery and claim authority.
+            const pendingBlocks = pendingPresentationBlocks(
+              await deps.repos.blocks.listByThread(threadId),
+            );
             const context = await deps.workContext.renderForThread(threadId);
             const turn = localUserTurn(threadId, expected);
             const block = contentForBlockInput({
@@ -159,8 +157,12 @@ export function createSystemUpdateDelivery(deps: {
             const events: OrchestratorEvent[] = [
               { type: "turn.created", turn },
               { type: "block.upserted", block },
-              ...pendingBlocks.flatMap(acknowledgedBlockEvents),
+              ...pendingBlocks.flatMap(acknowledgedPresentationEvents),
             ];
+            // The surrounding turn-start transaction makes this deletion atomic
+            // with both read-model projection and journal append. Any failure
+            // rolls the obligation back for the next claim.
+            await deps.repos.workContextDeliveries.acknowledge(threadId);
             return { result: { turn, block: localBlockFromEvent(block) }, events };
           },
         );
@@ -172,40 +174,27 @@ export function createSystemUpdateDelivery(deps: {
   }
 
   async function flushUnlocked(threadId: ThreadId): Promise<void> {
-    const key = threadId as string;
-    const queuedInMemory = pending.delete(key);
-    if (deps.isThreadRunning(threadId)) {
-      if (queuedInMemory) pending.add(key);
-      return;
-    }
-    await append(threadId, !queuedInMemory);
+    if (deps.isThreadRunning(threadId)) return;
+    await append(threadId);
   }
 
   const delivery: SystemUpdateDelivery = {
     async threadChanged(threadId) {
-      const thread = await deps.repos.threads.findById(threadId);
-      if (!thread || thread.status === "archived" || thread.bakedSkillSlugs === null) return;
-      const key = threadId as string;
-      pending.add(key);
-      if (!deps.isThreadRunning(threadId)) await delivery.flush(threadId);
+      await deps.repos.workContextDeliveries.enqueueThread(threadId);
     },
 
-    async projectChanged(projectId: ProjectId) {
-      const threads = await deps.repos.threads.listByProject(projectId);
-      await Promise.all(
-        threads.filter(receivesWorkUpdates).map((thread) => delivery.threadChanged(thread.id)),
-      );
+    async projectChanged(projectId) {
+      await deps.repos.workContextDeliveries.enqueueProject(projectId);
     },
 
     async deliverNow(threadId) {
-      pending.delete(threadId as string);
       const update = await append(threadId);
       if (!update) throw new Error("Work context delivery unexpectedly produced no update");
       return update;
     },
 
     async beforeTurn(threadId) {
-      await append(threadId, true);
+      await append(threadId);
     },
 
     async flush(threadId) {

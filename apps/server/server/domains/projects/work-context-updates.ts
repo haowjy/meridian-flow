@@ -1,4 +1,9 @@
-/** Port through which Work commands refresh model-visible Work context. */
+/**
+ * Durable enqueue port for model-visible Work context refreshes.
+ *
+ * Mutation commands call this inside their business transaction. Delivery is
+ * claimed separately and may fail without changing the committed outcome.
+ */
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 
 export interface WorkContextUpdates {

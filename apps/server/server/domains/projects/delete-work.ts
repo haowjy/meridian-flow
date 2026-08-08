@@ -24,18 +24,19 @@ export async function deleteWorkTransition(
     if (!before || before.deletedAt) return { before, after: before, changed: false };
     await deps.works.softDelete(workId);
     const after = await deps.works.findById(workId);
-    return { before, after, changed: !!after?.deletedAt };
+    const transition = { before, after, changed: !!after?.deletedAt };
+    if (transition.changed) await deps.contextUpdates.projectChanged(before.projectId);
+    return transition;
   });
-  if (transition.changed && transition.before) {
-    await deps.contextUpdates.projectChanged(transition.before.projectId);
-  }
   return transition;
 }
 
 export async function restoreWork(deps: Deps, workId: WorkId): Promise<Work> {
-  const before = await deps.works.findById(workId);
-  if (!before) throw new Error(`Work not found: ${workId}`);
-  const work = await deps.works.restore(workId);
-  if (before.deletedAt) await deps.contextUpdates.projectChanged(work.projectId);
-  return work;
+  return deps.works.transaction(async () => {
+    const before = await deps.works.lockById(workId);
+    if (!before) throw new Error(`Work not found: ${workId}`);
+    const work = before.deletedAt ? await deps.works.restore(workId) : before;
+    if (before.deletedAt) await deps.contextUpdates.projectChanged(work.projectId);
+    return work;
+  });
 }

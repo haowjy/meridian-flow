@@ -87,11 +87,11 @@ export async function reverseWorkReceipts(
           result(step.receipt, step.command, input.direction === "undo" ? "reversed" : "redone"),
         );
       }
+      await Promise.all(
+        [...changedProjects].map((projectId) => deps.contextUpdates.projectChanged(projectId)),
+      );
       return applied;
     });
-    await Promise.all(
-      [...changedProjects].map((projectId) => deps.contextUpdates.projectChanged(projectId)),
-    );
     return results;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -22,9 +22,9 @@ This domain is not the full project CRUD surface; that lives in
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
-| `createWork(user, input)` | Creates a Work and selects it as that writer’s current Work in the same transaction, then refreshes project thread Work context once. |
+| `createWork(user, input)` | Creates a Work, selects it as that writer’s current Work, and durably enqueues affected thread Work context in the same transaction. |
 | `updateWorkTransition(workId, input)` | Locks the Work lifecycle row, compares normalized requested semantic fields, and applies metadata and archive state in one write only when they differ. It returns exact before/after/changed facts used by receipts; `updateWork` projects its final Work for routes. |
-| `deleteWorkTransition` / `restoreWork` | The delete transition locks and returns exact before/after/changed facts, including a concurrent delete no-op. Route wrappers refresh Work context only after real lifecycle changes. |
+| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. |
 | `resolveCurrentWork(user, project)` | Reads the saved preference. Only a null or dangling selection falls back to newest active Work, newest archived Work, then concrete default creation; it persists that fallback with CAS and retries if another selection won. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 

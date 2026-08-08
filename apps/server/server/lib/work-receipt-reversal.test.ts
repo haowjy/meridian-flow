@@ -105,6 +105,48 @@ describe("Work receipt reversal", () => {
     );
   });
 
+  it("enqueues context inside the reversal transaction and returns the committed outcome", async () => {
+    const h = harness([]);
+    const work = await h.works.create({ projectId: "project-1", name: "Arc" });
+    await h.works.update(work.id, { name: "Arc revised" });
+    const receipt: WorkReceipt = {
+      operation: "update",
+      category: "mutate",
+      changed: true,
+      workId: work.id,
+      workName: "Arc revised",
+      before: state("Arc"),
+      after: state("Arc revised"),
+      inverse: { command: "update", workId: work.id, state: state("Arc") },
+    };
+    Object.assign(h.deps.blocks, {
+      listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
+    });
+    let transactionActive = false;
+    h.deps.transaction = async (operation) =>
+      h.works.transaction(async () => {
+        transactionActive = true;
+        try {
+          return await operation();
+        } finally {
+          transactionActive = false;
+        }
+      });
+    h.deps.contextUpdates.projectChanged.mockImplementation(async () => {
+      expect(transactionActive).toBe(true);
+    });
+
+    const result = await reverseWorkReceipts(h.deps, {
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      direction: "undo",
+    });
+    expect(result).toEqual([expect.objectContaining({ status: "reversed" })]);
+    await expect(h.works.findById(work.id)).resolves.toMatchObject(state("Arc"));
+
+    expect(result[0]?.status).toBe("reversed");
+  });
+
   it("restores delete and reports reclaimed name as an explicit failure", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });

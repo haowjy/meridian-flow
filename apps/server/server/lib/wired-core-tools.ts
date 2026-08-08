@@ -715,6 +715,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           if (result.changed && thread.kind === "primary") {
             await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, selected.id);
           }
+          if (result.changed) await deps.workContextUpdates.threadChanged(thread.id);
           return { ...result, previousWork, targetWork };
         });
         return {

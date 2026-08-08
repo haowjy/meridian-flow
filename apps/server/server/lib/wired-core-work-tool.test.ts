@@ -183,7 +183,7 @@ describe("wired work tool", () => {
       primary.handler({ command: "switch", work: primary.target.slug }, toolContext()),
     ).resolves.toMatchObject({ metadata: { workContextChanged: true } });
     expect(primary.invalidateThread).not.toHaveBeenCalled();
-    expect(primary.threadChanged).not.toHaveBeenCalled();
+    expect(primary.threadChanged).toHaveBeenCalledOnce();
     await expect(primary.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBe(
       primary.target.id,
     );
@@ -197,6 +197,7 @@ describe("wired work tool", () => {
   it("keeps an already-current switch side-effect free beyond its receipt", async () => {
     const fixture = await setup();
     await fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext());
+    expect(fixture.threadChanged).toHaveBeenCalledOnce();
     await expect(
       fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext()),
     ).resolves.toMatchObject({
@@ -204,7 +205,7 @@ describe("wired work tool", () => {
         workReceipt: { operation: "switch", changed: false, inverse: null },
       },
     });
-    expect(fixture.threadChanged).not.toHaveBeenCalled();
+    expect(fixture.threadChanged).toHaveBeenCalledOnce();
   });
 
   it("captures repeated updates from the locked transition that actually commits", async () => {

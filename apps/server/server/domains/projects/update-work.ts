@@ -42,14 +42,15 @@ export async function updateWorkTransition(
       before.description !== requested.description ||
       before.status !== requested.status;
     const work = changed ? await deps.works.update(workId, requested) : before;
-    return {
+    const result = {
       before,
       after: work,
       changed,
       contextChanged:
         before.name !== work.name || before.goal !== work.goal || before.status !== work.status,
     };
+    if (result.contextChanged) await deps.contextUpdates.projectChanged(work.projectId);
+    return result;
   });
-  if (result.contextChanged) await deps.contextUpdates.projectChanged(result.after.projectId);
   return { before: result.before, after: result.after, changed: result.changed };
 }
