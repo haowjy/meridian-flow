@@ -29,7 +29,7 @@ export interface ThreadCachePort {
   /**
    * Invalidate the persisted projections for a terminal turn: the thread
    * snapshot and, when the owning project is known, Work draft-review lists,
-   * its thread list, and the project's context trees.
+   * its thread list, canonical Work catalog, and the project's context trees.
    */
   invalidateThread(threadId: string, projectId: string | null): void;
 }
@@ -52,6 +52,13 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
         void client.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
         if (projectId) {
           void client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
+          // Work lifecycle tools and thread rebinding both settle through this
+          // boundary. Refresh the one complete (active + archived) catalog so
+          // every Work-derived projection observes the same server state.
+          void client.invalidateQueries({
+            queryKey: projectQueryKeys.works(projectId),
+            exact: true,
+          });
           void client.invalidateQueries({
             predicate: (query) =>
               query.queryKey[0] === "projects" &&
