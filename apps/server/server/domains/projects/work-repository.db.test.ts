@@ -20,8 +20,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
-    const { createDrizzleProjectWorkRepository, WorkDeleteBlockedError, WorkRestoreConflictError } =
-      await import("./index.js");
+    const {
+      createDrizzleProjectWorkRepository,
+      deleteWorkTransition,
+      updateWorkTransition,
+      WorkDeleteBlockedError,
+      WorkRestoreConflictError,
+    } = await import("./index.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -70,6 +75,62 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(works.update(first.id, { name: "Renamed" })).resolves.toMatchObject({
         slug: "book-2",
       });
+    });
+
+    it("captures update and delete receipts from the locked committing transition", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "A" });
+      let releaseUpdate!: () => void;
+      let updateLocked!: () => void;
+      const updateGate = new Promise<void>((resolve) => {
+        releaseUpdate = resolve;
+      });
+      const updateHasLock = new Promise<void>((resolve) => {
+        updateLocked = resolve;
+      });
+      const concurrentUpdate = works.transaction(async () => {
+        await works.lockById(work.id);
+        updateLocked();
+        await updateGate;
+        await works.update(work.id, { name: "B" });
+      });
+      await updateHasLock;
+      const commandUpdate = updateWorkTransition(
+        { works, contextUpdates: { async projectChanged() {} } },
+        work.id,
+        { name: "C" },
+      );
+      await waitForLock("transactionid");
+      releaseUpdate();
+      await concurrentUpdate;
+      await expect(commandUpdate).resolves.toMatchObject({
+        before: { name: "B" },
+        after: { name: "C" },
+        changed: true,
+      });
+
+      let releaseDelete!: () => void;
+      let deleteLocked!: () => void;
+      const deleteGate = new Promise<void>((resolve) => {
+        releaseDelete = resolve;
+      });
+      const deleteHasLock = new Promise<void>((resolve) => {
+        deleteLocked = resolve;
+      });
+      const concurrentDelete = works.transaction(async () => {
+        await works.lockById(work.id);
+        deleteLocked();
+        await deleteGate;
+        await works.softDelete(work.id);
+      });
+      await deleteHasLock;
+      const commandDelete = deleteWorkTransition(
+        { works, contextUpdates: { async projectChanged() {} } },
+        work.id,
+      );
+      await waitForLock("transactionid");
+      releaseDelete();
+      await concurrentDelete;
+      await expect(commandDelete).resolves.toMatchObject({ changed: false });
     });
 
     it("restores a deleted Work unless its name or slug was reclaimed", async () => {

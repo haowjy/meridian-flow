@@ -79,6 +79,10 @@ export function createInMemoryWorkRepository(
       }
     },
 
+    async lockById(id: WorkId): Promise<Work | null> {
+      return repo.findById(id);
+    },
+
     async create(input: CreateWorkInput): Promise<Work> {
       const work = build(input);
       if (nameIsTaken(work.projectId, work.name)) throw new WorkNameConflictError();

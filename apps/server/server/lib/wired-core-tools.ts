@@ -50,8 +50,8 @@ import {
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   createWork,
-  deleteWork,
-  updateWork,
+  deleteWorkTransition,
+  updateWorkTransition,
   type WorkContextUpdates,
   WorkDeleteBlockedError,
   type WorkRepository,
@@ -640,7 +640,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "update") {
-          const updated = await updateWork(
+          const transition = await updateWorkTransition(
             { works: deps.works, contextUpdates: deps.workContextUpdates },
             selected.id,
             {
@@ -650,11 +650,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               status: command.status,
             },
           );
-          const changed =
-            selected.name !== updated.name ||
-            selected.goal !== updated.goal ||
-            selected.description !== updated.description ||
-            selected.status !== updated.status;
+          const { before, after: updated, changed } = transition;
           return {
             output: modelWork(updated),
             metadata: {
@@ -664,15 +660,15 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 changed,
                 workId: updated.id,
                 workName: updated.name,
-                before: receiptState(selected),
+                before: receiptState(before),
                 after: receiptState(updated),
                 inverse: changed
-                  ? { command: "update", workId: selected.id, state: receiptState(selected) }
+                  ? { command: "update", workId: before.id, state: receiptState(before) }
                   : null,
               } satisfies WorkReceipt,
-              ...(selected.name !== updated.name ||
-              selected.goal !== updated.goal ||
-              selected.status !== updated.status
+              ...(before.name !== updated.name ||
+              before.goal !== updated.goal ||
+              before.status !== updated.status
                 ? { workContextChanged: true }
                 : {}),
             },
@@ -680,77 +676,63 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "delete") {
-          await deleteWork(
+          const transition = await deleteWorkTransition(
             { works: deps.works, contextUpdates: deps.workContextUpdates },
             selected.id,
           );
-          const deleted = await deps.works.findById(selected.id);
+          const before = transition.before ?? selected;
+          const deleted = transition.after ?? before;
           return {
-            output: modelWork(deleted ?? selected),
+            output: modelWork(deleted),
             metadata: {
               workReceipt: {
                 operation: "delete",
                 category: "mutate",
-                changed: true,
-                workId: selected.id,
-                workName: selected.name,
-                before: receiptState(selected),
+                changed: transition.changed,
+                workId: before.id,
+                workName: before.name,
+                before: receiptState(before),
                 after: null,
-                inverse: { command: "restore", workId: selected.id },
+                inverse: transition.changed ? { command: "restore", workId: before.id } : null,
               } satisfies WorkReceipt,
-              workContextChanged: true,
+              ...(transition.changed ? { workContextChanged: true } : {}),
             },
           };
         }
-
-        const current = await deps.threadWorks.findPrimary(thread.id);
-        if (current?.workId === selected.id) {
-          return {
-            output: modelWork(selected),
-            metadata: {
-              workReceipt: {
-                operation: "switch",
-                category: "binding",
-                changed: false,
-                workId: selected.id,
-                workName: selected.name,
-                before: receiptState(selected),
-                after: receiptState(selected),
-                inverse: null,
-              } satisfies WorkReceipt,
-            },
-          };
-        }
-        if (!current) return toolError({ message: "Conversation has no current Work" });
-        const previousWork = await deps.works.findById(current.workId);
-        if (!previousWork)
-          return toolError({ message: "Conversation's current Work was not found" });
 
         // The membership and primary-thread preference are one committed
         // decision. Both adapters join the ambient repository transaction.
-        const transaction =
-          deps.transaction ?? (async <T>(operation: () => Promise<T>) => operation());
+        const transaction = deps.transaction ?? deps.works.transaction.bind(deps.works);
         const rebound = await transaction(async () => {
           const result = await deps.threadWorks.rebindPrimary(thread.id, selected.id);
+          if (!result.previousWorkId) throw new Error("Conversation has no current Work");
+          const [previousWork, targetWork] = await Promise.all([
+            deps.works.findById(result.previousWorkId),
+            deps.works.findById(selected.id),
+          ]);
+          if (!previousWork) throw new Error("Conversation's current Work was not found");
+          if (!targetWork || targetWork.deletedAt) throw new Error("Target Work is not available");
           if (result.changed && thread.kind === "primary") {
             await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, selected.id);
           }
-          return result;
+          return { ...result, previousWork, targetWork };
         });
         return {
-          output: modelWork(selected),
+          output: modelWork(rebound.targetWork),
           metadata: {
             workReceipt: {
               operation: "switch",
               category: "binding",
-              changed: true,
-              workId: selected.id,
-              workName: selected.name,
-              before: receiptState(previousWork),
-              after: receiptState(selected),
-              inverse: { command: "switch", workId: rebound.previousWorkId ?? current.workId },
+              changed: rebound.changed,
+              workId: rebound.targetWork.id,
+              workName: rebound.targetWork.name,
+              before: receiptState(rebound.previousWork),
+              after: receiptState(rebound.targetWork),
+              inverse: rebound.changed
+                ? { command: "switch", workId: rebound.previousWork.id }
+                : null,
             } satisfies WorkReceipt,
-            workContextChanged: true,
+            ...(rebound.changed ? { workContextChanged: true } : {}),
           },
         };
       } catch (error) {

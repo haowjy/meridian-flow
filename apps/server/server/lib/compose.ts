@@ -795,6 +795,9 @@ export function createInMemoryAppServices(): AppServices {
       async findById() {
         throw new Error("in-memory work repository is not implemented");
       },
+      async lockById() {
+        throw new Error("in-memory work repository is not implemented");
+      },
       async listByProject() {
         return [];
       },
@@ -868,6 +871,9 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async findById() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async lockById() {
         throw new Error("in-memory work repository is not implemented");
       },
       async listByProject() {

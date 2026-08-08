@@ -23,8 +23,8 @@ This domain is not the full project CRUD surface; that lives in
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
 | `createWork(user, input)` | Creates a Work and selects it as that writer’s current Work in the same transaction, then refreshes project thread Work context once. |
-| `updateWork(workId, input)` | Applies metadata edits and an optional archive/unarchive lifecycle transition in one transaction, then emits at most one Work-context refresh. |
-| `deleteWork` / `restoreWork` | Wrap repository trash lifecycle changes and refresh project thread Work context after a real state change. |
+| `updateWorkTransition(workId, input)` | Locks the Work lifecycle row, applies metadata and archive state atomically, and returns the exact before/after/changed facts used by receipts. `updateWork` projects its final Work for routes. |
+| `deleteWorkTransition` / `restoreWork` | The delete transition locks and returns exact before/after/changed facts, including a concurrent delete no-op. Route wrappers refresh Work context only after real lifecycle changes. |
 | `resolveCurrentWork(user, project)` | Reads the saved preference. Only a null or dangling selection falls back to newest active Work, newest archived Work, then concrete default creation; it persists that fallback with CAS and retries if another selection won. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 

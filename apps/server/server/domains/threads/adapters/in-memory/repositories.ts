@@ -449,6 +449,10 @@ export function createInMemoryRepositories(
       const workId = primaryWorkIdForThread(threadId);
       return workId ? { workId } : null;
     },
+    async lockPrimary(threadId) {
+      const workId = primaryWorkIdForThread(threadId);
+      return workId ? { workId } : null;
+    },
     async rebindPrimary(threadId, workId) {
       const thread = threads.get(threadId);
       if (!thread) throw new Error("Thread membership requires an existing thread");
