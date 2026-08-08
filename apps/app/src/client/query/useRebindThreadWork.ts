@@ -113,8 +113,8 @@ export async function reconcileThreadWorkMutation(
   // cache after this point. The direct reads below are deliberately outside
   // fetchQuery so TanStack cannot return an existing retryer promise.
   await Promise.all([
-    client.cancelQueries({ queryKey: threadsKey }),
-    client.cancelQueries({ queryKey: worksKey }),
+    client.cancelQueries({ queryKey: threadsKey, exact: true }),
+    client.cancelQueries({ queryKey: worksKey, exact: true }),
   ]);
   const [threads, works] = await Promise.all([
     listProjectThreads(projectId),

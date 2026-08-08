@@ -1,6 +1,6 @@
 import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { RebindThreadWorkResponse } from "@meridian/contracts/works";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "./project-query-keys";
 import {
@@ -102,5 +102,42 @@ describe("reconcileThreadWorkMutation", () => {
       client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0]?.workId,
     ).toBe("work-b");
     expect(listProjectThreads).toHaveBeenCalledOnce();
+  });
+
+  it("does not cancel an in-flight descendant Work query", async () => {
+    const client = new QueryClient();
+    let resolveDrafts!: (drafts: string[]) => void;
+    const draftsRequest = new Promise<string[]>((resolve) => {
+      resolveDrafts = resolve;
+    });
+    const draftsKey = projectQueryKeys.workDrafts("project-1", "work-a");
+    const observer = new QueryObserver(client, {
+      queryKey: draftsKey,
+      queryFn: () => draftsRequest,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+
+    listProjectThreads.mockResolvedValue([
+      { id: "thread-1", projectId: "project-1", workId: "work-b" },
+    ]);
+    listProjectWorks.mockResolvedValue({ defaultWorkId: "work-b", works: [] });
+
+    await expect(
+      reconcileThreadWorkMutation(client, "project-1", "thread-1", "work-b"),
+    ).resolves.toBe(true);
+    expect(observer.getCurrentResult()).toMatchObject({
+      status: "pending",
+      fetchStatus: "fetching",
+    });
+
+    resolveDrafts(["draft-1"]);
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult()).toMatchObject({
+        status: "success",
+        fetchStatus: "idle",
+        data: ["draft-1"],
+      });
+    });
+    unsubscribe();
   });
 });
