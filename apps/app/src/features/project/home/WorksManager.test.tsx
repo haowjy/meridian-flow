@@ -103,6 +103,8 @@ describe("WorksManager actions", () => {
     } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
 
     await withReactRoot(<WorksManager projectId="project-1" />, () => {
+      expect(buttonContaining("Work A").getAttribute("aria-pressed")).toBe("true");
+      expect(buttonContaining("Work B").getAttribute("aria-pressed")).toBe("false");
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
         "Could not switch Work",
       );
