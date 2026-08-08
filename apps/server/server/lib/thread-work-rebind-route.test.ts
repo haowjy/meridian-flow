@@ -243,12 +243,13 @@ describe("thread Work rebind writer adapter", () => {
       {
         fixture: routeFixture({ missingPrimary: true }),
         status: 409,
-        code: "missing_primary_work",
+        code: "thread_work_missing",
       },
       {
         fixture: routeFixture({ rebindFailure: new ThreadWorkUnavailableError() }),
-        status: 404,
-        code: "not_found",
+        status: 409,
+        code: "work_unavailable",
+        details: { refresh: "works" },
       },
     ];
 
@@ -267,7 +268,11 @@ describe("thread Work rebind writer adapter", () => {
       expect(response?.status).toBe(entry.status);
       await expect(response?.json()).resolves.toMatchObject({
         kind: "error",
-        error: { code: entry.code, source: "system" },
+        error: {
+          code: entry.code,
+          source: "system",
+          ...(entry.details ? { details: entry.details } : {}),
+        },
       });
     }
   });

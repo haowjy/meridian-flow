@@ -20,7 +20,10 @@ instead of the N:1 `threads.workId` column.
   preference, the exact binding receipt, idempotent no-op behavior, and the
   targeted durable context refresh obligation. Public commands and receipt
   reversal share that transition. The authenticated writer adapter additionally
-  holds cross-process thread-run ownership across its transaction.
+  holds cross-process thread-run ownership across its transaction. Preflight
+  absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
+  typed refreshable conflict, missing primary membership is a separate
+  integrity conflict, and database failures propagate unchanged.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the

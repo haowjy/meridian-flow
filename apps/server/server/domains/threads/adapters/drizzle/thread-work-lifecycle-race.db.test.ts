@@ -1,6 +1,7 @@
 /** Postgres regression for Work deletion racing a new thread membership. */
 
 import { setTimeout as delay } from "node:timers/promises";
+import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -32,6 +33,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createInMemoryEventSink } = await import("../../../observability/index.js");
     const { createThreadForProject } = await import("../../../../lib/thread-creation.js");
+    const { handleRebindThreadWorkRequest } = await import(
+      "../../../../lib/thread-work-rebind-route.js"
+    );
+    const { default: interruptErrorHandler } = await import(
+      "../../../../lib/interrupt-error-handler.js"
+    );
     const { applyRebindThreadWorkTransition, rebindThreadWork } = await import(
       "../../domain/rebind-thread-work.js"
     );
@@ -278,6 +285,126 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: TARGET_WORK_ID,
       });
+    });
+
+    it("serializes a target deleted after preflight as a refreshable lifecycle conflict", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+      const projects = createDrizzleProjectRepository({ db });
+      const staleTarget = await works.findById(TARGET_WORK_ID);
+      if (!staleTarget) throw new Error("Expected target fixture");
+      let targetReads = 0;
+      const stalePreflightWorks = {
+        async findById(workId: string) {
+          if (workId !== TARGET_WORK_ID) return works.findById(workId);
+          targetReads += 1;
+          if (targetReads === 1) await works.softDelete(TARGET_WORK_ID);
+          return staleTarget;
+        },
+      };
+
+      let thrown: unknown;
+      try {
+        await handleRebindThreadWorkRequest(
+          {
+            threads: threads.threads,
+            threadWorks: threads.threadWorks,
+            projects,
+            works: stalePreflightWorks,
+            preferences,
+            contextUpdates: {
+              threadChanged: async () => {},
+              flush: async () => {},
+              isPending: async () => false,
+            },
+            transaction: threads.transaction,
+            runOwnership: {
+              tryAcquire: async () => ({ release: async () => {} }),
+            },
+          },
+          { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
+        );
+      } catch (cause) {
+        thrown = cause;
+      }
+
+      const response = interruptErrorHandler(thrown, {});
+      expect(response?.status).toBe(409);
+      await expect(response?.json()).resolves.toEqual({
+        kind: "error",
+        error: {
+          code: "work_unavailable",
+          message: "That Work is no longer available. Refresh Works and choose another.",
+          retryable: false,
+          source: "system",
+          details: { refresh: "works" },
+        },
+      });
+      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: WORK_ID,
+      });
+    });
+
+    it("returns 5xx when the real lifecycle lock query is cancelled", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+      const projects = createDrizzleProjectRepository({ db });
+      const failingDb = createDb(DATABASE_URL, {
+        max: 1,
+        postgres: { connection: { statement_timeout: 50 } },
+      });
+      const failingThreads = createDrizzleRepositories(failingDb);
+      const blocker = postgres(DATABASE_URL, { max: 1 });
+      let unlock!: () => void;
+      const keepLocked = new Promise<void>((resolve) => {
+        unlock = resolve;
+      });
+      let locked!: () => void;
+      const lockAcquired = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const holdLock = blocker.begin(async (sql) => {
+        await sql`SELECT id FROM works WHERE id = ${WORK_ID} FOR UPDATE`;
+        locked();
+        await keepLocked;
+      });
+      await lockAcquired;
+
+      try {
+        const app = createApp();
+        app.use(async () =>
+          handleRebindThreadWorkRequest(
+            {
+              threads: threads.threads,
+              threadWorks: failingThreads.threadWorks,
+              projects,
+              works,
+              preferences,
+              contextUpdates: {
+                threadChanged: async () => {},
+                flush: async () => {},
+                isPending: async () => false,
+              },
+              transaction: async (operation) => operation(),
+              runOwnership: {
+                tryAcquire: async () => ({ release: async () => {} }),
+              },
+            },
+            { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
+          ),
+        );
+
+        const response = await toWebHandler(app)(new Request("https://server.local/thread-work"));
+        expect(response.status).toBe(500);
+        const body = await response.text();
+        expect(body).not.toContain("not_found");
+        expect(body).not.toContain("work_unavailable");
+      } finally {
+        unlock();
+        await holdLock;
+        await blocker.end();
+        await failingDb.close();
+      }
     });
 
     it("rolls back binding and sticky preference when durable enqueue fails", async () => {

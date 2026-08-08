@@ -1,6 +1,6 @@
 /** Authenticated writer adapter for the canonical thread Work-rebind command. */
 
-import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
+import { meridianError, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -14,6 +14,7 @@ import {
   requireThreadOwner,
   type ThreadRepository,
   type ThreadWorkContextUpdates,
+  ThreadWorkRebindTargetUnavailableError,
   ThreadWorkRebindUnavailableError,
   type ThreadWorksRepository,
 } from "../domains/threads/index.js";
@@ -85,9 +86,20 @@ export async function handleRebindThreadWorkRequest(
     if (cause instanceof ThreadWorkRebindUnavailableError) {
       throwHttpInterrupt(meridianErrorFromSystem("not_found", "Thread or Work not found"), 404);
     }
+    if (cause instanceof ThreadWorkRebindTargetUnavailableError) {
+      throwHttpInterrupt(
+        meridianError({
+          code: "work_unavailable",
+          message: "That Work is no longer available. Refresh Works and choose another.",
+          source: "system",
+          details: { refresh: "works" },
+        }),
+        409,
+      );
+    }
     if (cause instanceof MissingPrimaryWorkMembershipError) {
       throwHttpInterrupt(
-        meridianErrorFromSystem("missing_primary_work", "Conversation has no current Work"),
+        meridianErrorFromSystem("thread_work_missing", "Conversation has no current Work"),
         409,
       );
     }

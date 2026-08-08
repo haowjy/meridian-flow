@@ -6,7 +6,10 @@ import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../../../shared/work-lifecycle-lock.js";
+import {
+  requireLockedActiveWork,
+  WorkLifecycleUnavailableError,
+} from "../../../../shared/work-lifecycle-lock.js";
 import {
   type ThreadWorksRepository,
   ThreadWorkUnavailableError,
@@ -52,7 +55,8 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
           for (const workId of workIds) {
             try {
               await requireLockedActiveWork(db, workId);
-            } catch {
+            } catch (cause) {
+              if (!(cause instanceof WorkLifecycleUnavailableError)) throw cause;
               throw new ThreadWorkUnavailableError();
             }
           }
