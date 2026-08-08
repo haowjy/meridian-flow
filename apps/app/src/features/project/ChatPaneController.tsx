@@ -6,8 +6,6 @@
  * sidebar/context rail reopen controls reachable above that surface.
  */
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/works";
-
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 
 import { PaneTitle } from "./PaneTitle";
@@ -16,7 +14,6 @@ import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 export type ChatPaneControllerProps = {
   projectId: string;
   threadId: string | null;
-  activeWork: Work | null;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
   onSelectThread: (threadId: string) => void;

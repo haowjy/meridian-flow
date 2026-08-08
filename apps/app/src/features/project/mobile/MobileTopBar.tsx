@@ -14,7 +14,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/protocol";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -26,7 +25,6 @@ import type { ProjectViewProps } from "../ProjectView";
 export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
   projectId: string;
   activeThreadId: string | null;
-  activeWork: Work | null;
   onSelectThread: (threadId: string) => void;
   onOpenDrawer: () => void;
   /** Left-aligned location trail; replaces the centered title when set. */

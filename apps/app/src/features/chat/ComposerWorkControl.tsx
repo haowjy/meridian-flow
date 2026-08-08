@@ -30,6 +30,8 @@ export function ComposerWorkControl({
   const [undoWorkId, setUndoWorkId] = useState<string | null>(null);
   const directTriggerRef = useRef<HTMLButtonElement>(null);
   const overflowTriggerRef = useRef<HTMLButtonElement>(null);
+  const overflowWorkEntryRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const initiatingTriggerRef = useRef<HTMLButtonElement | null>(null);
   const choiceRefs = useRef(new Map<string, HTMLButtonElement>());
   const previousWorkIdRef = useRef(work.id);
@@ -39,11 +41,22 @@ export function ComposerWorkControl({
   const { works, refetch } = useWorks(projectId);
   const mutation = useRebindThreadWork(projectId, threadId);
   const { announce, announceError } = useAnnouncement();
+  const undoWork = works?.find(
+    (candidate) => candidate.id === undoWorkId && candidate.id !== work.id,
+  );
 
   useEffect(() => {
     if (!entry || mutation.isPending || !error || !targetId) return;
     requestAnimationFrame(() => choiceRefs.current.get(targetId)?.focus());
   }, [entry, error, mutation.isPending, targetId]);
+
+  useEffect(() => {
+    if (entry !== "overflow") return;
+    requestAnimationFrame(() => {
+      if (overflowView === "works") searchRef.current?.focus();
+      else overflowWorkEntryRef.current?.focus();
+    });
+  }, [entry, overflowView]);
 
   const close = () => {
     setEntry(null);
@@ -62,6 +75,7 @@ export function ComposerWorkControl({
       }
       setTargetId(null);
       setError(null);
+      setUndoWorkId(null);
       announce(t`This chat's Work changed to ${work.name}`);
     }
   }, [announce, work.id, work.name]);
@@ -132,6 +146,7 @@ export function ComposerWorkControl({
       choiceRefs={choiceRefs.current}
       query={query}
       onQueryChange={setQuery}
+      searchRef={searchRef}
     />
   );
 
@@ -163,6 +178,7 @@ export function ComposerWorkControl({
       <Popover
         open={entry === "overflow"}
         onOpenChange={(open) => {
+          if (!open && mutation.isPending) return;
           setEntry(open ? "overflow" : null);
           if (!open) {
             setOverflowView("root");
@@ -176,20 +192,34 @@ export function ComposerWorkControl({
             type="button"
             aria-label={t`More composer settings`}
             aria-expanded={entry === "overflow"}
+            aria-busy={mutation.isPending}
             onClick={() => {
               initiatingTriggerRef.current = overflowTriggerRef.current;
             }}
-            className="focus-ring hidden size-7 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground @max-[520px]:flex"
+            className="focus-ring hidden size-11 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground @max-[520px]:flex"
           >
             <Ellipsis className="size-4" aria-hidden />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 p-3" aria-label={t`Composer settings`}>
+        <PopoverContent
+          align="start"
+          aria-busy={mutation.isPending}
+          className="flex max-h-[min(var(--radix-popover-content-available-height),calc(100svh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1rem))] w-80 flex-col overflow-hidden p-3"
+          aria-label={t`Composer settings`}
+          onEscapeKeyDown={(event) => {
+            if (mutation.isPending) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (mutation.isPending) event.preventDefault();
+          }}
+        >
           {overflowView === "root" ? (
             <div className="space-y-1">
               <button
+                ref={overflowWorkEntryRef}
                 type="button"
-                className="focus-ring flex min-h-10 w-full items-center rounded-md px-2 text-left text-sm hover:bg-accent"
+                disabled={mutation.isPending}
+                className="focus-ring flex min-h-11 w-full items-center rounded-md px-2 text-left text-sm hover:bg-accent disabled:opacity-60"
                 onClick={() => {
                   setOverflowView("works");
                   setQuery("");
@@ -197,13 +227,13 @@ export function ComposerWorkControl({
               >
                 <Trans>Work: {work.name}</Trans>
               </button>
-              {undoWorkId ? (
+              {undoWork ? (
                 <button
                   type="button"
-                  className="focus-ring flex min-h-10 w-full items-center rounded-md px-2 text-left text-sm text-jade-text hover:bg-accent"
+                  disabled={mutation.isPending}
+                  className="focus-ring flex min-h-11 w-full items-center rounded-md px-2 text-left text-sm text-jade-text hover:bg-accent disabled:opacity-60"
                   onClick={() => {
-                    const previous = works?.find((candidate) => candidate.id === undoWorkId);
-                    if (previous) void choose(previous, true);
+                    void choose(undoWork, true);
                   }}
                 >
                   <Trans>Undo Work change</Trans>
@@ -214,8 +244,11 @@ export function ComposerWorkControl({
             <>
               <button
                 type="button"
-                className="focus-ring mb-2 flex items-center gap-1 rounded-sm text-sm text-muted-foreground hover:text-foreground"
-                onClick={() => setOverflowView("root")}
+                disabled={mutation.isPending}
+                className="focus-ring mb-2 flex min-h-11 shrink-0 items-center gap-1 rounded-sm px-1 text-sm text-muted-foreground hover:text-foreground disabled:opacity-60"
+                onClick={() => {
+                  setOverflowView("root");
+                }}
               >
                 <ArrowLeft className="size-4" aria-hidden />
                 <Trans>Back</Trans>
@@ -225,13 +258,13 @@ export function ComposerWorkControl({
           )}
         </PopoverContent>
       </Popover>
-      {undoWorkId ? (
+      {undoWork ? (
         <button
           type="button"
-          className="focus-ring ml-2 rounded-sm text-meta text-jade-text hover:underline @max-[520px]:hidden"
+          disabled={mutation.isPending}
+          className="focus-ring ml-2 rounded-sm text-meta text-jade-text hover:underline disabled:opacity-60 @max-[520px]:hidden"
           onClick={() => {
-            const previous = works?.find((candidate) => candidate.id === undoWorkId);
-            if (previous) void choose(previous, true);
+            void choose(undoWork, true);
           }}
         >
           <Trans>Undo</Trans>
@@ -263,7 +296,7 @@ function WorkPopover({
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-80 p-3"
+        className="flex max-h-[min(var(--radix-popover-content-available-height),calc(100svh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1rem))] w-80 flex-col overflow-hidden p-3"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
       >
@@ -289,6 +322,7 @@ function WorkChoices({
   choiceRefs,
   query,
   onQueryChange,
+  searchRef,
 }: {
   works: Work[];
   currentWorkId: string;
@@ -299,6 +333,7 @@ function WorkChoices({
   choiceRefs: Map<string, HTMLButtonElement>;
   query: string;
   onQueryChange: (query: string) => void;
+  searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filtered = works.filter((work) =>
@@ -312,55 +347,61 @@ function WorkChoices({
     const rows = [
       ...event.currentTarget.querySelectorAll<HTMLButtonElement>("section button:not(:disabled)"),
     ];
-    if (!rows.length) return;
-    event.preventDefault();
     const current = rows.indexOf(document.activeElement as HTMLButtonElement);
+    if (current < 0) return;
+    event.preventDefault();
     const next =
       event.key === "Home"
         ? 0
         : event.key === "End"
           ? rows.length - 1
           : event.key === "ArrowDown"
-            ? (current + 1 + rows.length) % rows.length
-            : (current - 1 + rows.length) % rows.length;
+            ? Math.min(current + 1, rows.length - 1)
+            : Math.max(current - 1, 0);
     rows[next]?.focus();
   };
   return (
-    <fieldset className="min-w-0 space-y-3 border-0 p-0" onKeyDown={navigate}>
+    <fieldset
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 border-0 p-0"
+      onKeyDown={navigate}
+    >
       <label htmlFor={searchId} className="sr-only">
         <Trans>Search works</Trans>
       </label>
-      <div className="flex items-center gap-2 rounded-md border border-input px-2 focus-within:ring-2 focus-within:ring-ring">
+      <div className="flex min-h-11 shrink-0 items-center gap-2 rounded-md border border-input px-2 focus-within:ring-2 focus-within:ring-ring">
         <Search className="size-4 text-muted-foreground" aria-hidden />
         <input
+          ref={searchRef}
           id={searchId}
           type="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={t`Search works`}
-          className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
-      {active.length ? (
-        <WorkSection
-          works={active}
-          label={t`Active works`}
-          {...{ currentWorkId, targetId, pending, error, onChoose, choiceRefs }}
-        />
-      ) : null}
-      {archived.length ? (
-        <WorkSection
-          works={archived}
-          label={t`Archived works`}
-          archived
-          {...{ currentWorkId, targetId, pending, error, onChoose, choiceRefs }}
-        />
-      ) : null}
-      {!filtered.length ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">
-          <Trans>No works match your search.</Trans>
-        </p>
-      ) : null}
+      <div className="app-scroll min-h-0 flex-1 space-y-3 overflow-y-auto">
+        {active.length ? (
+          <WorkSection
+            works={active}
+            label={t`Active works`}
+            {...{ currentWorkId, targetId, pending, error, onChoose, choiceRefs }}
+          />
+        ) : null}
+        {archived.length ? (
+          <WorkSection
+            works={archived}
+            label={t`Archived works`}
+            archived
+            {...{ currentWorkId, targetId, pending, error, onChoose, choiceRefs }}
+          />
+        ) : null}
+        {!filtered.length ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            <Trans>No works match your search.</Trans>
+          </p>
+        ) : null}
+      </div>
     </fieldset>
   );
 }

@@ -937,11 +937,6 @@ msgstr "Current for this chat"
 msgid "Current Work"
 msgstr "Current Work"
 
-#. placeholder {0}: work.name
-#: src/features/chat/ThreadWorkControl.tsx
-#~ msgid "Currently {0}"
-#~ msgstr "Currently {0}"
-
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Currently {workName}"
 msgstr "Currently {workName}"
@@ -1769,10 +1764,6 @@ msgid "Names cannot be empty"
 msgstr "Names cannot be empty"
 
 #: src/features/project/context/context-entry-name.ts
-#~ msgid "Names cannot begin with '@'. That prefix identifies a Work"
-#~ msgstr "Names cannot begin with '@'. That prefix identifies a Work"
-
-#: src/features/project/context/context-entry-name.ts
 msgid "Names cannot begin with '@'. That prefix is reserved for authority qualifiers"
 msgstr "Names cannot begin with '@'. That prefix is reserved for authority qualifiers"
 
@@ -2308,15 +2299,6 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Restored the Work."
-#~ msgstr "Restored the Work."
-
-#. placeholder {0}: work.name
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Restored Work {0}."
-#~ msgstr "Restored Work {0}."
-
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -2617,10 +2599,6 @@ msgstr "Suggested: {0}"
 msgid "Switch screens or manage your account."
 msgstr "Switch screens or manage your account."
 
-#: src/features/project/context/ContextTreePanel.tsx
-#~ msgid "Switch work"
-#~ msgstr "Switch work"
-
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.switched"
@@ -2751,10 +2729,6 @@ msgstr "The assistant referred to this document, but it isn't there now. It may 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr "The browser blocked the clipboard. Check this site's permissions."
-
-#: src/features/chat/ThreadWorkControl.tsx
-#~ msgid "The change could not be confirmed. Refreshing this chat's Work."
-#~ msgstr "The change could not be confirmed. Refreshing this chat's Work."
 
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "The change could not be confirmed. Try again."

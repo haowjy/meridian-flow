@@ -937,11 +937,6 @@ msgstr ""
 msgid "Current Work"
 msgstr ""
 
-#. placeholder {0}: work.name
-#: src/features/chat/ThreadWorkControl.tsx
-#~ msgid "Currently {0}"
-#~ msgstr ""
-
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Currently {workName}"
 msgstr ""
@@ -1769,10 +1764,6 @@ msgid "Names cannot be empty"
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-#~ msgid "Names cannot begin with '@'. That prefix identifies a Work"
-#~ msgstr ""
-
-#: src/features/project/context/context-entry-name.ts
 msgid "Names cannot begin with '@'. That prefix is reserved for authority qualifiers"
 msgstr ""
 
@@ -2308,15 +2299,6 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Restored the Work."
-#~ msgstr ""
-
-#. placeholder {0}: work.name
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Restored Work {0}."
-#~ msgstr ""
-
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -2617,10 +2599,6 @@ msgstr ""
 msgid "Switch screens or manage your account."
 msgstr ""
 
-#: src/features/project/context/ContextTreePanel.tsx
-#~ msgid "Switch work"
-#~ msgstr ""
-
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.switched"
@@ -2751,10 +2729,6 @@ msgstr ""
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
-
-#: src/features/chat/ThreadWorkControl.tsx
-#~ msgid "The change could not be confirmed. Refreshing this chat's Work."
-#~ msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "The change could not be confirmed. Try again."

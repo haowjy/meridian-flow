@@ -1,4 +1,3 @@
-import type { Work } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -22,7 +21,6 @@ describe("MobileTopBar chat identity", () => {
         activeScreen="chat"
         projectId="project-1"
         activeThreadId="thread-1"
-        activeWork={{ name: "The Jade Path" } as Work}
         onSelectThread={() => undefined}
         onOpenDrawer={() => undefined}
       />,

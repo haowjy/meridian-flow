@@ -299,7 +299,6 @@ function DesktopProject(props: ResolvedProjectViewProps) {
               key="chat-pane-controller"
               projectId={props.projectId}
               threadId={props.activeThreadId}
-              activeWork={props.activeWork}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
               contextToggle={surfaceToggle("context-rail", t`Expand context`)}
               onSelectThread={props.onSelectThread}
