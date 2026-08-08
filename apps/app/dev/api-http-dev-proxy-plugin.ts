@@ -2,7 +2,11 @@ import https from "node:https";
 import type { Plugin } from "vite";
 
 import { resolveApiDevOriginForAppHost } from "../src/core/transport/dev-transport";
-import { isApiOwnedPath, isAppOwnedAuthPath } from "../src/server/api-route-ownership";
+import { getApiRouteOwner } from "../src/server/api-route-ownership";
+
+export function shouldProxyApiHttpPath(pathname: string, isWebSocket = false): boolean {
+  return !isWebSocket && getApiRouteOwner(pathname) === "server";
+}
 
 export function apiHttpDevProxyPlugin(
   apiDevOriginFallback: string,
@@ -23,19 +27,7 @@ export function apiHttpDevProxyPlugin(
         const url = new URL(req.url, `https://${requestHost}`);
         const pathname = url.pathname;
 
-        if (!pathname.startsWith("/api")) {
-          next();
-          return;
-        }
-        if (isAppOwnedAuthPath(pathname)) {
-          next();
-          return;
-        }
-        if (!isApiOwnedPath(pathname)) {
-          next();
-          return;
-        }
-        if (req.headers.upgrade?.toLowerCase() === "websocket") {
+        if (!shouldProxyApiHttpPath(pathname, req.headers.upgrade?.toLowerCase() === "websocket")) {
           next();
           return;
         }

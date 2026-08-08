@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isApiOwnedPath, isAppOwnedAuthPath } from "./api-route-ownership";
+import { getApiRouteOwner } from "./api-route-ownership";
 
 describe("API route ownership", () => {
   it.each([
@@ -10,16 +10,27 @@ describe("API route ownership", () => {
     "/api/works/work-1/unarchive",
     "/api/works/work-1/threads",
   ])("forwards the Work lifecycle path %s to the API server", (pathname) => {
-    expect(isApiOwnedPath(pathname)).toBe(true);
+    expect(getApiRouteOwner(pathname)).toBe("server");
   });
 
   it("does not claim adjacent app-shell paths", () => {
-    expect(isApiOwnedPath("/api/workshop")).toBe(false);
-    expect(isApiOwnedPath("/api/worksheets/work-1")).toBe(false);
+    expect(getApiRouteOwner("/api/workshop")).toBeNull();
+    expect(getApiRouteOwner("/api/worksheets/work-1")).toBeNull();
   });
 
-  it("leaves app-owned auth routes with the app", () => {
-    expect(isAppOwnedAuthPath("/api/auth/callback")).toBe(true);
-    expect(isApiOwnedPath("/api/auth/callback")).toBe(false);
+  it.each([
+    "/api/auth/callback",
+    "/api/auth/dev-login",
+  ])("leaves the implemented auth route %s with the app", (pathname) => {
+    expect(getApiRouteOwner(pathname)).toBe("app");
+  });
+
+  it.each([
+    "/api/auth/me",
+    "/api/auth/future-route",
+    "/api/auth/callback/unimplemented",
+    "/api/auth/dev-login/unimplemented",
+  ])("forwards the server-owned auth route %s", (pathname) => {
+    expect(getApiRouteOwner(pathname)).toBe("server");
   });
 });
