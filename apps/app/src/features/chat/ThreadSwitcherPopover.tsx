@@ -120,7 +120,7 @@ export function ThreadSwitcherPopover({
             type="button"
             aria-expanded={open}
             className={cn(
-              "focus-ring flex min-w-0 max-w-full items-center gap-1.5 text-left",
+              "focus-ring flex min-w-0 max-w-full flex-1 items-center gap-1.5 text-left",
               variant === "tab"
                 ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
                   // chip's base (and its flares) sit on the band's bottom edge
@@ -129,7 +129,7 @@ export function ThreadSwitcherPopover({
                 : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
             )}
           >
-            <PaneTitle className="min-w-0">{title}</PaneTitle>
+            <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
             {triggerHasAttention ? (
               <span
                 role="img"
