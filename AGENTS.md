@@ -35,8 +35,10 @@ simplification.
 **Writer primitives:** a **Project** is a serial, book, or body of work. A
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds `scratch://` context. A chat's Work
-is fixed at creation; outside creation, surfaces display Work and never control
-it. The schema is `works` + `thread_works`; every new project receives a
+may be rebound by the writer or LLM through one canonical command. Thread
+binding, the current Work preference for future chats, and selected-chat
+navigation are distinct states and actions. The schema is `works` +
+`thread_works`; every new project receives a
 concrete default Work, and writers can create and manage additional Works from
 Home.
 

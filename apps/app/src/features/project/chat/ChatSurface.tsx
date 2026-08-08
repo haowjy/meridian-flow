@@ -16,6 +16,7 @@
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ThreadWorkControl } from "@/features/chat/ThreadWorkControl";
 import { cn } from "@/lib/utils";
 import { DockShell } from "../dock/DockShell";
 import { PaneTitle } from "../PaneTitle";
@@ -77,11 +78,16 @@ export function ChatSurface({
         onClose={onCloseDock}
         threadSelect={
           threadId ? (
-            <ChatThreadTitle
-              projectId={projectId}
-              threadId={threadId}
-              onSelectThread={onSelectThread}
-            />
+            <div className="flex min-w-0 items-center gap-2">
+              <ChatThreadTitle
+                projectId={projectId}
+                threadId={threadId}
+                onSelectThread={onSelectThread}
+              />
+              {activeWork ? (
+                <ThreadWorkControl projectId={projectId} threadId={threadId} work={activeWork} />
+              ) : null}
+            </div>
           ) : (
             <PaneTitle>
               <Trans>Chat</Trans>

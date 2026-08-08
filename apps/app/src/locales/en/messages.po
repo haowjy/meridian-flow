@@ -128,6 +128,11 @@ msgstr "{0} isn't in {section}."
 msgid "{0} source copied"
 msgstr "{0} source copied"
 
+#. placeholder {0}: work.name
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "{0}, Archived"
+msgstr "{0}, Archived"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr "{count, plural, one {# match} other {# matches}}"
@@ -251,6 +256,10 @@ msgstr "Actions"
 msgid "Active"
 msgstr "Active"
 
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Active works"
+msgstr "Active works"
+
 #: src/features/chat/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
@@ -359,6 +368,10 @@ msgstr "Archived current Work"
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.archived"
 msgstr "Archived Work {name}"
+
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Archived works"
+msgstr "Archived works"
 
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
@@ -480,6 +493,15 @@ msgstr "Center"
 msgid "Centered"
 msgstr "Centered"
 
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Change work for this chat"
+msgstr "Change work for this chat"
+
+#. placeholder {0}: work.name
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Change work for this chat, currently {0}"
+msgstr "Change work for this chat, currently {0}"
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed {count} Works"
 msgstr "Changed {count} Works"
@@ -495,6 +517,15 @@ msgstr "Changed 1 Work"
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
 msgstr "Changes"
+
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Changing work"
+msgstr "Changing work"
+
+#. placeholder {0}: target.name
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Changing work to {0}"
+msgstr "Changing work to {0}"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "chart"
@@ -890,9 +921,18 @@ msgstr "Creating…"
 msgid "Current block type"
 msgstr "Current block type"
 
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Current for this chat"
+msgstr "Current for this chat"
+
 #: src/features/project/chat/NewChatDialog.tsx
 msgid "Current Work"
 msgstr "Current Work"
+
+#. placeholder {0}: work.name
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Currently {0}"
+msgstr "Currently {0}"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
@@ -2664,6 +2704,10 @@ msgstr "That picture is no longer in the document."
 msgid "That skill isn't available in this chat."
 msgstr "That skill isn't available in this chat."
 
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "That Work is no longer available. Choose another Work."
+msgstr "That Work is no longer available. Choose another Work."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
 msgstr "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
@@ -2683,6 +2727,10 @@ msgstr "The assistant referred to this document, but it isn't there now. It may 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr "The browser blocked the clipboard. Check this site's permissions."
+
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "The change could not be confirmed. Refreshing this chat's Work."
+msgstr "The change could not be confirmed. Refreshing this chat's Work."
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The document could not be created. Try again."
@@ -2801,10 +2849,25 @@ msgstr "This chapter is temporarily unavailable"
 msgid "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
 msgstr "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
 
+#. placeholder {0}: result.work.name
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "This chat now uses {0}."
+msgstr "This chat now uses {0}."
+
+#. placeholder {0}: result.work.name
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "This chat now uses {0}. New chats will use it too."
+msgstr "This chat now uses {0}. New chats will use it too."
+
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+
+#. placeholder {0}: work.name
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "This chat's Work changed to {0}"
+msgstr "This chat's Work changed to {0}"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This column is already at the edge."
@@ -2988,6 +3051,7 @@ msgstr "Undid"
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
+#: src/features/chat/ThreadWorkControl.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Undo"
@@ -3083,6 +3147,10 @@ msgstr "Usage"
 msgid "User"
 msgstr "User"
 
+#: src/features/chat/ThreadWorkControl.tsx
+msgid "Wait for this response to finish, then try again."
+msgstr "Wait for this response to finish, then try again."
+
 #: src/features/project/lifecycle.ts
 msgid "Waiting for you"
 msgstr "Waiting for you"
@@ -3133,9 +3201,8 @@ msgstr "Work details"
 msgid "Work: \"{workName}\""
 msgstr "Work: \"{workName}\""
 
-#. placeholder {0}: activeWork.name
-#: src/features/project/ChatPaneController.tsx
-#: src/features/project/mobile/MobileTopBar.tsx
+#. placeholder {0}: work.name
+#: src/features/chat/ThreadWorkControl.tsx
 msgid "Work: {0}"
 msgstr "Work: {0}"
 

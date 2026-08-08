@@ -12,6 +12,9 @@ vi.mock("@/features/chat/ChatThreadHeader", () => ({
     <button type="button">{threadId}</button>
   ),
 }));
+vi.mock("@/features/chat/ThreadWorkControl", () => ({
+  ThreadWorkControl: ({ work }: { work: Work }) => <span>Work: {work.name}</span>,
+}));
 vi.mock("./shell/PaneHeader", () => ({
   PaneHeader: ({ title }: { title: React.ReactNode }) => <header>{title}</header>,
 }));

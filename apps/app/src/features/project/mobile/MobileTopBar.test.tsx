@@ -12,6 +12,9 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@/features/chat/ChatThreadHeader", () => ({
   ChatThreadTitle: () => <button type="button">A thread</button>,
 }));
+vi.mock("@/features/chat/ThreadWorkControl", () => ({
+  ThreadWorkControl: ({ work }: { work: Work }) => <span>Work: {work.name}</span>,
+}));
 
 const { MobileTopBar } = await import("./MobileTopBar");
 

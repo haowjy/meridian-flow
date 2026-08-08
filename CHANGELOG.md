@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: chat headers now let writers change an idle chat's Work without
+  leaving it, including archived targets, cache convergence, retry guidance,
+  announcements, mobile bottom-sheet behavior, and direct Undo.
+
 - `apps/app`: Home now manages active and archived Works through the live API,
   and new chats require a Work before creation. The project explorer exposes
   thread-scoped Scratch and Uploads on one flat left rail; Uploads remains

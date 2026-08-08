@@ -9,6 +9,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ThreadWorkControl } from "@/features/chat/ThreadWorkControl";
 
 import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -44,9 +45,7 @@ export function ChatPaneController({
               variant="tab"
             />
             {activeWork ? (
-              <span className="shrink-0 text-meta text-muted-foreground">
-                <Trans>Work: {activeWork.name}</Trans>
-              </span>
+              <ThreadWorkControl projectId={projectId} threadId={threadId} work={activeWork} />
             ) : null}
           </div>
         ) : (
