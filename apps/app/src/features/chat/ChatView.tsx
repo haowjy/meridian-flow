@@ -166,8 +166,8 @@ export function ChatView({
                   primaryControls={[
                     {
                       id: "agent",
-                      priority: 100,
-                      node: threadStarted ? (
+                      priority: 300,
+                      inline: threadStarted ? (
                         <ComposerAgentControl
                           projectId={projectId}
                           mode="readonly"
@@ -181,11 +181,21 @@ export function ChatView({
                           onSelectedSlugChange={setDraftAgentSlug}
                         />
                       ),
+                      overflow: {
+                        ariaLabel: `Agent ${composerAgentSlug}`,
+                        label: "Agent",
+                        value: composerAgentSlug,
+                      },
                     },
                     {
                       id: "write-mode",
-                      priority: 90,
-                      node: <ComposerWriteModeControl projectId={projectId} work={activeWork} />,
+                      priority: 200,
+                      inline: <ComposerWriteModeControl projectId={projectId} work={activeWork} />,
+                      overflow: {
+                        ariaLabel: `Write mode ${activeWork.aiWriteMode}`,
+                        label: "Write mode",
+                        value: activeWork.aiWriteMode === "draft" ? "Draft" : "Auto-apply",
+                      },
                     },
                   ]}
                 />

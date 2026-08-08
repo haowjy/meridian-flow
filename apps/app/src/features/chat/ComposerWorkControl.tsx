@@ -3,9 +3,9 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
+import { ComposerToolbar, type ComposerToolbarControl } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MeasuredComposerToolbar } from "./MeasuredComposerToolbar";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
 import { WorkPickerPanel } from "./WorkPickerPanel";
 
@@ -18,7 +18,7 @@ export function ComposerWorkControl({
   projectId: string;
   threadId: string;
   work: Work;
-  primaryControls: Array<{ id: string; priority: number; node: ReactNode }>;
+  primaryControls: ComposerToolbarControl[];
 }) {
   const controller = useComposerWorkBinding({ projectId, threadId, work });
   const view = controller.state.view;
@@ -76,29 +76,30 @@ export function ComposerWorkControl({
     </span>
   );
   return (
-    <MeasuredComposerToolbar
+    <ComposerToolbar
+      ariaLabel={t`Composer controls`}
       controls={[
-        ...primaryControls.map(({ id, priority, node }) => ({ id, priority, inline: node })),
+        ...primaryControls,
         {
           id: "work",
-          priority: 10,
+          priority: 100,
           inline: direct,
           overflow: {
-            label: <Trans>Work: {work.name}</Trans>,
-            onOpen: controller.openWorks,
+            ariaLabel: t`Change work for this chat, currently ${work.name}`,
+            label: <Trans>Work</Trans>,
+            value: work.name,
+            onOpen: () => {
+              controller.open("overflow");
+              controller.openWorks();
+            },
             panel: picker,
-            panelOpen: surface === "overflow" && view.kind !== "closed" && view.page === "works",
             onBack: controller.openOverflowRoot,
+            size: "picker",
+            busy: controller.busy,
+            canDismiss: controller.canDismiss,
           },
         },
       ]}
-      overflowOpen={surface === "overflow"}
-      onOverflowOpenChange={(open) =>
-        open ? controller.open("overflow") : controller.requestDismiss()
-      }
-      onLayout={controller.setLayout}
-      busy={controller.busy}
-      canDismiss={controller.canDismiss}
     />
   );
 }
