@@ -162,9 +162,11 @@ facet.
   overlap may elevate receiving-writer-specific session marks. Trail evidence
   stays lifecycle-neutral and read-only.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
-  already active for that thread. Production runners hold a cross-process
-  PostgreSQL advisory claim through completion delivery; a crashed process loses
-  its session claim, so startup recovery can safely take over orphaned work.
+  already active or being claimed for that thread. The PostgreSQL adapter also
+  rejects same-process reentry because session advisory locks themselves are
+  reentrant. Production runners hold the cross-process claim through completion
+  delivery; a crashed process loses its session claim, so startup recovery can
+  safely take over orphaned work.
 - **Work context updates preserve prompt identity** — a frozen prompt is never
   rebuilt for Work metadata or lifecycle changes. The refreshed block is a
   durable `<system_update>` user-role turn. Every Work or primary-binding

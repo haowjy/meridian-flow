@@ -181,13 +181,15 @@ export function createTurnRunner(deps: {
       assertConnectionTokenLive(input.connectionToken);
 
       const controller = new AbortController();
-      const claim = await runOwnership.tryAcquire(input.threadId);
-      if (!claim) throw new TurnStartConflictError(input.threadId, "already_running");
       running.set(input.threadId, {
         controller,
-        claim,
       });
+      let claim: ThreadRunClaim | null = null;
       try {
+        claim = await runOwnership.tryAcquire(input.threadId);
+        if (!claim) throw new TurnStartConflictError(input.threadId, "already_running");
+        running.set(input.threadId, { controller, claim });
+
         assertConnectionTokenLive(input.connectionToken);
 
         const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
@@ -265,7 +267,7 @@ export function createTurnRunner(deps: {
         };
       } catch (error) {
         running.delete(input.threadId);
-        await claim.release();
+        await claim?.release();
         throw error;
       }
     },

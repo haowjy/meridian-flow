@@ -344,12 +344,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       } finally {
         try {
           if (prepared.childRegistered) {
-            if (deps.systemUpdateDelivery.flushOwned) {
-              await deps.systemUpdateDelivery.flushOwned(prepared.child.id as ThreadId);
-            } else {
-              await deps.systemUpdateDelivery.flush?.(prepared.child.id as ThreadId);
+            try {
+              if (deps.systemUpdateDelivery.flushOwned) {
+                await deps.systemUpdateDelivery.flushOwned(prepared.child.id as ThreadId);
+              } else {
+                await deps.systemUpdateDelivery.flush?.(prepared.child.id as ThreadId);
+              }
+            } finally {
+              deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
             }
-            deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
           }
         } finally {
           await prepared.runClaim.release();

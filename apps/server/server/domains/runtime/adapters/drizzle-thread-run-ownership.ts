@@ -8,9 +8,25 @@ export function createDrizzleThreadRunOwnership(db: Database): ThreadRunOwnershi
   // One reserved session owns every run lock for this server process. Holding a
   // pool connection per turn would cap live runs at the ordinary query-pool size.
   let connectionPromise: ReturnType<Database["$client"]["reserve"]> | undefined;
-  let activeClaims = 0;
+  const localClaims = new Map<string, symbol>();
   let operationChain = Promise.resolve();
-  const connection = () => (connectionPromise ??= db.$client.reserve());
+  const connection = async () => {
+    if (!connectionPromise) connectionPromise = db.$client.reserve();
+    const pending = connectionPromise;
+    try {
+      return await pending;
+    } catch (cause) {
+      if (connectionPromise === pending) connectionPromise = undefined;
+      throw cause;
+    }
+  };
+  const releaseConnectionIfIdle = (
+    lockConnection: Awaited<ReturnType<Database["$client"]["reserve"]>>,
+  ) => {
+    if (localClaims.size !== 0) return;
+    connectionPromise = undefined;
+    lockConnection.release();
+  };
   const exclusive = <T>(operation: () => Promise<T>): Promise<T> => {
     const result = operationChain.then(operation, operation);
     operationChain = result.then(
@@ -23,6 +39,11 @@ export function createDrizzleThreadRunOwnership(db: Database): ThreadRunOwnershi
   return {
     async tryAcquire(threadId) {
       return exclusive(async () => {
+        // PostgreSQL session advisory locks are reentrant. This registry makes
+        // the adapter's ownership contract exclusive without acting as recovery
+        // authority; process death still releases the database session locks.
+        if (localClaims.has(threadId)) return null;
+
         const lockConnection = await connection();
         const lockKey = `meridian:thread-run:${threadId}`;
         try {
@@ -32,43 +53,32 @@ export function createDrizzleThreadRunOwnership(db: Database): ThreadRunOwnershi
             ) as acquired
           `;
           if (!row?.acquired) {
-            if (activeClaims === 0) {
-              lockConnection.release();
-              connectionPromise = undefined;
-            }
+            releaseConnectionIfIdle(lockConnection);
             return null;
           }
-          activeClaims += 1;
-          let released = false;
+          const claimToken = Symbol(threadId);
+          localClaims.set(threadId, claimToken);
           return {
             async release() {
-              if (released) return;
-              released = true;
               await exclusive(async () => {
-                try {
-                  await lockConnection`
+                // A stale claim must not release a newer claim for the same
+                // thread after its own successful release.
+                if (localClaims.get(threadId) !== claimToken) return;
+                const [unlock] = await lockConnection<{ released: boolean }[]>`
                     select pg_advisory_unlock(
                       hashtextextended(${lockKey}, ${THREAD_RUN_LOCK_SEED})
-                    )
+                    ) as released
                   `;
-                  activeClaims -= 1;
-                  if (activeClaims === 0) {
-                    lockConnection.release();
-                    connectionPromise = undefined;
-                  }
-                } catch (cause) {
-                  lockConnection.release();
-                  connectionPromise = undefined;
-                  activeClaims = 0;
-                  throw cause;
+                if (!unlock?.released) {
+                  throw new Error(`Thread run claim was not held: ${threadId}`);
                 }
+                localClaims.delete(threadId);
+                releaseConnectionIfIdle(lockConnection);
               });
             },
           };
         } catch (cause) {
-          lockConnection.release();
-          connectionPromise = undefined;
-          activeClaims = 0;
+          releaseConnectionIfIdle(lockConnection);
           throw cause;
         }
       });
