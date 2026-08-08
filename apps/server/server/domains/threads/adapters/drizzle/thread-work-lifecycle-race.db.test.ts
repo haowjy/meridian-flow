@@ -32,6 +32,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createInMemoryEventSink } = await import("../../../observability/index.js");
     const { createThreadForProject } = await import("../../../../lib/thread-creation.js");
+    const { rebindThreadWork } = await import("../../domain/rebind-thread-work.js");
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import(
       "../../../collab/adapters/drizzle-branches.js"
@@ -193,6 +194,73 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual([
         { workId: TARGET_WORK_ID, isPrimary: true },
       ]);
+    });
+
+    it("commits binding, sticky preference, and durable context obligation atomically", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+
+      const result = await rebindThreadWork(
+        {
+          threads: threads.threads,
+          threadWorks: threads.threadWorks,
+          works,
+          preferences,
+          contextUpdates: {
+            threadChanged: async (threadId) => {
+              await threads.workContextDeliveries.enqueueThread(threadId);
+            },
+            flush: async () => {},
+            isPending: (threadId) => threads.workContextDeliveries.isPending(threadId),
+          },
+          transaction: threads.transaction,
+        },
+        {
+          threadId: THREAD_ID,
+          targetWorkId: TARGET_WORK_ID,
+          preferenceUserId: USER_ID,
+        },
+      );
+
+      expect(result).toMatchObject({ changed: true, contextUpdate: "pending" });
+      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: TARGET_WORK_ID,
+      });
+      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(TARGET_WORK_ID);
+      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+    });
+
+    it("rolls back binding and sticky preference when durable enqueue fails", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+
+      await expect(
+        rebindThreadWork(
+          {
+            threads: threads.threads,
+            threadWorks: threads.threadWorks,
+            works,
+            preferences,
+            contextUpdates: {
+              threadChanged: async () => {
+                throw new Error("injected durable enqueue failure");
+              },
+              flush: async () => {},
+              isPending: async () => false,
+            },
+            transaction: threads.transaction,
+          },
+          {
+            threadId: THREAD_ID,
+            targetWorkId: TARGET_WORK_ID,
+            preferenceUserId: USER_ID,
+          },
+        ),
+      ).rejects.toThrow("injected durable enqueue failure");
+      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: WORK_ID,
+      });
+      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
     });
 
     it("serializes competing primary add and rebind without reversing Work/thread locks", async () => {

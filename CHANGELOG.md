@@ -17,8 +17,13 @@
 - `apps/server`: projects with multiple active Works now list normally instead
   of failing the Work collection request.
 - `apps/server`: Work create, edit, archive, restore, delete, current selection,
-  thread listing, and conversation move routes are available. Moving a
-  conversation waits until its pending draft is reviewed.
+  and thread listing routes are available.
+- `apps/server`, `packages/contracts`: idle owned conversations can now rebind
+  to another Work through an idempotent writer endpoint and the same canonical
+  command used by the LLM Work tool. Binding, primary-thread preference,
+  receipt, and durable context refresh commit together; busy conversations
+  return a retryable conflict and pending delivery remains a successful,
+  truthful response.
 - `apps/server`: new conversations attach by explicit Work, parent Work, writer
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.

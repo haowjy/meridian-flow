@@ -18,6 +18,14 @@ export {
 } from "./domain/orchestrator-event-projector.js";
 export { projectReadModelEvent } from "./domain/read-model-projector.js";
 export {
+  MissingPrimaryWorkMembershipError,
+  type RebindThreadWorkDeps,
+  type RebindThreadWorkInput,
+  rebindThreadWork,
+  type ThreadWorkContextUpdates,
+  ThreadWorkRebindUnavailableError,
+} from "./domain/rebind-thread-work.js";
+export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";

@@ -484,6 +484,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       async threadChanged(threadId) {
         await systemUpdates?.threadChanged(threadId);
       },
+      async flush(threadId) {
+        await systemUpdates?.flush(threadId);
+      },
+      async isPending(threadId) {
+        return ports.threadRepos.workContextDeliveries.isPending(threadId);
+      },
     },
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,

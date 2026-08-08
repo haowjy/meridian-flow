@@ -4,6 +4,7 @@ export type WorkStatus = "active" | "archived";
 export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
 
 import type { ProjectId, UserId, WorkId } from "../ids.js";
+import type { WorkReceipt } from "./receipts.js";
 
 export interface Work {
   id: WorkId;
@@ -44,6 +45,30 @@ export interface UpdateWorkRequest {
   goal?: string;
   description?: string;
   status?: WorkStatus;
+}
+
+/** Strict body for changing the Work bound to an existing thread. */
+export interface RebindThreadWorkRequest {
+  workId: WorkId;
+}
+
+export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
+
+/** Authoritative result shared by writer and model Work-rebind adapters. */
+export interface RebindThreadWorkResponse {
+  threadId: import("../ids.js").ThreadId;
+  previousWorkId: WorkId;
+  work: Work;
+  changed: boolean;
+  preferenceChanged: boolean;
+  receipt: WorkReceipt;
+  contextUpdate: WorkContextUpdateStatus;
+}
+
+export interface ThreadBusyErrorResponse {
+  code: "thread_busy";
+  message: string;
+  retryable: true;
 }
 
 export * from "./receipts.js";

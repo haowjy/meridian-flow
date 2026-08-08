@@ -136,7 +136,12 @@ describe("wired write tool", () => {
       },
       works,
       preferences: {} as never,
-      workContextUpdates: { projectChanged: async () => {}, threadChanged: async () => {} },
+      workContextUpdates: {
+        projectChanged: async () => {},
+        threadChanged: async () => {},
+        flush: async () => {},
+        isPending: async () => false,
+      },
       drafts: { draftReview: { list: async () => [] } } as never,
       contextPorts: { forProject: () => port, forWork: () => port },
       documentSync: {
@@ -359,7 +364,12 @@ function wiredWriteHandler(input: {
     },
     works: { listByProject: async () => [] } as never,
     preferences: {} as never,
-    workContextUpdates: { projectChanged: async () => {}, threadChanged: async () => {} },
+    workContextUpdates: {
+      projectChanged: async () => {},
+      threadChanged: async () => {},
+      flush: async () => {},
+      isPending: async () => false,
+    },
     drafts: { draftReview: { list: async () => [] } } as never,
     contextPorts: { forProject: () => port, forWork: () => port },
     documentSync: {

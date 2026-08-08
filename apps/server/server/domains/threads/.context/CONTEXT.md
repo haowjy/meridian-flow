@@ -14,6 +14,12 @@ instead of the N:1 `threads.workId` column.
 - **Thread↔Work membership** — `thread_works` join table (one primary per
   thread). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
+- **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
+  changing an existing thread's primary Work. It owns lifecycle validation,
+  the repository rebind transaction, primary-thread sticky preference, the
+  exact binding receipt, idempotent no-op behavior, and the durable context
+  refresh obligation. Model and authenticated writer adapters resolve actor
+  identity and safe entry, then call this command.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
@@ -65,6 +71,7 @@ instead of the N:1 `threads.workId` column.
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships, reads the primary, and rebinds the primary membership through one Work-before-thread critical section. Rebind accepts active or archived same-project Works and preserves exactly one primary. |
+| `rebindThreadWork` | Shared domain command above `rebindPrimary`; commits preference and durable Work-context obligation with the binding, then reports delivered/pending truth after a best-effort post-commit flush. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
