@@ -53,7 +53,10 @@ function Harness({ work }: { work: Work }) {
       {control.inline({
         open: panel?.open ?? false,
         busy: panel?.busy ?? false,
-        requestOpen: () => panel?.onRequestOpen(),
+        requestOpen: () => {
+          panel?.onRequestOpen();
+          return true;
+        },
         requestDismiss: () => panel?.onRequestDismiss(),
       })}
       {panel?.render({ host: "overflow", requestDismiss: panel.onRequestDismiss })}

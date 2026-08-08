@@ -2627,6 +2627,10 @@ msgstr "Suggested text is prefilled; edit it before submitting if needed."
 msgid "Suggested: {0}"
 msgstr "Suggested: {0}"
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "Switch chat, currently {title}"
+msgstr "Switch chat, currently {title}"
+
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens or manage your account."
 msgstr "Switch screens or manage your account."

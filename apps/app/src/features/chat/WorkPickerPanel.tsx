@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { Check, LoaderCircle, Search } from "lucide-react";
-import { type KeyboardEvent, useId } from "react";
+import { type KeyboardEvent, type RefObject, useId } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,12 +43,14 @@ export function WorkPickerPanel({
   query,
   onQueryChange,
   onChoose,
+  searchRef,
 }: {
   catalog: WorkCatalogView;
   operation: WorkPickerOperation;
   query: string;
   onQueryChange: (query: string) => void;
   onChoose: (work: Work) => void;
+  searchRef?: RefObject<HTMLInputElement | null>;
 }) {
   const searchId = useId();
   if (catalog.status === "loading")
@@ -114,6 +116,7 @@ export function WorkPickerPanel({
           aria-hidden
         />
         <Input
+          ref={searchRef}
           id={searchId}
           type="search"
           value={query}

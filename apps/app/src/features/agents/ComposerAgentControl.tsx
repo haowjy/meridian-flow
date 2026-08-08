@@ -20,11 +20,11 @@ export function useComposerAgentToolbarControl(
   const [open, setOpen] = useState(false);
   const slug = props.selectedSlug || DEFAULT_AGENT_SLUG;
   const agent = resolveAgentFromCatalog(slug, catalog.agents);
-  const inline = () => (
+  const inline = ({ requestOpen }: { requestOpen(): void }) => (
     <AgentSelector
       agent={agent}
       disabled={props.mode === "readonly"}
-      onClick={() => setOpen(true)}
+      onClick={requestOpen}
       tooltip={
         props.mode === "readonly"
           ? t`This chat stays on ${agent.name} to keep costs predictable. Swapping agents mid-chat is coming.`
@@ -69,10 +69,4 @@ export function useComposerAgentToolbarControl(
       },
     },
   };
-}
-
-/** Compatibility shell for callers not yet composing a toolbar descriptor. */
-export function ComposerAgentControl(props: ComposerAgentControlProps) {
-  const control = useComposerAgentToolbarControl(props);
-  return control.inline({ open: false, busy: false, requestOpen() {}, requestDismiss() {} });
 }

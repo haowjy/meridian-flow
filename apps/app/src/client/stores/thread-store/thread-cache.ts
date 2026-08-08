@@ -49,7 +49,6 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
       // The store writes its turn state synchronously first; the cache catches
       // projector-only fields (final usage/cost metadata) on the next tick.
       queueMicrotask(() => {
-        void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
         if (projectId) {
           invalidateThreadProjectionDependencies(client, {
             threadId,
@@ -58,6 +57,8 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
             workIds: "all",
             contextTrees: "all",
           });
+        } else {
+          void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
         }
       });
     },

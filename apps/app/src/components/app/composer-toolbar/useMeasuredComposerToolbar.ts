@@ -11,7 +11,7 @@ const same = (a: ComposerToolbarLayout, b: ComposerToolbarLayout) =>
   a.overflowIds.join("\0") === b.overflowIds.join("\0");
 
 export function useMeasuredComposerToolbar(controls: readonly ComposerToolbarControl[]) {
-  const root = useRef<HTMLDivElement | null>(null);
+  const root = useRef<HTMLFieldSetElement | null>(null);
   const probe = useRef<HTMLButtonElement | null>(null);
   const nodes = useRef(new Map<string, HTMLElement>());
   const [layout, setLayout] = useState<ComposerToolbarLayout>(() => ({

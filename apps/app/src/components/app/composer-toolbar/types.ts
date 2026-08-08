@@ -4,7 +4,7 @@ export type ComposerControlId = string;
 export type ComposerToolbarInlineContext = {
   open: boolean;
   busy: boolean;
-  requestOpen(): void;
+  requestOpen(): boolean;
   requestDismiss(): void;
 };
 export type ComposerToolbarPanelContext = { host: "inline" | "overflow"; requestDismiss(): void };

@@ -118,9 +118,11 @@ export function ThreadSwitcherPopover({
         <PopoverTrigger asChild>
           <button
             type="button"
+            aria-label={t`Switch chat, currently ${title}`}
             aria-expanded={open}
+            aria-haspopup="dialog"
             className={cn(
-              "focus-ring flex min-w-0 max-w-full flex-1 items-center gap-1.5 text-left",
+              "focus-ring flex w-fit min-w-0 max-w-full items-center gap-1.5 text-left",
               variant === "tab"
                 ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
                   // chip's base (and its flares) sit on the band's bottom edge

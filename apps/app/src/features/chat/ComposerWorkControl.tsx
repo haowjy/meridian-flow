@@ -2,6 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
+import { useRef } from "react";
 import type { ComposerToolbarControl } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
@@ -17,6 +18,7 @@ export function useComposerWorkToolbarControl({
   work: Work;
 }): ComposerToolbarControl {
   const controller = useComposerWorkBinding({ projectId, threadId, work });
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const query = controller.state.view.kind === "closed" ? "" : controller.state.view.query;
   const panel = (
     <WorkPickerPanel
@@ -25,6 +27,7 @@ export function useComposerWorkToolbarControl({
       query={query}
       onQueryChange={controller.changeQuery}
       onChoose={controller.choose}
+      searchRef={searchRef}
     />
   );
   return {
@@ -38,6 +41,7 @@ export function useComposerWorkToolbarControl({
           type="button"
           aria-label={t`Change work for this chat, currently ${work.name}`}
           aria-busy={controller.busy}
+          disabled={controller.busy}
           className="max-w-44 truncate"
           onClick={requestOpen}
         >
@@ -70,6 +74,7 @@ export function useComposerWorkToolbarControl({
         canDismiss: controller.canDismiss,
         ariaLabel: t`Change work for this chat`,
         size: "picker",
+        initialFocusRef: searchRef,
         onRequestOpen: controller.open,
         onRequestDismiss: controller.requestDismiss,
         render: () => panel,

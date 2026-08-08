@@ -110,13 +110,16 @@ export function useComposerWriteModeToolbarControl({
   return {
     id: "write-mode",
     priority: 200,
-    inline: () => (
+    inline: ({ requestOpen }) => (
       <InlineWriteMode
         value={value}
         disabled={!loaded || update.isPending}
         pending={loaded ? groups.length : null}
         onDraft={chooseDraft}
-        onAuto={() => void requestAuto(false)}
+        onAuto={() => {
+          if (!requestOpen()) return;
+          void requestAuto(false);
+        }}
       />
     ),
     overflow: {
@@ -338,9 +341,4 @@ function Confirmation({
       </div>
     </div>
   );
-}
-
-export function ComposerWriteModeControl(props: { projectId: string; work: Work }) {
-  const control = useComposerWriteModeToolbarControl(props);
-  return control.inline({ open: false, busy: false, requestOpen() {}, requestDismiss() {} });
 }

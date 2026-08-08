@@ -76,10 +76,12 @@ export function reduceComposerWorkBinding(
 ): ComposerWorkBindingState {
   switch (event.type) {
     case "panel.opened":
-      return {
-        ...state,
-        view: { kind: "browsing", query: "" },
-      };
+      return state.view.kind === "changing"
+        ? state
+        : {
+            ...state,
+            view: { kind: "browsing", query: "" },
+          };
     case "panel.dismissed":
       return state.view.kind === "changing" ? state : { ...state, view: { kind: "closed" } };
     case "query.changed":

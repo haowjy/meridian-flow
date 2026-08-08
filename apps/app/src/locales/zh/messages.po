@@ -2627,6 +2627,10 @@ msgstr ""
 msgid "Suggested: {0}"
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "Switch chat, currently {title}"
+msgstr ""
+
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens or manage your account."
 msgstr ""

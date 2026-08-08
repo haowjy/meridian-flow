@@ -30,16 +30,14 @@ export function ChatPaneController({
     <PaneHeader
       title={
         threadId ? (
-          <div className="flex min-w-0 items-center gap-2">
-            <ChatThreadTitle
-              projectId={projectId}
-              threadId={threadId}
-              onSelectThread={onSelectThread}
-              // The centered chat body is page-sheet: the switcher wears the
-              // active-tab chip so the page continues up into the band.
-              variant="tab"
-            />
-          </div>
+          <ChatThreadTitle
+            projectId={projectId}
+            threadId={threadId}
+            onSelectThread={onSelectThread}
+            // The centered chat body is page-sheet: the switcher wears the
+            // active-tab chip so the page continues up into the band.
+            variant="tab"
+          />
         ) : (
           <PaneTitle>
             <Trans>Chat</Trans>

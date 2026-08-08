@@ -284,7 +284,7 @@
     var(--composer-overflow-page-size, 14rem),
     var(--radix-popover-content-available-width, 100vw),
     calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 1rem)
-  );
+  ) !important;
   max-height: min(
     var(--radix-popover-content-available-height, 100svh),
     calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem)

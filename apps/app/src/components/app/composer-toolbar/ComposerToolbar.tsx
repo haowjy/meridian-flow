@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,13 @@ export function ComposerToolbar({
   const { root, probe, controlRef, layout } = useMeasuredComposerToolbar(controls);
   const [rootOpen, setRootOpen] = useState(false);
   const [suppressedPanelId, setSuppressedPanelId] = useState<string | null>(null);
-  const drillingIn = useRef(false);
+  const migrating = useRef(false);
+  const previousOpenId = useRef<string | null>(null);
+  const previousOverflowIds = useRef<readonly string[]>([]);
+  const pendingRootFocus = useRef<string | null>(null);
+  const inlineNodes = useRef(new Map<string, HTMLElement>());
+  const rootItems = useRef(new Map<string, HTMLButtonElement>());
+  const overflowTrigger = useRef<HTMLButtonElement | null>(null);
   const overflow = controls.filter(({ id }) => layout.overflowIds.includes(id));
   const openControl = controls.find(
     (control) => control.overflow.kind === "panel" && control.overflow.panel.open,
@@ -36,25 +42,66 @@ export function ComposerToolbar({
     if (!overflow.length) setRootOpen(false);
   }, [activePanel, openControl, overflow.length]);
 
+  const focusVisibleTrigger = (id: string) => {
+    if (layout.overflowIds.includes(id)) overflowTrigger.current?.focus();
+    else
+      inlineNodes.current
+        .get(id)
+        ?.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled)")
+        ?.focus();
+  };
+
+  useLayoutEffect(() => {
+    const previousId = previousOpenId.current;
+    const previousOverflow = previousOverflowIds.current;
+    const currentId = openControl?.id ?? null;
+    if (currentId && previousId === currentId) {
+      const moved = previousOverflow.includes(currentId) !== layout.overflowIds.includes(currentId);
+      if (moved) {
+        migrating.current = true;
+        queueMicrotask(() => {
+          openControl?.overflow.kind === "panel" &&
+            openControl.overflow.panel.initialFocusRef?.current?.focus();
+          migrating.current = false;
+        });
+      }
+    } else if (previousId && !currentId && !pendingRootFocus.current) {
+      setRootOpen(false);
+      queueMicrotask(() => focusVisibleTrigger(previousId));
+    }
+    if (pendingRootFocus.current && !activePanel) {
+      const id = pendingRootFocus.current;
+      pendingRootFocus.current = null;
+      queueMicrotask(() => rootItems.current.get(id)?.focus());
+    }
+    previousOpenId.current = currentId;
+    previousOverflowIds.current = layout.overflowIds;
+  }, [activePanel, layout.overflowIds, openControl]);
+
+  useLayoutEffect(() => {
+    activePanel?.initialFocusRef?.current?.focus();
+  }, [activePanel]);
+
   const requestPanelOpen = (control: ComposerToolbarControl) => {
-    if (control.overflow.kind !== "panel") return;
+    if (control.overflow.kind !== "panel") return false;
+    if (openControl?.overflow.kind === "panel" && !openControl.overflow.panel.canDismiss)
+      return false;
     setSuppressedPanelId(null);
     if (openControl && openControl.id !== control.id && openControl.overflow.kind === "panel") {
-      if (!openControl.overflow.panel.canDismiss) return;
+      if (!openControl.overflow.panel.canDismiss) return false;
       openControl.overflow.panel.onRequestDismiss();
     }
     if (layout.overflowIds.includes(control.id)) {
-      drillingIn.current = true;
       setRootOpen(true);
     }
     control.overflow.panel.onRequestOpen();
+    return true;
   };
   return (
-    <div
+    <fieldset
       ref={root}
-      role="toolbar"
       aria-label={ariaLabel}
-      className="relative flex min-w-0 items-center gap-2 overflow-clip"
+      className="relative flex min-w-0 items-center gap-2 overflow-clip border-0"
     >
       {controls.map((control) => {
         const hidden = layout.overflowIds.includes(control.id);
@@ -71,7 +118,11 @@ export function ComposerToolbar({
           >
             <PopoverAnchor asChild>
               <span
-                ref={controlRef(control.id)}
+                ref={(node) => {
+                  controlRef(control.id)(node);
+                  if (node) inlineNodes.current.set(control.id, node);
+                  else inlineNodes.current.delete(control.id);
+                }}
                 inert={hidden ? true : undefined}
                 aria-hidden={hidden || undefined}
                 className={cn(
@@ -87,7 +138,14 @@ export function ComposerToolbar({
                 })}
               </span>
             </PopoverAnchor>
-            {panel ? <ToolbarContent panel={panel} host="inline" /> : null}
+            {panel ? (
+              <ToolbarContent
+                panel={panel}
+                host="inline"
+                onReturnFocus={() => focusVisibleTrigger(control.id)}
+                suppressReturnFocus={() => migrating.current}
+              />
+            ) : null}
           </Popover>
         );
       })}
@@ -95,10 +153,12 @@ export function ComposerToolbar({
         <Popover
           open={rootOpen}
           onOpenChange={(next) => {
-            if (!next && drillingIn.current) {
-              drillingIn.current = false;
+            if (
+              next &&
+              openControl?.overflow.kind === "panel" &&
+              !openControl.overflow.panel.canDismiss
+            )
               return;
-            }
             if (!next && activePanel && !activePanel.canDismiss) return;
             setRootOpen(next);
             if (!next && activePanel) activePanel.onRequestDismiss();
@@ -106,6 +166,7 @@ export function ComposerToolbar({
         >
           <PopoverTrigger asChild>
             <Button
+              ref={overflowTrigger}
               variant="quiet"
               size="icon-lg"
               type="button"
@@ -121,7 +182,7 @@ export function ComposerToolbar({
             aria-busy={activePanel?.busy}
             data-page={activePanel ? "panel" : "root"}
             className={cn(
-              "composer-overflow-surface flex flex-col overflow-hidden",
+              "composer-overflow-surface w-auto flex flex-col overflow-hidden",
               activePanel?.size === "picker"
                 ? "[--composer-overflow-page-size:20rem] p-3"
                 : "[--composer-overflow-page-size:14rem] p-1",
@@ -133,7 +194,13 @@ export function ComposerToolbar({
               if (activePanel && !activePanel.canDismiss) event.preventDefault();
             }}
             onCloseAutoFocus={(event) => {
-              if (activePanel && !activePanel.canDismiss) event.preventDefault();
+              if (migrating.current || (activePanel && !activePanel.canDismiss))
+                event.preventDefault();
+            }}
+            onOpenAutoFocus={(event) => {
+              if (!activePanel?.initialFocusRef?.current) return;
+              event.preventDefault();
+              activePanel.initialFocusRef.current.focus();
             }}
           >
             {activePanel && overflowPanel ? (
@@ -144,7 +211,7 @@ export function ComposerToolbar({
                   disabled={activePanel.busy}
                   onClick={() => {
                     if (!activePanel.canDismiss) return;
-                    drillingIn.current = true;
+                    pendingRootFocus.current = overflowPanel.id;
                     setRootOpen(true);
                     setSuppressedPanelId(overflowPanel.id);
                     activePanel.onRequestDismiss();
@@ -164,27 +231,41 @@ export function ComposerToolbar({
                   const item = control.overflow.item;
                   return (
                     <li key={control.id}>
-                      <Button
-                        variant="ghost"
-                        className="min-h-11 w-full justify-start gap-2 px-2"
-                        aria-label={item.ariaLabel}
-                        disabled={
-                          openControl?.overflow.kind === "panel" &&
-                          !openControl.overflow.panel.canDismiss
-                        }
-                        onClick={() => requestPanelOpen(control)}
-                      >
-                        {item.icon}
-                        <span className="shrink-0">{item.label}</span>
-                        {item.value ? (
-                          <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-                            {item.value}
-                          </span>
-                        ) : null}
-                        {control.overflow.kind === "panel" ? (
+                      {control.overflow.kind === "status" ? (
+                        <div className="flex min-h-11 w-full items-center gap-2 px-2">
+                          {item.icon}
+                          <span className="shrink-0">{item.label}</span>
+                          {item.value ? (
+                            <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+                              {item.value}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <Button
+                          ref={(node) => {
+                            if (node) rootItems.current.set(control.id, node);
+                            else rootItems.current.delete(control.id);
+                          }}
+                          variant="ghost"
+                          className="min-h-11 w-full justify-start gap-2 px-2"
+                          aria-label={item.ariaLabel}
+                          disabled={
+                            openControl?.overflow.kind === "panel" &&
+                            !openControl.overflow.panel.canDismiss
+                          }
+                          onClick={() => requestPanelOpen(control)}
+                        >
+                          {item.icon}
+                          <span className="shrink-0">{item.label}</span>
+                          {item.value ? (
+                            <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+                              {item.value}
+                            </span>
+                          ) : null}
                           <ChevronRight className="size-4 shrink-0" aria-hidden />
-                        ) : null}
-                      </Button>
+                        </Button>
+                      )}
                     </li>
                   );
                 })}
@@ -205,16 +286,20 @@ export function ComposerToolbar({
       >
         <Ellipsis className="size-4" />
       </Button>
-    </div>
+    </fieldset>
   );
 }
 
 function ToolbarContent({
   panel,
   host,
+  onReturnFocus,
+  suppressReturnFocus,
 }: {
   panel: Extract<ComposerToolbarControl["overflow"], { kind: "panel" }>["panel"];
   host: "inline" | "overflow";
+  onReturnFocus(): void;
+  suppressReturnFocus(): boolean;
 }) {
   return (
     <PopoverContent
@@ -223,7 +308,7 @@ function ToolbarContent({
       aria-label={panel.ariaLabel}
       aria-busy={panel.busy}
       className={cn(
-        "composer-overflow-surface flex flex-col overflow-hidden p-3",
+        "composer-overflow-surface w-auto flex flex-col overflow-hidden p-3",
         panel.size === "picker"
           ? "[--composer-overflow-page-size:20rem]"
           : "[--composer-overflow-page-size:14rem]",
@@ -235,7 +320,13 @@ function ToolbarContent({
         if (!panel.canDismiss) event.preventDefault();
       }}
       onCloseAutoFocus={(event) => {
-        if (panel.open) event.preventDefault();
+        event.preventDefault();
+        if (!panel.open && !suppressReturnFocus()) onReturnFocus();
+      }}
+      onOpenAutoFocus={(event) => {
+        if (!panel.initialFocusRef?.current) return;
+        event.preventDefault();
+        panel.initialFocusRef.current.focus();
       }}
     >
       {panel.render({ host, requestDismiss: panel.onRequestDismiss })}
