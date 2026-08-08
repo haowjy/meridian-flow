@@ -19,23 +19,14 @@ export function useComposerWorkToolbarControl({
 }): ComposerToolbarControl {
   const controller = useComposerWorkBinding({ projectId, threadId, work });
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const query = controller.state.view.kind === "closed" ? "" : controller.state.view.query;
-  const panel = (
-    <WorkPickerPanel
-      catalog={controller.catalog}
-      operation={controller.operation}
-      query={query}
-      onQueryChange={controller.changeQuery}
-      onChoose={controller.choose}
-      searchRef={searchRef}
-    />
-  );
+  const query = controller.state.view.query;
   return {
     id: "work",
     priority: 100,
-    inline: ({ requestOpen }) => (
+    inline: ({ activate, triggerRef }) => (
       <span className="flex items-center">
         <Button
+          ref={triggerRef}
           variant="quiet"
           size="meta"
           type="button"
@@ -43,7 +34,7 @@ export function useComposerWorkToolbarControl({
           aria-busy={controller.busy}
           disabled={controller.busy}
           className="max-w-44 truncate"
-          onClick={requestOpen}
+          onClick={activate}
         >
           <Trans>Work: {work.name}</Trans>
         </Button>
@@ -69,15 +60,22 @@ export function useComposerWorkToolbarControl({
         value: work.name,
       },
       panel: {
-        open: controller.state.view.kind !== "closed",
-        busy: controller.busy,
-        canDismiss: controller.canDismiss,
         ariaLabel: t`Change work for this chat`,
         size: "picker",
         initialFocusRef: searchRef,
-        onRequestOpen: controller.open,
-        onRequestDismiss: controller.requestDismiss,
-        render: () => panel,
+        render: ({ beginBlocking }) => (
+          <WorkPickerPanel
+            catalog={controller.catalog}
+            operation={controller.operation}
+            query={query}
+            onQueryChange={controller.changeQuery}
+            onChoose={(target) => {
+              const lock = beginBlocking();
+              if (lock.kind === "started") void controller.choose(target).then(lock.settle);
+            }}
+            searchRef={searchRef}
+          />
+        ),
       },
     },
   };

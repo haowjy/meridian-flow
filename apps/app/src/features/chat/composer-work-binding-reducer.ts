@@ -17,7 +17,6 @@ export type WorkBindingRequest = {
   observedProjection: "none" | "target" | "other";
 };
 export type WorkBindingView =
-  | { kind: "closed" }
   | { kind: "browsing"; query: string }
   | {
       kind: "changing";
@@ -41,8 +40,6 @@ export type ComposerWorkBindingState = {
   effects: ComposerWorkBindingEffect[];
 };
 export type ComposerWorkBindingEvent =
-  | { type: "panel.opened" }
-  | { type: "panel.dismissed" }
   | { type: "query.changed"; query: string }
   | { type: "change.started"; request: WorkBindingRequest; message: string }
   | { type: "change.committed"; requestId: string; commit: NormalizedCommit; message: string }
@@ -56,7 +53,7 @@ export const initialComposerWorkBindingState = (work: Work): ComposerWorkBinding
   observed: { id: work.id, name: work.name },
   expectedLocalWorkId: null,
   undo: null,
-  view: { kind: "closed" },
+  view: { kind: "browsing", query: "" },
   effects: [],
 });
 const effect = (
@@ -75,26 +72,15 @@ export function reduceComposerWorkBinding(
   event: ComposerWorkBindingEvent,
 ): ComposerWorkBindingState {
   switch (event.type) {
-    case "panel.opened":
-      return state.view.kind === "changing"
-        ? state
-        : {
-            ...state,
-            view: { kind: "browsing", query: "" },
-          };
-    case "panel.dismissed":
-      return state.view.kind === "changing" ? state : { ...state, view: { kind: "closed" } };
     case "query.changed":
-      return state.view.kind === "closed"
-        ? state
-        : { ...state, view: { ...state.view, query: event.query } };
+      return { ...state, view: { ...state.view, query: event.query } };
     case "change.started":
       return {
         ...state,
         undo: null,
         view: {
           kind: "changing",
-          query: state.view.kind === "closed" ? "" : state.view.query,
+          query: state.view.query,
           request: event.request,
         },
         effects: [
@@ -115,7 +101,7 @@ export function reduceComposerWorkBinding(
           event.commit.undoWorkId
             ? { workId: event.commit.undoWorkId, resultWorkId: event.commit.work.id }
             : null,
-        view: { kind: "closed" },
+        view: { kind: "browsing", query: "" },
         effects: event.commit.changed
           ? [...state.effects, effect(`${event.requestId}:committed`, "announce", event.message)]
           : state.effects,
@@ -149,7 +135,7 @@ export function reduceComposerWorkBinding(
         observed: { id: event.work.id, name: event.work.name },
         expectedLocalWorkId: null,
         undo: null,
-        view: { kind: "closed" },
+        view: { kind: "browsing", query: "" },
         effects: [
           ...state.effects,
           effect(`${event.requestId}:superseded`, "announce", event.message),
@@ -183,7 +169,7 @@ export function reduceComposerWorkBinding(
         observed: { id: event.work.id, name: event.work.name },
         expectedLocalWorkId: null,
         undo: null,
-        view: { kind: "closed" },
+        view: { kind: "browsing", query: "" },
         effects: [...state.effects, effect(`observed:${event.work.id}`, "announce", event.message)],
       };
     }

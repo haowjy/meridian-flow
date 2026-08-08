@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import {
   type ComposerToolbarLayout,
   resolveComposerToolbarLayout,
@@ -10,15 +10,14 @@ const same = (a: ComposerToolbarLayout, b: ComposerToolbarLayout) =>
   a.inlineIds.join("\0") === b.inlineIds.join("\0") &&
   a.overflowIds.join("\0") === b.overflowIds.join("\0");
 
-export function useMeasuredComposerToolbar(controls: readonly ComposerToolbarControl[]) {
+export function useMeasuredComposerToolbar(
+  controls: readonly ComposerToolbarControl[],
+  onLayout: (layout: ComposerToolbarLayout) => void,
+) {
   const root = useRef<HTMLFieldSetElement | null>(null);
   const probe = useRef<HTMLButtonElement | null>(null);
   const nodes = useRef(new Map<string, HTMLElement>());
-  const [layout, setLayout] = useState<ComposerToolbarLayout>(() => ({
-    inlineIds: [],
-    overflowIds: controls.map(({ id }) => id),
-    constrained: false,
-  }));
+  const last = useRef<ComposerToolbarLayout | null>(null);
   const measure = useCallback(() => {
     if (!root.current || !probe.current || root.current.clientWidth <= 0) return;
     const gap = Number.parseFloat(getComputedStyle(root.current).columnGap) || 0;
@@ -31,8 +30,11 @@ export function useMeasuredComposerToolbar(controls: readonly ComposerToolbarCon
       overflowTrigger: probe.current.getBoundingClientRect().width,
       controlWidths,
     });
-    setLayout((current) => (same(current, next) ? current : next));
-  }, [controls]);
+    if (!last.current || !same(last.current, next)) {
+      last.current = next;
+      onLayout(next);
+    }
+  }, [controls, onLayout]);
   useLayoutEffect(() => {
     measure();
     const observer = new ResizeObserver(measure);
@@ -45,5 +47,5 @@ export function useMeasuredComposerToolbar(controls: readonly ComposerToolbarCon
     if (node) nodes.current.set(id, node);
     else nodes.current.delete(id);
   };
-  return { root, probe, controlRef, layout };
+  return { root, probe, controlRef };
 }

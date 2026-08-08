@@ -5,7 +5,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectAgentSummary } from "@meridian/contracts/agents";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +38,8 @@ export function AgentPickerPanel({
   status,
   selectedSlug,
   onSelect,
-}: Omit<AgentPickerProps, "trigger">) {
+  initialFocusRef,
+}: Omit<AgentPickerProps, "trigger"> & { initialFocusRef?: RefObject<HTMLElement | null> }) {
   const agents = status.agents ?? [];
   const installed = agents.filter((agent) => agent.source === "package" || agent.source === "user");
   const builtins = agents.filter((agent) => agent.source === "builtin");
@@ -63,6 +64,7 @@ export function AgentPickerPanel({
               agents={installed}
               selectedSlug={selectedSlug}
               onSelect={onSelect}
+              initialFocusRef={initialFocusRef}
             />
           ) : null}
           {builtins.length > 0 ? (
@@ -71,6 +73,7 @@ export function AgentPickerPanel({
               agents={builtins}
               selectedSlug={selectedSlug}
               onSelect={onSelect}
+              initialFocusRef={installed.length ? undefined : initialFocusRef}
             />
           ) : null}
         </>
@@ -84,11 +87,13 @@ function AgentGroup({
   agents,
   selectedSlug,
   onSelect,
+  initialFocusRef,
 }: {
   title: string;
   agents: ProjectAgentSummary[];
   selectedSlug: string;
   onSelect: (slug: string) => void;
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }) {
   return (
     <section className="py-1">
@@ -101,6 +106,12 @@ function AgentGroup({
           return (
             <li key={agent.slug}>
               <button
+                ref={
+                  agent.slug === selectedSlug ||
+                  (!agents.some((a) => a.slug === selectedSlug) && agent === agents[0])
+                    ? (initialFocusRef as RefObject<HTMLButtonElement>)
+                    : undefined
+                }
                 type="button"
                 onClick={() => onSelect(agent.slug)}
                 className={cn(

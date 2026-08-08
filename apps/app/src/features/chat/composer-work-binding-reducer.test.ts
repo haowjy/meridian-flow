@@ -18,26 +18,12 @@ const request = (target = work("b"), intent: "change" | "undo" = "change"): Work
 });
 
 describe("composer Work binding reducer", () => {
-  it("contains dismissal while changing", () => {
-    let state = initialComposerWorkBindingState(work("a"));
-    state = reduceComposerWorkBinding(state, { type: "panel.opened" });
-    state = reduceComposerWorkBinding(state, {
-      type: "change.started",
-      request: request(),
-      message: "pending",
-    });
-    expect(reduceComposerWorkBinding(state, { type: "panel.dismissed" })).toBe(state);
-    expect(reduceComposerWorkBinding(state, { type: "panel.opened" })).toBe(state);
-  });
-
   it("consumes exactly one terminal outcome after ignored reopen and toggle events", () => {
     let state = reduceComposerWorkBinding(initialComposerWorkBindingState(work("a")), {
       type: "change.started",
       request: request(),
       message: "pending",
     });
-    state = reduceComposerWorkBinding(state, { type: "panel.opened" });
-    state = reduceComposerWorkBinding(state, { type: "panel.dismissed" });
     state = reduceComposerWorkBinding(state, {
       type: "change.committed",
       requestId: "request-1",
@@ -81,7 +67,7 @@ describe("composer Work binding reducer", () => {
       },
     });
     expect(state).toMatchObject({
-      view: { kind: "closed" },
+      view: { kind: "browsing" },
       expectedLocalWorkId: "b",
       undo: { workId: "a", resultWorkId: "b" },
     });

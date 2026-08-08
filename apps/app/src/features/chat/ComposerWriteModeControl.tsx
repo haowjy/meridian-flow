@@ -3,10 +3,11 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, type RefObject, useId, useRef, useState } from "react";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
 import type { ComposerToolbarControl } from "@/components/app/composer-toolbar";
+import type { ComposerToolbarPanelContext } from "@/components/app/composer-toolbar/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { activeDockedDraftGroups } from "./docked-drafts";
@@ -30,16 +31,15 @@ export function useComposerWriteModeToolbarControl({
       )
       .at(0) ?? null;
   const firstDraft = firstGroup?.drafts[0] ?? null;
-  const [open, setOpen] = useState(false);
+  const initialFocusRef = useRef<HTMLElement | null>(null);
   const [view, setView] = useState<"choices" | "confirmation">("choices");
   const [applying, setApplying] = useState(false);
   const [failed, setFailed] = useState(false);
   const [serverCount, setServerCount] = useState<number | null>(null);
   const loaded = drafts.groups !== null;
-  const requestAuto = async (confirmed: boolean) => {
+  const requestAuto = async (confirmed: boolean, settle: (outcome: "close" | "stay") => void) => {
     if (applying) return;
     if (!confirmed && work.aiWriteMode === "draft" && groups.length > 0) {
-      setOpen(true);
       setView("confirmation");
       setServerCount(null);
     }
@@ -51,25 +51,25 @@ export function useComposerWriteModeToolbarControl({
       )
       .catch(() => null);
     setApplying(false);
-    if (result?.status === "updated") setOpen(false);
+    if (result?.status === "updated") settle("close");
     else if (result?.status === "confirmation_required") {
       setServerCount(result.pendingChangeCount);
-      setOpen(true);
       setView("confirmation");
+      settle("stay");
       if (confirmed) setFailed(true);
     } else {
-      setOpen(true);
       setView("confirmation");
       setFailed(true);
+      settle("stay");
     }
   };
-  const chooseDraft = () => {
+  const chooseDraft = (terminalClose: () => void) => {
     update.mutate("draft");
-    setOpen(false);
+    terminalClose();
   };
-  const review = () => {
+  const review = (terminalClose: () => void) => {
     if (!firstGroup || !firstDraft || applying) return;
-    setOpen(false);
+    terminalClose();
     openAiDraft(
       {
         documentId: firstGroup.documentId,
@@ -80,45 +80,55 @@ export function useComposerWriteModeToolbarControl({
       firstDraft.draftId,
     );
   };
-  const close = () => {
+  const close = (terminalClose: () => void) => {
     if (applying) return;
-    setOpen(false);
+    terminalClose();
     setView("choices");
     setFailed(false);
   };
   const value = work.aiWriteMode;
-  const panelBody =
+  const panelBody = (context: ComposerToolbarPanelContext) =>
     view === "confirmation" ? (
       <Confirmation
         failed={failed}
         count={serverCount}
         applying={applying}
         reviewAvailable={loaded ? firstDraft !== null : null}
-        onCancel={close}
-        onReview={review}
-        onConfirm={() => void requestAuto(true)}
+        onCancel={() => close(context.terminalClose)}
+        onReview={() => review(context.terminalClose)}
+        onConfirm={() => {
+          const lock = context.beginBlocking();
+          if (lock.kind === "started") void requestAuto(true, lock.settle);
+        }}
       />
     ) : (
       <WriteModeChoices
         value={value}
         disabled={!loaded || update.isPending}
         pending={loaded ? groups.length : null}
-        onDraft={chooseDraft}
-        onAuto={() => void requestAuto(false)}
+        initialFocusRef={initialFocusRef}
+        onDraft={() => chooseDraft(context.terminalClose)}
+        onAuto={() => {
+          const lock = context.beginBlocking();
+          if (lock.kind === "started") void requestAuto(false, lock.settle);
+        }}
       />
     );
   return {
     id: "write-mode",
     priority: 200,
-    inline: ({ requestOpen }) => (
+    inline: ({ triggerRef, beginBlocking }) => (
       <InlineWriteMode
+        triggerRef={triggerRef}
         value={value}
         disabled={!loaded || update.isPending}
         pending={loaded ? groups.length : null}
-        onDraft={chooseDraft}
+        onDraft={() => {
+          update.mutate("draft");
+        }}
         onAuto={() => {
-          if (!requestOpen()) return;
-          void requestAuto(false);
+          const lock = beginBlocking();
+          if (lock.kind === "started") void requestAuto(false, lock.settle);
         }}
       />
     ),
@@ -130,29 +140,24 @@ export function useComposerWriteModeToolbarControl({
         value: value === "draft" ? <Trans>Draft</Trans> : <Trans>Auto-apply</Trans>,
       },
       panel: {
-        open,
-        busy: applying,
-        canDismiss: !applying,
         ariaLabel: t`AI write mode`,
         size: "compact",
-        onRequestOpen: () => {
-          setView("choices");
-          setOpen(true);
-        },
-        onRequestDismiss: close,
-        render: () => panelBody,
+        initialFocusRef,
+        render: panelBody,
       },
     },
   };
 }
 
 function InlineWriteMode({
+  triggerRef,
   value,
   disabled,
   pending,
   onDraft,
   onAuto,
 }: {
+  triggerRef(node: HTMLElement | null): void;
   value: AiWriteMode;
   disabled: boolean;
   pending: number | null;
@@ -167,6 +172,7 @@ function InlineWriteMode({
       </legend>
       <div className="flex items-center rounded-lg bg-foreground/6 p-0.5">
         <ModeOption
+          inputRef={value === "draft" ? triggerRef : undefined}
           name={name}
           value="draft"
           selected={value === "draft"}
@@ -181,6 +187,7 @@ function InlineWriteMode({
           ) : null}
         </ModeOption>
         <ModeOption
+          inputRef={value === "direct" ? triggerRef : undefined}
           name={name}
           value="direct"
           selected={value === "direct"}
@@ -194,6 +201,7 @@ function InlineWriteMode({
   );
 }
 function ModeOption({
+  inputRef,
   name,
   value,
   selected,
@@ -201,6 +209,7 @@ function ModeOption({
   onSelect,
   children,
 }: {
+  inputRef?: (node: HTMLElement | null) => void;
   name: string;
   value: AiWriteMode;
   selected: boolean;
@@ -216,6 +225,7 @@ function ModeOption({
       )}
     >
       <input
+        ref={inputRef}
         className="visually-hidden"
         type="radio"
         name={name}
@@ -237,12 +247,14 @@ function ModeOption({
   );
 }
 function WriteModeChoices({
+  initialFocusRef,
   value,
   disabled,
   pending,
   onDraft,
   onAuto,
 }: {
+  initialFocusRef: RefObject<HTMLElement | null>;
   value: AiWriteMode;
   disabled: boolean;
   pending: number | null;
@@ -252,6 +264,7 @@ function WriteModeChoices({
   return (
     <div role="radiogroup" aria-label={t`AI write mode`} className="space-y-1">
       <Button
+        ref={value === "draft" ? (initialFocusRef as RefObject<HTMLButtonElement>) : undefined}
         role="radio"
         aria-checked={value === "draft"}
         variant="ghost"
@@ -263,6 +276,7 @@ function WriteModeChoices({
         {pending ? <span>({pending})</span> : null}
       </Button>
       <Button
+        ref={value === "direct" ? (initialFocusRef as RefObject<HTMLButtonElement>) : undefined}
         role="radio"
         aria-checked={value === "direct"}
         variant="ghost"

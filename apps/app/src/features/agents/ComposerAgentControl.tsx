@@ -1,6 +1,6 @@
 /** Composer Agent adapter: one catalog/open-state owner for inline and overflow hosts. */
 import { t } from "@lingui/core/macro";
-import { useState } from "react";
+import { useRef } from "react";
 import { useProjectAgents } from "@/client/query/useProjectAgents";
 import type { ComposerToolbarControl } from "@/components/app/composer-toolbar";
 import { AgentPickerPanel } from "./AgentPicker";
@@ -17,14 +17,21 @@ export function useComposerAgentToolbarControl(
   props: ComposerAgentControlProps,
 ): ComposerToolbarControl {
   const catalog = useProjectAgents(props.projectId);
-  const [open, setOpen] = useState(false);
+  const initialFocusRef = useRef<HTMLElement | null>(null);
   const slug = props.selectedSlug || DEFAULT_AGENT_SLUG;
   const agent = resolveAgentFromCatalog(slug, catalog.agents);
-  const inline = ({ requestOpen }: { requestOpen(): void }) => (
+  const inline = ({
+    activate,
+    triggerRef,
+  }: {
+    activate(): void;
+    triggerRef(node: HTMLElement | null): void;
+  }) => (
     <AgentSelector
+      ref={triggerRef}
       agent={agent}
       disabled={props.mode === "readonly"}
-      onClick={requestOpen}
+      onClick={activate}
       tooltip={
         props.mode === "readonly"
           ? t`This chat stays on ${agent.name} to keep costs predictable. Swapping agents mid-chat is coming.`
@@ -42,10 +49,6 @@ export function useComposerAgentToolbarControl(
         item: { ariaLabel: t`Agent: ${agent.name}`, label: t`Agent`, value: agent.name },
       },
     };
-  const choose = (next: string) => {
-    props.onSelectedSlugChange(next);
-    setOpen(false);
-  };
   return {
     id: "agent",
     priority: 300,
@@ -58,14 +61,20 @@ export function useComposerAgentToolbarControl(
         value: agent.name,
       },
       panel: {
-        open,
-        busy: false,
-        canDismiss: true,
         ariaLabel: t`Choose agent`,
         size: "picker",
-        onRequestOpen: () => setOpen(true),
-        onRequestDismiss: () => setOpen(false),
-        render: () => <AgentPickerPanel status={catalog} selectedSlug={slug} onSelect={choose} />,
+        initialFocusRef,
+        render: ({ terminalClose }) => (
+          <AgentPickerPanel
+            initialFocusRef={initialFocusRef}
+            status={catalog}
+            selectedSlug={slug}
+            onSelect={(next) => {
+              props.onSelectedSlugChange(next);
+              terminalClose();
+            }}
+          />
+        ),
       },
     },
   };

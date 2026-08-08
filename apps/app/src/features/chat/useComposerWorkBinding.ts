@@ -22,11 +22,8 @@ export type ComposerWorkBindingController = {
   operation: WorkPickerOperation;
   undoWork: Work | null;
   busy: boolean;
-  canDismiss: boolean;
-  open(): void;
-  requestDismiss(): void;
   changeQuery(query: string): void;
-  choose(work: Work): void;
+  choose(work: Work): Promise<"close" | "stay">;
   undo(): void;
   retryCatalog(): void;
 };
@@ -71,8 +68,7 @@ export function useComposerWorkBinding({
   const run = useCallback(
     async (target: Work, intent: "change" | "undo", origin: WorkBindingRequest["origin"]) => {
       if (mutation.isPending || target.id === state.observed.id) {
-        if (target.id === state.observed.id) dispatch({ type: "panel.dismissed" });
-        return;
+        return target.id === state.observed.id ? ("close" as const) : ("stay" as const);
       }
       const request: WorkBindingRequest = {
         id: `${threadId}:${++requestNumber.current}`,
@@ -95,7 +91,7 @@ export function useComposerWorkBinding({
             work: outcome.currentWork,
             message: t`This chat's Work changed to ${outcome.currentWork.name}`,
           });
-          return;
+          return "close" as const;
         }
         if (outcome.kind === "reconciled_not_current") {
           dispatch({
@@ -103,7 +99,7 @@ export function useComposerWorkBinding({
             requestId: request.id,
             message: t`The Work did not change. Try again.`,
           });
-          return;
+          return "stay" as const;
         }
         const result = outcome.result;
         const commit: NormalizedCommit = {
@@ -143,7 +139,9 @@ export function useComposerWorkBinding({
               : t`The change could not be confirmed. Try again.`;
         }
         dispatch({ type: "change.refused", requestId: request.id, failure, message });
+        return "stay" as const;
       }
+      return "close" as const;
     },
     [mutation, state.observed.id, threadId, worksQuery.refetch],
   );
@@ -176,11 +174,8 @@ export function useComposerWorkBinding({
     operation,
     undoWork,
     busy,
-    canDismiss: !busy,
-    open: () => dispatch({ type: "panel.opened" }),
-    requestDismiss: () => dispatch({ type: "panel.dismissed" }),
     changeQuery: (query) => dispatch({ type: "query.changed", query }),
-    choose: (target) => void run(target, "change", "panel"),
+    choose: (target) => run(target, "change", "panel"),
     undo: () => {
       if (undoWork) void run(undoWork, "undo", "undo");
     },

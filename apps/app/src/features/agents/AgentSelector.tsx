@@ -17,6 +17,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { ChevronDown } from "lucide-react";
+import { forwardRef } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -31,32 +32,29 @@ export type AgentSelectorProps = {
   className?: string;
 };
 
-export function AgentSelector({
-  agent,
-  disabled = false,
-  onClick,
-  tooltip,
-  className,
-}: AgentSelectorProps) {
-  return (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      aria-disabled={disabled || undefined}
-      title={tooltip}
-      aria-label={t`Agent: ${agent.name}`}
-      className={cn(
-        buttonVariants({ variant: "outline", size: "sm" }),
-        "focus-ring max-w-[11rem] min-w-0 shrink font-medium",
-        disabled &&
-          "cursor-default border-transparent bg-transparent text-muted-foreground opacity-60 shadow-none hover:border-transparent hover:bg-transparent",
-        className,
-      )}
-    >
-      <span className="min-w-0 truncate">{agent.name}</span>
-      {!disabled ? (
-        <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      ) : null}
-    </button>
-  );
-}
+export const AgentSelector = forwardRef<HTMLButtonElement, AgentSelectorProps>(
+  function AgentSelector({ agent, disabled = false, onClick, tooltip, className }, ref) {
+    return (
+      <button
+        ref={ref}
+        type="button"
+        onClick={disabled ? undefined : onClick}
+        aria-disabled={disabled || undefined}
+        title={tooltip}
+        aria-label={t`Agent: ${agent.name}`}
+        className={cn(
+          buttonVariants({ variant: "outline", size: "sm" }),
+          "focus-ring max-w-[11rem] min-w-0 shrink font-medium",
+          disabled &&
+            "cursor-default border-transparent bg-transparent text-muted-foreground opacity-60 shadow-none hover:border-transparent hover:bg-transparent",
+          className,
+        )}
+      >
+        <span className="min-w-0 truncate">{agent.name}</span>
+        {!disabled ? (
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+        ) : null}
+      </button>
+    );
+  },
+);
