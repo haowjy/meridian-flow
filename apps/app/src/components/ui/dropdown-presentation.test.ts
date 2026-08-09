@@ -10,4 +10,12 @@ describe("compact dropdown pointer policy", () => {
       expect(recipe).not.toMatch(/any-pointer|max-width|min-width/);
     }
   });
+
+  it("keeps identity text lanes in the shared two-pixel stack recipe", () => {
+    const identity = dropdownRowVariants({ kind: "identity" });
+
+    expect(identity).toContain("flex-col");
+    expect(identity).toContain("items-start");
+    expect(identity).toContain("gap-0.5");
+  });
 });

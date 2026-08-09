@@ -7,7 +7,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadAttention, ThreadListItem } from "@meridian/contracts/protocol";
-import { ChevronDown, Pencil, Plus } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
@@ -170,15 +170,21 @@ export function ThreadSwitcherPopover({
                 "border-b border-border-subtle",
               )}
             >
-              <Input
-                data-switcher-focus
-                type="search"
-                value={query}
-                aria-label={t`Search chats`}
-                placeholder={t`Search chats`}
-                onChange={(event) => setQuery(event.target.value)}
-                className={cn(dropdownSearchClass, "shadow-none")}
-              />
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  data-switcher-focus
+                  type="search"
+                  value={query}
+                  aria-label={t`Search chats`}
+                  placeholder={t`Search chats`}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className={cn(dropdownSearchClass, "shadow-none")}
+                />
+              </div>
             </div>
           ) : null}
 

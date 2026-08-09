@@ -127,7 +127,6 @@ function AgentGroup({
                 onClick={() => onSelect(agent.slug)}
                 className={cn(
                   dropdownRowVariants({ kind: "identity", selected: active }),
-                  "flex-col items-start gap-0",
                   // Pressed neutral, not an accent wash — routine selection
                   // never spends jade (same grammar as sidebar rows).
                   active && "font-medium",

@@ -9,7 +9,7 @@ export const dropdownRowVariants = cva(
         navigation: "h-8 py-1.5 [@media(pointer:coarse)]:h-11",
         list: "h-8 py-1.5 [@media(pointer:coarse)]:h-11",
         descriptive: "h-10 py-0.5 [@media(pointer:coarse)]:h-11",
-        identity: "min-h-11 py-0.5",
+        identity: "min-h-11 flex-col items-start gap-0.5 py-0.5",
       },
       interactive: {
         true: "focus-ring transition-colors hover:bg-sidebar-accent/50 focus-visible:bg-sidebar-accent/50 data-[highlighted]:bg-sidebar-accent/50",
