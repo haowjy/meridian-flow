@@ -9,6 +9,7 @@ import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
 import type { ComposerToolbarControl } from "@/components/app/composer-toolbar";
 import type { ComposerToolbarPanelContext } from "@/components/app/composer-toolbar/types";
 import { Button } from "@/components/ui/button";
+import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 import { cn } from "@/lib/utils";
 import { activeDockedDraftGroups } from "./docked-drafts";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
@@ -268,7 +269,7 @@ function WriteModeChoices({
         role="radio"
         aria-checked={value === "draft"}
         variant="ghost"
-        className="w-full justify-between"
+        className={cn(dropdownRowVariants({ selected: value === "draft" }), "justify-between")}
         disabled={disabled}
         onClick={onDraft}
       >
@@ -280,7 +281,7 @@ function WriteModeChoices({
         role="radio"
         aria-checked={value === "direct"}
         variant="ghost"
-        className="w-full justify-start"
+        className={dropdownRowVariants({ selected: value === "direct" })}
         onClick={onAuto}
       >
         <Trans>Auto-apply</Trans>

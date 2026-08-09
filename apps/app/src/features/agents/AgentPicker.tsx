@@ -9,6 +9,11 @@ import type { ReactNode, RefObject } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
+import {
+  dropdownResultsVariants,
+  dropdownRowVariants,
+  dropdownSurfaceVariants,
+} from "@/components/ui/dropdown-presentation";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { sourceBadgeLabel } from "@/lib/source-badge";
@@ -27,7 +32,10 @@ export function AgentPicker({ status, selectedSlug, onSelect, trigger }: AgentPi
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
+      <PopoverContent
+        align="start"
+        className={dropdownSurfaceVariants({ measure: "identity", page: "picker" })}
+      >
         <AgentPickerPanel status={status} selectedSlug={selectedSlug} onSelect={onSelect} />
       </PopoverContent>
     </Popover>
@@ -45,7 +53,7 @@ export function AgentPickerPanel({
   const builtins = agents.filter((agent) => agent.source === "builtin");
 
   return (
-    <div className="app-scroll flex min-h-0 flex-col overflow-y-auto p-1">
+    <div className={cn(dropdownResultsVariants({ kind: "picker" }), "flex flex-col")}>
       {status.status === "loading" || status.status === "disabled" ? (
         <PickerHint>
           <Trans>Loading agents…</Trans>
@@ -96,8 +104,8 @@ function AgentGroup({
   initialFocusRef?: RefObject<HTMLElement | null>;
 }) {
   return (
-    <section className="py-1">
-      <p className={cn(sectionLabelVariants({ variant: "section" }), "px-2 py-1")}>{title}</p>
+    <section>
+      <p className={cn(sectionLabelVariants({ variant: "group" }), "mb-1 px-2")}>{title}</p>
       <ul className="flex flex-col gap-0.5">
         {agents.map((agent) => {
           const active = agent.slug === selectedSlug;
@@ -115,10 +123,11 @@ function AgentGroup({
                 type="button"
                 onClick={() => onSelect(agent.slug)}
                 className={cn(
-                  "focus-ring flex w-full flex-col gap-0.5 rounded-md px-2 py-2 text-left transition-colors",
+                  dropdownRowVariants({ kind: "identity", selected: active }),
+                  "flex-col items-start gap-0",
                   // Pressed neutral, not an accent wash — routine selection
                   // never spends jade (same grammar as sidebar rows).
-                  active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50",
+                  active && "font-medium",
                 )}
               >
                 <span className="inline-flex min-w-0 max-w-full items-center gap-2">
@@ -132,7 +141,7 @@ function AgentGroup({
                   ) : null}
                 </span>
                 {agent.description ? (
-                  <span className="line-clamp-2 text-meta text-muted-foreground">
+                  <span className="line-clamp-1 text-meta text-muted-foreground">
                     {agent.description}
                   </span>
                 ) : null}

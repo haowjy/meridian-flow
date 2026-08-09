@@ -61,7 +61,7 @@ export function useComposerWorkToolbarControl({
       },
       panel: {
         ariaLabel: t`Change work for this chat`,
-        size: "picker",
+        size: "catalog",
         initialFocusRef: searchRef,
         render: ({ beginBlocking }) => (
           <WorkPickerPanel

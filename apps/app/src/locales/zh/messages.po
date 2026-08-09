@@ -133,6 +133,11 @@ msgstr ""
 msgid "{0}, Archived"
 msgstr ""
 
+#. placeholder {0}: work.name
+#: src/features/chat/WorkPickerPanel.tsx
+msgid "{0}, current Work for this chat"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -951,8 +956,8 @@ msgid "Current block type"
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-msgid "Current for this chat"
-msgstr ""
+#~ msgid "Current for this chat"
+#~ msgstr ""
 
 #: src/features/project/chat/NewChatDialog.tsx
 msgid "Current Work"

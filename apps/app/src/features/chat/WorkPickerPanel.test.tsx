@@ -72,4 +72,23 @@ describe("WorkPickerPanel", () => {
       },
     );
   });
+
+  it("keeps current state accessible without a routine third line", async () => {
+    const current = { id: "a", name: "Opening arc", goal: "Ascend", status: "active" } as Work;
+    await withReactRoot(
+      <WorkPickerPanel
+        catalog={{ status: "ready", works: [current], refreshing: false }}
+        operation={operation}
+        query=""
+        onQueryChange={() => {}}
+        onChoose={() => {}}
+      />,
+      () => {
+        const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
+        expect(row?.getAttribute("aria-current")).toBe("true");
+        expect(row?.getAttribute("aria-label")).toContain("current Work for this chat");
+        expect(row?.textContent).not.toContain("Current for this chat");
+      },
+    );
+  });
 });

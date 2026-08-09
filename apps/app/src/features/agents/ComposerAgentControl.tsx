@@ -62,7 +62,7 @@ export function useComposerAgentToolbarControl(
       },
       panel: {
         ariaLabel: t`Choose agent`,
-        size: "picker",
+        size: "identity",
         initialFocusRef,
         render: ({ terminalClose }) => (
           <AgentPickerPanel

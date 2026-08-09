@@ -12,6 +12,13 @@ import { type KeyboardEvent, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
 import { Button } from "@/components/ui/button";
+import {
+  dropdownResultsVariants,
+  dropdownRowVariants,
+  dropdownSearchClass,
+  dropdownSurfaceVariants,
+  dropdownThreadRegionVariants,
+} from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -150,11 +157,16 @@ export function ThreadSwitcherPopover({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className="flex max-h-[60vh] w-80 flex-col overflow-hidden p-0"
+          className={dropdownSurfaceVariants({ measure: "thread-list", page: "thread-list" })}
           onKeyDown={handleNavigationKeyDown}
         >
           {showSearch ? (
-            <div className="border-b border-border-subtle p-2">
+            <div
+              className={cn(
+                dropdownThreadRegionVariants({ region: "header" }),
+                "border-b border-border-subtle",
+              )}
+            >
               <Input
                 data-switcher-focus
                 type="search"
@@ -162,12 +174,17 @@ export function ThreadSwitcherPopover({
                 aria-label={t`Search chats`}
                 placeholder={t`Search chats`}
                 onChange={(event) => setQuery(event.target.value)}
-                className="h-8 shadow-none"
+                className={cn(dropdownSearchClass, "shadow-none")}
               />
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+          <div
+            className={cn(
+              dropdownResultsVariants({ kind: "thread-list" }),
+              dropdownThreadRegionVariants({ region: "results" }),
+            )}
+          >
             {filteredThreads.length === 0 ? (
               <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
                 <Trans>No matching chats</Trans>
@@ -177,9 +194,7 @@ export function ThreadSwitcherPopover({
                 {visibleWorkItems.map((group) => (
                   <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
                     {showGroupHeaders ? (
-                      <h3
-                        className={cn(sectionLabelVariants({ variant: "group" }), "px-2.5 py-1.5")}
-                      >
+                      <h3 className={cn(sectionLabelVariants({ variant: "group" }), "mb-1 px-2")}>
                         {group.name}
                       </h3>
                     ) : null}
@@ -219,12 +234,17 @@ export function ThreadSwitcherPopover({
             )}
           </div>
 
-          <div className="border-t border-border-subtle p-1.5">
+          <div
+            className={cn(
+              dropdownThreadRegionVariants({ region: "footer" }),
+              "border-t border-border-subtle",
+            )}
+          >
             <Button
               data-switcher-focus
               type="button"
               variant="quiet"
-              className="w-full justify-start"
+              className={dropdownRowVariants()}
               onClick={startNewChat}
             >
               <Plus aria-hidden />
@@ -273,7 +293,8 @@ function ThreadSwitchItem({
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread.id)}
         className={cn(
-          "focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm",
+          dropdownRowVariants({ kind: "list" }),
+          "flex-1",
           active ? "font-medium" : "text-ink-muted group-hover:text-foreground",
         )}
       >
@@ -290,7 +311,7 @@ function ThreadSwitchItem({
           aria-label={t`Rename chat`}
           title={t`Rename chat`}
           onClick={onRename}
-          className="mr-1"
+          className="mr-1 [@media(pointer:coarse)]:size-11"
         >
           <Pencil className="size-3.5" aria-hidden />
         </IconButton>

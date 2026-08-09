@@ -23,7 +23,7 @@ export type ComposerToolbarPanelContext = {
 };
 export type ComposerToolbarPanel = {
   ariaLabel: string;
-  size: "compact" | "picker";
+  size: "compact" | "identity" | "catalog";
   initialFocusRef: RefObject<HTMLElement | null>;
   render(context: ComposerToolbarPanelContext): ReactNode;
 };

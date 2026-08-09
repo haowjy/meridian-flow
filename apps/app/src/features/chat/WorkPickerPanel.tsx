@@ -6,8 +6,14 @@ import { Check, LoaderCircle, Search } from "lucide-react";
 import { type KeyboardEvent, type RefObject, useId } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import {
+  dropdownResultsVariants,
+  dropdownRowVariants,
+  dropdownSearchClass,
+} from "@/components/ui/dropdown-presentation";
 import { Input } from "@/components/ui/input";
 import { sectionLabelVariants } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 import type { WorkBindingFailure } from "./composer-work-binding-reducer";
 
 export type WorkCatalogView =
@@ -104,7 +110,7 @@ export function WorkPickerPanel({
       role="group"
       aria-label={t`Change work for this chat`}
       aria-busy={catalog.refreshing || operation.pending}
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-3"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
       onKeyDown={navigate}
     >
       <label htmlFor={searchId} className="sr-only">
@@ -122,10 +128,10 @@ export function WorkPickerPanel({
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={t`Search works`}
-          className="h-11 pl-8"
+          className={dropdownSearchClass}
         />
       </div>
-      <div className="app-scroll min-h-0 flex-1 space-y-3 overflow-y-auto">
+      <div className={`${dropdownResultsVariants({ kind: "picker" })} space-y-2`}>
         {active.length ? (
           <WorkSection
             label={t`Active works`}
@@ -171,7 +177,7 @@ function WorkSection({
       <h3 className={sectionLabelVariants({ variant: "group", className: "mb-1 px-2" })}>
         {label}
       </h3>
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         {works.map((work) => {
           const current = work.id === operation.currentWorkId;
           const changing = work.id === operation.targetId && operation.pending;
@@ -185,27 +191,25 @@ function WorkSection({
                 type="button"
                 disabled={operation.pending}
                 aria-current={current ? "true" : undefined}
+                aria-label={current ? t`${work.name}, current Work for this chat` : work.name}
                 aria-describedby={error ? errorId : undefined}
                 onClick={() => onChoose(work)}
-                className="h-auto min-h-11 w-full justify-start gap-2 px-2 py-1.5 text-left whitespace-normal"
+                className={cn(
+                  dropdownRowVariants({ kind: "descriptive", selected: current }),
+                  "justify-start whitespace-normal",
+                )}
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">
                     {archived ? t`${work.name}, Archived` : work.name}
                   </span>
-                  {work.goal ? (
+                  {changing ? (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      <Trans>Changing work</Trans>
+                    </span>
+                  ) : work.goal ? (
                     <span className="block truncate text-xs text-muted-foreground">
                       {work.goal}
-                    </span>
-                  ) : null}
-                  {current ? (
-                    <span className="block text-xs text-muted-foreground">
-                      <Trans>Current for this chat</Trans>
-                    </span>
-                  ) : null}
-                  {changing ? (
-                    <span className="block text-xs text-muted-foreground">
-                      <Trans>Changing work</Trans>
                     </span>
                   ) : null}
                 </span>

@@ -3,6 +3,10 @@ import { Trans } from "@lingui/react/macro";
 import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
 import { useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  dropdownRowVariants,
+  dropdownSurfaceVariants,
+} from "@/components/ui/dropdown-presentation";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { PanelSession } from "./composer-toolbar-navigation";
@@ -220,10 +224,10 @@ export function ComposerToolbar({
           aria-busy={locked}
           data-page={panel ? "panel" : "root"}
           className={cn(
-            "composer-overflow-surface w-auto flex flex-col overflow-hidden",
-            panel?.size === "picker"
-              ? "[--composer-overflow-page-size:20rem] p-3"
-              : "[--composer-overflow-page-size:14rem] p-1",
+            dropdownSurfaceVariants({
+              measure: panel?.size ?? "compact",
+              page: panel?.size === "compact" ? "navigation" : "picker",
+            }),
           )}
           onEscapeKeyDown={(e) => {
             e.preventDefault();
@@ -257,7 +261,7 @@ export function ComposerToolbar({
               {view.kind === "overflow" ? (
                 <Button
                   variant="quiet"
-                  className="mb-1 min-h-11 justify-start"
+                  className={cn(dropdownRowVariants(), "mb-2 justify-start")}
                   disabled={locked}
                   onClick={() =>
                     dispatch({
@@ -280,7 +284,7 @@ export function ComposerToolbar({
               {overflow.map((control) => (
                 <li key={control.id}>
                   {control.overflow.kind === "status" ? (
-                    <div className="flex min-h-11 w-full items-center gap-2 px-2">
+                    <div className={dropdownRowVariants({ interactive: false })}>
                       {control.overflow.item.icon}
                       <span>{control.overflow.item.label}</span>
                       <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
@@ -294,7 +298,7 @@ export function ComposerToolbar({
                         else rootRows.current.delete(control.id);
                       }}
                       variant="ghost"
-                      className="min-h-11 w-full justify-start gap-2 px-2"
+                      className={dropdownRowVariants()}
                       aria-label={control.overflow.item.ariaLabel}
                       onFocus={() => dispatch({ type: "root.rowFocused", controlId: control.id })}
                       onClick={() => dispatch({ type: "panel.triggered", controlId: control.id })}
