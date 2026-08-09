@@ -300,7 +300,6 @@ msgid "Agent Packages"
 msgstr ""
 
 #. placeholder {0}: agent.name
-#: src/features/agents/AgentSelector.tsx
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {0}"
 msgstr ""

@@ -3,11 +3,11 @@ import { t } from "@lingui/core/macro";
 import { useRef } from "react";
 import { useProjectAgents } from "@/client/query/useProjectAgents";
 import {
+  ComposerCurrentValueStatus,
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { AgentPickerPanel } from "./AgentPicker";
-import { AgentReadonlyStatus } from "./AgentSelector";
 import { DEFAULT_AGENT_SLUG } from "./constants";
 import { resolveAgentFromCatalog } from "./resolve-agent";
 
@@ -33,11 +33,13 @@ export function useComposerAgentToolbarControl(
       priority: 300,
       item,
       inline: ({ controlRef }) => (
-        <AgentReadonlyStatus
+        <ComposerCurrentValueStatus
           ref={controlRef}
-          agent={agent}
+          ariaLabel={t`Agent: ${agent.name}`}
           tooltip={t`This chat stays on ${agent.name} to keep costs predictable. Swapping agents mid-chat is coming.`}
-        />
+        >
+          {agent.name}
+        </ComposerCurrentValueStatus>
       ),
     };
   const enabledSlugs =

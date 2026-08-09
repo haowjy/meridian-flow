@@ -3,7 +3,10 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ComposerCurrentValueTrigger } from "./ComposerCurrentValueTrigger";
+import {
+  ComposerCurrentValueStatus,
+  ComposerCurrentValueTrigger,
+} from "./ComposerCurrentValueTrigger";
 import type { ComposerToolbarTriggerBinding } from "./types";
 
 const hosts: HTMLDivElement[] = [];
@@ -45,8 +48,38 @@ describe("ComposerCurrentValueTrigger", () => {
     expect(button.disabled).toBe(false);
     expect(button.className).toContain("min-h-8");
     expect(button.className).toContain("max-w-[11rem]");
+    expect(button.className).toContain("px-2.5");
     expect(button.className).toContain("[@media(pointer:coarse)]:min-h-11");
     await act(async () => button.click());
     expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("gives readonly status the same bounded geometry without popup behavior", async () => {
+    const host = document.createElement("div");
+    hosts.push(host);
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <ComposerCurrentValueStatus
+          ariaLabel="Agent: A very long agent name"
+          tooltip="This chat stays on this agent."
+        >
+          A very long agent name
+        </ComposerCurrentValueStatus>,
+      );
+    });
+    const status = host.querySelector("button") as HTMLButtonElement;
+    expect(status.getAttribute("aria-label")).toBe("Agent: A very long agent name");
+    expect(status.title).toBe("This chat stays on this agent.");
+    expect(status.getAttribute("aria-disabled")).toBe("true");
+    expect(status.hasAttribute("aria-haspopup")).toBe(false);
+    expect(status.hasAttribute("aria-controls")).toBe(false);
+    expect(status.hasAttribute("aria-expanded")).toBe(false);
+    expect(status.querySelector("svg")).toBeNull();
+    expect(status.className).toContain("min-h-8");
+    expect(status.className).toContain("[@media(pointer:coarse)]:min-h-11");
+    expect(status.className).toContain("max-w-[11rem]");
+    expect(status.className).toContain("px-2.5");
   });
 });
