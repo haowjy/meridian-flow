@@ -1,7 +1,7 @@
 # features/agents — Agent identity, selection, and binding UI
 
-This module owns focused agent identity and selection surfaces used by chat,
-project provenance, and the Library. It keeps the capability-freeze rule out of
+This module owns focused agent identity and selection surfaces used by chat
+and project provenance. It keeps the capability-freeze rule out of
 individual call sites: a picker is a control only when the next send can change
 which agent handles that send.
 
@@ -33,8 +33,7 @@ controls:
 | New/Home composer or deferred project new-chat | Interactive picker; selection changes the agent bound on first send. |
 | Existing server-backed thread, zero turns | Interactive picker; rebinding is allowed until first send. |
 | Existing server-backed thread after first send | Read-only selector state; selection would not change the frozen prompt, so it is not a control. |
-| Idle existing thread with fork affordance | Picker opens only as **Continue in a new thread with…**; it creates a fresh thread. |
-| Thread header / results provenance | Inert span; tooltip uses positive provenance: **Started with X**. |
+| Results provenance | Inert badge inside the producing-thread navigation control. |
 
 Do not render a picker just because an agent label appears. A control must change the
 next send, or it teaches the user that capability controls are unreliable.
@@ -50,10 +49,9 @@ There is no shared `AgentChip` abstraction. Keep the surfaces honest and local:
 
 | Surface | Shell | Use |
 |---|---|---|
-| `AgentSelector` | enabled/locked selector shell | Composer agent selection and frozen-thread state. |
+| `ComposerAgentControl` | toolbar-owned current-value trigger or readonly status | Composer agent selection before prompt freeze and truthful frozen-thread identity afterward. |
 | `AgentPicker` row | row-owned button with name + optional source `Badge` | Catalog choice inside the popover. |
 | Results rail provenance | truncated `Badge neutral` inside the producing-thread button | Compact attribution, not a standalone control. |
-| `AgentSummaryCard` | bordered card with name/source badge + description | Library list + editor previews. |
 
 ## Architecture
 
@@ -62,13 +60,9 @@ flowchart TD
   Catalog[useProjectAgents] --> Resolve[resolveAgentFromCatalog]
   Constants[DEFAULT_AGENT_SLUG + wireAgentSlug] --> Composer[ComposerAgentControl]
   Resolve --> Picker[AgentPicker]
-  Resolve --> Summary[AgentSummaryCard]
   Resolve --> Results[Results rail badge]
   Composer --> Picker[AgentPicker]
-  Picker --> Defaults[Project preferences defaultAgentSlug]
   Composer --> ThreadCreate[create thread with wireAgentSlug]
-  Library[Test this agent] --> BoundThread[useCreateBoundProjectThread]
-  BoundThread --> ThreadCreate
 ```
 
 Key files:
@@ -76,17 +70,13 @@ Key files:
 | File | Role |
 |---|---|
 | `constants.ts` | Synthetic General/default-agent wire filter. |
-| `AgentPicker.tsx` | Popover catalog grouped into installed/user and builtin sources; default-agent action and Library link. |
-| `AgentSelector.tsx` | Enabled/locked selector shell for composer-facing current agent state. |
-| `AgentSummaryCard.tsx` | Library/editor summary card for a browsable agent. |
-| `ComposerAgentControl.tsx` | Applies the capability-freeze rule for composer chips and fork framing. |
-| `use-create-bound-thread.ts` | Fresh agent-bound thread creation for fork and Test-this-agent. |
+| `AgentPicker.tsx` | Catalog grouped into installed/user and builtin sources; also supplies the toolbar panel body. |
+| `ComposerAgentControl.tsx` | Applies capability freeze, adapting Agent identity to an interactive panel or readonly status through the toolbar-owned current-value family. |
 
 ## Patterns
 
-- Set defaults through `ProjectPreferences.defaultAgentSlug`; validate on the
-  server against selectable catalog rows.
-- Create a fresh thread for “Test this agent” and fork flows. Reusing a thread
-  silently tests the old bake.
-- Route Library navigation through the screen owner (`?screen=library`); docked
-  chat paths use `onSelectDockThread` and must not steal screen ownership.
+- Keep Agent catalog loading, grouping, and retry presentation in
+  `AgentPickerPanel`; the toolbar adapter supplies focus destinations and close
+  behavior.
+- Use `resolveAgentFromCatalog` anywhere a stored slug becomes writer-facing
+  identity so fallback names and source metadata stay consistent.

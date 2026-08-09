@@ -68,9 +68,13 @@ grouping, row enablement, rendered rows, and focus revision from one picker view
 model. These differences remain feature-owned; the toolbar supplies the same
 surface, trigger, lock, topology, and focus policy to all three.
 
-The compact current-value trigger is presentation only. It renders the localized
-current value and chevron while spreading the toolbar binding; it must not infer
-open, busy, locked, or refusal policy.
+The current-value presentation family shares one private visual chrome while
+keeping two truthful public contracts. `ComposerCurrentValueTrigger` renders the
+localized value and chevron for interactive panels and requires the toolbar
+binding intact; it must not infer open, busy, locked, or refusal policy.
+`ComposerCurrentValueStatus` renders the same geometry without a binding,
+chevron, activation, or popup relationship. Existing-chat Agent identity uses
+that focusable `aria-disabled` status and preserves its explanatory tooltip.
 
 ## Rejected structures
 
@@ -85,5 +89,5 @@ open, busy, locked, or refusal policy.
 - Feature-authored trigger ARIA or native-disabled transient triggers: they can
   contradict the one toolbar-owned dialog and strand focus.
 
-Feature-adapter behavior and the current Work-binding divergence are documented
-in [`../../../../features/chat/.context/composer-write-mode.md`](../../../../features/chat/.context/composer-write-mode.md).
+Feature-adapter behavior and mid-thread Work rebinding are documented in
+[`../../../../features/chat/.context/composer-write-mode.md`](../../../../features/chat/.context/composer-write-mode.md).
