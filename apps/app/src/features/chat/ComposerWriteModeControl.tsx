@@ -13,7 +13,6 @@ import {
 } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
-import { cn } from "@/lib/utils";
 import { activeDockedDraftGroups } from "./docked-drafts";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
@@ -245,12 +244,14 @@ function WriteModeChoices({
         role="radio"
         aria-checked={value === "draft"}
         variant="ghost"
-        className={cn(dropdownRowVariants({ selected: value === "draft" }), "justify-between")}
+        className={dropdownRowVariants({ selected: value === "draft" })}
         disabled={disabled || !loaded}
         onClick={onDraft}
       >
-        <Trans>Draft</Trans>
-        {pending ? <span>({pending})</span> : null}
+        <span className="min-w-0 flex-1 text-left">
+          <Trans>Draft</Trans>
+        </span>
+        {pending ? <span className="shrink-0">({pending})</span> : null}
       </Button>
       <Button
         ref={directRef}

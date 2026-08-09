@@ -43,6 +43,9 @@ describe("ComposerCurrentValueTrigger", () => {
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(button.getAttribute("aria-busy")).toBe("true");
     expect(button.disabled).toBe(false);
+    expect(button.className).toContain("min-h-8");
+    expect(button.className).toContain("max-w-[11rem]");
+    expect(button.className).toContain("[@media(pointer:coarse)]:min-h-11");
     await act(async () => button.click());
     expect(onClick).toHaveBeenCalledOnce();
   });

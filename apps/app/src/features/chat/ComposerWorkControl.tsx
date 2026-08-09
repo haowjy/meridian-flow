@@ -3,7 +3,10 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useRef } from "react";
-import type { ComposerToolbarControl } from "@/components/app/composer-toolbar";
+import {
+  ComposerCurrentValueTrigger,
+  type ComposerToolbarControl,
+} from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
 import { deriveWorkPickerViewModel, WorkPickerPanel } from "./WorkPickerPanel";
@@ -37,17 +40,12 @@ export function useComposerWorkToolbarControl({
     },
     inline: ({ trigger }) => (
       <span className="flex items-center">
-        <Button
-          ref={trigger.ref}
-          {...trigger.buttonProps}
-          variant="quiet"
-          size="meta"
-          type="button"
-          aria-label={t`Change work for this chat, currently ${work.name}`}
-          className="max-w-44 truncate"
+        <ComposerCurrentValueTrigger
+          binding={trigger}
+          ariaLabel={t`Change work for this chat, currently ${work.name}`}
         >
-          <Trans>Work: {work.name}</Trans>
-        </Button>
+          {work.name}
+        </ComposerCurrentValueTrigger>
         {controller.undoWork ? (
           <Button
             variant="link"

@@ -31,14 +31,9 @@ The shared toolbar owns popup topology, trigger policy, placement, and page-awar
 focus; feature controls own domain state and page content. See the
 [composer-toolbar contracts](../../../components/app/composer-toolbar/.context/CONTEXT.md).
 
-> [!FLAG] **Work-binding product conflict**
-> This checkout lets `ComposerWorkControl` rebind an idle existing thread and
-> carries that behavior through the controller, cache convergence, durable
-> projection, receipts, and Undo. The root product instruction instead says a
-> chat's Work is fixed at creation and later surfaces only display it. Human
-> intent has not resolved this conflict. Keep the current implementation
-> documented as current behavior, but do not extend or present either rule as
-> settled product truth.
+`ComposerWorkControl` can rebind an idle existing thread. The controller carries
+that behavior through cache convergence, durable projection, receipts, and
+Undo. Writer and LLM rebinding share the canonical server transition.
 
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an

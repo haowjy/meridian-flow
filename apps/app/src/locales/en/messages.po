@@ -3282,8 +3282,8 @@ msgstr "Work: \"{workName}\""
 
 #. placeholder {0}: work.name
 #: src/features/chat/ComposerWorkControl.tsx
-msgid "Work: {0}"
-msgstr "Work: {0}"
+#~ msgid "Work: {0}"
+#~ msgstr "Work: {0}"
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"

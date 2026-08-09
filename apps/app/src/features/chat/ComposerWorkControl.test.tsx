@@ -86,6 +86,8 @@ describe("useComposerWorkToolbarControl", () => {
     const trigger = document.querySelector<HTMLButtonElement>(
       '[aria-label="Change work for this chat, currently Current Work"]',
     );
+    expect(trigger?.textContent).toBe("Current Work");
+    expect(trigger?.className).toContain("max-w-[11rem]");
     await act(async () => trigger?.click());
     const search = document.querySelector<HTMLInputElement>('input[type="search"]');
     expect(document.activeElement).toBe(search);

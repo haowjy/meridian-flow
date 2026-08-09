@@ -35,11 +35,10 @@ simplification.
 **Writer primitives:** a **Project** is a serial, book, or body of work. A
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds `scratch://` context. A chat's Work
-is established at creation; whether it is then fixed or may be rebound is an
-unresolved product conflict. This checkout implements writer/LLM rebind through
-one canonical command, but that implementation is not a product ruling. Thread
-binding, the current Work preference for future chats, and selected-chat
-navigation remain distinct states and actions. The schema is `works` +
+is established at creation and may be rebound mid-thread by the writer or LLM
+through one canonical command. Thread binding, the current Work preference for
+future chats, and selected-chat navigation remain distinct states and actions.
+The schema is `works` +
 `thread_works`; every new project receives a
 concrete default Work, and writers can create and manage additional Works from
 Home.

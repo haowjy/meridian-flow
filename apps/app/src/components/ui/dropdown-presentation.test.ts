@@ -18,4 +18,11 @@ describe("compact dropdown pointer policy", () => {
     expect(identity).toContain("items-start");
     expect(identity).toContain("gap-0.5");
   });
+
+  it("left-aligns shared choice rows while allowing trailing state lanes", () => {
+    const row = dropdownRowVariants();
+
+    expect(row).toContain("justify-start");
+    expect(row).toContain("text-left");
+  });
 });

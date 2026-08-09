@@ -134,6 +134,8 @@ describe("useComposerAgentToolbarControl", () => {
       ),
     );
     const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Agent: General"]');
+    expect(trigger?.textContent).toBe("General");
+    expect(trigger?.className).toContain("max-w-[11rem]");
     await act(async () => trigger?.click());
     const content = document.querySelector<HTMLElement>('[role="dialog"]');
     expect(document.activeElement).toBe(content);
