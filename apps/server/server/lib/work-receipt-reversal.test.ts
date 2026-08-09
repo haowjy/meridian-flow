@@ -12,11 +12,17 @@ const THREAD_ID = "thread-1" as never;
 const TURN_ID = "turn-1" as never;
 
 function harness(receipts: WorkReceipt[]) {
-  const works = createInMemoryWorkRepository();
+  let liveThreadWorkId: WorkReceipt["workId"] | null = null;
+  const works = createInMemoryWorkRepository({
+    hasLiveThreads: (workId) => workId === liveThreadWorkId,
+  });
   const setCurrentWorkId = vi.fn(async () => {});
   return {
     works,
     setCurrentWorkId,
+    setLiveThreadWork(workId: WorkReceipt["workId"] | null) {
+      liveThreadWorkId = workId;
+    },
     deps: {
       works,
       preferences: { setCurrentWorkId },
@@ -162,10 +168,37 @@ describe("Work receipt reversal", () => {
     ).resolves.toEqual([expect.objectContaining({ status: "unavailable" })]);
   });
 
-  it("ignores a factual switch receipt while reversing a mutation in the same turn", async () => {
+  it("ignores a factual switch receipt while reversing an update in the same turn", async () => {
+    const h = harness([]);
+    const updated = await h.works.create({ projectId: "project-1", name: "Original" });
+    const target = await h.works.create({ projectId: "project-1", name: "Other" });
+    await h.works.update(updated.id, { name: "Revised" });
+    h.setLiveThreadWork(target.id);
+    const receipts: WorkReceipt[] = [
+      updateReceipt(updated.id, "Original", "Revised"),
+      switchReceipt({ ...updated, name: "Revised" }, target),
+    ];
+    Object.assign(h.deps.blocks, {
+      listByTurn: async () =>
+        receipts.map((workReceipt) => ({ content: { metadata: { workReceipt } } })) as never,
+    });
+
+    await expect(
+      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
+    ).resolves.toEqual([expect.objectContaining({ command: "update", status: "reversed" })]);
+    await expect(h.works.findById(updated.id)).resolves.toMatchObject({
+      name: "Original",
+      deletedAt: null,
+    });
+    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
+    expect(h.deps.workContextDelivery.projectChanged).toHaveBeenCalledOnce();
+  });
+
+  it("does not delete a created Work that remains the conversation binding", async () => {
     const h = harness([]);
     const original = await h.works.create({ projectId: "project-1", name: "Original" });
     const created = await h.works.create({ projectId: "project-1", name: "New" });
+    h.setLiveThreadWork(created.id);
     const receipts: WorkReceipt[] = [
       {
         operation: "create",
@@ -186,11 +219,10 @@ describe("Work receipt reversal", () => {
 
     await expect(
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
-    ).resolves.toEqual([expect.objectContaining({ command: "delete", status: "reversed" })]);
-    await expect(h.works.findById(created.id)).resolves.toMatchObject({
-      deletedAt: expect.any(String),
-    });
-    expect(h.setCurrentWorkId).toHaveBeenCalledWith("user-1", "project-1", original.id);
+    ).resolves.toEqual([expect.objectContaining({ command: "delete", status: "failed" })]);
+    await expect(h.works.findById(created.id)).resolves.toMatchObject({ deletedAt: null });
+    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
+    expect(h.deps.workContextDelivery.projectChanged).not.toHaveBeenCalled();
   });
 
   it("never exposes a switch-only turn through Undo or Redo", async () => {
