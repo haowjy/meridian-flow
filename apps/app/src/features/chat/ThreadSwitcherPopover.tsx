@@ -12,8 +12,8 @@ import { type KeyboardEvent, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
 import { Button } from "@/components/ui/button";
+import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
-  densityPopoverCollisionProps,
   dropdownResultsVariants,
   dropdownRowVariants,
   dropdownSearchClass,
@@ -60,6 +60,7 @@ export function ThreadSwitcherPopover({
    */
   variant?: "quiet" | "tab";
 }) {
+  const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
   const now = useThreadStore((state) => state.now);

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { type CDPSession, expect, test } from "@playwright/test";
 import {
   cleanupProjectFixture,
   findTestUserId,
@@ -13,7 +13,8 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const LONG_LABEL = "Localized composer control label ".repeat(12);
 const LONG_VALUE = "Localized current selection value ".repeat(12);
 
-test("compact root preserves actionable and status text lanes without overflow", async ({
+test("compact root preserves text lanes and follows the document safe area", async ({
+  context,
   page,
 }) => {
   test.skip(!DATABASE_URL, "DATABASE_URL is required");
@@ -65,6 +66,21 @@ test("compact root preserves actionable and status text lanes without overflow",
     await expect(actionable.first()).toBeVisible();
     await expect(status.first()).toBeVisible();
 
+    const cdp = await context.newCDPSession(page);
+    const content = root;
+    await page.setViewportSize({ width: 400, height: 800 });
+    await expectPopoverInside(content, { top: 0, right: 0, bottom: 0, left: 0 });
+
+    await setSafeAreaInsets(cdp, { top: 24, right: 7, bottom: 34, left: 18 });
+    await expectPopoverInside(content, { top: 24, right: 7, bottom: 34, left: 18 });
+
+    // Keep the surface open while both viewport orientation and asymmetric CSS
+    // safe-area geometry change. Floating UI's supported resize lifecycle must
+    // remeasure the document boundary rather than retaining the first placement.
+    await page.setViewportSize({ width: 800, height: 400 });
+    await setSafeAreaInsets(cdp, { top: 9, right: 31, bottom: 12, left: 43 });
+    await expectPopoverInside(content, { top: 9, right: 31, bottom: 12, left: 43 });
+
     for (const row of [actionable.first(), status.first()]) {
       await row.locator('[data-slot="composer-root-row-label"]').evaluate((node, text) => {
         node.textContent = text;
@@ -105,3 +121,39 @@ test("compact root preserves actionable and status text lanes without overflow",
     );
   }
 });
+
+type Insets = { top: number; right: number; bottom: number; left: number };
+
+async function setSafeAreaInsets(cdp: CDPSession, insets: Insets) {
+  await cdp.send("Emulation.setSafeAreaInsetsOverride", {
+    insets: {
+      ...insets,
+      topMax: insets.top,
+      rightMax: insets.right,
+      bottomMax: insets.bottom,
+      leftMax: insets.left,
+    },
+  });
+}
+
+async function expectPopoverInside(content: import("@playwright/test").Locator, insets: Insets) {
+  await expect
+    .poll(async () => {
+      const box = await content.boundingBox();
+      if (!box) return null;
+      const viewport = await content.evaluate(() => ({
+        left: window.visualViewport?.offsetLeft ?? 0,
+        top: window.visualViewport?.offsetTop ?? 0,
+        width: window.visualViewport?.width ?? window.innerWidth,
+        height: window.visualViewport?.height ?? window.innerHeight,
+      }));
+      const gutters = {
+        left: box.x - viewport.left - insets.left,
+        top: box.y - viewport.top - insets.top,
+        right: viewport.left + viewport.width - insets.right - box.x - box.width,
+        bottom: viewport.top + viewport.height - insets.bottom - box.y - box.height,
+      };
+      return Math.min(...Object.values(gutters));
+    })
+    .toBeGreaterThanOrEqual(8);
+}

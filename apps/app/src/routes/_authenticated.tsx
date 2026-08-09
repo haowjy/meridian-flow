@@ -18,6 +18,7 @@ import {
 } from "@/client/stores";
 import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { configureDocumentSessionUser } from "@/core/editor/document-session-registry";
 import {
@@ -184,27 +185,29 @@ function AuthenticatedProviderTree({
       <ThreadStoreProvider now={now}>
         <TransportProvider>
           <MeridianCopilotProvider>
-            <div className="app-frame flex flex-col">
-              <ConnectionBanner />
-              <div className="min-h-0 flex-1 overflow-hidden">
-                {/* Keyed by pathname to force a full remount per route — the
+            <DensityPopoverCollisionProvider>
+              <div className="app-frame flex flex-col">
+                <ConnectionBanner />
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  {/* Keyed by pathname to force a full remount per route — the
                       providers above stay mounted, so this intentionally discards
                       in-route state on navigation (e.g. /project/$id ↔ /billing)
                       rather than reconciling stale subtrees across routes. */}
-                <Outlet key={pathname} />
+                  <Outlet key={pathname} />
+                </div>
               </div>
-            </div>
-            <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
-            {DebugOverlay ? (
-              <Suspense fallback={null}>
-                <DebugOverlay />
-              </Suspense>
-            ) : null}
-            {ReactQueryDevtools ? (
-              <Suspense fallback={null}>
-                <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-              </Suspense>
-            ) : null}
+              <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
+              {DebugOverlay ? (
+                <Suspense fallback={null}>
+                  <DebugOverlay />
+                </Suspense>
+              ) : null}
+              {ReactQueryDevtools ? (
+                <Suspense fallback={null}>
+                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+                </Suspense>
+              ) : null}
+            </DensityPopoverCollisionProvider>
           </MeridianCopilotProvider>
         </TransportProvider>
       </ThreadStoreProvider>

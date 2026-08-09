@@ -3,8 +3,8 @@ import { Trans } from "@lingui/react/macro";
 import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
-  densityPopoverCollisionProps,
   dropdownRowVariants,
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
@@ -43,6 +43,7 @@ export function ComposerToolbar({
   ariaLabel: string;
 }) {
   const controlsRef = useRef(controls);
+  const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   controlsRef.current = controls;
   const [state, dispatchBase] = useReducer(
     (s: ReturnType<typeof initialNavigationState>, e: Parameters<typeof reduceNavigation>[1]) =>

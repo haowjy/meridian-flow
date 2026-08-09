@@ -23,9 +23,6 @@ export const dropdownRowVariants = cva(
 
 export type DropdownRowProps = VariantProps<typeof dropdownRowVariants>;
 
-/** Radix collision policy for compact density surfaces, not generic popovers. */
-export const densityPopoverCollisionProps = { collisionPadding: 8 } as const;
-
 export const dropdownSurfaceVariants = cva("dropdown-surface flex flex-col overflow-hidden", {
   variants: {
     measure: {

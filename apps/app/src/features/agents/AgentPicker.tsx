@@ -9,8 +9,8 @@ import type { ReactNode, RefObject } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
+import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
-  densityPopoverCollisionProps,
   dropdownResultsVariants,
   dropdownRowVariants,
   dropdownSurfaceVariants,
@@ -30,6 +30,7 @@ export type AgentPickerProps = {
 };
 
 export function AgentPicker({ status, selectedSlug, onSelect, trigger }: AgentPickerProps) {
+  const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
