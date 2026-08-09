@@ -59,15 +59,11 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (cache-only today, no PATCH endpoint) rather than on the thread store.
 - **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
   reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
-  `convergeThreadWorkBinding` owns cache effects and
-  `useThreadDurableProjections` owns the persistent transport subscription. See
-  [`features/chat/.context/composer-write-mode.md`](src/features/chat/.context/composer-write-mode.md).
-- **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
-  reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
   `convergeThreadWorkBinding` is the one cache-effect boundary, while
   `useThreadDurableProjections` is the one persistent transport owner. See
-  [`features/chat/.context/composer-write-mode.md`](src/features/chat/.context/composer-write-mode.md)
-  for placement and interaction ownership.
+  [`features/chat/.context/composer-write-mode.md`](../src/features/chat/.context/composer-write-mode.md)
+  for placement, interaction ownership, and the unresolved product conflict
+  between this checkout's rebind behavior and fixed-at-creation intent.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
   `useWorks` also exposes the server-resolved `defaultWorkId`; `useDefaultWorkId`

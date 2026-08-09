@@ -27,14 +27,18 @@ retain their state while the framework migrates their panel between inline and
 overflow hosts. Chat headers display only chat identity. The Work controller
 owns mutation, receipt/Undo, error, and live-convergence state, never placement.
 
-Toolbar descriptors discriminate panels from statuses. Panel adapters provide
-serializable page/repair identity plus ordered owned focus refs; the toolbar
-owns trigger ARIA, activation refusal, the single mounted dialog relationship,
-and current-time return focus. Structural descriptor changes reconcile in the
-toolbar machine before children commit. Page replacement requests entry focus,
-while same-page collection changes repair focus only when the current dialog
-target became invalid. Feature triggers never own popup state or use native
-disabled for transient panel work.
+The shared toolbar owns popup topology, trigger policy, placement, and page-aware
+focus; feature controls own domain state and page content. See the
+[composer-toolbar contracts](../../../components/app/composer-toolbar/.context/CONTEXT.md).
+
+> [!FLAG] **Work-binding product conflict**
+> This checkout lets `ComposerWorkControl` rebind an idle existing thread and
+> carries that behavior through the controller, cache convergence, durable
+> projection, receipts, and Undo. The root product instruction instead says a
+> chat's Work is fixed at creation and later surfaces only display it. Human
+> intent has not resolved this conflict. Keep the current implementation
+> documented as current behavior, but do not extend or present either rule as
+> settled product truth.
 
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an
