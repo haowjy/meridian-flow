@@ -176,7 +176,7 @@ const settleRadixFocus = async () => {
 };
 
 describe("ComposerToolbar Radix navigation", () => {
-  it("uses navigation padding for root and compact pages, picker padding for catalogs", async () => {
+  it("keeps root, compact, and catalog navigation on their semantic pages", async () => {
     const compact = panelControl("compact", "Compact");
     const catalog = panelControl("catalog", "Catalog", "catalog");
     controls = [compact, catalog];
@@ -184,12 +184,13 @@ describe("ComposerToolbar Radix navigation", () => {
     await renderToolbar();
 
     await press(button("More composer controls"));
-    expect(dialogs()[0]?.classList.contains("p-1")).toBe(true);
+    expect(dialogs()[0]?.getAttribute("data-page")).toBe("root");
     await press(button("Compact"));
-    expect(dialogs()[0]?.classList.contains("p-1")).toBe(true);
+    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Compact panel");
     await press(button("Back"));
+    expect(dialogs()[0]?.getAttribute("data-page")).toBe("root");
     await press(button("Catalog"));
-    expect(dialogs()[0]?.classList.contains("p-2")).toBe(true);
+    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Catalog panel");
   });
 
   it("toggles a direct panel with focus return and refuses the same click when locked", async () => {

@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   densityPopoverCollisionProps,
@@ -18,6 +18,22 @@ import {
 } from "./composer-toolbar-navigation";
 import type { ComposerToolbarControl, ComposerToolbarPanelContext } from "./types";
 import { useMeasuredComposerToolbar } from "./useMeasuredComposerToolbar";
+
+function RootRowText({ label, value }: { label: ReactNode; value?: ReactNode }) {
+  return (
+    <>
+      <span data-slot="composer-root-row-label" className="min-w-0 flex-1 truncate">
+        {label}
+      </span>
+      <span
+        data-slot="composer-root-row-value"
+        className="min-w-0 flex-1 truncate text-right text-muted-foreground"
+      >
+        {value}
+      </span>
+    </>
+  );
+}
 
 export function ComposerToolbar({
   controls,
@@ -288,10 +304,10 @@ export function ComposerToolbar({
                   {control.overflow.kind === "status" ? (
                     <div className={dropdownRowVariants({ interactive: false })}>
                       {control.overflow.item.icon}
-                      <span>{control.overflow.item.label}</span>
-                      <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-                        {control.overflow.item.value}
-                      </span>
+                      <RootRowText
+                        label={control.overflow.item.label}
+                        value={control.overflow.item.value}
+                      />
                     </div>
                   ) : (
                     <Button
@@ -306,10 +322,10 @@ export function ComposerToolbar({
                       onClick={() => dispatch({ type: "panel.triggered", controlId: control.id })}
                     >
                       {control.overflow.item.icon}
-                      <span>{control.overflow.item.label}</span>
-                      <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-                        {control.overflow.item.value}
-                      </span>
+                      <RootRowText
+                        label={control.overflow.item.label}
+                        value={control.overflow.item.value}
+                      />
                       <ChevronRight className="size-4 shrink-0" aria-hidden />
                     </Button>
                   )}

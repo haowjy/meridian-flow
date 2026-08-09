@@ -4,7 +4,8 @@
 
 - `apps/app`: compact composer, Work, Agent, thread, DropdownMenu, and Select
   surfaces now share consistent row density, collision gutters, state layout,
-  and accessible Work detail.
+  and accessible Work detail; long composer root labels and values truncate in
+  independent lanes without overflowing the row.
 - `apps/app`: responsive composer controls now keep one reducer-owned Radix
   surface across navigation and resize, including deterministic focus and
   readonly status-only overflow.
