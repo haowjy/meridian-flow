@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: the composer write mode now uses one compact current-value
+  trigger that opens the existing Draft and Auto-apply page in both inline and
+  overflow layouts.
 - `apps/app`: compact composer, Work, Agent, thread, DropdownMenu, and Select
   surfaces now share consistent row density, collision gutters, state layout,
   and accessible Work detail; long composer root labels and values truncate in

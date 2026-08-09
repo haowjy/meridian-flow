@@ -2,9 +2,11 @@
 
 This page defines the Work-scoped composer write-mode and sizing contracts.
 
-The Draft / Auto-apply selector lives in the composer footer beside the agent
-pill because write mode is a property of the conversation's Work, not workspace
-navigation. `ProjectView` resolves the displayed thread’s Work once at the project
+The compact current-value write-mode trigger lives in the composer footer beside
+Agent and Work because write mode is a property of the conversation's Work, not
+workspace navigation. It opens the toolbar's write-mode page for the Draft and
+Auto-apply choices instead of spending persistent width on both choices.
+`ProjectView` resolves the displayed thread’s Work once at the project
 composition boundary and passes that same Work identity to `DraftReviewProvider`
 and `ChatView`; the dock and composer control therefore share one binding. If
 either side of `thread → work` is absent, the control is not rendered. The

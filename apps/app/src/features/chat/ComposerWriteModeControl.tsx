@@ -3,10 +3,13 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { type ReactNode, type RefObject, useId, useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
-import type { ComposerToolbarControl } from "@/components/app/composer-toolbar";
+import {
+  ComposerCurrentValueTrigger,
+  type ComposerToolbarControl,
+} from "@/components/app/composer-toolbar";
 import type { ComposerToolbarPanelContext } from "@/components/app/composer-toolbar/types";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
@@ -118,20 +121,17 @@ export function useComposerWriteModeToolbarControl({
   return {
     id: "write-mode",
     priority: 200,
-    inline: ({ triggerRef, beginBlocking }) => (
-      <InlineWriteMode
-        triggerRef={triggerRef}
-        value={value}
-        disabled={!loaded || update.isPending}
-        pending={loaded ? groups.length : null}
-        onDraft={() => {
-          update.mutate("draft");
-        }}
-        onAuto={() => {
-          const lock = beginBlocking();
-          if (lock.kind === "started") void requestAuto(false, lock.settle);
-        }}
-      />
+    inline: ({ triggerRef, activate, active, locked }) => (
+      <ComposerCurrentValueTrigger
+        ref={triggerRef}
+        ariaLabel={t`AI write mode: ${value === "draft" ? "Draft" : "Auto-apply"}`}
+        disabled={update.isPending}
+        readOnly={locked}
+        active={active}
+        onActivate={activate}
+      >
+        {value === "draft" ? <Trans>Draft</Trans> : <Trans>Auto-apply</Trans>}
+      </ComposerCurrentValueTrigger>
     ),
     overflow: {
       kind: "panel",
@@ -150,103 +150,6 @@ export function useComposerWriteModeToolbarControl({
   };
 }
 
-function InlineWriteMode({
-  triggerRef,
-  value,
-  disabled,
-  pending,
-  onDraft,
-  onAuto,
-}: {
-  triggerRef(node: HTMLElement | null): void;
-  value: AiWriteMode;
-  disabled: boolean;
-  pending: number | null;
-  onDraft(): void;
-  onAuto(): void;
-}) {
-  const name = useId();
-  return (
-    <fieldset className="shrink-0 border-0">
-      <legend className="visually-hidden">
-        <Trans>AI write mode</Trans>
-      </legend>
-      <div className="flex items-center rounded-lg bg-foreground/6 p-0.5">
-        <ModeOption
-          inputRef={value === "draft" ? triggerRef : undefined}
-          name={name}
-          value="draft"
-          selected={value === "draft"}
-          disabled={disabled}
-          onSelect={onDraft}
-        >
-          <Trans>Draft</Trans>
-          {value === "draft" && pending ? (
-            <span className="ml-1 rounded-full bg-primary/15 px-1 text-[10px] text-jade-text">
-              ({pending})
-            </span>
-          ) : null}
-        </ModeOption>
-        <ModeOption
-          inputRef={value === "direct" ? triggerRef : undefined}
-          name={name}
-          value="direct"
-          selected={value === "direct"}
-          disabled={false}
-          onSelect={onAuto}
-        >
-          <Trans>Auto-apply</Trans>
-        </ModeOption>
-      </div>
-    </fieldset>
-  );
-}
-function ModeOption({
-  inputRef,
-  name,
-  value,
-  selected,
-  disabled,
-  onSelect,
-  children,
-}: {
-  inputRef?: (node: HTMLElement | null) => void;
-  name: string;
-  value: AiWriteMode;
-  selected: boolean;
-  disabled: boolean;
-  onSelect(): void;
-  children: ReactNode;
-}) {
-  return (
-    <label
-      className={cn(
-        "focus-within:focus-ring rounded-[calc(var(--radius-lg)-2px)]",
-        disabled ? "cursor-default" : "cursor-pointer",
-      )}
-    >
-      <input
-        ref={inputRef}
-        className="visually-hidden"
-        type="radio"
-        name={name}
-        value={value}
-        checked={selected}
-        disabled={disabled}
-        onChange={onSelect}
-      />
-      <span
-        className={cn(
-          "block h-7 rounded-[calc(var(--radius-lg)-2px)] px-2 text-xs leading-7",
-          selected ? "bg-background font-medium" : "text-muted-foreground",
-          disabled && "opacity-60",
-        )}
-      >
-        {children}
-      </span>
-    </label>
-  );
-}
 function WriteModeChoices({
   initialFocusRef,
   value,

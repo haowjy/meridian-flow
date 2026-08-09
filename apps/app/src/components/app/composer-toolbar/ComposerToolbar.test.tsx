@@ -3,6 +3,7 @@
 import { act, createRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ComposerCurrentValueTrigger } from "./ComposerCurrentValueTrigger";
 import { ComposerToolbar } from "./ComposerToolbar";
 import type { ComposerToolbarLayout } from "./composer-toolbar-layout";
 import type {
@@ -90,10 +91,16 @@ const writeModeControl = (): ControlHarness => {
     id: "write-mode",
     priority: 2,
     initial,
-    inline: ({ triggerRef, activate }) => (
-      <button ref={triggerRef} type="button" aria-label="AI write mode" onClick={activate}>
-        Write mode
-      </button>
+    inline: ({ triggerRef, activate, active, locked }) => (
+      <ComposerCurrentValueTrigger
+        ref={triggerRef}
+        ariaLabel="AI write mode: Auto-apply"
+        active={active}
+        readOnly={locked}
+        onActivate={activate}
+      >
+        Auto-apply
+      </ComposerCurrentValueTrigger>
     ),
     overflow: {
       kind: "panel",
@@ -238,7 +245,7 @@ describe("ComposerToolbar Radix navigation", () => {
     measuredLayout = layout(controls, inline ? [mode.id] : []);
     await renderToolbar();
     if (!inline) await press(button("More composer controls"));
-    await press(button("AI write mode"));
+    await press(button(inline ? "AI write mode: Auto-apply" : "AI write mode"));
     expect(document.activeElement).toBe(mode.initial.current);
     expect(mode.initial.current).toBeInstanceOf(HTMLInputElement);
     expect((mode.initial.current as HTMLInputElement | null)?.checked).toBe(true);
