@@ -5,6 +5,7 @@ import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/ru
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
+import type { NoticeInput } from "../domains/notices/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/index.js";
 import interruptErrorHandler from "./interrupt-error-handler.js";
 import {
@@ -28,6 +29,7 @@ function routeFixture(
     sameTarget?: boolean;
     flushFailure?: boolean;
     rebindFailure?: Error;
+    noticeFailure?: Error;
     missingPrimary?: boolean;
   } = {},
 ) {
@@ -66,6 +68,9 @@ function routeFixture(
     deletedAt: options.deletedTarget ? "now" : null,
   };
   let current = options.sameTarget ? TARGET_ID : SOURCE_ID;
+  const recordNotice = vi.fn(async (_notice: NoticeInput) => {
+    if (options.noticeFailure) throw options.noticeFailure;
+  });
   return {
     deps: {
       threads: { findById: async () => thread },
@@ -92,16 +97,18 @@ function routeFixture(
         },
       },
       workContextDelivery: {
-        deliverAfterCommit: async () => {
+        deliverAfterCommit: vi.fn(async () => {
           if (options.flushFailure) return "pending" as const;
           return "delivered" as const;
-        },
+        }),
       },
+      notices: { record: recordNotice },
       transaction: async <T>(operation: () => Promise<T>) => operation(),
       runOwnership: {
         tryAcquire: async () => (options.running ? null : { release: vi.fn(async () => {}) }),
       },
     } satisfies ThreadWorkRebindRouteDeps,
+    recordNotice,
   };
 }
 
@@ -131,6 +138,7 @@ describe("thread Work rebind writer adapter", () => {
       },
     });
     expect(h.deps.preferences.setCurrentWorkId).not.toHaveBeenCalled();
+    expect(h.recordNotice).not.toHaveBeenCalled();
   });
 
   it("holds the run claim across the transaction and releases before delivery", async () => {
@@ -156,14 +164,22 @@ describe("thread Work rebind writer adapter", () => {
       return operation();
     };
     const originalDelivery = h.deps.workContextDelivery.deliverAfterCommit;
-    h.deps.workContextDelivery.deliverAfterCommit = async () => {
-      expect(claimed).toBe(false);
-      order.push("delivery");
-      return originalDelivery();
+    const workContextDelivery: ThreadWorkRebindRouteDeps["workContextDelivery"] = {
+      async deliverAfterCommit() {
+        expect(claimed).toBe(false);
+        order.push("delivery");
+        return originalDelivery();
+      },
+    };
+    const notices: ThreadWorkRebindRouteDeps["notices"] = {
+      async record(notice) {
+        order.push("notice");
+        await h.recordNotice(notice);
+      },
     };
 
     await handleRebindThreadWorkRequest(
-      { ...h.deps, runOwnership, transaction },
+      { ...h.deps, workContextDelivery, notices, runOwnership, transaction },
       {
         threadId: THREAD_ID,
         userId: USER_ID,
@@ -171,7 +187,7 @@ describe("thread Work rebind writer adapter", () => {
       },
     );
 
-    expect(order).toEqual(["claim", "transaction", "release", "delivery"]);
+    expect(order).toEqual(["claim", "transaction", "notice", "release", "delivery"]);
   });
 
   it("returns the shared receipt and truthful delivery status", async () => {
@@ -192,6 +208,20 @@ describe("thread Work rebind writer adapter", () => {
         inverse: { command: "switch", workId: SOURCE_ID },
       },
     });
+    expect(h.recordNotice).toHaveBeenCalledOnce();
+    expect(h.recordNotice).toHaveBeenCalledWith({
+      kind: "work_switched",
+      scope: { kind: "thread", threadId: THREAD_ID },
+      message:
+        'The writer switched this conversation\'s Work from "Source" to "Target" before this message.',
+      data: {
+        previousWorkId: SOURCE_ID,
+        previousWorkName: "Source",
+        workId: TARGET_ID,
+        workName: "Target",
+        actor: "writer",
+      },
+    });
   });
 
   it("returns changed false for an idle same-target retry", async () => {
@@ -209,6 +239,7 @@ describe("thread Work rebind writer adapter", () => {
       receipt: { inverse: null },
     });
     expect(h.deps.preferences.setCurrentWorkId).not.toHaveBeenCalled();
+    expect(h.recordNotice).not.toHaveBeenCalled();
   });
 
   it("conceals wrong-owner, cross-project, and deleted targets", async () => {
@@ -293,5 +324,20 @@ describe("thread Work rebind writer adapter", () => {
         body: { workId: TARGET_ID },
       }),
     ).rejects.toBe(failure);
+    expect(h.recordNotice).not.toHaveBeenCalled();
+  });
+
+  it("fails the transition when its durable Notice cannot be recorded", async () => {
+    const failure = new Error("notice insert failed");
+    const h = routeFixture({ noticeFailure: failure });
+    await expect(
+      handleRebindThreadWorkRequest(h.deps, {
+        threadId: THREAD_ID,
+        userId: USER_ID,
+        body: { workId: TARGET_ID },
+      }),
+    ).rejects.toBe(failure);
+    expect(h.recordNotice).toHaveBeenCalledOnce();
+    expect(h.deps.workContextDelivery.deliverAfterCommit).not.toHaveBeenCalled();
   });
 });

@@ -32,6 +32,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectPreferencesRepository } = await import(
       "../domains/preferences/index.js"
     );
+    const { createDrizzleNoticePort } = await import("../domains/notices/index.js");
     const { handleRebindThreadWorkRequest } = await import("./thread-work-rebind-route.js");
     const { default: interruptErrorHandler } = await import("./interrupt-error-handler.js");
     const { createDrizzleThreadRunOwnership } = await import(
@@ -48,6 +49,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       db,
       hasUnreviewedDraft: async () => false,
     });
+    const notices = createDrizzleNoticePort(db);
 
     beforeEach(() => resetThreadWorkRaceFixture(db));
 
@@ -76,6 +78,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               preferences,
               obligations: threads.workContextDeliveries,
               workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+              notices,
               transaction: threads.transaction,
               runOwnership: writerInstance,
             },
@@ -104,6 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           preferences,
           obligations: threads.workContextDeliveries,
           workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+          notices,
           transaction: threads.transaction,
           runOwnership: writerInstance,
         },
@@ -142,6 +146,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             preferences,
             obligations: threads.workContextDeliveries,
             workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+            notices,
             transaction: threads.transaction,
             runOwnership: {
               tryAcquire: async () => ({ release: async () => {} }),
@@ -207,6 +212,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               preferences,
               obligations: threads.workContextDeliveries,
               workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+              notices,
               transaction: async (operation) => operation(),
               runOwnership: {
                 tryAcquire: async () => ({ release: async () => {} }),
@@ -227,6 +233,93 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await blocker.end();
         await failingDb.close();
       }
+    });
+
+    it("commits the writer binding state and one durable Notice in the same transaction", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+      const projects = createDrizzleProjectRepository({ db });
+
+      await handleRebindThreadWorkRequest(
+        {
+          threads: threads.threads,
+          threadWorks: threads.threadWorks,
+          projects,
+          works,
+          preferences,
+          obligations: threads.workContextDeliveries,
+          workContextDelivery: { deliverAfterCommit: async () => "pending" as const },
+          notices,
+          transaction: threads.transaction,
+          runOwnership: {
+            tryAcquire: async () => ({ release: async () => {} }),
+          },
+        },
+        { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
+      );
+
+      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: TARGET_WORK_ID,
+      });
+      await expect(preferences.getCurrentWorkId(USER_ID, THREAD_WORK_RACE.projectId)).resolves.toBe(
+        TARGET_WORK_ID,
+      );
+      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+
+      const recreatedPort = createDrizzleNoticePort(db);
+      await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toMatchObject([
+        {
+          kind: "work_switched",
+          scope: { kind: "thread", threadId: THREAD_ID },
+          data: {
+            previousWorkId: WORK_ID,
+            previousWorkName: "Race target",
+            workId: TARGET_WORK_ID,
+            workName: "Rebound target",
+            actor: "writer",
+          },
+        },
+      ]);
+      await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
+    });
+
+    it("rolls back binding, preference, context obligation, and Notice on Notice failure", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      const preferences = createDrizzleProjectPreferencesRepository({ db });
+      const projects = createDrizzleProjectRepository({ db });
+
+      await expect(
+        handleRebindThreadWorkRequest(
+          {
+            threads: threads.threads,
+            threadWorks: threads.threadWorks,
+            projects,
+            works,
+            preferences,
+            obligations: threads.workContextDeliveries,
+            workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+            notices: {
+              record: async () => {
+                throw new Error("injected Notice failure");
+              },
+            },
+            transaction: threads.transaction,
+            runOwnership: {
+              tryAcquire: async () => ({ release: async () => {} }),
+            },
+          },
+          { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
+        ),
+      ).rejects.toThrow("injected Notice failure");
+
+      await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+        workId: WORK_ID,
+      });
+      await expect(
+        preferences.getCurrentWorkId(USER_ID, THREAD_WORK_RACE.projectId),
+      ).resolves.toBeNull();
+      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+      await expect(notices.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
     });
   });
 }

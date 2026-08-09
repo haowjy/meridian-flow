@@ -47,7 +47,7 @@
  */
 
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { Notice } from "../../notices/index.js";
+import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -331,6 +331,9 @@ export function formatNotices(notices: readonly Notice[]): string {
 }
 
 function formatNotice(notice: Notice): string {
+  if (notice.kind === "work_switched") {
+    return formatWorkSwitchedNotice(notice.data) ?? notice.message;
+  }
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
   if (notice.kind === "awareness_degraded") {

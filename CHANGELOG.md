@@ -52,6 +52,10 @@
   canonical Meridian error envelope, reuse one transaction-composable binding
   transition for receipt reversal, and publish committed Work identity through
   the existing journal/AG-UI stream for live client convergence.
+- `apps/server`: successful writer Work switches and their Undo/Redo now commit
+  a durable one-shot model Notice with the binding transition. The next model
+  request receives the ordered before/after event after the writer's text while
+  the independent hidden Work-context update remains authoritative afterward.
 - `apps/server`: Work-rebind preflight concealment, lifecycle conflicts, missing
   primary integrity failures, and infrastructure failures now remain distinct
   through the repository, domain, and serialized HTTP boundaries.

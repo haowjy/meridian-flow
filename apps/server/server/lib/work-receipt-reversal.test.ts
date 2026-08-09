@@ -20,6 +20,7 @@ function harness(receipts: WorkReceipt[]) {
     return { previousWorkId, changed: previousWorkId !== workId };
   });
   const setCurrentWorkId = vi.fn(async () => {});
+  const recordNotice = vi.fn(async () => {});
   return {
     works,
     setPrimary(workId: string) {
@@ -50,6 +51,7 @@ function harness(receipts: WorkReceipt[]) {
       obligations: {
         enqueueThread: vi.fn(async (threadId) => [threadId]),
       },
+      notices: { record: recordNotice },
       transaction: works.transaction,
       blocks: {
         listByTurn: async () =>
@@ -59,6 +61,7 @@ function harness(receipts: WorkReceipt[]) {
       },
     },
     rebindPrimary,
+    recordNotice,
     setCurrentWorkId,
   };
 }
@@ -353,6 +356,97 @@ describe("Work receipt reversal", () => {
     expect(h.deps.obligations.enqueueThread).toHaveBeenCalledTimes(2);
     expect(h.deps.workContextDelivery.deliverAfterCommit).toHaveBeenCalledOnce();
     expect(h.deps.workContextDelivery.projectChanged).not.toHaveBeenCalled();
+    expect(h.recordNotice).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        kind: "work_switched",
+        data: expect.objectContaining({
+          previousWorkId: c.id,
+          previousWorkName: "C",
+          workId: b.id,
+          workName: "B",
+          actor: "writer",
+        }),
+      }),
+    );
+    expect(h.recordNotice).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        kind: "work_switched",
+        data: expect.objectContaining({
+          previousWorkId: b.id,
+          previousWorkName: "B",
+          workId: a.id,
+          workName: "A",
+          actor: "writer",
+        }),
+      }),
+    );
+  });
+
+  it("records the accurate current direction for writer Undo and Redo only after success", async () => {
+    const h = harness([]);
+    const a = await h.works.create({ projectId: "project-1", name: "A" });
+    const b = await h.works.create({ projectId: "project-1", name: "B" });
+    const receipt = switchReceipt(a, b);
+    h.setPrimary(b.id);
+    Object.assign(h.deps.blocks, {
+      listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
+    });
+
+    await reverseWorkReceipts(h.deps, {
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      direction: "undo",
+    });
+    await reverseWorkReceipts(h.deps, {
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      direction: "redo",
+    });
+
+    expect(h.recordNotice).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          previousWorkId: b.id,
+          previousWorkName: "B",
+          workId: a.id,
+          workName: "A",
+        }),
+      }),
+    );
+    expect(h.recordNotice).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          previousWorkId: a.id,
+          previousWorkName: "A",
+          workId: b.id,
+          workName: "B",
+        }),
+      }),
+    );
+  });
+
+  it("does not record a Work-switch Notice for an unavailable reversal", async () => {
+    const h = harness([]);
+    const a = await h.works.create({ projectId: "project-1", name: "A" });
+    const b = await h.works.create({ projectId: "project-1", name: "B" });
+    const receipt = switchReceipt(a, b);
+    h.setPrimary(a.id);
+    Object.assign(h.deps.blocks, {
+      listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
+    });
+
+    await expect(
+      reverseWorkReceipts(h.deps, {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+      }),
+    ).resolves.toEqual([expect.objectContaining({ status: "unavailable" })]);
+    expect(h.recordNotice).not.toHaveBeenCalled();
   });
 
   it("undoes and redoes a mixed update then delete sequence", async () => {

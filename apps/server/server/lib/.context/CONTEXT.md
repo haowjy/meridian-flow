@@ -153,6 +153,12 @@ Context ports and runtime tool algorithms live in their owning domains
 (`domains/context/*` and `domains/runtime/*`), not in `lib/`. `lib` composes
 those pieces into `AppServices` and route/WebSocket entry points.
 
+Writer-origin thread Work rebinds and their receipt Undo/Redo record a durable
+`work_switched` Notice inside the binding transaction. It is appended after the
+next writer message for one model request while the independent hidden
+`<system_update>` keeps the new Work context authoritative on later requests.
+The model-origin `work.switch` adapter does not emit the writer notice.
+
 ## Request flow (HTTP)
 
 ```

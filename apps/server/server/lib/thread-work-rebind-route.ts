@@ -4,6 +4,7 @@ import { meridianError, meridianErrorFromSystem } from "@meridian/contracts/prot
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
+import type { NoticePort } from "../domains/notices/index.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   type ProjectRepository,
@@ -23,6 +24,7 @@ import {
 } from "../domains/threads/index.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
+import { recordWriterWorkSwitchNotice } from "./writer-work-switch-notice.js";
 
 export interface ThreadWorkRebindRouteDeps {
   threads: Pick<ThreadRepository, "findById">;
@@ -32,6 +34,7 @@ export interface ThreadWorkRebindRouteDeps {
   preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
+  notices: Pick<NoticePort, "record">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   runOwnership: ThreadRunOwnership;
 }
@@ -79,13 +82,15 @@ export async function handleRebindThreadWorkRequest(
   }
   let transition: Awaited<ReturnType<typeof rebindThreadWork>>;
   try {
-    transition = await deps.transaction(() =>
-      rebindThreadWork(deps, {
+    transition = await deps.transaction(async () => {
+      const rebound = await rebindThreadWork(deps, {
         threadId: thread.id,
         targetWorkId: input.body.workId,
         preferenceUserId: input.userId,
-      }),
-    );
+      });
+      await recordWriterWorkSwitchNotice(deps.notices, rebound);
+      return rebound;
+    });
   } catch (cause) {
     if (cause instanceof RebindThreadWorkError && cause.reason === "unavailable") {
       throwHttpInterrupt(meridianErrorFromSystem("not_found", "Thread or Work not found"), 404);

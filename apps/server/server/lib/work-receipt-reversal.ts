@@ -8,6 +8,7 @@ import {
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
+import type { NoticePort } from "../domains/notices/index.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import type { WorkContextDelivery, WorkRepository } from "../domains/projects/index.js";
 import type {
@@ -18,6 +19,7 @@ import type {
   WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
 import { rebindThreadWork } from "../domains/threads/index.js";
+import { recordWriterWorkSwitchNotice } from "./writer-work-switch-notice.js";
 
 type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
@@ -28,6 +30,7 @@ type WorkReceiptReversalDeps = {
   works: WorkRepository;
   workContextDelivery: Pick<WorkContextDelivery, "projectChanged" | "deliverAfterCommit">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
+  notices: Pick<NoticePort, "record">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -292,6 +295,7 @@ async function applyStep(
       targetWorkId: target,
       preferenceUserId: thread.userId,
     });
+    await recordWriterWorkSwitchNotice(deps.notices, rebound);
     return rebound.changed;
   }
   return false;

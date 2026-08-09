@@ -71,6 +71,7 @@ export default defineEventHandler(async (event) => {
               preferences: app.preferences,
               workContextDelivery: app.workContextDelivery,
               obligations: app.threadRepos.workContextDeliveries,
+              notices: app.notices,
               transaction: app.threadRepos.transaction,
             },
             { threadId, turnId, direction: body.direction },
