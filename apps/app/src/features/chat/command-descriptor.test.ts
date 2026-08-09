@@ -87,7 +87,7 @@ describe("work command phrases", () => {
           workName: "Tournament arc",
           before: null,
           after: null,
-          inverse: { command: "switch", workId: "w0" },
+          inverse: null,
         },
       },
     });

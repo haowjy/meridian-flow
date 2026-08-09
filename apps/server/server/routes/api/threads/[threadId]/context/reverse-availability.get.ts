@@ -48,7 +48,6 @@ export default defineEventHandler(async (event) => {
         turns: services.turns,
         works: services.works,
         threads: services.threads,
-        threadWorks: services.threadWorks,
       },
       { threadId, turnId: requireRequestId(target, "target") },
     );

@@ -97,7 +97,7 @@ describe("rebindThreadWork", () => {
         changed: true,
         before: { name: "Source" },
         after: { name: "Target" },
-        inverse: { command: "switch", workId: SOURCE_ID },
+        inverse: null,
       },
     });
     expect(h.setCurrentWorkId).toHaveBeenCalledWith(PREFERENCE_USER_ID, "project-1", TARGET_ID);

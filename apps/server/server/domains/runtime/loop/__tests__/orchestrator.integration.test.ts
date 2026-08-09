@@ -1068,7 +1068,7 @@ describe("runtime loop integration", () => {
       workName: "Target",
       before: null,
       after: null,
-      inverse: { command: "switch", workId: "work-source" },
+      inverse: null,
     } as const;
     const registry = createToolRegistry();
     let enqueueWorkContext = async (_threadId: ThreadId) => {};

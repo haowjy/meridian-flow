@@ -66,7 +66,7 @@ export function formatWorkSwitchedNotice(data: Record<string, unknown>): string 
 }
 
 function workSwitchedNoticeMessage(data: { previousWorkName: string; workName: string }): string {
-  return `The writer switched this conversation's Work from ${JSON.stringify(data.previousWorkName)} to ${JSON.stringify(data.workName)} before this message.`;
+  return `This conversation's Work switched from ${JSON.stringify(data.previousWorkName)} to ${JSON.stringify(data.workName)}.`;
 }
 
 function nonEmptyString(value: unknown): string | null {

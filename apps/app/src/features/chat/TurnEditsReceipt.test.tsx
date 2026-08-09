@@ -53,10 +53,10 @@ const deletedWorkReceipt = {
   after: null,
   inverse: { command: "restore", workId: "work-1" },
 } as const;
-const readWorkReceipt = {
+const switchedWorkReceipt = {
   operation: "switch",
   category: "binding",
-  changed: false,
+  changed: true,
   workId: "work-1",
   workName: "Side quests",
   before: null,
@@ -353,14 +353,14 @@ describe("TurnEditsReceipt Work receipts", () => {
     expect(html).toContain("Undo");
   });
 
-  it("renders nothing for a turn whose only Work receipts are reads", () => {
+  it("renders nothing for a turn whose only Work receipt is a factual switch", () => {
     const html = renderToStaticMarkup(
       <TurnEditsReceipt
         threadId="thread-1"
         turn={turn()}
         documents={[]}
         receipt={null}
-        workReceipts={[readWorkReceipt]}
+        workReceipts={[switchedWorkReceipt]}
       />,
     );
 

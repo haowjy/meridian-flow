@@ -7,7 +7,6 @@ import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
-import { Button } from "@/components/ui/button";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
 import { deriveWorkPickerViewModel, WorkPickerPanel } from "./WorkPickerPanel";
 
@@ -39,26 +38,12 @@ export function useComposerWorkToolbarControl({
       value: work.name,
     },
     inline: ({ trigger }) => (
-      <span className="flex items-center">
-        <ComposerCurrentValueTrigger
-          binding={trigger}
-          ariaLabel={t`Change work for this chat, currently ${work.name}`}
-        >
-          {work.name}
-        </ComposerCurrentValueTrigger>
-        {controller.undoWork ? (
-          <Button
-            variant="link"
-            size="meta"
-            type="button"
-            disabled={controller.busy}
-            className="ml-1"
-            onClick={controller.undo}
-          >
-            <Trans>Undo</Trans>
-          </Button>
-        ) : null}
-      </span>
+      <ComposerCurrentValueTrigger
+        binding={trigger}
+        ariaLabel={t`Change work for this chat, currently ${work.name}`}
+      >
+        {work.name}
+      </ComposerCurrentValueTrigger>
     ),
     panel: {
       ariaLabel: t`Change work for this chat`,

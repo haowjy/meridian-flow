@@ -205,15 +205,14 @@ describe("thread Work rebind writer adapter", () => {
         operation: "switch",
         before: { name: "Source" },
         after: { name: "Target" },
-        inverse: { command: "switch", workId: SOURCE_ID },
+        inverse: null,
       },
     });
     expect(h.recordNotice).toHaveBeenCalledOnce();
     expect(h.recordNotice).toHaveBeenCalledWith({
       kind: "work_switched",
       scope: { kind: "thread", threadId: THREAD_ID },
-      message:
-        'The writer switched this conversation\'s Work from "Source" to "Target" before this message.',
+      message: 'This conversation\'s Work switched from "Source" to "Target".',
       data: {
         previousWorkId: SOURCE_ID,
         previousWorkName: "Source",
@@ -222,6 +221,33 @@ describe("thread Work rebind writer adapter", () => {
         actor: "writer",
       },
     });
+  });
+
+  it("records the reverse notice when the writer selects the previous Work normally", async () => {
+    const h = routeFixture();
+    await handleRebindThreadWorkRequest(h.deps, {
+      threadId: THREAD_ID,
+      userId: USER_ID,
+      body: { workId: TARGET_ID },
+    });
+    await handleRebindThreadWorkRequest(h.deps, {
+      threadId: THREAD_ID,
+      userId: USER_ID,
+      body: { workId: SOURCE_ID },
+    });
+
+    expect(h.recordNotice).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        message: 'This conversation\'s Work switched from "Target" to "Source".',
+        data: expect.objectContaining({
+          previousWorkId: TARGET_ID,
+          previousWorkName: "Target",
+          workId: SOURCE_ID,
+          workName: "Source",
+        }),
+      }),
+    );
   });
 
   it("returns changed false for an idle same-target retry", async () => {

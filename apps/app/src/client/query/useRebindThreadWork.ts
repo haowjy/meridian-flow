@@ -14,23 +14,16 @@ export type ThreadWorkMutationInput = { targetWorkId: string; previousWorkId: st
 
 export type NormalizedCommit = {
   threadId: string;
-  previousWorkId: string;
   work: Work;
   changed: boolean;
   preferenceChanged: boolean;
-  undoWorkId: string | null;
 };
 
 export type ThreadWorkMutationOutcome =
-  | { kind: "confirmed"; result: RebindThreadWorkResponse; undoWorkId: string | null }
+  | { kind: "confirmed"; result: RebindThreadWorkResponse }
   | { kind: "reconciled_committed"; result: NormalizedCommit & { changed: true } }
   | { kind: "reconciled_not_current"; requestedWorkId: string; currentWork: Work }
   | { kind: "superseded"; requestedWorkId: string; currentWork: Work };
-
-function inverseWorkId(result: RebindThreadWorkResponse): string | null {
-  const inverse = result.receipt.inverse;
-  return inverse?.command === "switch" ? inverse.workId : null;
-}
 
 export function useRebindThreadWork(projectId: string, threadId: string) {
   const client = useQueryClient();
@@ -48,7 +41,7 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
       const overlapped = admitted !== settled;
       if (response && !overlapped) {
         convergeThreadWorkBinding(client, { source: "confirmed", projectId, result: response });
-        return { kind: "confirmed", result: response, undoWorkId: inverseWorkId(response) };
+        return { kind: "confirmed", result: response };
       }
 
       const fresh = await readStableThreadWorkBinding(client, {
@@ -60,17 +53,15 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
       if (!currentWork) throw new Error("The thread's current Work is absent from its catalog");
       if (fresh.workId === targetWorkId) {
         if (response) {
-          return { kind: "confirmed", result: response, undoWorkId: inverseWorkId(response) };
+          return { kind: "confirmed", result: response };
         }
         return {
           kind: "reconciled_committed",
           result: {
             threadId,
-            previousWorkId,
             work: currentWork,
             changed: true,
             preferenceChanged: false,
-            undoWorkId: previousWorkId,
           },
         };
       }

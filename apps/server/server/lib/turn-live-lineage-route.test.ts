@@ -72,11 +72,36 @@ function deps({
     },
     blocks: { listByTurn: vi.fn(async () => []) },
     works: { findById: vi.fn(async () => null), listByProject: vi.fn(async () => []) },
-    threadWorks: { findPrimary: vi.fn(async () => null) },
   };
 }
 
 describe("turn live-lineage route", () => {
+  it("does not expose Undo for a factual Work switch", async () => {
+    const services = deps({ documents: [], receipt: null });
+    services.blocks.listByTurn.mockResolvedValueOnce([
+      {
+        content: {
+          metadata: {
+            workReceipt: {
+              operation: "switch",
+              category: "binding",
+              changed: true,
+              workId,
+              workName: "Revision",
+              before: null,
+              after: null,
+              inverse: null,
+            },
+          },
+        },
+      } as never,
+    ]);
+
+    await expect(
+      handleTurnLiveLineageRequest(services as never, { threadId, turnId, userId }),
+    ).resolves.toEqual({ documents: [], receipt: null });
+  });
+
   it("reports an active Work restore receipt as undoable without edited documents", async () => {
     const services = deps({ documents: [], receipt: null });
     services.blocks.listByTurn.mockResolvedValueOnce([

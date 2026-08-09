@@ -129,7 +129,7 @@ describe("orchestrator model-request debug capture", () => {
             { type: "text", text: "what did i just do?" },
             {
               type: "text",
-              text: '\n\nMeridian context for this message:\nThe writer switched this conversation\'s Work from "Book One" to "Book Two" before this message.',
+              text: '\n\nMeridian context for this message:\nThis conversation\'s Work switched from "Book One" to "Book Two".',
             },
           ],
         },

@@ -19,7 +19,7 @@ describe("Work receipt presentation", () => {
       workName: "第二卷",
       before: null,
       after: null,
-      inverse: { command: "switch", workId: "w0" },
+      inverse: null,
     };
     expect(workReceiptLine(receipt)).toBe("已将此对话切换到工作 第二卷");
   });

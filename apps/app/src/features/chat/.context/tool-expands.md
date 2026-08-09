@@ -27,12 +27,12 @@ switches on a command itself.
 receipt line (`metadata.workReceipt.line`, carried on the tool result), worn
 verbatim minus its terminal period — it is already the factual sentence, in
 Work names. Reads keep one minimal generic row; failures title with the
-failure verb and open onto the structured message. The receipt's `inverse`
-(`workReceipt` in `tool-command.ts`) is what makes the turn reversible, and
-that action lives on the turn edits receipt, not on this row: the reversal
-seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn lineage owns
-Undo authority, so a Work-only turn gets the same undo-bearing receipt card a
-document turn does (`turnWorkReceipts` feeds it). This row stays a record.
+failure verb and open onto the structured message. A mutation receipt's
+`inverse` (`workReceipt` in `tool-command.ts`) makes create/update/delete
+reversible, and that action lives on the turn edits receipt, not on this row:
+the reversal seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn
+lineage owns Undo authority. Switch receipts remain factual rows with
+`inverse: null`; they never create an Undo card. This row stays a record.
 
 **The tool picks the parser.** A search hit and a listing entry are both
 `{uri, …}`, so a payload cannot be asked what it is: guessing from the first

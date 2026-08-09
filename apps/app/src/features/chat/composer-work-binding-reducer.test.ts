@@ -8,12 +8,9 @@ import {
 } from "./composer-work-binding-reducer";
 
 const work = (id: string): Work => ({ id, name: id.toUpperCase(), status: "active" }) as Work;
-const request = (target = work("b"), intent: "change" | "undo" = "change"): WorkBindingRequest => ({
+const request = (target = work("b")): WorkBindingRequest => ({
   id: "request-1",
   target,
-  previousWorkId: "a",
-  intent,
-  origin: "panel",
   observedProjection: "none",
 });
 
@@ -30,11 +27,9 @@ describe("composer Work binding reducer", () => {
       message: "done",
       commit: {
         threadId: "thread",
-        previousWorkId: "a",
         work: work("b"),
         changed: true,
         preferenceChanged: false,
-        undoWorkId: "a",
       },
     });
     const settled = state;
@@ -59,26 +54,22 @@ describe("composer Work binding reducer", () => {
       message: "done",
       commit: {
         threadId: "thread",
-        previousWorkId: "a",
         work: work("b"),
         changed: true,
         preferenceChanged: false,
-        undoWorkId: "a",
       },
     });
     expect(state).toMatchObject({
       view: { kind: "browsing" },
       expectedLocalWorkId: "b",
-      undo: { workId: "a", resultWorkId: "b" },
     });
   });
 
-  it("consumes a local projection but announces and clears Undo for an external binding", () => {
+  it("consumes a local projection but announces an external binding", () => {
     let state: ComposerWorkBindingState = {
       ...initialComposerWorkBindingState(work("a")),
       observed: { id: "b", name: "B" },
       expectedLocalWorkId: "b",
-      undo: { workId: "a", resultWorkId: "b" },
     };
     state = reduceComposerWorkBinding(state, {
       type: "binding.observed",
@@ -91,7 +82,6 @@ describe("composer Work binding reducer", () => {
       work: work("c"),
       message: "external",
     });
-    expect(state.undo).toBeNull();
     expect(state.effects.at(-1)).toMatchObject({ type: "announce", message: "external" });
   });
 

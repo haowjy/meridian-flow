@@ -19,6 +19,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
+import { isReversibleWorkMutationReceipt } from "@meridian/contracts/works";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
@@ -55,7 +56,7 @@ function hasTurnEditsReceiptDocuments(
 
 /**
  * Whether this turn has a receipt to show at all: committed document edits,
- * or a Work receipt whose inverse makes the turn reversible. Both callers
+ * or a reversible Work mutation receipt. Both callers
  * (`AssistantTurn`'s render gate and this component's own null return) must
  * ask the same predicate, or a Work-only turn passes one gate and fails the
  * other.
@@ -67,7 +68,7 @@ export function hasTurnEditsReceiptContent(
 ): boolean {
   return (
     hasTurnEditsReceiptDocuments(documents, changeTrail) ||
-    workReceipts.some((receipt) => receipt.changed)
+    workReceipts.some(isReversibleWorkMutationReceipt)
   );
 }
 
@@ -110,11 +111,10 @@ export function TurnEditsReceipt({
   // receipt?" decision in name only — filtering first made its scope check dead
   // here while `AssistantTurn` still depends on it.
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
-  // Reversible Work receipts are receipt content in their own right: their
+  // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
-  // Undo on screen. Receipts without an inverse (reads) are process, not
-  // outcome, and never reach this card.
-  const reversibleWorkReceipts = workReceipts.filter((receipt) => receipt.changed);
+  // Undo on screen. Factual Work binding receipts never reach this card.
+  const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkMutationReceipt);
   // Chrome counts, never names. A document name here would sit inside the
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in

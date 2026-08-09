@@ -31,7 +31,7 @@ const response = {
   work: { id: "work-b", name: "B" },
   changed: true,
   preferenceChanged: true,
-  receipt: { inverse: { command: "switch", workId: "work-a" } },
+  receipt: { inverse: null },
 } as RebindThreadWorkResponse;
 
 describe("thread Work binding convergence", () => {
@@ -104,7 +104,7 @@ describe("thread Work binding convergence", () => {
     expect(listProjectThreads).toHaveBeenCalledTimes(2);
   });
 
-  it("does not let delayed mutation B roll back later projection C or offer stale Undo", async () => {
+  it("does not let delayed mutation B roll back later projection C", async () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     client.setQueryData(projectQueryKeys.threads("project-1"), [
       { id: "thread-1", projectId: "project-1", workId: "work-a" },
@@ -161,7 +161,6 @@ describe("thread Work binding convergence", () => {
       requestedWorkId: "work-b",
       currentWork: { id: "work-c" },
     });
-    expect(await pending).not.toHaveProperty("undoWorkId");
     expect(
       client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0]?.workId,
     ).toBe("work-c");

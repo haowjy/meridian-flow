@@ -42,11 +42,9 @@ function readyController(query = "", busy = false) {
       pending: busy,
       failure: null,
     },
-    undoWork: next,
     busy,
     changeQuery: vi.fn(),
     choose: vi.fn(async () => "close" as const),
-    undo: vi.fn(),
     retryCatalog: retry,
   };
 }
@@ -74,7 +72,7 @@ describe("useComposerWorkToolbarControl", () => {
     setTestToolbarInlineIds("all");
   });
 
-  it("owns Search/row repair, mutation refusal, error Retry, and sibling Undo", async () => {
+  it("owns Search/row repair, mutation refusal, and error Retry", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -82,7 +80,7 @@ describe("useComposerWorkToolbarControl", () => {
     await act(async () => root.render(<Harness />));
     expect(
       [...document.querySelectorAll("button")].some((button) => button.textContent === "Undo"),
-    ).toBe(true);
+    ).toBe(false);
     const trigger = document.querySelector<HTMLButtonElement>(
       '[aria-label="Change work for this chat, currently Current Work"]',
     );

@@ -60,7 +60,7 @@ function receipt(previousWork: Work, targetWork: Work, changed: boolean): WorkRe
     workName: targetWork.name,
     before: receiptState(previousWork),
     after: receiptState(targetWork),
-    inverse: changed ? { command: "switch", workId: previousWork.id } : null,
+    inverse: null,
   };
 }
 

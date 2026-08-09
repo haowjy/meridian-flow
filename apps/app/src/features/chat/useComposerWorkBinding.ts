@@ -20,11 +20,9 @@ export type ComposerWorkBindingController = {
   state: ComposerWorkBindingState;
   catalog: WorkCatalogView;
   operation: WorkPickerOperation;
-  undoWork: Work | null;
   busy: boolean;
   changeQuery(query: string): void;
   choose(work: Work): Promise<"close" | "stay">;
-  undo(): void;
   retryCatalog(): void;
 };
 
@@ -66,16 +64,13 @@ export function useComposerWorkBinding({
   }, [announce, announceError, state.effects, worksQuery.refetch]);
 
   const run = useCallback(
-    async (target: Work, intent: "change" | "undo", origin: WorkBindingRequest["origin"]) => {
+    async (target: Work) => {
       if (mutation.isPending || target.id === state.observed.id) {
         return target.id === state.observed.id ? ("close" as const) : ("stay" as const);
       }
       const request: WorkBindingRequest = {
         id: `${threadId}:${++requestNumber.current}`,
         target,
-        previousWorkId: state.observed.id,
-        intent,
-        origin,
         observedProjection: "none",
       };
       dispatch({ type: "change.started", request, message: t`Changing work to ${target.name}` });
@@ -104,11 +99,9 @@ export function useComposerWorkBinding({
         const result = outcome.result;
         const commit: NormalizedCommit = {
           threadId: result.threadId,
-          previousWorkId: result.previousWorkId,
           work: result.work,
           changed: result.changed,
           preferenceChanged: result.preferenceChanged,
-          undoWorkId: outcome.kind === "confirmed" ? outcome.undoWorkId : outcome.result.undoWorkId,
         };
         dispatch({
           type: "change.committed",
@@ -155,7 +148,6 @@ export function useComposerWorkBinding({
         : worksQuery.status === "empty"
           ? { status: "empty" }
           : { status: "ready", works: allWorks, refreshing: worksQuery.isFetching };
-  const undoWork = allWorks.find(({ id }) => id === state.undo?.workId) ?? null;
   const busy = state.view.kind === "changing";
   const operation: WorkPickerOperation = {
     currentWorkId: state.observed.id,
@@ -172,13 +164,9 @@ export function useComposerWorkBinding({
     state,
     catalog,
     operation,
-    undoWork,
     busy,
     changeQuery: (query) => dispatch({ type: "query.changed", query }),
-    choose: (target) => run(target, "change", "panel"),
-    undo: () => {
-      if (undoWork) void run(undoWork, "undo", "undo");
-    },
+    choose: run,
     retryCatalog: worksQuery.refetch,
   };
 }

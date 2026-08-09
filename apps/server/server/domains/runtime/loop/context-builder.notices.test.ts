@@ -46,9 +46,7 @@ describe("formatNotices", () => {
           message: "stale fallback",
         },
       ]),
-    ).toBe(
-      'The writer switched this conversation\'s Work from "Book \\"One\\"" to "Book Two" before this message.',
-    );
+    ).toBe('This conversation\'s Work switched from "Book \\"One\\"" to "Book Two".');
   });
 
   it("places ordered Work-switch alerts immediately after the latest writer text", () => {
@@ -86,7 +84,7 @@ describe("formatNotices", () => {
           {
             type: "text",
             text: expect.stringMatching(
-              /A" to "B" before this message\.\n\nThe writer switched.*B" to "A"/,
+              /A" to "B"\.\n\nThis conversation's Work switched.*B" to "A"/,
             ),
           },
         ],

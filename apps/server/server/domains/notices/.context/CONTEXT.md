@@ -26,8 +26,9 @@ call and result already carry the event.
 Failure policy belongs to the producer's mutation boundary. Collaboration
 notices remain best-effort after the underlying edit is durable: their
 composition layer catches and structured-logs failures and may attempt an
-`awareness_degraded` fallback. Writer Work rebinds and successful writer
-Work-switch Undo/Redo instead record `work_switched` in the same ambient
-transaction as the binding transition, so a Notice failure rolls the transition
-back rather than committing a silent switch. Notices never become mutation
+`awareness_degraded` fallback. Writer Work rebinds instead record
+`work_switched` in the same ambient transaction as the binding transition, so a
+Notice failure rolls the transition back rather than committing a silent
+switch. A writer reverses a switch by selecting the previous Work normally;
+there is no switch-specific Undo/Redo path. Notices never become mutation
 authority or a read-required fence.

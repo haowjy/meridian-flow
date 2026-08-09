@@ -25,15 +25,16 @@ Send and every mounted control's intrinsic width. Controls move behind one
 compact ellipsis in Work, write-mode, then Agent order. Feature controllers
 retain their state while the framework migrates their panel between inline and
 overflow hosts. Chat headers display only chat identity. The Work controller
-owns mutation, receipt/Undo, error, and live-convergence state, never placement.
+owns mutation, error, and live-convergence state, never placement. Switching
+back is an ordinary picker selection; the toolbar has no sibling Undo action.
 
 The shared toolbar owns popup topology, trigger policy, placement, and page-aware
 focus; feature controls own domain state and page content. See the
 [composer-toolbar contracts](../../../components/app/composer-toolbar/.context/CONTEXT.md).
 
 `ComposerWorkControl` can rebind an idle existing thread. The controller carries
-that behavior through cache convergence, durable projection, receipts, and
-Undo. Writer and LLM rebinding share the canonical server transition.
+that behavior through cache convergence and durable projection. Writer and LLM
+rebinding share the canonical server transition.
 
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an

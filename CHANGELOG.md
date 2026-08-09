@@ -50,12 +50,16 @@
 - `apps/server`, `packages/contracts`: writer Work rebinds now share the
   cross-process model-turn claim, serialize structured conflicts through the
   canonical Meridian error envelope, reuse one transaction-composable binding
-  transition for receipt reversal, and publish committed Work identity through
-  the existing journal/AG-UI stream for live client convergence.
-- `apps/server`: successful writer Work switches and their Undo/Redo now commit
-  a durable one-shot model Notice with the binding transition. The next model
-  request receives the ordered before/after event after the writer's text while
-  the independent hidden Work-context update remains authoritative afterward.
+  transition for writer and model commands, and publish committed Work identity
+  through the existing journal/AG-UI stream for live client convergence.
+- `apps/app`, `apps/server`, `packages/contracts`: Work-switch receipts are now
+  factual records with no inverse. Switching back uses the normal Work picker;
+  neither the composer nor turn receipts expose switch-specific Undo/Redo, while
+  Work create/update/delete receipts remain reversible.
+- `apps/server`: successful writer Work switches commit a durable one-shot model
+  Notice with the binding transition. The next model request receives the exact
+  ordered before/after event after the writer's text while the independent
+  hidden Work-context update remains authoritative afterward.
 - `apps/server`: Work-rebind preflight concealment, lifecycle conflicts, missing
   primary integrity failures, and infrastructure failures now remain distinct
   through the repository, domain, and serialized HTTP boundaries.

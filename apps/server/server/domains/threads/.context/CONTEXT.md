@@ -18,9 +18,10 @@ instead of the N:1 `threads.workId` column.
   changing an existing thread's primary Work. It owns lifecycle validation,
   the transaction-composable binding transition, primary-thread sticky
   preference, the exact binding receipt, idempotent no-op behavior, and the
-  targeted durable context refresh obligation. Public commands and receipt
-  reversal share that transition. The authenticated writer adapter additionally
-  holds cross-process thread-run ownership across its transaction. Preflight
+  targeted durable context refresh obligation. Writer and model commands share
+  that transition; switch receipts are factual and are not reversible through
+  turn Undo/Redo. The authenticated writer adapter additionally holds
+  cross-process thread-run ownership across its transaction. Preflight
   absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
   typed refreshable conflict, missing primary membership is a separate
   integrity conflict, and database failures propagate unchanged.

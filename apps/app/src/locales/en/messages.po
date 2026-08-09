@@ -3123,7 +3123,6 @@ msgstr "Undid"
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
-#: src/features/chat/ComposerWorkControl.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Undo"
