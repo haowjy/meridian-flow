@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: the desktop workspace selection now begins flush with the shared
+  40px pane-header boundary while phone navigation spacing remains unchanged.
 - `apps/app`: composer Agent, write-mode, and Work controls now share one
   toolbar-owned popup, trigger, and page-aware focus contract across direct,
   overflow, loading, mutation, error, and readonly states. Write mode keeps its
