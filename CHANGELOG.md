@@ -5,7 +5,9 @@
 - `apps/app`: composer Agent, write-mode, and Work controls now share one
   toolbar-owned popup, trigger, and page-aware focus contract across direct,
   overflow, loading, mutation, error, and readonly states. Write mode keeps its
-  compact current-value trigger with localized naming and coarse-pointer size.
+  compact current-value trigger with localized naming and coarse-pointer size;
+  competing locks, open-surface host migration, and confirmation resets remain
+  truthful across Work changes.
 - `apps/app`: compact composer, Work, Agent, thread, DropdownMenu, and Select
   surfaces now share consistent row density, collision gutters, state layout,
   and accessible Work detail; long composer root labels and values truncate in

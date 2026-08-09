@@ -99,17 +99,25 @@ export function ComposerToolbar({
     : undefined;
   const panel = active?.panel ?? null;
   const locked = state.surface.kind === "panel" && state.surface.lock === "nondismissible";
-  const anchorNode =
-    view.kind === "inline" ? inlineOwners.current.get(view.controlId) : overflowTrigger.current;
+  const anchorHost = view.kind === "inline" ? `inline:${view.controlId}` : view.kind;
+  const resolveAnchorHost = () => {
+    const currentView = deriveToolbarView(stateRef.current);
+    return currentView.kind === "inline"
+      ? inlineOwners.current.get(currentView.controlId)
+      : overflowTrigger.current;
+  };
   const virtualRef = useMemo(
     () => ({
       current: {
-        getBoundingClientRect: () => anchorNode?.getBoundingClientRect() ?? new DOMRect(),
+        get contextElement() {
+          return resolveAnchorHost();
+        },
+        getBoundingClientRect: () => resolveAnchorHost()?.getBoundingClientRect() ?? new DOMRect(),
       },
     }),
-    [anchorNode],
+    // A new virtual element makes Radix re-register its reference after the new host commits.
+    [anchorHost],
   );
-
   const commands = (session: PanelSession): ComposerToolbarPanelContext => ({
     host: view.kind === "inline" ? "inline" : "overflow",
     locked,

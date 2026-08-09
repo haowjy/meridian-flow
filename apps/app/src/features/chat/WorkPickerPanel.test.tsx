@@ -3,7 +3,11 @@
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { WorkPickerPanel } from "./WorkPickerPanel";
+import {
+  deriveWorkPickerViewModel,
+  type WorkCatalogView,
+  WorkPickerPanel,
+} from "./WorkPickerPanel";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -14,6 +18,8 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 const operation = { currentWorkId: "a", targetId: null, pending: false, failure: null } as const;
 const archived = { id: "b", name: "Second arc", goal: "Climb", status: "archived" } as Work;
+const view = (catalog: WorkCatalogView, query = "", pending = false) =>
+  deriveWorkPickerViewModel(catalog, query, pending);
 
 describe("WorkPickerPanel", () => {
   it.each([
@@ -22,9 +28,8 @@ describe("WorkPickerPanel", () => {
   ] as const)("renders truthful %s state", async (status, copy) => {
     await withReactRoot(
       <WorkPickerPanel
-        catalog={{ status }}
+        view={view({ status })}
         operation={operation}
-        query=""
         onQueryChange={() => {}}
         onChoose={() => {}}
       />,
@@ -42,9 +47,8 @@ describe("WorkPickerPanel", () => {
     const retry = vi.fn();
     await withReactRoot(
       <WorkPickerPanel
-        catalog={{ status: "error", retry }}
+        view={view({ status: "error", retry })}
         operation={operation}
-        query=""
         onQueryChange={() => {}}
         onChoose={() => {}}
       />,
@@ -61,9 +65,8 @@ describe("WorkPickerPanel", () => {
     const choose = vi.fn();
     await withReactRoot(
       <WorkPickerPanel
-        catalog={{ status: "ready", works: [archived], refreshing: false }}
+        view={view({ status: "ready", works: [archived], refreshing: false }, "Second")}
         operation={operation}
-        query="Second"
         onQueryChange={() => {}}
         onChoose={choose}
       />,
@@ -80,9 +83,8 @@ describe("WorkPickerPanel", () => {
     const current = { id: "a", name: "Opening arc", goal: "Ascend", status: "active" } as Work;
     await withReactRoot(
       <WorkPickerPanel
-        catalog={{ status: "ready", works: [current], refreshing: false }}
+        view={view({ status: "ready", works: [current], refreshing: false })}
         operation={operation}
-        query=""
         onQueryChange={() => {}}
         onChoose={() => {}}
       />,
@@ -101,9 +103,8 @@ describe("WorkPickerPanel", () => {
   it("preserves archived and changing state in accessible descriptions", async () => {
     await withReactRoot(
       <WorkPickerPanel
-        catalog={{ status: "ready", works: [archived], refreshing: false }}
+        view={view({ status: "ready", works: [archived], refreshing: false }, "", true)}
         operation={{ currentWorkId: "a", targetId: "b", pending: true, failure: null }}
-        query=""
         onQueryChange={() => {}}
         onChoose={() => {}}
       />,

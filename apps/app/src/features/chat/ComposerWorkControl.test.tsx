@@ -5,6 +5,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
+import { setTestToolbarInlineIds } from "@/components/app/composer-toolbar/composer-toolbar-test-harness";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -22,32 +23,11 @@ type ControlledController =
     });
 let controller: ControlledController;
 vi.mock("./useComposerWorkBinding", () => ({ useComposerWorkBinding: () => controller }));
-vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => {
-  const { useLayoutEffect, useRef } = await import("react");
-  return {
-    useMeasuredComposerToolbar: (
-      controls: readonly { id: string }[],
-      onLayout: (layout: {
-        inlineIds: string[];
-        overflowIds: string[];
-        constrained: boolean;
-      }) => void,
-    ) => {
-      const root = useRef<HTMLFieldSetElement | null>(null);
-      const probe = useRef<HTMLButtonElement | null>(null);
-      useLayoutEffect(
-        () =>
-          onLayout({
-            inlineIds: controls.map(({ id }) => id),
-            overflowIds: [],
-            constrained: false,
-          }),
-        [controls, onLayout],
-      );
-      return { root, probe, controlRef: () => () => {} };
-    },
-  };
-});
+vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => ({
+  useMeasuredComposerToolbar: (
+    await import("@/components/app/composer-toolbar/composer-toolbar-test-harness")
+  ).useTestMeasuredComposerToolbar,
+}));
 
 const current = { id: "current", name: "Current Work", goal: "Begin", status: "active" } as Work;
 const next = { id: "next", name: "Next Work", goal: "Climb", status: "active" } as Work;
@@ -91,6 +71,7 @@ describe("useComposerWorkToolbarControl", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     retry.mockClear();
+    setTestToolbarInlineIds("all");
   });
 
   it("owns Search/row repair, mutation refusal, error Retry, and sibling Undo", async () => {
@@ -129,6 +110,32 @@ describe("useComposerWorkToolbarControl", () => {
     };
     await act(async () => root.render(<Harness />));
     expect(document.activeElement?.textContent).toBe("Retry");
+    await act(async () => root.unmount());
+  });
+
+  it("opens the real Work picker from overflow and returns to its root row", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    controller = readyController();
+    setTestToolbarInlineIds([]);
+    await act(async () => root.render(<Harness />));
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="More composer controls"]')?.click(),
+    );
+    const row = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Change work for this chat, currently Current Work"]',
+    );
+    await act(async () => row?.click());
+    expect(document.activeElement).toBe(document.querySelector('input[type="search"]'));
+    await act(async () =>
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent?.trim() === "Back")
+        ?.click(),
+    );
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      "Change work for this chat, currently Current Work",
+    );
     await act(async () => root.unmount());
   });
 });

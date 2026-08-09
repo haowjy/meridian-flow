@@ -28,6 +28,51 @@ export type WorkPickerOperation = {
   failure: WorkBindingFailure | null;
 };
 
+type WorkPickerRows = {
+  query: string;
+  ordered: Work[];
+  active: Work[];
+  archived: Work[];
+  enabled: boolean;
+  enabledIds: string[];
+};
+export type WorkPickerViewModel = WorkPickerRows &
+  (
+    | { status: "loading" }
+    | { status: "error"; retry: () => void }
+    | { status: "empty" }
+    | { status: "ready"; refreshing: boolean }
+  );
+
+export function deriveWorkPickerViewModel(
+  catalog: WorkCatalogView,
+  query: string,
+  pending: boolean,
+): WorkPickerViewModel {
+  const needle = query.trim().toLocaleLowerCase();
+  const filtered =
+    catalog.status === "ready"
+      ? catalog.works.filter((work) =>
+          `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
+        )
+      : [];
+  const active = filtered.filter(({ status }) => status === "active");
+  const archived = filtered.filter(({ status }) => status === "archived");
+  const ordered = [...active, ...archived];
+  const rows = {
+    query,
+    ordered,
+    active,
+    archived,
+    enabled: catalog.status === "ready" && !pending,
+    enabledIds: catalog.status === "ready" && !pending ? ordered.map(({ id }) => id) : [],
+  };
+  if (catalog.status === "ready")
+    return { ...rows, status: "ready", refreshing: catalog.refreshing };
+  if (catalog.status === "error") return { ...rows, status: "error", retry: catalog.retry };
+  return { ...rows, status: catalog.status };
+}
+
 const failureCopy = (failure: WorkBindingFailure) => {
   switch (failure.kind) {
     case "thread_busy":
@@ -44,17 +89,15 @@ const failureCopy = (failure: WorkBindingFailure) => {
 };
 
 export function WorkPickerPanel({
-  catalog,
+  view,
   operation,
-  query,
   onQueryChange,
   onChoose,
   searchRef,
   focusRefs,
 }: {
-  catalog: WorkCatalogView;
+  view: WorkPickerViewModel;
   operation: WorkPickerOperation;
-  query: string;
   onQueryChange: (query: string) => void;
   onChoose: (work: Work) => void;
   searchRef?: RefObject<HTMLInputElement | null>;
@@ -65,13 +108,6 @@ export function WorkPickerPanel({
   };
 }) {
   const searchId = useId();
-  const needle = query.trim().toLocaleLowerCase();
-  const works = catalog.status === "ready" ? catalog.works : [];
-  const filtered = works.filter((work) =>
-    `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
-  );
-  const active = filtered.filter(({ status }) => status === "active");
-  const archived = filtered.filter(({ status }) => status === "archived");
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
     if (
       !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) ||
@@ -101,7 +137,7 @@ export function WorkPickerPanel({
     <div
       role="group"
       aria-label={t`Change work for this chat`}
-      aria-busy={(catalog.status === "ready" && catalog.refreshing) || operation.pending}
+      aria-busy={(view.status === "ready" && view.refreshing) || operation.pending}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
       onKeyDown={navigate}
     >
@@ -117,53 +153,55 @@ export function WorkPickerPanel({
           ref={searchRef}
           id={searchId}
           type="search"
-          value={query}
-          disabled={catalog.status !== "ready"}
+          value={view.query}
+          disabled={view.status !== "ready"}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={t`Search works`}
           className={dropdownSearchClass}
         />
       </div>
       <div className={`${dropdownResultsVariants({ kind: "picker" })} space-y-2`}>
-        {catalog.status === "loading" ? (
+        {view.status === "loading" ? (
           <PickerState>
             <Trans>Loading Works…</Trans>
           </PickerState>
         ) : null}
-        {catalog.status === "error" ? (
+        {view.status === "error" ? (
           <InlineErrorRow
             message={t`Couldn't load Works.`}
-            onRetry={catalog.retry}
+            onRetry={view.retry}
             retryRef={focusRefs?.retry}
           />
         ) : null}
-        {catalog.status === "empty" ? (
+        {view.status === "empty" ? (
           <PickerState>
             <Trans>No Works yet.</Trans>
           </PickerState>
         ) : null}
-        {active.length ? (
+        {view.active.length ? (
           <WorkSection
             label={t`Active works`}
-            works={active}
+            works={view.active}
             operation={operation}
+            enabled={view.enabled}
             onChoose={onChoose}
             focusRefs={focusRefs}
-            firstWorkId={filtered[0]?.id}
+            firstWorkId={view.ordered[0]?.id}
           />
         ) : null}
-        {archived.length ? (
+        {view.archived.length ? (
           <WorkSection
             label={t`Archived works`}
-            works={archived}
+            works={view.archived}
             operation={operation}
+            enabled={view.enabled}
             onChoose={onChoose}
             focusRefs={focusRefs}
-            firstWorkId={filtered[0]?.id}
+            firstWorkId={view.ordered[0]?.id}
             archived
           />
         ) : null}
-        {catalog.status === "ready" && !filtered.length ? (
+        {view.status === "ready" && !view.ordered.length ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
             <Trans>No works match your search.</Trans>
           </p>
@@ -181,6 +219,7 @@ function WorkSection({
   label,
   works,
   operation,
+  enabled,
   onChoose,
   archived = false,
   focusRefs,
@@ -189,6 +228,7 @@ function WorkSection({
   label: string;
   works: Work[];
   operation: WorkPickerOperation;
+  enabled: boolean;
   onChoose: (work: Work) => void;
   archived?: boolean;
   focusRefs?: {
@@ -223,7 +263,7 @@ function WorkSection({
                 data-work-choice
                 variant="ghost"
                 type="button"
-                disabled={operation.pending}
+                disabled={!enabled}
                 aria-current={current ? "true" : undefined}
                 aria-describedby={
                   [hasDescription ? descriptionId : null, error ? errorId : null]

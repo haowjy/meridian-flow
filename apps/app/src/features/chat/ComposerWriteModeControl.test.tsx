@@ -5,6 +5,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
+import { setTestToolbarInlineIds } from "@/components/app/composer-toolbar/composer-toolbar-test-harness";
 import { useComposerWriteModeToolbarControl } from "./ComposerWriteModeControl";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -26,32 +27,11 @@ vi.mock("@/client/query/useWorks", () => ({
   useUpdateWorkWriteMode: () => ({ isPending: false, mutate, mutateAsync }),
 }));
 vi.mock("./useAiDraftLauncher", () => ({ useAiDraftLauncher: () => ({ openAiDraft: vi.fn() }) }));
-vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => {
-  const { useLayoutEffect, useRef } = await import("react");
-  return {
-    useMeasuredComposerToolbar: (
-      controls: readonly { id: string }[],
-      onLayout: (layout: {
-        inlineIds: string[];
-        overflowIds: string[];
-        constrained: boolean;
-      }) => void,
-    ) => {
-      const root = useRef<HTMLFieldSetElement | null>(null);
-      const probe = useRef<HTMLButtonElement | null>(null);
-      useLayoutEffect(
-        () =>
-          onLayout({
-            inlineIds: controls.map(({ id }) => id),
-            overflowIds: [],
-            constrained: false,
-          }),
-        [controls, onLayout],
-      );
-      return { root, probe, controlRef: () => () => {} };
-    },
-  };
-});
+vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => ({
+  useMeasuredComposerToolbar: (
+    await import("@/components/app/composer-toolbar/composer-toolbar-test-harness")
+  ).useTestMeasuredComposerToolbar,
+}));
 
 const work = {
   id: "work",
@@ -68,8 +48,8 @@ beforeAll(() => {
 afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
-function Harness() {
-  const control = useComposerWriteModeToolbarControl({ projectId: "project", work });
+function Harness({ value = work }: { value?: Work }) {
+  const control = useComposerWriteModeToolbarControl({ projectId: "project", work: value });
   return <ComposerToolbar model={createComposerToolbarModel([control])} ariaLabel="Options" />;
 }
 const findButton = (name: string) =>
@@ -86,6 +66,7 @@ describe("useComposerWriteModeToolbarControl", () => {
     root = createRoot(host);
     groups = null;
     mutateAsync = vi.fn();
+    setTestToolbarInlineIds("all");
   });
   afterEach(async () => {
     await act(async () => root.unmount());
@@ -135,5 +116,59 @@ describe("useComposerWriteModeToolbarControl", () => {
     await act(async () => reject(new Error("offline")));
     expect(document.body.textContent).toContain("Nothing changed");
     expect(document.activeElement?.textContent).toBe("Cancel");
+  });
+
+  it("returns to choices after a successful confirmation and on the next open", async () => {
+    groups = [
+      {
+        documentId: "doc",
+        drafts: [{ draftId: "draft", documentId: "doc", status: "active" }],
+      },
+    ];
+    mutateAsync = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "confirmation_required", pendingChangeCount: 1 })
+      .mockResolvedValueOnce({ status: "updated" });
+    await act(async () => root.render(<Harness />));
+    await act(async () => findButton("AI write mode: Draft")?.click());
+    await act(async () => findButton("Auto-apply")?.click());
+    expect(document.body.textContent).toContain("Drafts are waiting");
+    await act(async () => findButton("Apply 1 change and switch")?.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => findButton("AI write mode: Draft")?.click());
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Drafts are waiting");
+  });
+
+  it("does not carry confirmation state across Work identity", async () => {
+    groups = [
+      {
+        documentId: "doc",
+        drafts: [{ draftId: "draft", documentId: "doc", status: "active" }],
+      },
+    ];
+    mutateAsync = vi.fn().mockResolvedValue({
+      status: "confirmation_required",
+      pendingChangeCount: 1,
+    });
+    await act(async () => root.render(<Harness />));
+    await act(async () => findButton("AI write mode: Draft")?.click());
+    await act(async () => findButton("Auto-apply")?.click());
+    expect(document.body.textContent).toContain("Drafts are waiting");
+    const nextWork = { ...work, id: "other", name: "Other Book" } as Work;
+    await act(async () => root.render(<Harness value={nextWork} />));
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Drafts are waiting");
+  });
+
+  it("opens choices from the overflow root and returns to the write row", async () => {
+    groups = [];
+    setTestToolbarInlineIds([]);
+    await act(async () => root.render(<Harness />));
+    await act(async () => findButton("More composer controls")?.click());
+    await act(async () => findButton("AI write mode: Draft")?.click());
+    expect(document.activeElement?.textContent).toBe("Draft");
+    await act(async () => findButton("Back")?.click());
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("AI write mode: Draft");
   });
 });

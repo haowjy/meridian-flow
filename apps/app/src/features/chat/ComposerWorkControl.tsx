@@ -6,7 +6,7 @@ import { useRef } from "react";
 import type { ComposerToolbarControl } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
-import { WorkPickerPanel } from "./WorkPickerPanel";
+import { deriveWorkPickerViewModel, WorkPickerPanel } from "./WorkPickerPanel";
 
 export function useComposerWorkToolbarControl({
   projectId,
@@ -23,22 +23,8 @@ export function useComposerWorkToolbarControl({
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const query = controller.state.view.query;
-  const needle = query.trim().toLocaleLowerCase();
-  const filtered =
-    controller.catalog.status === "ready"
-      ? controller.catalog.works.filter((candidate) =>
-          `${candidate.name} ${candidate.goal ?? ""}`.toLocaleLowerCase().includes(needle),
-        )
-      : [];
-  const enabledIds = controller.busy ? [] : filtered.map(({ id }) => id);
-  const pageId =
-    controller.catalog.status === "error"
-      ? "error"
-      : controller.catalog.status === "ready"
-        ? "ready"
-        : controller.catalog.status === "empty"
-          ? "empty"
-          : "loading";
+  const view = deriveWorkPickerViewModel(controller.catalog, query, controller.busy);
+  const pageId = view.status;
   return {
     kind: "panel",
     id: "work",
@@ -81,7 +67,7 @@ export function useComposerWorkToolbarControl({
       size: "catalog",
       focus: {
         pageId,
-        repairRevision: [query, controller.busy, ...enabledIds].join("\0"),
+        repairRevision: [query, view.enabled, ...view.enabledIds].join("\0"),
         candidates:
           pageId === "ready"
             ? [
@@ -89,7 +75,7 @@ export function useComposerWorkToolbarControl({
                 ...(!controller.busy
                   ? [
                       { key: `selected:${work.id}`, ref: selectedRef },
-                      { key: `first:${enabledIds[0] ?? "none"}`, ref: firstRef },
+                      { key: `first:${view.enabledIds[0] ?? "none"}`, ref: firstRef },
                     ]
                   : []),
               ]
@@ -100,9 +86,8 @@ export function useComposerWorkToolbarControl({
       },
       render: ({ beginBlocking }) => (
         <WorkPickerPanel
-          catalog={controller.catalog}
+          view={view}
           operation={controller.operation}
-          query={query}
           onQueryChange={controller.changeQuery}
           onChoose={(target) => {
             const lock = beginBlocking();

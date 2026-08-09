@@ -1,20 +1,4 @@
-/**
- * AgentSelector — the composer's agent control. One component, two states:
- *  - **enabled**: a picker trigger (agent name + chevron) — opens AgentPicker.
- *  - **disabled**: settled (muted name, no chevron, flat) — the thread has
- *    started, so swapping is cost-gated for now (coming later). The tooltip
- *    says why.
- *
- * The visible label is the bare agent name — everything in the composer is AI,
- * so an "AI ·" prefix was noise. Screen readers still get the category via
- * aria-label. The button yields width (`shrink` + truncate) so the composer
- * footer never overflows at narrow widths — the name is the row's one
- * flexible element.
- *
- * Rendered as a real <button> so Radix `PopoverTrigger asChild` gets a focusable
- * host. Disabled uses `aria-disabled` (not the native attr) so the tooltip still
- * shows on hover.
- */
+/** Agent toolbar presentations with separate interactive and readonly contracts. */
 import { t } from "@lingui/core/macro";
 import { ChevronDown } from "lucide-react";
 import { forwardRef } from "react";
@@ -23,39 +7,47 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ResolvedAgentDisplay } from "./resolve-agent";
 
-export type AgentSelectorProps = {
-  agent: ResolvedAgentDisplay;
-  disabled?: boolean;
-  onClick?: () => void;
-  tooltip?: string;
-  className?: string;
-  binding?: ComposerToolbarTriggerBinding;
-};
+const selectorClass = "focus-ring max-w-[11rem] min-w-0 shrink font-medium";
 
-export const AgentSelector = forwardRef<HTMLButtonElement, AgentSelectorProps>(
-  function AgentSelector({ agent, disabled = false, onClick, tooltip, className, binding }, ref) {
-    return (
-      <button
-        ref={binding?.ref ?? ref}
-        {...binding?.buttonProps}
-        type="button"
-        onClick={disabled ? undefined : (binding?.buttonProps.onClick ?? onClick)}
-        aria-disabled={disabled || undefined}
-        title={tooltip}
-        aria-label={t`Agent: ${agent.name}`}
-        className={cn(
-          buttonVariants({ variant: "outline", size: "sm" }),
-          "focus-ring max-w-[11rem] min-w-0 shrink font-medium",
-          disabled &&
-            "cursor-default border-transparent bg-transparent text-muted-foreground opacity-60 shadow-none hover:border-transparent hover:bg-transparent",
-          className,
-        )}
-      >
-        <span className="min-w-0 truncate">{agent.name}</span>
-        {!disabled ? (
-          <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-        ) : null}
-      </button>
-    );
-  },
-);
+export function AgentPanelTrigger({
+  agent,
+  binding,
+}: {
+  agent: ResolvedAgentDisplay;
+  binding: ComposerToolbarTriggerBinding;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={t`Agent: ${agent.name}`}
+      className={cn(buttonVariants({ variant: "outline", size: "sm" }), selectorClass)}
+      ref={binding.ref}
+      {...binding.buttonProps}
+    >
+      <span className="min-w-0 truncate">{agent.name}</span>
+      <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+    </button>
+  );
+}
+
+export const AgentReadonlyStatus = forwardRef<
+  HTMLButtonElement,
+  { agent: ResolvedAgentDisplay; tooltip: string }
+>(function AgentReadonlyStatus({ agent, tooltip }, ref) {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-disabled="true"
+      title={tooltip}
+      aria-label={t`Agent: ${agent.name}`}
+      className={cn(
+        buttonVariants({ variant: "outline", size: "sm" }),
+        selectorClass,
+        "cursor-default border-transparent bg-transparent text-muted-foreground opacity-60 shadow-none hover:border-transparent hover:bg-transparent",
+      )}
+    >
+      <span className="min-w-0 truncate">{agent.name}</span>
+    </button>
+  );
+});

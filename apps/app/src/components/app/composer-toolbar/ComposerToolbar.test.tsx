@@ -288,4 +288,41 @@ describe("ComposerToolbar focus execution", () => {
     expect(document.activeElement).toBe(beforeMigration);
     expect(dialog()).not.toBeNull();
   });
+
+  it("repositions from the current semantic host across open migrations", async () => {
+    const calls: string[] = [];
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      const label = this.getAttribute("aria-label") ?? "other";
+      calls.push(label);
+      if (label === "agent") return new DOMRect(40, 80, 120, 32);
+      if (label === "More composer controls") return new DOMRect(240, 80, 44, 44);
+      return original.call(this);
+    };
+    try {
+      const agent = panelControl("agent");
+      controls = [agent];
+      measuredLayout = layout(controls, ["agent"]);
+      await renderToolbar();
+      await press(button("agent"));
+      expect(calls).toContain("agent");
+
+      calls.length = 0;
+      agent.priority = 2;
+      measuredLayout = layout(controls, []);
+      await renderToolbar([agent]);
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(button("More composer controls")).toBeInstanceOf(HTMLButtonElement);
+      expect(calls).toContain("More composer controls");
+
+      calls.length = 0;
+      agent.priority = 3;
+      measuredLayout = layout(controls, ["agent"]);
+      await renderToolbar([agent]);
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(calls).toContain("agent");
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original;
+    }
+  });
 });

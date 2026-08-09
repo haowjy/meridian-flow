@@ -17,6 +17,21 @@ import { cn } from "@/lib/utils";
 import { activeDockedDraftGroups } from "./docked-drafts";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
+type WriteModeInteraction =
+  | { workId: string; page: "choices"; phase: "idle" | "applying" }
+  | {
+      workId: string;
+      page: "confirmation";
+      phase: "checking" | "ready" | "applying" | "error";
+      count: number | null;
+    };
+
+const choices = (workId: string): WriteModeInteraction => ({
+  workId,
+  page: "choices",
+  phase: "idle",
+});
+
 export function useComposerWriteModeToolbarControl({
   projectId,
   work,
@@ -40,39 +55,56 @@ export function useComposerWriteModeToolbarControl({
   const reviewRef = useRef<HTMLButtonElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
-  const [view, setView] = useState<"choices" | "confirmation">("choices");
-  const [applying, setApplying] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [serverCount, setServerCount] = useState<number | null>(null);
+  const [interaction, setInteraction] = useState<WriteModeInteraction>(() => choices(work.id));
+  if (interaction.workId !== work.id) setInteraction(choices(work.id));
+  const applying = interaction.phase === "applying" || interaction.phase === "checking";
+  const failed = interaction.page === "confirmation" && interaction.phase === "error";
+  const serverCount = interaction.page === "confirmation" ? interaction.count : null;
   const loaded = drafts.groups !== null;
   const requestAuto = async (confirmed: boolean, settle: (outcome: "close" | "stay") => void) => {
     if (applying) return;
-    if (!confirmed && work.aiWriteMode === "draft" && groups.length > 0) {
-      setView("confirmation");
-      setServerCount(null);
-    }
-    setApplying(true);
-    setFailed(false);
+    const localConfirmation = !confirmed && work.aiWriteMode === "draft" && groups.length > 0;
+    setInteraction(
+      confirmed
+        ? {
+            workId: work.id,
+            page: "confirmation",
+            phase: "applying",
+            count: serverCount,
+          }
+        : localConfirmation
+          ? { workId: work.id, page: "confirmation", phase: "checking", count: null }
+          : { workId: work.id, page: "choices", phase: "applying" },
+    );
     const result: UpdateWorkWriteModeResponse | null = await update
       .mutateAsync(
         confirmed ? { aiWriteMode: "direct", confirmedPush: true } : { aiWriteMode: "direct" },
       )
       .catch(() => null);
-    setApplying(false);
-    if (result?.status === "updated") settle("close");
-    else if (result?.status === "confirmation_required") {
-      setServerCount(result.pendingChangeCount);
-      setView("confirmation");
+    if (result?.status === "updated") {
+      setInteraction(choices(work.id));
+      settle("close");
+    } else if (result?.status === "confirmation_required") {
+      setInteraction({
+        workId: work.id,
+        page: "confirmation",
+        phase: confirmed ? "error" : "ready",
+        count: result.pendingChangeCount,
+      });
       settle("stay");
-      if (confirmed) setFailed(true);
     } else {
-      setView("confirmation");
-      setFailed(true);
+      setInteraction({
+        workId: work.id,
+        page: "confirmation",
+        phase: "error",
+        count: serverCount,
+      });
       settle("stay");
     }
   };
   const chooseDraft = (terminalClose: () => void) => {
     update.mutate("draft");
+    setInteraction(choices(work.id));
     terminalClose();
   };
   const review = (terminalClose: () => void) => {
@@ -91,15 +123,15 @@ export function useComposerWriteModeToolbarControl({
   const close = (terminalClose: () => void) => {
     if (applying) return;
     terminalClose();
-    setView("choices");
-    setFailed(false);
+    setInteraction(choices(work.id));
   };
   const value = work.aiWriteMode;
   const choicesDisabled = update.isPending || applying;
   const localizedValue = value === "draft" ? t`Draft` : t`Auto-apply`;
-  const pageId = view === "choices" ? "choices" : failed ? "confirmation-error" : "confirmation";
+  const pageId =
+    interaction.page === "choices" ? "choices" : failed ? "confirmation-error" : "confirmation";
   const focus =
-    view === "choices"
+    interaction.page === "choices"
       ? {
           pageId,
           repairRevision: [value, loaded, choicesDisabled, groups.length].join(":"),
@@ -129,7 +161,7 @@ export function useComposerWriteModeToolbarControl({
           fallback: "content" as const,
         };
   const panelBody = (context: ComposerToolbarPanelContext) =>
-    view === "confirmation" ? (
+    interaction.page === "confirmation" ? (
       <Confirmation
         failed={failed}
         count={serverCount}
