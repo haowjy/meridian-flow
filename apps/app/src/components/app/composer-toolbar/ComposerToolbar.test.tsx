@@ -38,7 +38,11 @@ vi.mock("./useMeasuredComposerToolbar", async () => {
 type ControlHarness = ComposerToolbarControl & {
   initial: React.RefObject<HTMLElement | null>;
 };
-const panelControl = (id: string, label: string): ControlHarness => {
+const panelControl = (
+  id: string,
+  label: string,
+  size: "compact" | "identity" | "catalog" = "compact",
+): ControlHarness => {
   const initial = createRef<HTMLButtonElement>();
   const inline = ({ triggerRef, activate }: ComposerToolbarInlineContext) => (
     <button ref={triggerRef} type="button" aria-label={label} onClick={activate}>
@@ -66,7 +70,7 @@ const panelControl = (id: string, label: string): ControlHarness => {
     overflow: {
       kind: "panel",
       item: { ariaLabel: label, label },
-      panel: { ariaLabel: `${label} panel`, size: "compact", initialFocusRef: initial, render },
+      panel: { ariaLabel: `${label} panel`, size, initialFocusRef: initial, render },
     },
   };
 };
@@ -172,6 +176,22 @@ const settleRadixFocus = async () => {
 };
 
 describe("ComposerToolbar Radix navigation", () => {
+  it("uses navigation padding for root and compact pages, picker padding for catalogs", async () => {
+    const compact = panelControl("compact", "Compact");
+    const catalog = panelControl("catalog", "Catalog", "catalog");
+    controls = [compact, catalog];
+    measuredLayout = layout(controls, []);
+    await renderToolbar();
+
+    await press(button("More composer controls"));
+    expect(dialogs()[0]?.classList.contains("p-1")).toBe(true);
+    await press(button("Compact"));
+    expect(dialogs()[0]?.classList.contains("p-1")).toBe(true);
+    await press(button("Back"));
+    await press(button("Catalog"));
+    expect(dialogs()[0]?.classList.contains("p-2")).toBe(true);
+  });
+
   it("toggles a direct panel with focus return and refuses the same click when locked", async () => {
     const agent = panelControl("agent", "Agent");
     controls = [agent];

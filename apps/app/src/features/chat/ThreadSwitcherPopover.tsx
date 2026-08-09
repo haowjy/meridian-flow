@@ -13,6 +13,7 @@ import { type KeyboardEvent, useState } from "react";
 import { useThreadStore } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import {
+  densityPopoverCollisionProps,
   dropdownResultsVariants,
   dropdownRowVariants,
   dropdownSearchClass,
@@ -156,6 +157,7 @@ export function ThreadSwitcherPopover({
           </button>
         </PopoverTrigger>
         <PopoverContent
+          {...densityPopoverCollisionProps}
           align="start"
           className={dropdownSurfaceVariants({ measure: "thread-list", page: "thread-list" })}
           onKeyDown={handleNavigationKeyDown}

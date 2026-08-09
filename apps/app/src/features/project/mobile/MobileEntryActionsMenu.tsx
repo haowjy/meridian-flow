@@ -35,15 +35,12 @@ export function MobileEntryActionsMenu({ onAction }: { onAction: (action: EntryA
         sideOffset={6}
         className="min-w-44 border-border bg-background shadow-md"
       >
-        <DropdownMenuItem
-          className="min-h-11 cursor-pointer gap-3 px-3 text-sm focus:bg-sidebar-accent"
-          onSelect={() => onAction("rename")}
-        >
+        <DropdownMenuItem className="cursor-pointer" onSelect={() => onAction("rename")}>
           <Pencil className="size-4 text-muted-foreground" aria-hidden />
           <Trans>Rename</Trans>
         </DropdownMenuItem>
         <DropdownMenuItem
-          className="min-h-11 cursor-pointer gap-3 px-3 text-sm text-destructive focus:bg-sidebar-accent focus:text-destructive"
+          className="cursor-pointer text-destructive focus:text-destructive"
           onSelect={() => onAction("delete")}
         >
           <Trash2 className="size-4" aria-hidden />

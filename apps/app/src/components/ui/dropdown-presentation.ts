@@ -2,7 +2,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 
 export const dropdownRowVariants = cva(
-  "flex w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-sm outline-hidden select-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
+  "flex w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-sm font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       kind: {
@@ -15,13 +15,16 @@ export const dropdownRowVariants = cva(
         true: "focus-ring transition-colors hover:bg-sidebar-accent/50 focus-visible:bg-sidebar-accent/50 data-[highlighted]:bg-sidebar-accent/50",
         false: null,
       },
-      selected: { true: "bg-sidebar-accent", false: null },
+      selected: { true: "bg-sidebar-accent font-medium", false: null },
     },
     defaultVariants: { kind: "navigation", interactive: true, selected: false },
   },
 );
 
 export type DropdownRowProps = VariantProps<typeof dropdownRowVariants>;
+
+/** Radix collision policy for compact density surfaces, not generic popovers. */
+export const densityPopoverCollisionProps = { collisionPadding: 8 } as const;
 
 export const dropdownSurfaceVariants = cva("dropdown-surface flex flex-col overflow-hidden", {
   variants: {

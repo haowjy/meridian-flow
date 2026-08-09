@@ -31,6 +31,9 @@ describe("WorkPickerPanel", () => {
       () => {
         expect(document.body.textContent).toContain(copy);
         expect(document.body.textContent).not.toContain("No works match your search.");
+        expect(document.querySelector('input[type="search"]')).not.toBeNull();
+        expect(document.querySelector('input[type="search"]')?.hasAttribute("disabled")).toBe(true);
+        expect(document.querySelector(".app-scroll")?.textContent).toContain(copy);
       },
     );
   });
@@ -73,7 +76,7 @@ describe("WorkPickerPanel", () => {
     );
   });
 
-  it("keeps current state accessible without a routine third line", async () => {
+  it("keeps the current name and goal accessible without a routine third line", async () => {
     const current = { id: "a", name: "Opening arc", goal: "Ascend", status: "active" } as Work;
     await withReactRoot(
       <WorkPickerPanel
@@ -86,8 +89,30 @@ describe("WorkPickerPanel", () => {
       () => {
         const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
         expect(row?.getAttribute("aria-current")).toBe("true");
-        expect(row?.getAttribute("aria-label")).toContain("current Work for this chat");
+        expect(row?.hasAttribute("aria-label")).toBe(false);
+        const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
+        expect(row?.textContent).toContain("Ascend");
+        expect(description?.textContent).toContain("Current Work for this chat");
         expect(row?.textContent).not.toContain("Current for this chat");
+      },
+    );
+  });
+
+  it("preserves archived and changing state in accessible descriptions", async () => {
+    await withReactRoot(
+      <WorkPickerPanel
+        catalog={{ status: "ready", works: [archived], refreshing: false }}
+        operation={{ currentWorkId: "a", targetId: "b", pending: true, failure: null }}
+        query=""
+        onQueryChange={() => {}}
+        onChoose={() => {}}
+      />,
+      () => {
+        const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
+        const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
+        expect(description?.textContent).toContain("Goal: Climb");
+        expect(row?.textContent).toContain("Archived");
+        expect(row?.textContent).toContain("Changing work");
       },
     );
   });

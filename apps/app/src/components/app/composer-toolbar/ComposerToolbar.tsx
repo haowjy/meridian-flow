@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
 import { useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
+  densityPopoverCollisionProps,
   dropdownRowVariants,
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
@@ -216,6 +217,7 @@ export function ComposerToolbar({
       <PopoverAnchor virtualRef={virtualRef} />
       {view.kind !== "closed" ? (
         <PopoverContent
+          {...densityPopoverCollisionProps}
           ref={contentRef}
           tabIndex={-1}
           align="start"
@@ -226,7 +228,7 @@ export function ComposerToolbar({
           className={cn(
             dropdownSurfaceVariants({
               measure: panel?.size ?? "compact",
-              page: panel?.size === "compact" ? "navigation" : "picker",
+              page: !panel || panel.size === "compact" ? "navigation" : "picker",
             }),
           )}
           onEscapeKeyDown={(e) => {

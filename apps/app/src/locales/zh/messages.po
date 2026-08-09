@@ -135,8 +135,8 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/WorkPickerPanel.tsx
-msgid "{0}, current Work for this chat"
-msgstr ""
+#~ msgid "{0}, current Work for this chat"
+#~ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
@@ -963,6 +963,10 @@ msgstr ""
 msgid "Current Work"
 msgstr ""
 
+#: src/features/chat/WorkPickerPanel.tsx
+msgid "Current Work for this chat."
+msgstr ""
+
 #. placeholder {0}: work.name
 #: src/features/chat/ComposerWorkControl.tsx
 #~ msgid "Currently {0}"
@@ -1334,6 +1338,11 @@ msgstr "说吧"
 
 #: src/features/project/home/WorksManager.tsx
 msgid "Goal"
+msgstr ""
+
+#. placeholder {0}: work.goal
+#: src/features/chat/WorkPickerPanel.tsx
+msgid "Goal: {0}. "
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts

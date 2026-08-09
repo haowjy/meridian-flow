@@ -10,6 +10,7 @@ import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
 import {
+  densityPopoverCollisionProps,
   dropdownResultsVariants,
   dropdownRowVariants,
   dropdownSurfaceVariants,
@@ -33,6 +34,7 @@ export function AgentPicker({ status, selectedSlug, onSelect, trigger }: AgentPi
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
+        {...densityPopoverCollisionProps}
         align="start"
         className={dropdownSurfaceVariants({ measure: "identity", page: "picker" })}
       >

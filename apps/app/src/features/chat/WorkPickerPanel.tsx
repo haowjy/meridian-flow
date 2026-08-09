@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { Check, LoaderCircle, Search } from "lucide-react";
-import { type KeyboardEvent, type RefObject, useId } from "react";
+import { type KeyboardEvent, type ReactNode, type RefObject, useId } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,23 +59,9 @@ export function WorkPickerPanel({
   searchRef?: RefObject<HTMLInputElement | null>;
 }) {
   const searchId = useId();
-  if (catalog.status === "loading")
-    return (
-      <p className="py-4 text-center text-sm text-muted-foreground">
-        <Trans>Loading Works…</Trans>
-      </p>
-    );
-  if (catalog.status === "error")
-    return <InlineErrorRow message={t`Couldn't load Works.`} onRetry={catalog.retry} />;
-  if (catalog.status === "empty")
-    return (
-      <p className="py-4 text-center text-sm text-muted-foreground">
-        <Trans>No Works yet.</Trans>
-      </p>
-    );
-
   const needle = query.trim().toLocaleLowerCase();
-  const filtered = catalog.works.filter((work) =>
+  const works = catalog.status === "ready" ? catalog.works : [];
+  const filtered = works.filter((work) =>
     `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
   );
   const active = filtered.filter(({ status }) => status === "active");
@@ -109,7 +95,7 @@ export function WorkPickerPanel({
     <div
       role="group"
       aria-label={t`Change work for this chat`}
-      aria-busy={catalog.refreshing || operation.pending}
+      aria-busy={(catalog.status === "ready" && catalog.refreshing) || operation.pending}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
       onKeyDown={navigate}
     >
@@ -126,12 +112,26 @@ export function WorkPickerPanel({
           id={searchId}
           type="search"
           value={query}
+          disabled={catalog.status !== "ready"}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={t`Search works`}
           className={dropdownSearchClass}
         />
       </div>
       <div className={`${dropdownResultsVariants({ kind: "picker" })} space-y-2`}>
+        {catalog.status === "loading" ? (
+          <PickerState>
+            <Trans>Loading Works…</Trans>
+          </PickerState>
+        ) : null}
+        {catalog.status === "error" ? (
+          <InlineErrorRow message={t`Couldn't load Works.`} onRetry={catalog.retry} />
+        ) : null}
+        {catalog.status === "empty" ? (
+          <PickerState>
+            <Trans>No Works yet.</Trans>
+          </PickerState>
+        ) : null}
         {active.length ? (
           <WorkSection
             label={t`Active works`}
@@ -149,7 +149,7 @@ export function WorkPickerPanel({
             archived
           />
         ) : null}
-        {!filtered.length ? (
+        {catalog.status === "ready" && !filtered.length ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
             <Trans>No works match your search.</Trans>
           </p>
@@ -157,6 +157,10 @@ export function WorkPickerPanel({
       </div>
     </div>
   );
+}
+
+function PickerState({ children }: { children: ReactNode }) {
+  return <p className="py-4 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
 function WorkSection({
@@ -183,6 +187,8 @@ function WorkSection({
           const changing = work.id === operation.targetId && operation.pending;
           const error = work.id === operation.targetId ? operation.failure : null;
           const errorId = `${work.id}-work-error`;
+          const descriptionId = `${work.id}-work-description`;
+          const hasDescription = Boolean((changing && work.goal) || current);
           return (
             <div key={work.id}>
               <Button
@@ -191,8 +197,11 @@ function WorkSection({
                 type="button"
                 disabled={operation.pending}
                 aria-current={current ? "true" : undefined}
-                aria-label={current ? t`${work.name}, current Work for this chat` : work.name}
-                aria-describedby={error ? errorId : undefined}
+                aria-describedby={
+                  [hasDescription ? descriptionId : null, error ? errorId : null]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
                 onClick={() => onChoose(work)}
                 className={cn(
                   dropdownRowVariants({ kind: "descriptive", selected: current }),
@@ -217,6 +226,12 @@ function WorkSection({
                   <LoaderCircle className="size-4 animate-spin" aria-hidden />
                 ) : current ? (
                   <Check className="size-4" aria-hidden />
+                ) : null}
+                {hasDescription ? (
+                  <span id={descriptionId} className="sr-only">
+                    {changing && work.goal ? t`Goal: ${work.goal}. ` : null}
+                    {current ? <Trans>Current Work for this chat.</Trans> : null}
+                  </span>
                 ) : null}
               </Button>
               {error ? (
