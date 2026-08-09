@@ -319,7 +319,11 @@ msgstr ""
 
 #. placeholder {0}: value === "draft" ? "Draft" : "Auto-apply"
 #: src/features/chat/ComposerWriteModeControl.tsx
-msgid "AI write mode: {0}"
+#~ msgid "AI write mode: {0}"
+#~ msgstr ""
+
+#: src/features/chat/ComposerWriteModeControl.tsx
+msgid "AI write mode: {localizedValue}"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts

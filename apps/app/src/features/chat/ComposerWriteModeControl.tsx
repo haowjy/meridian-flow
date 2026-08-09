@@ -1,4 +1,4 @@
-/** One write-mode controller rendered through inline and overflow toolbar hosts. */
+/** One write-mode controller rendered through toolbar-owned trigger and panel semantics. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
@@ -9,8 +9,8 @@ import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
+  type ComposerToolbarPanelContext,
 } from "@/components/app/composer-toolbar";
-import type { ComposerToolbarPanelContext } from "@/components/app/composer-toolbar/types";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 import { cn } from "@/lib/utils";
@@ -35,7 +35,11 @@ export function useComposerWriteModeToolbarControl({
       )
       .at(0) ?? null;
   const firstDraft = firstGroup?.drafts[0] ?? null;
-  const initialFocusRef = useRef<HTMLElement | null>(null);
+  const draftRef = useRef<HTMLButtonElement | null>(null);
+  const directRef = useRef<HTMLButtonElement | null>(null);
+  const reviewRef = useRef<HTMLButtonElement | null>(null);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
   const [view, setView] = useState<"choices" | "confirmation">("choices");
   const [applying, setApplying] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -91,6 +95,39 @@ export function useComposerWriteModeToolbarControl({
     setFailed(false);
   };
   const value = work.aiWriteMode;
+  const choicesDisabled = update.isPending || applying;
+  const localizedValue = value === "draft" ? t`Draft` : t`Auto-apply`;
+  const pageId = view === "choices" ? "choices" : failed ? "confirmation-error" : "confirmation";
+  const focus =
+    view === "choices"
+      ? {
+          pageId,
+          repairRevision: [value, loaded, choicesDisabled, groups.length].join(":"),
+          candidates: [
+            ...(value === "draft" && loaded && !choicesDisabled
+              ? [{ key: "selected:draft", ref: draftRef }]
+              : value === "direct" && !choicesDisabled
+                ? [{ key: "selected:direct", ref: directRef }]
+                : []),
+            ...(!choicesDisabled ? [{ key: "first:direct", ref: directRef }] : []),
+          ],
+          fallback: "content" as const,
+        }
+      : {
+          pageId,
+          repairRevision: [applying, serverCount, firstDraft !== null, failed].join(":"),
+          candidates: failed
+            ? [
+                { key: "confirm", ref: confirmRef },
+                { key: "cancel", ref: cancelRef },
+              ]
+            : [
+                { key: "review", ref: reviewRef },
+                { key: "cancel", ref: cancelRef },
+                { key: "confirm", ref: confirmRef },
+              ],
+          fallback: "content" as const,
+        };
   const panelBody = (context: ComposerToolbarPanelContext) =>
     view === "confirmation" ? (
       <Confirmation
@@ -98,6 +135,9 @@ export function useComposerWriteModeToolbarControl({
         count={serverCount}
         applying={applying}
         reviewAvailable={loaded ? firstDraft !== null : null}
+        reviewRef={reviewRef}
+        confirmRef={confirmRef}
+        cancelRef={cancelRef}
         onCancel={() => close(context.terminalClose)}
         onReview={() => review(context.terminalClose)}
         onConfirm={() => {
@@ -108,9 +148,11 @@ export function useComposerWriteModeToolbarControl({
     ) : (
       <WriteModeChoices
         value={value}
-        disabled={!loaded || update.isPending}
+        disabled={choicesDisabled}
+        loaded={loaded}
         pending={loaded ? groups.length : null}
-        initialFocusRef={initialFocusRef}
+        draftRef={draftRef}
+        directRef={directRef}
         onDraft={() => chooseDraft(context.terminalClose)}
         onAuto={() => {
           const lock = context.beginBlocking();
@@ -119,72 +161,72 @@ export function useComposerWriteModeToolbarControl({
       />
     );
   return {
+    kind: "panel",
     id: "write-mode",
     priority: 200,
-    inline: ({ triggerRef, activate, active, locked }) => (
+    interaction: update.isPending || applying ? "busy" : "enabled",
+    item: {
+      ariaLabel: t`AI write mode: ${localizedValue}`,
+      label: <Trans>Write mode</Trans>,
+      value: localizedValue,
+    },
+    inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger
-        ref={triggerRef}
-        ariaLabel={t`AI write mode: ${value === "draft" ? "Draft" : "Auto-apply"}`}
-        disabled={update.isPending}
-        readOnly={locked}
-        active={active}
-        onActivate={activate}
+        binding={trigger}
+        ariaLabel={t`AI write mode: ${localizedValue}`}
       >
-        {value === "draft" ? <Trans>Draft</Trans> : <Trans>Auto-apply</Trans>}
+        {localizedValue}
       </ComposerCurrentValueTrigger>
     ),
-    overflow: {
-      kind: "panel",
-      item: {
-        ariaLabel: t`AI write mode: ${value === "draft" ? "Draft" : "Auto-apply"}`,
-        label: <Trans>Write mode</Trans>,
-        value: value === "draft" ? <Trans>Draft</Trans> : <Trans>Auto-apply</Trans>,
-      },
-      panel: {
-        ariaLabel: t`AI write mode`,
-        size: "compact",
-        initialFocusRef,
-        render: panelBody,
-      },
+    panel: {
+      ariaLabel: t`AI write mode`,
+      size: "compact",
+      focus,
+      render: panelBody,
     },
   };
 }
 
 function WriteModeChoices({
-  initialFocusRef,
   value,
   disabled,
+  loaded,
   pending,
+  draftRef,
+  directRef,
   onDraft,
   onAuto,
 }: {
-  initialFocusRef: RefObject<HTMLElement | null>;
   value: AiWriteMode;
   disabled: boolean;
+  loaded: boolean;
   pending: number | null;
+  draftRef: RefObject<HTMLButtonElement | null>;
+  directRef: RefObject<HTMLButtonElement | null>;
   onDraft(): void;
   onAuto(): void;
 }) {
   return (
     <div role="radiogroup" aria-label={t`AI write mode`} className="space-y-1">
       <Button
-        ref={value === "draft" ? (initialFocusRef as RefObject<HTMLButtonElement>) : undefined}
+        ref={draftRef}
         role="radio"
         aria-checked={value === "draft"}
         variant="ghost"
         className={cn(dropdownRowVariants({ selected: value === "draft" }), "justify-between")}
-        disabled={disabled}
+        disabled={disabled || !loaded}
         onClick={onDraft}
       >
         <Trans>Draft</Trans>
         {pending ? <span>({pending})</span> : null}
       </Button>
       <Button
-        ref={value === "direct" ? (initialFocusRef as RefObject<HTMLButtonElement>) : undefined}
+        ref={directRef}
         role="radio"
         aria-checked={value === "direct"}
         variant="ghost"
         className={dropdownRowVariants({ selected: value === "direct" })}
+        disabled={disabled}
         onClick={onAuto}
       >
         <Trans>Auto-apply</Trans>
@@ -192,11 +234,15 @@ function WriteModeChoices({
     </div>
   );
 }
+
 function Confirmation({
   failed,
   count,
   applying,
   reviewAvailable,
+  reviewRef,
+  confirmRef,
+  cancelRef,
   onCancel,
   onReview,
   onConfirm,
@@ -205,6 +251,9 @@ function Confirmation({
   count: number | null;
   applying: boolean;
   reviewAvailable: boolean | null;
+  reviewRef: RefObject<HTMLButtonElement | null>;
+  confirmRef: RefObject<HTMLButtonElement | null>;
+  cancelRef: RefObject<HTMLButtonElement | null>;
   onCancel(): void;
   onReview(): void;
   onConfirm(): void;
@@ -231,6 +280,7 @@ function Confirmation({
       )}
       <div className="mt-3 flex flex-col gap-1">
         <Button
+          ref={reviewRef}
           variant="secondary"
           size="sm"
           disabled={applying || reviewAvailable !== true}
@@ -242,7 +292,7 @@ function Confirmation({
             <Trans>Review changes</Trans>
           )}
         </Button>
-        <Button size="sm" disabled={applying || count == null} onClick={onConfirm}>
+        <Button ref={confirmRef} size="sm" disabled={applying || count == null} onClick={onConfirm}>
           {applying ? (
             <Trans>Applying…</Trans>
           ) : (
@@ -253,7 +303,7 @@ function Confirmation({
             />
           )}
         </Button>
-        <Button variant="ghost" size="sm" disabled={applying} onClick={onCancel}>
+        <Button ref={cancelRef} variant="ghost" size="sm" disabled={applying} onClick={onCancel}>
           <Trans>Cancel</Trans>
         </Button>
       </div>

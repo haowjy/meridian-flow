@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
-import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
+import { type ReactNode, useCallback, useId, useLayoutEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -10,13 +10,15 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type { PanelSession } from "./composer-toolbar-navigation";
-import {
-  deriveToolbarView,
-  initialNavigationState,
-  reduceNavigation,
-} from "./composer-toolbar-navigation";
-import type { ComposerToolbarControl, ComposerToolbarPanelContext } from "./types";
+import { deriveToolbarView } from "./composer-toolbar-navigation";
+import type {
+  ComposerToolbarControl,
+  ComposerToolbarModel,
+  ComposerToolbarPanelContext,
+  ComposerToolbarTriggerBinding,
+  PanelSession,
+} from "./types";
+import { useComposerToolbarMachine } from "./useComposerToolbarMachine";
 import { useMeasuredComposerToolbar } from "./useMeasuredComposerToolbar";
 
 function RootRowText({ label, value }: { label: ReactNode; value?: ReactNode }) {
@@ -35,44 +37,70 @@ function RootRowText({ label, value }: { label: ReactNode; value?: ReactNode }) 
   );
 }
 
+function eligible(node: HTMLElement | null | undefined, allowAriaDisabled = false) {
+  if (!node?.isConnected || node.closest("[inert], [aria-hidden='true']")) return false;
+  if (node.matches(":disabled") || (!allowAriaDisabled && node.matches("[aria-disabled='true']")))
+    return false;
+  const style = getComputedStyle(node);
+  return style.display !== "none" && style.visibility !== "hidden";
+}
+
+function focusVerified(node: HTMLElement | null | undefined, allowAriaDisabled = false) {
+  if (!node || !eligible(node, allowAriaDisabled)) return false;
+  const target = node;
+  target.focus({ preventScroll: true });
+  return document.activeElement === target || Boolean(target.contains(document.activeElement));
+}
+
 export function ComposerToolbar({
-  controls,
+  model,
   ariaLabel,
 }: {
-  controls: readonly ComposerToolbarControl[];
+  model: ComposerToolbarModel;
   ariaLabel: string;
 }) {
-  const controlsRef = useRef(controls);
+  const { controls, input } = model;
+  const [state, dispatch] = useComposerToolbarMachine(input);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
-  controlsRef.current = controls;
-  const [state, dispatchBase] = useReducer(
-    (s: ReturnType<typeof initialNavigationState>, e: Parameters<typeof reduceNavigation>[1]) =>
-      reduceNavigation(s, e, controlsRef.current),
-    controls,
-    initialNavigationState,
-  );
-  const dispatch = dispatchBase;
+  const contentId = useId();
   const onLayout = useCallback(
-    (layout: ReturnType<typeof initialNavigationState>["layout"]) =>
-      dispatch({ type: "layout.measured", layout }),
-    [],
+    (layout: typeof state.layout) => dispatch({ type: "layout.measured", layout }),
+    [dispatch],
   );
-  const { root, probe, controlRef } = useMeasuredComposerToolbar(controls, onLayout);
-  const inlineTriggers = useRef(new Map<string, HTMLElement>());
+  const measurementRevision = controls.map(({ id, priority }) => `${id}:${priority}`).join("\0");
+  const measurementRef = useRef({
+    revision: measurementRevision,
+    controls: controls.map(({ id, priority }) => ({ id, priority })),
+  });
+  if (measurementRef.current.revision !== measurementRevision)
+    measurementRef.current = {
+      revision: measurementRevision,
+      controls: controls.map(({ id, priority }) => ({ id, priority })),
+    };
+  const measurement = measurementRef.current.controls;
+  const { root, probe, controlRef } = useMeasuredComposerToolbar(measurement, onLayout);
+  const inlineOwners = useRef(new Map<string, HTMLElement>());
   const rootRows = useRef(new Map<string, HTMLButtonElement>());
   const overflowTrigger = useRef<HTMLButtonElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
+  const toolbarFallback = useRef<HTMLFieldSetElement | null>(null);
   const stateRef = useRef(state);
+  const descriptorsRef = useRef(controls);
   stateRef.current = state;
+  descriptorsRef.current = controls;
   const view = deriveToolbarView(state);
-  const overflow = controls.filter((c) => state.layout.overflowIds.includes(c.id));
+  const overflow = controls.filter((control) => state.layout.overflowIds.includes(control.id));
   const surfacePanel = state.surface.kind === "panel" ? state.surface.panel : null;
-  const active = surfacePanel ? controls.find((c) => c.id === surfacePanel.controlId) : undefined;
-  const panel = active?.overflow.kind === "panel" ? active.overflow.panel : null;
+  const active = surfacePanel
+    ? controls.find(
+        (control): control is Extract<ComposerToolbarControl, { kind: "panel" }> =>
+          control.id === surfacePanel.controlId && control.kind === "panel",
+      )
+    : undefined;
+  const panel = active?.panel ?? null;
   const locked = state.surface.kind === "panel" && state.surface.lock === "nondismissible";
-  const activeId = state.surface.kind === "panel" ? state.surface.panel.controlId : null;
   const anchorNode =
-    view.kind === "inline" ? inlineTriggers.current.get(view.controlId) : overflowTrigger.current;
+    view.kind === "inline" ? inlineOwners.current.get(view.controlId) : overflowTrigger.current;
   const virtualRef = useMemo(
     () => ({
       current: {
@@ -81,13 +109,7 @@ export function ComposerToolbar({
     }),
     [anchorNode],
   );
-  const resultFor = (before: typeof state, id: string) => {
-    if (before.surface.kind === "panel" && before.surface.lock === "nondismissible")
-      return "refused" as const;
-    return before.surface.kind === "panel" && before.surface.panel.controlId === id
-      ? ("closed" as const)
-      : ("opened" as const);
-  };
+
   const commands = (session: PanelSession): ComposerToolbarPanelContext => ({
     host: view.kind === "inline" ? "inline" : "overflow",
     locked,
@@ -102,52 +124,104 @@ export function ComposerToolbar({
       dispatch({ type: "panel.blockingStarted", panel: session });
       return {
         kind: "started",
-        settle: (outcome: "close" | "stay") =>
-          dispatch({ type: "panel.blockingSettled", panel: session, outcome }),
+        settle: (outcome) => dispatch({ type: "panel.blockingSettled", panel: session, outcome }),
       };
     },
     terminalClose: () => dispatch({ type: "panel.terminalClose", panel: session }),
   });
+
+  const firstInlineOwner = () =>
+    stateRef.current.layout.inlineIds
+      .map((id) => inlineOwners.current.get(id))
+      .find((node) => eligible(node, true));
+  const returnCandidates = (controlId: string) => [
+    inlineOwners.current.get(controlId),
+    overflowTrigger.current,
+    firstInlineOwner(),
+    toolbarFallback.current,
+  ];
   const executePendingFocus = useCallback(() => {
     const currentState = stateRef.current;
     const intent = currentState.focus;
     if (!intent) return;
     const target = intent.target;
-    let node: HTMLElement | null | undefined;
-    if (target.kind === "panel.initial")
-      node =
-        controlsRef.current.find(
-          (c) => c.id === target.panel.controlId && c.overflow.kind === "panel",
-        )?.overflow.kind === "panel"
-          ? (
-              controlsRef.current.find((c) => c.id === target.panel.controlId)?.overflow as Extract<
-                ComposerToolbarControl["overflow"],
-                { kind: "panel" }
-              >
-            ).panel.initialFocusRef.current
-          : null;
-    else if (target.kind === "control.visibleTrigger")
-      node = currentState.layout.inlineIds.includes(target.controlId)
-        ? inlineTriggers.current.get(target.controlId)
-        : overflowTrigger.current;
+    if (target.kind === "panel.repair") {
+      const activeElement = document.activeElement as HTMLElement | null;
+      if (content.current?.contains(activeElement) && eligible(activeElement)) {
+        dispatch({ type: "focus.executed", token: intent.token });
+        return;
+      }
+    }
+    let candidates: Array<HTMLElement | null | undefined>;
+    if (target.kind === "panel.enter" || target.kind === "panel.repair") {
+      const descriptor = descriptorsRef.current.find(
+        (control): control is Extract<ComposerToolbarControl, { kind: "panel" }> =>
+          control.id === target.panel.controlId && control.kind === "panel",
+      );
+      candidates = [
+        ...(descriptor?.panel.focus.candidates.map(({ ref }) => ref.current) ?? []),
+        content.current,
+      ].filter(
+        (node) => !node || Boolean(content.current?.contains(node)) || node === content.current,
+      );
+    } else if (target.kind === "control.owner") candidates = returnCandidates(target.controlId);
     else if (target.kind === "root.row")
-      node = rootRows.current.get(target.controlId) ?? content.current;
-    else if (target.kind === "overflow.trigger") node = overflowTrigger.current;
-    else node = content.current;
-    if (!node) return;
-    node.focus({ preventScroll: true });
-    dispatchBase({ type: "focus.executed", token: intent.token });
-  }, []);
+      candidates = [rootRows.current.get(target.controlId), content.current];
+    else if (target.kind === "overflow.trigger")
+      candidates = [overflowTrigger.current, firstInlineOwner(), toolbarFallback.current];
+    else if (target.kind === "root.content") candidates = [content.current];
+    else candidates = [firstInlineOwner(), toolbarFallback.current];
+    for (const candidate of candidates) {
+      if (!focusVerified(candidate, target.kind === "control.owner")) continue;
+      dispatch({ type: "focus.executed", token: intent.token });
+      return;
+    }
+  }, [dispatch]);
   const contentRef = useCallback(
     (node: HTMLDivElement | null) => {
       content.current = node;
-      if (node && stateRef.current.surface.kind !== "closed") executePendingFocus();
+      if (node) executePendingFocus();
     },
     [executePendingFocus],
   );
-  useLayoutEffect(() => {
-    if (state.surface.kind !== "closed") executePendingFocus();
-  }, [state.focus, state.layout.inlineIds, state.surface.kind, executePendingFocus]);
+  useLayoutEffect(() => executePendingFocus(), [state.focus, executePendingFocus]);
+
+  const registerInline = (id: string) => (node: HTMLElement | null) => {
+    if (node) inlineOwners.current.set(id, node);
+    else inlineOwners.current.delete(id);
+  };
+  const triggerBinding = (
+    control: Extract<ComposerToolbarControl, { kind: "panel" }>,
+    owner: "inline" | "root-row",
+  ): ComposerToolbarTriggerBinding => {
+    const openForControl =
+      state.surface.kind === "panel" && state.surface.panel.controlId === control.id;
+    const ownsContent =
+      view.kind !== "closed" &&
+      (owner === "root-row" || view.kind === "inline") &&
+      (owner === "root-row" ? state.surface.kind === "root" : openForControl);
+    const refused = control.interaction === "busy" || locked;
+    return {
+      ref: (node) => {
+        if (owner === "inline") registerInline(control.id)(node);
+        else if (node) rootRows.current.set(control.id, node);
+        else rootRows.current.delete(control.id);
+      },
+      buttonProps: {
+        "aria-haspopup": "dialog",
+        "aria-controls": ownsContent ? contentId : undefined,
+        "aria-expanded": owner === "inline" && openForControl && view.kind === "inline",
+        "aria-busy": control.interaction === "busy" ? true : undefined,
+        "aria-disabled": refused ? true : undefined,
+        onClick: () => {
+          if (refused) return;
+          dispatch({ type: "panel.triggered", controlId: control.id });
+        },
+      },
+    };
+  };
+
+  const activeBusy = active?.interaction === "busy";
   return (
     <Popover
       open={view.kind !== "closed"}
@@ -157,7 +231,11 @@ export function ComposerToolbar({
       }}
     >
       <fieldset
-        ref={root}
+        ref={(node) => {
+          root.current = node;
+          toolbarFallback.current = node;
+        }}
+        tabIndex={-1}
         aria-label={ariaLabel}
         className="relative flex min-w-0 items-center gap-2 overflow-clip border-0"
       >
@@ -174,33 +252,9 @@ export function ComposerToolbar({
                 hidden && "pointer-events-none invisible absolute left-0 top-0",
               )}
             >
-              {control.inline({
-                active: activeId === control.id,
-                locked: activeId === control.id && locked,
-                triggerRef: (node) => {
-                  if (node) inlineTriggers.current.set(control.id, node);
-                  else inlineTriggers.current.delete(control.id);
-                },
-                activate: () => {
-                  const result = resultFor(state, control.id);
-                  dispatch({ type: "panel.triggered", controlId: control.id });
-                  return result;
-                },
-                beginBlocking: () => {
-                  if (locked) return { kind: "refused" };
-                  dispatch({ type: "panel.blockingTriggered", controlId: control.id });
-                  const session = state.nextPanelSession;
-                  return {
-                    kind: "started",
-                    settle: (outcome) =>
-                      dispatch({
-                        type: "panel.blockingSettled",
-                        panel: { controlId: control.id, session },
-                        outcome,
-                      }),
-                  };
-                },
-              })}
+              {control.kind === "panel"
+                ? control.inline({ trigger: triggerBinding(control, "inline") })
+                : control.inline({ controlRef: registerInline(control.id) })}
             </span>
           );
         })}
@@ -211,9 +265,14 @@ export function ComposerToolbar({
             size="icon-lg"
             type="button"
             aria-label={t`More composer controls`}
+            aria-haspopup="dialog"
+            aria-controls={view.kind === "overflow" ? contentId : undefined}
             aria-expanded={view.kind === "overflow"}
-            aria-busy={locked}
-            onClick={() => dispatch({ type: "root.triggered" })}
+            aria-busy={view.kind === "overflow" && activeBusy ? true : undefined}
+            aria-disabled={view.kind === "overflow" && locked ? true : undefined}
+            onClick={() => {
+              if (!locked) dispatch({ type: "root.triggered" });
+            }}
           >
             <Ellipsis className="size-4" aria-hidden />
           </Button>
@@ -235,21 +294,20 @@ export function ComposerToolbar({
       {view.kind !== "closed" ? (
         <PopoverContent
           {...densityPopoverCollisionProps}
+          id={contentId}
           ref={contentRef}
           tabIndex={-1}
           align="start"
           side="top"
           aria-label={panel?.ariaLabel ?? t`More composer controls`}
-          aria-busy={locked}
-          data-page={panel ? "panel" : "root"}
-          className={cn(
-            dropdownSurfaceVariants({
-              measure: panel?.size ?? "compact",
-              page: !panel || panel.size === "compact" ? "navigation" : "picker",
-            }),
-          )}
-          onEscapeKeyDown={(e) => {
-            e.preventDefault();
+          aria-busy={locked || activeBusy || undefined}
+          data-page={panel ? panel.focus.pageId : "root"}
+          className={dropdownSurfaceVariants({
+            measure: panel?.size ?? "compact",
+            page: !panel || panel.size === "compact" ? "navigation" : "picker",
+          })}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
             if (state.surface.kind === "panel")
               dispatch({
                 type: "panel.dismissRequested",
@@ -258,9 +316,9 @@ export function ComposerToolbar({
               });
             else dispatch({ type: "root.dismissRequested", cause: "escape" });
           }}
-          onPointerDownOutside={(e) => {
-            e.preventDefault();
-            if (root.current?.contains(e.target as Node)) return;
+          onPointerDownOutside={(event) => {
+            event.preventDefault();
+            if (root.current?.contains(event.target as Node)) return;
             if (state.surface.kind === "panel")
               dispatch({
                 type: "panel.dismissRequested",
@@ -269,9 +327,9 @@ export function ComposerToolbar({
               });
             else dispatch({ type: "root.dismissRequested", cause: "outside" });
           }}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          onCloseAutoFocus={(e) => {
-            e.preventDefault();
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
             executePendingFocus();
           }}
         >
@@ -281,16 +339,11 @@ export function ComposerToolbar({
                 <Button
                   variant="quiet"
                   className={cn(dropdownRowVariants(), "mb-2 justify-start")}
-                  disabled={locked}
-                  onClick={() =>
-                    dispatch({
-                      type: "panel.backRequested",
-                      panel:
-                        state.surface.kind === "panel"
-                          ? state.surface.panel
-                          : { controlId: "", session: 0 },
-                    })
-                  }
+                  aria-disabled={locked || undefined}
+                  onClick={() => {
+                    if (!locked && state.surface.kind === "panel")
+                      dispatch({ type: "panel.backRequested", panel: state.surface.panel });
+                  }}
                 >
                   <ArrowLeft className="size-4" aria-hidden />
                   <Trans>Back</Trans>
@@ -302,31 +355,22 @@ export function ComposerToolbar({
             <ul>
               {overflow.map((control) => (
                 <li key={control.id}>
-                  {control.overflow.kind === "status" ? (
+                  {control.kind === "status" ? (
                     <div className={dropdownRowVariants({ interactive: false })}>
-                      {control.overflow.item.icon}
-                      <RootRowText
-                        label={control.overflow.item.label}
-                        value={control.overflow.item.value}
-                      />
+                      {control.item.icon}
+                      <RootRowText label={control.item.label} value={control.item.value} />
                     </div>
                   ) : (
                     <Button
-                      ref={(n) => {
-                        if (n) rootRows.current.set(control.id, n);
-                        else rootRows.current.delete(control.id);
-                      }}
+                      {...triggerBinding(control, "root-row").buttonProps}
+                      ref={triggerBinding(control, "root-row").ref}
                       variant="ghost"
                       className={dropdownRowVariants()}
-                      aria-label={control.overflow.item.ariaLabel}
+                      aria-label={control.item.ariaLabel}
                       onFocus={() => dispatch({ type: "root.rowFocused", controlId: control.id })}
-                      onClick={() => dispatch({ type: "panel.triggered", controlId: control.id })}
                     >
-                      {control.overflow.item.icon}
-                      <RootRowText
-                        label={control.overflow.item.label}
-                        value={control.overflow.item.value}
-                      />
+                      {control.item.icon}
+                      <RootRowText label={control.item.label} value={control.item.value} />
                       <ChevronRight className="size-4 shrink-0" aria-hidden />
                     </Button>
                   )}

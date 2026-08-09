@@ -49,11 +49,18 @@ export function AgentPickerPanel({
   status,
   selectedSlug,
   onSelect,
-  initialFocusRef,
-}: Omit<AgentPickerProps, "trigger"> & { initialFocusRef?: RefObject<HTMLElement | null> }) {
+  focusRefs,
+}: Omit<AgentPickerProps, "trigger"> & {
+  focusRefs?: {
+    selected: RefObject<HTMLButtonElement | null>;
+    first: RefObject<HTMLButtonElement | null>;
+    retry: RefObject<HTMLButtonElement | null>;
+  };
+}) {
   const agents = status.agents ?? [];
   const installed = agents.filter((agent) => agent.source === "package" || agent.source === "user");
   const builtins = agents.filter((agent) => agent.source === "builtin");
+  const firstSlug = agents[0]?.slug;
 
   return (
     <div className={cn(dropdownResultsVariants({ kind: "picker" }), "flex flex-col")}>
@@ -62,7 +69,7 @@ export function AgentPickerPanel({
           <Trans>Loading agents…</Trans>
         </PickerHint>
       ) : status.status === "error" ? (
-        <ErrorHint onRetry={status.refetch} />
+        <ErrorHint onRetry={status.refetch} retryRef={focusRefs?.retry} />
       ) : status.status === "empty" ? (
         <PickerHint>
           <Trans>No agents available.</Trans>
@@ -75,7 +82,8 @@ export function AgentPickerPanel({
               agents={installed}
               selectedSlug={selectedSlug}
               onSelect={onSelect}
-              initialFocusRef={initialFocusRef}
+              focusRefs={focusRefs}
+              firstSlug={firstSlug}
             />
           ) : null}
           {builtins.length > 0 ? (
@@ -84,7 +92,8 @@ export function AgentPickerPanel({
               agents={builtins}
               selectedSlug={selectedSlug}
               onSelect={onSelect}
-              initialFocusRef={installed.length ? undefined : initialFocusRef}
+              focusRefs={focusRefs}
+              firstSlug={firstSlug}
             />
           ) : null}
         </>
@@ -98,13 +107,18 @@ function AgentGroup({
   agents,
   selectedSlug,
   onSelect,
-  initialFocusRef,
+  focusRefs,
+  firstSlug,
 }: {
   title: string;
   agents: ProjectAgentSummary[];
   selectedSlug: string;
   onSelect: (slug: string) => void;
-  initialFocusRef?: RefObject<HTMLElement | null>;
+  focusRefs?: {
+    selected: RefObject<HTMLButtonElement | null>;
+    first: RefObject<HTMLButtonElement | null>;
+  };
+  firstSlug?: string;
 }) {
   return (
     <section>
@@ -118,10 +132,11 @@ function AgentGroup({
             <li key={agent.slug}>
               <button
                 ref={
-                  agent.slug === selectedSlug ||
-                  (!agents.some((a) => a.slug === selectedSlug) && agent === agents[0])
-                    ? (initialFocusRef as RefObject<HTMLButtonElement>)
-                    : undefined
+                  agent.slug === selectedSlug
+                    ? focusRefs?.selected
+                    : agent.slug === firstSlug
+                      ? focusRefs?.first
+                      : undefined
                 }
                 type="button"
                 onClick={() => onSelect(agent.slug)}
@@ -161,6 +176,14 @@ function PickerHint({ children }: { children: ReactNode }) {
   return <p className="px-3 py-4 text-sm text-muted-foreground">{children}</p>;
 }
 
-function ErrorHint({ onRetry }: { onRetry: () => void }) {
-  return <InlineErrorRow message={t`Couldn't load agents.`} onRetry={onRetry} />;
+function ErrorHint({
+  onRetry,
+  retryRef,
+}: {
+  onRetry: () => void;
+  retryRef?: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <InlineErrorRow message={t`Couldn't load agents.`} onRetry={onRetry} retryRef={retryRef} />
+  );
 }

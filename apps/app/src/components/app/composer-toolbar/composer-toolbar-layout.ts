@@ -1,5 +1,3 @@
-import type { ComposerToolbarControl } from "./types";
-
 export type ComposerToolbarMetrics = {
   available: number;
   gap: number;
@@ -14,7 +12,7 @@ export type ComposerToolbarLayout = {
 };
 
 export function resolveComposerToolbarLayout(
-  controls: readonly Pick<ComposerToolbarControl, "id" | "priority" | "overflow">[],
+  controls: readonly { id: string; priority: number }[],
   metrics: ComposerToolbarMetrics,
 ): ComposerToolbarLayout {
   const ids = new Set(controls.map(({ id }) => id));

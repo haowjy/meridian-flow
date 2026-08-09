@@ -27,6 +27,15 @@ retain their state while the framework migrates their panel between inline and
 overflow hosts. Chat headers display only chat identity. The Work controller
 owns mutation, receipt/Undo, error, and live-convergence state, never placement.
 
+Toolbar descriptors discriminate panels from statuses. Panel adapters provide
+serializable page/repair identity plus ordered owned focus refs; the toolbar
+owns trigger ARIA, activation refusal, the single mounted dialog relationship,
+and current-time return focus. Structural descriptor changes reconcile in the
+toolbar machine before children commit. Page replacement requests entry focus,
+while same-page collection changes repair focus only when the current dialog
+target became invalid. Feature triggers never own popup state or use native
+disabled for transient panel work.
+
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an
 unconfirmed request; the server-vended count of reviewable content branches is
@@ -38,8 +47,10 @@ changes uses the same `useAiDraftLauncher` entry as every other review control;
 Apply all and switch is the only action that sends `confirmedPush`. It asks the
 server to apply the same canonical pending set, including any manifest companion
 needed to publish new-document membership, and only then switch policy. A failed
-push leaves Draft selected. The Auto-apply choice is never disabled, and the
-sidebar has no write-mode control.
+push leaves Draft selected. Loading draft data never disables the Auto-apply
+choice; a nondismissible write-mode request temporarily disables page actions
+while the toolbar retains a focusable dialog fallback. The sidebar has no
+write-mode control.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false. If a client fast path

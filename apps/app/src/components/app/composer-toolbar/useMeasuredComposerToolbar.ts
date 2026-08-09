@@ -3,7 +3,6 @@ import {
   type ComposerToolbarLayout,
   resolveComposerToolbarLayout,
 } from "./composer-toolbar-layout";
-import type { ComposerToolbarControl } from "./types";
 
 const same = (a: ComposerToolbarLayout, b: ComposerToolbarLayout) =>
   a.constrained === b.constrained &&
@@ -11,7 +10,7 @@ const same = (a: ComposerToolbarLayout, b: ComposerToolbarLayout) =>
   a.overflowIds.join("\0") === b.overflowIds.join("\0");
 
 export function useMeasuredComposerToolbar(
-  controls: readonly ComposerToolbarControl[],
+  controls: readonly { id: string; priority: number }[],
   onLayout: (layout: ComposerToolbarLayout) => void,
 ) {
   const root = useRef<HTMLFieldSetElement | null>(null);

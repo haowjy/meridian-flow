@@ -4,47 +4,46 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComposerCurrentValueTrigger } from "./ComposerCurrentValueTrigger";
+import type { ComposerToolbarTriggerBinding } from "./types";
 
 const hosts: HTMLDivElement[] = [];
 afterEach(() => {
   for (const host of hosts.splice(0)) host.remove();
 });
 
-async function render(
-  props: Partial<React.ComponentProps<typeof ComposerCurrentValueTrigger>> = {},
-) {
-  const host = document.createElement("div");
-  hosts.push(host);
-  document.body.append(host);
-  const root = createRoot(host);
-  await act(async () => {
-    root.render(
-      <ComposerCurrentValueTrigger ariaLabel="AI write mode: Auto-apply" {...props}>
-        Auto-apply
-      </ComposerCurrentValueTrigger>,
-    );
-  });
-  return host.querySelector("button") as HTMLButtonElement;
-}
-
 describe("ComposerCurrentValueTrigger", () => {
-  it("shows one truncating current value with a chevron and activation state", async () => {
-    const onActivate = vi.fn();
-    const button = await render({ active: true, onActivate });
-    expect(button.textContent).toBe("Auto-apply");
-    expect(button.querySelector("span")?.className).toContain("truncate");
-    expect(button.querySelector("svg")).not.toBeNull();
+  it("spreads the toolbar binding intact and renders the localized current value", async () => {
+    const onClick = vi.fn();
+    const binding: ComposerToolbarTriggerBinding = {
+      ref: vi.fn(),
+      buttonProps: {
+        "aria-haspopup": "dialog",
+        "aria-controls": "stable-content",
+        "aria-expanded": true,
+        "aria-busy": true,
+        "aria-disabled": true,
+        onClick,
+      },
+    };
+    const host = document.createElement("div");
+    hosts.push(host);
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <ComposerCurrentValueTrigger binding={binding} ariaLabel="Mode d’écriture : Brouillon">
+          Brouillon
+        </ComposerCurrentValueTrigger>,
+      );
+    });
+    const button = host.querySelector("button") as HTMLButtonElement;
+    expect(button.textContent).toBe("Brouillon");
+    expect(button.getAttribute("aria-label")).toBe("Mode d’écriture : Brouillon");
+    expect(button.getAttribute("aria-controls")).toBe("stable-content");
     expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.disabled).toBe(false);
     await act(async () => button.click());
-    expect(onActivate).toHaveBeenCalledOnce();
-  });
-
-  it.each(["disabled", "readOnly"] as const)("does not activate while %s", async (state) => {
-    const onActivate = vi.fn();
-    const button = await render({ [state]: true, onActivate });
-    await act(async () => button.click());
-    expect(onActivate).not.toHaveBeenCalled();
-    expect(button.querySelector("svg")).toBeNull();
-    expect(button.disabled || button.getAttribute("aria-disabled") === "true").toBe(true);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });

@@ -1,16 +1,12 @@
 // @vitest-environment jsdom
-/** React/Radix contract tests for the reducer-owned composer toolbar surface. */
+/** React/Radix contract tests for toolbar ownership, focus, and topology. */
 import { act, createRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ComposerCurrentValueTrigger } from "./ComposerCurrentValueTrigger";
 import { ComposerToolbar } from "./ComposerToolbar";
 import type { ComposerToolbarLayout } from "./composer-toolbar-layout";
-import type {
-  ComposerToolbarControl,
-  ComposerToolbarInlineContext,
-  ComposerToolbarPanelContext,
-} from "./types";
+import type { ComposerToolbarControl, ComposerToolbarPanelContext } from "./types";
+import { createComposerToolbarModel } from "./types";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -25,7 +21,7 @@ vi.mock("./useMeasuredComposerToolbar", async () => {
   const { useLayoutEffect, useRef } = await import("react");
   return {
     useMeasuredComposerToolbar: (
-      controls: readonly ComposerToolbarControl[],
+      controls: readonly { id: string; priority: number }[],
       onLayout: (layout: ComposerToolbarLayout) => void,
     ) => {
       const root = useRef<HTMLFieldSetElement | null>(null);
@@ -36,96 +32,84 @@ vi.mock("./useMeasuredComposerToolbar", async () => {
   };
 });
 
-type ControlHarness = ComposerToolbarControl & {
-  initial: React.RefObject<HTMLElement | null>;
+type PanelHarness = Extract<ComposerToolbarControl, { kind: "panel" }> & {
+  primary: React.RefObject<HTMLButtonElement | null>;
+  secondary: React.RefObject<HTMLButtonElement | null>;
 };
 const panelControl = (
   id: string,
-  label: string,
-  size: "compact" | "identity" | "catalog" = "compact",
-): ControlHarness => {
-  const initial = createRef<HTMLButtonElement>();
-  const inline = ({ triggerRef, activate }: ComposerToolbarInlineContext) => (
-    <button ref={triggerRef} type="button" aria-label={label} onClick={activate}>
-      {label}
-    </button>
-  );
+  options: {
+    interaction?: "enabled" | "busy";
+    pageId?: string;
+    repair?: string;
+    primaryDisabled?: boolean;
+    showPrimary?: boolean;
+  } = {},
+): PanelHarness => {
+  const primary = createRef<HTMLButtonElement>();
+  const secondary = createRef<HTMLButtonElement>();
+  const showPrimary = options.showPrimary ?? true;
   const render = (context: ComposerToolbarPanelContext) => (
     <div>
-      <button ref={initial} type="button">
-        {label} initial
+      {showPrimary ? (
+        <button ref={primary} type="button" disabled={options.primaryDisabled}>
+          {id} primary
+        </button>
+      ) : null}
+      <button ref={secondary} type="button">
+        {id} secondary
       </button>
       <button type="button" onClick={() => context.beginBlocking()}>
-        Lock {label}
+        Lock {id}
       </button>
       <button type="button" onClick={context.terminalClose}>
-        Finish {label}
+        Finish {id}
       </button>
     </div>
   );
   return {
+    kind: "panel",
     id,
     priority: 1,
-    initial,
-    inline,
-    overflow: {
-      kind: "panel",
-      item: { ariaLabel: label, label },
-      panel: { ariaLabel: `${label} panel`, size, initialFocusRef: initial, render },
-    },
-  };
-};
-const writeModeControl = (): ControlHarness => {
-  const initial = createRef<HTMLInputElement>();
-  const render = () => (
-    <div role="radiogroup" aria-label="AI write mode choices">
-      <label>
-        <input type="radio" name="mode" /> Draft
-      </label>
-      <label>
-        <input ref={initial} type="radio" name="mode" defaultChecked /> Auto-apply
-      </label>
-    </div>
-  );
-  return {
-    id: "write-mode",
-    priority: 2,
-    initial,
-    inline: ({ triggerRef, activate, active, locked }) => (
-      <ComposerCurrentValueTrigger
-        ref={triggerRef}
-        ariaLabel="AI write mode: Auto-apply"
-        active={active}
-        readOnly={locked}
-        onActivate={activate}
-      >
-        Auto-apply
-      </ComposerCurrentValueTrigger>
+    interaction: options.interaction ?? "enabled",
+    item: { ariaLabel: id, label: id },
+    primary,
+    secondary,
+    inline: ({ trigger }) => (
+      <button ref={trigger.ref} {...trigger.buttonProps} type="button" aria-label={id}>
+        {id}
+      </button>
     ),
-    overflow: {
-      kind: "panel",
-      item: { ariaLabel: "AI write mode", label: "Write mode", value: "Auto-apply" },
-      panel: {
-        ariaLabel: "AI write mode panel",
-        size: "compact",
-        initialFocusRef: initial,
-        render,
+    panel: {
+      ariaLabel: `${id} panel`,
+      size: "compact",
+      focus: {
+        pageId: options.pageId ?? "ready",
+        repairRevision: options.repair ?? "rows",
+        candidates: [
+          { key: "primary", ref: primary },
+          { key: "secondary", ref: secondary },
+        ],
+        fallback: "content",
       },
+      render,
     },
   };
 };
-const statusControl = (): ComposerToolbarControl => ({
-  id: "readonly",
-  priority: 0,
-  inline: () => <span>Readonly</span>,
-  overflow: {
-    kind: "status",
-    item: { ariaLabel: "Readonly status", label: "Agent", value: "Readonly" },
-  },
+const statusControl = (id = "agent"): ComposerToolbarControl => ({
+  kind: "status",
+  id,
+  priority: 1,
+  item: { ariaLabel: `${id} status`, label: id, value: "readonly" },
+  inline: ({ controlRef }) => (
+    <button ref={controlRef} type="button" aria-label={`${id} status`}>
+      {id}
+    </button>
+  ),
 });
 const layout = (controls: readonly ComposerToolbarControl[], inlineIds: string[]) => ({
   inlineIds,
-  overflowIds: controls.map((control) => control.id).filter((id) => !inlineIds.includes(id)),
+  overflowIds: controls.map(({ id }) => id).filter((id) => !inlineIds.includes(id)),
   constrained: inlineIds.length !== controls.length,
 });
 
@@ -140,210 +124,168 @@ beforeAll(() => {
 afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
-beforeEach(async () => {
+beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
 });
 afterEach(async () => {
   await act(async () => root.unmount());
-  host.remove();
   document.body.innerHTML = "";
 });
-
-const renderToolbar = async (nextControls = controls) => {
-  controls = nextControls;
-  await act(async () => {
-    root.render(<ComposerToolbar controls={nextControls} ariaLabel="Composer options" />);
-  });
+const renderToolbar = async (next = controls) => {
+  controls = next;
+  await act(async () =>
+    root.render(<ComposerToolbar model={createComposerToolbarModel(next)} ariaLabel="Options" />),
+  );
 };
 const button = (name: string) => {
-  const found = [...document.querySelectorAll("button")].find(
-    (node) => node.getAttribute("aria-label") === name || node.textContent?.trim() === name,
+  const node = [...document.querySelectorAll("button")].find(
+    (candidate) =>
+      candidate.getAttribute("aria-label") === name || candidate.textContent?.trim() === name,
   );
-  if (!(found instanceof HTMLButtonElement)) throw new Error(`missing button: ${name}`);
-  return found;
+  if (!(node instanceof HTMLButtonElement)) throw new Error(`missing ${name}`);
+  return node;
 };
 const press = async (node: HTMLElement) => {
   await act(async () => {
     node.focus();
     node.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
-    node.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, cancelable: true }));
     node.click();
   });
 };
-const dialogs = () => [...document.querySelectorAll('[role="dialog"]')];
-const pressEscape = async () => {
-  await act(async () => {
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  });
-};
-const settleRadixFocus = async () => {
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-};
+const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
 
-describe("ComposerToolbar Radix navigation", () => {
-  it("keeps root, compact, and catalog navigation on their semantic pages", async () => {
-    const compact = panelControl("compact", "Compact");
-    const catalog = panelControl("catalog", "Catalog", "catalog");
-    controls = [compact, catalog];
-    measuredLayout = layout(controls, []);
-    await renderToolbar();
-
-    await press(button("More composer controls"));
-    expect(dialogs()[0]?.getAttribute("data-page")).toBe("root");
-    await press(button("Compact"));
-    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Compact panel");
-    await press(button("Back"));
-    expect(dialogs()[0]?.getAttribute("data-page")).toBe("root");
-    await press(button("Catalog"));
-    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Catalog panel");
-  });
-
-  it("toggles a direct panel with focus return and refuses the same click when locked", async () => {
-    const agent = panelControl("agent", "Agent");
+describe("ComposerToolbar visible ownership", () => {
+  it("uses one stable mounted content ID and exposes it only from the visible owner", async () => {
+    const agent = panelControl("agent");
     controls = [agent];
     measuredLayout = layout(controls, ["agent"]);
     await renderToolbar();
-
-    await press(button("Agent"));
-    expect(dialogs()).toHaveLength(1);
-    expect(document.activeElement).toBe(agent.initial.current);
-    await press(button("Agent"));
-    expect(dialogs()).toHaveLength(0);
-    expect(document.activeElement).toBe(button("Agent"));
-
-    await press(button("Agent"));
-    await press(button("Lock Agent"));
-    await press(button("Agent"));
-    expect(dialogs()).toHaveLength(1);
-    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Agent panel");
+    const trigger = button("agent");
+    expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(trigger.hasAttribute("aria-controls")).toBe(false);
+    await press(trigger);
+    const id = dialog()?.id;
+    expect(id).toBeTruthy();
+    expect(trigger.getAttribute("aria-controls")).toBe(id);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    await press(trigger);
+    expect(trigger.hasAttribute("aria-controls")).toBe(false);
+    await press(trigger);
+    expect(dialog()?.id).toBe(id);
   });
 
-  it("pointer-switches A to B with one B dialog immediately and after Presence time", async () => {
-    const agent = panelControl("agent", "Agent");
-    const work = panelControl("work", "Work");
-    controls = [agent, work];
-    measuredLayout = layout(controls, ["agent", "work"]);
+  it("keeps expanded ownership and refusal truth while locked without native disabling", async () => {
+    const agent = panelControl("agent");
+    controls = [agent];
+    measuredLayout = layout(controls, ["agent"]);
     await renderToolbar();
-    await press(button("Agent"));
-    await press(button("Work"));
-    expect(dialogs()).toHaveLength(1);
-    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Work panel");
-    expect(document.body.textContent).not.toContain("Agent initial");
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
-    expect(dialogs()).toHaveLength(1);
-    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Work panel");
+    await press(button("agent"));
+    await press(button("Lock agent"));
+    const trigger = button("agent");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(trigger.getAttribute("aria-disabled")).toBe("true");
+    expect(trigger.disabled).toBe(false);
+    await press(trigger);
+    expect(dialog()).not.toBeNull();
   });
 
-  it.each([
-    ["inline", true],
-    ["overflow", false],
-  ] as const)("focuses the checked enabled write-mode radio from %s", async (_host, inline) => {
-    const mode = writeModeControl();
-    controls = [mode];
-    measuredLayout = layout(controls, inline ? [mode.id] : []);
+  it("makes busy direct and overflow-row triggers focusable, truthful, and refusing", async () => {
+    const busy = panelControl("work", { interaction: "busy" });
+    controls = [busy];
+    measuredLayout = layout(controls, ["work"]);
     await renderToolbar();
-    if (!inline) await press(button("More composer controls"));
-    await press(button(inline ? "AI write mode: Auto-apply" : "AI write mode"));
-    expect(document.activeElement).toBe(mode.initial.current);
-    expect(mode.initial.current).toBeInstanceOf(HTMLInputElement);
-    expect((mode.initial.current as HTMLInputElement | null)?.checked).toBe(true);
+    expect(button("work").getAttribute("aria-busy")).toBe("true");
+    expect(button("work").disabled).toBe(false);
+    await press(button("work"));
+    expect(dialog()).toBeNull();
+
+    const readonly = statusControl("readonly");
+    controls = [busy, readonly];
+    measuredLayout = layout(controls, []);
+    await renderToolbar(controls);
+    await press(button("More composer controls"));
+    const row = dialog()?.querySelector<HTMLButtonElement>('[aria-label="work"]');
+    expect(row?.getAttribute("aria-busy")).toBe("true");
+    expect(row?.getAttribute("aria-disabled")).toBe("true");
+    expect(row?.disabled).toBe(false);
+    row && (await press(row));
+    expect(dialog()?.getAttribute("data-page")).toBe("root");
+  });
+
+  it("commits panel to status with no invalid dialog frame and returns current-time focus", async () => {
+    const agent = panelControl("agent");
+    controls = [agent];
+    measuredLayout = layout(controls, ["agent"]);
+    await renderToolbar();
+    await press(button("agent"));
+    expect(dialog()).not.toBeNull();
+    const readonly = statusControl("agent");
+    measuredLayout = layout([readonly], ["agent"]);
+    await renderToolbar([readonly]);
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(button("agent status"));
+    expect(button("agent status").hasAttribute("aria-haspopup")).toBe(false);
+  });
+});
+
+describe("ComposerToolbar focus execution", () => {
+  it("tries ordered candidates then Content and never acknowledges a disabled target", async () => {
+    const agent = panelControl("agent", { primaryDisabled: true });
+    controls = [agent];
+    measuredLayout = layout(controls, ["agent"]);
+    await renderToolbar();
+    await press(button("agent"));
+    expect(document.activeElement).toBe(agent.secondary.current);
+
+    const noCandidates = panelControl("empty", { primaryDisabled: true, showPrimary: false });
+    noCandidates.panel.focus = {
+      ...noCandidates.panel.focus,
+      candidates: [{ key: "missing", ref: createRef() }],
+    };
+    controls = [noCandidates];
+    measuredLayout = layout(controls, ["empty"]);
+    await renderToolbar();
+    await press(button("empty"));
+    expect(document.activeElement).toBe(dialog());
     expect(document.activeElement).not.toBe(document.body);
   });
 
-  it("Back restores the exact root row and terminal close focuses the whole-surface trigger", async () => {
-    const agent = panelControl("agent", "Agent");
-    const work = panelControl("work", "Work");
-    controls = [agent, work];
-    measuredLayout = layout(controls, []);
-    await renderToolbar();
-    const ellipsis = button("More composer controls");
-    await press(ellipsis);
-    await press(button("Work"));
-    await press(button("Back"));
-    expect(document.activeElement).toBe(dialogs()[0]?.querySelector('[aria-label="Work"]'));
-    expect(dialogs()).toHaveLength(1);
-    expect(dialogs()[0]?.getAttribute("data-page")).toBe("root");
-
-    await press(button("Work"));
-    await press(button("Finish Work"));
-    await settleRadixFocus();
-    expect(dialogs()).toHaveLength(0);
-    expect(document.activeElement).toBe(ellipsis);
-  });
-
-  it("refuses locked Escape and outside pointer, then accepts terminal close", async () => {
-    const agent = panelControl("agent", "Agent");
+  it("preserves valid in-content focus on same-page repair", async () => {
+    let agent = panelControl("agent", { repair: "a" });
     controls = [agent];
     measuredLayout = layout(controls, ["agent"]);
     await renderToolbar();
-    const outside = document.createElement("button");
-    outside.textContent = "Outside";
-    document.body.append(outside);
-    await press(button("Agent"));
-    await press(button("Lock Agent"));
-    agent.initial.current?.focus();
-    await pressEscape();
-    expect(dialogs()).toHaveLength(1);
-    expect(document.activeElement).toBe(agent.initial.current);
-    await act(async () => {
-      outside.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
-    });
-    expect(dialogs()).toHaveLength(1);
-    expect(document.activeElement).toBe(agent.initial.current);
-    await press(button("Finish Agent"));
-    expect(dialogs()).toHaveLength(0);
+    await press(button("agent"));
+    agent.secondary.current?.focus();
+    const focused = document.activeElement;
+    agent = {
+      ...agent,
+      panel: { ...agent.panel, focus: { ...agent.panel.focus, repairRevision: "b" } },
+    };
+    await renderToolbar([agent]);
+    expect(document.activeElement).toBe(focused);
   });
 
-  it("atomically migrates direct to overflow and back with one surface and panel focus", async () => {
-    const agent = panelControl("agent", "Agent");
-    const work = panelControl("work", "Work");
-    controls = [agent, work];
-    measuredLayout = layout(controls, ["agent", "work"]);
+  it("repairs a removed focused candidate and preserves focus across host migration", async () => {
+    let agent = panelControl("agent", { repair: "a" });
+    controls = [agent];
+    measuredLayout = layout(controls, ["agent"]);
     await renderToolbar();
-    await press(button("Agent"));
+    await press(button("agent"));
+    const focused = agent.primary.current;
+    expect(document.activeElement).toBe(focused);
 
-    measuredLayout = layout(controls, []);
-    await renderToolbar([...controls]);
-    expect(dialogs()).toHaveLength(1);
-    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Agent panel");
-    expect(document.activeElement).toBe(agent.initial.current);
+    agent = panelControl("agent", { repair: "b", showPrimary: false });
+    measuredLayout = layout([agent], ["agent"]);
+    await renderToolbar([agent]);
+    expect(document.activeElement).toBe(agent.secondary.current);
 
-    measuredLayout = layout(controls, ["agent", "work"]);
-    await renderToolbar([...controls]);
-    expect(dialogs()).toHaveLength(1);
-    expect(dialogs()[0]?.getAttribute("aria-label")).toBe("Agent panel");
-    expect(document.activeElement).toBe(agent.initial.current);
-  });
-
-  it.each([
-    ["overflow remaining", ["agent"]],
-    ["no overflow", ["agent", "work"]],
-  ] as const)("focuses a promoted root row with %s", async (_name, promotedInline) => {
-    const agent = panelControl("agent", "Agent");
-    const work = panelControl("work", "Work");
-    controls = [agent, work];
-    measuredLayout = layout(controls, []);
-    await renderToolbar();
-    await press(button("More composer controls"));
-    const rootRow = dialogs()[0]?.querySelector('[aria-label="Agent"]');
-    if (!(rootRow instanceof HTMLButtonElement)) throw new Error("missing Agent root row");
-    await act(async () => rootRow.focus());
-
-    measuredLayout = layout(controls, [...promotedInline]);
-    await renderToolbar([...controls]);
-    await settleRadixFocus();
-    expect(dialogs()).toHaveLength(0);
-    expect(document.activeElement).toBe(button("Agent"));
-  });
-
-  it("opens a status-only overflow instead of rendering a dead ellipsis", async () => {
-    controls = [statusControl()];
-    measuredLayout = layout(controls, []);
-    await renderToolbar();
-    await press(button("More composer controls"));
-    expect(dialogs()).toHaveLength(1);
-    expect(document.body.textContent).toContain("Readonly");
+    const beforeMigration = document.activeElement;
+    measuredLayout = layout([agent], []);
+    await renderToolbar([agent]);
+    expect(document.activeElement).toBe(beforeMigration);
+    expect(dialog()).not.toBeNull();
   });
 });

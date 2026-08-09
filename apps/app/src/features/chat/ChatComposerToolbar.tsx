@@ -1,6 +1,6 @@
 /** App-specific composition of Agent, write-mode, and Work toolbar descriptors. */
 import type { Work } from "@meridian/contracts/works";
-import { ComposerToolbar } from "@/components/app/composer-toolbar";
+import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 import { useComposerWriteModeToolbarControl } from "./ComposerWriteModeControl";
@@ -32,9 +32,8 @@ export function ChatComposerToolbar({
   );
   const writeMode = useComposerWriteModeToolbarControl({ projectId, work });
   const workControl = useComposerWorkToolbarControl({ projectId, threadId, work });
-  return (
-    <ComposerToolbar ariaLabel="Composer controls" controls={[agent, writeMode, workControl]} />
-  );
+  const model = createComposerToolbarModel([agent, writeMode, workControl]);
+  return <ComposerToolbar ariaLabel="Composer controls" model={model} />;
 }
 
 export function AgentOnlyComposerToolbar({
@@ -58,5 +57,7 @@ export function AgentOnlyComposerToolbar({
           onSelectedSlugChange: onAgentChange ?? (() => {}),
         },
   );
-  return <ComposerToolbar ariaLabel="Composer controls" controls={[agent]} />;
+  return (
+    <ComposerToolbar ariaLabel="Composer controls" model={createComposerToolbarModel([agent])} />
+  );
 }

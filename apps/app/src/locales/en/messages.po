@@ -319,8 +319,12 @@ msgstr "AI write mode"
 
 #. placeholder {0}: value === "draft" ? "Draft" : "Auto-apply"
 #: src/features/chat/ComposerWriteModeControl.tsx
-msgid "AI write mode: {0}"
-msgstr "AI write mode: {0}"
+#~ msgid "AI write mode: {0}"
+#~ msgstr "AI write mode: {0}"
+
+#: src/features/chat/ComposerWriteModeControl.tsx
+msgid "AI write mode: {localizedValue}"
+msgstr "AI write mode: {localizedValue}"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Align center"

@@ -50,6 +50,7 @@ export function WorkPickerPanel({
   onQueryChange,
   onChoose,
   searchRef,
+  focusRefs,
 }: {
   catalog: WorkCatalogView;
   operation: WorkPickerOperation;
@@ -57,6 +58,11 @@ export function WorkPickerPanel({
   onQueryChange: (query: string) => void;
   onChoose: (work: Work) => void;
   searchRef?: RefObject<HTMLInputElement | null>;
+  focusRefs?: {
+    selected: RefObject<HTMLButtonElement | null>;
+    first: RefObject<HTMLButtonElement | null>;
+    retry: RefObject<HTMLButtonElement | null>;
+  };
 }) {
   const searchId = useId();
   const needle = query.trim().toLocaleLowerCase();
@@ -125,7 +131,11 @@ export function WorkPickerPanel({
           </PickerState>
         ) : null}
         {catalog.status === "error" ? (
-          <InlineErrorRow message={t`Couldn't load Works.`} onRetry={catalog.retry} />
+          <InlineErrorRow
+            message={t`Couldn't load Works.`}
+            onRetry={catalog.retry}
+            retryRef={focusRefs?.retry}
+          />
         ) : null}
         {catalog.status === "empty" ? (
           <PickerState>
@@ -138,6 +148,8 @@ export function WorkPickerPanel({
             works={active}
             operation={operation}
             onChoose={onChoose}
+            focusRefs={focusRefs}
+            firstWorkId={filtered[0]?.id}
           />
         ) : null}
         {archived.length ? (
@@ -146,6 +158,8 @@ export function WorkPickerPanel({
             works={archived}
             operation={operation}
             onChoose={onChoose}
+            focusRefs={focusRefs}
+            firstWorkId={filtered[0]?.id}
             archived
           />
         ) : null}
@@ -169,12 +183,19 @@ function WorkSection({
   operation,
   onChoose,
   archived = false,
+  focusRefs,
+  firstWorkId,
 }: {
   label: string;
   works: Work[];
   operation: WorkPickerOperation;
   onChoose: (work: Work) => void;
   archived?: boolean;
+  focusRefs?: {
+    selected: RefObject<HTMLButtonElement | null>;
+    first: RefObject<HTMLButtonElement | null>;
+  };
+  firstWorkId?: string;
 }) {
   return (
     <section aria-label={label}>
@@ -192,6 +213,13 @@ function WorkSection({
           return (
             <div key={work.id}>
               <Button
+                ref={
+                  current
+                    ? focusRefs?.selected
+                    : work.id === firstWorkId
+                      ? focusRefs?.first
+                      : undefined
+                }
                 data-work-choice
                 variant="ghost"
                 type="button"

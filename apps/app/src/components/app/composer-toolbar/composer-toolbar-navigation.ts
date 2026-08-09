@@ -1,19 +1,21 @@
 /** Pure navigation state machine for the measured composer toolbar. */
 import type { ComposerToolbarLayout } from "./composer-toolbar-layout";
-import type { ComposerControlId, ComposerToolbarControl } from "./types";
+import type { ComposerControlId, PanelSession, ToolbarNavigationInput } from "./types";
 
-export type PanelSession = { controlId: ComposerControlId; session: number };
+export type { PanelSession } from "./types";
 export type NavigationSurface =
   | { kind: "closed" }
   | { kind: "root"; cursorId: ComposerControlId | null }
   | { kind: "panel"; panel: PanelSession; lock: "dismissible" | "nondismissible" };
 export type FocusTarget =
-  | { kind: "panel.initial"; panel: PanelSession }
-  | { kind: "control.visibleTrigger"; controlId: ComposerControlId }
+  | { kind: "panel.enter" | "panel.repair"; panel: PanelSession }
+  | { kind: "control.owner"; controlId: ComposerControlId }
   | { kind: "root.row"; controlId: ComposerControlId }
   | { kind: "root.content" }
-  | { kind: "overflow.trigger" };
+  | { kind: "overflow.trigger" }
+  | { kind: "toolbar.fallback" };
 export type NavigationState = {
+  input: ToolbarNavigationInput;
   layout: ComposerToolbarLayout;
   surface: NavigationSurface;
   focus: { token: number; target: FocusTarget } | null;
@@ -21,6 +23,7 @@ export type NavigationState = {
   nextFocusToken: number;
 };
 export type NavigationEvent =
+  | { type: "inputs.changed"; input: ToolbarNavigationInput }
   | { type: "layout.measured"; layout: ComposerToolbarLayout }
   | { type: "root.triggered" }
   | { type: "root.dismissRequested"; cause: "escape" | "outside" }
@@ -43,22 +46,23 @@ export type ToolbarView =
   | { kind: "overflow"; page: { kind: "panel"; controlId: string; session: number } }
   | { kind: "inline"; controlId: string; session: number };
 
-export const initialNavigationState = (
-  controls: readonly ComposerToolbarControl[],
-): NavigationState => ({
-  layout: { inlineIds: [], overflowIds: controls.map((c) => c.id), constrained: false },
+export const initialNavigationState = (input: ToolbarNavigationInput): NavigationState => ({
+  input,
+  layout: { inlineIds: [], overflowIds: input.controls.map((c) => c.id), constrained: false },
   surface: { kind: "closed" },
   focus: null,
   nextPanelSession: 1,
   nextFocusToken: 1,
 });
-const interactiveOverflow = (
-  controls: readonly ComposerToolbarControl[],
-  layout: ComposerToolbarLayout,
-) =>
-  layout.overflowIds.filter((id) => controls.find((c) => c.id === id)?.overflow.kind === "panel");
-const allOverflow = (controls: readonly ComposerToolbarControl[], layout: ComposerToolbarLayout) =>
-  layout.overflowIds.filter((id) => controls.some((control) => control.id === id));
+const panelInput = (state: NavigationState, id: string) =>
+  state.input.controls.find(
+    (control): control is Extract<(typeof state.input.controls)[number], { kind: "panel" }> =>
+      control.id === id && control.kind === "panel",
+  );
+const interactiveOverflow = (state: NavigationState) =>
+  state.layout.overflowIds.filter((id) => panelInput(state, id));
+const allOverflow = (state: NavigationState) =>
+  state.layout.overflowIds.filter((id) => state.input.controls.some((c) => c.id === id));
 const withFocus = (state: NavigationState, target: FocusTarget): NavigationState => ({
   ...state,
   focus: { token: state.nextFocusToken, target },
@@ -72,7 +76,7 @@ const closePanel = (state: NavigationState) =>
   state.surface.kind === "panel"
     ? withFocus(
         { ...state, surface: { kind: "closed" } },
-        { kind: "control.visibleTrigger", controlId: state.surface.panel.controlId },
+        { kind: "control.owner", controlId: state.surface.panel.controlId },
       )
     : state;
 const openPanel = (state: NavigationState, controlId: string, locked: boolean) => {
@@ -83,7 +87,7 @@ const openPanel = (state: NavigationState, controlId: string, locked: boolean) =
       surface: { kind: "panel", panel, lock: locked ? "nondismissible" : "dismissible" },
       nextPanelSession: state.nextPanelSession + 1,
     },
-    { kind: "panel.initial", panel },
+    { kind: "panel.enter", panel },
   );
 };
 export function deriveToolbarView(state: NavigationState): ToolbarView {
@@ -96,15 +100,46 @@ export function deriveToolbarView(state: NavigationState): ToolbarView {
 }
 export const visibleContentCount = (view: ToolbarView) => (view.kind === "closed" ? 0 : 1);
 
-export function reduceNavigation(
-  state: NavigationState,
-  event: NavigationEvent,
-  controls: readonly ComposerToolbarControl[],
-): NavigationState {
-  const overflow = interactiveOverflow(controls, state.layout);
-  const overflowControls = allOverflow(controls, state.layout);
-  const validPanel = (id: string) =>
-    controls.some((c) => c.id === id && c.overflow.kind === "panel");
+function reconcileInput(state: NavigationState, input: ToolbarNavigationInput): NavigationState {
+  if (state.input.revision === input.revision) return state;
+  const ids = new Set(input.controls.map(({ id }) => id));
+  const measured = new Set([...state.layout.inlineIds, ...state.layout.overflowIds]);
+  const next: NavigationState = {
+    ...state,
+    input,
+    layout: {
+      ...state.layout,
+      inlineIds: state.layout.inlineIds.filter((id) => ids.has(id)),
+      overflowIds: input.controls
+        .map(({ id }) => id)
+        .filter((id) => state.layout.overflowIds.includes(id) || !measured.has(id)),
+    },
+  };
+  if (state.surface.kind !== "panel") return next;
+  const previous = panelInput(state, state.surface.panel.controlId);
+  const currentInput = panelInput(next, state.surface.panel.controlId);
+  if (!currentInput) {
+    if (state.surface.lock === "nondismissible" && import.meta.env?.DEV)
+      console.error("Composer toolbar adapter withdrew a locked panel");
+    return withFocus(
+      { ...next, surface: { kind: "closed" } },
+      { kind: "control.owner", controlId: state.surface.panel.controlId },
+    );
+  }
+  if (previous?.page.id !== currentInput.page.id)
+    return withFocus(next, { kind: "panel.enter", panel: state.surface.panel });
+  if (
+    previous?.page.repairRevision !== currentInput.page.repairRevision ||
+    previous?.page.candidateKeys.join("\0") !== currentInput.page.candidateKeys.join("\0")
+  )
+    return withFocus(next, { kind: "panel.repair", panel: state.surface.panel });
+  return next;
+}
+
+export function reduceNavigation(state: NavigationState, event: NavigationEvent): NavigationState {
+  if (event.type === "inputs.changed") return reconcileInput(state, event.input);
+  const overflow = interactiveOverflow(state);
+  const overflowControls = allOverflow(state);
   switch (event.type) {
     case "focus.executed":
       return state.focus?.token === event.token ? { ...state, focus: null } : state;
@@ -128,7 +163,8 @@ export function reduceNavigation(
         : state;
     case "panel.triggered":
     case "panel.blockingTriggered": {
-      if (!validPanel(event.controlId)) return state;
+      const target = panelInput(state, event.controlId);
+      if (!target || target.interaction === "busy") return state;
       if (state.surface.kind === "panel" && state.surface.lock === "nondismissible") return state;
       if (
         event.type === "panel.triggered" &&
@@ -170,32 +206,23 @@ export function reduceNavigation(
     case "layout.measured": {
       const previous = state.layout;
       const next = { ...state, layout: event.layout };
-      const nextOverflow = interactiveOverflow(controls, event.layout);
-      const nextOverflowControls = allOverflow(controls, event.layout);
+      const nextState = { ...state, layout: event.layout };
+      const nextOverflow = interactiveOverflow(nextState);
+      const nextOverflowControls = allOverflow(nextState);
       if (state.surface.kind === "panel") {
         const id = state.surface.panel.controlId;
-        if (!validPanel(id))
-          return withFocus(
-            { ...next, surface: { kind: "closed" } },
-            nextOverflowControls.length
-              ? { kind: "overflow.trigger" }
-              : { kind: "control.visibleTrigger", controlId: event.layout.inlineIds[0] ?? id },
-          );
-        if (previous.inlineIds.includes(id) !== event.layout.inlineIds.includes(id))
-          return withFocus(next, { kind: "panel.initial", panel: state.surface.panel });
+        if (previous.inlineIds.includes(id) !== event.layout.inlineIds.includes(id)) return next;
       } else if (state.surface.kind === "root") {
         const cursor = state.surface.cursorId;
         if (cursor && !nextOverflow.includes(cursor) && event.layout.inlineIds.includes(cursor))
           return withFocus(
             { ...next, surface: { kind: "closed" } },
-            { kind: "control.visibleTrigger", controlId: cursor },
+            { kind: "control.owner", controlId: cursor },
           );
         if (!nextOverflowControls.length)
           return withFocus(
             { ...next, surface: { kind: "closed" } },
-            cursor
-              ? { kind: "control.visibleTrigger", controlId: cursor }
-              : { kind: "control.visibleTrigger", controlId: event.layout.inlineIds[0] ?? "" },
+            cursor ? { kind: "control.owner", controlId: cursor } : { kind: "toolbar.fallback" },
           );
         if (cursor && !nextOverflow.includes(cursor))
           return withFocus(

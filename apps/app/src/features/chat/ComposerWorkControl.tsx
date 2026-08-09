@@ -19,22 +19,46 @@ export function useComposerWorkToolbarControl({
 }): ComposerToolbarControl {
   const controller = useComposerWorkBinding({ projectId, threadId, work });
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const selectedRef = useRef<HTMLButtonElement | null>(null);
+  const firstRef = useRef<HTMLButtonElement | null>(null);
+  const retryRef = useRef<HTMLButtonElement | null>(null);
   const query = controller.state.view.query;
+  const needle = query.trim().toLocaleLowerCase();
+  const filtered =
+    controller.catalog.status === "ready"
+      ? controller.catalog.works.filter((candidate) =>
+          `${candidate.name} ${candidate.goal ?? ""}`.toLocaleLowerCase().includes(needle),
+        )
+      : [];
+  const enabledIds = controller.busy ? [] : filtered.map(({ id }) => id);
+  const pageId =
+    controller.catalog.status === "error"
+      ? "error"
+      : controller.catalog.status === "ready"
+        ? "ready"
+        : controller.catalog.status === "empty"
+          ? "empty"
+          : "loading";
   return {
+    kind: "panel",
     id: "work",
     priority: 100,
-    inline: ({ activate, triggerRef }) => (
+    interaction: controller.busy ? "busy" : "enabled",
+    item: {
+      ariaLabel: t`Change work for this chat, currently ${work.name}`,
+      label: <Trans>Work</Trans>,
+      value: work.name,
+    },
+    inline: ({ trigger }) => (
       <span className="flex items-center">
         <Button
-          ref={triggerRef}
+          ref={trigger.ref}
+          {...trigger.buttonProps}
           variant="quiet"
           size="meta"
           type="button"
           aria-label={t`Change work for this chat, currently ${work.name}`}
-          aria-busy={controller.busy}
-          disabled={controller.busy}
           className="max-w-44 truncate"
-          onClick={activate}
         >
           <Trans>Work: {work.name}</Trans>
         </Button>
@@ -52,31 +76,42 @@ export function useComposerWorkToolbarControl({
         ) : null}
       </span>
     ),
-    overflow: {
-      kind: "panel",
-      item: {
-        ariaLabel: t`Change work for this chat, currently ${work.name}`,
-        label: <Trans>Work</Trans>,
-        value: work.name,
+    panel: {
+      ariaLabel: t`Change work for this chat`,
+      size: "catalog",
+      focus: {
+        pageId,
+        repairRevision: [query, controller.busy, ...enabledIds].join("\0"),
+        candidates:
+          pageId === "ready"
+            ? [
+                { key: "search", ref: searchRef },
+                ...(!controller.busy
+                  ? [
+                      { key: `selected:${work.id}`, ref: selectedRef },
+                      { key: `first:${enabledIds[0] ?? "none"}`, ref: firstRef },
+                    ]
+                  : []),
+              ]
+            : pageId === "error"
+              ? [{ key: "retry", ref: retryRef }]
+              : [],
+        fallback: "content",
       },
-      panel: {
-        ariaLabel: t`Change work for this chat`,
-        size: "catalog",
-        initialFocusRef: searchRef,
-        render: ({ beginBlocking }) => (
-          <WorkPickerPanel
-            catalog={controller.catalog}
-            operation={controller.operation}
-            query={query}
-            onQueryChange={controller.changeQuery}
-            onChoose={(target) => {
-              const lock = beginBlocking();
-              if (lock.kind === "started") void controller.choose(target).then(lock.settle);
-            }}
-            searchRef={searchRef}
-          />
-        ),
-      },
+      render: ({ beginBlocking }) => (
+        <WorkPickerPanel
+          catalog={controller.catalog}
+          operation={controller.operation}
+          query={query}
+          onQueryChange={controller.changeQuery}
+          onChoose={(target) => {
+            const lock = beginBlocking();
+            if (lock.kind === "started") void controller.choose(target).then(lock.settle);
+          }}
+          searchRef={searchRef}
+          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
+        />
+      ),
     },
   };
 }

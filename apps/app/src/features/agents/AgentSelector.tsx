@@ -18,10 +18,9 @@
 import { t } from "@lingui/core/macro";
 import { ChevronDown } from "lucide-react";
 import { forwardRef } from "react";
-
+import type { ComposerToolbarTriggerBinding } from "@/components/app/composer-toolbar";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
 import type { ResolvedAgentDisplay } from "./resolve-agent";
 
 export type AgentSelectorProps = {
@@ -30,15 +29,17 @@ export type AgentSelectorProps = {
   onClick?: () => void;
   tooltip?: string;
   className?: string;
+  binding?: ComposerToolbarTriggerBinding;
 };
 
 export const AgentSelector = forwardRef<HTMLButtonElement, AgentSelectorProps>(
-  function AgentSelector({ agent, disabled = false, onClick, tooltip, className }, ref) {
+  function AgentSelector({ agent, disabled = false, onClick, tooltip, className, binding }, ref) {
     return (
       <button
-        ref={ref}
+        ref={binding?.ref ?? ref}
+        {...binding?.buttonProps}
         type="button"
-        onClick={disabled ? undefined : onClick}
+        onClick={disabled ? undefined : (binding?.buttonProps.onClick ?? onClick)}
         aria-disabled={disabled || undefined}
         title={tooltip}
         aria-label={t`Agent: ${agent.name}`}
