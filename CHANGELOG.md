@@ -6,6 +6,9 @@
   keyboard-focus boundaries while search fields and other non-row content keep
   their intentional local gutters.
 
+- `apps/app`: blocking composer panel actions now retain their toolbar allocation
+  and popup anchor while Work or write-mode labels change, truncate transient
+  values within that allocation, and reconcile overflow once settlement finishes.
 - `apps/app`: writer-facing collection copy across Home, Work selection,
   receipts, and command states now uses the collective `Work` label instead of
   `Works`; the serialized unavailable-Work guidance follows the same wording.

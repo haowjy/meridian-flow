@@ -12,6 +12,7 @@ const same = (a: ComposerToolbarLayout, b: ComposerToolbarLayout) =>
 export function useMeasuredComposerToolbar(
   controls: readonly { id: string; priority: number }[],
   onLayout: (layout: ComposerToolbarLayout) => void,
+  locked: boolean,
 ) {
   const root = useRef<HTMLFieldSetElement | null>(null);
   const probe = useRef<HTMLButtonElement | null>(null);
@@ -21,7 +22,13 @@ export function useMeasuredComposerToolbar(
     if (!root.current || !probe.current || root.current.clientWidth <= 0) return;
     const gap = Number.parseFloat(getComputedStyle(root.current).columnGap) || 0;
     const controlWidths = new Map(
-      [...nodes.current].map(([id, node]) => [id, node.getBoundingClientRect().width]),
+      [...nodes.current].map(([id, node]) => {
+        const renderedWidth = node.getBoundingClientRect().width;
+        const label = node.querySelector<HTMLElement>('[data-slot="composer-current-value-label"]');
+        const hiddenLabelWidth =
+          locked && label ? Math.max(0, label.scrollWidth - label.clientWidth) : 0;
+        return [id, Math.max(node.scrollWidth, renderedWidth + hiddenLabelWidth)];
+      }),
     );
     const next = resolveComposerToolbarLayout(controls, {
       available: root.current.clientWidth,
@@ -33,15 +40,26 @@ export function useMeasuredComposerToolbar(
       last.current = next;
       onLayout(next);
     }
-  }, [controls, onLayout]);
+  }, [controls, locked, onLayout]);
   useLayoutEffect(() => {
+    for (const node of nodes.current.values()) {
+      if (locked) node.style.width = `${node.getBoundingClientRect().width}px`;
+      else node.style.removeProperty("width");
+    }
     measure();
     const observer = new ResizeObserver(measure);
+    const contentObserver = new MutationObserver(measure);
     if (root.current) observer.observe(root.current);
     if (probe.current) observer.observe(probe.current);
     for (const node of nodes.current.values()) observer.observe(node);
-    return () => observer.disconnect();
-  }, [measure]);
+    for (const node of nodes.current.values())
+      contentObserver.observe(node, { childList: true, characterData: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      contentObserver.disconnect();
+      if (locked) for (const node of nodes.current.values()) node.style.removeProperty("width");
+    };
+  }, [locked, measure]);
   const controlRef = (id: string) => (node: HTMLElement | null) => {
     if (node) nodes.current.set(id, node);
     else nodes.current.delete(id);

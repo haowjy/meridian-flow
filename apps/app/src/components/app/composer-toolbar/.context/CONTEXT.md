@@ -29,6 +29,10 @@ the active inline control. When controls overflow, the same Content shows either
 the root page or a feature page anchored to the ellipsis. Host migration keeps
 the panel session and stable Content relationship; it changes neither domain
 state nor the current in-panel focus merely because width changed.
+During a nondismissible panel session, measurement continues to accept the latest
+control widths, but the toolbar retains its committed allocation and popup host.
+Current-value wrappers hold their allocated width and truncate changing labels;
+the latest measured topology is applied once when the blocking session settles.
 
 The navigation reducer owns same-trigger toggle, different-trigger switch,
 overflow Back, terminal close, outside/Escape dismissal, and nondismissible
@@ -80,6 +84,8 @@ that focusable `aria-disabled` status and preserves its explanatory tooltip.
 
 - Separate inline and overflow popups, nested feature popovers, or feature-owned
   open state: they permit duplicate or empty surfaces during migration.
+- Permanent maximum-width reservations or Work-specific allocation rules: they
+  waste space for short values and fail to cover other changing labels.
 - Mutable descriptor refs or effect-time topology repair: they allow rendered
   controls and reducer validity to disagree for a committed frame.
 - One static initial-focus ref: real pages replace choices, disable rows, and

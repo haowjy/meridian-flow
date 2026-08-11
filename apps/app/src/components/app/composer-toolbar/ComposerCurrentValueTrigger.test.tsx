@@ -50,6 +50,10 @@ describe("ComposerCurrentValueTrigger", () => {
     expect(button.className).toContain("max-w-[11rem]");
     expect(button.className).toContain("px-2.5");
     expect(button.className).toContain("[@media(pointer:coarse)]:min-h-11");
+    expect(button.className).not.toContain("transition-all");
+    expect(button.className).toContain(
+      "transition-[color,background-color,border-color,box-shadow,opacity,transform]",
+    );
     await act(async () => button.click());
     expect(onClick).toHaveBeenCalledOnce();
   });

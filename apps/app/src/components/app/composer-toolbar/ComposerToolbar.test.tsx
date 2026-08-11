@@ -36,6 +36,7 @@ type PanelHarness = Extract<ComposerToolbarControl, { kind: "panel" }> & {
   primary: React.RefObject<HTMLButtonElement | null>;
   secondary: React.RefObject<HTMLButtonElement | null>;
 };
+let settleBlocking: ((outcome: "close" | "stay") => void) | null = null;
 const panelControl = (
   id: string,
   options: {
@@ -59,7 +60,13 @@ const panelControl = (
       <button ref={secondary} type="button">
         {id} secondary
       </button>
-      <button type="button" onClick={() => context.beginBlocking()}>
+      <button
+        type="button"
+        onClick={() => {
+          const result = context.beginBlocking();
+          if (result.kind === "started") settleBlocking = result.settle;
+        }}
+      >
         Lock {id}
       </button>
       <button type="button" onClick={context.terminalClose}>
@@ -125,6 +132,7 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 beforeEach(() => {
+  settleBlocking = null;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -189,6 +197,30 @@ describe("ComposerToolbar visible ownership", () => {
     expect(trigger.disabled).toBe(false);
     await press(trigger);
     expect(dialog()).not.toBeNull();
+  });
+
+  it("keeps one content and its inline host until a locked width change settles", async () => {
+    const work = panelControl("work");
+    controls = [work];
+    measuredLayout = layout(controls, ["work"]);
+    await renderToolbar();
+    await press(button("work"));
+    await press(button("Lock work"));
+    work.primary.current?.focus();
+    const focused = document.activeElement;
+
+    work.priority = 2;
+    measuredLayout = layout(controls, []);
+    await renderToolbar([work]);
+    expect(button("work").getAttribute("aria-expanded")).toBe("true");
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(document.querySelector('[aria-label="More composer controls"]')).toBeNull();
+    expect(document.activeElement).toBe(focused);
+
+    await act(async () => settleBlocking?.("stay"));
+    expect(button("More composer controls")).toBeInstanceOf(HTMLButtonElement);
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(document.activeElement).toBe(focused);
   });
 
   it("makes busy direct and overflow-row triggers focusable, truthful, and refusing", async () => {
