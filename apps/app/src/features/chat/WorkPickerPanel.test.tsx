@@ -96,6 +96,10 @@ describe("WorkPickerPanel", () => {
         expect(document.querySelector("label[for]")?.textContent).toBe("Search Work");
         expect(document.querySelector("section")?.getAttribute("aria-label")).toBe("Active Work");
         const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
+        const search = document.querySelector<HTMLInputElement>('input[type="search"]');
+        expect(row?.className).toContain("px-2");
+        expect(row?.className).toContain("dropdown-focus-ring");
+        expect(search?.parentElement?.className).toContain("mx-2");
         expect(row?.getAttribute("aria-current")).toBe("true");
         expect(row?.hasAttribute("aria-label")).toBe(false);
         const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");

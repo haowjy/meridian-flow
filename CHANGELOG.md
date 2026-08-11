@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: dropdown rows now share full-width selected, hover, and inset
+  keyboard-focus boundaries while search fields and other non-row content keep
+  their intentional local gutters.
+
 - `apps/app`: writer-facing collection copy across Home, Work selection,
   receipts, and command states now uses the collective `Work` label instead of
   `Works`; the serialized unavailable-Work guidance follows the same wording.

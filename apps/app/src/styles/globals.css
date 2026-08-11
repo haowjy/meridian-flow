@@ -528,6 +528,19 @@
   }
 }
 
+/* Dropdown rows meet the clipped surface edge, so their keyboard indicator
+   draws inward. Composite rows may apply this to a wrapper around the focused
+   control; ordinary controls continue to use focus-ring above. */
+@utility dropdown-focus-ring {
+  @apply outline-none;
+  &:focus-visible,
+  &:has(> :focus-visible) {
+    box-shadow:
+      inset 0 0 0 2px var(--color-border-focus),
+      inset 0 0 0 4px color-mix(in oklab, var(--color-ring) 12%, transparent) !important;
+  }
+}
+
 /* Login hero — soft jade+cinnabar radial behind the needle, and a matching
    glow on the needle itself. Colors stay token-derived (no literals in TSX). */
 @utility login-hero-glow {

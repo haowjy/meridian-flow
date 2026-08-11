@@ -12,7 +12,7 @@ export const dropdownRowVariants = cva(
         identity: "min-h-11 flex-col items-start gap-0.5 py-0.5",
       },
       interactive: {
-        true: "focus-ring transition-colors hover:bg-sidebar-accent/50 focus-visible:bg-sidebar-accent/50 data-[highlighted]:bg-sidebar-accent/50",
+        true: "dropdown-focus-ring transition-colors hover:bg-sidebar-accent/50 focus-visible:bg-sidebar-accent/50 data-[highlighted]:bg-sidebar-accent/50",
         false: null,
       },
       selected: { true: "bg-sidebar-accent font-medium", false: null },
@@ -23,6 +23,9 @@ export const dropdownRowVariants = cva(
 
 export type DropdownRowProps = VariantProps<typeof dropdownRowVariants>;
 
+export const dropdownNavigationPageClass = "px-0 py-1";
+export const dropdownPickerPageClass = "px-0 py-2";
+
 export const dropdownSurfaceVariants = cva("dropdown-surface flex flex-col overflow-hidden", {
   variants: {
     measure: {
@@ -32,8 +35,8 @@ export const dropdownSurfaceVariants = cva("dropdown-surface flex flex-col overf
       "thread-list": "[--dropdown-preferred-width:18rem]",
     },
     page: {
-      navigation: "p-1",
-      picker: "p-2",
+      navigation: dropdownNavigationPageClass,
+      picker: dropdownPickerPageClass,
       "thread-list": "p-0",
     },
   },
@@ -56,8 +59,11 @@ export const dropdownThreadRegionVariants = cva("shrink-0", {
   variants: {
     region: {
       header: "p-2",
-      results: "min-h-0 flex-1 p-1",
-      footer: "p-1",
+      results: "min-h-0 flex-1 px-0 py-1",
+      footer: "px-0 py-1",
     },
   },
 });
+
+/** Lets a composite row own selected, hover, and descendant-focus geometry. */
+export const dropdownRowContainerClass = "dropdown-focus-ring";

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
   dropdownResultsVariants,
+  dropdownRowContainerClass,
   dropdownRowVariants,
   dropdownSearchClass,
   dropdownSurfaceVariants,
@@ -287,7 +288,8 @@ function ThreadSwitchItem({
   return (
     <li
       className={cn(
-        "group flex min-w-0 items-center rounded-md transition-colors",
+        dropdownRowContainerClass,
+        "group flex min-w-0 items-center rounded-sm transition-colors",
         // Pressed neutral, not an accent wash — routine selection never
         // spends jade (same grammar as the sidebar's neutral rows).
         active ? "bg-sidebar-accent text-foreground" : "hover:bg-sidebar-accent/50",
@@ -299,7 +301,7 @@ function ThreadSwitchItem({
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread.id)}
         className={cn(
-          dropdownRowVariants({ kind: "list" }),
+          dropdownRowVariants({ kind: "list", interactive: false }),
           "flex-1",
           active ? "font-medium" : "text-ink-muted group-hover:text-foreground",
         )}
