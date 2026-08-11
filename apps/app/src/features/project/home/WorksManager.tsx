@@ -2,8 +2,16 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
-import { Archive, ArchiveRestore, Check, MoreHorizontal, Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  ChevronDown,
+  MoreHorizontal,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
@@ -77,61 +85,42 @@ export function WorksManager({ projectId }: { projectId: string }) {
         <p className="text-sm text-muted-foreground">
           <Trans>Loading Work…</Trans>
         </p>
-      ) : works.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          <Trans>No Work yet.</Trans>
-        </p>
       ) : (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {[...active, ...archived].map((work) => (
-            <article
-              key={work.id}
-              className="flex min-w-0 items-start gap-3 rounded-sm border border-border-subtle p-3"
-            >
-              <button
-                type="button"
-                aria-pressed={work.id === currentWorkId}
-                className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={mutation.isPending}
-                onClick={() => runAction({ type: "switch", workId: work.id })}
-              >
-                <span className="flex items-center gap-1.5 font-medium text-foreground">
-                  {work.id === currentWorkId ? <Check className="size-4 text-primary" /> : null}
-                  <span className="truncate">{work.name}</span>
-                </span>
-                <span className="mt-1 block line-clamp-2 text-meta text-muted-foreground">
-                  {work.goal || <Trans>No goal yet</Trans>}
-                </span>
-                <span className="mt-2 block text-meta text-muted-foreground">
-                  {work.status === "archived" ? <Trans>Archived</Trans> : <Trans>Active</Trans>}
-                  {work.unpushedChangeCount ? (
-                    <>
-                      {" ("}
-                      <Plural
-                        value={work.unpushedChangeCount}
-                        one="# pending change"
-                        other="# pending changes"
-                      />
-                      {")"}
-                    </>
-                  ) : null}
-                </span>
-              </button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={mutation.isPending}
-                aria-label={t`Edit ${work.name}`}
-                onClick={() => {
+        <>
+          <section aria-labelledby="active-work-heading">
+            <h3 id="active-work-heading" className="mb-2 text-sm font-medium text-foreground">
+              <Trans>Active Work</Trans>
+            </h3>
+            {active.length > 0 ? (
+              <WorkList
+                works={active}
+                currentWorkId={currentWorkId}
+                pending={mutation.isPending}
+                onSelect={(workId) => runAction({ type: "switch", workId })}
+                onEdit={(work) => {
                   mutation.reset();
                   setEditing(work);
                 }}
-              >
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </article>
-          ))}
-        </div>
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                <Trans>No active Work yet.</Trans>
+              </p>
+            )}
+          </section>
+          {archived.length > 0 ? (
+            <ArchivedWorkSection
+              works={archived}
+              currentWorkId={currentWorkId}
+              pending={mutation.isPending}
+              onSelect={(workId) => runAction({ type: "switch", workId })}
+              onEdit={(work) => {
+                mutation.reset();
+                setEditing(work);
+              }}
+            />
+          ) : null}
+        </>
       )}
 
       {!editing && mutation.error ? (
@@ -148,6 +137,127 @@ export function WorksManager({ projectId }: { projectId: string }) {
         onClose={closeDialog}
         onAction={(action) => runAction(action, true)}
       />
+    </section>
+  );
+}
+
+function WorkList({
+  works,
+  currentWorkId,
+  pending,
+  onSelect,
+  onEdit,
+}: {
+  works: Work[];
+  currentWorkId: string | null;
+  pending: boolean;
+  onSelect: (workId: string) => void;
+  onEdit: (work: Work) => void;
+}) {
+  return (
+    <ul className="grid gap-2 sm:grid-cols-2">
+      {works.map((work) => (
+        <li
+          key={work.id}
+          className="flex min-w-0 items-start gap-3 rounded-sm border border-border-subtle p-3"
+        >
+          <button
+            type="button"
+            aria-pressed={work.id === currentWorkId}
+            className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={pending}
+            onClick={() => onSelect(work.id)}
+          >
+            <span className="flex items-center gap-1.5 font-medium text-foreground">
+              {work.id === currentWorkId ? <Check className="size-4 text-primary" /> : null}
+              <span className="truncate">{work.name}</span>
+            </span>
+            <span className="mt-1 block line-clamp-2 text-meta text-muted-foreground">
+              {work.goal || <Trans>No goal yet</Trans>}
+            </span>
+            <span className="mt-2 block text-meta text-muted-foreground">
+              {work.status === "archived" ? <Trans>Archived</Trans> : <Trans>Active</Trans>}
+              {work.unpushedChangeCount ? (
+                <>
+                  {" ("}
+                  <Plural
+                    value={work.unpushedChangeCount}
+                    one="# pending change"
+                    other="# pending changes"
+                  />
+                  {")"}
+                </>
+              ) : null}
+            </span>
+          </button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={pending}
+            aria-label={t`Edit ${work.name}`}
+            onClick={() => onEdit(work)}
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ArchivedWorkSection({
+  works,
+  currentWorkId,
+  pending,
+  onSelect,
+  onEdit,
+}: {
+  works: Work[];
+  currentWorkId: string | null;
+  pending: boolean;
+  onSelect: (workId: string) => void;
+  onEdit: (work: Work) => void;
+}) {
+  const panelId = useId();
+  const headingId = useId();
+  const currentIsArchived = works.some((work) => work.id === currentWorkId);
+  const [open, setOpen] = useState(currentIsArchived);
+
+  useEffect(() => {
+    if (currentIsArchived) setOpen(true);
+  }, [currentIsArchived]);
+
+  return (
+    <section className="mt-4 border-t border-border-subtle pt-3" aria-labelledby={headingId}>
+      <h3 id={headingId}>
+        <button
+          type="button"
+          className="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded-sm px-1 text-left"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span className="text-sm font-medium text-foreground">
+            <Trans>Archived Work</Trans>
+            <span className="ml-2 font-normal text-muted-foreground">({works.length})</span>
+          </span>
+          <ChevronDown
+            aria-hidden
+            className={`size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+      </h3>
+      {open ? (
+        <div id={panelId} className="mt-2">
+          <WorkList
+            works={works}
+            currentWorkId={currentWorkId}
+            pending={pending}
+            onSelect={onSelect}
+            onEdit={onEdit}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

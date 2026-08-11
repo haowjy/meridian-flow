@@ -191,6 +191,11 @@ children are controlled — they never set the URL directly, only call the route
 handlers. Direct `/chat/$threadId` renders the independent chat view inside the
 same provider stack.
 
+Home's Work manager presents Active Work first and keeps Archived Work in a
+default-collapsed disclosure. If the current Work is archived at load or becomes
+archived, the disclosure opens so the selected project context remains visible.
+Home remains the only scroll owner for both lists.
+
 Ownership rules:
 
 - **`?screen=` wins; a bare `?thread=` (no screen) implies `chat`.** The

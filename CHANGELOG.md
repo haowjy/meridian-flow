@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: Home now separates Active Work from a default-collapsed Archived
+  Work disclosure while keeping the current archived context visible.
+
 - `apps/app`: New Chat now creates immediately in the server-resolved
   current/default Work from Home and the thread switcher, with inline failure
   alerts and retry at each entry surface; writers can rebind afterward from the

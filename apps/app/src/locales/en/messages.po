@@ -253,6 +253,7 @@ msgid "Active"
 msgstr "Active"
 
 #: src/features/chat/WorkPickerPanel.tsx
+#: src/features/project/home/WorksManager.tsx
 msgid "Active Work"
 msgstr "Active Work"
 
@@ -365,6 +366,7 @@ msgid "Archived"
 msgstr "Archived"
 
 #: src/features/chat/WorkPickerPanel.tsx
+#: src/features/project/home/WorksManager.tsx
 msgid "Archived Work"
 msgstr "Archived Work"
 
@@ -1825,6 +1827,10 @@ msgstr "New tab"
 msgid "New Work"
 msgstr "New Work"
 
+#: src/features/project/home/WorksManager.tsx
+msgid "No active Work yet."
+msgstr "No active Work yet."
+
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr "No agents available."
@@ -1902,7 +1908,6 @@ msgid "No Work matches your search."
 msgstr "No Work matches your search."
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
 msgid "No Work yet."
 msgstr "No Work yet."
 
