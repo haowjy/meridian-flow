@@ -8,6 +8,7 @@
  * mutation's own in-flight check.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import { createProjectThread } from "@/client/api/projects-api";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
@@ -15,12 +16,12 @@ import { DEFAULT_AGENT_SLUG, threadCreateAgentField } from "@/features/agents";
 
 export function useCreateChat(projectId: string, onSelectThread: (threadId: string) => void) {
   const queryClient = useQueryClient();
+  const createInFlight = useRef(false);
 
   const mutation = useMutation({
-    mutationFn: (workId: string) =>
+    mutationFn: () =>
       createProjectThread(projectId, {
         ...threadCreateAgentField(DEFAULT_AGENT_SLUG),
-        workId,
       }),
     onSuccess: async (thread) => {
       await invalidateProjectThreadData(queryClient, projectId);
@@ -28,10 +29,15 @@ export function useCreateChat(projectId: string, onSelectThread: (threadId: stri
     },
   });
 
-  const createChat = (workId: string) => {
-    if (mutation.isPending) return;
+  const createChat = () => {
+    if (createInFlight.current) return;
+    createInFlight.current = true;
     mutation.reset();
-    mutation.mutate(workId);
+    mutation.mutate(undefined, {
+      onSettled: () => {
+        createInFlight.current = false;
+      },
+    });
   };
 
   return {

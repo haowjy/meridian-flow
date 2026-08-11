@@ -133,11 +133,6 @@ msgstr ""
 msgid "{0}, Archived"
 msgstr ""
 
-#. placeholder {0}: work.name
-#: src/features/chat/WorkPickerPanel.tsx
-#~ msgid "{0}, current Work for this chat"
-#~ msgstr ""
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -177,10 +172,6 @@ msgstr "{minutes}分钟"
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr ""
-
-#: src/features/chat/ComposerWriteModeControl.tsx
-#~ msgid "{pendingChangeCount} changes waiting for review"
-#~ msgstr ""
 
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
@@ -316,11 +307,6 @@ msgstr ""
 msgid "AI write mode"
 msgstr ""
 
-#. placeholder {0}: value === "draft" ? "Draft" : "Auto-apply"
-#: src/features/chat/ComposerWriteModeControl.tsx
-#~ msgid "AI write mode: {0}"
-#~ msgstr ""
-
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "AI write mode: {localizedValue}"
 msgstr ""
@@ -376,10 +362,6 @@ msgstr ""
 
 #: src/features/project/home/WorksManager.tsx
 msgid "Archived"
-msgstr ""
-
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "Archived current Work"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -607,10 +589,6 @@ msgstr ""
 msgid "Choose a listed option"
 msgstr ""
 
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "Choose a Work for this chat"
-msgstr ""
-
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
 msgstr ""
@@ -717,10 +695,6 @@ msgstr ""
 #: src/features/project/lifecycle.ts
 msgid "Completed"
 msgstr ""
-
-#: src/features/chat/MeasuredComposerToolbar.tsx
-#~ msgid "Composer settings"
-#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
@@ -859,7 +833,6 @@ msgid "Couldn't load uploads."
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "Couldn't load Works."
 msgstr ""
@@ -959,25 +932,8 @@ msgid "Current block type"
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-#~ msgid "Current for this chat"
-#~ msgstr ""
-
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "Current Work"
-msgstr ""
-
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "Current Work for this chat."
 msgstr ""
-
-#. placeholder {0}: work.name
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Currently {0}"
-#~ msgstr ""
-
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Currently {workName}"
-#~ msgstr ""
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
@@ -1669,7 +1625,6 @@ msgid "Loading Work"
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "Loading Works…"
 msgstr ""
@@ -1749,10 +1704,6 @@ msgstr ""
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 msgid "More composer controls"
 msgstr ""
-
-#: src/features/chat/MeasuredComposerToolbar.tsx
-#~ msgid "More composer settings"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
@@ -1918,7 +1869,6 @@ msgstr ""
 msgid "No files uploaded yet."
 msgstr ""
 
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "No goal yet"
 msgstr ""
@@ -1945,10 +1895,6 @@ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
-msgstr ""
-
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "No Work is available for a new chat."
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
@@ -3048,10 +2994,6 @@ msgstr "本周"
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
-#~ msgid "This Work has {serverPendingCount, plural, one {# AI change} other {# AI changes}} in draft. Auto-apply stays off until every draft is applied or discarded."
-#~ msgstr ""
-
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
 msgstr ""
@@ -3075,7 +3017,6 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "Try again"
 msgstr ""
@@ -3135,10 +3076,6 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo is no longer available."
 msgstr ""
-
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Undo Work change"
-#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undoing…"
@@ -3277,11 +3214,6 @@ msgstr ""
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Work: \"{workName}\""
 msgstr ""
-
-#. placeholder {0}: work.name
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Work: {0}"
-#~ msgstr ""
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"

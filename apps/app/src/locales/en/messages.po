@@ -133,11 +133,6 @@ msgstr "{0} source copied"
 msgid "{0}, Archived"
 msgstr "{0}, Archived"
 
-#. placeholder {0}: work.name
-#: src/features/chat/WorkPickerPanel.tsx
-#~ msgid "{0}, current Work for this chat"
-#~ msgstr "{0}, current Work for this chat"
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr "{count, plural, one {# match} other {# matches}}"
@@ -177,10 +172,6 @@ msgstr "{minutes}m"
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr "{name} source"
-
-#: src/features/chat/ComposerWriteModeControl.tsx
-#~ msgid "{pendingChangeCount} changes waiting for review"
-#~ msgstr "{pendingChangeCount} changes waiting for review"
 
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
@@ -316,11 +307,6 @@ msgstr "AI edits wait here for your review."
 msgid "AI write mode"
 msgstr "AI write mode"
 
-#. placeholder {0}: value === "draft" ? "Draft" : "Auto-apply"
-#: src/features/chat/ComposerWriteModeControl.tsx
-#~ msgid "AI write mode: {0}"
-#~ msgstr "AI write mode: {0}"
-
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "AI write mode: {localizedValue}"
 msgstr "AI write mode: {localizedValue}"
@@ -377,10 +363,6 @@ msgstr "Archive"
 #: src/features/project/home/WorksManager.tsx
 msgid "Archived"
 msgstr "Archived"
-
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "Archived current Work"
-msgstr "Archived current Work"
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -607,10 +589,6 @@ msgstr "Choose a home"
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
 
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "Choose a Work for this chat"
-msgstr "Choose a Work for this chat"
-
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
 msgstr "Choose agent"
@@ -717,10 +695,6 @@ msgstr "Combines {0} AI turns"
 #: src/features/project/lifecycle.ts
 msgid "Completed"
 msgstr "Completed"
-
-#: src/features/chat/MeasuredComposerToolbar.tsx
-#~ msgid "Composer settings"
-#~ msgstr "Composer settings"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
@@ -859,7 +833,6 @@ msgid "Couldn't load uploads."
 msgstr "Couldn't load uploads."
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "Couldn't load Works."
 msgstr "Couldn't load Works."
@@ -959,25 +932,8 @@ msgid "Current block type"
 msgstr "Current block type"
 
 #: src/features/chat/WorkPickerPanel.tsx
-#~ msgid "Current for this chat"
-#~ msgstr "Current for this chat"
-
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "Current Work"
-msgstr "Current Work"
-
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "Current Work for this chat."
 msgstr "Current Work for this chat."
-
-#. placeholder {0}: work.name
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Currently {0}"
-#~ msgstr "Currently {0}"
-
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Currently {workName}"
-#~ msgstr "Currently {workName}"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
@@ -1669,7 +1625,6 @@ msgid "Loading Work"
 msgstr "Loading Work"
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "Loading Works…"
 msgstr "Loading Works…"
@@ -1749,10 +1704,6 @@ msgstr "More"
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 msgid "More composer controls"
 msgstr "More composer controls"
-
-#: src/features/chat/MeasuredComposerToolbar.tsx
-#~ msgid "More composer settings"
-#~ msgstr "More composer settings"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
@@ -1918,7 +1869,6 @@ msgstr "No fields required; confirm to continue."
 msgid "No files uploaded yet."
 msgstr "No files uploaded yet."
 
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "No goal yet"
 msgstr "No goal yet"
@@ -1946,10 +1896,6 @@ msgstr "No projects yet."
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
 msgstr "No results yet."
-
-#: src/features/project/chat/NewChatDialog.tsx
-msgid "No Work is available for a new chat."
-msgstr "No Work is available for a new chat."
 
 #: src/features/chat/WorkPickerPanel.tsx
 msgid "No works match your search."
@@ -3048,10 +2994,6 @@ msgstr "This week"
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 msgstr "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 
-#: src/features/chat/ComposerWriteModeControl.tsx
-#~ msgid "This Work has {serverPendingCount, plural, one {# AI change} other {# AI changes}} in draft. Auto-apply stays off until every draft is applied or discarded."
-#~ msgstr "This Work has {serverPendingCount, plural, one {# AI change} other {# AI changes}} in draft. Auto-apply stays off until every draft is applied or discarded."
-
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
 msgstr "title"
@@ -3075,7 +3017,6 @@ msgstr "Try a web address, a document path, or [[a document name]]."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#: src/features/project/chat/NewChatDialog.tsx
 #: src/features/project/home/WorksManager.tsx
 msgid "Try again"
 msgstr "Try again"
@@ -3135,10 +3076,6 @@ msgstr "Undo didn't go through. Try again."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo is no longer available."
 msgstr "Undo is no longer available."
-
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Undo Work change"
-#~ msgstr "Undo Work change"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undoing…"
@@ -3277,11 +3214,6 @@ msgstr "Work details"
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Work: \"{workName}\""
 msgstr "Work: \"{workName}\""
-
-#. placeholder {0}: work.name
-#: src/features/chat/ComposerWorkControl.tsx
-#~ msgid "Work: {0}"
-#~ msgstr "Work: {0}"
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"

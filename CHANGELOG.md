@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: New Chat now creates immediately in the server-resolved
+  current/default Work from Home and the thread switcher, with inline failure
+  and retry at each entry surface; writers can rebind afterward from the
+  composer.
 - `apps/app`: the desktop workspace selection now begins flush with the shared
   40px pane-header boundary while phone navigation spacing remains unchanged.
 - `apps/app`: composer Agent, write-mode, and Work controls now share one
@@ -25,8 +29,8 @@
   decode canonical server refusals, and converge other-tab and LLM changes
   through the existing live thread projection.
 
-- `apps/app`: Home now manages active and archived Works through the live API,
-  and new chats require a Work before creation. The project explorer exposes
+- `apps/app`: Home now manages active and archived Works through the live API.
+  The project explorer exposes
   thread-scoped Scratch and Uploads on one flat left rail; Uploads remains
   intake-only without file or folder creation controls.
 

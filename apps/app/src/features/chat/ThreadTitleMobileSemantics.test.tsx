@@ -31,7 +31,9 @@ vi.mock("@/features/project/data/dashboard-data", () => ({
     ungroupedThreads: [],
   }),
 }));
-vi.mock("@/features/project/chat/NewChatDialog", () => ({ NewChatDialog: () => null }));
+vi.mock("@/features/project/chat/use-create-chat", () => ({
+  useCreateChat: () => ({ createChat: vi.fn(), creating: false, createError: null }),
+}));
 vi.mock("@/client/query/useRenameThread", () => ({ useRenameThread: () => vi.fn() }));
 
 let cleanup: (() => void) | undefined;

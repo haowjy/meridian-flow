@@ -17,11 +17,12 @@ import { Trans } from "@lingui/react/macro";
 import { ArrowUpDown, Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
-import { NewChatDialog } from "../chat/NewChatDialog";
+import { useCreateChat } from "../chat/use-create-chat";
 import { lifecycleDisplay } from "../lifecycle";
 import { relativeTime } from "../relative-time";
 import {
@@ -139,7 +140,7 @@ export function HomeOverviewBody({
   createButtonClassName?: string;
 }) {
   const { rows, workCount, loaded } = useChatsOverview(projectId);
-  const [newChatOpen, setNewChatOpen] = useState(false);
+  const { createChat, creating, createError } = useCreateChat(projectId, onSelectThread);
 
   const [filter, setFilter] = useState<ChatFilterKey>("all");
   const [sortKey, setSortKey] = useState<ChatSortKey>("updated");
@@ -187,18 +188,16 @@ export function HomeOverviewBody({
           <Button
             type="button"
             size="lg"
-            onClick={() => setNewChatOpen(true)}
+            onClick={createChat}
+            disabled={creating}
             className={createButtonClassName}
           >
             <Plus className="size-4" aria-hidden />
             <Trans>New chat</Trans>
           </Button>
-          <NewChatDialog
-            projectId={projectId}
-            open={newChatOpen}
-            onOpenChange={setNewChatOpen}
-            onSelectThread={onSelectThread}
-          />
+          {createError ? (
+            <InlineErrorRow message={createError.message} onRetry={createChat} />
+          ) : null}
         </header>
 
         <StatStrip stats={stats} />

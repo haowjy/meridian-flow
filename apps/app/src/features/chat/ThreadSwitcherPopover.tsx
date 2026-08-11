@@ -11,6 +11,7 @@ import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -24,7 +25,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
-import { NewChatDialog } from "@/features/project/chat/NewChatDialog";
+import { useCreateChat } from "@/features/project/chat/use-create-chat";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
@@ -65,8 +66,8 @@ export function ThreadSwitcherPopover({
     useProjectThreadGroups(projectId);
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
-  const [newChatOpen, setNewChatOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const { createChat, creating, createError } = useCreateChat(projectId, selectCreatedThread);
   const filteredThreads = filterThreadsByTitle(primaryThreads, query);
   const filteredIds = new Set(filteredThreads.map((thread) => thread.id));
   const visibleWorkItems = workItems
@@ -95,10 +96,10 @@ export function ThreadSwitcherPopover({
     onRename();
   };
 
-  const startNewChat = () => {
+  function selectCreatedThread(threadId: string) {
     changeOpen(false);
-    setNewChatOpen(true);
-  };
+    onSelectThread(threadId);
+  }
 
   const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -122,153 +123,149 @@ export function ThreadSwitcherPopover({
   };
 
   return (
-    <>
-      <Popover open={open} onOpenChange={changeOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label={t`Switch chat, currently ${title}`}
-            aria-expanded={open}
-            aria-haspopup="dialog"
-            className={cn(
-              "focus-ring flex w-fit min-w-0 max-w-full items-center gap-1.5 text-left",
-              variant === "tab"
-                ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
-                  // chip's base (and its flares) sit on the band's bottom edge
-                  // where the page begins.
-                  "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
-                : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
-            )}
-          >
-            <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
-            {triggerHasAttention ? (
-              <span
-                role="img"
-                aria-label={t`Another chat needs attention`}
-                className="size-1.5 shrink-0 rounded-full bg-jade-text"
-              />
-            ) : null}
-            <ChevronDown
-              className={cn(
-                "size-4 shrink-0 text-muted-foreground transition-transform",
-                open && "rotate-180",
-              )}
-              aria-hidden
-            />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          {...densityPopoverCollisionProps}
-          align="start"
-          className={dropdownSurfaceVariants({ measure: "thread-list", page: "thread-list" })}
-          onKeyDown={handleNavigationKeyDown}
+    <Popover open={open} onOpenChange={changeOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t`Switch chat, currently ${title}`}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          className={cn(
+            "focus-ring flex w-fit min-w-0 max-w-full items-center gap-1.5 text-left",
+            variant === "tab"
+              ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
+                // chip's base (and its flares) sit on the band's bottom edge
+                // where the page begins.
+                "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
+              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
+          )}
         >
-          {showSearch ? (
-            <div
-              className={cn(
-                dropdownThreadRegionVariants({ region: "header" }),
-                "border-b border-border-subtle",
-              )}
-            >
-              <div className="relative">
-                <Search
-                  className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  data-switcher-focus
-                  type="search"
-                  value={query}
-                  aria-label={t`Search chats`}
-                  placeholder={t`Search chats`}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className={cn(dropdownSearchClass, "shadow-none")}
-                />
-              </div>
-            </div>
+          <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
+          {triggerHasAttention ? (
+            <span
+              role="img"
+              aria-label={t`Another chat needs attention`}
+              className="size-1.5 shrink-0 rounded-full bg-jade-text"
+            />
           ) : null}
-
+          <ChevronDown
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+            aria-hidden
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        {...densityPopoverCollisionProps}
+        align="start"
+        className={dropdownSurfaceVariants({ measure: "thread-list", page: "thread-list" })}
+        onKeyDown={handleNavigationKeyDown}
+      >
+        {showSearch ? (
           <div
             className={cn(
-              dropdownResultsVariants({ kind: "thread-list" }),
-              dropdownThreadRegionVariants({ region: "results" }),
+              dropdownThreadRegionVariants({ region: "header" }),
+              "border-b border-border-subtle",
             )}
           >
-            {filteredThreads.length === 0 ? (
-              <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
-                <Trans>No matching chats</Trans>
-              </p>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {visibleWorkItems.map((group) => (
-                  <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
-                    {showGroupHeaders ? (
-                      <h3 className={cn(sectionLabelVariants({ variant: "group" }), "mb-1 px-2")}>
-                        {group.name}
-                      </h3>
-                    ) : null}
-                    <ul className="flex flex-col gap-0.5">
-                      {group.threadIds.map((id) => {
-                        const thread = threadById.get(id);
-                        if (!thread) return null;
-                        return (
-                          <ThreadSwitchItem
-                            key={id}
-                            thread={thread}
-                            active={id === activeThreadId}
-                            now={now}
-                            onSelect={selectThread}
-                            onRename={startRename}
-                          />
-                        );
-                      })}
-                    </ul>
-                  </section>
-                ))}
-                {visibleUngrouped.length > 0 ? (
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                data-switcher-focus
+                type="search"
+                value={query}
+                aria-label={t`Search chats`}
+                placeholder={t`Search chats`}
+                onChange={(event) => setQuery(event.target.value)}
+                className={cn(dropdownSearchClass, "shadow-none")}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div
+          className={cn(
+            dropdownResultsVariants({ kind: "thread-list" }),
+            dropdownThreadRegionVariants({ region: "results" }),
+          )}
+        >
+          {filteredThreads.length === 0 ? (
+            <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
+              <Trans>No matching chats</Trans>
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {visibleWorkItems.map((group) => (
+                <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
+                  {showGroupHeaders ? (
+                    <h3 className={cn(sectionLabelVariants({ variant: "group" }), "mb-1 px-2")}>
+                      {group.name}
+                    </h3>
+                  ) : null}
                   <ul className="flex flex-col gap-0.5">
-                    {visibleUngrouped.map((thread) => (
-                      <ThreadSwitchItem
-                        key={thread.id}
-                        thread={thread}
-                        active={thread.id === activeThreadId}
-                        now={now}
-                        onSelect={selectThread}
-                        onRename={startRename}
-                      />
-                    ))}
+                    {group.threadIds.map((id) => {
+                      const thread = threadById.get(id);
+                      if (!thread) return null;
+                      return (
+                        <ThreadSwitchItem
+                          key={id}
+                          thread={thread}
+                          active={id === activeThreadId}
+                          now={now}
+                          onSelect={selectThread}
+                          onRename={startRename}
+                        />
+                      );
+                    })}
                   </ul>
-                ) : null}
-              </div>
-            )}
-          </div>
+                </section>
+              ))}
+              {visibleUngrouped.length > 0 ? (
+                <ul className="flex flex-col gap-0.5">
+                  {visibleUngrouped.map((thread) => (
+                    <ThreadSwitchItem
+                      key={thread.id}
+                      thread={thread}
+                      active={thread.id === activeThreadId}
+                      now={now}
+                      onSelect={selectThread}
+                      onRename={startRename}
+                    />
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          )}
+        </div>
 
-          <div
-            className={cn(
-              dropdownThreadRegionVariants({ region: "footer" }),
-              "border-t border-border-subtle",
-            )}
+        <div
+          className={cn(
+            dropdownThreadRegionVariants({ region: "footer" }),
+            "border-t border-border-subtle",
+          )}
+        >
+          <Button
+            data-switcher-focus
+            type="button"
+            variant="quiet"
+            className={dropdownRowVariants()}
+            onClick={createChat}
+            disabled={creating}
           >
-            <Button
-              data-switcher-focus
-              type="button"
-              variant="quiet"
-              className={dropdownRowVariants()}
-              onClick={startNewChat}
-            >
-              <Plus aria-hidden />
-              <Trans>New chat</Trans>
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-      <NewChatDialog
-        projectId={projectId}
-        open={newChatOpen}
-        onOpenChange={setNewChatOpen}
-        onSelectThread={onSelectThread}
-      />
-    </>
+            <Plus aria-hidden />
+            <Trans>New chat</Trans>
+          </Button>
+          {createError ? (
+            <InlineErrorRow message={createError.message} onRetry={createChat} />
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
