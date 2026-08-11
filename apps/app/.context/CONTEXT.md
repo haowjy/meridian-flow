@@ -342,6 +342,13 @@ Spacing is contextual and resists full centralization:
   either (a) Tier 1 rhythm that needs promoting, or (b) you should round to
   the nearest scale step.
 
+Dropdown row geometry is shared by `components/ui/dropdown-presentation.ts`.
+Row-bearing regions add vertical breathing only; `dropdownRowVariants` alone
+owns the horizontal text gutter and the inset, token-derived keyboard focus
+treatment. Search fields, headings, and state copy add their own local gutters.
+This keeps selected, hover, and focus boundaries full-width across menus,
+selects, pickers, composer navigation, and the thread switcher.
+
 ### Typography
 
 Three fonts via `@theme`: `--font-heading` → Cormorant Garamond (display),

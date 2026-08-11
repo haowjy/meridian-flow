@@ -144,7 +144,7 @@ export function WorkPickerPanel({
       <label htmlFor={searchId} className="sr-only">
         <Trans>Search Work</Trans>
       </label>
-      <div className="relative shrink-0">
+      <div className="relative mx-2 shrink-0">
         <Search
           className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -202,7 +202,7 @@ export function WorkPickerPanel({
           />
         ) : null}
         {view.status === "ready" && !view.ordered.length ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
+          <p className="px-2 py-4 text-center text-sm text-muted-foreground">
             <Trans>No Work matches your search.</Trans>
           </p>
         ) : null}
@@ -212,7 +212,7 @@ export function WorkPickerPanel({
 }
 
 function PickerState({ children }: { children: ReactNode }) {
-  return <p className="py-4 text-center text-sm text-muted-foreground">{children}</p>;
+  return <p className="px-2 py-4 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
 function WorkSection({
