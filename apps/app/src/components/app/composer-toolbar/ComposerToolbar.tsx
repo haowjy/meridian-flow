@@ -78,7 +78,8 @@ export function ComposerToolbar({
       controls: controls.map(({ id, priority }) => ({ id, priority })),
     };
   const measurement = measurementRef.current.controls;
-  const { root, probe, controlRef } = useMeasuredComposerToolbar(measurement, onLayout);
+  const locked = state.surface.kind === "panel" && state.surface.lock === "nondismissible";
+  const { root, probe, controlRef } = useMeasuredComposerToolbar(measurement, onLayout, locked);
   const inlineOwners = useRef(new Map<string, HTMLElement>());
   const rootRows = useRef(new Map<string, HTMLButtonElement>());
   const overflowTrigger = useRef<HTMLButtonElement | null>(null);
@@ -98,7 +99,6 @@ export function ComposerToolbar({
       )
     : undefined;
   const panel = active?.panel ?? null;
-  const locked = state.surface.kind === "panel" && state.surface.lock === "nondismissible";
   const anchorHost = view.kind === "inline" ? `inline:${view.controlId}` : view.kind;
   const resolveAnchorHost = () => {
     const currentView = deriveToolbarView(stateRef.current);
@@ -256,7 +256,7 @@ export function ComposerToolbar({
               inert={hidden ? true : undefined}
               aria-hidden={hidden || undefined}
               className={cn(
-                "inline-flex w-max flex-none",
+                "inline-flex w-max min-w-0 flex-none overflow-hidden [&>button]:max-w-full",
                 hidden && "pointer-events-none invisible absolute left-0 top-0",
               )}
             >

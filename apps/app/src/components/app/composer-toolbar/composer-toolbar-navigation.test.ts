@@ -28,18 +28,18 @@ const input = (...controls: ComposerToolbarControlInput[]): ToolbarNavigationInp
   revision: JSON.stringify(controls),
 });
 const baseInput = input(panel("agent"), panel("write"), panel("work"), status("status"));
-const layout = (inlineIds: string[], source = baseInput) => ({
+const layout = (inlineIds: readonly string[], source = baseInput) => ({
   inlineIds,
   overflowIds: source.controls.map(({ id }) => id).filter((id) => !inlineIds.includes(id)),
   constrained: inlineIds.length !== source.controls.length,
 });
 const send = (state: NavigationState, event: NavigationEvent) => reduceNavigation(state, event);
-const measured = (inlineIds: string[] = [], source = baseInput) =>
+const measured = (inlineIds: readonly string[] = [], source = baseInput) =>
   send(initialNavigationState(source), {
     type: "layout.measured",
     layout: layout(inlineIds, source),
   });
-const open = (id = "agent", inlineIds: string[] = [], source = baseInput) =>
+const open = (id = "agent", inlineIds: readonly string[] = [], source = baseInput) =>
   send(measured(inlineIds, source), { type: "panel.triggered", controlId: id });
 
 describe("composer toolbar navigation inputs", () => {
@@ -146,6 +146,34 @@ describe("composer toolbar navigation policy", () => {
     const migrated = send(acknowledged, { type: "layout.measured", layout: layout([]) });
     expect(migrated.surface).toBe(acknowledged.surface);
     expect(migrated.focus).toBeNull();
+  });
+
+  it("retains topology while locked and reconciles once to the latest measurement", () => {
+    for (const [initialInline, firstInline, finalInline] of [
+      [["agent"], [], ["agent"]],
+      [[], ["agent"], []],
+    ] as const) {
+      let state = open("agent", initialInline);
+      if (state.surface.kind !== "panel") throw new Error("expected panel");
+      const session = state.surface.panel;
+      state = send(state, { type: "panel.blockingStarted", panel: session });
+
+      const first = send(state, { type: "layout.measured", layout: layout(firstInline) });
+      expect(first.layout).toBe(state.layout);
+      expect(deriveToolbarView(first)).toEqual(deriveToolbarView(state));
+      const latest = send(first, { type: "layout.measured", layout: layout(finalInline) });
+      expect(latest.layout).toBe(state.layout);
+      expect(latest.deferredLayout).toEqual(layout(finalInline));
+
+      const settled = send(latest, {
+        type: "panel.blockingSettled",
+        panel: session,
+        outcome: "stay",
+      });
+      expect(settled.layout).toEqual(layout(finalInline));
+      expect(settled.deferredLayout).toBeNull();
+      expect(settled.surface).toMatchObject({ kind: "panel", lock: "dismissible" });
+    }
   });
 
   it("returns Back to its row and close to the semantic owner", () => {

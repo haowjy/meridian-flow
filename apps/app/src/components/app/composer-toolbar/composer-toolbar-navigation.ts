@@ -17,6 +17,8 @@ export type FocusTarget =
 export type NavigationState = {
   input: ToolbarNavigationInput;
   layout: ComposerToolbarLayout;
+  /** Latest measured topology held until a nondismissible panel settles. */
+  deferredLayout: ComposerToolbarLayout | null;
   surface: NavigationSurface;
   focus: { token: number; target: FocusTarget } | null;
   nextPanelSession: number;
@@ -49,6 +51,7 @@ export type ToolbarView =
 export const initialNavigationState = (input: ToolbarNavigationInput): NavigationState => ({
   input,
   layout: { inlineIds: [], overflowIds: input.controls.map((c) => c.id), constrained: false },
+  deferredLayout: null,
   surface: { kind: "closed" },
   focus: null,
   nextPanelSession: 1,
@@ -198,12 +201,21 @@ export function reduceNavigation(state: NavigationState, event: NavigationEvent)
         : state;
     case "panel.blockingSettled":
       if (!current(state, event.panel) || state.surface.kind !== "panel") return state;
-      return event.outcome === "close"
-        ? closePanel(state)
-        : { ...state, surface: { ...state.surface, lock: "dismissible" } };
+      {
+        const settled = {
+          ...state,
+          layout: state.deferredLayout ?? state.layout,
+          deferredLayout: null,
+        };
+        return event.outcome === "close"
+          ? closePanel(settled)
+          : { ...settled, surface: { ...state.surface, lock: "dismissible" } };
+      }
     case "panel.terminalClose":
       return current(state, event.panel) ? closePanel(state) : state;
     case "layout.measured": {
+      if (state.surface.kind === "panel" && state.surface.lock === "nondismissible")
+        return { ...state, deferredLayout: event.layout };
       const previous = state.layout;
       const next = { ...state, layout: event.layout };
       const nextState = { ...state, layout: event.layout };

@@ -7,7 +7,7 @@ import type { ComposerToolbarTriggerBinding } from "./types";
 
 const currentValueChrome = cn(
   buttonVariants({ variant: "outline", size: null }),
-  "h-8 min-h-8 max-w-[11rem] min-w-0 shrink gap-1.5 px-2.5 font-medium [@media(pointer:coarse)]:min-h-11",
+  "h-8 min-h-8 max-w-[11rem] min-w-0 shrink gap-1.5 px-2.5 font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform] [@media(pointer:coarse)]:min-h-11",
 );
 
 const CurrentValueChrome = forwardRef<
@@ -15,8 +15,16 @@ const CurrentValueChrome = forwardRef<
   Omit<ComponentProps<"button">, "value"> & { value: ReactNode; chevron: boolean }
 >(function CurrentValueChrome({ value, chevron, className, ...props }, ref) {
   return (
-    <button ref={ref} type="button" className={cn(currentValueChrome, className)} {...props}>
-      <span className="min-w-0 truncate">{value}</span>
+    <button
+      ref={ref}
+      type="button"
+      data-slot="composer-current-value"
+      className={cn(currentValueChrome, className)}
+      {...props}
+    >
+      <span data-slot="composer-current-value-label" className="min-w-0 truncate">
+        {value}
+      </span>
       {chevron ? (
         <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
       ) : null}
