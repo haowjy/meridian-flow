@@ -132,7 +132,7 @@ describe("WorksManager actions", () => {
       const disclosure = buttonContaining("Archived Work");
       expect(archivedSection).not.toBeNull();
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-      expect(disclosure.getAttribute("aria-controls")).toBeTruthy();
+      expect(disclosure.hasAttribute("aria-controls")).toBe(false);
       expect(document.body.textContent).not.toContain("Archived A");
       expect(focusableLabels()).toEqual([
         "NewWork",
@@ -143,15 +143,24 @@ describe("WorksManager actions", () => {
 
       await act(async () => disclosure.click());
       expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+      const panelId = disclosure.getAttribute("aria-controls");
+      expect(panelId).toBeTruthy();
+      expect(document.getElementById(panelId ?? "")).not.toBeNull();
       expect(document.body.textContent).toContain("Archived A");
       expect(focusableLabels().slice(-2)).toEqual([
         "ArchivedAGoalArchivedAArchived",
         "EditArchivedA",
       ]);
+
+      await act(async () => disclosure.click());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+      expect(disclosure.hasAttribute("aria-controls")).toBe(false);
+      expect(document.getElementById(panelId ?? "")).toBeNull();
+      expect(document.body.textContent).not.toContain("Archived A");
     });
   });
 
-  it("opens and reopens Archived Work when the current Work becomes archived", async () => {
+  it("opens Archived Work when the current Work becomes archived", async () => {
     const active = workFixture("active-a", "Active A", "Goal A");
     const archived = archivedWorkFixture("archived-a", "Archived A");
     let currentWorkId = active.id;
@@ -170,13 +179,54 @@ describe("WorksManager actions", () => {
       await act(async () => rerender?.());
       expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("true");
       expect(buttonContaining("Archived A").getAttribute("aria-pressed")).toBe("true");
+    });
+  });
 
-      await act(async () => buttonContaining("Archived Work").click());
-      currentWorkId = active.id;
+  it("preserves a deliberate close across rerenders of the same current Work", async () => {
+    const archived = archivedWorkFixture("archived-a", "Archived A");
+    let rerender: (() => void) | null = null;
+    mockManagerWorks([archived], () => archived.id);
+
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorksManager projectId="project-1" />;
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      const disclosure = buttonContaining("Archived Work");
+      expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+      await act(async () => disclosure.click());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+
       await act(async () => rerender?.());
-      currentWorkId = archived.id;
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+      expect(document.body.textContent).not.toContain("Archived A");
+    });
+  });
+
+  it("reopens Archived Work when the archived current Work changes identity", async () => {
+    const archivedA = archivedWorkFixture("archived-a", "Archived A");
+    const archivedB = archivedWorkFixture("archived-b", "Archived B");
+    let currentWorkId = archivedA.id;
+    let rerender: (() => void) | null = null;
+    mockManagerWorks([archivedA, archivedB], () => currentWorkId);
+
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorksManager projectId="project-1" />;
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      const disclosure = buttonContaining("Archived Work");
+      await act(async () => disclosure.click());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+
+      currentWorkId = archivedB.id;
       await act(async () => rerender?.());
-      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("true");
+      expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+      expect(buttonContaining("Archived B").getAttribute("aria-pressed")).toBe("true");
     });
   });
 

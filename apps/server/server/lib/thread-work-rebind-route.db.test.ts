@@ -164,7 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "error",
         error: {
           code: "work_unavailable",
-          message: "That Work is no longer available. Refresh Works and choose another.",
+          message: "That Work is no longer available. Refresh Work and choose another.",
           retryable: false,
           source: "system",
           details: { refresh: "works" },

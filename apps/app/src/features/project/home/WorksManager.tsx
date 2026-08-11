@@ -220,12 +220,12 @@ function ArchivedWorkSection({
 }) {
   const panelId = useId();
   const headingId = useId();
-  const currentIsArchived = works.some((work) => work.id === currentWorkId);
-  const [open, setOpen] = useState(currentIsArchived);
+  const archivedCurrentWorkId = works.find((work) => work.id === currentWorkId)?.id ?? null;
+  const [open, setOpen] = useState(archivedCurrentWorkId !== null);
 
   useEffect(() => {
-    if (currentIsArchived) setOpen(true);
-  }, [currentIsArchived]);
+    if (archivedCurrentWorkId !== null) setOpen(true);
+  }, [archivedCurrentWorkId]);
 
   return (
     <section className="mt-4 border-t border-border-subtle pt-3" aria-labelledby={headingId}>
@@ -234,7 +234,7 @@ function ArchivedWorkSection({
           type="button"
           className="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded-sm px-1 text-left"
           aria-expanded={open}
-          aria-controls={panelId}
+          aria-controls={open ? panelId : undefined}
           onClick={() => setOpen((value) => !value)}
         >
           <span className="text-sm font-medium text-foreground">

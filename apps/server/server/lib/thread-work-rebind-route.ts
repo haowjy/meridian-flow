@@ -106,7 +106,7 @@ export async function handleRebindThreadWorkRequest(
         throwHttpInterrupt(
           meridianError({
             code: "work_unavailable",
-            message: "That Work is no longer available. Refresh Works and choose another.",
+            message: "That Work is no longer available. Refresh Work and choose another.",
             source: "system",
             details: { refresh: "works" },
           }),

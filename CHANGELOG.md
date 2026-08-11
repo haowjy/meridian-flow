@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+- `apps/app`: writer-facing collection copy across Home, Work selection,
+  receipts, and command states now uses the collective `Work` label instead of
+  `Works`; the serialized unavailable-Work guidance follows the same wording.
 - `apps/app`: Home now separates Active Work from a default-collapsed Archived
-  Work disclosure while keeping the current archived context visible.
+  Work disclosure. Selecting a different archived current Work reopens the
+  disclosure once, while a deliberate close remains closed across rerenders of
+  that same selection.
 
 - `apps/app`: New Chat now creates immediately in the server-resolved
   current/default Work from Home and the thread switcher, with inline failure
