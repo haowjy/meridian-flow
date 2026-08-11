@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: compact write-mode confirmation copy keeps its local 4px gutter,
+  and real toolbar measurement coverage now protects locked widths, intrinsic
+  label changes, observer updates, and final unlock reconciliation.
+
 - `apps/app`: dropdown rows now share full-width selected, hover, and inset
   keyboard-focus boundaries while search fields and other non-row content keep
   their intentional local gutters.

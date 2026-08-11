@@ -111,6 +111,10 @@ describe("useComposerWriteModeToolbarControl", () => {
     await act(async () => findButton("AI write mode: Draft")?.click());
     await act(async () => findButton("Auto-apply")?.click());
     expect(document.body.textContent).toContain("Drafts are waiting");
+    const confirmation = document.querySelector("h2")?.parentElement;
+    expect(confirmation?.className).toContain("px-1");
+    expect(confirmation?.querySelector("p")?.parentElement).toBe(confirmation);
+    expect(findButton("Cancel")?.parentElement?.parentElement).toBe(confirmation);
     expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
     expect(document.activeElement).not.toBe(document.body);
     await act(async () => reject(new Error("offline")));

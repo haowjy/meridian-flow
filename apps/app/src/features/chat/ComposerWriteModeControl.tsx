@@ -292,7 +292,7 @@ function Confirmation({
   onConfirm(): void;
 }) {
   return (
-    <div>
+    <div className="px-1">
       <h2 className="font-semibold">
         <Trans>Drafts are waiting</Trans>
       </h2>
