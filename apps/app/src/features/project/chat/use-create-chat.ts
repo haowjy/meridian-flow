@@ -4,8 +4,8 @@
  * Purpose: one mutation that creates a thread, invalidates the thread-data
  * cache, then selects the new thread. Backed by TanStack Query `useMutation`
  * (not hand-rolled state) so pending/error lifecycle uses the standard layer.
- * `creating` drives disabled state; the guard against double-submit is the
- * mutation's own in-flight check.
+ * `creating` drives disabled state; a synchronous ref provides the same-tick
+ * single-flight guard before TanStack Query publishes pending state.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
@@ -44,6 +44,5 @@ export function useCreateChat(projectId: string, onSelectThread: (threadId: stri
     createChat,
     creating: mutation.isPending,
     createError: mutation.error,
-    resetCreateError: mutation.reset,
   };
 }

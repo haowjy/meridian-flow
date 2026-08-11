@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
-const createChat = vi.fn();
-let createError: Error | null = null;
+const createProjectThread = vi.fn();
+const invalidateProjectThreadData = vi.fn();
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -14,10 +15,8 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-
-vi.mock("../chat/use-create-chat", () => ({
-  useCreateChat: () => ({ createChat, creating: false, createError }),
-}));
+vi.mock("@/client/api/projects-api", () => ({ createProjectThread }));
+vi.mock("@/client/query/project-invalidation", () => ({ invalidateProjectThreadData }));
 vi.mock("./chats-overview", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./chats-overview")>()),
   useChatsOverview: () => ({ rows: [], workCount: 0, loaded: true }),
@@ -26,33 +25,82 @@ vi.mock("./WorksManager", () => ({ WorksManager: () => null }));
 
 const { HomeOverviewBody } = await import("./HomeScreen");
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+function buttonNamed(name: string) {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent === name,
+  );
+}
+
 afterEach(() => {
-  createChat.mockReset();
-  createError = null;
+  createProjectThread.mockReset();
+  invalidateProjectThreadData.mockReset();
 });
 
 describe("Home New chat", () => {
-  it("creates immediately and keeps failure retry at the invoking surface", async () => {
-    createError = new Error("Could not create chat");
-    const renderHome = () => (
-      <HomeOverviewBody projectId="project-1" onSelectThread={vi.fn()}>
-        {() => null}
-      </HomeOverviewBody>
-    );
+  it("shows the pending, failure, retry, and success lifecycle at the invoking surface", async () => {
+    const firstCreate = deferred<{ id: string }>();
+    const retryCreate = deferred<{ id: string }>();
+    createProjectThread
+      .mockImplementationOnce(() => firstCreate.promise)
+      .mockImplementationOnce(() => retryCreate.promise);
+    invalidateProjectThreadData.mockResolvedValue(undefined);
+    const onSelectThread = vi.fn();
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
 
-    await withReactRoot(renderHome(), async () => {
-      const newChat = Array.from(document.querySelectorAll("button")).find(
-        (button) => button.textContent === "New chat",
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <HomeOverviewBody projectId="project-1" onSelectThread={onSelectThread}>
+            {() => null}
+          </HomeOverviewBody>
+        </QueryClientProvider>,
+        async () => {
+          expect(document.body.textContent).not.toContain("Could not create chat");
+          expect(buttonNamed("Retry")).toBeUndefined();
+
+          await act(async () => {
+            buttonNamed("New chat")?.click();
+            await Promise.resolve();
+          });
+          expect(createProjectThread).toHaveBeenCalledTimes(1);
+          expect(buttonNamed("New chat")?.disabled).toBe(true);
+          expect(onSelectThread).not.toHaveBeenCalled();
+
+          firstCreate.reject(new Error("Could not create chat"));
+          await flush();
+          expect(buttonNamed("New chat")?.disabled).toBe(false);
+          expect(document.body.textContent).toContain("Could not create chat");
+          expect(buttonNamed("Retry")).toBeDefined();
+          expect(onSelectThread).not.toHaveBeenCalled();
+
+          act(() => buttonNamed("Retry")?.click());
+          await flush();
+          expect(createProjectThread).toHaveBeenCalledTimes(2);
+          expect(buttonNamed("New chat")?.disabled).toBe(true);
+          expect(onSelectThread).not.toHaveBeenCalled();
+
+          retryCreate.resolve({ id: "thread-1" });
+          await flush();
+          expect(onSelectThread).toHaveBeenCalledOnce();
+          expect(onSelectThread).toHaveBeenCalledWith("thread-1");
+          expect(document.body.textContent).not.toContain("Could not create chat");
+        },
+        { drainMacrotask: true },
       );
-      act(() => newChat?.click());
-      expect(createChat).toHaveBeenCalledTimes(1);
-      expect(document.body.textContent).not.toContain("Choose a Work for this chat");
-      expect(document.body.textContent).toContain("Could not create chat");
-      const retry = Array.from(document.querySelectorAll("button")).find(
-        (button) => button.textContent === "Retry",
-      );
-      act(() => retry?.click());
-      expect(createChat).toHaveBeenCalledTimes(2);
-    });
+    } finally {
+      client.clear();
+    }
   });
 });

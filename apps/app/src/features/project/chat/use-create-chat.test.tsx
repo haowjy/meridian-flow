@@ -19,10 +19,13 @@ describe("useCreateChat", () => {
     invalidateProjectThreadData.mockReset();
   });
   it("omits Work, exposes failure, and retries through the shared lifecycle", async () => {
+    let resolveInvalidation!: () => void;
     createProjectThread
       .mockRejectedValueOnce(new Error("Could not create chat"))
       .mockResolvedValueOnce({ id: "thread-1" });
-    invalidateProjectThreadData.mockResolvedValue(undefined);
+    invalidateProjectThreadData.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (resolveInvalidation = resolve)),
+    );
     const selectThread = vi.fn();
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const state: { value: ReturnType<typeof useCreateChat> | null } = { value: null };
@@ -45,16 +48,19 @@ describe("useCreateChat", () => {
 
           act(() => state.value?.createChat());
           await flush();
-          expect(createProjectThread).toHaveBeenNthCalledWith(
-            1,
-            "project-1",
-            expect.not.objectContaining({ workId: expect.anything() }),
-          );
-          expect(createProjectThread).toHaveBeenNthCalledWith(
-            2,
-            "project-1",
-            expect.not.objectContaining({ workId: expect.anything() }),
-          );
+
+          expect(createProjectThread).toHaveBeenCalledTimes(2);
+          for (const [projectId, body] of createProjectThread.mock.calls) {
+            expect(projectId).toBe("project-1");
+            expect(body).toEqual({});
+            expect(Object.hasOwn(body, "workId")).toBe(false);
+          }
+          expect(invalidateProjectThreadData).toHaveBeenCalledOnce();
+          expect(invalidateProjectThreadData).toHaveBeenCalledWith(client, "project-1");
+          expect(selectThread).not.toHaveBeenCalled();
+
+          resolveInvalidation();
+          await flush();
           expect(selectThread).toHaveBeenCalledWith("thread-1");
         },
         { drainMacrotask: true },
