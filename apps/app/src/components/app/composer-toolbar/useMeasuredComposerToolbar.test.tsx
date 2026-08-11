@@ -10,16 +10,54 @@ const controls = [
   { id: "mode", priority: 200 },
   { id: "work", priority: 100 },
 ];
-let resizeCallbacks: ResizeObserverCallback[] = [];
+let resizeObservers: TestResizeObserver[] = [];
 class TestResizeObserver implements ResizeObserver {
   readonly callback: ResizeObserverCallback;
+  readonly observed = new Set<Element>();
+  disconnected = false;
   constructor(callback: ResizeObserverCallback) {
     this.callback = callback;
-    resizeCallbacks.push(callback);
+    resizeObservers.push(this);
   }
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe(target: Element) {
+    this.observed.add(target);
+  }
+  unobserve(target: Element) {
+    this.observed.delete(target);
+  }
+  disconnect() {
+    this.disconnected = true;
+    this.observed.clear();
+  }
+  deliver(target: Element) {
+    if (!this.disconnected && this.observed.has(target)) this.callback([], this);
+  }
+}
+let mutationObservers: TestMutationObserver[] = [];
+class TestMutationObserver implements MutationObserver {
+  readonly callback: MutationCallback;
+  readonly observed = new Map<Node, MutationObserverInit>();
+  disconnected = false;
+  constructor(callback: MutationCallback) {
+    this.callback = callback;
+    mutationObservers.push(this);
+  }
+  observe(target: Node, options?: MutationObserverInit) {
+    this.observed.set(target, options ?? {});
+  }
+  disconnect() {
+    this.disconnected = true;
+    this.observed.clear();
+  }
+  takeRecords() {
+    return [];
+  }
+  deliver(target: Node) {
+    const registered = [...this.observed].some(
+      ([root, options]) => root === target || (options.subtree && root.contains(target)),
+    );
+    if (!this.disconnected && registered) this.callback([], this);
+  }
 }
 const rect = (width: number) => new DOMRect(0, 0, width, 32);
 const setNumber = (node: Element, property: string, value: number) =>
@@ -56,6 +94,7 @@ const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
 beforeAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("ResizeObserver", TestResizeObserver);
+  vi.stubGlobal("MutationObserver", TestMutationObserver);
 });
 afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
@@ -63,14 +102,17 @@ afterAll(() => {
 });
 let host: HTMLDivElement;
 let root: Root;
+let mounted: boolean;
 beforeEach(() => {
-  resizeCallbacks = [];
+  resizeObservers = [];
+  mutationObservers = [];
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  mounted = true;
 });
 afterEach(async () => {
-  await act(async () => root.unmount());
+  if (mounted) await act(async () => root.unmount());
   host.remove();
 });
 
@@ -91,28 +133,56 @@ it("freezes committed wrappers while locked, keeps intrinsic measurements live, 
   setNumber(work, "scrollWidth", 80);
   setNumber(label, "clientWidth", 60);
   setNumber(label, "scrollWidth", 60);
-  await act(async () => resizeCallbacks.at(-1)?.([], {} as ResizeObserver));
+  const initialResizeObserver = resizeObservers.at(-1);
+  const initialMutationObserver = mutationObservers.at(-1);
+  expect(initialResizeObserver?.observed).toEqual(new Set([fieldset, probe, mode, work]));
+  expect(initialMutationObserver?.observed).toEqual(
+    new Map([
+      [mode, { childList: true, characterData: true, subtree: true }],
+      [work, { childList: true, characterData: true, subtree: true }],
+    ]),
+  );
+
+  await act(async () => initialResizeObserver?.deliver(fieldset));
   expect(layouts.at(-1)?.inlineIds).toEqual(["mode", "work"]);
 
   await act(async () => root.render(<Harness locked onLayout={onLayout} />));
+  expect(initialResizeObserver?.disconnected).toBe(true);
+  expect(initialMutationObserver?.disconnected).toBe(true);
   expect(mode.style.width).toBe("80px");
   expect(work.style.width).toBe("80px");
 
   setNumber(label, "scrollWidth", 150);
   await act(async () => work.querySelector("button")?.click());
-  await act(async () => Promise.resolve());
+  const lockedMutationObserver = mutationObservers.at(-1);
+  await act(async () => lockedMutationObserver?.deliver(label));
   expect(work.style.width).toBe("80px");
   expect(layouts.at(-1)?.inlineIds).toEqual(["mode"]);
   expect(layouts.at(-1)?.overflowIds).toEqual(["work"]);
 
   setNumber(label, "scrollWidth", 90);
   setNumber(fieldset, "clientWidth", 270);
-  await act(async () => resizeCallbacks.at(-1)?.([], {} as ResizeObserver));
+  const lockedResizeObserver = resizeObservers.at(-1);
+  await act(async () => lockedResizeObserver?.deliver(fieldset));
   expect(layouts.at(-1)?.inlineIds).toEqual(["mode", "work"]);
   expect(work.style.width).toBe("80px");
 
   await act(async () => root.render(<Harness locked={false} onLayout={onLayout} />));
+  expect(lockedResizeObserver?.disconnected).toBe(true);
+  expect(lockedMutationObserver?.disconnected).toBe(true);
   expect(mode.style.width).toBe("");
   expect(work.style.width).toBe("");
   expect(layouts.at(-1)?.inlineIds).toEqual(["mode", "work"]);
+
+  await act(async () => root.render(<Harness locked onLayout={onLayout} />));
+  const unmountedResizeObserver = resizeObservers.at(-1);
+  const unmountedMutationObserver = mutationObservers.at(-1);
+  expect(mode.style.width).toBe("80px");
+  expect(work.style.width).toBe("80px");
+  await act(async () => root.unmount());
+  mounted = false;
+  expect(unmountedResizeObserver?.disconnected).toBe(true);
+  expect(unmountedMutationObserver?.disconnected).toBe(true);
+  expect(mode.style.width).toBe("");
+  expect(work.style.width).toBe("");
 });
