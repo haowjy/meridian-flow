@@ -42,8 +42,6 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-
 function buttonNamed(name: string) {
   return Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
     (button) => button.textContent === name,
@@ -89,33 +87,45 @@ describe("thread switcher New chat", () => {
 
           await act(async () => {
             buttonNamed("New chat")?.click();
-            await Promise.resolve();
+            await vi.waitFor(() => {
+              expect(createProjectThread).toHaveBeenCalledTimes(1);
+              expect(buttonNamed("New chat")?.disabled).toBe(true);
+            });
           });
-          expect(createProjectThread).toHaveBeenCalledTimes(1);
-          expect(buttonNamed("New chat")?.disabled).toBe(true);
-          expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-          expect(onSelectThread).not.toHaveBeenCalled();
-
-          firstCreate.reject(new Error("Could not create chat"));
-          await flush();
-          expect(document.body.textContent).toContain("Could not create chat");
-          expect(buttonNamed("Retry")).toBeDefined();
-          expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-          expect(onSelectThread).not.toHaveBeenCalled();
-
-          act(() => buttonNamed("Retry")?.click());
-          await flush();
-          expect(createProjectThread).toHaveBeenCalledTimes(2);
-          expect(buttonNamed("New chat")?.disabled).toBe(true);
-          expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-          expect(onSelectThread).not.toHaveBeenCalled();
-
-          retryCreate.resolve({ id: "thread-1" });
-          await flush();
-          expect(onSelectThread).toHaveBeenCalledOnce();
-          expect(onSelectThread).toHaveBeenCalledWith("thread-1");
-          expect(trigger?.getAttribute("aria-expanded")).toBe("false");
           expect(document.body.textContent).not.toContain("Could not create chat");
+          expect(buttonNamed("Retry")).toBeUndefined();
+          expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+          expect(onSelectThread).not.toHaveBeenCalled();
+
+          await act(async () => {
+            firstCreate.reject(new Error("Could not create chat"));
+            await vi.waitFor(() => {
+              expect(document.body.textContent).toContain("Could not create chat");
+              expect(buttonNamed("Retry")).toBeDefined();
+              expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+            });
+          });
+          expect(onSelectThread).not.toHaveBeenCalled();
+
+          await act(async () => {
+            buttonNamed("Retry")?.click();
+            await vi.waitFor(() => {
+              expect(createProjectThread).toHaveBeenCalledTimes(2);
+              expect(buttonNamed("New chat")?.disabled).toBe(true);
+              expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+            });
+          });
+          expect(onSelectThread).not.toHaveBeenCalled();
+
+          await act(async () => {
+            retryCreate.resolve({ id: "thread-1" });
+            await vi.waitFor(() => {
+              expect(onSelectThread).toHaveBeenCalledOnce();
+              expect(onSelectThread).toHaveBeenCalledWith("thread-1");
+              expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+              expect(document.body.textContent).not.toContain("Could not create chat");
+            });
+          });
         },
         { drainMacrotask: true },
       );
