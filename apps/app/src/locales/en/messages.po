@@ -253,8 +253,8 @@ msgid "Active"
 msgstr "Active"
 
 #: src/features/chat/WorkPickerPanel.tsx
-msgid "Active works"
-msgstr "Active works"
+msgid "Active Work"
+msgstr "Active Work"
 
 #: src/features/chat/placeholders.ts
 msgid "Actually…"
@@ -364,14 +364,14 @@ msgstr "Archive"
 msgid "Archived"
 msgstr "Archived"
 
+#: src/features/chat/WorkPickerPanel.tsx
+msgid "Archived Work"
+msgstr "Archived Work"
+
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.archived"
 msgstr "Archived Work {name}"
-
-#: src/features/chat/WorkPickerPanel.tsx
-msgid "Archived works"
-msgstr "Archived works"
 
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
@@ -508,8 +508,8 @@ msgid "Change work for this chat, currently {0}"
 msgstr "Change work for this chat, currently {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Changed {count} Works"
-msgstr "Changed {count} Works"
+msgid "Changed {count} Work"
+msgstr "Changed {count} Work"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
@@ -558,8 +558,8 @@ msgid "Checked recent changes"
 msgstr "Checked recent changes"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Checked Works"
-msgstr "Checked Works"
+msgid "Checked Work"
+msgstr "Checked Work"
 
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Checking pending changes…"
@@ -570,8 +570,8 @@ msgid "Checking recent changes…"
 msgstr "Checking recent changes…"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Checking Works…"
-msgstr "Checking Works…"
+msgid "Checking Work…"
+msgstr "Checking Work…"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
@@ -759,8 +759,8 @@ msgid "Couldn't check recent changes"
 msgstr "Couldn't check recent changes"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't check Works"
-msgstr "Couldn't check Works"
+msgid "Couldn't check Work"
+msgstr "Couldn't check Work"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't create a Work"
@@ -834,8 +834,8 @@ msgstr "Couldn't load uploads."
 
 #: src/features/chat/WorkPickerPanel.tsx
 #: src/features/project/home/WorksManager.tsx
-msgid "Couldn't load Works."
-msgstr "Couldn't load Works."
+msgid "Couldn't load Work."
+msgstr "Couldn't load Work."
 
 #: src/components/app/QueryErrorRow.tsx
 msgid "Couldn't load. Check your connection."
@@ -874,8 +874,8 @@ msgid "Couldn't search"
 msgstr "Couldn't search"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't switch Works"
-msgstr "Couldn't switch Works"
+msgid "Couldn't switch Work"
+msgstr "Couldn't switch Work"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
@@ -1626,8 +1626,8 @@ msgstr "Loading Work"
 
 #: src/features/chat/WorkPickerPanel.tsx
 #: src/features/project/home/WorksManager.tsx
-msgid "Loading Works…"
-msgstr "Loading Works…"
+msgid "Loading Work…"
+msgstr "Loading Work…"
 
 #: src/features/billing/UsageCard.tsx
 msgid "Loading…"
@@ -1898,13 +1898,13 @@ msgid "No results yet."
 msgstr "No results yet."
 
 #: src/features/chat/WorkPickerPanel.tsx
-msgid "No works match your search."
-msgstr "No works match your search."
+msgid "No Work matches your search."
+msgstr "No Work matches your search."
 
 #: src/features/chat/WorkPickerPanel.tsx
 #: src/features/project/home/WorksManager.tsx
-msgid "No Works yet."
-msgstr "No Works yet."
+msgid "No Work yet."
+msgstr "No Work yet."
 
 #: src/routes/__root.tsx
 msgid "Not Found"
@@ -2391,8 +2391,8 @@ msgid "Search papers, extract findings, and synthesize a summary across sources.
 msgstr "Search papers, extract findings, and synthesize a summary across sources."
 
 #: src/features/chat/WorkPickerPanel.tsx
-msgid "Search works"
-msgstr "Search works"
+msgid "Search Work"
+msgstr "Search Work"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Searched"
@@ -2604,12 +2604,12 @@ msgid "workReceipt.switched"
 msgstr "Switched this conversation to Work {name}"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Switched Works"
-msgstr "Switched Works"
+msgid "Switched Work"
+msgstr "Switched Work"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Switching Works…"
-msgstr "Switching Works…"
+msgid "Switching Work…"
+msgstr "Switching Work…"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -3198,6 +3198,7 @@ msgstr "Why this is marked merged"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/WorksManager.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Work"
 msgstr "Work"
@@ -3218,10 +3219,6 @@ msgstr "Work: \"{workName}\""
 #: src/features/project/lifecycle.ts
 msgid "Working…"
 msgstr "Working…"
-
-#: src/features/project/home/WorksManager.tsx
-msgid "Works"
-msgstr "Works"
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx

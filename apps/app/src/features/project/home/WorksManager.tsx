@@ -45,7 +45,7 @@ export function WorksManager({ projectId }: { projectId: string }) {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="font-semibold text-foreground">
-            <Trans>Works</Trans>
+            <Trans>Work</Trans>
           </h2>
           <p className="text-meta text-muted-foreground">
             <Trans>Choose the context for new writing and chats.</Trans>
@@ -67,7 +67,7 @@ export function WorksManager({ projectId }: { projectId: string }) {
       {isError ? (
         <div className="flex items-center gap-2" role="alert">
           <p className="text-sm text-destructive">
-            <Trans>Couldn't load Works.</Trans>
+            <Trans>Couldn't load Work.</Trans>
           </p>
           <Button variant="outline" size="sm" onClick={refetch}>
             <Trans>Try again</Trans>
@@ -75,11 +75,11 @@ export function WorksManager({ projectId }: { projectId: string }) {
         </div>
       ) : works === null ? (
         <p className="text-sm text-muted-foreground">
-          <Trans>Loading Works…</Trans>
+          <Trans>Loading Work…</Trans>
         </p>
       ) : works.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          <Trans>No Works yet.</Trans>
+          <Trans>No Work yet.</Trans>
         </p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">

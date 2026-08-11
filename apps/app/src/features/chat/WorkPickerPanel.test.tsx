@@ -23,8 +23,8 @@ const view = (catalog: WorkCatalogView, query = "", pending = false) =>
 
 describe("WorkPickerPanel", () => {
   it.each([
-    ["loading", "Loading Works…"],
-    ["empty", "No Works yet."],
+    ["loading", "Loading Work…"],
+    ["empty", "No Work yet."],
   ] as const)("renders truthful %s state", async (status, copy) => {
     await withReactRoot(
       <WorkPickerPanel
@@ -35,7 +35,7 @@ describe("WorkPickerPanel", () => {
       />,
       () => {
         expect(document.body.textContent).toContain(copy);
-        expect(document.body.textContent).not.toContain("No works match your search.");
+        expect(document.body.textContent).not.toContain("No Work matches your search.");
         expect(document.querySelector('input[type="search"]')).not.toBeNull();
         expect(document.querySelector('input[type="search"]')?.hasAttribute("disabled")).toBe(true);
         expect(document.querySelector(".app-scroll")?.textContent).toContain(copy);
@@ -71,6 +71,10 @@ describe("WorkPickerPanel", () => {
         onChoose={choose}
       />,
       () => {
+        expect(document.querySelector('input[type="search"]')?.getAttribute("placeholder")).toBe(
+          "Search Work",
+        );
+        expect(document.querySelector("section")?.getAttribute("aria-label")).toBe("Archived Work");
         Array.from(document.querySelectorAll("button"))
           .find((node) => node.textContent?.includes("Second arc"))
           ?.click();
@@ -89,6 +93,8 @@ describe("WorkPickerPanel", () => {
         onChoose={() => {}}
       />,
       () => {
+        expect(document.querySelector("label[for]")?.textContent).toBe("Search Work");
+        expect(document.querySelector("section")?.getAttribute("aria-label")).toBe("Active Work");
         const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
         expect(row?.getAttribute("aria-current")).toBe("true");
         expect(row?.hasAttribute("aria-label")).toBe(false);

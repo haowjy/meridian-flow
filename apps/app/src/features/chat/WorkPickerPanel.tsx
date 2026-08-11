@@ -142,7 +142,7 @@ export function WorkPickerPanel({
       onKeyDown={navigate}
     >
       <label htmlFor={searchId} className="sr-only">
-        <Trans>Search works</Trans>
+        <Trans>Search Work</Trans>
       </label>
       <div className="relative shrink-0">
         <Search
@@ -156,31 +156,31 @@ export function WorkPickerPanel({
           value={view.query}
           disabled={view.status !== "ready"}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder={t`Search works`}
+          placeholder={t`Search Work`}
           className={dropdownSearchClass}
         />
       </div>
       <div className={`${dropdownResultsVariants({ kind: "picker" })} space-y-2`}>
         {view.status === "loading" ? (
           <PickerState>
-            <Trans>Loading Works…</Trans>
+            <Trans>Loading Work…</Trans>
           </PickerState>
         ) : null}
         {view.status === "error" ? (
           <InlineErrorRow
-            message={t`Couldn't load Works.`}
+            message={t`Couldn't load Work.`}
             onRetry={view.retry}
             retryRef={focusRefs?.retry}
           />
         ) : null}
         {view.status === "empty" ? (
           <PickerState>
-            <Trans>No Works yet.</Trans>
+            <Trans>No Work yet.</Trans>
           </PickerState>
         ) : null}
         {view.active.length ? (
           <WorkSection
-            label={t`Active works`}
+            label={t`Active Work`}
             works={view.active}
             operation={operation}
             enabled={view.enabled}
@@ -191,7 +191,7 @@ export function WorkPickerPanel({
         ) : null}
         {view.archived.length ? (
           <WorkSection
-            label={t`Archived works`}
+            label={t`Archived Work`}
             works={view.archived}
             operation={operation}
             enabled={view.enabled}
@@ -203,7 +203,7 @@ export function WorkPickerPanel({
         ) : null}
         {view.status === "ready" && !view.ordered.length ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            <Trans>No works match your search.</Trans>
+            <Trans>No Work matches your search.</Trans>
           </p>
         ) : null}
       </div>

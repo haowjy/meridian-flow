@@ -526,7 +526,7 @@ function documentCountLabel(count: number) {
 /** The Work-only header: same counting grammar as documents, wearing the
  * writer's own word for the entity the turn changed. */
 function workCountLabel(count: number) {
-  return count === 1 ? <Trans>Changed 1 Work</Trans> : <Trans>Changed {count} Works</Trans>;
+  return count === 1 ? <Trans>Changed 1 Work</Trans> : <Trans>Changed {count} Work</Trans>;
 }
 
 /** One receipt-style line per restored Work. The server names the Work when it
