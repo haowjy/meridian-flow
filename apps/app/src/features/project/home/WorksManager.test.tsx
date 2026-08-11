@@ -201,7 +201,28 @@ describe("WorksManager actions", () => {
 
       await act(async () => rerender?.());
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-      expect(document.body.textContent).not.toContain("Archived A");
+      expect(disclosure.textContent).toContain("Current: Archived A");
+      expect(document.body.textContent?.match(/Archived A/g)).toHaveLength(1);
+    });
+  });
+
+  it("contains a long current Work name in the collapsed trigger without duplicating it expanded", async () => {
+    const longName = "The Immortal Sovereign's Very Long Chronicle Beyond the Ninth Heaven";
+    const archived = archivedWorkFixture("archived-a", longName);
+    mockManagerWorks([archived], () => archived.id);
+
+    await withReactRoot(<WorksManager projectId="project-1" />, async () => {
+      const disclosure = buttonContaining("Archived Work");
+      expect(disclosure.textContent).not.toContain("Current:");
+      expect(summaryIn(disclosure)).toBeUndefined();
+
+      await act(async () => disclosure.click());
+      const summary = summaryIn(disclosure);
+      expect(summary?.textContent).toBe(`Current: ${longName}`);
+      expect(summary?.className).toContain("truncate");
+      expect(summary?.parentElement?.className).toContain("min-w-0");
+      expect(disclosure.className).toContain("w-full");
+      expect(disclosure.className).toContain("min-h-11");
     });
   });
 
@@ -257,6 +278,12 @@ describe("WorksManager actions", () => {
     });
   });
 });
+
+function summaryIn(disclosure: HTMLButtonElement) {
+  return Array.from(disclosure.querySelectorAll("span")).find((span) =>
+    span.textContent?.startsWith("Current:"),
+  );
+}
 
 function mockManagerWorks(
   works: Work[],

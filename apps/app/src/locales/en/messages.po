@@ -937,6 +937,11 @@ msgstr "Current block type"
 msgid "Current Work for this chat."
 msgstr "Current Work for this chat."
 
+#. placeholder {0}: archivedCurrentWork.name
+#: src/features/project/home/WorksManager.tsx
+msgid "Current: {0}"
+msgstr "Current: {0}"
+
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
 msgstr "Custom amount (USD)"

@@ -195,8 +195,8 @@ Home's Work manager presents Active Work first and keeps Archived Work in a
 default-collapsed disclosure. If the current Work is archived at load or becomes
 archived, the disclosure opens. Changing directly from one archived current Work
 to another also reopens it once; a deliberate close wins across rerenders while
-that same Work remains current. Home remains the only scroll owner for both
-lists.
+that same Work remains current, and the collapsed trigger continues to name it.
+Home remains the only scroll owner for both lists.
 
 Ownership rules:
 

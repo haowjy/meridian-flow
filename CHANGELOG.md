@@ -8,7 +8,7 @@
 - `apps/app`: Home now separates Active Work from a default-collapsed Archived
   Work disclosure. Selecting a different archived current Work reopens the
   disclosure once, while a deliberate close remains closed across rerenders of
-  that same selection.
+  that same selection and names it in the collapsed summary.
 
 - `apps/app`: New Chat now creates immediately in the server-resolved
   current/default Work from Home and the thread switcher, with inline failure

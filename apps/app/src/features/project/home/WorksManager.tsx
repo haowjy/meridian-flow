@@ -220,7 +220,8 @@ function ArchivedWorkSection({
 }) {
   const panelId = useId();
   const headingId = useId();
-  const archivedCurrentWorkId = works.find((work) => work.id === currentWorkId)?.id ?? null;
+  const archivedCurrentWork = works.find((work) => work.id === currentWorkId) ?? null;
+  const archivedCurrentWorkId = archivedCurrentWork?.id ?? null;
   const [open, setOpen] = useState(archivedCurrentWorkId !== null);
 
   useEffect(() => {
@@ -237,9 +238,16 @@ function ArchivedWorkSection({
           aria-controls={open ? panelId : undefined}
           onClick={() => setOpen((value) => !value)}
         >
-          <span className="text-sm font-medium text-foreground">
-            <Trans>Archived Work</Trans>
-            <span className="ml-2 font-normal text-muted-foreground">({works.length})</span>
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="shrink-0 text-sm font-medium text-foreground">
+              <Trans>Archived Work</Trans>
+              <span className="ml-2 font-normal text-muted-foreground">({works.length})</span>
+            </span>
+            {!open && archivedCurrentWork ? (
+              <span className="truncate text-meta font-normal text-muted-foreground">
+                <Trans>Current: {archivedCurrentWork.name}</Trans>
+              </span>
+            ) : null}
           </span>
           <ChevronDown
             aria-hidden
