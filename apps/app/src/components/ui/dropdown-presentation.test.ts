@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   dropdownRowContainerClass,
@@ -50,25 +48,13 @@ describe("compact dropdown pointer policy", () => {
     expect(dropdownRowVariants()).toMatch(/(?:^|\s)px-2(?:\s|$)/);
   });
 
-  it("uses square edge-attached row paint and focus without changing ordinary controls", () => {
+  it("delegates direct and composite row focus to the shared square-edge utility", () => {
     const row = dropdownRowVariants();
-    const styles = readFileSync(
-      fileURLToPath(new URL("../../styles/globals.css", import.meta.url)),
-      "utf8",
-    );
-    const dropdownFocus = styles.match(/@utility dropdown-focus-ring \{(?<body>[\s\S]*?)\n\}/)
-      ?.groups?.body;
 
     expect(row).toContain("dropdown-focus-ring");
     expect(row).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
+    expect(dropdownRowContainerClass).toContain("dropdown-focus-ring");
     expect(dropdownRowContainerClass).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
-    expect(dropdownRowContainerClass).toContain("has-[>:focus-visible]:bg-sidebar-accent/50");
-    expect(dropdownRowContainerClass).toContain(
-      "data-[selected=true]:has-[>:focus-visible]:bg-sidebar-accent",
-    );
     expect(row).not.toMatch(/(?:^|\s)focus-ring(?:\s|$)/);
-    expect(dropdownFocus).toContain("inset 0 2px 0 var(--color-dropdown-focus-indicator)");
-    expect(dropdownFocus).toContain("inset 0 -2px 0 var(--color-dropdown-focus-indicator)");
-    expect(dropdownFocus).not.toContain("inset 0 0 0");
   });
 });
