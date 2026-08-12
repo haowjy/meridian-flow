@@ -35,6 +35,7 @@
   --color-border: oklch(0.38 0.014 84);
   --color-border-subtle: oklch(0.335 0.012 84);
   --color-border-focus: oklch(0.55 0.07 175);
+  --color-dropdown-focus-indicator: oklch(0.75 0.08 176);
 
   --color-sidebar: oklch(0.25 0.012 84);
   --color-sidebar-accent: oklch(0.31 0.014 84);

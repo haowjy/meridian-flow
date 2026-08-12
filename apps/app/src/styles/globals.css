@@ -536,8 +536,8 @@
   &:focus-visible,
   &:has(> :focus-visible) {
     box-shadow:
-      inset 0 2px 0 var(--color-border-focus),
-      inset 0 -2px 0 var(--color-border-focus) !important;
+      inset 0 2px 0 var(--color-dropdown-focus-indicator),
+      inset 0 -2px 0 var(--color-dropdown-focus-indicator) !important;
   }
 }
 

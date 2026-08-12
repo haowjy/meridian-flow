@@ -290,10 +290,10 @@ function ThreadSwitchItem({
       className={cn(
         dropdownRowContainerClass,
         "group flex min-w-0 items-center transition-colors",
-        // Pressed neutral, not an accent wash — routine selection never
-        // spends jade (same grammar as the sidebar's neutral rows).
-        active ? "bg-sidebar-accent text-foreground" : "hover:bg-sidebar-accent/50",
+        "hover:bg-sidebar-accent/50",
+        active && "text-foreground",
       )}
+      data-selected={active}
     >
       <button
         data-switcher-focus

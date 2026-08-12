@@ -345,8 +345,10 @@ Spacing is contextual and resists full centralization:
 Dropdown row geometry is shared by `components/ui/dropdown-presentation.ts`.
 Row-bearing regions add vertical breathing only; `dropdownRowVariants` alone
 owns the horizontal text gutter and square, full-bleed state paint. Keyboard
-focus uses token-derived block-edge rules, not a four-sided inset halo, so it
-remains visible inside popup clipping without reading as another card. Search
+focus uses block-edge rules and the theme-specific semantic dropdown focus
+indicator, whose contrast is protected against every shared row fill, not a
+four-sided inset halo. It remains visible inside popup clipping without reading
+as another card. Search
 fields, headings, and state copy add their own local gutters. This keeps
 selected, hover, and focus boundaries edge-attached across menus, selects,
 pickers, composer navigation, and the thread switcher.

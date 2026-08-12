@@ -62,9 +62,13 @@ describe("compact dropdown pointer policy", () => {
     expect(row).toContain("dropdown-focus-ring");
     expect(row).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
     expect(dropdownRowContainerClass).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
+    expect(dropdownRowContainerClass).toContain("has-[>:focus-visible]:bg-sidebar-accent/50");
+    expect(dropdownRowContainerClass).toContain(
+      "data-[selected=true]:has-[>:focus-visible]:bg-sidebar-accent",
+    );
     expect(row).not.toMatch(/(?:^|\s)focus-ring(?:\s|$)/);
-    expect(dropdownFocus).toContain("inset 0 2px 0 var(--color-border-focus)");
-    expect(dropdownFocus).toContain("inset 0 -2px 0 var(--color-border-focus)");
+    expect(dropdownFocus).toContain("inset 0 2px 0 var(--color-dropdown-focus-indicator)");
+    expect(dropdownFocus).toContain("inset 0 -2px 0 var(--color-dropdown-focus-indicator)");
     expect(dropdownFocus).not.toContain("inset 0 0 0");
   });
 });

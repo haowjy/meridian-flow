@@ -66,4 +66,5 @@ export const dropdownThreadRegionVariants = cva("shrink-0", {
 });
 
 /** Lets a composite row own selected, hover, and descendant-focus geometry. */
-export const dropdownRowContainerClass = "dropdown-focus-ring rounded-none";
+export const dropdownRowContainerClass =
+  "dropdown-focus-ring rounded-none has-[>:focus-visible]:bg-sidebar-accent/50 data-[selected=true]:bg-sidebar-accent data-[selected=true]:has-[>:focus-visible]:bg-sidebar-accent";
