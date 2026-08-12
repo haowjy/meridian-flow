@@ -2,7 +2,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 
 export const dropdownRowVariants = cva(
-  "flex w-full min-w-0 items-center justify-start gap-2 rounded-sm px-2 text-left text-sm font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
+  "flex w-full min-w-0 items-center justify-start gap-2 rounded-none px-2 text-left text-sm font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       kind: {
@@ -66,4 +66,4 @@ export const dropdownThreadRegionVariants = cva("shrink-0", {
 });
 
 /** Lets a composite row own selected, hover, and descendant-focus geometry. */
-export const dropdownRowContainerClass = "dropdown-focus-ring";
+export const dropdownRowContainerClass = "dropdown-focus-ring rounded-none";

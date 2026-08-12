@@ -79,6 +79,10 @@ binding intact; it must not infer open, busy, locked, or refusal policy.
 `ComposerCurrentValueStatus` renders the same geometry without a binding,
 chevron, activation, or popup relationship. Existing-chat Agent identity uses
 that focusable `aria-disabled` status and preserves its explanatory tooltip.
+Current-value controls and the toolbar-owned overflow control share a 32px fine
+pointer height and a 44px coarse pointer height. The visible ellipsis and its
+permanently mounted measurement probe consume one sizing recipe so overflow
+reservation always matches the rendered owner.
 
 ## Rejected structures
 

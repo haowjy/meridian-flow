@@ -223,6 +223,19 @@ describe("ComposerToolbar visible ownership", () => {
     expect(document.activeElement).toBe(focused);
   });
 
+  it("uses one 32px fine and 44px coarse recipe for the overflow trigger", async () => {
+    controls = [panelControl("work")];
+    measuredLayout = layout(controls, []);
+    await renderToolbar();
+
+    const trigger = button("More composer controls");
+    expect(trigger.dataset.size).toBe("icon-sm");
+    expect(trigger.className).toContain("[@media(pointer:coarse)]:size-11");
+    const probe = document.querySelector<HTMLButtonElement>("button[inert]");
+    expect(probe?.dataset.size).toBe("icon-sm");
+    expect(probe?.className).toContain("[@media(pointer:coarse)]:size-11");
+  });
+
   it("makes busy direct and overflow-row triggers focusable, truthful, and refusing", async () => {
     const busy = panelControl("work", { interaction: "busy" });
     controls = [busy];

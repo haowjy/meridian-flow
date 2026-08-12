@@ -52,6 +52,11 @@ function focusVerified(node: HTMLElement | null | undefined, allowAriaDisabled =
   return document.activeElement === target || Boolean(target.contains(document.activeElement));
 }
 
+const overflowControlSize = {
+  size: "icon-sm" as const,
+  className: "[@media(pointer:coarse)]:size-11",
+};
+
 export function ComposerToolbar({
   model,
   ariaLabel,
@@ -270,7 +275,7 @@ export function ComposerToolbar({
           <Button
             ref={overflowTrigger}
             variant="quiet"
-            size="icon-lg"
+            {...overflowControlSize}
             type="button"
             aria-label={t`More composer controls`}
             aria-haspopup="dialog"
@@ -288,12 +293,15 @@ export function ComposerToolbar({
         <Button
           ref={probe}
           variant="quiet"
-          size="icon-lg"
+          {...overflowControlSize}
           type="button"
           tabIndex={-1}
           inert
           aria-hidden
-          className="pointer-events-none invisible absolute left-0 top-0"
+          className={cn(
+            overflowControlSize.className,
+            "pointer-events-none invisible absolute left-0 top-0",
+          )}
         >
           <Ellipsis className="size-4" />
         </Button>

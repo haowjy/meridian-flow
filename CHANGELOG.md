@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: composer overflow controls now match the 32px fine-pointer toolbar
+  rhythm and use a measured 44px coarse target; shared menu selection, hover,
+  and keyboard focus paint now reaches the popup's clipped inner edges.
+
 - `apps/app`: compact write-mode confirmation copy keeps its local 4px gutter,
   and real toolbar measurement coverage now protects locked widths, intrinsic
   label changes, observer updates, and final unlock reconciliation.

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  dropdownRowContainerClass,
   dropdownRowVariants,
   dropdownSearchClass,
   dropdownSurfaceVariants,
@@ -49,7 +50,7 @@ describe("compact dropdown pointer policy", () => {
     expect(dropdownRowVariants()).toMatch(/(?:^|\s)px-2(?:\s|$)/);
   });
 
-  it("uses the shared inset dropdown focus treatment without changing ordinary controls", () => {
+  it("uses square edge-attached row paint and focus without changing ordinary controls", () => {
     const row = dropdownRowVariants();
     const styles = readFileSync(
       fileURLToPath(new URL("../../styles/globals.css", import.meta.url)),
@@ -59,8 +60,11 @@ describe("compact dropdown pointer policy", () => {
       ?.groups?.body;
 
     expect(row).toContain("dropdown-focus-ring");
+    expect(row).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
+    expect(dropdownRowContainerClass).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
     expect(row).not.toMatch(/(?:^|\s)focus-ring(?:\s|$)/);
-    expect(dropdownFocus).toContain("inset 0 0 0 2px var(--color-border-focus)");
-    expect(dropdownFocus).toContain("inset 0 0 0 4px color-mix(in oklab, var(--color-ring)");
+    expect(dropdownFocus).toContain("inset 0 2px 0 var(--color-border-focus)");
+    expect(dropdownFocus).toContain("inset 0 -2px 0 var(--color-border-focus)");
+    expect(dropdownFocus).not.toContain("inset 0 0 0");
   });
 });

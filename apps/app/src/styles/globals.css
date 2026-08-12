@@ -528,16 +528,16 @@
   }
 }
 
-/* Dropdown rows meet the clipped surface edge, so their keyboard indicator
-   draws inward. Composite rows may apply this to a wrapper around the focused
-   control; ordinary controls continue to use focus-ring above. */
+/* Dropdown rows meet the clipped surface edge. Their keyboard indicator uses
+   block-edge rules so it stays visible inside clipping without recreating a
+   four-sided inset card. Composite rows apply this to their wrapper. */
 @utility dropdown-focus-ring {
   @apply outline-none;
   &:focus-visible,
   &:has(> :focus-visible) {
     box-shadow:
-      inset 0 0 0 2px var(--color-border-focus),
-      inset 0 0 0 4px color-mix(in oklab, var(--color-ring) 12%, transparent) !important;
+      inset 0 2px 0 var(--color-border-focus),
+      inset 0 -2px 0 var(--color-border-focus) !important;
   }
 }
 
