@@ -68,6 +68,63 @@ test.beforeEach(async ({ page }) => {
 
 type Theme = "light" | "dark";
 
+type ComputedShadowLayer = {
+  inset: boolean;
+  lengths: number[];
+  color: string;
+  serialized: string;
+};
+
+function computedShadowLayers(shadow: string, indicatorColor: string): ComputedShadowLayer[] {
+  const layers: string[] = [];
+  let start = 0;
+  let parentheses = 0;
+  for (let index = 0; index < shadow.length; index += 1) {
+    if (shadow[index] === "(") parentheses += 1;
+    else if (shadow[index] === ")") parentheses -= 1;
+    else if (shadow[index] === "," && parentheses === 0) {
+      layers.push(shadow.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  layers.push(shadow.slice(start).trim());
+
+  return layers.map((serialized) => ({
+    inset: /(?:^|\s)inset(?:\s|$)/.test(serialized),
+    lengths: [...serialized.matchAll(/(-?(?:\d+(?:\.\d+)?|\.\d+))px/g)].map((match) =>
+      Number(match[1]),
+    ),
+    color: serialized.includes(indicatorColor) ? indicatorColor : "",
+    serialized,
+  }));
+}
+
+function expectSemanticFocusRails(shadow: string, indicatorColor: string) {
+  const layers = computedShadowLayers(shadow, indicatorColor);
+  const semanticInsetLayers = layers.filter(
+    (layer) => layer.inset && layer.color === indicatorColor,
+  );
+  const hasGeometry = (layer: ComputedShadowLayer, yOffset: number) =>
+    layer.lengths.length === 4 &&
+    layer.lengths[0] === 0 &&
+    layer.lengths[1] === yOffset &&
+    layer.lengths[2] === 0 &&
+    layer.lengths[3] === 0;
+
+  expect(semanticInsetLayers.filter((layer) => hasGeometry(layer, 2))).toHaveLength(1);
+  expect(semanticInsetLayers.filter((layer) => hasGeometry(layer, -2))).toHaveLength(1);
+  expect(
+    layers.filter(
+      (layer) =>
+        layer.inset &&
+        layer.lengths.length === 4 &&
+        layer.lengths[0] === 0 &&
+        layer.lengths[1] === 0 &&
+        layer.lengths[3] !== 0,
+    ),
+  ).toHaveLength(0);
+}
+
 async function setTheme(page: import("@playwright/test").Page, theme: Theme) {
   await page.evaluate((nextTheme) => {
     if (nextTheme === "dark") document.documentElement.dataset.uiTheme = "dark";
@@ -207,10 +264,7 @@ test("resolves semantic colors and effective direct/composite row paint", async 
     expect(effective.selected.background).toBe(expectedBackground.selected);
     expect(selectedFocused.background).toBe(effective.selected.background);
     for (const shadow of [directFocused.shadow, compositeFocused.shadow, selectedFocused.shadow]) {
-      expect(shadow).toContain("2px");
-      expect(shadow).toContain("inset");
-      expect(shadow).toContain(indicatorColor);
-      expect(shadow).not.toBe("none");
+      expectSemanticFocusRails(shadow, indicatorColor);
     }
     for (const row of [effective.direct, effective.composite, effective.selected]) {
       expect(row.radius).toBe("0px");
