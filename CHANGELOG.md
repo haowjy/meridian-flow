@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/app`: replace the project Home dashboard and separate phone list with
+  one responsive Continue, Favorites, and paginated Recent chat feed, including
+  server previews, accessible shared cards, direct New Chat, and field-scoped
+  optimistic favorite/read state.
+
 - `apps/app`: the Work screen now shares the named project-screen container,
   responds to its 42rem column threshold, presents the reviewed row semantics,
   and restores focus according to each completed lifecycle action.

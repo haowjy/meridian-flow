@@ -18,6 +18,7 @@ import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
+import { HomeScreen } from "../home/HomeScreen";
 import type { ProjectViewProps } from "../ProjectView";
 import { WorkScreen } from "../work/WorkScreen";
 import { folderAncestry, pathLeafName } from "./context-location";
@@ -26,7 +27,6 @@ import { MobileChatHost } from "./MobileChatHost";
 import { MobileContextBrowser } from "./MobileContextBrowser";
 import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
-import { MobileHomeScreen } from "./MobileHomeScreen";
 import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -134,7 +134,7 @@ function renderActiveView(
 
   switch (props.activeScreen) {
     case "home":
-      return <MobileHomeScreen projectId={props.projectId} onSelectThread={props.onSelectThread} />;
+      return <HomeScreen projectId={props.projectId} onSelectThread={props.onSelectThread} />;
     case "work":
       return <WorkScreen projectId={props.projectId} />;
     case "chat":

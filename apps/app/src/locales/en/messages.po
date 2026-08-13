@@ -248,6 +248,10 @@ msgstr "Account settings."
 msgid "Actions"
 msgstr "Actions"
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Actions for {title}"
+msgstr "Actions for {title}"
+
 #: src/features/project/work/WorkScreen.tsx
 #~ msgid "Active"
 #~ msgstr "Active"
@@ -260,6 +264,10 @@ msgstr "Active Work"
 #: src/features/chat/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Add {title} to favorites"
+msgstr "Add {title} to favorites"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add column"
@@ -542,7 +550,6 @@ msgstr "chart"
 #: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatPaneController.tsx
 #: src/features/project/dock/DockHeader.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
 msgstr "Chat"
@@ -554,6 +561,14 @@ msgstr "Chat away"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
 msgstr "Chat context"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chats couldn’t load"
+msgstr "Chats couldn’t load"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Check your connection and try again."
+msgstr "Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked recent changes"
@@ -710,6 +725,10 @@ msgstr "Connection lost. Retrying… attempt {0}"
 #: src/features/project/dock/DockHeader.tsx
 msgid "Context"
 msgstr "Context"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Continue"
+msgstr "Continue"
 
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
@@ -923,6 +942,10 @@ msgstr "Created Work {name}"
 #: src/features/chat/command-descriptor.ts
 msgid "Creating a Work…"
 msgstr "Creating a Work…"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Creating chat…"
+msgstr "Creating chat…"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
@@ -1207,14 +1230,13 @@ msgid "epigraph"
 msgstr "epigraph"
 
 #: src/features/chat/ErrorBlock.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
 msgid "Errored"
 msgstr "Errored"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Every chat across your work"
-msgstr "Every chat across your work"
+#~ msgid "Every chat across your work"
+#~ msgstr "Every chat across your work"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -1260,6 +1282,10 @@ msgstr "Extra usage"
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "Failed to load image"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Favorite chats"
+msgstr "Favorite chats"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
@@ -1393,7 +1419,6 @@ msgstr "Id"
 msgid "Identity"
 msgstr "Identity"
 
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
 msgid "Idle"
 msgstr "Idle"
@@ -1597,9 +1622,13 @@ msgid "Loading agents…"
 msgstr "Loading agents…"
 
 #: src/features/project/home/HomeScreen.tsx
+msgid "Loading chats"
+msgstr "Loading chats"
+
+#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
-msgid "Loading chats…"
-msgstr "Loading chats…"
+#~ msgid "Loading chats…"
+#~ msgstr "Loading chats…"
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "Loading file…"
@@ -1613,6 +1642,10 @@ msgstr "Loading files…"
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "Loading image"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Loading more chats"
+msgstr "Loading more chats"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Loading recent documents…"
@@ -1662,6 +1695,14 @@ msgstr "Manage billing"
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
 msgstr "Manuscript"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Mark read"
+msgstr "Mark read"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Mark unread"
+msgstr "Mark unread"
 
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1714,6 +1755,10 @@ msgstr "Monthly usage"
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "More"
 msgstr "More"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "More chats couldn’t load."
+msgstr "More chats couldn’t load."
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 msgid "More composer controls"
@@ -1801,7 +1846,6 @@ msgstr "New"
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"
@@ -1832,6 +1876,7 @@ msgid "New project started"
 msgstr "New project started"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/home/HomeScreen.tsx
 msgid "New reply since you last opened"
 msgstr "New reply since you last opened"
 
@@ -1863,8 +1908,8 @@ msgstr "No billing activity yet."
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
-msgid "No chats yet — start one to get going."
-msgstr "No chats yet — start one to get going."
+#~ msgid "No chats yet — start one to get going."
+#~ msgstr "No chats yet — start one to get going."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "No column has been resized yet."
@@ -1902,6 +1947,10 @@ msgstr "No matching chats"
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "No matching files"
 msgstr "No matching files"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "No messages yet."
+msgstr "No messages yet."
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
@@ -1941,8 +1990,8 @@ msgstr "Nothing here yet"
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
-msgid "Nothing matches this filter."
-msgstr "Nothing matches this filter."
+#~ msgid "Nothing matches this filter."
+#~ msgstr "Nothing matches this filter."
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to redo yet."
@@ -1952,6 +2001,7 @@ msgstr "Nothing to redo yet."
 msgid "Nothing to undo yet."
 msgstr "Nothing to undo yet."
 
+#: src/features/project/home/HomeScreen.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "now"
@@ -1974,8 +2024,8 @@ msgid "Older"
 msgstr "Older"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
-msgstr "One surface for every chat in this project. Jump into any chat, or start a new one."
+#~ msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
+#~ msgstr "One surface for every chat in this project. Jump into any chat, or start a new one."
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Only on this device"
@@ -1992,6 +2042,7 @@ msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
 #: src/features/chat/DocumentName.tsx
+#: src/features/project/home/HomeScreen.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
 
@@ -2186,6 +2237,10 @@ msgstr "Recent"
 msgid "Recent activity"
 msgstr "Recent activity"
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Recent chats"
+msgstr "Recent chats"
+
 #: src/features/home/RecentProjects.tsx
 msgid "Recent projects"
 msgstr "Recent projects"
@@ -2248,6 +2303,10 @@ msgstr "remaining"
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Remove"
 msgstr "Remove"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Remove {title} from favorites"
+msgstr "Remove {title} from favorites"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -2334,6 +2393,7 @@ msgstr "Resume where I left off on any device"
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -2377,8 +2437,8 @@ msgid "rule"
 msgstr "rule"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Running"
-msgstr "Running"
+#~ msgid "Running"
+#~ msgstr "Running"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
@@ -2535,12 +2595,16 @@ msgstr "Something went wrong while making that change."
 
 #. placeholder {0}: direction === "asc" ? "ascending" : "descending"
 #: src/features/project/home/HomeScreen.tsx
-msgid "Sorted {0}"
-msgstr "Sorted {0}"
+#~ msgid "Sorted {0}"
+#~ msgstr "Sorted {0}"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
 msgstr "Split cell"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Start a chat"
+msgstr "Start a chat"
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
@@ -2560,8 +2624,8 @@ msgid "status"
 msgstr "status"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Status"
-msgstr "Status"
+#~ msgid "Status"
+#~ msgstr "Status"
 
 #: src/features/chat/Composer.tsx
 msgid "Stop"
@@ -2741,6 +2805,7 @@ msgid "The {skillName} skill isn't available in this chat."
 msgstr "The {skillName} skill isn't available in this chat."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/home/HomeScreen.tsx
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
 
@@ -3120,8 +3185,8 @@ msgid "Update link"
 msgstr "Update link"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Updated"
-msgstr "Updated"
+#~ msgid "Updated"
+#~ msgstr "Updated"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Updated a Work"
@@ -3190,8 +3255,8 @@ msgid "Waiting for you"
 msgstr "Waiting for you"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Waiting on you"
-msgstr "Waiting on you"
+#~ msgid "Waiting on you"
+#~ msgstr "Waiting on you"
 
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
@@ -3218,7 +3283,6 @@ msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkScreen.tsx
@@ -3239,9 +3303,18 @@ msgstr "Work couldn’t load"
 msgid "Work details"
 msgstr "Work details"
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Work unavailable"
+msgstr "Work unavailable"
+
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Work: \"{workName}\""
 msgstr "Work: \"{workName}\""
+
+#. placeholder {0}: item.work?.title ?? t`Work unavailable`
+#: src/features/project/home/HomeScreen.tsx
+msgid "Work: {0}"
+msgstr "Work: {0}"
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"
@@ -3285,6 +3358,10 @@ msgstr "Yesterday"
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
 msgstr "you answered"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Your conversations will appear here."
+msgstr "Your conversations will appear here."
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."

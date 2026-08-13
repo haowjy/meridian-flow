@@ -55,6 +55,11 @@ switch, metadata, archive, unarchive, and guarded delete actions. New Chat creat
 immediately in the server-resolved current/default Work without loading the Work
 catalog. After creation, the composer Work control can rebind the chat.
 
+Home is one shared, container-responsive chat feed on desktop and phone. Its
+server-owned projection is grouped with Continue precedence, then Favorites,
+then cursor-paginated Recent chats. The QueryClient owns pending favorite and
+read overlays so navigation and stale page arrival cannot discard desired state.
+
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
 with transparent headers. Scratch and Uploads resolve from the active thread's
