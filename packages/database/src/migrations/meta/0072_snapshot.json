@@ -1,5 +1,5 @@
 {
-  "id": "177eec42-c02c-43fb-94d0-3a5391ebf8b6",
+  "id": "3d7c6377-e8a3-4413-b723-822b40d21a1c",
   "prevId": "c13b6632-cf52-4175-90c3-d734e44d39ff",
   "version": "7",
   "dialect": "postgresql",
@@ -1201,30 +1201,7 @@
           "default": false
         }
       },
-      "indexes": {
-        "thread_user_state_user_favorite_idx": {
-          "name": "thread_user_state_user_favorite_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"thread_user_state\".\"is_favorite\" = true",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "thread_user_state_thread_id_threads_id_fk": {
           "name": "thread_user_state_thread_id_threads_id_fk",

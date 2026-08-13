@@ -9,6 +9,7 @@ import type {
   TurnRole,
   TurnStatus,
 } from "@meridian/contracts/threads";
+import { projectEffectiveThreadAttention } from "./visible-conversation-policy.js";
 
 export interface ThreadListSummary {
   running: number;
@@ -24,6 +25,7 @@ export interface ThreadListProjectionInput {
   lastTurnStatus: TurnStatus | null;
   lastTurnAt: string | null;
   lastOpenedAt: string | null;
+  manuallyUnread?: boolean;
   runningTurnId: string | null;
 }
 
@@ -33,20 +35,16 @@ export function projectThreadAttention(
   lastTurnStatus: TurnStatus | null,
   lastTurnAt: string | null,
   lastOpenedAt: string | null,
+  manuallyUnread = false,
 ): ThreadAttention {
-  if (lastTurnRole === "assistant" && lastTurnStatus === "waiting_interrupt") {
-    return "actionRequired";
-  }
-  if (
-    threadStatus === "idle" &&
-    lastTurnRole === "assistant" &&
-    lastTurnStatus === "complete" &&
-    lastTurnAt !== null &&
-    (lastOpenedAt === null || new Date(lastOpenedAt) < new Date(lastTurnAt))
-  ) {
-    return "unread";
-  }
-  return "none";
+  return projectEffectiveThreadAttention({
+    threadStatus,
+    headRole: lastTurnRole,
+    headStatus: lastTurnStatus,
+    headActivityAt: lastTurnAt,
+    lastOpenedAt,
+    manuallyUnread,
+  });
 }
 
 export function toThreadListItem(input: ThreadListProjectionInput): ThreadListItem {
@@ -62,6 +60,7 @@ export function toThreadListItem(input: ThreadListProjectionInput): ThreadListIt
       input.lastTurnStatus,
       input.lastTurnAt,
       input.lastOpenedAt,
+      input.manuallyUnread,
     ),
     runningTurnId: input.runningTurnId,
   };

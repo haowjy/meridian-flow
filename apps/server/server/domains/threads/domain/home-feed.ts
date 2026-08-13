@@ -8,6 +8,20 @@ import type { HomeChatFeedRepository, HomeFeedCursorKey } from "../ports/reposit
 const PAGE_SIZE = 24;
 const EXACT_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 
+function isCanonicalCursorEncoding(cursor: string): boolean {
+  return (
+    /^[A-Za-z0-9_-]+$/.test(cursor) &&
+    Buffer.from(cursor, "base64url").toString("base64url") === cursor
+  );
+}
+
+function isRealExactUtcTimestamp(value: string): boolean {
+  if (!EXACT_UTC_TIMESTAMP.test(value)) return false;
+  const milliseconds = Date.parse(`${value.slice(0, 23)}Z`);
+  if (!Number.isFinite(milliseconds)) return false;
+  return `${new Date(milliseconds).toISOString().slice(0, 23)}${value.slice(23)}` === value;
+}
+
 export class InvalidHomeFeedCursorError extends Error {
   constructor() {
     super("Invalid Home feed cursor");
@@ -23,6 +37,7 @@ export function encodeHomeFeedCursor(key: HomeFeedCursorKey): string {
 
 export function decodeHomeFeedCursor(cursor: string): HomeFeedCursorKey {
   try {
+    if (!isCanonicalCursorEncoding(cursor)) throw new Error();
     const value: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
     const record = value as Record<string, unknown>;
@@ -30,7 +45,7 @@ export function decodeHomeFeedCursor(cursor: string): HomeFeedCursorKey {
       Object.keys(record).sort().join(",") !== "a,i,v" ||
       record.v !== 1 ||
       typeof record.a !== "string" ||
-      !EXACT_UTC_TIMESTAMP.test(record.a) ||
+      !isRealExactUtcTimestamp(record.a) ||
       typeof record.i !== "string" ||
       !isUuid(record.i)
     ) {

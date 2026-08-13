@@ -28,6 +28,7 @@ import {
   type ThreadSnapshotResponse,
   type ThreadUploadDocumentItem,
   type TurnContextPreview,
+  type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
@@ -100,8 +101,11 @@ export function getThreadSnapshot({
   return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }));
 }
 
-export function markThreadOpened(threadId: string): Promise<UpdateThreadUserStateResponse> {
-  return patchJson(apiThreadUserStatePath(threadId), { isUnread: false });
+export function updateThreadUserState(
+  threadId: string,
+  request: UpdateThreadUserStateRequest,
+): Promise<UpdateThreadUserStateResponse> {
+  return patchJson(apiThreadUserStatePath(threadId), request);
 }
 
 export function rebindThreadWork(

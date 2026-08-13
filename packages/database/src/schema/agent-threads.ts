@@ -357,12 +357,7 @@ export const threadUserState = pgTable(
     isFavorite: boolean("is_favorite").notNull().default(false),
     manuallyUnread: boolean("manually_unread").notNull().default(false),
   },
-  (table) => [
-    primaryKey({ columns: [table.threadId, table.userId] }),
-    index("thread_user_state_user_favorite_idx")
-      .on(table.userId, table.threadId)
-      .where(sql`${table.isFavorite} = true`),
-  ],
+  (table) => [primaryKey({ columns: [table.threadId, table.userId] })],
 );
 
 export const threadDocuments = pgTable(

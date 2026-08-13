@@ -24,8 +24,7 @@ import type {
 } from "../../ports/repositories.js";
 import { mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
-
-const activeLeafTurn = alias(schema.turns, "active_leaf_turn");
+import { visibleConversationalHeadLateral } from "./visible-conversation-sql.js";
 
 const runningTurnId = sql<string | null>`(
   SELECT ${schema.turns.id}
@@ -44,6 +43,7 @@ type ThreadListRow = typeof schema.threads.$inferSelect & {
   lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
   lastTurnAt: Date | string | null;
   lastOpenedAt: Date | null;
+  manuallyUnread: boolean | null;
   runningTurnId: string | null;
 };
 
@@ -55,6 +55,7 @@ function mapThreadListRow(row: ThreadListRow) {
     lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
     lastTurnAt: row.lastTurnAt ? toIsoString(row.lastTurnAt) : null,
     lastOpenedAt: row.lastOpenedAt ? toIsoString(row.lastOpenedAt) : null,
+    manuallyUnread: row.manuallyUnread ?? false,
     runningTurnId: row.runningTurnId,
   });
 }
@@ -64,10 +65,11 @@ function threadListSelect() {
     ...getTableColumns(schema.threads),
     workId: schema.threadWorks.workId,
     workTitle: schema.works.name,
-    lastTurnRole: activeLeafTurn.role,
-    lastTurnStatus: activeLeafTurn.status,
-    lastTurnAt: sql<Date | null>`COALESCE(${activeLeafTurn.completedAt}, ${activeLeafTurn.createdAt})`,
+    lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
+    lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
+    lastTurnAt: sql<Date | null>`conversational_head.activity_at`,
     lastOpenedAt: schema.threadUserState.lastOpenedAt,
+    manuallyUnread: schema.threadUserState.manuallyUnread,
     runningTurnId,
   };
 }
@@ -290,7 +292,10 @@ export function createDrizzleThreadRepository(
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
-        .leftJoin(activeLeafTurn, eq(activeLeafTurn.id, schema.threads.activeLeafTurnId))
+        .leftJoin(
+          visibleConversationalHeadLateral(sql`${schema.threads.activeLeafTurnId}`),
+          sql`true`,
+        )
         .leftJoin(
           schema.threadUserState,
           and(
@@ -317,10 +322,11 @@ export function createDrizzleThreadRepository(
           ...getTableColumns(schema.threads),
           workId: primaryThreadWorks.workId,
           workTitle: primaryWorks.name,
-          lastTurnRole: activeLeafTurn.role,
-          lastTurnStatus: activeLeafTurn.status,
-          lastTurnAt: sql<Date | null>`COALESCE(${activeLeafTurn.completedAt}, ${activeLeafTurn.createdAt})`,
+          lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
+          lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
+          lastTurnAt: sql<Date | null>`conversational_head.activity_at`,
           lastOpenedAt: schema.threadUserState.lastOpenedAt,
+          manuallyUnread: schema.threadUserState.manuallyUnread,
           runningTurnId,
         })
         .from(schema.threads)
@@ -340,7 +346,10 @@ export function createDrizzleThreadRepository(
           ),
         )
         .leftJoin(primaryWorks, eq(primaryThreadWorks.workId, primaryWorks.id))
-        .leftJoin(activeLeafTurn, eq(activeLeafTurn.id, schema.threads.activeLeafTurnId))
+        .leftJoin(
+          visibleConversationalHeadLateral(sql`${schema.threads.activeLeafTurnId}`),
+          sql`true`,
+        )
         .leftJoin(
           schema.threadUserState,
           and(

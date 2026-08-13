@@ -11,8 +11,8 @@ import { useEffect } from "react";
 import {
   deserializeThreadSnapshot,
   getThreadSnapshot,
-  markThreadOpened,
   toThreadSnapshotApplyOptions,
+  updateThreadUserState,
 } from "@/client/api/threads-api";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 
@@ -63,7 +63,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
 
   useEffect(() => {
     if (!data) return;
-    void markThreadOpened(threadId).then(() => {
+    void updateThreadUserState(threadId, { isUnread: false }).then(() => {
       if (data.attention === "unread") {
         actions.setThreadAttention(threadId, "none");
       }

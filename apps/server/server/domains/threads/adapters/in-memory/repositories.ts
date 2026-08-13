@@ -7,15 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type {
-  Block,
-  HomeChatAttention,
-  HomeChatItem,
-  ModelResponse,
-  Thread,
-  Turn,
-  TurnUsage,
-} from "@meridian/contracts/threads";
+import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -31,14 +23,12 @@ import type {
   CreateThreadInput,
   CreateTurnInput,
   DerivedPrimaryThreadFactory,
-  HomeChatFeedRepository,
   InternalThreadRepositories,
   ModelResponseRepository,
   SubagentThreadFactory,
   ThreadDocument,
   ThreadDocumentRepository,
   ThreadRepository,
-  ThreadUserStateRepository,
   ThreadWorksRepository,
   TurnDocumentTouch,
   TurnDocumentTouchRepository,
@@ -47,6 +37,7 @@ import type {
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
 import { ThreadWorkProjectMismatchError } from "../../ports/repositories.js";
+import { createInMemoryHomeStateAdapter } from "./home-state-adapter.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
 // ledger are the money truth. Keep this local float helper out of billing
@@ -226,9 +217,8 @@ export function createInMemoryRepositories(
     const work =
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
     const threadTurns = [...turns.values()].filter((turn) => turn.threadId === thread.id);
-    const latestTurn = projected.activeLeafTurnId
-      ? (turns.get(projected.activeLeafTurnId) ?? null)
-      : null;
+    const latestTurn = conversationalHead(projected);
+    const userState = userStateByThreadUser.get(openedKey(thread.id, thread.userId));
     const runningTurn = [...threadTurns]
       .reverse()
       .find(
@@ -242,8 +232,8 @@ export function createInMemoryRepositories(
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
       lastTurnAt: latestTurn ? (latestTurn.completedAt ?? latestTurn.createdAt) : null,
-      lastOpenedAt:
-        userStateByThreadUser.get(openedKey(thread.id, thread.userId))?.lastOpenedAt ?? null,
+      lastOpenedAt: userState?.lastOpenedAt ?? null,
+      manuallyUnread: userState?.manuallyUnread ?? false,
       runningTurnId: runningTurn?.id ?? null,
     });
   }
@@ -777,154 +767,17 @@ export function createInMemoryRepositories(
     },
   };
 
-  function conversationalHead(thread: Thread): Turn | null {
-    let turn = thread.activeLeafTurnId ? turns.get(thread.activeLeafTurnId) : undefined;
-    const visited = new Set<string>();
-    while (turn && !visited.has(turn.id)) {
-      visited.add(turn.id);
-      const metadata = turn.metadata as Record<string, unknown> | null;
-      const hiddenWorkUpdate =
-        turn.role === "user" &&
-        metadata?.kind === "system_update" &&
-        metadata.section === "work_context";
-      const visibleSystem =
-        turn.role === "system" &&
-        [...blocks.values()].some(
-          (block) => block.turnId === turn?.id && block.blockType === "custom",
-        );
-      if (
-        turn.role === "assistant" ||
-        (turn.role === "user" && !hiddenWorkUpdate) ||
-        visibleSystem
-      ) {
-        return turn;
-      }
-      turn = turn.parentTurnId ? turns.get(turn.parentTurnId) : undefined;
-    }
-    return null;
-  }
-
-  function exactTimestamp(value: string): string {
-    return value.replace(/\.(\d{3})Z$/, ".$1000Z");
-  }
-
-  function effectiveAttention(
-    thread: Thread,
-    head: Turn | null,
-    userId: string,
-  ): HomeChatAttention {
-    const state = userStateByThreadUser.get(openedKey(thread.id, userId));
-    const activity = head ? (head.completedAt ?? head.createdAt) : thread.createdAt;
-    if (head?.role === "assistant" && head.status === "waiting_interrupt") return "actionRequired";
-    if (state?.manuallyUnread) return "unread";
-    if (
-      thread.status === "idle" &&
-      head?.role === "assistant" &&
-      head.status === "complete" &&
-      (!state?.lastOpenedAt || activity > state.lastOpenedAt)
-    ) {
-      return "unread";
-    }
-    return "none";
-  }
-
-  async function homeItem(thread: Thread, userId: string): Promise<HomeChatItem> {
-    const head = conversationalHead(thread);
-    const workId = primaryWorkIdForThread(thread.id as ThreadId);
-    const work = workId && options.works ? await options.works.findById(workId) : null;
-    const preview = head
-      ? [...blocks.values()]
-          .filter(
-            (block) => block.turnId === head.id && block.blockType === "text" && !block.pruned,
-          )
-          .sort((a, b) => a.sequence - b.sequence)
-          .map((block) => block.modelText ?? "")
-          .join(" ")
-          .replace(/\s+/gu, " ")
-          .trim()
-      : "";
-    const state = userStateByThreadUser.get(openedKey(thread.id, userId));
-    return {
-      id: thread.id,
-      title: thread.title ?? "",
-      work: workId && work && !work.deletedAt ? { id: workId, title: work.name } : null,
-      lastMessagePreview: preview ? Array.from(preview).slice(0, 240).join("") : null,
-      lastActivityAt: exactTimestamp(
-        head ? (head.completedAt ?? head.createdAt) : thread.createdAt,
-      ),
-      attention: effectiveAttention(thread, head, userId),
-      isFavorite: state?.isFavorite ?? false,
-    };
-  }
-
-  const homeFeed: HomeChatFeedRepository = {
-    async queryPage(input) {
-      const eligible: HomeChatItem[] = [];
-      for (const thread of threads.values()) {
-        if (
-          thread.projectId === input.projectId &&
-          !thread.deletedAt &&
-          thread.status !== "archived" &&
-          (await threadInActiveProject(thread))
-        ) {
-          eligible.push(await homeItem(thread, input.userId));
-        }
-      }
-      eligible.sort(
-        (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id),
-      );
-      const continueChat = eligible[0] ?? null;
-      const favorites = input.includeFeatured
-        ? eligible.filter((item) => item.id !== continueChat?.id && item.isFavorite)
-        : [];
-      const after = input.after;
-      const recent = eligible
-        .filter((item) => item.id !== continueChat?.id && !item.isFavorite)
-        .filter(
-          (item) =>
-            !after ||
-            item.lastActivityAt < after.lastActivityAt ||
-            (item.lastActivityAt === after.lastActivityAt && item.id < after.threadId),
-        )
-        .slice(0, input.recentLimit);
-      return {
-        continueChat: input.includeFeatured ? continueChat : null,
-        favorites,
-        recent,
-      };
+  const { homeFeed, threadUserState, conversationalHead } = createInMemoryHomeStateAdapter(
+    {
+      threads: () => threads.values(),
+      turn: (id) => turns.get(id),
+      blocks: () => blocks.values(),
+      isProjectVisible: threadInActiveProject,
+      primaryWorkId: primaryWorkIdForThread,
+      work: async (id) => options.works?.findById(id) ?? null,
     },
-  };
-
-  const threadUserState: ThreadUserStateRepository = {
-    async get(threadId, userId) {
-      return (
-        userStateByThreadUser.get(openedKey(threadId, userId)) ?? {
-          isFavorite: false,
-          manuallyUnread: false,
-          lastOpenedAt: null,
-        }
-      );
-    },
-    async effectiveAttention(threadId, userId) {
-      const thread = threads.get(threadId);
-      return thread ? effectiveAttention(thread, conversationalHead(thread), userId) : "none";
-    },
-    async update(input) {
-      const key = openedKey(input.threadId, input.userId);
-      const current = await this.get(input.threadId, input.userId);
-      const next = {
-        isFavorite: input.isFavorite ?? current.isFavorite,
-        manuallyUnread: input.isUnread ?? current.manuallyUnread,
-        lastOpenedAt: input.isUnread === false ? new Date().toISOString() : current.lastOpenedAt,
-      };
-      userStateByThreadUser.set(key, next);
-      return {
-        threadId: input.threadId,
-        ...next,
-        attention: await this.effectiveAttention(input.threadId, input.userId),
-      };
-    },
-  };
+    userStateByThreadUser,
+  );
 
   return {
     threads: threadRepo,
