@@ -8,7 +8,6 @@
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
-import { projectThreadAttention } from "./domain/thread-list-projection.js";
 import { orderTurnsCausally } from "./order-turns.js";
 import type {
   BlockRepository,
@@ -90,9 +89,6 @@ export async function buildThreadSnapshot(
 
   const nextSeq = (headSeq + 1n).toString();
   const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
-  const headTurn = thread.activeLeafTurnId
-    ? (turns.find((turn) => turn.id === thread.activeLeafTurnId) ?? null)
-    : null;
   // runningTurnId is liveness; durable turn status is its single source of truth.
   // (1) The runner map is cleared lazily (only in the generator's finally) and NOT by
   //     finalizeError, so it can still name a turn that already reached a terminal
@@ -113,8 +109,6 @@ export async function buildThreadSnapshot(
       ? runningTurn.id
       : null;
 
-  const lastOpenedAt = (await repos.threadUserState.get(threadId, userId)).lastOpenedAt;
-
   return {
     threadId,
     thread,
@@ -130,13 +124,7 @@ export async function buildThreadSnapshot(
       // unmaterialized delta window the snapshot could not include.
       resumeAfterSeq,
     },
-    attention: projectThreadAttention(
-      thread.status,
-      headTurn?.role ?? null,
-      headTurn?.status ?? null,
-      headTurn ? (headTurn.completedAt ?? headTurn.createdAt) : null,
-      lastOpenedAt,
-    ),
+    attention: await repos.threadUserState.effectiveAttention(threadId, userId),
     nextSeq,
   };
 }

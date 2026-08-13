@@ -21,6 +21,20 @@ describe("Home chat feed", () => {
     expect(() => decodeHomeFeedCursor(Buffer.from('{"v":2}').toString("base64url"))).toThrow(
       InvalidHomeFeedCursorError,
     );
+    const encoded = encodeHomeFeedCursor(key);
+    for (const malformed of [
+      `${encoded}=`,
+      `${encoded}!`,
+      ` ${encoded}`,
+      Buffer.from(
+        JSON.stringify({ v: 1, a: "2026-02-30T20:01:02.123456Z", i: key.threadId }),
+      ).toString("base64url"),
+      Buffer.from(
+        JSON.stringify({ v: 1, a: "2026-08-13T20:01:02.12345Z", i: key.threadId }),
+      ).toString("base64url"),
+    ]) {
+      expect(() => decodeHomeFeedCursor(malformed)).toThrow(InvalidHomeFeedCursorError);
+    }
   });
 
   it("partitions Continue, favorites, and stable Recent pages without duplicates", async () => {

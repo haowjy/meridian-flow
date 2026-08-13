@@ -188,17 +188,20 @@ contract shapes.
   replay (capped at 10,000 entries).
 - Thread status is stored in DB using the domain vocabulary
   (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
-- `threads.active_leaf_turn_id` is the single logical head for lifecycle read
-  projections. Home walks its selected lineage past hidden Work-context turns
-  before deriving activity, preview, and attention; project/work lists and
-  snapshots continue to project from the logical head. The closed `attention`
-  enum uses `thread_user_state`: a
+- `threads.active_leaf_turn_id` anchors one visible-conversational-head policy:
+  projections walk its active lineage past hidden Work-context, compaction, and
+  non-custom system turns. Home, project/Work lists, state mutation responses,
+  and snapshots all derive effective attention from that head and the complete
+  writer state. Set-oriented SQL companions are parity-tested against the named
+  domain policy. The closed `attention` enum uses `thread_user_state`: a
   `waiting_interrupt` assistant head is `actionRequired`, and an idle completed
   assistant head newer than the writer's acknowledgement is `unread`.
 - Opening a thread sends `{ isUnread: false }` to
   `PATCH /api/threads/:threadId/user-state`. Mark-read/open clears the manual
-  override and monotonically advances `last_opened_at`; mark-unread sets the
-  durable override without moving that timestamp. Neither clears
+  override and monotonically advances `last_opened_at` using database time;
+  mark-unread sets the durable override without moving that timestamp. The
+  partial desired-state mutation is one statement and preserves omitted fields.
+  Neither clears
   `actionRequired`, which has precedence.
 - Draft-review attention remains an extension point. Establishing it requires
   collab-domain branch/journal queries and review-state semantics, so the

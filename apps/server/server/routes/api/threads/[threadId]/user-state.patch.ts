@@ -6,10 +6,14 @@ import {
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireThreadOwner } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
+import { isUuid } from "../../../../shared/uuid.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = getRouterParam(event, "threadId") ?? "";
+  if (!isUuid(threadId)) {
+    throw createError({ statusCode: 400, statusMessage: "Invalid thread user state" });
+  }
   const parsed = updateThreadUserStateRequestSchema.safeParse(await readBody(event));
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: "Invalid thread user state" });

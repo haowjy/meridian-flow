@@ -5,7 +5,9 @@
 - `server`, `database`, `contracts`: add the server-owned chat-first Home feed
   with visible-lineage previews, stable Recent pagination, and per-writer
   favorite/read state; opening a chat now uses the unified desired-state
-  mutation.
+  mutation. Home, thread lists, state responses, and snapshots share effective
+  attention semantics; strict cursors reject malformed calendar instants, and
+  desired-state writes are atomic, partial-preserving, monotonic, and DB-timed.
 - `apps/app`: Work management now has a dedicated Home-like project screen, with canonical Home, Work, Chat, Editor navigation across desktop and phone while preserving the existing lifecycle, disclosure, and direct New Chat behavior.
 
 - `apps/app`: composer overflow controls now match the 32px fine-pointer toolbar
