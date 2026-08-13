@@ -33,8 +33,20 @@ export function WorkScreen({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState<Work | "new" | null>(null);
   const active = works?.filter((work) => work.status === "active") ?? [];
   const archived = works?.filter((work) => work.status === "archived") ?? [];
+  const restoreFocus = (target: string) => {
+    queueMicrotask(() => {
+      const exact = Array.from(document.querySelectorAll<HTMLElement>("[data-work-focus]")).find(
+        (element) => element.dataset.workFocus === target,
+      );
+      const fallback = target.startsWith("edit:")
+        ? document.querySelector<HTMLElement>('[data-work-focus="archived-disclosure"]')
+        : null;
+      (exact ?? fallback)?.focus();
+    });
+  };
   const closeDialog = () => {
     mutation.reset();
+    restoreFocus(editing === "new" ? "new" : `edit:${editing?.id}`);
     setEditing(null);
   };
   const runAction = (action: WorkAction, closeOnSuccess = false) => {
@@ -42,7 +54,13 @@ export function WorkScreen({ projectId }: { projectId: string }) {
     actionInFlight.current = true;
     mutation.reset();
     mutation.mutate(action, {
-      onSuccess: closeOnSuccess ? () => setEditing(null) : undefined,
+      onSuccess: closeOnSuccess
+        ? () => {
+            const target = focusTargetForAction(action, works ?? []);
+            setEditing(null);
+            restoreFocus(target);
+          }
+        : undefined,
       onSettled: () => {
         actionInFlight.current = false;
       },
@@ -51,19 +69,18 @@ export function WorkScreen({ projectId }: { projectId: string }) {
 
   return (
     <div className="app-scroll" aria-busy={isFetching}>
-      <section className="mx-auto flex w-full max-w-home flex-col gap-6 px-4 py-5 sm:px-8 sm:py-10">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="font-semibold text-foreground">
-              <Trans>Work</Trans>
-            </h2>
-            <p className="text-meta text-muted-foreground">
-              <Trans>Choose the context for new writing and chats.</Trans>
-            </p>
-          </div>
+      <section className="project-screen-column gap-8">
+        <h1 className="sr-only">
+          <Trans>Work</Trans>
+        </h1>
+        <div className="flex flex-col items-start gap-3 @2xl/project-home:flex-row @2xl/project-home:items-center @2xl/project-home:justify-between">
+          <p className="text-sm text-muted-foreground">
+            <Trans>New chats use the current Work.</Trans>
+          </p>
           <Button
             size="sm"
             disabled={mutation.isPending}
+            data-work-focus="new"
             onClick={() => {
               mutation.reset();
               setEditing("new");
@@ -84,9 +101,20 @@ export function WorkScreen({ projectId }: { projectId: string }) {
             </Button>
           </div>
         ) : works === null ? (
-          <section aria-label={t`Loading Work`} className="grid gap-2 sm:grid-cols-2">
+          <section
+            role="status"
+            aria-label={t`Loading Work`}
+            className="grid gap-4 @2xl/project-home:grid-cols-2"
+          >
+            <span className="sr-only">
+              <Trans>Loading Work</Trans>
+            </span>
             {[0, 1].map((index) => (
-              <div key={index} className="rounded-sm border border-border-subtle p-3">
+              <div
+                key={index}
+                aria-hidden
+                className="min-h-36 rounded-sm border border-border-subtle p-4"
+              >
                 <Skeleton className="h-4 w-2/5 motion-reduce:animate-none" />
                 <Skeleton className="mt-3 h-3 w-4/5 motion-reduce:animate-none" />
                 <Skeleton className="mt-2 h-3 w-1/3 motion-reduce:animate-none" />
@@ -105,7 +133,9 @@ export function WorkScreen({ projectId }: { projectId: string }) {
                   currentWorkId={currentWorkId}
                   defaultWorkId={defaultWorkId}
                   pending={mutation.isPending}
-                  onSelect={(workId) => runAction({ type: "switch", workId })}
+                  onSelect={(workId) => {
+                    if (workId !== currentWorkId) runAction({ type: "switch", workId });
+                  }}
                   onEdit={(work) => {
                     mutation.reset();
                     setEditing(work);
@@ -123,7 +153,9 @@ export function WorkScreen({ projectId }: { projectId: string }) {
                 currentWorkId={currentWorkId}
                 defaultWorkId={defaultWorkId}
                 pending={mutation.isPending}
-                onSelect={(workId) => runAction({ type: "switch", workId })}
+                onSelect={(workId) => {
+                  if (workId !== currentWorkId) runAction({ type: "switch", workId });
+                }}
                 onEdit={(work) => {
                   mutation.reset();
                   setEditing(work);
@@ -168,16 +200,16 @@ function WorkList({
   onEdit: (work: Work) => void;
 }) {
   return (
-    <ul className="grid gap-2 sm:grid-cols-2">
+    <ul className="grid gap-4 @2xl/project-home:grid-cols-2">
       {works.map((work) => (
         <li
           key={work.id}
-          className="flex min-w-0 items-start gap-3 rounded-sm border border-border-subtle p-3"
+          className="surface-card flex min-h-36 min-w-0 items-start gap-3 rounded-sm border border-border-subtle p-4"
         >
           <button
             type="button"
             aria-pressed={work.id === currentWorkId}
-            className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring min-w-0 flex-1 rounded-sm text-left disabled:cursor-not-allowed disabled:opacity-50"
             disabled={pending}
             onClick={() => onSelect(work.id)}
           >
@@ -198,26 +230,28 @@ function WorkList({
             <span className="mt-1 block line-clamp-2 text-meta text-muted-foreground">
               {work.goal || <Trans>No goal yet</Trans>}
             </span>
-            <span className="mt-2 block text-meta text-muted-foreground">
-              {work.status === "archived" ? <Trans>Archived</Trans> : <Trans>Active</Trans>}
-              {work.unpushedChangeCount ? (
-                <>
-                  {" ("}
-                  <Plural
-                    value={work.unpushedChangeCount}
-                    one="# pending change"
-                    other="# pending changes"
-                  />
-                  {")"}
-                </>
-              ) : null}
-            </span>
+            {work.description ? (
+              <span className="mt-2 block line-clamp-2 text-meta text-muted-foreground">
+                {work.description}
+              </span>
+            ) : null}
+            {work.unpushedChangeCount ? (
+              <span className="mt-2 block text-meta text-muted-foreground">
+                <Plural
+                  value={work.unpushedChangeCount}
+                  one="# pending change"
+                  other="# pending changes"
+                />
+              </span>
+            ) : null}
           </button>
           <Button
             variant="ghost"
             size="icon-sm"
             disabled={pending}
             aria-label={t`Edit ${work.name}`}
+            className="focus-ring"
+            data-work-focus={`edit:${work.id}`}
             onClick={() => onEdit(work)}
           >
             <MoreHorizontal className="size-4" />
@@ -260,6 +294,7 @@ function ArchivedWorkSection({
           type="button"
           className="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded-sm px-1 text-left"
           aria-expanded={open}
+          data-work-focus="archived-disclosure"
           aria-controls={open ? panelId : undefined}
           onClick={() => setOpen((value) => !value)}
         >
@@ -297,6 +332,26 @@ function ArchivedWorkSection({
 }
 
 type WorkAction = Parameters<ReturnType<typeof useWorkMutations>["mutate"]>[0];
+
+function focusTargetForAction(action: WorkAction, works: Work[]): string {
+  if (action.type === "create") return "new";
+  if (action.type === "update") return `edit:${action.workId}`;
+  if (action.type === "archive" || action.type === "unarchive") return `edit:${action.workId}`;
+  if (action.type === "delete") {
+    const visible = works.filter((work) => {
+      if (work.status === "active") return true;
+      return (
+        document
+          .querySelector('[data-work-focus="archived-disclosure"]')
+          ?.getAttribute("aria-expanded") === "true"
+      );
+    });
+    const index = visible.findIndex((work) => work.id === action.workId);
+    const sibling = visible[index + 1] ?? visible[index - 1];
+    return sibling ? `edit:${sibling.id}` : "new";
+  }
+  return "new";
+}
 
 export type WorkFormValues = { name: string; goal: string; description: string };
 
@@ -339,7 +394,15 @@ export function WorkDialog({
         if (!open && !pending) onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          const nameInput = document.getElementById("work-name") as HTMLInputElement | null;
+          nameInput?.focus();
+          nameInput?.select();
+        }}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>
             {initial ? <Trans>Work details</Trans> : <Trans>New Work</Trans>}

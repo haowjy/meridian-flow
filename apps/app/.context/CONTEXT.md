@@ -196,7 +196,10 @@ default-collapsed disclosure. If the current Work is archived at load or becomes
 archived, the disclosure opens. Changing directly from one archived current Work
 to another also reopens it once; a deliberate close wins across rerenders while
 that same Work remains current, and the collapsed trigger continues to name it.
-Home remains the only scroll owner for both lists.
+Home and Work each own exactly one screen-level `app-scroll`; neither screen
+adds a nested scroll owner. Their bodies share `project-screen-column`, whose
+named inline-size container controls collection columns independently of the
+viewport.
 
 Ownership rules:
 

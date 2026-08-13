@@ -104,7 +104,9 @@ describe("WorkScreen actions", () => {
     } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
 
     await withReactRoot(<WorkScreen projectId="project-1" />, () => {
-      expect(document.querySelector("h2")?.textContent).toBe("Work");
+      expect(document.querySelector("h1")?.textContent).toBe("Work");
+      expect(document.querySelector("h1")?.className).toContain("sr-only");
+      expect(document.body.textContent).toContain("New chats use the current Work.");
       expect(buttonContaining("Work A").getAttribute("aria-pressed")).toBe("true");
       expect(buttonContaining("Work B").getAttribute("aria-pressed")).toBe("false");
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
@@ -114,7 +116,7 @@ describe("WorkScreen actions", () => {
       buttonContaining("Work B").click();
       expect(mutate).toHaveBeenCalledTimes(1);
       expect(mutate).toHaveBeenCalledWith(
-        { type: "switch", workId: "work-a" },
+        { type: "switch", workId: "work-b" },
         expect.objectContaining({ onSettled: expect.any(Function) }),
       );
     });
@@ -136,7 +138,7 @@ describe("WorkScreen actions", () => {
       expect(document.body.textContent).not.toContain("Archived A");
       expect(focusableLabels()).toEqual([
         "NewWork",
-        "ActiveACurrentGoalAActive",
+        "ActiveACurrentGoalADescriptionActiveA",
         "EditActiveA",
         "ArchivedWork(1)",
       ]);
@@ -148,7 +150,7 @@ describe("WorkScreen actions", () => {
       expect(document.getElementById(panelId ?? "")).not.toBeNull();
       expect(document.body.textContent).toContain("Archived A");
       expect(focusableLabels().slice(-2)).toEqual([
-        "ArchivedAGoalArchivedAArchived",
+        "ArchivedAGoalArchivedADescriptionArchivedA",
         "EditArchivedA",
       ]);
 
@@ -275,6 +277,29 @@ describe("WorkScreen actions", () => {
       expect(sectionNamed("Active Work")?.textContent).toContain("No active Work yet.");
       expect(buttonContaining("New Work")).not.toBeNull();
       expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
+    });
+  });
+
+  it("uses the shared container grid and restores cancelled creation focus to New Work", async () => {
+    mockManagerWorks([workFixture("active-a", "Active A", "Goal A")]);
+    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
+      mutate: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: null,
+    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
+
+    await withReactRoot(<WorkScreen projectId="project-1" />, async () => {
+      expect(document.querySelector(".project-screen-column")).not.toBeNull();
+      expect(document.querySelector("ul")?.className).toContain("@2xl/project-home:grid-cols-2");
+      const newWork = buttonContaining("New Work");
+      const focus = vi.spyOn(window.HTMLElement.prototype, "focus").mockImplementation(() => {});
+      await act(async () => newWork.click());
+      await act(async () => clickButton("Cancel"));
+      await Promise.resolve();
+      expect(focus).toHaveBeenCalledWith();
+      expect(focus.mock.instances.at(-1)).toBe(newWork);
+      focus.mockRestore();
     });
   });
 });

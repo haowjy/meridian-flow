@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: the Work screen now shares the named project-screen container,
+  responds to its 42rem column threshold, presents the reviewed row semantics,
+  and restores focus according to each completed lifecycle action.
+
 - `server`, `database`, `contracts`: add the server-owned chat-first Home feed
   with visible-lineage previews, stable Recent pagination, and per-writer
   favorite/read state; opening a chat now uses the unified desired-state

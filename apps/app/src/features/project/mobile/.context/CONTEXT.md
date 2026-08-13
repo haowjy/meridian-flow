@@ -25,7 +25,7 @@ The project route owns all phone navigation state:
 
 | Param | Meaning |
 |---|---|
-| `?screen=` | Active primary project destination: `home`, `chat`, or `context`. |
+| `?screen=` | Active primary project destination: `home`, `work`, `chat`, or `context`. |
 | `?results=` | Phone Results auxiliary surface. Presence means open; desktop ignores it. |
 | `?thread=` | Active chat thread. It rides along when switching screens. |
 | `?scheme=` | Active context source (`kb`, `user`, `work`, `fs1`). |
@@ -91,7 +91,7 @@ MobileProject
   │   ├─ breadcrumb for context screens
   │   └─ trailing slot: chat ⇄ results toggle, or `+` create menu in Files
   ├─ one active main view
-  │   ├─ MobileHomeScreen → HomeOverviewBody + phone list chrome
+  │   ├─ HomeScreen or WorkScreen → shared project-screen body and one screen scroll owner
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
   │   ├─ MobileContextBrowser or MobileDocumentHost
   │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay

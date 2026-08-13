@@ -16,6 +16,7 @@
 @theme {
   --container-chat-column: 48rem;
   --container-home: 45rem;
+  --container-project-home: 60rem;
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -314,6 +315,19 @@
 
   & li {
     @apply min-w-0;
+  }
+}
+
+/* Shared content measure for project-owned Home and Work screens. The screen,
+   rather than the viewport, is the responsive authority for its collections. */
+@utility project-screen-column {
+  container-name: project-home;
+  container-type: inline-size;
+  @apply mx-auto box-border flex w-full max-w-project-home flex-col px-4 py-6 sm:px-8 sm:py-8;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+
+  @media (min-width: 40rem) {
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
   }
 }
 

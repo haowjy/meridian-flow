@@ -249,8 +249,8 @@ msgid "Actions"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Active"
-msgstr ""
+#~ msgid "Active"
+#~ msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
@@ -362,8 +362,8 @@ msgid "Archive"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Archived"
-msgstr ""
+#~ msgid "Archived"
+#~ msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
@@ -605,8 +605,8 @@ msgid "Choose an option"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Choose the context for new writing and chats."
-msgstr ""
+#~ msgid "Choose the context for new writing and chats."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
@@ -1806,6 +1806,10 @@ msgstr ""
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "New chats use the current Work."
+msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
