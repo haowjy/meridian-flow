@@ -11,7 +11,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
@@ -31,22 +31,31 @@ export function WorkScreen({ projectId }: { projectId: string }) {
   const mutation = useWorkMutations(projectId);
   const actionInFlight = useRef(false);
   const [editing, setEditing] = useState<Work | "new" | null>(null);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const focusRefs = useRef(new Map<FocusTarget, HTMLElement>());
+  const [pendingFocus, setPendingFocus] = useState<PendingFocusIntent | null>(null);
   const active = works?.filter((work) => work.status === "active") ?? [];
   const archived = works?.filter((work) => work.status === "archived") ?? [];
-  const restoreFocus = (target: string) => {
-    queueMicrotask(() => {
-      const exact = Array.from(document.querySelectorAll<HTMLElement>("[data-work-focus]")).find(
-        (element) => element.dataset.workFocus === target,
-      );
-      const fallback = target.startsWith("edit:")
-        ? document.querySelector<HTMLElement>('[data-work-focus="archived-disclosure"]')
-        : null;
-      (exact ?? fallback)?.focus();
-    });
+  const registerFocus = (target: FocusTarget) => (node: HTMLElement | null) => {
+    if (node) focusRefs.current.set(target, node);
+    else focusRefs.current.delete(target);
   };
+  useLayoutEffect(() => {
+    if (!pendingFocus || works === null) return;
+    if (!focusIntentHasCommitted(pendingFocus, works)) return;
+    const exact = focusRefs.current.get(pendingFocus.target);
+    const target = exact?.isConnected
+      ? exact
+      : pendingFocus.target.startsWith("edit:")
+        ? focusRefs.current.get("archived-disclosure")
+        : undefined;
+    if (!target?.isConnected) return;
+    target.focus();
+    setPendingFocus(null);
+  }, [pendingFocus, works, archivedOpen]);
   const closeDialog = () => {
     mutation.reset();
-    restoreFocus(editing === "new" ? "new" : `edit:${editing?.id}`);
+    setPendingFocus({ kind: "cancel", target: editing === "new" ? "new" : `edit:${editing?.id}` });
     setEditing(null);
   };
   const runAction = (action: WorkAction, closeOnSuccess = false) => {
@@ -55,10 +64,11 @@ export function WorkScreen({ projectId }: { projectId: string }) {
     mutation.reset();
     mutation.mutate(action, {
       onSuccess: closeOnSuccess
-        ? () => {
-            const target = focusTargetForAction(action, works ?? []);
+        ? (result) => {
+            const intent = focusIntentForAction(action, works ?? [], result, archivedOpen);
+            if (action.type === "archive") setArchivedOpen(true);
             setEditing(null);
-            restoreFocus(target);
+            setPendingFocus(intent);
           }
         : undefined,
       onSettled: () => {
@@ -81,6 +91,7 @@ export function WorkScreen({ projectId }: { projectId: string }) {
             size="sm"
             disabled={mutation.isPending}
             data-work-focus="new"
+            ref={registerFocus("new")}
             onClick={() => {
               mutation.reset();
               setEditing("new");
@@ -91,13 +102,16 @@ export function WorkScreen({ projectId }: { projectId: string }) {
           </Button>
         </div>
 
+        <h3 id="active-work-heading" className="mb-2 text-sm font-medium text-foreground">
+          <Trans>Active Work</Trans>
+        </h3>
         {isError ? (
           <div className="flex items-center gap-2" role="alert">
             <p className="text-sm text-destructive">
-              <Trans>Couldn't load Work.</Trans>
+              <Trans>Work couldn’t load</Trans>
             </p>
             <Button variant="outline" size="sm" onClick={refetch}>
-              <Trans>Try again</Trans>
+              <Trans>Retry</Trans>
             </Button>
           </div>
         ) : works === null ? (
@@ -124,9 +138,6 @@ export function WorkScreen({ projectId }: { projectId: string }) {
         ) : (
           <>
             <section aria-labelledby="active-work-heading">
-              <h3 id="active-work-heading" className="mb-2 text-sm font-medium text-foreground">
-                <Trans>Active Work</Trans>
-              </h3>
               {active.length > 0 ? (
                 <WorkList
                   works={active}
@@ -140,6 +151,7 @@ export function WorkScreen({ projectId }: { projectId: string }) {
                     mutation.reset();
                     setEditing(work);
                   }}
+                  registerFocus={registerFocus}
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -150,6 +162,9 @@ export function WorkScreen({ projectId }: { projectId: string }) {
             {archived.length > 0 ? (
               <ArchivedWorkSection
                 works={archived}
+                open={archivedOpen}
+                onOpenChange={setArchivedOpen}
+                registerFocus={registerFocus}
                 currentWorkId={currentWorkId}
                 defaultWorkId={defaultWorkId}
                 pending={mutation.isPending}
@@ -191,6 +206,7 @@ function WorkList({
   pending,
   onSelect,
   onEdit,
+  registerFocus,
 }: {
   works: Work[];
   currentWorkId: string | null;
@@ -198,6 +214,7 @@ function WorkList({
   pending: boolean;
   onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
+  registerFocus?: (target: FocusTarget) => (node: HTMLElement | null) => void;
 }) {
   return (
     <ul className="grid gap-4 @2xl/project-home:grid-cols-2">
@@ -252,6 +269,7 @@ function WorkList({
             aria-label={t`Edit ${work.name}`}
             className="focus-ring"
             data-work-focus={`edit:${work.id}`}
+            ref={registerFocus?.(`edit:${work.id}`)}
             onClick={() => onEdit(work)}
           >
             <MoreHorizontal className="size-4" />
@@ -269,6 +287,9 @@ function ArchivedWorkSection({
   pending,
   onSelect,
   onEdit,
+  open,
+  onOpenChange,
+  registerFocus,
 }: {
   works: Work[];
   currentWorkId: string | null;
@@ -276,15 +297,16 @@ function ArchivedWorkSection({
   pending: boolean;
   onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  registerFocus: (target: FocusTarget) => (node: HTMLElement | null) => void;
 }) {
   const panelId = useId();
   const headingId = useId();
   const archivedCurrentWork = works.find((work) => work.id === currentWorkId) ?? null;
   const archivedCurrentWorkId = archivedCurrentWork?.id ?? null;
-  const [open, setOpen] = useState(archivedCurrentWorkId !== null);
-
   useEffect(() => {
-    if (archivedCurrentWorkId !== null) setOpen(true);
+    if (archivedCurrentWorkId !== null) onOpenChange(true);
   }, [archivedCurrentWorkId]);
 
   return (
@@ -295,8 +317,9 @@ function ArchivedWorkSection({
           className="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded-sm px-1 text-left"
           aria-expanded={open}
           data-work-focus="archived-disclosure"
+          ref={registerFocus("archived-disclosure")}
           aria-controls={open ? panelId : undefined}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => onOpenChange(!open)}
         >
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="shrink-0 text-sm font-medium text-foreground">
@@ -324,6 +347,7 @@ function ArchivedWorkSection({
             pending={pending}
             onSelect={onSelect}
             onEdit={onEdit}
+            registerFocus={registerFocus}
           />
         </div>
       ) : null}
@@ -333,24 +357,53 @@ function ArchivedWorkSection({
 
 type WorkAction = Parameters<ReturnType<typeof useWorkMutations>["mutate"]>[0];
 
-function focusTargetForAction(action: WorkAction, works: Work[]): string {
-  if (action.type === "create") return "new";
-  if (action.type === "update") return `edit:${action.workId}`;
-  if (action.type === "archive" || action.type === "unarchive") return `edit:${action.workId}`;
+type FocusTarget = "new" | "archived-disclosure" | `edit:${string}`;
+type PendingFocusIntent =
+  | { kind: "cancel"; target: FocusTarget }
+  | { kind: "present"; target: FocusTarget; workId: string; status: Work["status"] }
+  | { kind: "deleted"; target: FocusTarget; workId: string };
+
+function focusIntentForAction(
+  action: WorkAction,
+  works: Work[],
+  result: unknown,
+  archivedOpen: boolean,
+): PendingFocusIntent {
+  if (action.type === "create") {
+    const created = result as Work;
+    return { kind: "present", target: "new", workId: created.id, status: created.status };
+  }
+  if (action.type === "update")
+    return {
+      kind: "present",
+      target: `edit:${action.workId}`,
+      workId: action.workId,
+      status: works.find((work) => work.id === action.workId)?.status ?? "active",
+    };
+  if (action.type === "archive" || action.type === "unarchive")
+    return {
+      kind: "present",
+      target: `edit:${action.workId}`,
+      workId: action.workId,
+      status: action.type === "archive" ? "archived" : "active",
+    };
   if (action.type === "delete") {
-    const visible = works.filter((work) => {
-      if (work.status === "active") return true;
-      return (
-        document
-          .querySelector('[data-work-focus="archived-disclosure"]')
-          ?.getAttribute("aria-expanded") === "true"
-      );
-    });
+    const visible = works.filter((work) => work.status === "active" || archivedOpen);
     const index = visible.findIndex((work) => work.id === action.workId);
     const sibling = visible[index + 1] ?? visible[index - 1];
-    return sibling ? `edit:${sibling.id}` : "new";
+    return {
+      kind: "deleted",
+      target: sibling ? `edit:${sibling.id}` : "new",
+      workId: action.workId,
+    };
   }
-  return "new";
+  throw new Error("Switch does not close the Work dialog");
+}
+
+function focusIntentHasCommitted(intent: PendingFocusIntent, works: Work[]): boolean {
+  if (intent.kind === "cancel") return true;
+  if (intent.kind === "deleted") return !works.some((work) => work.id === intent.workId);
+  return works.some((work) => work.id === intent.workId && work.status === intent.status);
 }
 
 export type WorkFormValues = { name: string; goal: string; description: string };
@@ -469,7 +522,7 @@ export function WorkDialog({
             </Button>
           </div>
         ) : null}
-        <DialogFooter>
+        <DialogFooter className="flex-col sm:flex-row">
           <Button variant="outline" disabled={pending} onClick={onClose}>
             <Trans>Cancel</Trans>
           </Button>
