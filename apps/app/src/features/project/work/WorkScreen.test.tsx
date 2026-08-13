@@ -26,7 +26,7 @@ vi.mock("@/components/ui/dialog", () => ({
 }));
 
 const queryHooks = await import("@/client/query/useWorks");
-const { WorkDialog, WorksManager, workFormAction } = await import("./WorksManager");
+const { WorkDialog, WorkScreen, workFormAction } = await import("./WorkScreen");
 
 describe("WorkDialog identity", () => {
   it("remounts controlled values for each Work and allows optional strings to clear", async () => {
@@ -83,7 +83,7 @@ describe("WorkDialog identity", () => {
   });
 });
 
-describe("WorksManager actions", () => {
+describe("WorkScreen actions", () => {
   it("announces switch failure and synchronously rejects a competing switch", async () => {
     const mutate = vi.fn();
     vi.mocked(queryHooks.useWorks).mockReturnValue({
@@ -103,7 +103,7 @@ describe("WorksManager actions", () => {
       error: new Error("Could not switch Work"),
     } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
 
-    await withReactRoot(<WorksManager projectId="project-1" />, () => {
+    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
       expect(document.querySelector("h2")?.textContent).toBe("Work");
       expect(buttonContaining("Work A").getAttribute("aria-pressed")).toBe("true");
       expect(buttonContaining("Work B").getAttribute("aria-pressed")).toBe("false");
@@ -126,7 +126,7 @@ describe("WorksManager actions", () => {
       archivedWorkFixture("archived-a", "Archived A"),
     ]);
 
-    await withReactRoot(<WorksManager projectId="project-1" />, async () => {
+    await withReactRoot(<WorkScreen projectId="project-1" />, async () => {
       expect(sectionNamed("Active Work")).not.toBeNull();
       const archivedSection = sectionNamed("Archived Work");
       const disclosure = buttonContaining("Archived Work");
@@ -136,7 +136,7 @@ describe("WorksManager actions", () => {
       expect(document.body.textContent).not.toContain("Archived A");
       expect(focusableLabels()).toEqual([
         "NewWork",
-        "ActiveAGoalAActive",
+        "ActiveACurrentGoalAActive",
         "EditActiveA",
         "ArchivedWork(1)",
       ]);
@@ -170,7 +170,7 @@ describe("WorksManager actions", () => {
     function Harness() {
       const [, setVersion] = useState(0);
       rerender = () => setVersion((value) => value + 1);
-      return <WorksManager projectId="project-1" />;
+      return <WorkScreen projectId="project-1" />;
     }
 
     await withReactRoot(<Harness />, async () => {
@@ -190,7 +190,7 @@ describe("WorksManager actions", () => {
     function Harness() {
       const [, setVersion] = useState(0);
       rerender = () => setVersion((value) => value + 1);
-      return <WorksManager projectId="project-1" />;
+      return <WorkScreen projectId="project-1" />;
     }
 
     await withReactRoot(<Harness />, async () => {
@@ -211,7 +211,7 @@ describe("WorksManager actions", () => {
     const archived = archivedWorkFixture("archived-a", longName);
     mockManagerWorks([archived], () => archived.id);
 
-    await withReactRoot(<WorksManager projectId="project-1" />, async () => {
+    await withReactRoot(<WorkScreen projectId="project-1" />, async () => {
       const disclosure = buttonContaining("Archived Work");
       expect(disclosure.textContent).not.toContain("Current:");
       expect(summaryIn(disclosure)).toBeUndefined();
@@ -236,7 +236,7 @@ describe("WorksManager actions", () => {
     function Harness() {
       const [, setVersion] = useState(0);
       rerender = () => setVersion((value) => value + 1);
-      return <WorksManager projectId="project-1" />;
+      return <WorkScreen projectId="project-1" />;
     }
 
     await withReactRoot(<Harness />, async () => {
@@ -255,7 +255,7 @@ describe("WorksManager actions", () => {
     const archived = archivedWorkFixture("archived-a", "Archived A");
     mockManagerWorks([archived], () => archived.id);
 
-    await withReactRoot(<WorksManager projectId="project-1" />, () => {
+    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
       expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("true");
       expect(buttonContaining("Archived A").getAttribute("aria-pressed")).toBe("true");
     });
@@ -263,7 +263,7 @@ describe("WorksManager actions", () => {
 
   it("omits Archived Work when there are no archived records", async () => {
     mockManagerWorks([workFixture("active-a", "Active A", "Goal A")]);
-    await withReactRoot(<WorksManager projectId="project-1" />, () => {
+    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
       expect(sectionNamed("Active Work")).not.toBeNull();
       expect(sectionNamed("Archived Work")).toBeNull();
     });
@@ -271,7 +271,7 @@ describe("WorksManager actions", () => {
 
   it("keeps the Active Work empty state and New Work action beside archived records", async () => {
     mockManagerWorks([archivedWorkFixture("archived-a", "Archived A")], () => null);
-    await withReactRoot(<WorksManager projectId="project-1" />, () => {
+    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
       expect(sectionNamed("Active Work")?.textContent).toContain("No active Work yet.");
       expect(buttonContaining("New Work")).not.toBeNull();
       expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");

@@ -1,4 +1,4 @@
-/** Live Work management for the project Home. */
+/** WorkScreen — the project’s dedicated Work lifecycle surface. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
@@ -23,10 +23,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 
-export function WorksManager({ projectId }: { projectId: string }) {
-  const { works, currentWorkId, isError, isFetching, refetch } = useWorks(projectId);
+export function WorkScreen({ projectId }: { projectId: string }) {
+  const { works, currentWorkId, defaultWorkId, isError, isFetching, refetch } = useWorks(projectId);
   const mutation = useWorkMutations(projectId);
   const actionInFlight = useRef(false);
   const [editing, setEditing] = useState<Work | "new" | null>(null);
@@ -49,52 +50,78 @@ export function WorksManager({ projectId }: { projectId: string }) {
   };
 
   return (
-    <section className="rounded-md border border-border-subtle bg-card p-4" aria-busy={isFetching}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="font-semibold text-foreground">
-            <Trans>Work</Trans>
-          </h2>
-          <p className="text-meta text-muted-foreground">
-            <Trans>Choose the context for new writing and chats.</Trans>
-          </p>
-        </div>
-        <Button
-          size="sm"
-          disabled={mutation.isPending}
-          onClick={() => {
-            mutation.reset();
-            setEditing("new");
-          }}
-        >
-          <Plus className="size-4" />
-          <Trans>New Work</Trans>
-        </Button>
-      </div>
-
-      {isError ? (
-        <div className="flex items-center gap-2" role="alert">
-          <p className="text-sm text-destructive">
-            <Trans>Couldn't load Work.</Trans>
-          </p>
-          <Button variant="outline" size="sm" onClick={refetch}>
-            <Trans>Try again</Trans>
+    <div className="app-scroll" aria-busy={isFetching}>
+      <section className="mx-auto flex w-full max-w-home flex-col gap-6 px-4 py-5 sm:px-8 sm:py-10">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold text-foreground">
+              <Trans>Work</Trans>
+            </h2>
+            <p className="text-meta text-muted-foreground">
+              <Trans>Choose the context for new writing and chats.</Trans>
+            </p>
+          </div>
+          <Button
+            size="sm"
+            disabled={mutation.isPending}
+            onClick={() => {
+              mutation.reset();
+              setEditing("new");
+            }}
+          >
+            <Plus className="size-4" />
+            <Trans>New Work</Trans>
           </Button>
         </div>
-      ) : works === null ? (
-        <p className="text-sm text-muted-foreground">
-          <Trans>Loading Work…</Trans>
-        </p>
-      ) : (
-        <>
-          <section aria-labelledby="active-work-heading">
-            <h3 id="active-work-heading" className="mb-2 text-sm font-medium text-foreground">
-              <Trans>Active Work</Trans>
-            </h3>
-            {active.length > 0 ? (
-              <WorkList
-                works={active}
+
+        {isError ? (
+          <div className="flex items-center gap-2" role="alert">
+            <p className="text-sm text-destructive">
+              <Trans>Couldn't load Work.</Trans>
+            </p>
+            <Button variant="outline" size="sm" onClick={refetch}>
+              <Trans>Try again</Trans>
+            </Button>
+          </div>
+        ) : works === null ? (
+          <section aria-label={t`Loading Work`} className="grid gap-2 sm:grid-cols-2">
+            {[0, 1].map((index) => (
+              <div key={index} className="rounded-sm border border-border-subtle p-3">
+                <Skeleton className="h-4 w-2/5 motion-reduce:animate-none" />
+                <Skeleton className="mt-3 h-3 w-4/5 motion-reduce:animate-none" />
+                <Skeleton className="mt-2 h-3 w-1/3 motion-reduce:animate-none" />
+              </div>
+            ))}
+          </section>
+        ) : (
+          <>
+            <section aria-labelledby="active-work-heading">
+              <h3 id="active-work-heading" className="mb-2 text-sm font-medium text-foreground">
+                <Trans>Active Work</Trans>
+              </h3>
+              {active.length > 0 ? (
+                <WorkList
+                  works={active}
+                  currentWorkId={currentWorkId}
+                  defaultWorkId={defaultWorkId}
+                  pending={mutation.isPending}
+                  onSelect={(workId) => runAction({ type: "switch", workId })}
+                  onEdit={(work) => {
+                    mutation.reset();
+                    setEditing(work);
+                  }}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  <Trans>No active Work yet.</Trans>
+                </p>
+              )}
+            </section>
+            {archived.length > 0 ? (
+              <ArchivedWorkSection
+                works={archived}
                 currentWorkId={currentWorkId}
+                defaultWorkId={defaultWorkId}
                 pending={mutation.isPending}
                 onSelect={(workId) => runAction({ type: "switch", workId })}
                 onEdit={(work) => {
@@ -102,54 +129,40 @@ export function WorksManager({ projectId }: { projectId: string }) {
                   setEditing(work);
                 }}
               />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                <Trans>No active Work yet.</Trans>
-              </p>
-            )}
-          </section>
-          {archived.length > 0 ? (
-            <ArchivedWorkSection
-              works={archived}
-              currentWorkId={currentWorkId}
-              pending={mutation.isPending}
-              onSelect={(workId) => runAction({ type: "switch", workId })}
-              onEdit={(work) => {
-                mutation.reset();
-                setEditing(work);
-              }}
-            />
-          ) : null}
-        </>
-      )}
+            ) : null}
+          </>
+        )}
 
-      {!editing && mutation.error ? (
-        <p className="mt-3 text-sm text-destructive" role="alert">
-          {mutation.error.message}
-        </p>
-      ) : null}
+        {!editing && mutation.error ? (
+          <p className="mt-3 text-sm text-destructive" role="alert">
+            {mutation.error.message}
+          </p>
+        ) : null}
 
-      <WorkDialog
-        key={editing === "new" ? "new" : (editing?.id ?? "closed")}
-        work={editing}
-        pending={mutation.isPending}
-        error={mutation.error}
-        onClose={closeDialog}
-        onAction={(action) => runAction(action, true)}
-      />
-    </section>
+        <WorkDialog
+          key={editing === "new" ? "new" : (editing?.id ?? "closed")}
+          work={editing}
+          pending={mutation.isPending}
+          error={mutation.error}
+          onClose={closeDialog}
+          onAction={(action) => runAction(action, true)}
+        />
+      </section>
+    </div>
   );
 }
 
 function WorkList({
   works,
   currentWorkId,
+  defaultWorkId,
   pending,
   onSelect,
   onEdit,
 }: {
   works: Work[];
   currentWorkId: string | null;
+  defaultWorkId: string | null;
   pending: boolean;
   onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
@@ -171,6 +184,16 @@ function WorkList({
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               {work.id === currentWorkId ? <Check className="size-4 text-primary" /> : null}
               <span className="truncate">{work.name}</span>
+              {work.id === currentWorkId ? (
+                <span className="text-meta font-normal text-primary">
+                  <Trans>Current</Trans>
+                </span>
+              ) : null}
+              {work.id === defaultWorkId && work.id !== currentWorkId ? (
+                <span className="text-meta font-normal text-muted-foreground">
+                  <Trans>Default</Trans>
+                </span>
+              ) : null}
             </span>
             <span className="mt-1 block line-clamp-2 text-meta text-muted-foreground">
               {work.goal || <Trans>No goal yet</Trans>}
@@ -208,12 +231,14 @@ function WorkList({
 function ArchivedWorkSection({
   works,
   currentWorkId,
+  defaultWorkId,
   pending,
   onSelect,
   onEdit,
 }: {
   works: Work[];
   currentWorkId: string | null;
+  defaultWorkId: string | null;
   pending: boolean;
   onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
@@ -260,6 +285,7 @@ function ArchivedWorkSection({
           <WorkList
             works={works}
             currentWorkId={currentWorkId}
+            defaultWorkId={defaultWorkId}
             pending={pending}
             onSelect={onSelect}
             onEdit={onEdit}

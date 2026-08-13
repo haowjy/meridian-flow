@@ -34,7 +34,6 @@ import {
   selectChatRows,
   useChatsOverview,
 } from "./chats-overview";
-import { WorksManager } from "./WorksManager";
 
 export type HomeScreenProps = {
   projectId: string;
@@ -201,8 +200,6 @@ export function HomeOverviewBody({
         </header>
 
         <StatStrip stats={stats} />
-
-        <WorksManager projectId={projectId} />
 
         <div className="flex flex-wrap items-center gap-1.5">
           {CHAT_FILTERS.map((f) => (

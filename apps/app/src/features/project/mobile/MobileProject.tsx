@@ -19,6 +19,7 @@ import { useConversationRevealRouting } from "@/features/chat/conversation-revea
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { ProjectViewProps } from "../ProjectView";
+import { WorkScreen } from "../work/WorkScreen";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
 import { MobileChatHost } from "./MobileChatHost";
@@ -134,6 +135,8 @@ function renderActiveView(
   switch (props.activeScreen) {
     case "home":
       return <MobileHomeScreen projectId={props.projectId} onSelectThread={props.onSelectThread} />;
+    case "work":
+      return <WorkScreen projectId={props.projectId} />;
     case "chat":
       return (
         <MobileChatHost

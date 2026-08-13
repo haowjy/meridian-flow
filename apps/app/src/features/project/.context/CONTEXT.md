@@ -34,9 +34,9 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 ```
 
 - **`rail-l`** — the left sidebar (destinations + project file tree).
-- **`center`** — the destination's main pane (Home/Settings route pane, or the
+- **`center`** — the destination's main pane (Home/Work route pane, or the
   Chat/Editor center surface).
-- **`dock`** — the shared right dock. Chat occupies it on Home/Editor; the
+- **`dock`** — the shared right dock. Chat occupies it on Home/Work/Editor; the
   context-rail occupies it on the Chat screen. It reads as **one persistent
   sidebar** whose inner content swaps — a single shared width/collapse pref
   (`slotPrefs.dock`), not a per-surface one.
@@ -44,14 +44,14 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 There is **no `files` grid track**. The file explorer is the persistent body of
 the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
 
-`LeftSidebar` is one column with a linked wordmark, Home/Chat/Editor navigation,
+`LeftSidebar` is one column with a linked wordmark, Home/Work/Chat/Editor navigation,
 the persistent project tree, and account controls. The navigation rows are
 shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
 are desktop shell grammar.
 
-Home is also the live Work-management surface. It reads the Work collection
+Work is the dedicated live Work-management surface. It reads the Work collection
 and the writer's explicit current Work through TanStack Query, and owns create,
-switch, metadata, archive, restore, and guarded delete actions. New Chat creates
+switch, metadata, archive, unarchive, and guarded delete actions. New Chat creates
 immediately in the server-resolved current/default Work without loading the Work
 catalog. After creation, the composer Work control can rebind the chat.
 

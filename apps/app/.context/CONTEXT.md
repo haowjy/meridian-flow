@@ -180,7 +180,7 @@ route without changing path. See `features/account/SettingsDialog.tsx`.
 ## Project screen routing
 
 `SCREENS` (`features/project/shell/screens.ts`) is the single source of
-route-valid primary destinations: **home, chat, context** (Import removed).
+route-valid primary destinations: **home, work, chat, context** (Import removed).
 Settings and phone Results are auxiliary routed surfaces (`?settings=`,
 `?results=`), not drawer/sidebar destinations.
 
@@ -191,7 +191,7 @@ children are controlled — they never set the URL directly, only call the route
 handlers. Direct `/chat/$threadId` renders the independent chat view inside the
 same provider stack.
 
-Home's Work manager presents Active Work first and keeps Archived Work in a
+The dedicated Work screen presents Active Work first and keeps Archived Work in a
 default-collapsed disclosure. If the current Work is archived at load or becomes
 archived, the disclosure opens. Changing directly from one archived current Work
 to another also reopens it once; a deliberate close wins across rerenders while
