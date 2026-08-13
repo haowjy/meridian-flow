@@ -12,6 +12,8 @@ import type {
   BlockType,
   ExecutionSide,
   FinishReason,
+  HomeChatAttention,
+  HomeChatItem,
   JsonValue,
   ModelResponse,
   PriceSource,
@@ -23,6 +25,7 @@ import type {
   Turn,
   TurnRole,
   TurnStatus,
+  UpdateThreadUserStateResponse,
   WorkingState,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -131,8 +134,6 @@ export interface ThreadRepository {
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
   /** Threads in a work, ordered by update time (excludes soft-deleted threads). */
   listByWork(projectId: ProjectId, workId: WorkId): Promise<ThreadListItem[]>;
-  getLastOpenedAt(id: ThreadId, userId: UserId): Promise<string | null>;
-  markOpened(id: ThreadId, userId: UserId): Promise<string>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
   /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
   updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;
@@ -155,6 +156,43 @@ export interface ThreadRepository {
   softDelete(id: ThreadId): Promise<Thread>;
   /** Clears `deletedAt`; idempotent if already active. */
   restore(id: ThreadId): Promise<Thread>;
+}
+
+export interface HomeFeedCursorKey {
+  lastActivityAt: string;
+  threadId: ThreadId;
+}
+
+export interface HomeChatFeedRepository {
+  queryPage(input: {
+    projectId: ProjectId;
+    userId: UserId;
+    after: HomeFeedCursorKey | null;
+    recentLimit: number;
+    includeFeatured: boolean;
+  }): Promise<{
+    continueChat: HomeChatItem | null;
+    favorites: HomeChatItem[];
+    recent: HomeChatItem[];
+  }>;
+}
+
+export interface ThreadUserStateRepository {
+  get(
+    threadId: ThreadId,
+    userId: UserId,
+  ): Promise<{
+    isFavorite: boolean;
+    manuallyUnread: boolean;
+    lastOpenedAt: string | null;
+  }>;
+  update(input: {
+    threadId: ThreadId;
+    userId: UserId;
+    isFavorite?: boolean;
+    isUnread?: boolean;
+  }): Promise<UpdateThreadUserStateResponse>;
+  effectiveAttention(threadId: ThreadId, userId: UserId): Promise<HomeChatAttention>;
 }
 
 /**
@@ -285,6 +323,8 @@ export interface WorkContextDeliveryRepository {
 
 export type ThreadRepositories = {
   threads: ThreadRepository;
+  homeFeed: HomeChatFeedRepository;
+  threadUserState: ThreadUserStateRepository;
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;
   blocks: BlockRepository;

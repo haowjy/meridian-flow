@@ -505,6 +505,13 @@
       "when": 1786172289375,
       "tag": "0071_shallow_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1786660205264,
+      "tag": "0072_yummy_leper_queen",
+      "breakpoints": true
     }
   ]
 }

@@ -70,6 +70,8 @@ instead of the N:1 `threads.workId` column.
 | Port | Surface |
 |---|---|
 | `ThreadRepository` | `create / findById / listByUser / listByProject / updateStatus / recomputeCostFromModelResponses / updateCost / softDelete / restore` |
+| `HomeChatFeedRepository` | One server-owned Continue/Favorite/Recent projection with current-visible-lineage preview and keyset pagination. |
+| `ThreadUserStateRepository` | Per-writer favorite, manual-unread, and last-opened desired-state authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn` |
@@ -187,13 +189,17 @@ contract shapes.
 - Thread status is stored in DB using the domain vocabulary
   (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
 - `threads.active_leaf_turn_id` is the single logical head for lifecycle read
-  projections. Project/work lists and snapshots derive the closed `attention`
-  enum from that turn plus `thread_user_state.last_opened_at`: a
+  projections. Home walks its selected lineage past hidden Work-context turns
+  before deriving activity, preview, and attention; project/work lists and
+  snapshots continue to project from the logical head. The closed `attention`
+  enum uses `thread_user_state`: a
   `waiting_interrupt` assistant head is `actionRequired`, and an idle completed
   assistant head newer than the writer's acknowledgement is `unread`.
-- Opening a thread calls `POST /api/threads/:threadId/opened`, which upserts the
-  current writer's `last_opened_at`; this is the acknowledgement authority for
-  clearing `unread`. Opening does not clear `actionRequired`.
+- Opening a thread sends `{ isUnread: false }` to
+  `PATCH /api/threads/:threadId/user-state`. Mark-read/open clears the manual
+  override and monotonically advances `last_opened_at`; mark-unread sets the
+  durable override without moving that timestamp. Neither clears
+  `actionRequired`, which has precedence.
 - Draft-review attention remains an extension point. Establishing it requires
   collab-domain branch/journal queries and review-state semantics, so the
   threads projector currently sources `actionRequired` only from the durable

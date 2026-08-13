@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `server`, `database`, `contracts`: add the server-owned chat-first Home feed
+  with visible-lineage previews, stable Recent pagination, and per-writer
+  favorite/read state; opening a chat now uses the unified desired-state
+  mutation.
+
 - `apps/app`: composer overflow controls now match the 32px fine-pointer toolbar
   rhythm and use a measured 44px coarse target; shared menu selection, hover,
   and keyboard focus paint now reaches the popup's clipped inner edges with an
