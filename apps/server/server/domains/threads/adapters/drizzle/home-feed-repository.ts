@@ -3,6 +3,7 @@ import type { HomeChatAttention, HomeChatItem } from "@meridian/contracts/thread
 import { sql } from "drizzle-orm";
 import type { HomeChatFeedRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
+import { effectiveAttentionSql, visibleConversationalTurnSql } from "./visible-conversation-sql.js";
 
 type HomeRow = {
   section: "continue" | "favorite" | "recent";
@@ -64,27 +65,23 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           SELECT DISTINCT ON (l.thread_id) l.thread_id, l.turn_id, l.role,
             l.turn_status, COALESCE(l.completed_at, l.created_at) AS conversational_activity_at
           FROM lineage l
-          WHERE l.role = 'assistant'
-            OR (l.role = 'user' AND NOT (
-              COALESCE(l.metadata->>'kind', '') = 'system_update'
-              AND COALESCE(l.metadata->>'section', '') = 'work_context'))
-            OR (l.role = 'system' AND EXISTS (
-              SELECT 1 FROM turn_blocks cb
-              WHERE cb.turn_id = l.turn_id AND cb.block_type = 'custom'))
+          WHERE ${visibleConversationalTurnSql({
+            role: sql`l.role`,
+            metadata: sql`l.metadata`,
+            turnId: sql`l.turn_id`,
+          })}
           ORDER BY l.thread_id, l.depth
         ), base AS (
           SELECT e.*, vh.turn_id AS conversational_leaf_turn_id,
             COALESCE(vh.conversational_activity_at, e.thread_created_at) AS last_activity_at,
-            CASE
-              WHEN vh.role = 'assistant' AND vh.turn_status = 'waiting_interrupt'
-                THEN 'actionRequired'
-              WHEN e.manually_unread THEN 'unread'
-              WHEN e.thread_status = 'idle' AND vh.role = 'assistant'
-                AND vh.turn_status = 'complete'
-                AND (e.last_opened_at IS NULL OR vh.conversational_activity_at > e.last_opened_at)
-                THEN 'unread'
-              ELSE 'none'
-            END AS attention
+            ${effectiveAttentionSql({
+              threadStatus: sql`e.thread_status`,
+              headRole: sql`vh.role`,
+              headStatus: sql`vh.turn_status`,
+              headActivityAt: sql`vh.conversational_activity_at`,
+              manuallyUnread: sql`e.manually_unread`,
+              lastOpenedAt: sql`e.last_opened_at`,
+            })} AS attention
           FROM eligible e LEFT JOIN visible_heads vh ON vh.thread_id = e.thread_id
         ), continue_row AS (
           SELECT thread_id FROM base ORDER BY last_activity_at DESC, thread_id DESC LIMIT 1

@@ -42,6 +42,10 @@ describe("GET /api/projects/:projectId/home-feed", () => {
     Buffer.from(
       '{"v":1,"a":"2026-99-99T99:99:99.999999Z","i":"00000000-0000-4000-8000-000000000703"}',
     ).toString("base64url"),
+    encodeHomeFeedCursor({
+      lastActivityAt: "0000-01-01T00:00:00.000000Z",
+      threadId: THREAD_ID,
+    }),
   ])("rejects malformed cursor %s without repository access", async (cursor) => {
     const fixture = app();
     vi.mocked(requireAppUser).mockResolvedValue({

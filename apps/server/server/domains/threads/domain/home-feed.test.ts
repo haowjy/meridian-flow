@@ -1,5 +1,5 @@
 /** Behavior coverage for Home feed pagination, lineage, and writer state. */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInMemoryRepositories } from "../adapters/in-memory/repositories.js";
 import {
   decodeHomeFeedCursor,
@@ -32,9 +32,29 @@ describe("Home chat feed", () => {
       Buffer.from(
         JSON.stringify({ v: 1, a: "2026-08-13T20:01:02.12345Z", i: key.threadId }),
       ).toString("base64url"),
+      encodeHomeFeedCursor({
+        lastActivityAt: "0000-01-01T00:00:00.000000Z",
+        threadId: key.threadId,
+      }),
     ]) {
       expect(() => decodeHomeFeedCursor(malformed)).toThrow(InvalidHomeFeedCursorError);
     }
+  });
+
+  it("rejects PostgreSQL-incompatible timestamps before repository access", async () => {
+    const queryPage = vi.fn();
+    await expect(
+      getHomeChatFeedPage({
+        repository: { queryPage },
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+        cursor: encodeHomeFeedCursor({
+          lastActivityAt: "0000-01-01T00:00:00.000000Z",
+          threadId: "00000000-0000-4000-8000-000000000103",
+        }),
+      }),
+    ).rejects.toBeInstanceOf(InvalidHomeFeedCursorError);
+    expect(queryPage).not.toHaveBeenCalled();
   });
 
   it("partitions Continue, favorites, and stable Recent pages without duplicates", async () => {

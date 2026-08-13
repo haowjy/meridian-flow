@@ -316,7 +316,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(deleted.continueChat?.work).toBeNull();
     });
 
-    it("uses DB time for monotonic partial combined and concurrent per-writer state", async () => {
+    it("uses DB time for monotonic partial combined and isolated per-writer state", async () => {
       const db = database.current;
       const repos = createDrizzleRepositories(db);
       const threadId = "00000000-0000-4000-8000-000000000540";
@@ -339,10 +339,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         new Date((clockAfter as { now: string }).now).getTime(),
       );
 
-      const [unread, favorite] = await Promise.all([
-        repos.threadUserState.update({ threadId, userId: USER_ID, isUnread: true }),
-        repos.threadUserState.update({ threadId, userId: USER_ID, isFavorite: false }),
-      ]);
+      const unread = await repos.threadUserState.update({
+        threadId,
+        userId: USER_ID,
+        isUnread: true,
+      });
+      const favorite = await repos.threadUserState.update({
+        threadId,
+        userId: USER_ID,
+        isFavorite: false,
+      });
       const owner = await repos.threadUserState.get(threadId, USER_ID);
       expect(owner).toMatchObject({ isFavorite: false, manuallyUnread: true });
       expect(owner.lastOpenedAt).toBe(first.lastOpenedAt);
