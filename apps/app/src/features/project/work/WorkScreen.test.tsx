@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import type { Work } from "@meridian/contracts/works";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -17,14 +18,6 @@ vi.mock("@/client/query/useWorks", () => ({
   useWorks: vi.fn(),
   useWorkMutations: vi.fn(),
 }));
-vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
-}));
-
 const queryHooks = await import("@/client/query/useWorks");
 const { WorkDialog, WorkScreen, workFormAction } = await import("./WorkScreen");
 
@@ -49,6 +42,7 @@ describe("WorkDialog identity", () => {
     }
 
     await withReactRoot(<Harness />, async () => {
+      await settleDialog();
       expect(
         workFormAction(workFixture("work-a", "Work A", "Goal A"), {
           name: "Edited A",
@@ -64,6 +58,7 @@ describe("WorkDialog identity", () => {
       await act(async () => {
         selectWork?.(workFixture("work-b", "Work B", "Goal B"));
       });
+      await settleDialog();
       expect(input("work-name").value).toBe("Work B");
       expect(input("work-goal").value).toBe("Goal B");
       clickButton("Save Work");
@@ -76,6 +71,7 @@ describe("WorkDialog identity", () => {
       await act(async () => {
         selectWork?.("new");
       });
+      await settleDialog();
       expect(input("work-name").value).toBe("");
       expect(input("work-goal").value).toBe("");
       expect(input("work-description").value).toBe("");
@@ -295,6 +291,7 @@ describe("WorkScreen actions", () => {
       const newWork = buttonContaining("New Work");
       const focus = vi.spyOn(window.HTMLElement.prototype, "focus").mockImplementation(() => {});
       await act(async () => newWork.click());
+      await settleDialog();
       await act(async () => clickButton("Cancel"));
       await Promise.resolve();
       expect(focus).toHaveBeenCalledWith();
@@ -302,7 +299,136 @@ describe("WorkScreen actions", () => {
       focus.mockRestore();
     });
   });
+
+  it.each([
+    ["create", "New Work", "Save Work", "new"],
+    ["update", "Edit Active A", "Save Work", "edit:active-a"],
+    ["archive", "Edit Active A", "Archive", "edit:active-a"],
+    ["unarchive", "Edit Archived A", "Unarchive", "edit:archived-a"],
+    ["delete", "Edit Active A", "Delete", "edit:active-b"],
+  ] as const)("restores focus after successful %s through the Radix dialog", async (kind, opener, actionLabel, target) => {
+    let works =
+      kind === "unarchive"
+        ? [archivedWorkFixture("archived-a", "Archived A")]
+        : [
+            workFixture("active-a", "Active A", "Goal A"),
+            workFixture("active-b", "Active B", "Goal B"),
+          ];
+    let rerender: (() => void) | null = null;
+    vi.mocked(queryHooks.useWorks).mockImplementation(() => ({
+      works,
+      currentWork: works[0] ?? null,
+      currentWorkId: works[0]?.id ?? null,
+      defaultWorkId: works[0]?.id ?? null,
+      isError: false,
+      isFetching: false,
+      status: "ready",
+      refetch: vi.fn(),
+    }));
+    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
+      mutate: (
+        action: { type: string; workId?: string },
+        options: { onSuccess?: (result: Work | null) => void; onSettled?: () => void },
+      ) => {
+        let result: Work | null = null;
+        if (action.type === "create") {
+          result = workFixture("created-a", "Created A", "");
+          works = [...works, result];
+        } else if (action.type === "archive") {
+          works = works.map((work) =>
+            work.id === action.workId ? archivedWorkFixture(work.id, work.name) : work,
+          );
+          result = works.find((work) => work.id === action.workId) ?? null;
+        } else if (action.type === "unarchive") {
+          works = works.map((work) =>
+            work.id === action.workId ? workFixture(work.id, work.name, work.goal ?? "") : work,
+          );
+          result = works.find((work) => work.id === action.workId) ?? null;
+        } else if (action.type === "delete") {
+          works = works.filter((work) => work.id !== action.workId);
+        } else {
+          result = works.find((work) => work.id === action.workId) ?? null;
+        }
+        options.onSuccess?.(result);
+        rerender?.();
+        options.onSettled?.();
+      },
+      reset: vi.fn(),
+      isPending: false,
+      error: null,
+    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
+
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorkScreen projectId="project-1" />;
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      await settleDialog();
+      const openerButton =
+        document.querySelector<HTMLButtonElement>(`button[aria-label="${opener}"]`) ??
+        buttonContaining(opener);
+      await act(async () => openerButton.click());
+      await settleDialog();
+      if (kind === "create") {
+        await act(async () => {
+          const name = input("work-name") as HTMLInputElement;
+          Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(
+            name,
+            "Created A",
+          );
+          name.dispatchEvent(new window.Event("input", { bubbles: true }));
+        });
+      }
+      await act(async () => clickButton(actionLabel));
+      await settleDialog();
+      expect(document.activeElement?.getAttribute("data-work-focus")).toBe(target);
+    });
+  });
+
+  it("falls back to the deliberately closed Archived disclosure after save", async () => {
+    const archived = archivedWorkFixture("archived-a", "Archived A");
+    let rerender: (() => void) | null = null;
+    mockManagerWorks([archived], () => archived.id);
+    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
+      mutate: (
+        _action: unknown,
+        options: { onSuccess?: (result: Work) => void; onSettled?: () => void },
+      ) => {
+        options.onSuccess?.(archived);
+        rerender?.();
+        options.onSettled?.();
+      },
+      reset: vi.fn(),
+      isPending: false,
+      error: null,
+    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorkScreen projectId="project-1" />;
+    }
+    await withReactRoot(<Harness />, async () => {
+      await settleDialog();
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('button[aria-label="Edit Archived A"]')?.click(),
+      );
+      await settleDialog();
+      await act(async () => buttonContaining("Archived Work").click());
+      await act(async () => clickButton("Save Work"));
+      await settleDialog();
+      expect(document.activeElement?.getAttribute("data-work-focus")).toBe("archived-disclosure");
+      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
+    });
+  });
 });
+
+async function settleDialog() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
 
 function summaryIn(disclosure: HTMLButtonElement) {
   return Array.from(disclosure.querySelectorAll("span")).find((span) =>

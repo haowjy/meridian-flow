@@ -835,7 +835,6 @@ msgid "Couldn't load uploads."
 msgstr "Couldn't load uploads."
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Couldn't load Work."
 msgstr "Couldn't load Work."
 
@@ -2335,6 +2334,7 @@ msgstr "Resume where I left off on any device"
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Retry"
 msgstr "Retry"
 
@@ -3039,7 +3039,6 @@ msgstr "Try a web address, a document path, or [[a document name]]."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Try again"
 msgstr "Try again"
 
@@ -3231,6 +3230,10 @@ msgstr "Work"
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.upToDate"
 msgstr "Work {name} was already up to date"
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Work couldn’t load"
+msgstr "Work couldn’t load"
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Work details"
