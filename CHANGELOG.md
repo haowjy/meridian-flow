@@ -12,6 +12,9 @@
   mutation. Home, thread lists, state responses, and snapshots share effective
   attention semantics; strict cursors reject malformed calendar instants, and
   desired-state writes are atomic, partial-preserving, monotonic, and DB-timed.
+- `apps/server`: Home cursors now reject PostgreSQL-incompatible year-zero
+  timestamps, and every production chat projection consumes the canonical SQL
+  visible-head and effective-attention expressions.
 - `apps/app`: Work management now has a dedicated Home-like project screen, with canonical Home, Work, Chat, Editor navigation across desktop and phone while preserving the existing lifecycle, disclosure, and direct New Chat behavior.
 
 - `apps/app`: composer overflow controls now match the 32px fine-pointer toolbar

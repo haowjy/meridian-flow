@@ -17,6 +17,8 @@ function isCanonicalCursorEncoding(cursor: string): boolean {
 
 function isRealExactUtcTimestamp(value: string): boolean {
   if (!EXACT_UTC_TIMESTAMP.test(value)) return false;
+  // PostgreSQL has no year zero: its four-digit AD range starts at 0001.
+  if (value.startsWith("0000-")) return false;
   const milliseconds = Date.parse(`${value.slice(0, 23)}Z`);
   if (!Number.isFinite(milliseconds)) return false;
   return `${new Date(milliseconds).toISOString().slice(0, 23)}${value.slice(23)}` === value;
