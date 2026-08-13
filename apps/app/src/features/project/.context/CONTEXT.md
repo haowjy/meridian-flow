@@ -1,7 +1,7 @@
 # features/project — Desktop project shell
 
 The authenticated project project: one persistent multi-panel desktop surface
-that swaps primary *destinations* (Home / Chat / Editor) without tearing down
+that swaps primary *destinations* (Home / Work / Chat / Editor) without tearing down
 its stateful surfaces. This file is the colocated contract for the shell — read
 it before touching layout, the rails/headers, or the prefs store.
 Settings is an auxiliary routed surface, not a primary destination.
