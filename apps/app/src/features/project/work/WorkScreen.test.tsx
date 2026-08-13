@@ -300,20 +300,53 @@ describe("WorkScreen actions", () => {
     });
   });
 
+  it("restores cancelled creation focus while Work is still loading", async () => {
+    vi.mocked(queryHooks.useWorks).mockReturnValue({
+      works: null,
+      currentWork: null,
+      currentWorkId: null,
+      defaultWorkId: null,
+      isError: false,
+      isFetching: true,
+      status: "loading",
+      refetch: vi.fn(),
+    });
+    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
+      mutate: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: null,
+    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
+
+    await withReactRoot(<WorkScreen projectId="project-1" />, async () => {
+      const newWork = buttonContaining("New Work");
+      await act(async () => newWork.click());
+      await settleDialog();
+      await act(async () => clickButton("Cancel"));
+      expect(document.activeElement).toBe(newWork);
+    });
+  });
+
   it.each([
     ["create", "New Work", "Save Work", "new"],
     ["update", "Edit Active A", "Save Work", "edit:active-a"],
-    ["archive", "Edit Active A", "Archive", "edit:active-a"],
+    ["archive", "Edit Active A", "Archive", "archived-disclosure"],
     ["unarchive", "Edit Archived A", "Unarchive", "edit:archived-a"],
     ["delete", "Edit Active A", "Delete", "edit:active-b"],
   ] as const)("restores focus after successful %s through the Radix dialog", async (kind, opener, actionLabel, target) => {
     let works =
       kind === "unarchive"
         ? [archivedWorkFixture("archived-a", "Archived A")]
-        : [
-            workFixture("active-a", "Active A", "Goal A"),
-            workFixture("active-b", "Active B", "Goal B"),
-          ];
+        : kind === "delete"
+          ? [
+              workFixture("active-a", "Active A", "Goal A"),
+              archivedWorkFixture("archived-x", "Archived X"),
+              workFixture("active-b", "Active B", "Goal B"),
+            ]
+          : [
+              workFixture("active-a", "Active A", "Goal A"),
+              workFixture("active-b", "Active B", "Goal B"),
+            ];
     let rerender: (() => void) | null = null;
     vi.mocked(queryHooks.useWorks).mockImplementation(() => ({
       works,
@@ -366,6 +399,7 @@ describe("WorkScreen actions", () => {
 
     await withReactRoot(<Harness />, async () => {
       await settleDialog();
+      if (kind === "delete") await act(async () => buttonContaining("Archived Work").click());
       const openerButton =
         document.querySelector<HTMLButtonElement>(`button[aria-label="${opener}"]`) ??
         buttonContaining(opener);
@@ -384,6 +418,8 @@ describe("WorkScreen actions", () => {
       await act(async () => clickButton(actionLabel));
       await settleDialog();
       expect(document.activeElement?.getAttribute("data-work-focus")).toBe(target);
+      if (kind === "archive")
+        expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
     });
   });
 

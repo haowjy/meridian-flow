@@ -32,6 +32,7 @@ export function WorkScreen({ projectId }: { projectId: string }) {
   const actionInFlight = useRef(false);
   const [editing, setEditing] = useState<Work | "new" | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [closedArchiveId, setClosedArchiveId] = useState<string | null>(null);
   const focusRefs = useRef(new Map<FocusTarget, HTMLElement>());
   const [pendingFocus, setPendingFocus] = useState<PendingFocusIntent | null>(null);
   const active = works?.filter((work) => work.status === "active") ?? [];
@@ -41,7 +42,15 @@ export function WorkScreen({ projectId }: { projectId: string }) {
     else focusRefs.current.delete(target);
   };
   useLayoutEffect(() => {
-    if (!pendingFocus || works === null) return;
+    if (!pendingFocus) return;
+    if (pendingFocus.kind === "cancel") {
+      const target = focusRefs.current.get(pendingFocus.target);
+      if (!target?.isConnected) return;
+      target.focus();
+      setPendingFocus(null);
+      return;
+    }
+    if (works === null) return;
     if (!focusIntentHasCommitted(pendingFocus, works)) return;
     const exact = focusRefs.current.get(pendingFocus.target);
     const target = exact?.isConnected
@@ -66,7 +75,7 @@ export function WorkScreen({ projectId }: { projectId: string }) {
       onSuccess: closeOnSuccess
         ? (result) => {
             const intent = focusIntentForAction(action, works ?? [], result, archivedOpen);
-            if (action.type === "archive") setArchivedOpen(true);
+            if (action.type === "archive" && !archivedOpen) setClosedArchiveId(action.workId);
             setEditing(null);
             setPendingFocus(intent);
           }
@@ -163,7 +172,11 @@ export function WorkScreen({ projectId }: { projectId: string }) {
               <ArchivedWorkSection
                 works={archived}
                 open={archivedOpen}
-                onOpenChange={setArchivedOpen}
+                closedArchiveId={closedArchiveId}
+                onOpenChange={(open) => {
+                  setClosedArchiveId(null);
+                  setArchivedOpen(open);
+                }}
                 registerFocus={registerFocus}
                 currentWorkId={currentWorkId}
                 defaultWorkId={defaultWorkId}
@@ -288,6 +301,7 @@ function ArchivedWorkSection({
   onSelect,
   onEdit,
   open,
+  closedArchiveId,
   onOpenChange,
   registerFocus,
 }: {
@@ -298,6 +312,7 @@ function ArchivedWorkSection({
   onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
   open: boolean;
+  closedArchiveId: string | null;
   onOpenChange: (open: boolean) => void;
   registerFocus: (target: FocusTarget) => (node: HTMLElement | null) => void;
 }) {
@@ -306,8 +321,9 @@ function ArchivedWorkSection({
   const archivedCurrentWork = works.find((work) => work.id === currentWorkId) ?? null;
   const archivedCurrentWorkId = archivedCurrentWork?.id ?? null;
   useEffect(() => {
-    if (archivedCurrentWorkId !== null) onOpenChange(true);
-  }, [archivedCurrentWorkId]);
+    if (archivedCurrentWorkId !== null && archivedCurrentWorkId !== closedArchiveId)
+      onOpenChange(true);
+  }, [archivedCurrentWorkId, closedArchiveId]);
 
   return (
     <section className="mt-4 border-t border-border-subtle pt-3" aria-labelledby={headingId}>
@@ -383,12 +399,18 @@ function focusIntentForAction(
   if (action.type === "archive" || action.type === "unarchive")
     return {
       kind: "present",
-      target: `edit:${action.workId}`,
+      target:
+        action.type === "archive" && !archivedOpen
+          ? "archived-disclosure"
+          : `edit:${action.workId}`,
       workId: action.workId,
       status: action.type === "archive" ? "archived" : "active",
     };
   if (action.type === "delete") {
-    const visible = works.filter((work) => work.status === "active" || archivedOpen);
+    const visible = [
+      ...works.filter((work) => work.status === "active"),
+      ...(archivedOpen ? works.filter((work) => work.status === "archived") : []),
+    ];
     const index = visible.findIndex((work) => work.id === action.workId);
     const sibling = visible[index + 1] ?? visible[index - 1];
     return {
