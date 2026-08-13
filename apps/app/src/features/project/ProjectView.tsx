@@ -47,6 +47,7 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
+import { WorkPaneController } from "./WorkPaneController";
 import {
   contextDeskReconciliation,
   seedWorkingSetTabs,
@@ -359,6 +360,14 @@ function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggle
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
           onSelectThread={props.onSelectThread}
+        />
+      );
+    case "work":
+      return (
+        <WorkPaneController
+          projectId={props.projectId}
+          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+          chatToggle={surfaceToggle("chat", t`Expand chat`)}
         />
       );
     case "chat":

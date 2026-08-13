@@ -34,6 +34,7 @@ type DockViewSet = {
  */
 const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
   home: { views: ["chat", "changes"], default: "chat", primary: "chat" },
+  work: { views: ["chat", "changes"], default: "chat", primary: "chat" },
   chat: { views: ["context", "changes"], default: "context", primary: "context" },
   context: { views: ["chat", "changes"], default: "chat", primary: "chat" },
 };

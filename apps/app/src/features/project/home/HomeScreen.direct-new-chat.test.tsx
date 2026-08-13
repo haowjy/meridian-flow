@@ -21,7 +21,6 @@ vi.mock("./chats-overview", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./chats-overview")>()),
   useChatsOverview: () => ({ rows: [], workCount: 0, loaded: true }),
 }));
-vi.mock("./WorksManager", () => ({ WorksManager: () => null }));
 
 const { HomeOverviewBody } = await import("./HomeScreen");
 

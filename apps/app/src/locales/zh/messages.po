@@ -68,7 +68,7 @@ msgid "(also {0})"
 msgstr ""
 
 #. placeholder {0}: work.unpushedChangeCount
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "{0, plural, one {# pending change} other {# pending changes}}"
 msgstr ""
 
@@ -248,12 +248,12 @@ msgstr ""
 msgid "Actions"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Active"
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Active Work"
 msgstr ""
 
@@ -357,16 +357,16 @@ msgstr ""
 msgid "Applying…"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Archive"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Archived"
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Archived Work"
 msgstr ""
 
@@ -475,7 +475,7 @@ msgstr ""
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Cancel"
 msgstr ""
 
@@ -604,7 +604,7 @@ msgstr ""
 msgid "Choose an option"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Choose the context for new writing and chats."
 msgstr ""
 
@@ -835,7 +835,7 @@ msgid "Couldn't load uploads."
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Couldn't load Work."
 msgstr ""
 
@@ -929,6 +929,10 @@ msgstr ""
 msgid "Creating…"
 msgstr ""
 
+#: src/features/project/work/WorkScreen.tsx
+msgid "Current"
+msgstr ""
+
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 msgid "Current block type"
 msgstr ""
@@ -938,7 +942,7 @@ msgid "Current Work for this chat."
 msgstr ""
 
 #. placeholder {0}: archivedCurrentWork.name
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Current: {0}"
 msgstr "当前：{0}"
 
@@ -958,6 +962,10 @@ msgstr ""
 msgid "Data Analysis"
 msgstr ""
 
+#: src/features/project/work/WorkScreen.tsx
+msgid "Default"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Default alignment"
 msgstr ""
@@ -966,8 +974,8 @@ msgstr ""
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/home/WorksManager.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Delete"
 msgstr ""
 
@@ -1016,7 +1024,7 @@ msgstr "演示图片"
 msgid "Describe the picture for a reader who cannot see it"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Description"
 msgstr ""
 
@@ -1120,7 +1128,7 @@ msgid "Duplicate"
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Edit {0}"
 msgstr ""
 
@@ -1302,7 +1310,7 @@ msgstr ""
 msgid "Go ahead"
 msgstr "说吧"
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Goal"
 msgstr ""
 
@@ -1628,11 +1636,11 @@ msgid "Loading uploads…"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work"
 msgstr ""
 
 #: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
 msgid "Loading Work…"
 msgstr ""
 
@@ -1756,7 +1764,7 @@ msgstr ""
 msgid "Must be at most {value}"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Name"
 msgstr ""
 
@@ -1828,11 +1836,11 @@ msgstr ""
 msgid "New tab"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "New Work"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "No active Work yet."
 msgstr ""
 
@@ -1880,7 +1888,7 @@ msgstr ""
 msgid "No files uploaded yet."
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "No goal yet"
 msgstr ""
 
@@ -2123,8 +2131,8 @@ msgid "Profile"
 msgstr ""
 
 #: src/features/project/mobile/MobileTopBar.tsx
-msgid "Project"
-msgstr ""
+#~ msgid "Project"
+#~ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Protocol Designer"
@@ -2372,7 +2380,7 @@ msgstr "运行中"
 msgid "Save name and location"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Save Work"
 msgstr ""
 
@@ -3027,7 +3035,7 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Try again"
 msgstr ""
 
@@ -3056,7 +3064,7 @@ msgstr ""
 msgid "Unable to render diagram"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Unarchive"
 msgstr ""
 
@@ -3208,8 +3216,10 @@ msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/home/WorksManager.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/shell/screens.ts
+#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/WorkPaneController.tsx
 msgid "Work"
 msgstr ""
 
@@ -3218,7 +3228,7 @@ msgstr ""
 msgid "workReceipt.upToDate"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Work details"
 msgstr ""
 
