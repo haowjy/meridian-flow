@@ -358,28 +358,6 @@ export function createDrizzleThreadRepository(
         .orderBy(desc(schema.threads.updatedAt));
       return rows.map(mapThreadListRow);
     },
-    async getLastOpenedAt(id, userId) {
-      const [row] = await currentDrizzleDb(db)
-        .select({ lastOpenedAt: schema.threadUserState.lastOpenedAt })
-        .from(schema.threadUserState)
-        .where(
-          and(eq(schema.threadUserState.threadId, id), eq(schema.threadUserState.userId, userId)),
-        );
-      return row?.lastOpenedAt?.toISOString() ?? null;
-    },
-    async markOpened(id, userId) {
-      const now = new Date();
-      const [row] = await currentDrizzleDb(db)
-        .insert(schema.threadUserState)
-        .values({ threadId: id, userId, lastOpenedAt: now })
-        .onConflictDoUpdate({
-          target: [schema.threadUserState.threadId, schema.threadUserState.userId],
-          set: { lastOpenedAt: now },
-        })
-        .returning({ lastOpenedAt: schema.threadUserState.lastOpenedAt });
-      if (!row?.lastOpenedAt) throw new Error(`Failed to mark thread opened: ${id}`);
-      return row.lastOpenedAt.toISOString();
-    },
     async updateStatus(id, status) {
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)

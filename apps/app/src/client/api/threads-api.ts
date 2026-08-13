@@ -10,12 +10,12 @@ import {
   apiThreadCancelPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
-  apiThreadOpenedPath,
   apiThreadPath,
   apiThreadRecentDocumentsPath,
   apiThreadSnapshotPath,
   apiThreadTurnContextPreviewDebugPath,
   apiThreadUploadsPath,
+  apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
   type ListThreadRecentDocumentsResponse,
@@ -28,10 +28,11 @@ import {
   type ThreadSnapshotResponse,
   type ThreadUploadDocumentItem,
   type TurnContextPreview,
+  type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
-import { deleteRequest, getJson, postJson, putJson } from "./http-client";
+import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
 type CreateThreadInput = {
   id?: string;
@@ -99,10 +100,8 @@ export function getThreadSnapshot({
   return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }));
 }
 
-export function markThreadOpened(
-  threadId: string,
-): Promise<{ threadId: string; openedAt: string }> {
-  return postJson(apiThreadOpenedPath(threadId), {});
+export function markThreadOpened(threadId: string): Promise<UpdateThreadUserStateResponse> {
+  return patchJson(apiThreadUserStatePath(threadId), { isUnread: false });
 }
 
 export function rebindThreadWork(

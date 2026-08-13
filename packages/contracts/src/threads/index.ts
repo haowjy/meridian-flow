@@ -270,6 +270,7 @@ export interface ModelResponse {
 }
 
 export * from "./golden/index.js";
+export * from "./home-feed.js";
 export type {
   ModelRequestDebugCapture,
   ModelRequestDebugMessage,

@@ -14,12 +14,14 @@ import type {
   BlockRepository,
   ModelResponseRepository,
   ThreadRepository,
+  ThreadUserStateRepository,
   TurnRepository,
 } from "./ports/index.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
 
 export interface ThreadSnapshotRepositories {
   threads: ThreadRepository;
+  threadUserState: ThreadUserStateRepository;
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
@@ -111,7 +113,7 @@ export async function buildThreadSnapshot(
       ? runningTurn.id
       : null;
 
-  const lastOpenedAt = await repos.threads.getLastOpenedAt(threadId, userId);
+  const lastOpenedAt = (await repos.threadUserState.get(threadId, userId)).lastOpenedAt;
 
   return {
     threadId,

@@ -49,13 +49,14 @@ shape for parity and lower merge risk.
 The shipped route surface covers:
 
 - Project CRUD, stats, preferences, working-set snapshots, library, works list,
-  work threads, and project thread list/create; account settings expose the
+  work threads, project thread list/create, and the chat-first Home feed;
+  account settings expose the
   working-set sync toggle.
 - Agent and skill definition reads, saves, revision lists, revision restores,
   restore-original, and agent skill-link patching.
 - Package preview/apply, update check/apply, and export.
 - Global thread list/create, snapshot, delete, turn cancel, model-request debug,
-  and turn-context preview.
+  turn-context preview, and owner-gated favorite/read desired-state mutation.
 - Authenticated `PUT /api/threads/:threadId/work` rebinds an idle owned thread
   through the shared thread-domain transition while holding the same
   cross-process run claim as model turns. Running threads return canonical,

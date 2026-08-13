@@ -35,6 +35,7 @@ if (!enabled || !databaseUrl) {
         "0069_multi_work_v1",
         "0070_opposite_white_queen",
         "0071_shallow_karnak",
+        "0072_yummy_leper_queen",
       ]);
       for (let index = 1; index < tail.length; index += 1) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
