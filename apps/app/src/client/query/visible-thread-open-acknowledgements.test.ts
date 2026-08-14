@@ -185,6 +185,52 @@ describe("visible thread open acknowledgements", () => {
     expect(getOpenAcknowledgementState(client, secondId)).toBeNull();
   });
 
+  it("keeps one operation when the same lease is released and reclaimed in an effect replay", async () => {
+    const client = new QueryClient();
+    const requests = controlledRequests();
+    const lease = createVisibilityLeaseId();
+    const key = { projectId: "project-1", threadId: "thread-1" };
+    const firstId = claimVisibleOpenAcknowledgement(client, key, lease);
+
+    releaseVisibleOpenAcknowledgement(client, lease);
+    const replayedId = claimVisibleOpenAcknowledgement(client, key, lease);
+    await Promise.resolve();
+
+    expect(replayedId).toBe(firstId);
+    expect(requests.map((request) => request.body)).toEqual([{ isUnread: false }]);
+    expect(getOpenAcknowledgementState(client, firstId)).toMatchObject({ phase: "pending" });
+
+    requests[0]?.resolve(json(response));
+    await tick();
+    await tick();
+    expect(getOpenAcknowledgementState(client, firstId)).toMatchObject({ phase: "succeeded" });
+  });
+
+  it.each([
+    "success",
+    "failure",
+  ] as const)("retires a detached pending operation after %s settlement", async (settlement) => {
+    const client = new QueryClient();
+    const requests = controlledRequests();
+    const lease = createVisibilityLeaseId();
+    const id = claimVisibleOpenAcknowledgement(
+      client,
+      { projectId: "project-1", threadId: "thread-1" },
+      lease,
+    );
+
+    releaseVisibleOpenAcknowledgement(client, lease);
+    await Promise.resolve();
+    expect(getOpenAcknowledgementState(client, id)).toMatchObject({ phase: "pending" });
+
+    requests[0]?.resolve(
+      settlement === "success" ? json(response) : json({ message: "offline" }, 503),
+    );
+    await tick();
+    await tick();
+    expect(getOpenAcknowledgementState(client, id)).toBeNull();
+  });
+
   it.each([
     "settled",
     "pending",
