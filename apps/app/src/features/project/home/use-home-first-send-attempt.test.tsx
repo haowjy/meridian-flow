@@ -4,6 +4,7 @@ import type { Thread } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import type { ThreadStoreActions } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useHomeFirstSendAttempt } from "./use-home-first-send-attempt";
@@ -46,6 +47,65 @@ function actions() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("useHomeFirstSendAttempt", () => {
+  it("retries an authoritative stale Agent refusal with repaired context and the same identity", async () => {
+    const threadActions = actions();
+    const createThread = vi
+      .fn()
+      .mockRejectedValueOnce(new HttpResponseError("Agent not found: prose", 400, null))
+      .mockResolvedValueOnce(canonical());
+    const onSelectThread = vi.fn(async () => undefined);
+    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
+
+    function Harness() {
+      controller = useHomeFirstSendAttempt({
+        projectId: "project-1",
+        actions: threadActions,
+        onSelectThread,
+        createThread,
+        listThreads: vi.fn(),
+        makeId: () => "stable-thread",
+      });
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => {
+          await expect(
+            controller.submit("Exact opening", {
+              work: { source: "current_default", displayedWorkId: "work-1" },
+              agentSlug: "prose",
+            }),
+          ).resolves.toBe(false);
+        });
+        expect(controller.contextLocked).toBe(false);
+        await act(async () => {
+          await expect(
+            controller.retry({
+              work: { source: "current_default", displayedWorkId: "work-1" },
+              agentSlug: "general",
+            }),
+          ).resolves.toBe(true);
+        });
+
+        expect(createThread).toHaveBeenNthCalledWith(1, "project-1", {
+          id: "stable-thread",
+          title: "Exact opening",
+          currentAgent: "prose",
+        });
+        expect(createThread).toHaveBeenNthCalledWith(2, "project-1", {
+          id: "stable-thread",
+          title: "Exact opening",
+        });
+        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
+        expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
+      },
+    );
+  });
+
   it.each([
     {
       name: "current default Work",
