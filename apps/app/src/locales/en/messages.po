@@ -2228,6 +2228,7 @@ msgstr "Read"
 msgid "Read file"
 msgstr "Read file"
 
+#: src/client/query/useThreadOpenAcknowledgement.ts
 #: src/features/project/home/HomeScreen.tsx
 msgid "Read status wasn’t saved"
 msgstr "Read status wasn’t saved"
@@ -2235,6 +2236,10 @@ msgstr "Read status wasn’t saved"
 #: src/features/project/home/HomeChatCard.tsx
 msgid "Read status wasn’t saved."
 msgstr "Read status wasn’t saved."
+
+#: src/features/chat/OpenAcknowledgementError.tsx
+msgid "Read status wasn’t saved. This chat is still unread."
+msgstr "Read status wasn’t saved. This chat is still unread."
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"

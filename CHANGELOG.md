@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: serialize opposite read/favorite commands, show failed open acknowledgement with retry on Chat, and delete the superseded dashboard activity model.
+
 - `apps/app`: Home feed reads no longer retry automatically, and visible-chat
   acknowledgement now converges the cached card without refetching Home or
   treating a hidden persistent dock as opened.

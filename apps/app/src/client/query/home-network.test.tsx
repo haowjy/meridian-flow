@@ -5,19 +5,32 @@ import type {
   ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { act, StrictMode, useState } from "react";
+import { act, type ReactNode, StrictMode, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { groupHomeFeed, type HomeFeedData } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock("@lingui/core/macro", () => ({
+  t: (parts: TemplateStringsArray) => parts.join(""),
+}));
+
 const threadActions = { setThreadAttention: vi.fn() };
-vi.mock("@/client/stores", () => ({ useThreadActions: () => threadActions }));
+const announceError = vi.fn();
+vi.mock("@/client/stores", () => ({
+  useThreadActions: () => threadActions,
+  useAnnouncement: () => ({ announceError }),
+}));
 
 const { useHomeChatFeed } = await import("./useHomeChatFeed");
 const { useThreadOpenAcknowledgement } = await import("./useThreadOpenAcknowledgement");
+const { runThreadUserStateCommand } = await import("./thread-user-state-commands");
 
 const projectId = "project-1";
 const threadId = "thread-1";
@@ -169,6 +182,98 @@ describe("Home network behavior", () => {
     } finally {
       queryClient.clear();
     }
+  });
+
+  it("shows a failed Home open on Chat and retries through the shared command", async () => {
+    const queryClient = client();
+    queryClient.setQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId), {
+      pages: [page([item()])],
+      pageParams: [null],
+    });
+    queryClient.setQueryData(threadQueryKeys.snapshot(threadId), {
+      attention: "unread",
+    } as ThreadSnapshotResponse);
+    const requests: DeferredResponse[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => {
+        const request = deferredResponse();
+        requests.push(request);
+        return request.promise;
+      }),
+    );
+
+    function Harness() {
+      const [chatVisible, setChatVisible] = useState(false);
+      const { data: snapshot } = useQuery<ThreadSnapshotResponse>({
+        queryKey: threadQueryKeys.snapshot(threadId),
+        queryFn: () => Promise.reject(new Error("seed only")),
+        staleTime: Infinity,
+      });
+      const acknowledgement = useThreadOpenAcknowledgement({
+        threadId,
+        projectId,
+        attention: snapshot?.attention ?? null,
+        enabled: chatVisible,
+      });
+      return chatVisible ? (
+        <OpenAcknowledgementError error={acknowledgement.error} onRetry={acknowledgement.retry} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            void runThreadUserStateCommand(queryClient, projectId, threadId, "isUnread", false);
+            setChatVisible(true);
+          }}
+        >
+          Open chat
+        </button>
+      );
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => (document.querySelector("button") as HTMLButtonElement).click());
+        await waitFor(() => requests.length === 1);
+        requests[0]?.resolve(json({ message: "offline" }, 503));
+        await waitFor(() => document.body.textContent?.includes("still unread") === true);
+        expect(announceError).toHaveBeenCalledTimes(1);
+        expect(
+          groupHomeFeed(
+            queryClient.getQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId)),
+          ).continueChat?.attention,
+        ).toBe("unread");
+        await act(async () => (document.querySelector("button") as HTMLButtonElement).click());
+        await waitFor(() => requests.length === 2);
+        requests[1]?.resolve(
+          json({
+            threadId,
+            isFavorite: false,
+            manuallyUnread: false,
+            lastOpenedAt: "2026-08-13T00:01:00.000Z",
+            attention: "none",
+          }),
+        );
+        await waitFor(
+          () =>
+            queryClient.getQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId))
+              ?.attention === "none",
+        );
+        expect(requests).toHaveLength(2);
+        expect(
+          groupHomeFeed(
+            queryClient.getQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId)),
+          ).continueChat?.attention,
+        ).toBe("none");
+        expect(
+          queryClient.getQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId)),
+        ).toMatchObject({ attention: "none" });
+      },
+      { drainMacrotask: true },
+    );
   });
 
   it("makes one failed initial request and waits for manual refetch", async () => {

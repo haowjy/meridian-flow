@@ -9,7 +9,7 @@ import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "re
 
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
-import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
+import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { displayThreadTitle } from "@/lib/thread-title";
 
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";

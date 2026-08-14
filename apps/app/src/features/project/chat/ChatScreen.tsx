@@ -10,6 +10,7 @@ import { useThreadOpenAcknowledgement } from "@/client/query/useThreadOpenAcknow
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
+import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
 import { SubagentTaskCard } from "./SubagentTaskCard";
@@ -94,7 +95,7 @@ function ChatScreenLoaded({
     settled: historySettled,
     refetch,
   } = useThreadSnapshotSync(threadId);
-  useThreadOpenAcknowledgement({
+  const openAcknowledgement = useThreadOpenAcknowledgement({
     threadId,
     projectId: snapshotThread?.projectId ?? projectId,
     attention: snapshotAttention,
@@ -109,6 +110,10 @@ function ChatScreenLoaded({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <OpenAcknowledgementError
+        error={openAcknowledgement.error}
+        onRetry={openAcknowledgement.retry}
+      />
       {isSubagent && thread ? (
         <>
           <SubagentBanner subagent={thread} parent={parent} onOpenParent={onSelectThread} />

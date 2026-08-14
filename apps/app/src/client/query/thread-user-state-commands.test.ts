@@ -98,3 +98,74 @@ describe("thread user-state command authority", () => {
     ).toBe(false);
   });
 });
+
+describe.each([
+  { first: false, second: true },
+  { first: true, second: false },
+])("serialized $first → $second commands", ({ first, second }) => {
+  it.each([
+    "success",
+    "failure",
+  ] as const)("advances after first-command %s and lets same-value callers join", async (settlement) => {
+    const client = new QueryClient();
+    seed(client);
+    const transports: Array<{
+      resolve: (response: Response) => void;
+      reject: (error: Error) => void;
+    }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve, reject) => {
+            transports.push({ resolve, reject });
+          }),
+      ),
+    );
+
+    const firstCommand = runThreadUserStateCommand(
+      client,
+      "project-1",
+      "thread-1",
+      "isUnread",
+      first,
+    );
+    const secondCommand = runThreadUserStateCommand(
+      client,
+      "project-1",
+      "thread-1",
+      "isUnread",
+      second,
+    );
+    const joinedSecond = runThreadUserStateCommand(
+      client,
+      "project-1",
+      "thread-1",
+      "isUnread",
+      second,
+    );
+    expect(transports).toHaveLength(1);
+
+    if (settlement === "success") transports[0]?.resolve(json(response()));
+    else transports[0]?.reject(new Error("first offline"));
+    await firstCommand;
+    expect(transports).toHaveLength(2);
+
+    transports[1]?.resolve(
+      json({
+        ...response(),
+        manuallyUnread: second,
+        attention: second ? "unread" : "none",
+      }),
+    );
+    await expect(Promise.all([secondCommand, joinedSecond])).resolves.toMatchObject([
+      { status: "success" },
+      { status: "success" },
+    ]);
+    expect(transports).toHaveLength(2);
+    expect(
+      groupHomeFeed(client.getQueryData(["projects", "project-1", "home-feed"])).continueChat
+        ?.attention,
+    ).toBe(second ? "unread" : "none");
+  });
+});
