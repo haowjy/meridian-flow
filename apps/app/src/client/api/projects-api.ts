@@ -78,8 +78,9 @@ export async function getHomeProject(init?: RequestInitOptions): Promise<HomePro
 export function getProjectHomeFeed(
   projectId: string,
   cursor?: string | null,
+  signal?: AbortSignal,
 ): Promise<HomeChatFeedPage> {
-  return getJson<HomeChatFeedPage>(apiProjectHomeFeedPath(projectId, cursor));
+  return getJson<HomeChatFeedPage>(apiProjectHomeFeedPath(projectId, cursor), { signal });
 }
 
 export async function listProjects(init?: RequestInitOptions): Promise<Project[]> {

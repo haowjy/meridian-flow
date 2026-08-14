@@ -3,6 +3,16 @@
 How the frontend is structured, why the seams exist, and what conventions
 govern visual and interaction work.
 
+## Project Home client boundary
+
+`src/client/query/home-chat-feed-cache.ts` owns Home's QueryClient-scoped
+desired-state overlays, request watermarks, and authoritative reconciliation.
+`useHomeChatFeed` owns transport and per-thread/per-field command serialization.
+The Home feature keeps screen orchestration in `HomeScreen`, card semantics in
+`HomeChatCard`, collection layout in `HomeFeed`, date policy in
+`home-activity-date`, and scroll/focus restoration in the favorite-movement
+hook. Do not duplicate any of those concerns in the screen orchestrator.
+
 ## Server config and auth surface
 
 `src/server/config.ts` is the app server's config seam. It parses the

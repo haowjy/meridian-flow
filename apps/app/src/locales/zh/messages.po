@@ -258,7 +258,7 @@ msgstr ""
 msgid "Actions"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Actions for {title}"
 msgstr ""
 
@@ -275,7 +275,7 @@ msgstr ""
 msgid "Actually…"
 msgstr "其实…"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Add {title} to favorites"
 msgstr ""
 
@@ -1297,6 +1297,10 @@ msgstr "图片加载失败"
 msgid "Favorite chats"
 msgstr ""
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Favorite wasn’t saved"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
 msgstr ""
@@ -1706,11 +1710,11 @@ msgstr ""
 msgid "Manuscript"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Mark read"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Mark unread"
 msgstr ""
 
@@ -1855,6 +1859,7 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/home/HomeChatCard.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
@@ -1886,7 +1891,7 @@ msgid "New project started"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "New reply since you last opened"
 msgstr ""
 
@@ -1958,7 +1963,7 @@ msgstr ""
 msgid "No matching files"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "No messages yet."
 msgstr ""
 
@@ -2011,7 +2016,7 @@ msgstr ""
 msgid "Nothing to undo yet."
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "刚刚"
@@ -2052,7 +2057,7 @@ msgid "Open {0} at this passage. {1}"
 msgstr ""
 
 #: src/features/chat/DocumentName.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Open {title}"
 msgstr ""
 
@@ -2314,7 +2319,7 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Remove {title} from favorites"
 msgstr ""
 
@@ -2815,7 +2820,7 @@ msgid "The {skillName} skill isn't available in this chat."
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "The AI asked you a question"
 msgstr ""
 
@@ -3313,7 +3318,7 @@ msgstr ""
 msgid "Work details"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Work unavailable"
 msgstr ""
 
@@ -3322,7 +3327,7 @@ msgid "Work: \"{workName}\""
 msgstr ""
 
 #. placeholder {0}: item.work?.title ?? t`Work unavailable`
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Work: {0}"
 msgstr ""
 

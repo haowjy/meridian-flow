@@ -258,7 +258,7 @@ msgstr "Account settings."
 msgid "Actions"
 msgstr "Actions"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Actions for {title}"
 msgstr "Actions for {title}"
 
@@ -275,7 +275,7 @@ msgstr "Active Work"
 msgid "Actually…"
 msgstr "Actually…"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Add {title} to favorites"
 msgstr "Add {title} to favorites"
 
@@ -1297,6 +1297,10 @@ msgstr "Failed to load image"
 msgid "Favorite chats"
 msgstr "Favorite chats"
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Favorite wasn’t saved"
+msgstr "Favorite wasn’t saved"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
 msgstr "fence"
@@ -1706,11 +1710,11 @@ msgstr "Manage billing"
 msgid "Manuscript"
 msgstr "Manuscript"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Mark read"
 msgstr "Mark read"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Mark unread"
 msgstr "Mark unread"
 
@@ -1855,6 +1859,7 @@ msgstr "New"
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/home/HomeChatCard.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
@@ -1886,7 +1891,7 @@ msgid "New project started"
 msgstr "New project started"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "New reply since you last opened"
 msgstr "New reply since you last opened"
 
@@ -1958,7 +1963,7 @@ msgstr "No matching chats"
 msgid "No matching files"
 msgstr "No matching files"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "No messages yet."
 msgstr "No messages yet."
 
@@ -2011,7 +2016,7 @@ msgstr "Nothing to redo yet."
 msgid "Nothing to undo yet."
 msgstr "Nothing to undo yet."
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "now"
@@ -2052,7 +2057,7 @@ msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
 #: src/features/chat/DocumentName.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
 
@@ -2314,7 +2319,7 @@ msgstr "remaining"
 msgid "Remove"
 msgstr "Remove"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Remove {title} from favorites"
 msgstr "Remove {title} from favorites"
 
@@ -2815,7 +2820,7 @@ msgid "The {skillName} skill isn't available in this chat."
 msgstr "The {skillName} skill isn't available in this chat."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
 
@@ -3313,7 +3318,7 @@ msgstr "Work couldn’t load"
 msgid "Work details"
 msgstr "Work details"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Work unavailable"
 msgstr "Work unavailable"
 
@@ -3322,7 +3327,7 @@ msgid "Work: \"{workName}\""
 msgstr "Work: \"{workName}\""
 
 #. placeholder {0}: item.work?.title ?? t`Work unavailable`
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
 msgid "Work: {0}"
 msgstr "Work: {0}"
 

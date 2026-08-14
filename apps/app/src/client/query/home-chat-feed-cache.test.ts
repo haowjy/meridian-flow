@@ -21,6 +21,13 @@ const page = (
   items: HomeChatItem[],
   cursor: string | null = null,
 ): HomeChatFeedPage => ({ featured, recentChats: { items, nextCursor: cursor } });
+const response = (attention: HomeChatItem["attention"], favorite = false) => ({
+  threadId: "a",
+  isFavorite: favorite,
+  manuallyUnread: attention === "unread",
+  lastOpenedAt: null,
+  attention,
+});
 
 describe("Home feed projection", () => {
   it("keeps Continue, Favorite, and paged Recent exclusive", () => {
@@ -62,5 +69,64 @@ describe("Home feed projection", () => {
     controller.command("a", "isFavorite", false);
     old.fail();
     expect(groupHomeFeed(client.getQueryData(key)).recent[0]?.isFavorite).toBe(false);
+  });
+
+  it.each([true, false])("never downgrades action-required for desired unread %s", (value) => {
+    const client = new QueryClient();
+    const action = { ...item("a"), attention: "actionRequired" as const };
+    client.setQueryData(["projects", "p", "home-feed"], {
+      pageParams: [null],
+      pages: [page({ continueChat: action, favoriteChats: [] }, [])],
+    });
+    const command = createHomeFeedCacheController(client, "p").command("a", "isUnread", value);
+    expect(
+      groupHomeFeed(client.getQueryData(["projects", "p", "home-feed"])).continueChat?.attention,
+    ).toBe("actionRequired");
+    command.fail();
+    expect(
+      groupHomeFeed(client.getQueryData(["projects", "p", "home-feed"])).continueChat?.attention,
+    ).toBe("actionRequired");
+  });
+
+  it("reconciles authoritative mutation fields and trusts the first post-ack request", () => {
+    const client = new QueryClient();
+    const key = ["projects", "p", "home-feed"];
+    client.setQueryData(key, {
+      pageParams: [null],
+      pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
+    });
+    const controller = createHomeFeedCacheController(client, "p");
+    const before = controller.beginRequest();
+    const command = controller.command("a", "isFavorite", true);
+    command.succeed(response("actionRequired", true));
+    const after = controller.beginRequest();
+    expect(
+      controller.merge(page(null, [{ ...item("a"), isFavorite: false, attention: "none" }]), after)
+        .recentChats.items[0],
+    ).toMatchObject({ isFavorite: false, attention: "none" });
+    expect(
+      controller.merge(page({ continueChat: null, favoriteChats: [] }, [item("a")]), before)
+        .featured?.favoriteChats[0]?.isFavorite,
+    ).toBe(true);
+    controller.settleRequest(after);
+    controller.settleRequest(before);
+  });
+
+  it("lets later authoritative truth replace a field-scoped failure rollback", () => {
+    const client = new QueryClient();
+    client.setQueryData(["projects", "p", "home-feed"], {
+      pageParams: [null],
+      pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
+    });
+    const controller = createHomeFeedCacheController(client, "p");
+    controller.command("a", "isFavorite", true).fail();
+    const request = controller.beginRequest();
+    expect(
+      controller.merge(
+        page({ continueChat: null, favoriteChats: [] }, [{ ...item("a"), isFavorite: true }]),
+        request,
+      ).featured?.favoriteChats[0]?.isFavorite,
+    ).toBe(true);
+    controller.settleRequest(request);
   });
 });

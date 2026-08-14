@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: make Home favorite/read commands ordered and field-scoped,
+  preserve action-required attention, reconcile authoritative responses, abort
+  cancelled feed reads, and preserve scroll and keyboard focus across moves.
+
 - `apps/app`: replace the project Home dashboard and separate phone list with
   one responsive Continue, Favorites, and paginated Recent chat feed, including
   server previews, accessible shared cards, direct New Chat, and field-scoped
