@@ -64,10 +64,14 @@ Two interfaces are the only paths between the visual layer and the substrate:
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
   `useThreadActions()` only. First-message transfer uses the thread-keyed
-  `stageFirstSend` → route-owned `armFirstSend` → Chat-owned claim/ack/nack
+  `stageFirstSend` → route-owned `armFirstSend` → Chat-owned claim/settlement
   lifecycle in `useThreadHandoff`; an unarmed send cannot be claimed by a
-  persistent dock. Definite rejection returns the exact text once for the
-  shared Composer to restore, while ambiguous admission stays quarantined.
+  persistent dock. `ThreadRunController` classifies admission through a typed
+  definite/ambiguous boundary. Definite rejection remains provider-owned until
+  the matching shared Composer acknowledges an idempotent restoration; when a
+  newer draft exists, the failed first send is prepended with a blank-line
+  separator so both writer-authored texts survive. Ambiguous admission stays
+  quarantined without blind retry.
   This handoff lasts only for the authenticated provider lifetime and is not a
   durable outbox. Deferred project-creation flows separately use
   `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;

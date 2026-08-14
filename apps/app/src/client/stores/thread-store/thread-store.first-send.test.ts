@@ -38,7 +38,7 @@ describe("first-send handoff", () => {
     });
   });
 
-  it("allows only one claim across remount or StrictMode-style duplicate effects", () => {
+  it("allows only one claim", () => {
     const subject = store();
     stage(subject);
     subject.getState().armFirstSend("thread-1");
@@ -50,25 +50,31 @@ describe("first-send handoff", () => {
     expect(subject.getState().claimFirstSend("thread-1")).toBeNull();
   });
 
-  it("restores definite failure exactly once and quarantines ambiguous admission", () => {
+  it("retains definite failure until restoration acknowledgement", () => {
     const definite = store();
     stage(definite);
     definite.getState().armFirstSend("thread-1");
     const definiteClaim = definite.getState().claimFirstSend("thread-1");
-    expect(
-      definite.getState().nackFirstSend("thread-1", definiteClaim?.claimId ?? -1, "definite"),
-    ).toBe("exact first message");
-    expect(
-      definite.getState().nackFirstSend("thread-1", definiteClaim?.claimId ?? -1, "definite"),
-    ).toBeNull();
+    const claimId = definiteClaim?.claimId ?? -1;
+    definite.getState().rejectFirstSend("thread-1", claimId, "definite");
+    expect(definite.getState().firstSendByThreadId["thread-1"]).toMatchObject({
+      status: "failed",
+      text: "exact first message",
+      claimId,
+    });
+    definite.getState().ackFirstSendDraftRestored("thread-1", claimId + 1);
+    expect(definite.getState().firstSendByThreadId["thread-1"]?.status).toBe("failed");
+    definite.getState().ackFirstSendDraftRestored("thread-1", claimId);
+    expect(definite.getState().firstSendByThreadId["thread-1"]).toBeUndefined();
+  });
 
+  it("quarantines ambiguous admission", () => {
     const ambiguous = store();
     stage(ambiguous);
     ambiguous.getState().armFirstSend("thread-1");
     const ambiguousClaim = ambiguous.getState().claimFirstSend("thread-1");
-    expect(
-      ambiguous.getState().nackFirstSend("thread-1", ambiguousClaim?.claimId ?? -1, "ambiguous"),
-    ).toBeNull();
+    ambiguous.getState().rejectFirstSend("thread-1", ambiguousClaim?.claimId ?? -1, "ambiguous");
+    expect(ambiguous.getState().firstSendByThreadId["thread-1"]?.status).toBe("ambiguous");
     expect(ambiguous.getState().claimFirstSend("thread-1")).toBeNull();
   });
 });

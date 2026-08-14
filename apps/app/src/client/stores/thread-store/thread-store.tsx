@@ -177,7 +177,8 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     armFirstSend: state.armFirstSend,
     claimFirstSend: state.claimFirstSend,
     ackFirstSend: state.ackFirstSend,
-    nackFirstSend: state.nackFirstSend,
+    rejectFirstSend: state.rejectFirstSend,
+    ackFirstSendDraftRestored: state.ackFirstSendDraftRestored,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
   };
@@ -630,26 +631,29 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           });
         },
 
-        nackFirstSend(threadId, claimId, rejection) {
+        rejectFirstSend(threadId, claimId, rejection) {
           const pending = get().firstSendByThreadId[threadId];
-          if (pending?.status !== "claimed" || pending.claimId !== claimId) return null;
+          if (pending?.status !== "claimed" || pending.claimId !== claimId) return;
 
-          if (rejection === "ambiguous") {
-            set((state) => ({
-              firstSendByThreadId: {
-                ...state.firstSendByThreadId,
-                [threadId]: { ...pending, status: "ambiguous" },
+          set((state) => ({
+            firstSendByThreadId: {
+              ...state.firstSendByThreadId,
+              [threadId]: {
+                ...pending,
+                status: rejection === "definite" ? "failed" : "ambiguous",
               },
-            }));
-            return null;
-          }
+            },
+          }));
+        },
 
+        ackFirstSendDraftRestored(threadId, claimId) {
           set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (pending?.status !== "failed" || pending.claimId !== claimId) return state;
             const firstSendByThreadId = { ...state.firstSendByThreadId };
             delete firstSendByThreadId[threadId];
             return { firstSendByThreadId };
           });
-          return pending.text;
         },
 
         markPendingCreation({ projectId, threadId }) {

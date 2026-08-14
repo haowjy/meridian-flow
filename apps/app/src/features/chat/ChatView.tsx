@@ -22,7 +22,11 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
-import { Composer, type ComposerHandle } from "@/components/app/composer";
+import {
+  Composer,
+  type ComposerDraftRestoration,
+  type ComposerHandle,
+} from "@/components/app/composer";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
@@ -94,8 +98,8 @@ export function ChatView({
     isStreaming,
   });
 
-  const restoreFirstSendDraft = useCallback((text: string) => {
-    composerRef.current?.restoreDraft(text);
+  const restoreFirstSendDraft = useCallback((restoration: ComposerDraftRestoration) => {
+    return composerRef.current?.restoreDraft(restoration) ?? false;
   }, []);
   useThreadHandoff(
     threadId,

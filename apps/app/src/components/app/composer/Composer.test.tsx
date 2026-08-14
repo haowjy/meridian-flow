@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Submission ownership contract for the shared Composer presentation. */
-import { act } from "react";
+import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,7 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 vi.mock("./placeholders", () => ({ useComposerPlaceholder: () => "Write" }));
 
-import { Composer } from "./Composer";
+import { Composer, type ComposerHandle } from "./Composer";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -68,5 +68,29 @@ describe("Composer submission ownership", () => {
 
     expect(textarea.value).toBe("");
     expect(document.activeElement).toBe(textarea);
+  });
+
+  it("restores a failed first send before a newer draft without duplicating either", async () => {
+    const composerRef = createRef<ComposerHandle>();
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => root.render(<Composer ref={composerRef} onSubmit={() => true} />));
+    const textarea = host.querySelector("textarea") as HTMLTextAreaElement;
+    await enterDraft(textarea, "newer follow-up");
+
+    await act(async () => {
+      expect(
+        composerRef.current?.restoreDraft({ id: "thread-1:1", text: "failed first send" }),
+      ).toBe(true);
+    });
+    expect(textarea.value).toBe("failed first send\n\nnewer follow-up");
+
+    await act(async () => {
+      expect(
+        composerRef.current?.restoreDraft({ id: "thread-1:1", text: "failed first send" }),
+      ).toBe(true);
+    });
+    expect(textarea.value).toBe("failed first send\n\nnewer follow-up");
   });
 });

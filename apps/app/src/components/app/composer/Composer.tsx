@@ -49,12 +49,22 @@ export type ComposerProps = {
   submitDisabled?: boolean;
 };
 
+export type ComposerDraftRestoration = {
+  id: string;
+  text: string;
+};
+
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
 export type ComposerHandle = {
   focus: () => void;
-  /** Restore a failed handoff into this actual textarea. */
-  restoreDraft: (text: string) => void;
+  /** Restore a failed handoff into this actual textarea and acknowledge delivery. */
+  restoreDraft: (restoration: ComposerDraftRestoration) => boolean;
 };
+
+export function mergeRestoredComposerDraft(restoredText: string, currentText: string): string {
+  if (!currentText || currentText === restoredText) return restoredText;
+  return `${restoredText}\n\n${currentText}`;
+}
 
 function resizeComposerTextarea(el: HTMLTextAreaElement) {
   const maxHeight = Number.parseInt(getComputedStyle(el).maxHeight, 10);
@@ -90,6 +100,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [text, setText] = useState("");
   const textRef = useRef("");
   const submissionInFlightRef = useRef(false);
+  const restoredDraftIdsRef = useRef(new Set<string>());
   const [submissionInFlight, setSubmissionInFlight] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canSend = text.trim().length > 0 && !submitDisabled && !submissionInFlight;
@@ -97,10 +108,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // Expose a focus() handle to parent components (e.g. ChatView).
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
-    restoreDraft: (restoredText: string) => {
-      textRef.current = restoredText;
-      setText(restoredText);
+    restoreDraft: ({ id, text: restoredText }) => {
+      if (restoredDraftIdsRef.current.has(id)) return true;
+      restoredDraftIdsRef.current.add(id);
+      const mergedText = mergeRestoredComposerDraft(restoredText, textRef.current);
+      textRef.current = mergedText;
+      setText(mergedText);
       textareaRef.current?.focus();
+      return true;
     },
   }));
 

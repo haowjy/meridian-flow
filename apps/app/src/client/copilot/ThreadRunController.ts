@@ -36,6 +36,30 @@ export type SubmitOptions = {
   optimisticUserTurnId?: string;
 };
 
+export type AdmissionFailureKind = "definite" | "ambiguous";
+
+/**
+ * Typed boundary for message admission failures.
+ *
+ * `definite` means the controller knows the append was not accepted: local
+ * arbitration, connection preflight, or an authoritative API rejection.
+ * `ambiguous` means a dispatched append did not produce an authoritative
+ * response, so callers must not retry it blindly.
+ */
+export class ThreadAdmissionError extends Error {
+  readonly kind: AdmissionFailureKind;
+
+  constructor(kind: AdmissionFailureKind, cause: unknown) {
+    super(errorMessage(cause, "Failed to submit message"), { cause });
+    this.name = "ThreadAdmissionError";
+    this.kind = kind;
+  }
+}
+
+export function isThreadAdmissionError(value: unknown): value is ThreadAdmissionError {
+  return value instanceof ThreadAdmissionError;
+}
+
 export type ThreadRunControllerOptions = {
   transport: ThreadTransport;
   actions: ThreadStoreActions;
@@ -92,15 +116,25 @@ export class ThreadRunController {
       if (options.optimisticUserTurnId) {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
-      throw new Error("submit already in flight");
+      throw new ThreadAdmissionError("definite", new Error("submit already in flight"));
     }
 
     this.admissionInFlight = true;
     const admissionEpoch = this.admissionEpoch;
     let result: Awaited<ReturnType<AppendUserMessageFn>>;
 
+    let connectionToken: string;
     try {
-      const connectionToken = await this.transport.awaitConnectionToken();
+      connectionToken = await this.transport.awaitConnectionToken();
+    } catch (error) {
+      if (options.optimisticUserTurnId) {
+        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+      }
+      this.admissionInFlight = false;
+      throw new ThreadAdmissionError("definite", error);
+    }
+
+    try {
       result = await this.appendUserMessageFn({
         data: {
           threadId,
@@ -109,10 +143,15 @@ export class ThreadRunController {
         },
       });
     } catch (error) {
-      if (options.optimisticUserTurnId && isMeridianApiError(error)) {
+      const kind: AdmissionFailureKind = isThreadAdmissionError(error)
+        ? error.kind
+        : isMeridianApiError(error)
+          ? "definite"
+          : "ambiguous";
+      if (options.optimisticUserTurnId && kind === "definite") {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
-      throw error;
+      throw isThreadAdmissionError(error) ? error : new ThreadAdmissionError(kind, error);
     } finally {
       this.admissionInFlight = false;
     }

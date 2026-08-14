@@ -40,7 +40,7 @@ export type FirstSendClaim = {
 export type FirstSendRejection = "definite" | "ambiguous";
 
 export type FirstSendHandoffState = Omit<FirstSendClaim, "claimId"> & {
-  status: "staged" | "armed" | "claimed" | "ambiguous";
+  status: "staged" | "armed" | "claimed" | "failed" | "ambiguous";
   claimId?: number;
 };
 
@@ -150,11 +150,10 @@ export type ThreadStoreActions = {
   /** Atomically claim an armed send. Remounts and other Chat surfaces receive null. */
   claimFirstSend(threadId: string): FirstSendClaim | null;
   ackFirstSend(threadId: string, claimId: number): void;
-  /**
-   * Definite rejection retires the handoff and returns its exact text once for
-   * destination draft restoration. Ambiguous rejection remains quarantined.
-   */
-  nackFirstSend(threadId: string, claimId: number, rejection: FirstSendRejection): string | null;
+  /** Definite rejection retains a restorable draft; ambiguous rejection is quarantined. */
+  rejectFirstSend(threadId: string, claimId: number, rejection: FirstSendRejection): void;
+  /** Retire a failed handoff only after its matching Composer accepted the draft. */
+  ackFirstSendDraftRestored(threadId: string, claimId: number): void;
   /**
    * Mark a (projectId, threadId) pair as pending server creation. Set by the
    * optimistic Home → Project flow before navigation; cleared by the chat

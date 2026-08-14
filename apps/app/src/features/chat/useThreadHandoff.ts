@@ -9,13 +9,16 @@
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { isMeridianApiError } from "@/client/api/meridian-error";
 import { createProject } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
-import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
+import {
+  isThreadAdmissionError,
+  type ThreadRunController,
+} from "@/client/copilot/ThreadRunController";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError, useThreadStore } from "@/client/stores";
+import type { ComposerDraftRestoration } from "@/components/app/composer";
 import { threadCreateAgentField } from "@/features/agents/constants";
 
 type Controller = ThreadRunController;
@@ -50,15 +53,14 @@ export function useThreadHandoff(
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
-  restoreFirstSendDraft?: (text: string) => void,
+  restoreFirstSendDraft?: (restoration: ComposerDraftRestoration) => boolean,
 ): void {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
+  const restoredFirstSendIdsRef = useRef(new Set<string>());
   const queryClient = useQueryClient();
-  const firstSendStatus = useThreadStore(
-    (state) => state.firstSendByThreadId[threadId]?.status ?? null,
-  );
+  const firstSend = useThreadStore((state) => state.firstSendByThreadId[threadId] ?? null);
 
   useEffect(() => {
     pendingResumeRef.current = false;
@@ -67,24 +69,34 @@ export function useThreadHandoff(
   }, [threadId]);
 
   useEffect(() => {
-    const firstSend = actions.claimFirstSend(threadId);
+    if (firstSend?.status !== "failed" || firstSend.claimId === undefined) return;
+    const restorationId = `${threadId}:${firstSend.claimId}`;
+    if (restoredFirstSendIdsRef.current.has(restorationId)) return;
+    const restored = restoreFirstSendDraft?.({
+      id: restorationId,
+      text: firstSend.text,
+    });
+    if (restored) {
+      restoredFirstSendIdsRef.current.add(restorationId);
+      actions.ackFirstSendDraftRestored(threadId, firstSend.claimId);
+    }
+  }, [actions, firstSend, restoreFirstSendDraft, threadId]);
+
+  useEffect(() => {
     if (firstSend) {
+      const claim = actions.claimFirstSend(threadId);
+      if (!claim) return;
       handoffStartedRef.current = true;
       void controller
-        .submit(threadId, firstSend.text, {
-          optimisticUserTurnId: firstSend.optimisticUserTurnId,
+        .submit(threadId, claim.text, {
+          optimisticUserTurnId: claim.optimisticUserTurnId,
         })
         .then(() => {
-          actions.ackFirstSend(threadId, firstSend.claimId);
+          actions.ackFirstSend(threadId, claim.claimId);
         })
         .catch((error) => {
-          const definite = isMeridianApiError(error);
-          const restoredText = actions.nackFirstSend(
-            threadId,
-            firstSend.claimId,
-            definite ? "definite" : "ambiguous",
-          );
-          if (restoredText !== null) restoreFirstSendDraft?.(restoredText);
+          const rejection = isThreadAdmissionError(error) ? error.kind : "ambiguous";
+          actions.rejectFirstSend(threadId, claim.claimId, rejection);
           const message = error instanceof Error ? error.message : "Failed to start stream";
           announceError(message);
         });
@@ -180,7 +192,7 @@ export function useThreadHandoff(
     controller,
     queryClient,
     restoreFirstSendDraft,
-    firstSendStatus,
+    firstSend,
     snapshotResume?.liveState,
     threadId,
   ]);

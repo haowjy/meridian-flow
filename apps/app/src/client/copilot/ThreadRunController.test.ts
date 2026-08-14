@@ -9,6 +9,7 @@ import type {
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/meridian-error";
+import { isThreadAdmissionError } from "./ThreadRunController";
 import {
   defaultSendResponse,
   scenarioGate,
@@ -259,7 +260,14 @@ describe("ThreadRunController", () => {
     scenario.resume({ after: "42", expectedTurnId: "turn_old" });
 
     const first = scenario.submit("first");
-    await expect(scenario.submit("second")).rejects.toThrow("submit already in flight");
+    const optimistic = scenario.store.getState().appendUserTurn("thread_1", "second");
+    await expect(
+      scenario.submit("second", { optimisticUserTurnId: optimistic.id }),
+    ).rejects.toMatchObject({
+      kind: "definite",
+      message: "submit already in flight",
+    });
+    expect(scenario.turns()).toEqual([]);
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests).toEqual([
       { threadId: "thread_1", turnId: "turn_old" },
@@ -268,6 +276,21 @@ describe("ThreadRunController", () => {
     admission.resolve(defaultSendResponse());
     await first;
     expect(scenario.transport.subscriptions).toHaveLength(2);
+  });
+
+  it("classifies connection preflight failure as definite and rolls back its optimistic row", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.disconnectAdmission();
+    const optimistic = scenario.store.getState().appendUserTurn("thread_1", "not dispatched");
+
+    const submit = scenario.submit("not dispatched", { optimisticUserTurnId: optimistic.id });
+    scenario.rejectConnection(new Error("connection unavailable"));
+    const error = await submit.catch((reason: unknown) => reason);
+
+    expect(isThreadAdmissionError(error)).toBe(true);
+    expect(error).toMatchObject({ kind: "definite", message: "connection unavailable" });
+    expect(scenario.appendRequests).toEqual([]);
+    expect(scenario.turns()).toEqual([]);
   });
 
   it.each([
@@ -280,15 +303,21 @@ describe("ThreadRunController", () => {
         source: "system",
       }),
       remaining: 0,
+      kind: "definite",
     },
-    { label: "ambiguous network failure", error: new TypeError("fetch failed"), remaining: 1 },
-  ])("handles optimistic turns after $label", async ({ error, remaining }) => {
+    {
+      label: "ambiguous network failure",
+      error: new TypeError("fetch failed"),
+      remaining: 1,
+      kind: "ambiguous",
+    },
+  ] as const)("handles optimistic turns after $label", async ({ error, remaining, kind }) => {
     const scenario = new ThreadRunScenario({ append: async () => Promise.reject(error) });
     const optimistic = scenario.store.getState().appendUserTurn("thread_1", "possibly persisted");
 
     await expect(
       scenario.submit("possibly persisted", { optimisticUserTurnId: optimistic.id }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ kind });
     expect(scenario.turns()).toHaveLength(remaining);
   });
 

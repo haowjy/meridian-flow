@@ -4,8 +4,8 @@
 
 - `apps/app`: promote the real Composer to a neutral presentation boundary,
   make draft clearing caller-accepted, and add route-armed first-message
-  handoff with exclusive claim, admission acknowledgement, and safe failure
-  restoration.
+  handoff with exclusive claim, typed definite/ambiguous admission, and
+  provider-owned failure restoration that preserves newer drafts.
 
 - `apps/app`: serialize opposite read/favorite commands, show failed open acknowledgement with retry on Chat, and delete the superseded dashboard activity model.
 
