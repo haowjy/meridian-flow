@@ -6,6 +6,7 @@
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme, Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useThreadOpenAcknowledgement } from "@/client/query/useThreadOpenAcknowledgement";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
@@ -21,6 +22,8 @@ export type ChatScreenProps = {
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  /** False for a mounted but hidden persistent dock. */
+  acknowledgeOpen?: boolean;
 };
 
 /** Renders the resolved thread, with parent context when it is a subagent. */
@@ -30,6 +33,7 @@ export function ChatScreen({
   activeWork,
   onSelectThread,
   onSelectContextPath,
+  acknowledgeOpen = true,
 }: ChatScreenProps) {
   const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
 
@@ -59,6 +63,7 @@ export function ChatScreen({
       projectThreads={projectThreads ?? []}
       onSelectThread={onSelectThread}
       onSelectContextPath={onSelectContextPath}
+      acknowledgeOpen={acknowledgeOpen}
     />
   );
 }
@@ -70,6 +75,7 @@ function ChatScreenLoaded({
   projectThreads,
   onSelectThread,
   onSelectContextPath,
+  acknowledgeOpen,
 }: {
   projectId: string;
   threadId: string;
@@ -77,15 +83,23 @@ function ChatScreenLoaded({
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  acknowledgeOpen: boolean;
 }) {
   const {
     thread: snapshotThread,
     liveState: snapshotLiveState,
+    attention: snapshotAttention,
     nextSeq: snapshotNextSeq,
     isError,
     settled: historySettled,
     refetch,
   } = useThreadSnapshotSync(threadId);
+  useThreadOpenAcknowledgement({
+    threadId,
+    projectId: snapshotThread?.projectId ?? projectId,
+    attention: snapshotAttention,
+    enabled: acknowledgeOpen,
+  });
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
   const parent = thread?.parentThreadId
     ? (projectThreads.find((t) => t.id === thread.parentThreadId) ?? null)

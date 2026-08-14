@@ -95,6 +95,7 @@ export function ChatSurface({
           activeWork={activeWork}
           onSelectThread={onSelectThread}
           onSelectContextPath={onSelectContextPath}
+          acknowledgeOpen={visible}
         />
       </DockShell>
     </div>
