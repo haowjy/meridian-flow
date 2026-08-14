@@ -276,4 +276,45 @@ describe("visible thread open acknowledgements", () => {
     expect(getOpenAcknowledgementState(client, offer.transfer.id)).toBeNull();
     expect(getOpenAcknowledgementState(client, claimed)).toMatchObject({ phase: "succeeded" });
   });
+
+  it.each([
+    ["same lease", "success"],
+    ["same lease", "failure"],
+    ["shared operation", "success"],
+    ["shared operation", "failure"],
+  ] as const)("retires a mismatched transfer after %s claim and %s settlement", async (claim, settlement) => {
+    const client = new QueryClient();
+    const requests = controlledRequests();
+    const lease = createVisibilityLeaseId();
+    const visibleId = claimVisibleOpenAcknowledgement(
+      client,
+      { projectId: "project-1", threadId: "thread-b" },
+      lease,
+    );
+    const offer = prepareHomeOpenAcknowledgement(client, {
+      projectId: "project-1",
+      threadId: "thread-a",
+    });
+    if (offer.kind !== "transfer") return;
+
+    const reclaimed = claimVisibleOpenAcknowledgement(
+      client,
+      { projectId: "project-1", threadId: "thread-b" },
+      claim === "same lease" ? lease : createVisibilityLeaseId(),
+      offer.transfer,
+    );
+    expect(reclaimed).toBe(visibleId);
+    expect(requests).toHaveLength(2);
+
+    requests[1]?.resolve(
+      settlement === "success"
+        ? json({ ...response, threadId: "thread-a" })
+        : json({ message: "offline" }, 503),
+    );
+    await tick();
+    await tick();
+
+    expect(getOpenAcknowledgementState(client, offer.transfer.id)).toBeNull();
+    expect(getOpenAcknowledgementState(client, visibleId)).toMatchObject({ phase: "pending" });
+  });
 });

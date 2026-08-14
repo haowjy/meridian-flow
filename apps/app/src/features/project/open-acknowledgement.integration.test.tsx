@@ -205,6 +205,34 @@ function Providers({ client, children }: { client: QueryClient; children: ReactN
   );
 }
 
+function HomeToChatHarness({ client }: { client: QueryClient }) {
+  const [chat, setChat] = useState(false);
+  const [transfer, setTransfer] = useState<OpenAcknowledgementTransfer>();
+  const open = useCallback(
+    (id: string) => {
+      const offer = prepareHomeOpenAcknowledgement(client, { projectId, threadId: id });
+      if (offer.kind === "transfer") setTransfer(offer.transfer);
+      setChat(true);
+    },
+    [client],
+  );
+  return chat ? (
+    <ChatScreen
+      projectId={projectId}
+      threadId={threadId}
+      activeWork={null}
+      onSelectThread={vi.fn()}
+      visible
+      openTransfer={transfer}
+      onOpenTransferClaimed={(claimed) => {
+        if (claimed === transfer) setTransfer(undefined);
+      }}
+    />
+  ) : (
+    <HomeScreen projectId={projectId} onSelectThread={vi.fn()} onOpenThread={open} />
+  );
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("visible Chat open caller boundary", () => {
@@ -218,35 +246,10 @@ describe("visible Chat open caller boundary", () => {
     } as ThreadSnapshotResponse);
     const patches = router();
 
-    function Harness() {
-      const [chat, setChat] = useState(false);
-      const [transfer, setTransfer] = useState<OpenAcknowledgementTransfer>();
-      const open = useCallback((id: string) => {
-        const offer = prepareHomeOpenAcknowledgement(client, { projectId, threadId: id });
-        if (offer.kind === "transfer") setTransfer(offer.transfer);
-        setChat(true);
-      }, []);
-      return chat ? (
-        <ChatScreen
-          projectId={projectId}
-          threadId={threadId}
-          activeWork={null}
-          onSelectThread={vi.fn()}
-          visible
-          openTransfer={transfer}
-          onOpenTransferClaimed={(claimed) => {
-            if (claimed === transfer) setTransfer(undefined);
-          }}
-        />
-      ) : (
-        <HomeScreen projectId={projectId} onSelectThread={vi.fn()} onOpenThread={open} />
-      );
-    }
-
     await withReactRoot(
       <StrictMode>
         <Providers client={client}>
-          <Harness />
+          <HomeToChatHarness client={client} />
         </Providers>
       </StrictMode>,
       async () => {
@@ -423,30 +426,9 @@ describe("visible Chat open caller boundary", () => {
       },
     };
     const patches = router(readPage);
-    function Harness() {
-      const [chat, setChat] = useState(false);
-      const [transfer, setTransfer] = useState<OpenAcknowledgementTransfer>();
-      const open = useCallback((id: string) => {
-        const offer = prepareHomeOpenAcknowledgement(client, { projectId, threadId: id });
-        if (offer.kind === "transfer") setTransfer(offer.transfer);
-        setChat(true);
-      }, []);
-      return chat ? (
-        <ChatScreen
-          projectId={projectId}
-          threadId={threadId}
-          activeWork={null}
-          onSelectThread={vi.fn()}
-          visible
-          openTransfer={transfer}
-        />
-      ) : (
-        <HomeScreen projectId={projectId} onSelectThread={vi.fn()} onOpenThread={open} />
-      );
-    }
     await withReactRoot(
       <Providers client={client}>
-        <Harness />
+        <HomeToChatHarness client={client} />
       </Providers>,
       async () => {
         await waitFor(() => Boolean(document.querySelector('[aria-label="Actions for River"]')));
@@ -495,31 +477,9 @@ describe("visible Chat open caller boundary", () => {
     };
     const patches = router(readPage);
 
-    function Harness() {
-      const [chat, setChat] = useState(false);
-      const [transfer, setTransfer] = useState<OpenAcknowledgementTransfer>();
-      const open = useCallback((id: string) => {
-        const offer = prepareHomeOpenAcknowledgement(client, { projectId, threadId: id });
-        if (offer.kind === "transfer") setTransfer(offer.transfer);
-        setChat(true);
-      }, []);
-      return chat ? (
-        <ChatScreen
-          projectId={projectId}
-          threadId={threadId}
-          activeWork={null}
-          onSelectThread={vi.fn()}
-          visible
-          openTransfer={transfer}
-        />
-      ) : (
-        <HomeScreen projectId={projectId} onSelectThread={vi.fn()} onOpenThread={open} />
-      );
-    }
-
     await withReactRoot(
       <Providers client={client}>
-        <Harness />
+        <HomeToChatHarness client={client} />
       </Providers>,
       async () => {
         await waitFor(() => Boolean(document.querySelector('[aria-label="Actions for River"]')));
@@ -552,6 +512,83 @@ describe("visible Chat open caller boundary", () => {
               ?.attention === "none",
         );
         expect(document.body.textContent).not.toContain("couldn’t save that you opened");
+      },
+      { drainMacrotask: true },
+    );
+  });
+
+  it.each([
+    "success",
+    "failure",
+  ] as const)("serializes the visible dock's false to true opening after first Mark unread %s", async (settlement) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(threadQueryKeys.snapshot(threadId), {
+      attention: "none",
+    } as ThreadSnapshotResponse);
+    const readPage: HomeChatFeedPage = {
+      ...page,
+      featured: {
+        continueChat: { ...page.featured?.continueChat, attention: "none" } as NonNullable<
+          HomeChatFeedPage["featured"]
+        >["continueChat"],
+        favoriteChats: [],
+      },
+    };
+    const patches = router(readPage);
+    useDockViewStore.getState().setDockView("home", "chat");
+
+    function Harness() {
+      const [visible, setVisible] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setVisible(true)}>
+            Reveal dock
+          </button>
+          <HomeScreen projectId={projectId} onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
+          <ChatSurface
+            projectId={projectId}
+            threadId={threadId}
+            activeWork={null}
+            activeScreen="home"
+            onSelectThread={vi.fn()}
+            placement="dock"
+            visible={visible}
+          />
+        </>
+      );
+    }
+
+    await withReactRoot(
+      <Providers client={client}>
+        <Harness />
+      </Providers>,
+      async () => {
+        await waitFor(() => Boolean(document.querySelector('[aria-label="Actions for River"]')));
+        await chooseMarkUnread();
+        await waitFor(() => patches.length === 1);
+        expect(patches[0]?.body).toEqual({ isUnread: true });
+
+        await act(async () => buttonNamed("Reveal dock")?.click());
+        expect(patches).toHaveLength(1);
+
+        patches[0]?.resolve(
+          settlement === "success"
+            ? json({ ...success, manuallyUnread: true, attention: "unread" })
+            : json({ message: "manual offline" }, 503),
+        );
+        await waitFor(() => patches.length === 2);
+        expect(patches.map((request) => request.body)).toEqual([
+          { isUnread: true },
+          { isUnread: false },
+        ]);
+        expect(document.body.textContent).not.toContain("couldn’t save that you opened");
+
+        patches[1]?.resolve(json(success));
+        await waitFor(
+          () =>
+            client.getQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId))
+              ?.attention === "none",
+        );
       },
       { drainMacrotask: true },
     );

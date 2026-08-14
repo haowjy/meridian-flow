@@ -224,12 +224,17 @@ export function ProjectView(props: ProjectViewProps) {
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
   const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
   const hydrated = prefsHydrated && deskHydrated;
+  const visibleOpenTransfer =
+    pendingOpen?.transfer.key.projectId === props.projectId &&
+    pendingOpen.transfer.key.threadId === props.activeThreadId
+      ? pendingOpen.transfer
+      : undefined;
   const resolvedProps = {
     ...props,
     activeThreadId: resolvedThreadId,
     activeWork,
     onOpenThread,
-    openTransfer: pendingOpen?.transfer,
+    openTransfer: visibleOpenTransfer,
     onOpenTransferClaimed,
   };
   return (
