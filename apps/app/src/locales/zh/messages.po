@@ -122,6 +122,16 @@ msgstr ""
 msgid "{0} isn't in {section}."
 msgstr ""
 
+#. placeholder {0}: item.title
+#: src/features/project/home/HomeScreen.tsx
+msgid "{0} moved to Favorite chats"
+msgstr ""
+
+#. placeholder {0}: item.title
+#: src/features/project/home/HomeScreen.tsx
+msgid "{0} moved to Recent chats"
+msgstr ""
+
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx

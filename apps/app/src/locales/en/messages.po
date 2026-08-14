@@ -122,6 +122,16 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
+#. placeholder {0}: item.title
+#: src/features/project/home/HomeScreen.tsx
+msgid "{0} moved to Favorite chats"
+msgstr "{0} moved to Favorite chats"
+
+#. placeholder {0}: item.title
+#: src/features/project/home/HomeScreen.tsx
+msgid "{0} moved to Recent chats"
+msgstr "{0} moved to Recent chats"
+
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx

@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { MoreHorizontal, Plus, Star } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useHomeChatFeed } from "@/client/query/useHomeChatFeed";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,11 @@ export function HomeScreen({ projectId, onSelectThread }: HomeScreenProps) {
   const feed = useHomeChatFeed(projectId);
   const creation = useCreateChat(projectId, onSelectThread);
   const sentinel = useRef<HTMLDivElement>(null);
+  const [movement, setMovement] = useState<{
+    threadId: string;
+    scrollTop: number;
+  } | null>(null);
+  const [announcement, setAnnouncement] = useState("");
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -60,6 +65,16 @@ export function HomeScreen({ projectId, onSelectThread }: HomeScreenProps) {
     observer.observe(sentinel.current);
     return () => observer.disconnect();
   }, [feed.fetchNextPage, feed.hasNextPage, feed.isFetchNextPageError, feed.isFetchingNextPage]);
+  useLayoutEffect(() => {
+    if (!movement) return;
+    const control = document.querySelector<HTMLButtonElement>(
+      `[data-home-favorite="${CSS.escape(movement.threadId)}"]`,
+    );
+    const scrollport = control?.closest<HTMLElement>(".app-scroll");
+    if (scrollport) scrollport.scrollTop = movement.scrollTop;
+    control?.focus({ preventScroll: true });
+    setMovement(null);
+  }, [feed.grouped, movement]);
 
   if (feed.isPending) return <HomeLoading />;
   if (feed.isError && !feed.data)
@@ -96,7 +111,17 @@ export function HomeScreen({ projectId, onSelectThread }: HomeScreenProps) {
       if (item.attention !== "none") feed.setUnread(item.id, false);
       onSelectThread(item.id);
     },
-    onFavorite: feed.setFavorite,
+    onFavorite: (item: HomeChatItem, value: boolean) => {
+      const scrollTop = document.querySelector<HTMLElement>(".app-scroll")?.scrollTop ?? 0;
+      setMovement({
+        threadId: item.id,
+        scrollTop,
+      });
+      setAnnouncement(
+        value ? t`${item.title} moved to Favorite chats` : t`${item.title} moved to Recent chats`,
+      );
+      feed.setFavorite(item.id, value);
+    },
     onUnread: feed.setUnread,
   };
   return (
@@ -105,6 +130,9 @@ export function HomeScreen({ projectId, onSelectThread }: HomeScreenProps) {
         <h1 className="sr-only">
           <Trans>Home</Trans>
         </h1>
+        <span className="sr-only" aria-live="polite">
+          {announcement}
+        </span>
         <section className="flex flex-col gap-3">
           <div className="flex min-h-9 items-center justify-between gap-4">
             <h2 className="text-headline-section">
@@ -190,7 +218,7 @@ type HomeChatCardProps = {
   variant?: "continue" | "regular";
   now: number;
   onOpen: (item: HomeChatItem) => void;
-  onFavorite: (id: string, value: boolean) => void;
+  onFavorite: (item: HomeChatItem, value: boolean) => void;
   onUnread: (id: string, value: boolean) => void;
 };
 export function HomeChatCard({
@@ -277,12 +305,13 @@ export function HomeChatCard({
       </div>
       <div className="absolute right-3 top-3 z-20 flex gap-1 [@media(pointer:coarse)]:gap-1">
         <IconButton
+          data-home-favorite={item.id}
           className="[@media(pointer:coarse)]:size-11"
           aria-pressed={item.isFavorite}
           aria-label={
             item.isFavorite ? t`Remove ${title} from favorites` : t`Add ${title} to favorites`
           }
-          onClick={() => onFavorite(item.id, !item.isFavorite)}
+          onClick={() => onFavorite(item, !item.isFavorite)}
         >
           <Star className={cn("size-4", item.isFavorite && "fill-current text-cinnabar")} />
         </IconButton>
