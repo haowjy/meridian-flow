@@ -82,6 +82,55 @@ describe("Composer submission ownership", () => {
     expect(textarea.value).toBe("  exact draft  ");
   });
 
+  it("retains byte-equal text authored again while acceptance is pending", async () => {
+    let settle!: (accepted: boolean) => void;
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const textarea = await render(onSubmit);
+    await enterDraft(textarea, "same words");
+    await pressEnter(textarea);
+
+    await enterDraft(textarea, "different words");
+    await enterDraft(textarea, "same words");
+    await act(async () => settle(true));
+
+    expect(textarea.value).toBe("same words");
+  });
+
+  it("retains a restored draft while acceptance is pending", async () => {
+    let settle!: (accepted: boolean) => void;
+    const composerRef = createRef<ComposerHandle>();
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <Composer
+          ref={composerRef}
+          onSubmit={() =>
+            new Promise<boolean>((resolve) => {
+              settle = resolve;
+            })
+          }
+        />,
+      ),
+    );
+    const textarea = host.querySelector("textarea") as HTMLTextAreaElement;
+    await enterDraft(textarea, "failed send");
+    await pressEnter(textarea);
+
+    await act(async () => {
+      composerRef.current?.restoreDraft({ id: "thread-1:1", text: "failed send" });
+    });
+    await act(async () => settle(true));
+
+    expect(textarea.value).toBe("failed send");
+  });
+
   it("preserves Chat parity by clearing and refocusing an accepted submit", async () => {
     const textarea = await render(() => true);
     await enterDraft(textarea, "Next chapter");

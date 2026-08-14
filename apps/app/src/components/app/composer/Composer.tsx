@@ -65,7 +65,7 @@ export type ComposerDraftRestoration = {
 export type ComposerHandle = {
   focus: () => void;
   getDraft: () => string;
-  /** Restore a failed handoff into this actual textarea and acknowledge delivery. */
+  /** Restore a failed handoff as a new draft revision and acknowledge delivery. */
   restoreDraft: (restoration: ComposerDraftRestoration) => boolean;
 };
 
@@ -126,8 +126,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       if (restoredDraftIdsRef.current.has(id)) return true;
       restoredDraftIdsRef.current.add(id);
       const mergedText = mergeRestoredComposerDraft(restoredText, textRef.current);
+      draftRevisionRef.current += 1;
       textRef.current = mergedText;
       setText(mergedText);
+      onDraftChange?.(mergedText, draftRevisionRef.current);
       textareaRef.current?.focus();
       return true;
     },
@@ -150,19 +152,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   async function submit() {
     if (submitDisabled || submissionInFlightRef.current) return;
-    const draftAtSubmit = text;
     const trimmed = text.trim();
     if (!trimmed) return;
+    const revisionAtSubmit = draftRevisionRef.current;
     submissionInFlightRef.current = true;
     setSubmissionInFlight(true);
     try {
       let accepted = false;
       try {
-        accepted = await onSubmit(trimmed, draftRevisionRef.current);
+        accepted = await onSubmit(trimmed, revisionAtSubmit);
       } catch {
         // The caller owns operation errors; a rejected acceptance retains the draft.
       }
-      if (accepted && textRef.current === draftAtSubmit) {
+      if (accepted && draftRevisionRef.current === revisionAtSubmit) {
         textRef.current = "";
         setText("");
       }
