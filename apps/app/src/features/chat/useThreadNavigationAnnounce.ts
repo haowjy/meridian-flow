@@ -2,7 +2,7 @@ import { type RefObject, useEffect } from "react";
 
 import { announce } from "@/client/stores";
 
-import type { ComposerHandle } from "./Composer";
+import type { ComposerHandle } from "@/components/app/composer";
 
 /** Announce thread navigation and focus the composer when {@link threadId} changes. */
 export function useThreadNavigationAnnounce(

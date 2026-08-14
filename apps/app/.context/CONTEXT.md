@@ -63,11 +63,16 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Composer handoff uses `markHandoffPending` +
-  `useThreadHandoff` (not inline in `ChatView`). Deferred first-send flows use
-  `markPendingCreation`, `clearPendingCreation`, and
-  `removeOptimisticUserTurn`; the last one is only rollback for a locally
-  appended user turn that failed before server acknowledgement.
+  `useThreadActions()` only. First-message transfer uses the thread-keyed
+  `stageFirstSend` → route-owned `armFirstSend` → Chat-owned claim/ack/nack
+  lifecycle in `useThreadHandoff`; an unarmed send cannot be claimed by a
+  persistent dock. Definite rejection returns the exact text once for the
+  shared Composer to restore, while ambiguous admission stays quarantined.
+  This handoff lasts only for the authenticated provider lifetime and is not a
+  durable outbox. Deferred project-creation flows separately use
+  `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
+  the last one is only rollback for a locally appended user turn that failed
+  before server acknowledgement.
 - **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
   thin seam between thread-store lifecycle transitions and the React Query cache.
   The store depends on this port, not `QueryClient` directly — list/snapshot

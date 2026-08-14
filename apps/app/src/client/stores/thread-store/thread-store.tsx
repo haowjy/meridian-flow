@@ -51,6 +51,7 @@ type ThreadStoreSliceState = ThreadStoreState & {
   snapshotNextSeqFloorByThread: Record<string, string>;
   handoffPendingThreadIds: Record<string, true>;
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
+  firstSendClaimCounter: number;
   pendingCreation: PendingCreationState;
   turnCounter: number;
 };
@@ -172,6 +173,11 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     applyThreadSnapshot: state.applyThreadSnapshot,
     markPendingStream: state.markPendingStream,
     consumePendingStream: state.consumePendingStream,
+    stageFirstSend: state.stageFirstSend,
+    armFirstSend: state.armFirstSend,
+    claimFirstSend: state.claimFirstSend,
+    ackFirstSend: state.ackFirstSend,
+    nackFirstSend: state.nackFirstSend,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
   };
@@ -188,6 +194,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         liveMeta: {},
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
+        firstSendByThreadId: {},
+        firstSendClaimCounter: 0,
         pendingCreation: { projectIds: {}, threadIds: {} },
         streamingThreadId: null,
         streamingProjectId: null,
@@ -564,6 +572,84 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             return { pendingStreamByThreadId };
           });
           return pending;
+        },
+
+        stageFirstSend(args) {
+          set((state) =>
+            state.firstSendByThreadId[args.threadId]
+              ? state
+              : {
+                  firstSendByThreadId: {
+                    ...state.firstSendByThreadId,
+                    [args.threadId]: { ...args, status: "staged" },
+                  },
+                },
+          );
+        },
+
+        armFirstSend(threadId) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (pending?.status !== "staged") return state;
+            return {
+              firstSendByThreadId: {
+                ...state.firstSendByThreadId,
+                [threadId]: { ...pending, status: "armed" },
+              },
+            };
+          });
+        },
+
+        claimFirstSend(threadId) {
+          const pending = get().firstSendByThreadId[threadId];
+          if (pending?.status !== "armed") return null;
+
+          const claimId = get().firstSendClaimCounter + 1;
+          set((state) => ({
+            firstSendClaimCounter: claimId,
+            firstSendByThreadId: {
+              ...state.firstSendByThreadId,
+              [threadId]: { ...pending, status: "claimed", claimId },
+            },
+          }));
+          return {
+            claimId,
+            threadId,
+            text: pending.text,
+            optimisticUserTurnId: pending.optimisticUserTurnId,
+          };
+        },
+
+        ackFirstSend(threadId, claimId) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (pending?.status !== "claimed" || pending.claimId !== claimId) return state;
+            const firstSendByThreadId = { ...state.firstSendByThreadId };
+            delete firstSendByThreadId[threadId];
+            return { firstSendByThreadId };
+          });
+        },
+
+        nackFirstSend(threadId, claimId, rejection) {
+          const pending = get().firstSendByThreadId[threadId];
+          if (pending?.status !== "claimed" || pending.claimId !== claimId) return null;
+
+          if (rejection === "ambiguous") {
+            set((state) => ({
+              firstSendByThreadId: {
+                ...state.firstSendByThreadId,
+                [threadId]: { ...pending, status: "ambiguous" },
+              },
+            }));
+            return null;
+          }
+
+          set((state) => {
+            const firstSendByThreadId = { ...state.firstSendByThreadId };
+            delete firstSendByThreadId[threadId];
+            return { firstSendByThreadId };
+          });
+          return pending.text;
         },
 
         markPendingCreation({ projectId, threadId }) {

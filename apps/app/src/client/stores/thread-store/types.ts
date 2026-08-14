@@ -29,6 +29,21 @@ export type PendingStreamStart = {
   };
 };
 
+/** A route-armed first message claimed exclusively by its destination Chat. */
+export type FirstSendClaim = {
+  claimId: number;
+  threadId: string;
+  text: string;
+  optimisticUserTurnId: string;
+};
+
+export type FirstSendRejection = "definite" | "ambiguous";
+
+export type FirstSendHandoffState = Omit<FirstSendClaim, "claimId"> & {
+  status: "staged" | "armed" | "claimed" | "ambiguous";
+  claimId?: number;
+};
+
 export type LiveTurnMeta = {
   /**
    * Count of live protocol events applied to this thread.
@@ -82,6 +97,8 @@ export type ThreadStoreState = {
   liveMeta: Record<string, LiveTurnMeta>;
   streamingThreadId: string | null;
   streamingProjectId: string | null;
+  /** Provider-lifetime route handoffs; not a durable reload-safe outbox. */
+  firstSendByThreadId: Record<string, FirstSendHandoffState>;
 };
 
 /**
@@ -126,6 +143,18 @@ export type ThreadStoreActions = {
   ): void;
   markPendingStream(threadId: string, start?: PendingStreamStart): void;
   consumePendingStream(threadId: string): PendingStreamStart | null;
+  /** Stage before navigation. A staged send is invisible to mounted Chat surfaces. */
+  stageFirstSend(args: Omit<FirstSendClaim, "claimId">): void;
+  /** Make a staged send claimable after the matching primary Chat route commits. */
+  armFirstSend(threadId: string): void;
+  /** Atomically claim an armed send. Remounts and other Chat surfaces receive null. */
+  claimFirstSend(threadId: string): FirstSendClaim | null;
+  ackFirstSend(threadId: string, claimId: number): void;
+  /**
+   * Definite rejection retires the handoff and returns its exact text once for
+   * destination draft restoration. Ambiguous rejection remains quarantined.
+   */
+  nackFirstSend(threadId: string, claimId: number, rejection: FirstSendRejection): string | null;
   /**
    * Mark a (projectId, threadId) pair as pending server creation. Set by the
    * optimistic Home → Project flow before navigation; cleared by the chat

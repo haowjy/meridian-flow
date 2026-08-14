@@ -9,7 +9,7 @@ import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { announce, announceError } from "@/client/stores";
-import type { ComposerHandle } from "./Composer";
+import type { ComposerHandle } from "@/components/app/composer";
 import { toolActivityAnnouncement, toolActivityPhrase } from "./command-descriptor";
 import { reportChatError } from "./error-telemetry";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";

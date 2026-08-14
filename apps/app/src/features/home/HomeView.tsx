@@ -2,10 +2,10 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
+import { Composer } from "@/components/app/composer";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { AgentOnlyComposerToolbar } from "@/features/chat/ChatComposerToolbar";
-import { Composer } from "@/features/chat/Composer";
 import { useComposerNewProject } from "@/features/chat/useComposerNewProject";
 import { useStartIndependentChat } from "@/features/chat/useStartIndependentChat";
 import { HomeColumn } from "@/features/home/HomeColumn";
@@ -32,7 +32,10 @@ export function HomeView() {
           variant="hero"
           autoFocus
           placeholder={t`Start writing…`}
-          onSubmit={(text) => handleSubmit(text, selectedAgentSlug)}
+          onSubmit={(text) => {
+            handleSubmit(text, selectedAgentSlug);
+            return true;
+          }}
           toolbarLeft={
             <AgentOnlyComposerToolbar
               projectId={null}

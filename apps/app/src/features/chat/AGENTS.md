@@ -1,16 +1,16 @@
 # features/chat — Turn render surface + transcript viewport
 
 The chat frontend: assistant-turn rendering, transcript scrolling, and the
-conversation-attached composer chrome, including Work-scoped draft controls.
+conversation-attached composer controls, including Work-scoped draft controls.
 
 ## Purpose
 
 This directory owns the **assistant turn render surface** — the components and
 partition logic that convert an ordered `Block[]` (from `@meridian/contracts` `Turn`)
 into what the reader sees — and the **transcript viewport** (`TurnList.tsx`), the
-single scroll container for the conversation. It is NOT the chat session, thread
-management, or composer — those are adjacent concerns in sibling files
-(`useChatThreadSession`, `Composer.tsx`).
+single scroll container for the conversation. It is NOT the chat session,
+thread management, or shared Composer presentation — those are adjacent
+concerns (`useChatThreadSession` and `components/app/composer`).
 
 ## Mental model
 

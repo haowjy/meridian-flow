@@ -22,12 +22,11 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
+import { Composer, type ComposerHandle } from "@/components/app/composer";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
-import type { ComposerHandle } from "./Composer";
-import { Composer } from "./Composer";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
@@ -95,10 +94,19 @@ export function ChatView({
     isStreaming,
   });
 
-  useThreadHandoff(threadId, controller, actions, {
-    liveState: snapshotLiveState,
-    nextSeq: snapshotNextSeq,
-  });
+  const restoreFirstSendDraft = useCallback((text: string) => {
+    composerRef.current?.restoreDraft(text);
+  }, []);
+  useThreadHandoff(
+    threadId,
+    controller,
+    actions,
+    {
+      liveState: snapshotLiveState,
+      nextSeq: snapshotNextSeq,
+    },
+    restoreFirstSendDraft,
+  );
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const draftMode = activeWork?.aiWriteMode === "draft";
@@ -109,24 +117,26 @@ export function ChatView({
   const generating = isStreaming && draftMode;
   const dock = useDraftDock({ generating });
 
-  async function handleSubmit(text: string) {
+  function handleSubmit(text: string): boolean {
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
 
-    try {
-      await controller.submit(threadId, text, { optimisticUserTurnId: optimisticUserTurn.id });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to submit message";
-      announceError(message);
-    } finally {
-      // The PRIOR assistant turn may have errored and the projector clears it
-      // off `status:error` when the next user turn arrives — a side-effect with
-      // no journal/WS event. Refresh only after submit settles so this fetch
-      // cannot race ahead of a persisted user turn. Definitive API rejections
-      // roll back the optimistic row; ambiguous transport failures retain it
-      // until a later acknowledgement or reload can reconcile the write.
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
-    }
+    void controller
+      .submit(threadId, text, { optimisticUserTurnId: optimisticUserTurn.id })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : "Failed to submit message";
+        announceError(message);
+      })
+      .finally(() => {
+        // The PRIOR assistant turn may have errored and the projector clears it
+        // off `status:error` when the next user turn arrives — a side-effect with
+        // no journal/WS event. Refresh only after submit settles so this fetch
+        // cannot race ahead of a persisted user turn. Definitive API rejections
+        // roll back the optimistic row; ambiguous transport failures retain it
+        // until a later acknowledgement or reload can reconcile the write.
+        void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+      });
+    return true;
   }
 
   function handleStop() {

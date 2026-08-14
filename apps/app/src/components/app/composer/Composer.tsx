@@ -1,5 +1,5 @@
 /**
- * Composer — shared chat input surface used by home and pinned chat footers.
+ * Composer — shared message input presentation for landing and chat surfaces.
  * It owns textarea growth, keyboard submit/stop behaviour, and the send control
  * while callers own message dispatch and streaming state.
  */
@@ -23,8 +23,8 @@ import { cn } from "@/lib/utils";
 import { useComposerPlaceholder } from "./placeholders";
 
 export type ComposerProps = {
-  /** Called with the trimmed message text when the user submits a non-empty draft. */
-  onSubmit: (text: string) => void;
+  /** Clear only when the caller accepts ownership of the exact submitted text. */
+  onSubmit: (text: string) => boolean | Promise<boolean>;
   /** Called when the user clicks the stop control while a turn is running. */
   onStop?: () => void;
   /**
@@ -45,11 +45,15 @@ export type ComposerProps = {
   variant?: "hero" | "pinned";
   /** Footer toolbar slot for caller-owned controls such as the agent selector. */
   toolbarLeft?: ReactNode;
+  /** Caller-owned readiness gate; the draft remains editable and intact. */
+  submitDisabled?: boolean;
 };
 
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
 export type ComposerHandle = {
   focus: () => void;
+  /** Restore a failed handoff into this actual textarea. */
+  restoreDraft: (text: string) => void;
 };
 
 function resizeComposerTextarea(el: HTMLTextAreaElement) {
@@ -77,18 +81,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     autoFocus = false,
     variant = "hero",
     toolbarLeft,
+    submitDisabled = false,
   },
   ref,
 ) {
   const rotatingPlaceholder = useComposerPlaceholder(streaming);
   const resolvedPlaceholder = placeholder ?? rotatingPlaceholder;
   const [text, setText] = useState("");
+  const textRef = useRef("");
+  const submissionInFlightRef = useRef(false);
+  const [submissionInFlight, setSubmissionInFlight] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const canSend = text.trim().length > 0;
+  const canSend = text.trim().length > 0 && !submitDisabled && !submissionInFlight;
 
   // Expose a focus() handle to parent components (e.g. ChatView).
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
+    restoreDraft: (restoredText: string) => {
+      textRef.current = restoredText;
+      setText(restoredText);
+      textareaRef.current?.focus();
+    },
   }));
 
   // Resize after React commits `text` — including post-submit clear. Synchronous
@@ -99,17 +112,34 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, [text]);
 
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    textRef.current = event.target.value;
     setText(event.target.value);
     resizeComposerTextarea(event.target);
   }
 
-  function submit() {
+  async function submit() {
+    if (submitDisabled || submissionInFlightRef.current) return;
+    const draftAtSubmit = text;
     const trimmed = text.trim();
     if (!trimmed) return;
-    onSubmit(trimmed);
-    setText("");
-    // Keep focus for a fast follow-up message.
-    textareaRef.current?.focus();
+    submissionInFlightRef.current = true;
+    setSubmissionInFlight(true);
+    try {
+      let accepted = false;
+      try {
+        accepted = await onSubmit(trimmed);
+      } catch {
+        // The caller owns operation errors; a rejected acceptance retains the draft.
+      }
+      if (accepted && textRef.current === draftAtSubmit) {
+        textRef.current = "";
+        setText("");
+      }
+      if (accepted) textareaRef.current?.focus();
+    } finally {
+      submissionInFlightRef.current = false;
+      setSubmissionInFlight(false);
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -123,14 +153,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     // Cmd/Ctrl+Enter always submits (multiline-friendly).
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      if (!streaming) submit();
+      if (!streaming) void submit();
       return;
     }
 
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       // While a turn is streaming, Enter is inert — the action button is "stop".
-      if (!streaming) submit();
+      if (!streaming) void submit();
     }
   }
 
@@ -171,7 +201,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <Button
           type="button"
           size="icon-sm"
-          onClick={() => (streaming ? onStop?.() : submit())}
+          onClick={() => (streaming ? onStop?.() : void submit())}
           disabled={streaming ? false : !canSend}
           aria-label={streaming ? t`Stop` : t`Send message`}
           className={cn(

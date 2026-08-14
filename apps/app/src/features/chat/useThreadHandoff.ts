@@ -9,12 +9,13 @@
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { isMeridianApiError } from "@/client/api/meridian-error";
 import { createProject } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
-import { announceError } from "@/client/stores";
+import { announceError, useThreadStore } from "@/client/stores";
 import { threadCreateAgentField } from "@/features/agents/constants";
 
 type Controller = ThreadRunController;
@@ -49,11 +50,15 @@ export function useThreadHandoff(
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
+  restoreFirstSendDraft?: (text: string) => void,
 ): void {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
   const queryClient = useQueryClient();
+  const firstSendStatus = useThreadStore(
+    (state) => state.firstSendByThreadId[threadId]?.status ?? null,
+  );
 
   useEffect(() => {
     pendingResumeRef.current = false;
@@ -62,6 +67,30 @@ export function useThreadHandoff(
   }, [threadId]);
 
   useEffect(() => {
+    const firstSend = actions.claimFirstSend(threadId);
+    if (firstSend) {
+      handoffStartedRef.current = true;
+      void controller
+        .submit(threadId, firstSend.text, {
+          optimisticUserTurnId: firstSend.optimisticUserTurnId,
+        })
+        .then(() => {
+          actions.ackFirstSend(threadId, firstSend.claimId);
+        })
+        .catch((error) => {
+          const definite = isMeridianApiError(error);
+          const restoredText = actions.nackFirstSend(
+            threadId,
+            firstSend.claimId,
+            definite ? "definite" : "ambiguous",
+          );
+          if (restoredText !== null) restoreFirstSendDraft?.(restoredText);
+          const message = error instanceof Error ? error.message : "Failed to start stream";
+          announceError(message);
+        });
+      return;
+    }
+
     const startResume = (after?: string, expectedTurnId?: string) => {
       try {
         controller.resume(threadId, { after, expectedTurnId });
@@ -146,5 +175,13 @@ export function useThreadHandoff(
 
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
-  }, [actions, controller, queryClient, snapshotResume?.liveState, threadId]);
+  }, [
+    actions,
+    controller,
+    queryClient,
+    restoreFirstSendDraft,
+    firstSendStatus,
+    snapshotResume?.liveState,
+    threadId,
+  ]);
 }

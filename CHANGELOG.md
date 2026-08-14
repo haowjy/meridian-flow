@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/app`: promote the real Composer to a neutral presentation boundary,
+  make draft clearing caller-accepted, and add route-armed first-message
+  handoff with exclusive claim, admission acknowledgement, and safe failure
+  restoration.
+
 - `apps/app`: serialize opposite read/favorite commands, show failed open acknowledgement with retry on Chat, and delete the superseded dashboard activity model.
 
 - `apps/app`: Home feed reads no longer retry automatically, and visible-chat
