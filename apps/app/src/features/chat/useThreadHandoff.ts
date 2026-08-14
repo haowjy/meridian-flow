@@ -63,7 +63,7 @@ export function useThreadHandoff(
   const firstSend = useThreadStore((state) => state.firstSendByThreadId[threadId] ?? null);
 
   useEffect(() => {
-    if (!firstSend?.draftAfterRoute || firstSend.draftAfterRouteRestored) return;
+    if (firstSend?.draftAfterRoute === undefined || firstSend.draftAfterRouteRestored) return;
     if (firstSend.status !== "armed" && firstSend.status !== "claimed") return;
     const restored = restoreFirstSendDraft?.({
       id: `${threadId}:route-draft`,

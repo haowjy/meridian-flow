@@ -91,15 +91,19 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
           : firstSend.attempt
             ? t`Repair your choices, then retry`
             : undefined;
-  const submit = (text: string) => {
+  const submit = (text: string, draftRevision: number) => {
     if (!selectedWork || modePending) return false;
-    return firstSend.submit(text, {
-      work:
-        workSelection.source === "writer"
-          ? { source: "writer", workId: selectedWork.id }
-          : { source: "current_default", displayedWorkId: selectedWork.id },
-      agentSlug,
-    });
+    return firstSend.submit(
+      text,
+      {
+        work:
+          workSelection.source === "writer"
+            ? { source: "writer", workId: selectedWork.id }
+            : { source: "current_default", displayedWorkId: selectedWork.id },
+        agentSlug,
+      },
+      draftRevision,
+    );
   };
 
   return (

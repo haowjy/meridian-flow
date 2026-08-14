@@ -8,8 +8,9 @@
   stable-ID reconciliation, route-only retry, accessible pending states, and a
   real phone scroll owner close the first-send runtime boundary. Fresh chats
   suppress the existing-chat open acknowledgement for their first visibility
-  epoch, stale Work or Agent refusals retain the same first send for repaired
-  context retry, and drafts typed during creation or routing transfer intact.
+  epoch, stale Work or Agent refusals before or after ambiguity reconciliation
+  refresh context while retaining the same first send for repair, and every
+  later authored draft revision transfers intact even when its text is equal.
 
 - `apps/app`: promote the real Composer to a neutral presentation boundary,
   make draft clearing caller-accepted, and add route-armed first-message

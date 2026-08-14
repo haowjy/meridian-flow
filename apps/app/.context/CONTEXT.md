@@ -75,8 +75,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   separator so both writer-authored texts survive. Ambiguous admission stays
   quarantined without blind retry. If a writer changes the Home draft while
   creation or routing is pending, the immutable first message remains the
-  admitted turn and the latest newer text transfers separately into the
-  destination Composer.
+  admitted turn and the latest authored revision transfers separately into the
+  destination Composer, even when that revision's text is byte-equal to the
+  submitted message. The shared Composer reports a monotonic authoring revision;
+  content equality is never a draft-version test.
   This handoff lasts only for the authenticated provider lifetime and is not a
   durable outbox. Deferred project-creation flows separately use
   `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
@@ -155,9 +157,10 @@ Home first send deliberately orders the boundary differently: stable client ID
 → canonical create or same-ID ambiguity reconciliation → optimistic turn and
 staged handoff → route → arm. The matching Chat visibility lease claims a
 creation-owned no-command epoch rather than acknowledging the new thread as if
-it were an existing chat. A definite stale Work or Agent refusal refreshes the
-relevant catalog and unlocks prospective context repair while retaining the
-stable ID and immutable first text.
+it were an existing chat. A definite stale Work or Agent refusal, whether
+returned by the initial create or its guarded same-ID retry after absence
+reconciliation, refreshes the relevant catalog and unlocks prospective context
+repair while retaining the stable ID and immutable first text.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),

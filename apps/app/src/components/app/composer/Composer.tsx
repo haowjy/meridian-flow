@@ -25,9 +25,9 @@ import { useComposerPlaceholder } from "./placeholders";
 
 export type ComposerProps = {
   /** Clear only when the caller accepts ownership of the exact submitted text. */
-  onSubmit: (text: string) => boolean | Promise<boolean>;
-  /** Reports the live draft when a caller must preserve it across navigation. */
-  onDraftChange?: (text: string) => void;
+  onSubmit: (text: string, revision: number) => boolean | Promise<boolean>;
+  /** Reports the live draft and its authoring revision for navigation handoffs. */
+  onDraftChange?: (text: string, revision: number) => void;
   /** Called when the user clicks the stop control while a turn is running. */
   onStop?: () => void;
   /**
@@ -110,6 +110,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const resolvedPlaceholder = placeholder ?? rotatingPlaceholder;
   const [text, setText] = useState("");
   const textRef = useRef("");
+  const draftRevisionRef = useRef(0);
   const submissionInFlightRef = useRef(false);
   const restoredDraftIdsRef = useRef(new Set<string>());
   const [submissionInFlight, setSubmissionInFlight] = useState(false);
@@ -140,9 +141,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, [text]);
 
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    draftRevisionRef.current += 1;
     textRef.current = event.target.value;
     setText(event.target.value);
-    onDraftChange?.(event.target.value);
+    onDraftChange?.(event.target.value, draftRevisionRef.current);
     resizeComposerTextarea(event.target);
   }
 
@@ -156,7 +158,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     try {
       let accepted = false;
       try {
-        accepted = await onSubmit(trimmed);
+        accepted = await onSubmit(trimmed, draftRevisionRef.current);
       } catch {
         // The caller owns operation errors; a rejected acceptance retains the draft.
       }

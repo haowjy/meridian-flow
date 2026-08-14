@@ -76,7 +76,7 @@ describe("Composer submission ownership", () => {
     await enterDraft(textarea, "  exact draft  ");
     await pressEnter(textarea);
 
-    expect(onSubmit).toHaveBeenCalledWith("exact draft");
+    expect(onSubmit).toHaveBeenCalledWith("exact draft", 1);
     expect(textarea.value).toBe("  exact draft  ");
     await act(async () => settle(false));
     expect(textarea.value).toBe("  exact draft  ");

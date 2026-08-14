@@ -44,9 +44,118 @@ function actions() {
   } as unknown as ThreadStoreActions;
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("useHomeFirstSendAttempt", () => {
+  it.each([
+    {
+      catalog: "Work",
+      refusal: new HttpResponseError("Work is not available in this project", 400, null),
+      initial: {
+        work: { source: "writer", workId: "work-stale" } as const,
+        agentSlug: "general",
+      },
+      repaired: {
+        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        agentSlug: "general",
+      },
+      queryKey: ["projects", "project-1", "works"],
+    },
+    {
+      catalog: "Agent",
+      refusal: new HttpResponseError("Agent not found: prose", 400, null),
+      initial: {
+        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        agentSlug: "prose",
+      },
+      repaired: {
+        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        agentSlug: "general",
+      },
+      queryKey: ["projects", "project-1", "agents"],
+    },
+  ])("refreshes the $catalog catalog after an ambiguous create's same-ID retry is refused", async ({
+    refusal,
+    initial,
+    repaired,
+    queryKey,
+  }) => {
+    const threadActions = actions();
+    const createThread = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("connection closed"))
+      .mockRejectedValueOnce(refusal)
+      .mockResolvedValueOnce(canonical());
+    const listThreads = vi.fn().mockResolvedValue([]);
+    const onSelectThread = vi.fn(async () => undefined);
+    const client = new QueryClient();
+    const catalogRefresh = deferred();
+    const refetch = vi
+      .spyOn(client, "refetchQueries")
+      .mockImplementation(async () => catalogRefresh.promise);
+    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
+
+    function Harness() {
+      controller = useHomeFirstSendAttempt({
+        projectId: "project-1",
+        actions: threadActions,
+        onSelectThread,
+        createThread,
+        listThreads,
+        makeId: () => "stable-thread",
+      });
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        let submission!: Promise<boolean>;
+        await act(async () => {
+          submission = controller.submit("Exact opening", initial, 0);
+          while (refetch.mock.calls.length === 0) await Promise.resolve();
+        });
+
+        expect(listThreads).toHaveBeenCalledOnce();
+        expect(refetch).toHaveBeenCalledWith({ queryKey });
+        expect(controller.contextLocked).toBe(true);
+        expect(controller.failure).toBe(null);
+
+        await act(async () => {
+          catalogRefresh.resolve();
+          await expect(submission).resolves.toBe(false);
+        });
+
+        expect(controller.contextLocked).toBe(false);
+        expect(controller.failure).toBe("create");
+
+        await act(async () => {
+          await expect(controller.retry(repaired)).resolves.toBe(true);
+        });
+
+        expect(createThread).toHaveBeenCalledTimes(3);
+        for (const [, request] of createThread.mock.calls) {
+          expect(request).toMatchObject({ id: "stable-thread", title: "Exact opening" });
+        }
+        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
+        expect(threadActions.stageFirstSend).toHaveBeenCalledWith(
+          expect.objectContaining({ threadId: "stable-thread", text: "Exact opening" }),
+        );
+        expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
+      },
+    );
+  });
+
   it("retries an authoritative stale Agent refusal with repaired context and the same identity", async () => {
     const threadActions = actions();
     const createThread = vi
@@ -75,10 +184,14 @@ describe("useHomeFirstSendAttempt", () => {
       async () => {
         await act(async () => {
           await expect(
-            controller.submit("Exact opening", {
-              work: { source: "current_default", displayedWorkId: "work-1" },
-              agentSlug: "prose",
-            }),
+            controller.submit(
+              "Exact opening",
+              {
+                work: { source: "current_default", displayedWorkId: "work-1" },
+                agentSlug: "prose",
+              },
+              0,
+            ),
           ).resolves.toBe(false);
         });
         expect(controller.contextLocked).toBe(false);
@@ -159,7 +272,7 @@ describe("useHomeFirstSendAttempt", () => {
       </QueryClientProvider>,
       async () => {
         await act(async () => {
-          await expect(controller.submit("Opening line", context)).resolves.toBe(false);
+          await expect(controller.submit("Opening line", context, 0)).resolves.toBe(false);
         });
         expect(controller.failure).toBe("mismatch");
         expect(threadActions.appendUserTurn).not.toHaveBeenCalled();
@@ -201,14 +314,22 @@ describe("useHomeFirstSendAttempt", () => {
         let first!: Promise<boolean>;
         let duplicate!: Promise<boolean>;
         await act(async () => {
-          first = controller.submit("Opening line", {
-            work: { source: "current_default", displayedWorkId: "work-1" },
-            agentSlug: "general",
-          });
-          duplicate = controller.submit("Duplicate", {
-            work: { source: "current_default", displayedWorkId: "work-1" },
-            agentSlug: "general",
-          });
+          first = controller.submit(
+            "Opening line",
+            {
+              work: { source: "current_default", displayedWorkId: "work-1" },
+              agentSlug: "general",
+            },
+            0,
+          );
+          duplicate = controller.submit(
+            "Duplicate",
+            {
+              work: { source: "current_default", displayedWorkId: "work-1" },
+              agentSlug: "general",
+            },
+            0,
+          );
         });
         await expect(duplicate).resolves.toBe(false);
         await expect(first).resolves.toBe(true);
@@ -255,10 +376,14 @@ describe("useHomeFirstSendAttempt", () => {
       async () => {
         await act(async () => {
           await expect(
-            controller.submit("Opening line", {
-              work: { source: "writer", workId: "work-explicit" },
-              agentSlug: "general",
-            }),
+            controller.submit(
+              "Opening line",
+              {
+                work: { source: "writer", workId: "work-explicit" },
+                agentSlug: "general",
+              },
+              0,
+            ),
           ).resolves.toBe(false);
         });
         expect(createThread).toHaveBeenCalledWith(
@@ -267,7 +392,7 @@ describe("useHomeFirstSendAttempt", () => {
         );
 
         await act(async () => {
-          controller.updateDraft("A newer follow-up");
+          controller.updateDraft("A newer follow-up", 1);
           await expect(
             controller.retry({
               work: { source: "writer", workId: "work-explicit" },

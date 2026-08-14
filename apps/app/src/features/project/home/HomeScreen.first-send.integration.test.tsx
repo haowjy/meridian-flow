@@ -174,6 +174,78 @@ afterEach(() => {
 });
 
 describe("Home first send", () => {
+  it("transfers an equal-text draft authored after submit while admitting the first message once", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const creation = deferred<Response>();
+    const navigation = deferred<void>();
+    const requests: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    const admitted = vi.fn(async () => undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const path = String(input);
+        const method = init?.method ?? "GET";
+        const body = init?.body
+          ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+          : undefined;
+        requests.push({ path, method, body });
+        if (path.includes("/home-feed")) return Promise.resolve(json(homeFeed));
+        if (path.includes("/drafts")) return Promise.resolve(json({ drafts: [] }));
+        if (path.includes("/works"))
+          return Promise.resolve(json({ defaultWorkId: firstWork.id, works: [firstWork] }));
+        if (path.includes("/agents")) return Promise.resolve(json({ agents }));
+        if (method === "POST" && path.endsWith("/threads")) return creation.promise;
+        throw new Error(`unexpected request: ${method} ${path}`);
+      }),
+    );
+
+    function Harness() {
+      const [threadId, setThreadId] = useState<string | null>(null);
+      return threadId ? (
+        <Destination threadId={threadId} submit={admitted} />
+      ) : (
+        <HomeScreen
+          projectId={projectId}
+          onOpenThread={vi.fn()}
+          onSelectThread={async (id) => {
+            await navigation.promise;
+            setThreadId(id);
+          }}
+        />
+      );
+    }
+
+    await withReactRoot(
+      <Providers client={client}>
+        <Harness />
+      </Providers>,
+      async () => {
+        await waitFor(() => Boolean(document.querySelector('textarea[aria-label="Message"]')));
+        const textarea = await setTextarea("Same words");
+        await act(async () =>
+          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+        );
+        await waitFor(() => requests.some(({ method }) => method === "POST"));
+        await setTextarea("Different interim words");
+        await setTextarea("Same words");
+        const body = requests.find(({ method }) => method === "POST")?.body;
+        await act(async () => creation.resolve(json(canonical(String(body?.id), firstWork.id))));
+        await act(async () => navigation.resolve());
+
+        await waitFor(() => admitted.mock.calls.length === 1);
+        expect(admitted).toHaveBeenCalledWith(
+          String(body?.id),
+          "Same words",
+          expect.objectContaining({ optimisticUserTurnId: expect.any(String) }),
+        );
+        expect((document.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
+          "Same words",
+        );
+      },
+      { drainMacrotask: true },
+    );
+  });
+
   it("transfers a newer in-flight draft and admits once without an open acknowledgement", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const creation = deferred<Response>();

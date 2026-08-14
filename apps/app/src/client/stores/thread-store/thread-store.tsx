@@ -594,12 +594,11 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           set((state) => {
             const pending = state.firstSendByThreadId[threadId];
             if (!pending) return state;
-            const draftAfterRoute = text && text !== pending.text ? text : undefined;
-            if (pending.draftAfterRoute === draftAfterRoute) return state;
+            if (pending.draftAfterRoute === text) return state;
             return {
               firstSendByThreadId: {
                 ...state.firstSendByThreadId,
-                [threadId]: { ...pending, draftAfterRoute, draftAfterRouteRestored: false },
+                [threadId]: { ...pending, draftAfterRoute: text, draftAfterRouteRestored: false },
               },
             };
           });
@@ -677,7 +676,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         ackFirstSendRouteDraftRestored(threadId) {
           set((state) => {
             const pending = state.firstSendByThreadId[threadId];
-            if (!pending?.draftAfterRoute || pending.draftAfterRouteRestored) return state;
+            if (pending?.draftAfterRoute === undefined || pending.draftAfterRouteRestored)
+              return state;
             return {
               firstSendByThreadId: {
                 ...state.firstSendByThreadId,

@@ -148,7 +148,8 @@ export type ThreadStoreActions = {
   consumePendingStream(threadId: string): PendingStreamStart | null;
   /** Stage before navigation. A staged send is invisible to mounted Chat surfaces. */
   stageFirstSend(args: Omit<FirstSendClaim, "claimId">): void;
-  preserveFirstSendRouteDraft(threadId: string, text: string): void;
+  /** Replace the route draft; the caller determines whether a post-submit revision exists. */
+  preserveFirstSendRouteDraft(threadId: string, text: string | undefined): void;
   /** Make a staged send claimable after the matching primary Chat route commits. */
   armFirstSend(threadId: string): void;
   /** Atomically claim an armed send. Remounts and other Chat surfaces receive null. */

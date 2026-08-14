@@ -18,6 +18,7 @@ export type HomeFirstSendEnvelope = {
   threadId: string;
   projectId: string;
   text: string;
+  draftRevision: number;
   title: string;
   work: HomeWorkSelection;
   agentSlug: string;
@@ -72,7 +73,7 @@ export function useHomeFirstSendAttempt({
 }: Dependencies) {
   const queryClient = useQueryClient();
   const attemptRef = useRef<HomeFirstSendEnvelope | null>(null);
-  const latestDraftRef = useRef("");
+  const latestDraftRef = useRef({ text: "", revision: 0 });
   const singleFlightRef = useRef(false);
   const [attempt, setAttempt] = useState<HomeFirstSendEnvelope | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -83,14 +84,18 @@ export function useHomeFirstSendAttempt({
     setAttempt(next);
   }, []);
 
+  const routeDraft = useCallback((envelope: HomeFirstSendEnvelope) => {
+    const latest = latestDraftRef.current;
+    return latest.revision > envelope.draftRevision ? latest.text : undefined;
+  }, []);
+
   const route = useCallback(
     async (envelope: HomeFirstSendEnvelope) => {
       const thread = envelope.canonicalThread;
       if (!thread) return false;
       const routing = { ...envelope, phase: "routing" as const };
       publish(routing);
-      const newerDraft = latestDraftRef.current;
-      actions.preserveFirstSendRouteDraft(thread.id, newerDraft);
+      actions.preserveFirstSendRouteDraft(thread.id, routeDraft(envelope));
       try {
         await onSelectThread(thread.id);
         actions.armFirstSend(thread.id);
@@ -104,7 +109,7 @@ export function useHomeFirstSendAttempt({
         return false;
       }
     },
-    [actions, onSelectThread, publish],
+    [actions, onSelectThread, publish, routeDraft],
   );
 
   const prepareCanonical = useCallback(
@@ -115,14 +120,14 @@ export function useHomeFirstSendAttempt({
         return false;
       }
       const canonical = { ...envelope, canonicalThread: thread, phase: "routing" as const };
-      const newerDraft = latestDraftRef.current;
+      const draftAfterRoute = routeDraft(envelope);
       actions.ensureThread(thread);
       const optimistic = actions.appendUserTurn(thread.id, envelope.text);
       actions.stageFirstSend({
         threadId: thread.id,
         text: envelope.text,
         optimisticUserTurnId: optimistic.id,
-        draftAfterRoute: newerDraft && newerDraft !== envelope.text ? newerDraft : undefined,
+        draftAfterRoute,
       });
       prepareCreatedThreadVisibility(queryClient, {
         projectId: envelope.projectId,
@@ -131,7 +136,7 @@ export function useHomeFirstSendAttempt({
       publish(canonical);
       return route(canonical);
     },
-    [actions, publish, queryClient, route],
+    [actions, publish, queryClient, route, routeDraft],
   );
 
   const reconcile = useCallback(
@@ -146,6 +151,24 @@ export function useHomeFirstSendAttempt({
     [listThreads, projectId],
   );
 
+  const settleAuthoritativeRefusal = useCallback(
+    async (envelope: HomeFirstSendEnvelope, error: unknown) => {
+      publish({ ...envelope, phase: "failed_create" });
+      const catalog = refusedCatalog(error);
+      await Promise.all([
+        catalog !== "agent"
+          ? queryClient.refetchQueries({ queryKey: projectQueryKeys.works(projectId) })
+          : Promise.resolve(),
+        catalog !== "work"
+          ? queryClient.refetchQueries({ queryKey: projectQueryKeys.agents(projectId) })
+          : Promise.resolve(),
+      ]);
+      setFailure("create");
+      return false;
+    },
+    [projectId, publish, queryClient],
+  );
+
   const create = useCallback(
     async (envelope: HomeFirstSendEnvelope) => {
       const request = {
@@ -158,18 +181,7 @@ export function useHomeFirstSendAttempt({
         return await prepareCanonical(envelope, await createThread(projectId, request));
       } catch (error) {
         if (isAuthoritativeRefusal(error)) {
-          publish({ ...envelope, phase: "failed_create" });
-          const catalog = refusedCatalog(error);
-          await Promise.all([
-            catalog !== "agent"
-              ? queryClient.refetchQueries({ queryKey: projectQueryKeys.works(projectId) })
-              : Promise.resolve(),
-            catalog !== "work"
-              ? queryClient.refetchQueries({ queryKey: projectQueryKeys.agents(projectId) })
-              : Promise.resolve(),
-          ]);
-          setFailure("create");
-          return false;
+          return settleAuthoritativeRefusal(envelope, error);
         }
         const reconciled = await reconcile(envelope);
         if (reconciled) return prepareCanonical(envelope, reconciled);
@@ -177,10 +189,11 @@ export function useHomeFirstSendAttempt({
           try {
             return await prepareCanonical(envelope, await createThread(projectId, request));
           } catch (retryError) {
-            if (!isAuthoritativeRefusal(retryError)) {
-              const afterRetry = await reconcile(envelope);
-              if (afterRetry) return prepareCanonical(envelope, afterRetry);
+            if (isAuthoritativeRefusal(retryError)) {
+              return settleAuthoritativeRefusal(envelope, retryError);
             }
+            const afterRetry = await reconcile(envelope);
+            if (afterRetry) return prepareCanonical(envelope, afterRetry);
           }
         }
         publish({ ...envelope, phase: "failed_create" });
@@ -188,7 +201,7 @@ export function useHomeFirstSendAttempt({
         return false;
       }
     },
-    [createThread, prepareCanonical, projectId, publish, queryClient, reconcile],
+    [createThread, prepareCanonical, projectId, publish, reconcile, settleAuthoritativeRefusal],
   );
 
   const run = useCallback(async (operation: () => Promise<boolean>) => {
@@ -204,20 +217,25 @@ export function useHomeFirstSendAttempt({
   }, []);
 
   const submit = useCallback(
-    (text: string, context: { work: HomeWorkSelection; agentSlug: string }) =>
+    (
+      text: string,
+      context: { work: HomeWorkSelection; agentSlug: string },
+      draftRevision: number,
+    ) =>
       run(async () => {
         if (attemptRef.current) return false;
         const envelope: HomeFirstSendEnvelope = {
           threadId: makeId(),
           projectId,
           text,
+          draftRevision,
           title: deriveTitleFromMessage(text),
           work: context.work,
           agentSlug: context.agentSlug,
           phase: "creating",
           canonicalThread: null,
         };
-        latestDraftRef.current = text;
+        latestDraftRef.current = { text, revision: draftRevision };
         publish(envelope);
         setFailure(null);
         return create(envelope);
@@ -239,14 +257,14 @@ export function useHomeFirstSendAttempt({
   );
 
   const updateDraft = useCallback(
-    (text: string) => {
-      latestDraftRef.current = text;
+    (text: string, revision: number) => {
+      latestDraftRef.current = { text, revision };
       const envelope = attemptRef.current;
       if (envelope?.canonicalThread) {
-        actions.preserveFirstSendRouteDraft(envelope.threadId, text);
+        actions.preserveFirstSendRouteDraft(envelope.threadId, routeDraft(envelope));
       }
     },
-    [actions],
+    [actions, routeDraft],
   );
 
   const contextRepair = attempt?.phase === "failed_create" && failure === "create";
