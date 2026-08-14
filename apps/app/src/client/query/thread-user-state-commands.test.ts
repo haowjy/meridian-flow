@@ -110,15 +110,16 @@ describe.each([
     const client = new QueryClient();
     seed(client);
     const transports: Array<{
+      body: unknown;
       resolve: (response: Response) => void;
       reject: (error: Error) => void;
     }> = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(
-        () =>
+        (_input: RequestInfo | URL, init?: RequestInit) =>
           new Promise<Response>((resolve, reject) => {
-            transports.push({ resolve, reject });
+            transports.push({ body: JSON.parse(String(init?.body)), resolve, reject });
           }),
       ),
     );
@@ -145,11 +146,13 @@ describe.each([
       second,
     );
     expect(transports).toHaveLength(1);
+    expect(transports[0]?.body).toEqual({ isUnread: first });
 
     if (settlement === "success") transports[0]?.resolve(json(response()));
     else transports[0]?.reject(new Error("first offline"));
     await firstCommand;
     expect(transports).toHaveLength(2);
+    expect(transports[1]?.body).toEqual({ isUnread: second });
 
     transports[1]?.resolve(
       json({

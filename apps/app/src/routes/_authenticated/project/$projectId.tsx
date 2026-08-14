@@ -100,7 +100,7 @@ function RouteComponent() {
   const resolvedScreen: ScreenKey = screen ?? (thread ? "chat" : "home");
 
   function patchSearch(next: Partial<ProjectSearch>, options?: { replace?: boolean }) {
-    void navigate({
+    return navigate({
       to: "/project/$projectId",
       params: { projectId },
       search: (prev) => stripEmptySearch({ ...(prev as ProjectSearch), ...next }),
@@ -122,7 +122,7 @@ function RouteComponent() {
   }
 
   function handleSelectThread(threadId: string) {
-    patchSearch({ screen: undefined, thread: threadId, results: undefined });
+    return patchSearch({ screen: undefined, thread: threadId, results: undefined });
   }
 
   function handleSelectDockThread(threadId: string) {

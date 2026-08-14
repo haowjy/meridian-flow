@@ -8,6 +8,9 @@ govern visual and interaction work.
 `src/client/query/home-chat-feed-cache.ts` owns Home's QueryClient-scoped
 desired-state overlays, request watermarks, and authoritative reconciliation.
 `useHomeChatFeed` owns transport and per-thread/per-field command serialization.
+`visible-thread-open-acknowledgements.ts` owns semantic visible-Chat epochs,
+Home-to-Chat transfer, retry attribution, and lease cleanup above that transport;
+field command state never retains a shared settled error or outcome.
 The Home feature keeps screen orchestration in `HomeScreen`, card semantics in
 `HomeChatCard`, collection layout in `HomeFeed`, date policy in
 `home-activity-date`, and scroll/focus restoration in the favorite-movement

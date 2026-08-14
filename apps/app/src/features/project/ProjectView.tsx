@@ -13,9 +13,14 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useWorks } from "@/client/query/useWorks";
+import {
+  cancelOpenAcknowledgementTransfer,
+  type OpenAcknowledgementTransfer,
+  prepareHomeOpenAcknowledgement,
+} from "@/client/query/visible-thread-open-acknowledgements";
 import { useContextTabsStore } from "@/client/stores";
 import {
   hydrateWorkingSet,
@@ -76,7 +81,7 @@ export type ProjectViewProps = {
   /** Phone-only routed Results auxiliary surface (`?results=`). Desktop ignores it. */
   resultsOpen: boolean;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectThread: (threadId: string) => void;
+  onSelectThread: (threadId: string) => Promise<void>;
   onSelectDockThread: (threadId: string) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
@@ -103,6 +108,73 @@ export function ProjectView(props: ProjectViewProps) {
   const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
   const workingSetHydration = retriedHydration ?? entryHydration;
   const queryClient = useQueryClient();
+  const [pendingOpen, setPendingOpen] = useState<{
+    transfer: OpenAcknowledgementTransfer;
+    navigationSettled: boolean;
+  } | null>(null);
+  const pendingOpenRef = useRef(pendingOpen);
+  pendingOpenRef.current = pendingOpen;
+  const cancelPendingOpen = useCallback(
+    (transfer: OpenAcknowledgementTransfer) => {
+      cancelOpenAcknowledgementTransfer(queryClient, transfer);
+      if (pendingOpenRef.current?.transfer === transfer) pendingOpenRef.current = null;
+      setPendingOpen((current) => (current?.transfer === transfer ? null : current));
+    },
+    [queryClient],
+  );
+  const onOpenThread = useCallback(
+    (threadId: string) => {
+      const previous = pendingOpenRef.current;
+      if (previous) cancelPendingOpen(previous.transfer);
+      const offer = prepareHomeOpenAcknowledgement(queryClient, {
+        projectId: props.projectId,
+        threadId,
+      });
+      if (offer.kind === "transfer") {
+        const pending = { transfer: offer.transfer, navigationSettled: false };
+        pendingOpenRef.current = pending;
+        setPendingOpen(pending);
+      }
+      void props.onSelectThread(threadId).then(
+        () => {
+          if (offer.kind === "transfer") {
+            setPendingOpen((current) => {
+              if (current?.transfer !== offer.transfer) return current;
+              const settled = { transfer: offer.transfer, navigationSettled: true };
+              pendingOpenRef.current = settled;
+              return settled;
+            });
+          }
+        },
+        () => {
+          if (offer.kind === "transfer") cancelPendingOpen(offer.transfer);
+        },
+      );
+    },
+    [cancelPendingOpen, props.onSelectThread, props.projectId, queryClient],
+  );
+  const onOpenTransferClaimed = useCallback((transfer: OpenAcknowledgementTransfer) => {
+    if (pendingOpenRef.current?.transfer === transfer) pendingOpenRef.current = null;
+    setPendingOpen((current) => (current?.transfer === transfer ? null : current));
+  }, []);
+  useEffect(() => {
+    if (!pendingOpen?.navigationSettled) return;
+    const { transfer } = pendingOpen;
+    if (
+      transfer.key.projectId !== props.projectId ||
+      transfer.key.threadId !== props.activeThreadId ||
+      props.activeScreen !== "chat"
+    ) {
+      cancelPendingOpen(transfer);
+    }
+  }, [cancelPendingOpen, pendingOpen, props.activeScreen, props.activeThreadId, props.projectId]);
+  useEffect(
+    () => () => {
+      const current = pendingOpenRef.current;
+      if (current) cancelOpenAcknowledgementTransfer(queryClient, current.transfer);
+    },
+    [queryClient],
+  );
   const { resolvedThreadId, projectThreads } = useResolvedChatThread(
     props.projectId,
     props.activeThreadId,
@@ -152,7 +224,14 @@ export function ProjectView(props: ProjectViewProps) {
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
   const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
   const hydrated = prefsHydrated && deskHydrated;
-  const resolvedProps = { ...props, activeThreadId: resolvedThreadId, activeWork };
+  const resolvedProps = {
+    ...props,
+    activeThreadId: resolvedThreadId,
+    activeWork,
+    onOpenThread,
+    openTransfer: pendingOpen?.transfer,
+    onOpenTransferClaimed,
+  };
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
@@ -168,7 +247,12 @@ export function ProjectView(props: ProjectViewProps) {
   );
 }
 
-type ResolvedProjectViewProps = ProjectViewProps & { activeWork: Work | null };
+export type ResolvedProjectViewProps = ProjectViewProps & {
+  activeWork: Work | null;
+  onOpenThread: (threadId: string) => void;
+  openTransfer?: OpenAcknowledgementTransfer;
+  onOpenTransferClaimed: (transfer: OpenAcknowledgementTransfer) => void;
+};
 
 function HydratedProject(props: ResolvedProjectViewProps) {
   const usePhone = usePhoneShell();
@@ -323,6 +407,8 @@ function DesktopProject(props: ResolvedProjectViewProps) {
             // Mounted-but-hidden when the dock is collapsed, so the live
             // conversation survives a close/reopen.
             visible={chatPlacement === "center" || isOpen("chat")}
+            openTransfer={props.openTransfer}
+            onOpenTransferClaimed={props.onOpenTransferClaimed}
             onCloseDock={close("chat")}
             onSelectContextPath={props.onSelectContextPath}
           />
@@ -351,7 +437,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
 
 type SurfaceToggleFactory = (surfaceId: SurfaceId, label: string) => PaneHeaderRailToggle;
 
-function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
+function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
   switch (props.activeScreen) {
     case "home":
       return (
@@ -360,6 +446,7 @@ function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggle
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
           onSelectThread={props.onSelectThread}
+          onOpenThread={props.onOpenThread}
         />
       );
     case "work":

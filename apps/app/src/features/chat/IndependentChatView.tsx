@@ -31,7 +31,6 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
   const navigate = useNavigate();
   const {
     thread,
-    attention: snapshotAttention,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
     settled: historySettled,
@@ -40,8 +39,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
   const openAcknowledgement = useThreadOpenAcknowledgement({
     threadId,
     projectId,
-    attention: snapshotAttention,
-    enabled: true,
+    visible: true,
   });
   const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const activeWork = works?.find((work) => work.id === thread?.workId) ?? null;

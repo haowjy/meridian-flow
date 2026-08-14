@@ -8,6 +8,7 @@ import type { ProjectContextTreeScheme, Thread, Work } from "@meridian/contracts
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadOpenAcknowledgement } from "@/client/query/useThreadOpenAcknowledgement";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
+import type { OpenAcknowledgementTransfer } from "@/client/query/visible-thread-open-acknowledgements";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
 import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
@@ -23,8 +24,10 @@ export type ChatScreenProps = {
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
-  /** False for a mounted but hidden persistent dock. */
-  acknowledgeOpen?: boolean;
+  /** False for a mounted but hidden persistent surface. */
+  visible?: boolean;
+  openTransfer?: OpenAcknowledgementTransfer;
+  onOpenTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
 };
 
 /** Renders the resolved thread, with parent context when it is a subagent. */
@@ -34,7 +37,9 @@ export function ChatScreen({
   activeWork,
   onSelectThread,
   onSelectContextPath,
-  acknowledgeOpen = true,
+  visible = true,
+  openTransfer,
+  onOpenTransferClaimed,
 }: ChatScreenProps) {
   const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
 
@@ -64,7 +69,9 @@ export function ChatScreen({
       projectThreads={projectThreads ?? []}
       onSelectThread={onSelectThread}
       onSelectContextPath={onSelectContextPath}
-      acknowledgeOpen={acknowledgeOpen}
+      visible={visible}
+      openTransfer={openTransfer}
+      onOpenTransferClaimed={onOpenTransferClaimed}
     />
   );
 }
@@ -76,7 +83,9 @@ function ChatScreenLoaded({
   projectThreads,
   onSelectThread,
   onSelectContextPath,
-  acknowledgeOpen,
+  visible,
+  openTransfer,
+  onOpenTransferClaimed,
 }: {
   projectId: string;
   threadId: string;
@@ -84,12 +93,13 @@ function ChatScreenLoaded({
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
-  acknowledgeOpen: boolean;
+  visible: boolean;
+  openTransfer?: OpenAcknowledgementTransfer;
+  onOpenTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
 }) {
   const {
     thread: snapshotThread,
     liveState: snapshotLiveState,
-    attention: snapshotAttention,
     nextSeq: snapshotNextSeq,
     isError,
     settled: historySettled,
@@ -98,8 +108,9 @@ function ChatScreenLoaded({
   const openAcknowledgement = useThreadOpenAcknowledgement({
     threadId,
     projectId: snapshotThread?.projectId ?? projectId,
-    attention: snapshotAttention,
-    enabled: acknowledgeOpen,
+    visible,
+    transfer: openTransfer,
+    onTransferClaimed: onOpenTransferClaimed,
   });
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
   const parent = thread?.parentThreadId

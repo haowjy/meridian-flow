@@ -12,8 +12,12 @@ import { useCreateChat } from "../chat/use-create-chat";
 import { HomeFeed } from "./HomeFeed";
 import { useHomeFavoriteMovement } from "./use-home-favorite-movement";
 
-export type HomeScreenProps = { projectId: string; onSelectThread: (threadId: string) => void };
-export function HomeScreen({ projectId, onSelectThread }: HomeScreenProps) {
+export type HomeScreenProps = {
+  projectId: string;
+  onSelectThread: (threadId: string) => void;
+  onOpenThread: (threadId: string) => void;
+};
+export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScreenProps) {
   const feed = useHomeChatFeed(projectId);
   const creation = useCreateChat(projectId, onSelectThread);
   const { announce, announceError } = useAnnouncement();
@@ -26,8 +30,7 @@ export function HomeScreen({ projectId, onSelectThread }: HomeScreenProps) {
   const cardProps = {
     now,
     onOpen: (item: HomeChatItem) => {
-      if (item.attention !== "none") void feed.setUnread(item.id, false);
-      onSelectThread(item.id);
+      onOpenThread(item.id);
     },
     onFavorite: (item: HomeChatItem, value: boolean, keyboard: boolean) => {
       const optimistic = movement.capture(item.id, keyboard);
