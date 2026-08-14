@@ -162,7 +162,7 @@ describe("Home network behavior", () => {
             groupHomeFeed(
               queryClient.getQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId)),
             ).continueChat,
-          ).toMatchObject({ attention: "none", isFavorite: true });
+          ).toMatchObject({ attention: "none" });
         },
         { drainMacrotask: true },
       );

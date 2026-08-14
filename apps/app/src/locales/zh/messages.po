@@ -572,11 +572,11 @@ msgstr "随便聊聊"
 msgid "Chat context"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Chats couldn’t load"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Check your connection and try again."
 msgstr ""
 
@@ -736,7 +736,7 @@ msgstr ""
 msgid "Context"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Continue"
 msgstr ""
 
@@ -1293,7 +1293,7 @@ msgstr ""
 msgid "Failed to load image"
 msgstr "图片加载失败"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Favorite chats"
 msgstr ""
 
@@ -1409,7 +1409,7 @@ msgstr ""
 msgid "Hold on…"
 msgstr "等一下…"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 #: src/features/project/HomePaneController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
@@ -1635,7 +1635,7 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Loading chats"
 msgstr ""
 
@@ -1657,7 +1657,7 @@ msgstr ""
 msgid "Loading image"
 msgstr "正在加载图片"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Loading more chats"
 msgstr ""
 
@@ -1770,7 +1770,7 @@ msgstr ""
 msgid "More"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "More chats couldn’t load."
 msgstr ""
 
@@ -2228,6 +2228,14 @@ msgstr ""
 msgid "Read file"
 msgstr ""
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Read status wasn’t saved"
+msgstr ""
+
+#: src/features/project/home/HomeChatCard.tsx
+msgid "Read status wasn’t saved."
+msgstr ""
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
 msgstr ""
@@ -2252,7 +2260,7 @@ msgstr ""
 msgid "Recent activity"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Recent chats"
 msgstr ""
 
@@ -2408,7 +2416,8 @@ msgstr ""
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeFeed.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Retry"
 msgstr ""
@@ -2617,7 +2626,7 @@ msgstr ""
 msgid "Split cell"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Start a chat"
 msgstr ""
 
@@ -3374,7 +3383,7 @@ msgstr "昨天"
 msgid "you answered"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Your conversations will appear here."
 msgstr ""
 
