@@ -19,7 +19,7 @@ export type HomeChatCardProps = {
   now: number;
   onOpen: (item: HomeChatItem) => void;
   onFavorite: (item: HomeChatItem, value: boolean, keyboard: boolean) => void;
-  onUnread: (id: string, value: boolean) => Promise<boolean>;
+  onUnread: (item: HomeChatItem, value: boolean) => Promise<boolean>;
   getCommandState: (
     id: string,
     field: "isFavorite" | "isUnread",
@@ -139,7 +139,7 @@ export function HomeChatCard({
             <DropdownMenuItem
               aria-disabled={unread.pending || undefined}
               onSelect={() => {
-                if (!unread.pending) void onUnread(item.id, item.attention === "none");
+                if (!unread.pending) void onUnread(item, item.attention === "none");
               }}
             >
               <span>{item.attention === "none" ? t`Mark unread` : t`Mark read`}</span>
@@ -147,6 +147,21 @@ export function HomeChatCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {unread.error ? (
+        <div
+          role="alert"
+          className="absolute bottom-2 right-3 z-20 flex items-center gap-1 rounded-md bg-background px-2 py-1 text-meta text-destructive shadow-card"
+        >
+          <Trans>Read status wasn’t saved.</Trans>
+          <button
+            type="button"
+            className="focus-ring rounded-sm font-semibold underline underline-offset-2"
+            onClick={() => void onUnread(item, item.attention === "none")}
+          >
+            <Trans>Retry</Trans>
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 }

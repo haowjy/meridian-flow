@@ -181,9 +181,11 @@ export function createHomeFeedCacheController(client: QueryClient, projectId: st
       return {
         succeed(response: UpdateThreadUserStateResponse) {
           if (fields[field]?.revision !== revision) return false;
-          reconcile(threadId, response);
           fields[field] = { revision, value, retireAfter: ++s.watermark };
-          apply();
+          // Apply the authoritative response after the overlay becomes acknowledged so
+          // fields outside this command (favorite during read, attention during favorite)
+          // cannot be replaced by the optimistic pre-request cache value.
+          reconcile(threadId, response);
           retire();
           return true;
         },
