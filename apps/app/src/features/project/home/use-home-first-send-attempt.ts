@@ -157,10 +157,16 @@ export function useHomeFirstSendAttempt({
       const catalog = refusedCatalog(error);
       await Promise.all([
         catalog !== "agent"
-          ? queryClient.refetchQueries({ queryKey: projectQueryKeys.works(projectId) })
+          ? queryClient.refetchQueries({
+              queryKey: projectQueryKeys.works(projectId),
+              exact: true,
+            })
           : Promise.resolve(),
         catalog !== "work"
-          ? queryClient.refetchQueries({ queryKey: projectQueryKeys.agents(projectId) })
+          ? queryClient.refetchQueries({
+              queryKey: projectQueryKeys.agents(projectId),
+              exact: true,
+            })
           : Promise.resolve(),
       ]);
       setFailure("create");

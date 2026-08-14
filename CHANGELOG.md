@@ -9,8 +9,9 @@
   real phone scroll owner close the first-send runtime boundary. Fresh chats
   suppress the existing-chat open acknowledgement for their first visibility
   epoch, stale Work or Agent refusals before or after ambiguity reconciliation
-  refresh context while retaining the same first send for repair, and every
-  later authored draft revision transfers intact even when its text is equal.
+  refresh only the exact context catalog while retaining the same first send for
+  repair, and every later authored draft revision transfers intact even when its
+  text is equal.
   Shared Composer acceptance also clears by authoring revision rather than text
   equality, including revisions created by failed-handoff restoration.
 

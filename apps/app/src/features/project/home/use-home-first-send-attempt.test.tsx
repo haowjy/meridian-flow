@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useHomeFirstSendAttempt } from "./use-home-first-send-attempt";
@@ -67,7 +68,8 @@ describe("useHomeFirstSendAttempt", () => {
         work: { source: "current_default", displayedWorkId: "work-1" } as const,
         agentSlug: "general",
       },
-      queryKey: ["projects", "project-1", "works"],
+      queryKey: projectQueryKeys.works("project-1"),
+      descendantKey: projectQueryKeys.workDrafts("project-1", "work-stale"),
     },
     {
       catalog: "Agent",
@@ -80,13 +82,15 @@ describe("useHomeFirstSendAttempt", () => {
         work: { source: "current_default", displayedWorkId: "work-1" } as const,
         agentSlug: "general",
       },
-      queryKey: ["projects", "project-1", "agents"],
+      queryKey: projectQueryKeys.agents("project-1"),
+      descendantKey: [...projectQueryKeys.agents("project-1"), "prose"],
     },
-  ])("refreshes the $catalog catalog after an ambiguous create's same-ID retry is refused", async ({
+  ])("refetches only the $catalog catalog after an ambiguous create's retry is refused", async ({
     refusal,
     initial,
     repaired,
     queryKey,
+    descendantKey,
   }) => {
     const threadActions = actions();
     const createThread = vi
@@ -96,11 +100,21 @@ describe("useHomeFirstSendAttempt", () => {
       .mockResolvedValueOnce(canonical());
     const listThreads = vi.fn().mockResolvedValue([]);
     const onSelectThread = vi.fn(async () => undefined);
-    const client = new QueryClient();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const catalogRefresh = deferred();
-    const refetch = vi
-      .spyOn(client, "refetchQueries")
-      .mockImplementation(async () => catalogRefresh.promise);
+    const descendantRefresh = deferred();
+    const fetchCatalog = vi.fn(async () => "catalog-seed");
+    const fetchDescendant = vi.fn(async () => "descendant-seed");
+    await client.fetchQuery({ queryKey, queryFn: fetchCatalog });
+    await client.fetchQuery({ queryKey: descendantKey, queryFn: fetchDescendant });
+    fetchCatalog.mockImplementation(async () => {
+      await catalogRefresh.promise;
+      return "catalog-refreshed";
+    });
+    fetchDescendant.mockImplementation(async () => {
+      await descendantRefresh.promise;
+      return "descendant-refreshed";
+    });
     let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
 
     function Harness() {
@@ -123,18 +137,23 @@ describe("useHomeFirstSendAttempt", () => {
         let submission!: Promise<boolean>;
         await act(async () => {
           submission = controller.submit("Exact opening", initial, 0);
-          while (refetch.mock.calls.length === 0) await Promise.resolve();
+          while (fetchCatalog.mock.calls.length === 1) await Promise.resolve();
         });
 
         expect(listThreads).toHaveBeenCalledOnce();
-        expect(refetch).toHaveBeenCalledWith({ queryKey });
+        expect(fetchCatalog).toHaveBeenCalledTimes(2);
+        expect(fetchDescendant).toHaveBeenCalledOnce();
         expect(controller.contextLocked).toBe(true);
         expect(controller.failure).toBe(null);
 
-        await act(async () => {
-          catalogRefresh.resolve();
-          await expect(submission).resolves.toBe(false);
-        });
+        try {
+          await act(async () => {
+            catalogRefresh.resolve();
+            await expect(submission).resolves.toBe(false);
+          });
+        } finally {
+          descendantRefresh.resolve();
+        }
 
         expect(controller.contextLocked).toBe(false);
         expect(controller.failure).toBe("create");
