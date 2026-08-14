@@ -11,6 +11,7 @@ export type VisibilityLeaseId = string & { readonly [leaseId]: true };
 
 export type OpenAcknowledgementKey = Readonly<{ projectId: string; threadId: string }>;
 export type OpenAcknowledgementState =
+  | { phase: "suppressed"; id: OpenAcknowledgementOperationId }
   | { phase: "pending"; id: OpenAcknowledgementOperationId; attempt: number }
   | {
       phase: "failed";
@@ -36,6 +37,7 @@ type Operation = {
   key: OpenAcknowledgementKey;
   state: OpenAcknowledgementState;
   transfer: OpenAcknowledgementTransfer | null;
+  creationSuppression: boolean;
   leases: Set<VisibilityLeaseId>;
   listeners: Set<() => void>;
 };
@@ -82,7 +84,13 @@ function publish(operation: Operation) {
 
 function retireIfUnowned(owner: Coordinator, id: OpenAcknowledgementOperationId) {
   const operation = owner.operations.get(id);
-  if (!operation || operation.transfer || operation.leases.size > 0) return;
+  if (
+    !operation ||
+    operation.transfer ||
+    operation.creationSuppression ||
+    operation.leases.size > 0
+  )
+    return;
   if (operation.state.phase !== "pending") owner.operations.delete(id);
 }
 
@@ -96,12 +104,37 @@ function beginOperation(
     key,
     state: { phase: "pending", id, attempt: 1 },
     transfer: null,
+    creationSuppression: false,
     leases: new Set(),
     listeners: new Set(),
   };
   owner.operations.set(id, operation);
   runAttempt(client, id, operation, 1);
   return [id, operation];
+}
+
+/**
+ * Reserves the first visible epoch of a newly created thread. Creation already
+ * establishes unread state, so the matching Chat lease must not issue the
+ * existing-chat acknowledgement command.
+ */
+export function prepareCreatedThreadVisibility(
+  client: QueryClient,
+  key: OpenAcknowledgementKey,
+): void {
+  const owner = coordinator(client);
+  for (const operation of owner.operations.values()) {
+    if (operation.creationSuppression && sameKey(operation.key, key)) return;
+  }
+  const id = newId(owner);
+  owner.operations.set(id, {
+    key,
+    state: { phase: "suppressed", id },
+    transfer: null,
+    creationSuppression: true,
+    leases: new Set(),
+    listeners: new Set(),
+  });
 }
 
 function runAttempt(
@@ -118,7 +151,12 @@ function runAttempt(
     false,
   ).then((outcome) => {
     const owner = coordinator(client);
-    if (owner.operations.get(id) !== operation || operation.state.attempt !== attempt) return;
+    if (
+      owner.operations.get(id) !== operation ||
+      operation.state.phase !== "pending" ||
+      operation.state.attempt !== attempt
+    )
+      return;
     operation.state =
       outcome.status === "success"
         ? { phase: "succeeded", id, attempt, response: outcome.response }
@@ -138,6 +176,7 @@ export function prepareHomeOpenAcknowledgement(
       return { kind: "active", operationId: id };
     }
   }
+
   const [id, operation] = beginOperation(client, key);
   const transfer: OpenAcknowledgementTransfer = { id, key };
   operation.transfer = transfer;
@@ -201,6 +240,14 @@ export function claimVisibleOpenAcknowledgement(
       owner.leases.set(leaseId, { operationId: id, generation: nextLeaseGeneration(owner) });
       return id;
     }
+  }
+
+  for (const [id, operation] of owner.operations) {
+    if (!operation.creationSuppression || !sameKey(operation.key, key)) continue;
+    operation.creationSuppression = false;
+    operation.leases.add(leaseId);
+    owner.leases.set(leaseId, { operationId: id, generation: nextLeaseGeneration(owner) });
+    return id;
   }
 
   let id: OpenAcknowledgementOperationId;

@@ -1,8 +1,11 @@
 /** Home-owned stable-ID thread creation, reconciliation, and route handoff. */
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
 import { createProjectThread, listProjectThreads } from "@/client/api/projects-api";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { prepareCreatedThreadVisibility } from "@/client/query/visible-thread-open-acknowledgements";
 import type { ThreadStoreActions } from "@/client/stores";
 import { threadCreateAgentField, wireAgentSlug } from "@/features/agents";
 import { deriveTitleFromMessage } from "@/lib/thread-title";
@@ -45,8 +48,18 @@ function matchesEnvelope(thread: Thread, envelope: HomeFirstSendEnvelope): boole
     thread.id === envelope.threadId &&
     thread.projectId === envelope.projectId &&
     thread.currentAgent === expectedAgent &&
-    (envelope.work.source === "current_default" || thread.workId === envelope.work.workId)
+    thread.workId ===
+      (envelope.work.source === "current_default"
+        ? envelope.work.displayedWorkId
+        : envelope.work.workId)
   );
+}
+
+function refusedCatalog(error: unknown): "agent" | "work" | "both" {
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("Agent not found:")) return "agent";
+  if (message.includes("Work")) return "work";
+  return "both";
 }
 
 export function useHomeFirstSendAttempt({
@@ -57,7 +70,9 @@ export function useHomeFirstSendAttempt({
   listThreads = listProjectThreads,
   makeId = () => crypto.randomUUID(),
 }: Dependencies) {
+  const queryClient = useQueryClient();
   const attemptRef = useRef<HomeFirstSendEnvelope | null>(null);
+  const latestDraftRef = useRef("");
   const singleFlightRef = useRef(false);
   const [attempt, setAttempt] = useState<HomeFirstSendEnvelope | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -69,14 +84,13 @@ export function useHomeFirstSendAttempt({
   }, []);
 
   const route = useCallback(
-    async (envelope: HomeFirstSendEnvelope, newerDraft = "") => {
+    async (envelope: HomeFirstSendEnvelope) => {
       const thread = envelope.canonicalThread;
       if (!thread) return false;
       const routing = { ...envelope, phase: "routing" as const };
       publish(routing);
-      if (newerDraft && newerDraft !== envelope.text) {
-        actions.preserveFirstSendRouteDraft(thread.id, newerDraft);
-      }
+      const newerDraft = latestDraftRef.current;
+      actions.preserveFirstSendRouteDraft(thread.id, newerDraft);
       try {
         await onSelectThread(thread.id);
         actions.armFirstSend(thread.id);
@@ -94,13 +108,14 @@ export function useHomeFirstSendAttempt({
   );
 
   const prepareCanonical = useCallback(
-    async (envelope: HomeFirstSendEnvelope, thread: Thread, newerDraft = "") => {
+    async (envelope: HomeFirstSendEnvelope, thread: Thread) => {
       if (!matchesEnvelope(thread, envelope)) {
         publish({ ...envelope, phase: "failed_create" });
         setFailure("mismatch");
         return false;
       }
       const canonical = { ...envelope, canonicalThread: thread, phase: "routing" as const };
+      const newerDraft = latestDraftRef.current;
       actions.ensureThread(thread);
       const optimistic = actions.appendUserTurn(thread.id, envelope.text);
       actions.stageFirstSend({
@@ -109,10 +124,14 @@ export function useHomeFirstSendAttempt({
         optimisticUserTurnId: optimistic.id,
         draftAfterRoute: newerDraft && newerDraft !== envelope.text ? newerDraft : undefined,
       });
+      prepareCreatedThreadVisibility(queryClient, {
+        projectId: envelope.projectId,
+        threadId: thread.id,
+      });
       publish(canonical);
-      return route(canonical, newerDraft);
+      return route(canonical);
     },
-    [actions, publish, route],
+    [actions, publish, queryClient, route],
   );
 
   const reconcile = useCallback(
@@ -128,7 +147,7 @@ export function useHomeFirstSendAttempt({
   );
 
   const create = useCallback(
-    async (envelope: HomeFirstSendEnvelope, newerDraft = "") => {
+    async (envelope: HomeFirstSendEnvelope) => {
       const request = {
         id: envelope.threadId,
         title: envelope.title,
@@ -136,26 +155,31 @@ export function useHomeFirstSendAttempt({
         ...threadCreateAgentField(envelope.agentSlug),
       };
       try {
-        return await prepareCanonical(envelope, await createThread(projectId, request), newerDraft);
+        return await prepareCanonical(envelope, await createThread(projectId, request));
       } catch (error) {
         if (isAuthoritativeRefusal(error)) {
           publish({ ...envelope, phase: "failed_create" });
+          const catalog = refusedCatalog(error);
+          await Promise.all([
+            catalog !== "agent"
+              ? queryClient.refetchQueries({ queryKey: projectQueryKeys.works(projectId) })
+              : Promise.resolve(),
+            catalog !== "work"
+              ? queryClient.refetchQueries({ queryKey: projectQueryKeys.agents(projectId) })
+              : Promise.resolve(),
+          ]);
           setFailure("create");
           return false;
         }
         const reconciled = await reconcile(envelope);
-        if (reconciled) return prepareCanonical(envelope, reconciled, newerDraft);
+        if (reconciled) return prepareCanonical(envelope, reconciled);
         if (reconciled === null) {
           try {
-            return await prepareCanonical(
-              envelope,
-              await createThread(projectId, request),
-              newerDraft,
-            );
+            return await prepareCanonical(envelope, await createThread(projectId, request));
           } catch (retryError) {
             if (!isAuthoritativeRefusal(retryError)) {
               const afterRetry = await reconcile(envelope);
-              if (afterRetry) return prepareCanonical(envelope, afterRetry, newerDraft);
+              if (afterRetry) return prepareCanonical(envelope, afterRetry);
             }
           }
         }
@@ -164,7 +188,7 @@ export function useHomeFirstSendAttempt({
         return false;
       }
     },
-    [createThread, prepareCanonical, projectId, publish, reconcile],
+    [createThread, prepareCanonical, projectId, publish, queryClient, reconcile],
   );
 
   const run = useCallback(async (operation: () => Promise<boolean>) => {
@@ -193,6 +217,7 @@ export function useHomeFirstSendAttempt({
           phase: "creating",
           canonicalThread: null,
         };
+        latestDraftRef.current = text;
         publish(envelope);
         setFailure(null);
         return create(envelope);
@@ -201,17 +226,38 @@ export function useHomeFirstSendAttempt({
   );
 
   const retry = useCallback(
-    (currentDraft = "") =>
+    (context: { work: HomeWorkSelection; agentSlug: string }) =>
       run(async () => {
         const envelope = attemptRef.current;
-        if (!envelope) return false;
+        if (!envelope || failure === "mismatch") return false;
         setFailure(null);
         return envelope.canonicalThread
-          ? route(envelope, currentDraft)
-          : create({ ...envelope, phase: "creating" }, currentDraft);
+          ? route(envelope)
+          : create({ ...envelope, ...context, phase: "creating" });
       }),
-    [create, route, run],
+    [create, failure, route, run],
   );
 
-  return { attempt, busy, failure, submit, retry, contextLocked: attempt !== null };
+  const updateDraft = useCallback(
+    (text: string) => {
+      latestDraftRef.current = text;
+      const envelope = attemptRef.current;
+      if (envelope?.canonicalThread) {
+        actions.preserveFirstSendRouteDraft(envelope.threadId, text);
+      }
+    },
+    [actions],
+  );
+
+  const contextRepair = attempt?.phase === "failed_create" && failure === "create";
+  return {
+    attempt,
+    busy,
+    failure,
+    submit,
+    retry,
+    updateDraft,
+    contextLocked: attempt !== null && !contextRepair,
+    retryable: failure !== "mismatch",
+  };
 }

@@ -11,7 +11,8 @@ desired-state overlays, request watermarks, and authoritative reconciliation.
 transport, per-thread/per-field command serialization, and cache-command authority.
 `useHomeChatFeed` owns the Home query plus mounted-caller presentation and orchestration.
 `visible-thread-open-acknowledgements.ts` owns semantic visible-Chat epochs,
-Home-to-Chat transfer, retry attribution, and lease cleanup above that transport;
+Home-to-Chat transfer, creation-owned no-command epochs, retry attribution, and
+lease cleanup above that transport;
 field command state never retains a shared settled error or outcome.
 The visible destination's inline error row is the only accessible alert owner
 for an open failure; manual read/unread failures remain with their initiating
@@ -72,9 +73,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the matching shared Composer acknowledges an idempotent restoration; when a
   newer draft exists, the failed first send is prepended with a blank-line
   separator so both writer-authored texts survive. Ambiguous admission stays
-  quarantined without blind retry. If a writer changes the Home draft after a
-  route failure, the immutable first message remains the admitted turn and the
-  newer text transfers separately into the destination Composer.
+  quarantined without blind retry. If a writer changes the Home draft while
+  creation or routing is pending, the immutable first message remains the
+  admitted turn and the latest newer text transfers separately into the
+  destination Composer.
   This handoff lasts only for the authenticated provider lifetime and is not a
   durable outbox. Deferred project-creation flows separately use
   `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
@@ -142,11 +144,20 @@ are JSON-natural string IDs and ISO timestamps from `@meridian/contracts/threads
 
 Both transports emit this shape; the reducer consumes this shape.
 
-## Optimistic flow pattern
+## Client-led creation patterns
 
 `src/lib/optimistic-project.ts` is the template for client-led writes:
 client-generated UUID → navigate immediately → call `threads-api.ts` → reconcile
-on response. The Composer's submit-from-Home flow follows it.
+on response. It remains the pattern for flows whose destination can safely own
+an unresolved create.
+
+Home first send deliberately orders the boundary differently: stable client ID
+→ canonical create or same-ID ambiguity reconciliation → optimistic turn and
+staged handoff → route → arm. The matching Chat visibility lease claims a
+creation-owned no-command epoch rather than acknowledging the new thread as if
+it were an existing chat. A definite stale Work or Agent refusal refreshes the
+relevant catalog and unlocks prospective context repair while retaining the
+stable ID and immutable first text.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),

@@ -2417,6 +2417,10 @@ msgstr "Rendering diagram…"
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Repair your choices, then retry"
+msgstr "Repair your choices, then retry"
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
 msgstr "Replace image"

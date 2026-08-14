@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Integration contracts for Home's stable-ID create and route controller. */
 import type { Thread } from "@meridian/contracts/protocol";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadStoreActions } from "@/client/stores";
@@ -45,6 +46,74 @@ function actions() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("useHomeFirstSendAttempt", () => {
+  it.each([
+    {
+      name: "current default Work",
+      context: {
+        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        agentSlug: "general",
+      },
+      reconciled: canonical({ workId: "work-other" }),
+    },
+    {
+      name: "writer-selected Work",
+      context: {
+        work: { source: "writer", workId: "work-explicit" } as const,
+        agentSlug: "general",
+      },
+      reconciled: canonical({ workId: "work-other" }),
+    },
+    {
+      name: "non-General Agent",
+      context: {
+        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        agentSlug: "prose",
+      },
+      reconciled: canonical({ currentAgent: "other-agent" }),
+    },
+  ])("quarantines ambiguous reconciliation with mismatched $name", async ({
+    context,
+    reconciled,
+  }) => {
+    const threadActions = actions();
+    const createThread = vi.fn().mockRejectedValue(new TypeError("connection closed"));
+    const listThreads = vi.fn().mockResolvedValue([reconciled]);
+    const onSelectThread = vi.fn(async () => undefined);
+    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
+
+    function Harness() {
+      controller = useHomeFirstSendAttempt({
+        projectId: "project-1",
+        actions: threadActions,
+        onSelectThread,
+        createThread,
+        listThreads,
+        makeId: () => "stable-thread",
+      });
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => {
+          await expect(controller.submit("Opening line", context)).resolves.toBe(false);
+        });
+        expect(controller.failure).toBe("mismatch");
+        expect(threadActions.appendUserTurn).not.toHaveBeenCalled();
+        expect(threadActions.stageFirstSend).not.toHaveBeenCalled();
+        expect(onSelectThread).not.toHaveBeenCalled();
+        await act(async () => {
+          await expect(controller.retry(context)).resolves.toBe(false);
+        });
+        expect(createThread).toHaveBeenCalledOnce();
+        expect(listThreads).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
   it("reconciles an ambiguous default-Work create by stable ID, then stages and arms once", async () => {
     const threadActions = actions();
     const createThread = vi.fn().mockRejectedValueOnce(new TypeError("connection closed"));
@@ -64,33 +133,38 @@ describe("useHomeFirstSendAttempt", () => {
       return null;
     }
 
-    await withReactRoot(<Harness />, async () => {
-      let first!: Promise<boolean>;
-      let duplicate!: Promise<boolean>;
-      await act(async () => {
-        first = controller.submit("Opening line", {
-          work: { source: "current_default", displayedWorkId: "work-1" },
-          agentSlug: "general",
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        let first!: Promise<boolean>;
+        let duplicate!: Promise<boolean>;
+        await act(async () => {
+          first = controller.submit("Opening line", {
+            work: { source: "current_default", displayedWorkId: "work-1" },
+            agentSlug: "general",
+          });
+          duplicate = controller.submit("Duplicate", {
+            work: { source: "current_default", displayedWorkId: "work-1" },
+            agentSlug: "general",
+          });
         });
-        duplicate = controller.submit("Duplicate", {
-          work: { source: "current_default", displayedWorkId: "work-1" },
-          agentSlug: "general",
-        });
-      });
-      await expect(duplicate).resolves.toBe(false);
-      await expect(first).resolves.toBe(true);
+        await expect(duplicate).resolves.toBe(false);
+        await expect(first).resolves.toBe(true);
 
-      expect(createThread).toHaveBeenCalledOnce();
-      expect(createThread).toHaveBeenCalledWith("project-1", {
-        id: "stable-thread",
-        title: "Opening line",
-      });
-      expect(listThreads).toHaveBeenCalledOnce();
-      expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
-      expect(threadActions.stageFirstSend).toHaveBeenCalledOnce();
-      expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
-      expect(threadActions.armFirstSend).toHaveBeenCalledOnce();
-    });
+        expect(createThread).toHaveBeenCalledOnce();
+        expect(createThread).toHaveBeenCalledWith("project-1", {
+          id: "stable-thread",
+          title: "Opening line",
+        });
+        expect(listThreads).toHaveBeenCalledOnce();
+        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
+        expect(threadActions.stageFirstSend).toHaveBeenCalledOnce();
+        expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
+        expect(threadActions.armFirstSend).toHaveBeenCalledOnce();
+      },
+    );
   });
 
   it("keeps an explicit Work immutable and retries only routing while transferring a newer draft", async () => {
@@ -114,32 +188,43 @@ describe("useHomeFirstSendAttempt", () => {
       return null;
     }
 
-    await withReactRoot(<Harness />, async () => {
-      await act(async () => {
-        await expect(
-          controller.submit("Opening line", {
-            work: { source: "writer", workId: "work-explicit" },
-            agentSlug: "general",
-          }),
-        ).resolves.toBe(false);
-      });
-      expect(createThread).toHaveBeenCalledWith(
-        "project-1",
-        expect.objectContaining({ id: "stable-thread", workId: "work-explicit" }),
-      );
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => {
+          await expect(
+            controller.submit("Opening line", {
+              work: { source: "writer", workId: "work-explicit" },
+              agentSlug: "general",
+            }),
+          ).resolves.toBe(false);
+        });
+        expect(createThread).toHaveBeenCalledWith(
+          "project-1",
+          expect.objectContaining({ id: "stable-thread", workId: "work-explicit" }),
+        );
 
-      await act(async () => {
-        await expect(controller.retry("A newer follow-up")).resolves.toBe(true);
-      });
-      expect(createThread).toHaveBeenCalledOnce();
-      expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
-      expect(threadActions.stageFirstSend).toHaveBeenCalledOnce();
-      expect(threadActions.preserveFirstSendRouteDraft).toHaveBeenCalledWith(
-        "stable-thread",
-        "A newer follow-up",
-      );
-      expect(onSelectThread).toHaveBeenCalledTimes(2);
-      expect(threadActions.armFirstSend).toHaveBeenCalledOnce();
-    });
+        await act(async () => {
+          controller.updateDraft("A newer follow-up");
+          await expect(
+            controller.retry({
+              work: { source: "writer", workId: "work-explicit" },
+              agentSlug: "general",
+            }),
+          ).resolves.toBe(true);
+        });
+        expect(createThread).toHaveBeenCalledOnce();
+        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
+        expect(threadActions.stageFirstSend).toHaveBeenCalledOnce();
+        expect(threadActions.preserveFirstSendRouteDraft).toHaveBeenCalledWith(
+          "stable-thread",
+          "A newer follow-up",
+        );
+        expect(onSelectThread).toHaveBeenCalledTimes(2);
+        expect(threadActions.armFirstSend).toHaveBeenCalledOnce();
+      },
+    );
   });
 });

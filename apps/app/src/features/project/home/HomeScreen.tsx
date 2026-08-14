@@ -2,11 +2,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { HomeChatItem } from "@meridian/contracts/protocol";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useHomeChatFeed } from "@/client/query/useHomeChatFeed";
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement, useThreadActions } from "@/client/stores";
-import { Composer, type ComposerHandle } from "@/components/app/composer";
+import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { HomeFeed } from "./HomeFeed";
@@ -32,7 +32,6 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     { source: "current_default" } | { source: "writer"; workId: string }
   >({ source: "current_default" });
   const [modePending, setModePending] = useState(false);
-  const composerRef = useRef<ComposerHandle>(null);
   const [finePointer, setFinePointer] = useState(false);
 
   useEffect(() => {
@@ -89,7 +88,9 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
         ? t`Loading Work`
         : !selectedWork
           ? t`Choose a Work`
-          : undefined;
+          : firstSend.attempt
+            ? t`Repair your choices, then retry`
+            : undefined;
   const submit = (text: string) => {
     if (!selectedWork || modePending) return false;
     return firstSend.submit(text, {
@@ -115,11 +116,13 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
               </p>
               <div className="mt-4 @2xl/project-home:mt-6">
                 <Composer
-                  ref={composerRef}
                   variant="hero"
                   autoFocus={finePointer}
                   onSubmit={submit}
-                  submitDisabled={!worksReady || modePending || firstSend.busy}
+                  onDraftChange={firstSend.updateDraft}
+                  submitDisabled={
+                    !worksReady || modePending || firstSend.busy || firstSend.attempt !== null
+                  }
                   submitDisabledReason={submitDisabledReason}
                   busy={firstSend.busy}
                   toolbarLeft={
@@ -164,9 +167,22 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                         ? t`Created chat didn’t match your choices`
                         : t`Chat couldn’t start`
                   }
-                  onRetry={() => {
-                    void firstSend.retry(composerRef.current?.getDraft() ?? "");
-                  }}
+                  onRetry={
+                    firstSend.retryable && selectedWork
+                      ? () => {
+                          void firstSend.retry({
+                            work:
+                              workSelection.source === "writer"
+                                ? { source: "writer", workId: selectedWork.id }
+                                : {
+                                    source: "current_default",
+                                    displayedWorkId: selectedWork.id,
+                                  },
+                            agentSlug,
+                          });
+                        }
+                      : undefined
+                  }
                 />
               ) : null}
             </div>

@@ -26,6 +26,8 @@ import { useComposerPlaceholder } from "./placeholders";
 export type ComposerProps = {
   /** Clear only when the caller accepts ownership of the exact submitted text. */
   onSubmit: (text: string) => boolean | Promise<boolean>;
+  /** Reports the live draft when a caller must preserve it across navigation. */
+  onDraftChange?: (text: string) => void;
   /** Called when the user clicks the stop control while a turn is running. */
   onStop?: () => void;
   /**
@@ -91,6 +93,7 @@ function resizeComposerTextarea(el: HTMLTextAreaElement) {
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
     onSubmit,
+    onDraftChange,
     onStop,
     streaming = false,
     placeholder,
@@ -139,6 +142,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
     textRef.current = event.target.value;
     setText(event.target.value);
+    onDraftChange?.(event.target.value);
     resizeComposerTextarea(event.target);
   }
 

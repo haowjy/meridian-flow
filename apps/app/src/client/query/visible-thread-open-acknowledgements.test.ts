@@ -8,6 +8,7 @@ import {
   claimVisibleOpenAcknowledgement,
   createVisibilityLeaseId,
   getOpenAcknowledgementState,
+  prepareCreatedThreadVisibility,
   prepareHomeOpenAcknowledgement,
   releaseVisibleOpenAcknowledgement,
   retryOpenAcknowledgement,
@@ -44,6 +45,26 @@ function controlledRequests(): Request[] {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("visible thread open acknowledgements", () => {
+  it("owns a created thread's complete first visibility epoch without a command", async () => {
+    const client = new QueryClient();
+    const requests = controlledRequests();
+    const key = { projectId: "project-1", threadId: "thread-created" };
+    prepareCreatedThreadVisibility(client, key);
+    const firstLease = createVisibilityLeaseId();
+    const id = claimVisibleOpenAcknowledgement(client, key, firstLease);
+    const secondLease = createVisibilityLeaseId();
+    expect(claimVisibleOpenAcknowledgement(client, key, secondLease)).toBe(id);
+    expect(getOpenAcknowledgementState(client, id)).toEqual({ phase: "suppressed", id });
+    expect(requests).toHaveLength(0);
+
+    releaseVisibleOpenAcknowledgement(client, firstLease);
+    releaseVisibleOpenAcknowledgement(client, secondLease);
+    await Promise.resolve();
+    expect(getOpenAcknowledgementState(client, id)).toBeNull();
+    claimVisibleOpenAcknowledgement(client, key, createVisibilityLeaseId());
+    expect(requests.map((request) => request.body)).toEqual([{ isUnread: false }]);
+  });
+
   it("transfers Home's exact in-flight operation to visible Chat without a duplicate PATCH", async () => {
     const client = new QueryClient();
     const requests = controlledRequests();

@@ -6,7 +6,10 @@
   prospective Agent, write-mode, and Work controls, and route-armed first-send
   creation while preserving the secondary Continue, Favorite, and Recent feed;
   stable-ID reconciliation, route-only retry, accessible pending states, and a
-  real phone scroll owner close the first-send runtime boundary.
+  real phone scroll owner close the first-send runtime boundary. Fresh chats
+  suppress the existing-chat open acknowledgement for their first visibility
+  epoch, stale Work or Agent refusals retain the same first send for repaired
+  context retry, and drafts typed during creation or routing transfer intact.
 
 - `apps/app`: promote the real Composer to a neutral presentation boundary,
   make draft clearing caller-accepted, and add route-armed first-message
