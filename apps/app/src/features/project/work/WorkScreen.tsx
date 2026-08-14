@@ -37,6 +37,8 @@ export function WorkScreen({ projectId }: { projectId: string }) {
   const [pendingFocus, setPendingFocus] = useState<PendingFocusIntent | null>(null);
   const active = works?.filter((work) => work.status === "active") ?? [];
   const archived = works?.filter((work) => work.status === "archived") ?? [];
+  const nonDialogError = !editing ? mutation.error : null;
+  const errorPlacement = getWorkErrorPlacement(mutation.variables, works ?? []);
   const registerFocus = (target: FocusTarget) => (node: HTMLElement | null) => {
     if (node) focusRefs.current.set(target, node);
     else focusRefs.current.delete(target);
@@ -154,6 +156,8 @@ export function WorkScreen({ projectId }: { projectId: string }) {
                   currentWorkId={currentWorkId}
                   defaultWorkId={defaultWorkId}
                   pending={mutation.isPending}
+                  error={errorPlacement.section === "active" ? nonDialogError : null}
+                  errorWorkId={errorPlacement.workId}
                   onSelect={(workId) => {
                     if (workId !== currentWorkId) runAction({ type: "switch", workId });
                   }}
@@ -182,6 +186,8 @@ export function WorkScreen({ projectId }: { projectId: string }) {
                 currentWorkId={currentWorkId}
                 defaultWorkId={defaultWorkId}
                 pending={mutation.isPending}
+                error={errorPlacement.section === "archived" ? nonDialogError : null}
+                errorWorkId={errorPlacement.workId}
                 onSelect={(workId) => {
                   if (workId !== currentWorkId) runAction({ type: "switch", workId });
                 }}
@@ -193,12 +199,6 @@ export function WorkScreen({ projectId }: { projectId: string }) {
             ) : null}
           </>
         )}
-
-        {!editing && mutation.error ? (
-          <p className="mt-3 text-sm text-destructive" role="alert">
-            {mutation.error.message}
-          </p>
-        ) : null}
 
         <WorkDialog
           key={editing === "new" ? "new" : (editing?.id ?? "closed")}
@@ -218,6 +218,8 @@ function WorkList({
   currentWorkId,
   defaultWorkId,
   pending,
+  error,
+  errorWorkId,
   onSelect,
   onEdit,
   registerFocus,
@@ -226,6 +228,8 @@ function WorkList({
   currentWorkId: string | null;
   defaultWorkId: string | null;
   pending: boolean;
+  error: Error | null;
+  errorWorkId: string | null;
   onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
   registerFocus?: (target: FocusTarget) => (node: HTMLElement | null) => void;
@@ -235,7 +239,7 @@ function WorkList({
       {works.map((work) => (
         <li
           key={work.id}
-          className="surface-card flex min-h-36 min-w-0 items-stretch gap-3 rounded-sm border border-border-subtle p-4"
+          className="surface-card flex min-h-36 min-w-0 flex-wrap items-stretch gap-3 rounded-sm border border-border-subtle p-4"
         >
           <button
             type="button"
@@ -289,8 +293,18 @@ function WorkList({
           >
             <MoreHorizontal className="size-4" />
           </Button>
+          {error && errorWorkId === work.id ? (
+            <p className="w-full text-sm text-destructive" role="alert" data-work-error={work.id}>
+              {error.message}
+            </p>
+          ) : null}
         </li>
       ))}
+      {error && errorWorkId === null ? (
+        <li className="text-sm text-destructive" role="alert" data-work-error="active-boundary">
+          {error.message}
+        </li>
+      ) : null}
     </ul>
   );
 }
@@ -300,6 +314,8 @@ function ArchivedWorkSection({
   currentWorkId,
   defaultWorkId,
   pending,
+  error,
+  errorWorkId,
   onSelect,
   onEdit,
   open,
@@ -311,6 +327,8 @@ function ArchivedWorkSection({
   currentWorkId: string | null;
   defaultWorkId: string | null;
   pending: boolean;
+  error: Error | null;
+  errorWorkId: string | null;
   onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
   open: boolean;
@@ -363,17 +381,39 @@ function ArchivedWorkSection({
             currentWorkId={currentWorkId}
             defaultWorkId={defaultWorkId}
             pending={pending}
+            error={error}
+            errorWorkId={errorWorkId}
             onSelect={onSelect}
             onEdit={onEdit}
             registerFocus={registerFocus}
           />
         </div>
+      ) : error ? (
+        <p
+          className="mt-2 text-sm text-destructive"
+          role="alert"
+          data-work-error="archived-boundary"
+        >
+          {error.message}
+        </p>
       ) : null}
     </section>
   );
 }
 
 type WorkAction = Parameters<ReturnType<typeof useWorkMutations>["mutate"]>[0];
+
+function getWorkErrorPlacement(
+  action: WorkAction | undefined,
+  works: Work[],
+): { section: Work["status"]; workId: string | null } {
+  if (!action || action.type === "create") return { section: "active", workId: null };
+  const work = works.find((candidate) => candidate.id === action.workId);
+  return {
+    section: work?.status ?? (action.type === "unarchive" ? "archived" : "active"),
+    workId: work?.id ?? null,
+  };
+}
 
 type FocusTarget = "new" | "archived-disclosure" | `edit:${string}`;
 type PendingFocusIntent =

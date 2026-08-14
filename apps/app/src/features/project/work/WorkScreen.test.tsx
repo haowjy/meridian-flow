@@ -97,6 +97,7 @@ describe("WorkScreen actions", () => {
       reset: vi.fn(),
       isPending: false,
       error: new Error("Could not switch Work"),
+      variables: { type: "switch", workId: "work-b" },
     } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
 
     await withReactRoot(<WorkScreen projectId="project-1" />, () => {
@@ -108,6 +109,9 @@ describe("WorkScreen actions", () => {
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
         "Could not switch Work",
       );
+      expect(
+        document.querySelector('[data-work-error="work-b"]')?.closest("li")?.textContent,
+      ).toContain("Work B");
       buttonContaining("Work A").click();
       buttonContaining("Work B").click();
       expect(mutate).toHaveBeenCalledTimes(1);
@@ -115,6 +119,87 @@ describe("WorkScreen actions", () => {
         { type: "switch", workId: "work-b" },
         expect.objectContaining({ onSettled: expect.any(Function) }),
       );
+    });
+  });
+
+  it("keeps each failed row action beside its submitted Work and clears it on retry and success", async () => {
+    const works = [
+      workFixture("active-a", "Active A", "Goal A"),
+      workFixture("active-b", "Active B", "Goal B"),
+      workFixture("active-c", "Active C", "Goal C"),
+      archivedWorkFixture("archived-a", "Archived A"),
+    ];
+    type MutationOptions = { onSuccess?: (result: Work) => void; onSettled?: () => void };
+    let rerender: (() => void) | null = null;
+    let mutationError: Error | null = null;
+    let variables: { type: "switch"; workId: string } | undefined;
+    let submitted: { action: { type: "switch"; workId: string }; options: MutationOptions } | null =
+      null;
+    const reset = vi.fn(() => {
+      mutationError = null;
+      variables = undefined;
+      rerender?.();
+    });
+    const mutate = vi.fn((action: { type: "switch"; workId: string }, options: MutationOptions) => {
+      variables = action;
+      submitted = { action, options };
+      rerender?.();
+    });
+    vi.mocked(queryHooks.useWorks).mockReturnValue({
+      works,
+      currentWork: works[0],
+      currentWorkId: works[0].id,
+      defaultWorkId: works[0].id,
+      isError: false,
+      isFetching: false,
+      status: "ready",
+      refetch: vi.fn(),
+    });
+    vi.mocked(queryHooks.useWorkMutations).mockImplementation(
+      () =>
+        ({
+          mutate,
+          reset,
+          isPending: false,
+          error: mutationError,
+          variables,
+        }) as unknown as ReturnType<typeof queryHooks.useWorkMutations>,
+    );
+
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorkScreen projectId="project-1" />;
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      await act(async () => buttonContaining("Active B").click());
+      mutationError = new Error("Active switch failed");
+      submitted?.options.onSettled?.();
+      await act(async () => rerender?.());
+      expect(document.querySelector('[data-work-error="active-b"]')?.textContent).toBe(
+        "Active switch failed",
+      );
+      expect(
+        document.querySelector('[data-work-selection="active-c"]')?.closest("li")?.textContent,
+      ).not.toContain("Active switch failed");
+
+      await act(async () => buttonContaining("Active B").click());
+      expect(document.querySelector("[data-work-error]")).toBeNull();
+      submitted?.options.onSuccess?.(works[1]);
+      submitted?.options.onSettled?.();
+      await act(async () => rerender?.());
+      expect(document.querySelector("[data-work-error]")).toBeNull();
+
+      await act(async () => buttonContaining("Archived Work").click());
+      await act(async () => buttonContaining("Archived A").click());
+      mutationError = new Error("Archived switch failed");
+      submitted?.options.onSettled?.();
+      await act(async () => rerender?.());
+      expect(document.querySelector('[data-work-error="archived-a"]')?.textContent).toBe(
+        "Archived switch failed",
+      );
+      expect(document.querySelector('[data-work-error="active-b"]')).toBeNull();
     });
   });
 
