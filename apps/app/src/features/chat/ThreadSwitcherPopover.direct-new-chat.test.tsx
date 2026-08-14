@@ -21,7 +21,7 @@ vi.mock("@/client/query/project-invalidation", () => ({ invalidateProjectThreadD
 vi.mock("@/client/stores", () => ({
   useThreadStore: (selector: (state: { now: number }) => unknown) => selector({ now: 0 }),
 }));
-vi.mock("@/features/project/data/dashboard-data", () => ({
+vi.mock("@/features/project/data/project-thread-groups", () => ({
   useProjectThreadGroups: () => ({
     workItems: [],
     primaryThreads: [],

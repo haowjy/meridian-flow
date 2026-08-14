@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { useCreateChat } from "@/features/project/chat/use-create-chat";
-import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
+import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
 import { displayThreadTitle } from "@/lib/thread-title";

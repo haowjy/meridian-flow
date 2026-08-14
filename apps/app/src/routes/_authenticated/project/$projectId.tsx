@@ -18,7 +18,7 @@ import {
 } from "@/client/query/project-route-data";
 import { useThreadStore } from "@/client/stores";
 import { setThread } from "@/client/working-set";
-import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
+import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { ProjectView } from "@/features/project/ProjectView";
 import { SCREENS, type ScreenKey } from "@/features/project/shell/screens";
 import { Route as AuthenticatedRoute } from "../../_authenticated";

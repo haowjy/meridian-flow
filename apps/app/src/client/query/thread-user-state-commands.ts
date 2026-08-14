@@ -16,14 +16,16 @@ export type ThreadUserStateCommandState = {
 };
 export type ThreadUserStateLifecycle = { beforeRollback?: () => void };
 
-type ActiveCommand = {
+type QueuedCommand = {
   value: boolean;
   promise: Promise<ThreadUserStateOutcome>;
+  resolve: (outcome: ThreadUserStateOutcome) => void;
   lifecycles: Set<ThreadUserStateLifecycle>;
 };
+type CommandQueue = { running: boolean; entries: QueuedCommand[] };
 type Authority = {
   version: number;
-  active: Map<string, ActiveCommand>;
+  active: Map<string, CommandQueue>;
   states: Map<string, ThreadUserStateCommandState>;
   listeners: Set<() => void>;
 };
@@ -67,62 +69,86 @@ export function runThreadUserStateCommand(
 ): Promise<ThreadUserStateOutcome> {
   const owner = authority(client);
   const id = commandId(projectId, threadId, field);
-  const existing = owner.active.get(id);
-  if (existing) {
-    if (existing.value === value) {
-      existing.lifecycles.add(lifecycle);
-      return existing.promise;
-    }
-    return existing.promise.then(() =>
-      runThreadUserStateCommand(client, projectId, threadId, field, value, lifecycle),
-    );
+  let queue = owner.active.get(id);
+  if (!queue) {
+    queue = { running: false, entries: [] };
+    owner.active.set(id, queue);
+  }
+  const tail = queue.entries.at(-1);
+  if (tail?.value === value) {
+    tail.lifecycles.add(lifecycle);
+    return tail.promise;
   }
 
-  const lifecycles = new Set([lifecycle]);
+  let resolve!: (outcome: ThreadUserStateOutcome) => void;
+  const promise = new Promise<ThreadUserStateOutcome>((done) => {
+    resolve = done;
+  });
+  queue.entries.push({ value, promise, resolve, lifecycles: new Set([lifecycle]) });
+  publish(owner, id, { pending: true, error: null, outcome: null });
+  if (!queue.running)
+    void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
+  return promise;
+}
+
+async function advanceThreadUserStateQueue(
+  owner: Authority,
+  id: string,
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+  field: HomeStateField,
+): Promise<void> {
+  const queue = owner.active.get(id);
+  const entry = queue?.entries[0];
+  if (!queue || !entry || queue.running) return;
+  queue.running = true;
   const cacheCommand = createHomeFeedCacheController(client, projectId).command(
     threadId,
     field,
-    value,
+    entry.value,
   );
-  publish(owner, id, { pending: true, error: null, outcome: null });
-  const promise = updateThreadUserState(
-    threadId,
-    field === "isFavorite" ? { isFavorite: value } : { isUnread: value },
-  )
-    .then(
-      (response) =>
-        new Promise<ThreadUserStateOutcome>((resolve) => {
-          // Query observers may still flush the request result that preceded this
-          // command. Reconcile after that notification turn so stale local delivery
-          // cannot replace the authoritative mutation response.
-          setTimeout(() => {
-            cacheCommand.succeed(response);
-            const outcome = { status: "success" as const, response };
-            publish(owner, id, { pending: false, error: null, outcome });
-            resolve(outcome);
-          }, 0);
-        }),
-    )
-    .catch((cause): ThreadUserStateOutcome => {
-      lifecycles.forEach((entry) => {
-        entry.beforeRollback?.();
-      });
-      cacheCommand.fail();
-      const error = cause instanceof Error ? cause : new Error(String(cause));
-      const outcome = { status: "error" as const, error };
-      publish(owner, id, { pending: false, error, outcome });
-      return outcome;
-    })
-    .finally(() => {
-      // Keep the settled command joinable through consumer reconciliation renders.
-      // A visible-chat acknowledgement updates its snapshot in a promise consumer;
-      // deleting synchronously here would let that render start a duplicate transport.
-      setTimeout(() => {
-        if (owner.active.get(id)?.promise === promise) owner.active.delete(id);
-      }, 0);
+  let outcome: ThreadUserStateOutcome;
+  try {
+    const response = await updateThreadUserState(
+      threadId,
+      field === "isFavorite" ? { isFavorite: entry.value } : { isUnread: entry.value },
+    );
+    // Let stale query observer delivery finish before applying the mutation response.
+    await new Promise<void>((resolveTurn) => setTimeout(resolveTurn, 0));
+    cacheCommand.succeed(response);
+    outcome = { status: "success", response };
+  } catch (cause) {
+    entry.lifecycles.forEach((item) => {
+      item.beforeRollback?.();
     });
-  owner.active.set(id, { value, promise, lifecycles });
-  return promise;
+    cacheCommand.fail();
+    outcome = {
+      status: "error",
+      error: cause instanceof Error ? cause : new Error(String(cause)),
+    };
+  }
+
+  // Remove the settled entry and release the queue before resolving consumers.
+  // A consumer may synchronously enqueue the opposite value without observing
+  // the completed command as active.
+  queue.entries.shift();
+  queue.running = false;
+  const next = queue.entries[0];
+  if (!next) owner.active.delete(id);
+  publish(
+    owner,
+    id,
+    next
+      ? { pending: true, error: null, outcome: null }
+      : {
+          pending: false,
+          error: outcome.status === "error" ? outcome.error : null,
+          outcome,
+        },
+  );
+  entry.resolve(outcome);
+  if (next) void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
 }
 
 export function useThreadUserStateCommandState(

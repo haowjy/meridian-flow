@@ -23,7 +23,7 @@ vi.mock("@/client/stores", () => ({
   useThreadStore: (selector: (state: { now: string }) => unknown) =>
     selector({ now: "2026-01-01T00:00:00.000Z" }),
 }));
-vi.mock("@/features/project/data/dashboard-data", () => ({
+vi.mock("@/features/project/data/project-thread-groups", () => ({
   useProjectThreadGroups: () => ({
     workItems: [],
     primaryThreads: [],

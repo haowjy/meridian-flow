@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { ChatView } from "@/features/chat/ChatView";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
+import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
 
 /**
  * Independent chat surface (`/chat/:threadId`) — a thread the user experiences
@@ -36,7 +37,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     settled: historySettled,
   } = useThreadSnapshotSync(threadId);
   const projectId = thread?.projectId ?? null;
-  useThreadOpenAcknowledgement({
+  const openAcknowledgement = useThreadOpenAcknowledgement({
     threadId,
     projectId,
     attention: snapshotAttention,
@@ -75,6 +76,10 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
           <Trans>Create project</Trans>
         </Button>
       </header>
+      <OpenAcknowledgementError
+        error={openAcknowledgement.error}
+        onRetry={openAcknowledgement.retry}
+      />
 
       <main className="min-h-0 flex-1">
         <DraftReviewProvider
