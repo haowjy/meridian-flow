@@ -8,6 +8,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import { MeridianApiError } from "@/client/api/meridian-error";
 import { isThreadAdmissionError } from "./ThreadRunController";
 import {
@@ -301,6 +302,15 @@ describe("ThreadRunController", () => {
         message: "Turn already running",
         retryable: false,
         source: "system",
+      }),
+      remaining: 0,
+      kind: "definite",
+    },
+    {
+      label: "authoritative plain HTTP rejection",
+      error: new HttpResponseError("Turn already running", 409, {
+        statusCode: 409,
+        message: "Turn already running",
       }),
       remaining: 0,
       kind: "definite",

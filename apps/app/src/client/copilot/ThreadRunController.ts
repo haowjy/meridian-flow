@@ -7,6 +7,7 @@
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
 import { EventType } from "@meridian/contracts/protocol";
+import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
   appendUserMessage,
@@ -58,6 +59,12 @@ export class ThreadAdmissionError extends Error {
 
 export function isThreadAdmissionError(value: unknown): value is ThreadAdmissionError {
   return value instanceof ThreadAdmissionError;
+}
+
+function classifyAdmissionFailure(error: unknown): AdmissionFailureKind {
+  if (isThreadAdmissionError(error)) return error.kind;
+  if (isMeridianApiError(error) || error instanceof HttpResponseError) return "definite";
+  return "ambiguous";
 }
 
 export type ThreadRunControllerOptions = {
@@ -143,11 +150,7 @@ export class ThreadRunController {
         },
       });
     } catch (error) {
-      const kind: AdmissionFailureKind = isThreadAdmissionError(error)
-        ? error.kind
-        : isMeridianApiError(error)
-          ? "definite"
-          : "ambiguous";
+      const kind = classifyAdmissionFailure(error);
       if (options.optimisticUserTurnId && kind === "definite") {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
