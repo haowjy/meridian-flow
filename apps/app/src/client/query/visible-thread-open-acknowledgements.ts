@@ -153,6 +153,29 @@ function detachLease(owner: Coordinator, leaseId: VisibilityLeaseId) {
   retireIfUnowned(owner, lease.operationId);
 }
 
+function takeDeliveredTransfer(
+  owner: Coordinator,
+  key: OpenAcknowledgementKey,
+  transfer: OpenAcknowledgementTransfer,
+  operationId?: OpenAcknowledgementOperationId,
+): Operation | null {
+  const operation = owner.operations.get(transfer.id);
+  const exact =
+    operation?.transfer === transfer &&
+    (operationId === undefined || transfer.id === operationId) &&
+    sameKey(transfer.key, key) &&
+    sameKey(operation.key, key);
+  if (exact) {
+    operation.transfer = null;
+    return operation;
+  }
+  if (operation?.transfer === transfer) {
+    operation.transfer = null;
+    retireIfUnowned(owner, transfer.id);
+  }
+  return null;
+}
+
 export function claimVisibleOpenAcknowledgement(
   client: QueryClient,
   key: OpenAcknowledgementKey,
@@ -165,6 +188,7 @@ export function claimVisibleOpenAcknowledgement(
     ? owner.operations.get(existingLease.operationId)
     : undefined;
   if (existingLease && existingOperation && sameKey(existingOperation.key, key)) {
+    if (transfer) takeDeliveredTransfer(owner, key, transfer, existingLease.operationId);
     existingLease.generation = nextLeaseGeneration(owner);
     return existingLease.operationId;
   }
@@ -172,6 +196,7 @@ export function claimVisibleOpenAcknowledgement(
 
   for (const [id, operation] of owner.operations) {
     if (operation.leases.size > 0 && sameKey(operation.key, key)) {
+      if (transfer) takeDeliveredTransfer(owner, key, transfer, id);
       operation.leases.add(leaseId);
       owner.leases.set(leaseId, { operationId: id, generation: nextLeaseGeneration(owner) });
       return id;
@@ -180,18 +205,11 @@ export function claimVisibleOpenAcknowledgement(
 
   let id: OpenAcknowledgementOperationId;
   let operation: Operation;
-  const transferred = transfer ? owner.operations.get(transfer.id) : undefined;
-  if (
-    transfer &&
-    transferred?.transfer === transfer &&
-    sameKey(transfer.key, key) &&
-    sameKey(transferred.key, key)
-  ) {
+  const transferred = transfer ? takeDeliveredTransfer(owner, key, transfer) : null;
+  if (transfer && transferred) {
     id = transfer.id;
     operation = transferred;
-    operation.transfer = null;
   } else {
-    if (transfer) cancelOpenAcknowledgementTransfer(client, transfer);
     [id, operation] = beginOperation(client, key);
   }
   operation.leases.add(leaseId);

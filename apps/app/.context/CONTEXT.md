@@ -7,7 +7,9 @@ govern visual and interaction work.
 
 `src/client/query/home-chat-feed-cache.ts` owns Home's QueryClient-scoped
 desired-state overlays, request watermarks, and authoritative reconciliation.
-`useHomeChatFeed` owns transport and per-thread/per-field command serialization.
+`src/client/query/thread-user-state-commands.ts` is the QueryClient-scoped
+transport, per-thread/per-field command serialization, and cache-command authority.
+`useHomeChatFeed` owns the Home query plus mounted-caller presentation and orchestration.
 `visible-thread-open-acknowledgements.ts` owns semantic visible-Chat epochs,
 Home-to-Chat transfer, retry attribution, and lease cleanup above that transport;
 field command state never retains a shared settled error or outcome.
