@@ -1,10 +1,10 @@
-/** One write-mode controller rendered through toolbar-owned trigger and panel semantics. */
+/** Selected-Work write-mode control shared by new and existing chat composers. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { type RefObject, useRef, useState } from "react";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
 import {
   ComposerCurrentValueTrigger,
@@ -13,8 +13,6 @@ import {
 } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
-import { activeDockedDraftGroups } from "./docked-drafts";
-import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 type WriteModeInteraction =
   | { workId: string; page: "choices"; phase: "idle" | "applying" }
@@ -31,17 +29,26 @@ const choices = (workId: string): WriteModeInteraction => ({
   phase: "idle",
 });
 
-export function useComposerWriteModeToolbarControl({
+export function useSelectedWorkWriteModeToolbarControl({
   projectId,
   work,
+  openDraftReview,
 }: {
   projectId: string;
   work: Work;
+  openDraftReview: (
+    group: {
+      documentId: string;
+      contextPath?: string;
+      documentName?: string;
+      isNewDocument?: boolean;
+    },
+    draftId: string,
+  ) => void;
 }): ComposerToolbarControl {
   const update = useUpdateWorkWriteMode(projectId, work.id);
   const drafts = useWorkDrafts(projectId, work.id);
-  const { openAiDraft } = useAiDraftLauncher();
-  const groups = activeDockedDraftGroups(drafts.groups);
+  const groups = activeWorkDraftGroups(drafts.groups);
   const firstGroup =
     [...groups]
       .sort((a, b) =>
@@ -109,7 +116,7 @@ export function useComposerWriteModeToolbarControl({
   const review = (terminalClose: () => void) => {
     if (!firstGroup || !firstDraft || applying) return;
     terminalClose();
-    openAiDraft(
+    openDraftReview(
       {
         documentId: firstGroup.documentId,
         contextPath: firstGroup.contextPath ?? undefined,

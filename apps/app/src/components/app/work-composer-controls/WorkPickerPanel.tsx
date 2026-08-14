@@ -14,7 +14,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
-import type { WorkBindingFailure } from "./composer-work-binding-reducer";
+
+export type WorkPickerFailure =
+  | { kind: "thread_busy" }
+  | { kind: "work_unavailable" }
+  | { kind: "current_work_missing" }
+  | { kind: "reconciled_not_current" }
+  | { kind: "unconfirmed" };
 
 export type WorkCatalogView =
   | { status: "loading" }
@@ -25,7 +31,7 @@ export type WorkPickerOperation = {
   currentWorkId: string;
   targetId: string | null;
   pending: boolean;
-  failure: WorkBindingFailure | null;
+  failure: WorkPickerFailure | null;
 };
 
 type WorkPickerRows = {
@@ -73,7 +79,7 @@ export function deriveWorkPickerViewModel(
   return { ...rows, status: catalog.status };
 }
 
-const failureCopy = (failure: WorkBindingFailure) => {
+const failureCopy = (failure: WorkPickerFailure) => {
   switch (failure.kind) {
     case "thread_busy":
       return t`Wait for this response to finish, then try again.`;

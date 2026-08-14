@@ -7,6 +7,7 @@ import { ThreadWorkOutcomeUnconfirmedError } from "@/client/query/thread-work-bi
 import { type NormalizedCommit, useRebindThreadWork } from "@/client/query/useRebindThreadWork";
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement } from "@/client/stores";
+import type { WorkCatalogView, WorkPickerOperation } from "@/components/app/work-composer-controls";
 import {
   type ComposerWorkBindingState,
   initialComposerWorkBindingState,
@@ -14,7 +15,6 @@ import {
   type WorkBindingFailure,
   type WorkBindingRequest,
 } from "./composer-work-binding-reducer";
-import type { WorkCatalogView, WorkPickerOperation } from "./WorkPickerPanel";
 
 export type ComposerWorkBindingController = {
   state: ComposerWorkBindingState;

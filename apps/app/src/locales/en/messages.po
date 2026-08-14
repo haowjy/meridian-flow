@@ -73,7 +73,7 @@ msgid "{0, plural, one {# pending change} other {# pending changes}}"
 msgstr "{0, plural, one {# pending change} other {# pending changes}}"
 
 #. placeholder {0}: count ?? 0
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 msgstr "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 
@@ -139,7 +139,7 @@ msgid "{0} source copied"
 msgstr "{0} source copied"
 
 #. placeholder {0}: work.name
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "{0}, Archived"
 msgstr "{0}, Archived"
 
@@ -266,7 +266,7 @@ msgstr "Actions for {title}"
 #~ msgid "Active"
 #~ msgstr "Active"
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Active Work"
 msgstr "Active Work"
@@ -322,11 +322,11 @@ msgstr "AI assistant"
 msgid "AI edits wait here for your review."
 msgstr "AI edits wait here for your review."
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "AI write mode: {localizedValue}"
 msgstr "AI write mode: {localizedValue}"
 
@@ -371,7 +371,7 @@ msgstr "Apply"
 msgid "Apply all"
 msgstr "Apply all"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
 
@@ -383,7 +383,7 @@ msgstr "Archive"
 #~ msgid "Archived"
 #~ msgstr "Archived"
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Archived Work"
 msgstr "Archived Work"
@@ -401,7 +401,7 @@ msgstr "Ask about your data, methods, or the next step in your work—plain lang
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Auto-apply"
 msgstr "Auto-apply"
 
@@ -489,7 +489,7 @@ msgstr "Buy extra usage"
 msgid "Can't undo"
 msgstr "Can't undo"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
@@ -517,8 +517,8 @@ msgstr "Center"
 msgid "Centered"
 msgstr "Centered"
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "Change work for this chat"
 msgstr "Change work for this chat"
 
@@ -543,7 +543,7 @@ msgstr "Changed 1 Work"
 msgid "Changes"
 msgstr "Changes"
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Changing work"
 msgstr "Changing work"
 
@@ -596,7 +596,7 @@ msgstr "Checked recent changes"
 msgid "Checked Work"
 msgstr "Checked Work"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr "Checking pending changes…"
 
@@ -804,7 +804,7 @@ msgstr "Copy removed text"
 msgid "Could not load files."
 msgstr "Could not load files."
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr "Couldn't apply everything. Nothing changed, so you're still in Draft."
 
@@ -892,7 +892,7 @@ msgstr "Couldn't load this result."
 msgid "Couldn't load uploads."
 msgstr "Couldn't load uploads."
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
 msgstr "Couldn't load Work."
 
@@ -1006,7 +1006,7 @@ msgstr "Current"
 msgid "Current block type"
 msgstr "Current block type"
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Current Work for this chat."
 msgstr "Current Work for this chat."
 
@@ -1157,7 +1157,7 @@ msgstr "Download {name}"
 msgid "Download image"
 msgstr "Download image"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Draft"
 msgstr "Draft"
 
@@ -1182,7 +1182,7 @@ msgstr "Drafted file"
 msgid "Drafting…"
 msgstr "Drafting…"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Drafts are waiting"
 msgstr "Drafts are waiting"
 
@@ -1395,7 +1395,7 @@ msgid "Goal"
 msgstr "Goal"
 
 #. placeholder {0}: work.goal
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Goal: {0}. "
 msgstr "Goal: {0}. "
 
@@ -1727,7 +1727,7 @@ msgstr "Loading uploads…"
 msgid "Loading Work"
 msgstr "Loading Work"
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Loading Work…"
 msgstr "Loading Work…"
 
@@ -2027,11 +2027,11 @@ msgstr "No projects yet."
 msgid "No results yet."
 msgstr "No results yet."
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work matches your search."
 msgstr "No Work matches your search."
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
 msgstr "No Work yet."
 
@@ -2482,7 +2482,7 @@ msgstr "Retry sign-in"
 msgid "Review"
 msgstr "Review"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Review changes"
 msgstr "Review changes"
 
@@ -2548,7 +2548,7 @@ msgstr "Search chats"
 msgid "Search papers, extract findings, and synthesize a summary across sources."
 msgstr "Search papers, extract findings, and synthesize a summary across sources."
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Search Work"
 msgstr "Search Work"
 
@@ -2871,8 +2871,8 @@ msgstr "That picture is no longer in the document."
 msgid "That skill isn't available in this chat."
 msgstr "That skill isn't available in this chat."
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "That Work is no longer available. Choose another Work."
 msgstr "That Work is no longer available. Choose another Work."
 
@@ -2897,8 +2897,8 @@ msgstr "The assistant referred to this document, but it isn't there now. It may 
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr "The browser blocked the clipboard. Check this site's permissions."
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "The change could not be confirmed. Try again."
 msgstr "The change could not be confirmed. Try again."
 
@@ -2934,8 +2934,8 @@ msgstr "The requested passage in {name} wasn't specific enough."
 msgid "The requested passage wasn't specific enough."
 msgstr "The requested passage wasn't specific enough."
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "The Work did not change. Try again."
 msgstr "The Work did not change. Try again."
 
@@ -3039,8 +3039,8 @@ msgstr "This chat now uses {0}. New chats will use it too."
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "This chat's current Work could not be found. Refresh the page and try again."
 msgstr "This chat's current Work could not be found. Refresh the page and try again."
 
@@ -3157,7 +3157,7 @@ msgstr "This stored figure needs a project before it can be rendered."
 msgid "This week"
 msgstr "This week"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 msgstr "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 
@@ -3329,8 +3329,8 @@ msgstr "Usage"
 msgid "User"
 msgstr "User"
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
 
@@ -3427,7 +3427,7 @@ msgstr "Wrap lines"
 msgid "Write away"
 msgstr "Write away"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Write mode"
 msgstr "Write mode"
 

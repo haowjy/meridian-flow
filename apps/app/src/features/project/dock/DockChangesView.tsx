@@ -26,7 +26,6 @@ import { NewBadge } from "@/components/app/NewBadge";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
-import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import type {
   DraftReviewController,
   InlineReviewMessageCode,
@@ -34,6 +33,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { partitionClosureClasses } from "./closure-classes";
 import { ReviewOperationCard } from "./ReviewOperationCard";
+import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 export function DockChangesView({ className }: { className?: string }) {
   const { groups, controller } = useDraftReview();

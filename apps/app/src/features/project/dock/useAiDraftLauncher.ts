@@ -20,12 +20,11 @@ import { useCallback } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { useContextTabsActions } from "@/client/stores";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
 import type { ScreenKey } from "@/features/project/shell/screens";
-
-import { useDraftReview } from "./DraftReviewProvider";
 
 export function useAiDraftLauncher() {
   const { controller } = useDraftReview();

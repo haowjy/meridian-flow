@@ -7,11 +7,10 @@
  * context, so the identity bar just mounts it and passes the documentId.
  */
 import { Trans } from "@lingui/react/macro";
-
+import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { pendingReviewDraft } from "@/features/chat/docked-drafts";
-import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import { IDENTITY_BAR_BOX_CLASS } from "@/features/project/context/identity-bar-geometry";
+import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { cn } from "@/lib/utils";
 
 export type DraftReviewChipProps = {

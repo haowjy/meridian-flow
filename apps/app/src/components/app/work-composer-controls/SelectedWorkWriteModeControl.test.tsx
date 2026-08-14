@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { setTestToolbarInlineIds } from "@/components/app/composer-toolbar/composer-toolbar-test-harness";
-import { useComposerWriteModeToolbarControl } from "./ComposerWriteModeControl";
+import { useSelectedWorkWriteModeToolbarControl } from "./SelectedWorkWriteModeControl";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -22,11 +22,11 @@ let mutateAsync = vi.fn();
 const mutate = vi.fn();
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ groups, drafts: null, status: groups === null ? "loading" : "ready" }),
+  activeWorkDraftGroups: () => groups ?? [],
 }));
 vi.mock("@/client/query/useWorks", () => ({
   useUpdateWorkWriteMode: () => ({ isPending: false, mutate, mutateAsync }),
 }));
-vi.mock("./useAiDraftLauncher", () => ({ useAiDraftLauncher: () => ({ openAiDraft: vi.fn() }) }));
 vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => ({
   useMeasuredComposerToolbar: (
     await import("@/components/app/composer-toolbar/composer-toolbar-test-harness")
@@ -49,7 +49,11 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 function Harness({ value = work }: { value?: Work }) {
-  const control = useComposerWriteModeToolbarControl({ projectId: "project", work: value });
+  const control = useSelectedWorkWriteModeToolbarControl({
+    projectId: "project",
+    work: value,
+    openDraftReview: vi.fn(),
+  });
   return <ComposerToolbar model={createComposerToolbarModel([control])} ariaLabel="Options" />;
 }
 const findButton = (name: string) =>
@@ -57,7 +61,7 @@ const findButton = (name: string) =>
     (button) => button.getAttribute("aria-label") === name || button.textContent?.trim() === name,
   ) as HTMLButtonElement | undefined;
 
-describe("useComposerWriteModeToolbarControl", () => {
+describe("useSelectedWorkWriteModeToolbarControl", () => {
   let host: HTMLDivElement;
   let root: Root;
   beforeEach(() => {

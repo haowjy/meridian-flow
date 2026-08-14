@@ -36,14 +36,16 @@ focus; feature controls own domain state and page content. See the
 that behavior through cache convergence and durable projection. Writer and LLM
 rebinding share the canonical server transition.
 
-`ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
-count only to open confirmation quickly. Every Auto-apply selection sends an
+The neutral `useSelectedWorkWriteModeToolbarControl` owns the selected-Work
+mutation and uses the active-draft count only to open confirmation quickly.
+Every Auto-apply selection sends an
 unconfirmed request; the server-vended count of reviewable content branches is
 the number shown in the confirmation. It is not a raw journal-row or active
 branch count: manifest-membership bookkeeping does not represent prose waiting
 for review. Moving Draft → Auto-apply with pending changes keeps Draft selected
 and opens the **Drafts are waiting** popover. Cancel preserves the mode; Review
-changes uses the same `useAiDraftLauncher` entry as every other review control;
+changes receives the project dock's `useAiDraftLauncher` entry from each
+composer adapter, the same entry used by every other review control;
 Apply all and switch is the only action that sends `confirmedPush`. It asks the
 server to apply the same canonical pending set, including any manifest companion
 needed to publish new-document membership, and only then switch policy. A failed

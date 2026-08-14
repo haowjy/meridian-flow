@@ -9,9 +9,13 @@ import {
   type ComposerToolbarControl,
   createComposerToolbarModel,
 } from "@/components/app/composer-toolbar";
+import {
+  deriveWorkPickerViewModel,
+  useSelectedWorkWriteModeToolbarControl,
+  WorkPickerPanel,
+} from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
-import { useComposerWriteModeToolbarControl } from "@/features/chat/ComposerWriteModeControl";
-import { deriveWorkPickerViewModel, WorkPickerPanel } from "@/features/chat/WorkPickerPanel";
+import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 
 export function NewThreadComposerToolbar({
   projectId,
@@ -92,7 +96,12 @@ function AvailableNewThreadControls({
   disabled: boolean;
   onModePendingChange(pending: boolean): void;
 }) {
-  const mode = useComposerWriteModeToolbarControl({ projectId, work });
+  const { openAiDraft } = useAiDraftLauncher();
+  const mode = useSelectedWorkWriteModeToolbarControl({
+    projectId,
+    work,
+    openDraftReview: openAiDraft,
+  });
   const modePending = "interaction" in mode && mode.interaction === "busy";
   const visibleMode = disabled ? { ...mode, interaction: "busy" as const } : mode;
   useEffect(() => onModePendingChange(modePending), [modePending, onModePendingChange]);

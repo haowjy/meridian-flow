@@ -51,18 +51,29 @@ are desktop shell grammar.
 
 Work is the dedicated live Work-management surface. It reads the Work collection
 and the writer's explicit current Work through TanStack Query, and owns create,
-switch, metadata, archive, unarchive, and guarded delete actions. New Chat creates
-immediately in the server-resolved current/default Work without loading the Work
-catalog. After creation, the composer Work control can rebind the chat.
+switch, metadata, archive, unarchive, and guarded delete actions.
 
-Home is one shared, container-responsive chat feed on desktop and phone. Its
-server-owned projection is grouped with Continue precedence, then Favorites,
-then cursor-paginated Recent chats. The QueryClient owns pending favorite and
-read overlays so navigation and stale page arrival cannot discard desired state.
-`ProjectView` also owns the transient one-shot envelope that transfers the exact
-existing-card open acknowledgement from Home to the matching visible Chat.
-Chat visibility includes the dock's Chat-versus-Changes selection; hidden
-persistent chat content does not hold a visible-open lease.
+Home is the shared, container-responsive Composer-led entry surface on desktop
+and phone, followed by the server-owned Continue, Favorites, and
+cursor-paginated Recent feed. First send creates and reconciles the canonical
+thread under one stable client-chosen ID before routing. An untouched
+current/default Work control omits `workId` so the server resolves its
+transactional fallback; an explicit writer selection submits `workId`. In both
+cases the displayed Work ID remains an immutable reconciliation fact, along
+with project and Agent, and no cache, handoff, visibility, admission, or route
+effect may run until the canonical thread matches those captured facts.
+
+The QueryClient owns pending favorite and read overlays so navigation and stale
+page arrival cannot discard desired state. Fresh creation also prepares one
+creation-owned no-command visibility epoch before routing; the matching visible
+Chat lease consumes it without issuing an existing-chat open acknowledgement.
+Chat visibility includes the dock's Chat-versus-Changes selection, so hidden
+persistent chat content holds no visible-open lease.
+
+A chat has one current Work. Creation fixes the initial binding by default, and
+the explicit composer Work control can rebind an idle existing chat through the
+canonical durable transition. Home's Work selection is prospective creation
+state only; it never invokes that rebind command.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings

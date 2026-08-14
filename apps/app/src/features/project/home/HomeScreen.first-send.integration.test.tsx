@@ -37,7 +37,7 @@ vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async ()
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
   useDraftReview: () => ({ groups: [] }),
 }));
-vi.mock("@/features/chat/useAiDraftLauncher", () => ({
+vi.mock("@/features/project/dock/useAiDraftLauncher", () => ({
   useAiDraftLauncher: () => ({ openAiDraft: vi.fn() }),
 }));
 

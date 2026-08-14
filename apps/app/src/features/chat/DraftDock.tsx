@@ -22,13 +22,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
 import { type DockRow, dockRows } from "./docked-drafts";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
-import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 

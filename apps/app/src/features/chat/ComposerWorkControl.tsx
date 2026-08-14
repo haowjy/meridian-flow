@@ -7,8 +7,11 @@ import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
+import {
+  deriveWorkPickerViewModel,
+  WorkPickerPanel,
+} from "@/components/app/work-composer-controls";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
-import { deriveWorkPickerViewModel, WorkPickerPanel } from "./WorkPickerPanel";
 
 export function useComposerWorkToolbarControl({
   projectId,

@@ -49,7 +49,7 @@ vi.mock("./DraftReviewProvider", () => ({
 
 const { DEFAULT_DOCK_PREFS, DEFAULT_SURFACE_PREFS, useProjectLayout, useProjectSurfacePrefsStore } =
   await import("@/features/project/layout");
-const { useAiDraftLauncher } = await import("./useAiDraftLauncher");
+const { useAiDraftLauncher } = await import("@/features/project/dock/useAiDraftLauncher");
 const { useReviewProseFocus } = await import("./review-prose-focus");
 
 type DraftGroup = { documentId: string; contextPath: string };

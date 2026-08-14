@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: give Home and Chat one neutral public boundary for shared Work
+  picker and selected-Work write-mode presentation while keeping prospective
+  creation selection separate from durable existing-chat rebinding.
+
 - `apps/app`: make Project Home composer-led with the actual shared Composer,
   prospective Agent, write-mode, and Work controls, and route-armed first-send
   creation while preserving the secondary Continue, Favorite, and Recent feed;
