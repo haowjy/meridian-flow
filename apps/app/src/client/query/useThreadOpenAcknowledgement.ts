@@ -9,6 +9,7 @@ import {
   claimVisibleOpenAcknowledgement,
   createVisibilityLeaseId,
   getOpenAcknowledgementState,
+  type OpenAcknowledgementKey,
   type OpenAcknowledgementOperationId,
   type OpenAcknowledgementTransfer,
   releaseVisibleOpenAcknowledgement,
@@ -32,28 +33,37 @@ export function useThreadOpenAcknowledgement({
   const client = useQueryClient();
   const actions = useThreadActions();
   const [leaseId] = useState(createVisibilityLeaseId);
-  const [operationId, setOperationId] = useState<OpenAcknowledgementOperationId | null>(null);
+  const [binding, setBinding] = useState<{
+    operationId: OpenAcknowledgementOperationId;
+    key: OpenAcknowledgementKey;
+  } | null>(null);
 
   useEffect(() => {
     if (!projectId || !visible) {
       releaseVisibleOpenAcknowledgement(client, leaseId);
-      setOperationId(null);
+      setBinding(null);
       return;
     }
-    const matchingTransfer =
-      transfer?.key.projectId === projectId && transfer.key.threadId === threadId
-        ? transfer
-        : undefined;
-    const claimed = claimVisibleOpenAcknowledgement(
-      client,
-      { projectId, threadId },
-      leaseId,
-      matchingTransfer,
+    const key = { projectId, threadId };
+    const claimed = claimVisibleOpenAcknowledgement(client, key, leaseId, transfer);
+    setBinding((current) =>
+      current?.operationId === claimed &&
+      current.key.projectId === key.projectId &&
+      current.key.threadId === key.threadId
+        ? current
+        : { operationId: claimed, key },
     );
-    setOperationId(claimed);
-    if (matchingTransfer && claimed === matchingTransfer.id) onTransferClaimed?.(matchingTransfer);
+    if (transfer && claimed === transfer.id) onTransferClaimed?.(transfer);
     return () => releaseVisibleOpenAcknowledgement(client, leaseId);
   }, [client, leaseId, onTransferClaimed, projectId, threadId, transfer, visible]);
+
+  const operationId =
+    visible &&
+    projectId &&
+    binding?.key.projectId === projectId &&
+    binding.key.threadId === threadId
+      ? binding.operationId
+      : null;
 
   const state = useSyncExternalStore(
     useCallback(
@@ -69,21 +79,21 @@ export function useThreadOpenAcknowledgement({
   );
   const appliedSuccess = useRef<OpenAcknowledgementOperationId | null>(null);
   useEffect(() => {
-    if (state?.phase !== "succeeded" || appliedSuccess.current === state.id) return;
+    if (!operationId || state?.phase !== "succeeded" || appliedSuccess.current === state.id) return;
     appliedSuccess.current = state.id;
     actions.setThreadAttention(threadId, state.response.attention);
     client.setQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId), (snapshot) =>
       snapshot ? { ...snapshot, attention: state.response.attention } : snapshot,
     );
-  }, [actions, client, state, threadId]);
+  }, [actions, client, operationId, state, threadId]);
 
   const retry = useCallback(() => {
     if (operationId) retryOpenAcknowledgement(client, operationId);
   }, [client, operationId]);
 
   return {
-    error: visible && state?.phase === "failed" ? state.error : null,
-    pending: visible && state?.phase === "pending",
+    error: state?.phase === "failed" ? state.error : null,
+    pending: state?.phase === "pending",
     retry,
   };
 }

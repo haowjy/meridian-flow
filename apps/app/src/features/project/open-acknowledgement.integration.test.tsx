@@ -1,7 +1,15 @@
 /** Rendered Home/Chat caller contracts for visible-chat open operations. */
 import type { HomeChatFeedPage, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, type ReactElement, type ReactNode, StrictMode, useCallback, useState } from "react";
+import {
+  act,
+  type ReactElement,
+  type ReactNode,
+  StrictMode,
+  useCallback,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
@@ -279,6 +287,79 @@ describe("visible Chat open caller boundary", () => {
           { isUnread: false },
           { isUnread: false },
         ]);
+      },
+      { drainMacrotask: true },
+    );
+  });
+
+  it("keeps a visible key switch from exposing or detaching the prior key's failure", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const patches = router();
+    const commits: Array<{ threadId: string; hasFailure: boolean; hasRetry: boolean }> = [];
+
+    function Harness() {
+      const [selectedThreadId, setSelectedThreadId] = useState("thread-1");
+      useLayoutEffect(() => {
+        commits.push({
+          threadId: selectedThreadId,
+          hasFailure: document.body.textContent?.includes("couldn’t save") === true,
+          hasRetry: Array.from(document.querySelectorAll("button")).some(
+            (button) => button.textContent?.trim() === "Retry",
+          ),
+        });
+      });
+      return (
+        <>
+          <button type="button" onClick={() => setSelectedThreadId("thread-2")}>
+            Switch chat
+          </button>
+          <ChatScreen
+            projectId={projectId}
+            threadId={selectedThreadId}
+            activeWork={null}
+            onSelectThread={vi.fn()}
+            visible
+          />
+        </>
+      );
+    }
+
+    await withReactRoot(
+      <Providers client={client}>
+        <Harness />
+      </Providers>,
+      async () => {
+        await waitFor(() => patches.length === 1);
+        patches[0]?.resolve(json({ message: "thread 1 offline" }, 503));
+        await waitFor(() => document.body.textContent?.includes("couldn’t save") === true);
+
+        commits.length = 0;
+        const switchChat = Array.from(document.querySelectorAll("button")).find((button) =>
+          button.textContent?.includes("Switch chat"),
+        );
+        await act(async () => switchChat?.click());
+        await waitFor(() => patches.length === 2);
+
+        const threadTwoCommits = commits.filter((commit) => commit.threadId === "thread-2");
+        expect(threadTwoCommits.length).toBeGreaterThan(0);
+        expect(threadTwoCommits.every((commit) => !commit.hasFailure && !commit.hasRetry)).toBe(
+          true,
+        );
+
+        patches[1]?.resolve(json({ message: "thread 2 offline" }, 503));
+        await waitFor(() => document.body.textContent?.includes("couldn’t save") === true);
+        const retry = Array.from(document.querySelectorAll("button")).find(
+          (button) => button.textContent?.trim() === "Retry",
+        );
+        await act(async () => retry?.click());
+        await waitFor(() => patches.length === 3);
+        expect(patches.map((request) => request.body)).toEqual([
+          { isUnread: false },
+          { isUnread: false },
+          { isUnread: false },
+        ]);
+        patches[2]?.resolve(json({ ...success, threadId: "thread-2" }));
+        await waitFor(() => !document.body.textContent?.includes("couldn’t save"));
       },
       { drainMacrotask: true },
     );
