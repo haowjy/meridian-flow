@@ -14,6 +14,7 @@ import {
   updateWorkWriteMode,
 } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
+import { invalidateProjectThreadData } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
@@ -55,10 +56,7 @@ export function useDefaultWorkId(projectId: string): string | null {
 }
 
 async function refreshWorks(client: QueryClient, projectId: string) {
-  await Promise.all([
-    client.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) }),
-    client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) }),
-  ]);
+  await invalidateProjectThreadData(client, projectId);
 }
 
 export function useWorkMutations(projectId: string) {

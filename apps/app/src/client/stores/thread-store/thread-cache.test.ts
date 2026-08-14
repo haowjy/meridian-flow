@@ -14,6 +14,7 @@ describe("createThreadCache terminal invalidation", () => {
       threadQueryKeys.snapshot(threadId),
       projectQueryKeys.threads(projectId),
       projectQueryKeys.works(projectId),
+      projectQueryKeys.homeFeed(projectId),
       projectQueryKeys.workDrafts(projectId, "work-1"),
       projectQueryKeys.contextTree(projectId, "scratch", "work-1"),
     ] as const;
@@ -53,6 +54,7 @@ describe("createThreadCache terminal invalidation", () => {
       threadQueryKeys.snapshot("thread-2"),
       projectQueryKeys.threads("project-1"),
       projectQueryKeys.works("project-1"),
+      projectQueryKeys.homeFeed("project-1"),
     ] as const;
     for (const key of [...direct, ...unrelated]) client.setQueryData(key, { fresh: true });
     const invalidateQueries = vi.spyOn(client, "invalidateQueries");

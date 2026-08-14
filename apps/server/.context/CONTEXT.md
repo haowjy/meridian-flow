@@ -48,8 +48,8 @@ shape for parity and lower merge risk.
 
 The shipped route surface covers:
 
-- Project CRUD, stats, preferences, working-set snapshots, library, works list,
-  work threads, project thread list/create, and the chat-first Home feed;
+- Project CRUD, preferences, working-set snapshots, library, works list, work
+  threads, project thread list/create, and the chat-first Home feed;
   account settings expose the
   working-set sync toggle.
 - Agent and skill definition reads, saves, revision lists, revision restores,

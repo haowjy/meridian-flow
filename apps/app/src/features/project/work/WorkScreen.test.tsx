@@ -128,6 +128,14 @@ describe("WorkScreen actions", () => {
       expect(sectionNamed("Active Work")).not.toBeNull();
       const archivedSection = sectionNamed("Archived Work");
       const disclosure = buttonContaining("Archived Work");
+      expect(document.querySelectorAll("h2")).toHaveLength(2);
+      const selection = document.querySelector<HTMLElement>('[data-work-selection="active-a"]');
+      expect(selection?.className).toContain("self-stretch");
+      expect(selection?.parentElement?.className).toContain("items-stretch");
+      expect(buttonContaining("New Work").className).toContain("[@media(pointer:coarse)]:min-h-11");
+      expect(
+        document.querySelector<HTMLButtonElement>('[aria-label="Edit Active A"]')?.className,
+      ).toContain("[@media(pointer:coarse)]:size-11");
       expect(archivedSection).not.toBeNull();
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
       expect(disclosure.hasAttribute("aria-controls")).toBe(false);
@@ -292,6 +300,13 @@ describe("WorkScreen actions", () => {
       const focus = vi.spyOn(window.HTMLElement.prototype, "focus").mockImplementation(() => {});
       await act(async () => newWork.click());
       await settleDialog();
+      expect(buttonContaining("Cancel").className).toContain("[@media(pointer:coarse)]:min-h-11");
+      expect(buttonContaining("Save Work").className).toContain(
+        "[@media(pointer:coarse)]:min-h-11",
+      );
+      expect(document.querySelector('[data-slot="dialog-content"]')?.className).toContain(
+        "[@media(pointer:coarse)]:[&>button:last-child]:size-11",
+      );
       await act(async () => clickButton("Cancel"));
       await Promise.resolve();
       expect(focus).toHaveBeenCalledWith();

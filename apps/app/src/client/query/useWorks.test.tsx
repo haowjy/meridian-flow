@@ -22,7 +22,7 @@ vi.mock("@/client/stores", () => ({
   useIsProjectPendingCreation: () => false,
 }));
 
-const { useUpdateWorkWriteMode, useWorks } = await import("./useWorks");
+const { useUpdateWorkWriteMode, useWorkMutations, useWorks } = await import("./useWorks");
 const { projectQueryKeys } = await import("./project-query-keys");
 const { threadQueryKeys } = await import("./thread-query-keys");
 
@@ -52,6 +52,41 @@ describe("Work client queries", () => {
           expect(state.value?.currentWorkId).toBe("work-current");
         },
         { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+    }
+  });
+
+  it.each([
+    { type: "create", data: { name: "New Work" } },
+    { type: "switch", workId: "work-1" },
+    { type: "update", workId: "work-1", data: { name: "Renamed Work" } },
+    { type: "archive", workId: "work-1" },
+    { type: "unarchive", workId: "work-1" },
+    { type: "delete", workId: "work-1" },
+  ] as const)("invalidates Home after Work $type", async (action) => {
+    const client = new QueryClient();
+    const homeKey = projectQueryKeys.homeFeed("project-1");
+    client.setQueryData(homeKey, { fresh: true });
+    const state: { value: ReturnType<typeof useWorkMutations> | null } = { value: null };
+
+    function Harness() {
+      state.value = useWorkMutations("project-1");
+      return null;
+    }
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <Harness />
+        </QueryClientProvider>,
+        async () => {
+          await act(async () => {
+            await state.value?.mutateAsync(action);
+          });
+          expect(client.getQueryState(homeKey)?.isInvalidated).toBe(true);
+        },
       );
     } finally {
       client.clear();

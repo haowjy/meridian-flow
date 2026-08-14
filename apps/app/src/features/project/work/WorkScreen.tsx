@@ -98,6 +98,7 @@ export function WorkScreen({ projectId }: { projectId: string }) {
           </p>
           <Button
             size="sm"
+            className="[@media(pointer:coarse)]:min-h-11"
             disabled={mutation.isPending}
             data-work-focus="new"
             ref={registerFocus("new")}
@@ -111,9 +112,9 @@ export function WorkScreen({ projectId }: { projectId: string }) {
           </Button>
         </div>
 
-        <h3 id="active-work-heading" className="mb-2 text-sm font-medium text-foreground">
+        <h2 id="active-work-heading" className="mb-2 text-sm font-medium text-foreground">
           <Trans>Active Work</Trans>
-        </h3>
+        </h2>
         {isError ? (
           <div className="flex items-center gap-2" role="alert">
             <p className="text-sm text-destructive">
@@ -234,12 +235,13 @@ function WorkList({
       {works.map((work) => (
         <li
           key={work.id}
-          className="surface-card flex min-h-36 min-w-0 items-start gap-3 rounded-sm border border-border-subtle p-4"
+          className="surface-card flex min-h-36 min-w-0 items-stretch gap-3 rounded-sm border border-border-subtle p-4"
         >
           <button
             type="button"
             aria-pressed={work.id === currentWorkId}
-            className="focus-ring min-w-0 flex-1 rounded-sm text-left disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring min-w-0 flex-1 self-stretch rounded-sm text-left disabled:cursor-not-allowed disabled:opacity-50"
+            data-work-selection={work.id}
             disabled={pending}
             onClick={() => onSelect(work.id)}
           >
@@ -280,7 +282,7 @@ function WorkList({
             size="icon-sm"
             disabled={pending}
             aria-label={t`Edit ${work.name}`}
-            className="focus-ring"
+            className="focus-ring self-start [@media(pointer:coarse)]:size-11"
             data-work-focus={`edit:${work.id}`}
             ref={registerFocus?.(`edit:${work.id}`)}
             onClick={() => onEdit(work)}
@@ -327,7 +329,7 @@ function ArchivedWorkSection({
 
   return (
     <section className="mt-4 border-t border-border-subtle pt-3" aria-labelledby={headingId}>
-      <h3 id={headingId}>
+      <h2 id={headingId}>
         <button
           type="button"
           className="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded-sm px-1 text-left"
@@ -353,7 +355,7 @@ function ArchivedWorkSection({
             className={`size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
           />
         </button>
-      </h3>
+      </h2>
       {open ? (
         <div id={panelId} className="mt-2">
           <WorkList
@@ -470,6 +472,7 @@ export function WorkDialog({
       }}
     >
       <DialogContent
+        className="[@media(pointer:coarse)]:[&>button:last-child]:size-11"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const nameInput = document.getElementById("work-name") as HTMLInputElement | null;
@@ -519,6 +522,7 @@ export function WorkDialog({
           <div className="flex gap-2">
             <Button
               variant="outline"
+              className="[@media(pointer:coarse)]:min-h-11"
               disabled={pending}
               onClick={() =>
                 onAction({
@@ -536,6 +540,7 @@ export function WorkDialog({
             </Button>
             <Button
               variant="destructive"
+              className="[@media(pointer:coarse)]:min-h-11"
               disabled={pending}
               onClick={() => onAction({ type: "delete", workId: initial.id })}
             >
@@ -545,10 +550,16 @@ export function WorkDialog({
           </div>
         ) : null}
         <DialogFooter className="flex-col sm:flex-row">
-          <Button variant="outline" disabled={pending} onClick={onClose}>
+          <Button
+            variant="outline"
+            className="[@media(pointer:coarse)]:min-h-11"
+            disabled={pending}
+            onClick={onClose}
+          >
             <Trans>Cancel</Trans>
           </Button>
           <Button
+            className="[@media(pointer:coarse)]:min-h-11"
             disabled={pending || !name.trim()}
             onClick={() => onAction(workFormAction(work, { name, goal, description }))}
           >

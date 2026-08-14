@@ -5,6 +5,9 @@
 - `apps/app`: make Home favorite/read commands ordered and field-scoped,
   preserve action-required attention, reconcile authoritative responses, abort
   cancelled feed reads, and preserve scroll and keyboard focus across moves.
+- `apps/app`, `apps/server`, `contracts`: converge Home from canonical thread,
+  Work, and open-read transitions; complete Work coarse-pointer and heading
+  semantics; delete the superseded project statistics API and contract.
 
 - `apps/app`: replace the project Home dashboard and separate phone list with
   one responsive Continue, Favorites, and paginated Recent chat feed, including
