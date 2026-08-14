@@ -42,6 +42,7 @@ type Operation = {
 type Lease = { operationId: OpenAcknowledgementOperationId; generation: number };
 type Coordinator = {
   nextId: number;
+  nextLeaseGeneration: number;
   operations: Map<OpenAcknowledgementOperationId, Operation>;
   leases: Map<VisibilityLeaseId, Lease>;
 };
@@ -53,10 +54,15 @@ const sameKey = (left: OpenAcknowledgementKey, right: OpenAcknowledgementKey) =>
 function coordinator(client: QueryClient): Coordinator {
   let owner = coordinators.get(client);
   if (!owner) {
-    owner = { nextId: 0, operations: new Map(), leases: new Map() };
+    owner = { nextId: 0, nextLeaseGeneration: 0, operations: new Map(), leases: new Map() };
     coordinators.set(client, owner);
   }
   return owner;
+}
+
+function nextLeaseGeneration(owner: Coordinator) {
+  owner.nextLeaseGeneration += 1;
+  return owner.nextLeaseGeneration;
 }
 
 function newId(owner: Coordinator): OpenAcknowledgementOperationId {
@@ -159,7 +165,7 @@ export function claimVisibleOpenAcknowledgement(
     ? owner.operations.get(existingLease.operationId)
     : undefined;
   if (existingLease && existingOperation && sameKey(existingOperation.key, key)) {
-    existingLease.generation += 1;
+    existingLease.generation = nextLeaseGeneration(owner);
     return existingLease.operationId;
   }
   if (existingLease) detachLease(owner, leaseId);
@@ -167,7 +173,7 @@ export function claimVisibleOpenAcknowledgement(
   for (const [id, operation] of owner.operations) {
     if (operation.leases.size > 0 && sameKey(operation.key, key)) {
       operation.leases.add(leaseId);
-      owner.leases.set(leaseId, { operationId: id, generation: 1 });
+      owner.leases.set(leaseId, { operationId: id, generation: nextLeaseGeneration(owner) });
       return id;
     }
   }
@@ -185,10 +191,11 @@ export function claimVisibleOpenAcknowledgement(
     operation = transferred;
     operation.transfer = null;
   } else {
+    if (transfer) cancelOpenAcknowledgementTransfer(client, transfer);
     [id, operation] = beginOperation(client, key);
   }
   operation.leases.add(leaseId);
-  owner.leases.set(leaseId, { operationId: id, generation: 1 });
+  owner.leases.set(leaseId, { operationId: id, generation: nextLeaseGeneration(owner) });
   return id;
 }
 
