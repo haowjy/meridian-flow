@@ -59,6 +59,10 @@ Home is one shared, container-responsive chat feed on desktop and phone. Its
 server-owned projection is grouped with Continue precedence, then Favorites,
 then cursor-paginated Recent chats. The QueryClient owns pending favorite and
 read overlays so navigation and stale page arrival cannot discard desired state.
+`ProjectView` also owns the transient one-shot envelope that transfers the exact
+existing-card open acknowledgement from Home to the matching visible Chat.
+Chat visibility includes the dock's Chat-versus-Changes selection; hidden
+persistent chat content does not hold a visible-open lease.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings

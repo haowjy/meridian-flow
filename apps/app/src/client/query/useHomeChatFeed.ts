@@ -1,6 +1,6 @@
 /** Infinite Home feed plus field-scoped optimistic user-state commands. */
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { getProjectHomeFeed } from "@/client/api/projects-api";
 import {
@@ -10,10 +10,10 @@ import {
 } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 import {
-  getThreadUserStateCommandState,
-  getThreadUserStateCommandVersion,
+  getThreadUserStateTransportState,
+  getThreadUserStateTransportVersion,
   runThreadUserStateCommand,
-  subscribeThreadUserStateCommands,
+  subscribeThreadUserStateTransport,
   type ThreadUserStateLifecycle,
 } from "./thread-user-state-commands";
 
@@ -39,11 +39,13 @@ export function useHomeChatFeed(projectId: string) {
     retry: false,
   });
   // Re-render for command state owned outside this hook and shared across mounts.
-  const commandVersion = useSyncExternalStore(
-    (listener) => subscribeThreadUserStateCommands(client, listener),
-    () => getThreadUserStateCommandVersion(client),
+  const transportVersion = useSyncExternalStore(
+    (listener) => subscribeThreadUserStateTransport(client, listener),
+    () => getThreadUserStateTransportVersion(client),
     () => 0,
   );
+  const [manualErrors, setManualErrors] = useState<Record<string, Error | null>>({});
+  const commandGeneration = useRef(new Map<string, number>());
   const runCommand = useCallback(
     async (
       threadId: string,
@@ -51,6 +53,10 @@ export function useHomeChatFeed(projectId: string) {
       value: boolean,
       lifecycle?: ThreadUserStateLifecycle,
     ) => {
+      const id = `${threadId}:${field}`;
+      const generation = (commandGeneration.current.get(id) ?? 0) + 1;
+      commandGeneration.current.set(id, generation);
+      setManualErrors((current) => ({ ...current, [id]: null }));
       const outcome = await runThreadUserStateCommand(
         client,
         projectId,
@@ -59,15 +65,22 @@ export function useHomeChatFeed(projectId: string) {
         value,
         lifecycle,
       );
+      if (commandGeneration.current.get(id) === generation) {
+        setManualErrors((current) => ({
+          ...current,
+          [id]: outcome.status === "error" ? outcome.error : null,
+        }));
+      }
       return outcome.status === "success";
     },
     [client, projectId],
   );
   const getCommandState = useCallback(
-    (threadId: string, field: HomeStateField) =>
-      getThreadUserStateCommandState(client, projectId, threadId, field),
-    // commandVersion is the shared authority's render invalidation signal.
-    [client, projectId, commandVersion],
+    (threadId: string, field: HomeStateField) => ({
+      pending: getThreadUserStateTransportState(client, projectId, threadId, field).pending,
+      error: manualErrors[`${threadId}:${field}`] ?? null,
+    }),
+    [client, manualErrors, projectId, transportVersion],
   );
   return {
     ...query,

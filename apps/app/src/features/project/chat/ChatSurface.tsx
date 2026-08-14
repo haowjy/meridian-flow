@@ -15,6 +15,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import type { OpenAcknowledgementTransfer } from "@/client/query/visible-thread-open-acknowledgements";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 import { DockShell } from "../dock/DockShell";
@@ -38,6 +39,8 @@ export type ChatSurfaceProps = {
   placement: ChatPlacement;
   /** When false the surface is hidden (e.g. Settings / closed dock) WITHOUT unmounting. */
   visible: boolean;
+  openTransfer?: OpenAcknowledgementTransfer;
+  onOpenTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
   /**
    * Collapse the dock. Only meaningful in `dock` placement — the dock header
    * carries the close control (matching the Context rail). The centered chat
@@ -55,6 +58,8 @@ export function ChatSurface({
   onSelectThread,
   placement,
   visible,
+  openTransfer,
+  onOpenTransferClaimed,
   onCloseDock,
   onSelectContextPath,
 }: ChatSurfaceProps) {
@@ -89,14 +94,18 @@ export function ChatSurface({
           )
         }
       >
-        <ChatScreen
-          projectId={projectId}
-          threadId={threadId}
-          activeWork={activeWork}
-          onSelectThread={onSelectThread}
-          onSelectContextPath={onSelectContextPath}
-          acknowledgeOpen={visible}
-        />
+        {(showPrimary) => (
+          <ChatScreen
+            projectId={projectId}
+            threadId={threadId}
+            activeWork={activeWork}
+            onSelectThread={onSelectThread}
+            onSelectContextPath={onSelectContextPath}
+            visible={visible && showPrimary}
+            openTransfer={openTransfer}
+            onOpenTransferClaimed={onOpenTransferClaimed}
+          />
+        )}
       </DockShell>
     </div>
   );

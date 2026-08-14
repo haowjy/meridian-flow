@@ -1,7 +1,6 @@
 /** QueryClient-scoped authority for optimistic thread user-state commands. */
 import type { UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
 
 import { updateThreadUserState } from "@/client/api/threads-api";
 import { createHomeFeedCacheController, type HomeStateField } from "./home-chat-feed-cache";
@@ -9,11 +8,7 @@ import { createHomeFeedCacheController, type HomeStateField } from "./home-chat-
 export type ThreadUserStateOutcome =
   | { status: "success"; response: UpdateThreadUserStateResponse }
   | { status: "error"; error: Error };
-export type ThreadUserStateCommandState = {
-  pending: boolean;
-  error: Error | null;
-  outcome: ThreadUserStateOutcome | null;
-};
+export type ThreadUserStateTransportState = { pending: boolean };
 export type ThreadUserStateLifecycle = { beforeRollback?: () => void };
 
 type QueuedCommand = {
@@ -26,11 +21,11 @@ type CommandQueue = { running: boolean; entries: QueuedCommand[] };
 type Authority = {
   version: number;
   active: Map<string, CommandQueue>;
-  states: Map<string, ThreadUserStateCommandState>;
+  states: Map<string, ThreadUserStateTransportState>;
   listeners: Set<() => void>;
 };
 const authorities = new WeakMap<QueryClient, Authority>();
-const idleState: ThreadUserStateCommandState = { pending: false, error: null, outcome: null };
+const idleState: ThreadUserStateTransportState = { pending: false };
 
 function authority(client: QueryClient): Authority {
   let current = authorities.get(client);
@@ -42,7 +37,7 @@ function authority(client: QueryClient): Authority {
 }
 const commandId = (projectId: string, threadId: string, field: HomeStateField) =>
   `${projectId}:${threadId}:${field}`;
-function publish(owner: Authority, id: string, state: ThreadUserStateCommandState) {
+function publish(owner: Authority, id: string, state: ThreadUserStateTransportState) {
   owner.states.set(id, state);
   owner.version += 1;
   owner.listeners.forEach((listener) => {
@@ -50,12 +45,12 @@ function publish(owner: Authority, id: string, state: ThreadUserStateCommandStat
   });
 }
 
-export function subscribeThreadUserStateCommands(client: QueryClient, listener: () => void) {
+export function subscribeThreadUserStateTransport(client: QueryClient, listener: () => void) {
   const owner = authority(client);
   owner.listeners.add(listener);
   return () => owner.listeners.delete(listener);
 }
-export function getThreadUserStateCommandVersion(client: QueryClient) {
+export function getThreadUserStateTransportVersion(client: QueryClient) {
   return authority(client).version;
 }
 
@@ -85,7 +80,7 @@ export function runThreadUserStateCommand(
     resolve = done;
   });
   queue.entries.push({ value, promise, resolve, lifecycles: new Set([lifecycle]) });
-  publish(owner, id, { pending: true, error: null, outcome: null });
+  publish(owner, id, { pending: true });
   if (!queue.running)
     void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
   return promise;
@@ -136,56 +131,16 @@ async function advanceThreadUserStateQueue(
   queue.running = false;
   const next = queue.entries[0];
   if (!next) owner.active.delete(id);
-  publish(
-    owner,
-    id,
-    next
-      ? { pending: true, error: null, outcome: null }
-      : {
-          pending: false,
-          error: outcome.status === "error" ? outcome.error : null,
-          outcome,
-        },
-  );
+  publish(owner, id, { pending: Boolean(next) });
   entry.resolve(outcome);
   if (next) void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
 }
 
-export function useThreadUserStateCommandState(
-  client: QueryClient,
-  projectId: string,
-  threadId: string,
-  field: HomeStateField,
-) {
-  const owner = authority(client);
-  const id = commandId(projectId, threadId, field);
-  return useSyncExternalStore(
-    (listener) => {
-      owner.listeners.add(listener);
-      return () => owner.listeners.delete(listener);
-    },
-    () => owner.states.get(id) ?? idleState,
-    () => idleState,
-  );
-}
-
-export function getThreadUserStateCommandState(
+export function getThreadUserStateTransportState(
   client: QueryClient,
   projectId: string,
   threadId: string,
   field: HomeStateField,
 ) {
   return authority(client).states.get(commandId(projectId, threadId, field)) ?? idleState;
-}
-
-export function clearThreadUserStateCommandOutcome(
-  client: QueryClient,
-  projectId: string,
-  threadId: string,
-  field: HomeStateField,
-) {
-  const owner = authority(client);
-  const id = commandId(projectId, threadId, field);
-  const current = owner.states.get(id);
-  if (!owner.active.has(id) && current && current !== idleState) publish(owner, id, idleState);
 }

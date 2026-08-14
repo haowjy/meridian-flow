@@ -1,77 +1,89 @@
-/** Acknowledges a visible conversation and exposes destination failure recovery. */
-import { t } from "@lingui/core/macro";
-import type { ThreadAttention, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+/** React visibility lease adapter for semantic open acknowledgements. */
+import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { useAnnouncement, useThreadActions } from "@/client/stores";
+import { useThreadActions } from "@/client/stores";
 import { threadQueryKeys } from "./thread-query-keys";
 import {
-  clearThreadUserStateCommandOutcome,
-  runThreadUserStateCommand,
-  useThreadUserStateCommandState,
-} from "./thread-user-state-commands";
-
-const announcedOpenErrors = new WeakSet<Error>();
+  claimVisibleOpenAcknowledgement,
+  createVisibilityLeaseId,
+  getOpenAcknowledgementState,
+  type OpenAcknowledgementOperationId,
+  type OpenAcknowledgementTransfer,
+  releaseVisibleOpenAcknowledgement,
+  retryOpenAcknowledgement,
+  subscribeOpenAcknowledgement,
+} from "./visible-thread-open-acknowledgements";
 
 export function useThreadOpenAcknowledgement({
   threadId,
   projectId,
-  attention,
-  enabled,
+  visible,
+  transfer,
+  onTransferClaimed,
 }: {
   threadId: string;
   projectId: string | null;
-  attention: ThreadAttention | null;
-  enabled: boolean;
+  visible: boolean;
+  transfer?: OpenAcknowledgementTransfer;
+  onTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
 }) {
   const client = useQueryClient();
   const actions = useThreadActions();
-  const { announceError } = useAnnouncement();
-  const command = useThreadUserStateCommandState(client, projectId ?? "", threadId, "isUnread");
-
-  const acknowledge = useCallback(async () => {
-    if (!projectId) return;
-    const outcome = await runThreadUserStateCommand(client, projectId, threadId, "isUnread", false);
-    if (outcome.status === "error") return;
-    actions.setThreadAttention(threadId, outcome.response.attention);
-    client.setQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId), (snapshot) =>
-      snapshot ? { ...snapshot, attention: outcome.response.attention } : snapshot,
-    );
-  }, [actions, client, projectId, threadId]);
+  const [leaseId] = useState(createVisibilityLeaseId);
+  const [operationId, setOperationId] = useState<OpenAcknowledgementOperationId | null>(null);
 
   useEffect(() => {
-    if (!projectId) return;
-    if (!enabled) return;
-    if (command.error) return;
-    if (attention === "unread" || command.pending) {
-      if (!command.outcome) void acknowledge();
+    if (!projectId || !visible) {
+      releaseVisibleOpenAcknowledgement(client, leaseId);
+      setOperationId(null);
       return;
     }
-    clearThreadUserStateCommandOutcome(client, projectId, threadId, "isUnread");
-  }, [
-    acknowledge,
-    attention,
-    client,
-    command.outcome,
-    command.pending,
-    enabled,
-    projectId,
-    threadId,
-  ]);
+    const matchingTransfer =
+      transfer?.key.projectId === projectId && transfer.key.threadId === threadId
+        ? transfer
+        : undefined;
+    const claimed = claimVisibleOpenAcknowledgement(
+      client,
+      { projectId, threadId },
+      leaseId,
+      matchingTransfer,
+    );
+    setOperationId(claimed);
+    if (matchingTransfer && claimed === matchingTransfer.id) onTransferClaimed?.(matchingTransfer);
+    return () => releaseVisibleOpenAcknowledgement(client, leaseId);
+  }, [client, leaseId, onTransferClaimed, projectId, threadId, transfer, visible]);
 
+  const state = useSyncExternalStore(
+    useCallback(
+      (listener) =>
+        operationId ? subscribeOpenAcknowledgement(client, operationId, listener) : () => undefined,
+      [client, operationId],
+    ),
+    useCallback(
+      () => (operationId ? getOpenAcknowledgementState(client, operationId) : null),
+      [client, operationId],
+    ),
+    () => null,
+  );
+  const appliedSuccess = useRef<OpenAcknowledgementOperationId | null>(null);
   useEffect(() => {
-    const error = command.error;
-    if (!enabled || !error || announcedOpenErrors.has(error)) return;
-    announcedOpenErrors.add(error);
-    announceError(t`Read status wasn’t saved`);
-  }, [announceError, command.error, enabled]);
+    if (state?.phase !== "succeeded" || appliedSuccess.current === state.id) return;
+    appliedSuccess.current = state.id;
+    actions.setThreadAttention(threadId, state.response.attention);
+    client.setQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId), (snapshot) =>
+      snapshot ? { ...snapshot, attention: state.response.attention } : snapshot,
+    );
+  }, [actions, client, state, threadId]);
 
   const retry = useCallback(() => {
-    if (!projectId) return;
-    clearThreadUserStateCommandOutcome(client, projectId, threadId, "isUnread");
-    void acknowledge();
-  }, [acknowledge, client, projectId, threadId]);
+    if (operationId) retryOpenAcknowledgement(client, operationId);
+  }, [client, operationId]);
 
-  return { error: enabled ? command.error : null, pending: command.pending, retry };
+  return {
+    error: visible && state?.phase === "failed" ? state.error : null,
+    pending: visible && state?.phase === "pending",
+    retry,
+  };
 }

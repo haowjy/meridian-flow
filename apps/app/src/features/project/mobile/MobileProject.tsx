@@ -10,7 +10,6 @@
  * not a back button — the drawer trigger stays on every screen.
  */
 import { t } from "@lingui/core/macro";
-import type { Work } from "@meridian/contracts/protocol";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -19,7 +18,7 @@ import { useConversationRevealRouting } from "@/features/chat/conversation-revea
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import { HomeScreen } from "../home/HomeScreen";
-import type { ProjectViewProps } from "../ProjectView";
+import type { ResolvedProjectViewProps } from "../ProjectView";
 import { WorkScreen } from "../work/WorkScreen";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
@@ -31,7 +30,7 @@ import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
 
-type MobileProjectProps = ProjectViewProps & { activeWork: Work | null };
+type MobileProjectProps = ResolvedProjectViewProps;
 
 export function MobileProject(props: MobileProjectProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -99,7 +98,7 @@ export function MobileProject(props: MobileProjectProps) {
  * screens leave the slot empty.
  */
 function trailingAction(
-  props: ProjectViewProps,
+  props: ResolvedProjectViewProps,
   onRequestCreate: (kind: ContextCreateKind) => void,
 ) {
   if (props.resultsOpen) {
@@ -134,7 +133,13 @@ function renderActiveView(
 
   switch (props.activeScreen) {
     case "home":
-      return <HomeScreen projectId={props.projectId} onSelectThread={props.onSelectThread} />;
+      return (
+        <HomeScreen
+          projectId={props.projectId}
+          onSelectThread={props.onSelectThread}
+          onOpenThread={props.onOpenThread}
+        />
+      );
     case "work":
       return <WorkScreen projectId={props.projectId} />;
     case "chat":
@@ -145,6 +150,8 @@ function renderActiveView(
           activeWork={props.activeWork}
           onSelectThread={props.onSelectThread}
           onSelectContextPath={props.onSelectContextPath}
+          openTransfer={props.openTransfer}
+          onOpenTransferClaimed={props.onOpenTransferClaimed}
         />
       );
     case "context":
@@ -180,7 +187,7 @@ function renderActiveView(
  * routed Results auxiliary state suppresses the trail so the top bar shows its
  * plain centered title instead — Results is not part of the Files hierarchy.
  */
-function contextBreadcrumbSegments(props: ProjectViewProps): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(props: ResolvedProjectViewProps): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
