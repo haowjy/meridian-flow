@@ -79,20 +79,40 @@ describe("thread title host semantics", () => {
     expect(trigger?.children[1]?.tagName).toBe("svg");
   });
 
-  it("does not reserve a phantom trailing mobile action when none is supplied", () => {
+  it.each([
+    "home",
+    "work",
+  ] as const)("keeps symmetric title reserves on the %s screen without an action", (activeScreen) => {
     const host = render(
       <MobileTopBar
-        activeScreen="home"
+        activeScreen={activeScreen}
         projectId="project-1"
         activeThreadId={null}
         onSelectThread={vi.fn()}
         onOpenDrawer={vi.fn()}
-        title="Home"
+        title={activeScreen === "home" ? "Home" : "Work"}
       />,
     );
     const row = host.querySelector("header > div");
-    expect(row?.children).toHaveLength(2);
+    expect(row?.children).toHaveLength(3);
+    expect(row?.lastElementChild?.getAttribute("class")).toContain("size-11");
     expect(host.querySelectorAll("button")).toHaveLength(1);
-    expect(host.querySelector('button[aria-label="Open navigation"]')).not.toBeNull();
+  });
+
+  it("uses the same trailing reserve when an action is supplied", () => {
+    const host = render(
+      <MobileTopBar
+        activeScreen="chat"
+        projectId="project-1"
+        activeThreadId={null}
+        onSelectThread={vi.fn()}
+        onOpenDrawer={vi.fn()}
+        title="Chat"
+        actions={<button type="button">Open results</button>}
+      />,
+    );
+    const reserve = host.querySelector("header > div")?.lastElementChild;
+    expect(reserve?.getAttribute("class")).toContain("size-11");
+    expect(reserve?.textContent).toBe("Open results");
   });
 });

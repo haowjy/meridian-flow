@@ -80,9 +80,7 @@ export function MobileTopBar({
               </div>
             ))}
         </div>
-        {actions ? (
-          <div className="flex size-11 shrink-0 items-center justify-end">{actions}</div>
-        ) : null}
+        <div className="flex size-11 shrink-0 items-center justify-end">{actions}</div>
       </div>
     </header>
   );
