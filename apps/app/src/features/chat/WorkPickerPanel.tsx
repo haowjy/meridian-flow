@@ -89,6 +89,7 @@ const failureCopy = (failure: WorkBindingFailure) => {
 };
 
 export function WorkPickerPanel({
+  purposeLabel = t`Change work for this chat`,
   view,
   operation,
   onQueryChange,
@@ -96,6 +97,7 @@ export function WorkPickerPanel({
   searchRef,
   focusRefs,
 }: {
+  purposeLabel?: string;
   view: WorkPickerViewModel;
   operation: WorkPickerOperation;
   onQueryChange: (query: string) => void;
@@ -136,7 +138,7 @@ export function WorkPickerPanel({
     // biome-ignore lint/a11y/useSemanticElements: fieldset intrinsic sizing breaks the bounded results scrollport.
     <div
       role="group"
-      aria-label={t`Change work for this chat`}
+      aria-label={purposeLabel}
       aria-busy={(view.status === "ready" && view.refreshing) || operation.pending}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
       onKeyDown={navigate}

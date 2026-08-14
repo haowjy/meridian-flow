@@ -364,6 +364,36 @@
   @apply text-base leading-relaxed md:text-[15px];
 }
 
+@utility home-composer-page {
+  gap: 2rem;
+  padding-block-end: calc(2rem + env(safe-area-inset-bottom));
+}
+
+@utility home-composer-entry {
+  display: flex;
+  align-items: center;
+}
+
+@utility home-composer-inner {
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
+@container project-home (min-width: 42rem) {
+  @media (min-height: 42rem) {
+    .home-composer-entry {
+      min-block-size: clamp(20rem, 42svh, 26rem);
+    }
+  }
+}
+
+@media (pointer: coarse) {
+  .home-composer-page button {
+    min-block-size: 44px;
+  }
+}
+
 @utility user-turn {
   @apply mb-8 ml-auto w-fit max-w-[95%];
 }

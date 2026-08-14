@@ -21,12 +21,11 @@ type FeedQuery = {
 export function HomeFeed({
   feed,
   cardProps,
-  newChat,
-  newChatError,
 }: {
   feed: FeedQuery;
   cardProps: Omit<HomeChatCardProps, "item" | "variant">;
-  newChat: React.ReactNode;
+  /** Superseded Home creation slot, accepted temporarily for direct feed callers. */
+  newChat?: React.ReactNode;
   newChatError?: React.ReactNode;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
@@ -65,27 +64,19 @@ export function HomeFeed({
   const { continueChat, favorites, recent } = feed.grouped;
   if (!continueChat && !favorites.length && !recent.length)
     return (
-      <HomeState
-        title={t`Start a chat`}
-        caption={t`Your conversations will appear here.`}
-        action={newChat}
-        error={newChatError}
-      />
+      <p className="py-8 text-center text-compact text-muted-foreground">
+        <Trans>Your chats will appear here after you send a message.</Trans>
+      </p>
     );
 
   return (
-    <div className="project-screen-column gap-8">
-      <h1 className="sr-only">
-        <Trans>Home</Trans>
-      </h1>
+    <div className="flex flex-col gap-8">
       <section className="flex flex-col gap-3">
-        <div className="flex min-h-9 items-center justify-between gap-4">
+        <div className="flex min-h-9 items-center gap-4">
           <h2 className="text-headline-section">
             <Trans>Continue</Trans>
           </h2>
-          {newChat}
         </div>
-        {newChatError}
         {continueChat ? (
           <HomeChatCard item={continueChat} variant="continue" {...cardProps} />
         ) : null}
@@ -159,29 +150,23 @@ function HomeState({
   caption,
   action,
   role,
-  error,
 }: {
   title: string;
   caption: string;
-  action: React.ReactNode;
+  action?: React.ReactNode;
   role?: "alert";
-  error?: React.ReactNode;
 }) {
   return (
-    <div
-      className="project-screen-column min-h-full items-center justify-center text-center"
-      role={role}
-    >
+    <div className="py-8 text-center" role={role}>
       <h1 className="text-headline-section">{title}</h1>
       <p className="mt-2 text-compact text-muted-foreground">{caption}</p>
-      <div className="mt-5">{action}</div>
-      {error ? <div className="mt-3">{error}</div> : null}
+      {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );
 }
 function HomeLoading() {
   return (
-    <div className="project-screen-column gap-8" role="status" aria-busy="true">
+    <div className="flex flex-col gap-8" role="status" aria-busy="true">
       <span className="sr-only">
         <Trans>Loading chats</Trans>
       </span>

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: make Project Home composer-led with the actual shared Composer,
+  prospective Agent, write-mode, and Work controls, and route-armed first-send
+  creation while preserving the secondary Continue, Favorite, and Recent feed.
+
 - `apps/app`: promote the real Composer to a neutral presentation boundary,
   make draft clearing caller-accepted, and add route-armed first-message
   handoff with exclusive claim, typed definite/ambiguous admission, and
