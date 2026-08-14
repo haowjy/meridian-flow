@@ -13,6 +13,9 @@ transport, per-thread/per-field command serialization, and cache-command authori
 `visible-thread-open-acknowledgements.ts` owns semantic visible-Chat epochs,
 Home-to-Chat transfer, retry attribution, and lease cleanup above that transport;
 field command state never retains a shared settled error or outcome.
+The visible destination's inline error row is the only accessible alert owner
+for an open failure; manual read/unread failures remain with their initiating
+Home control.
 The Home feature keeps screen orchestration in `HomeScreen`, card semantics in
 `HomeChatCard`, collection layout in `HomeFeed`, date policy in
 `home-activity-date`, and scroll/focus restoration in the favorite-movement

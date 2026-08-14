@@ -112,7 +112,7 @@ the document session registry.
   happens through OS/browser back because drill-in pushes route states.
 - Context screens supply a left-aligned breadcrumb immediately after the
   hamburger. The breadcrumb is Files-rooted: `Files › scheme › folders › file`.
-- Home/chat/results use centered titles. The leading hamburger and trailing
+- Home/Work/chat/results use centered titles. The leading hamburger and trailing
   action reserve are both `44px`, so non-breadcrumb titles remain centered.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way

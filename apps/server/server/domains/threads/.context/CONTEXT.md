@@ -70,7 +70,7 @@ instead of the N:1 `threads.workId` column.
 | Port | Surface |
 |---|---|
 | `ThreadRepository` | `create / findById / listByUser / listByProject / updateStatus / recomputeCostFromModelResponses / updateCost / softDelete / restore` |
-| `HomeChatFeedRepository` | One server-owned Continue/Favorite/Recent projection with current-visible-lineage preview and keyset pagination. |
+| `HomeChatFeedRepository` | One server-owned Continue/Favorite/Recent projection with current-visible-lineage preview and keyset pagination. Production resolves a page in one set-oriented SQL statement; in-memory adapters preserve behavior, not query shape. |
 | `ThreadUserStateRepository` | Per-writer favorite, manual-unread, and last-opened desired-state authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
@@ -196,6 +196,10 @@ contract shapes.
   domain policy. The closed `attention` enum uses `thread_user_state`: a
   `waiting_interrupt` assistant head is `actionRequired`, and an idle completed
   assistant head newer than the writer's acknowledgement is `unread`.
+- Home returns Continue and Favorites only on the first page. Recent pagination
+  uses an opaque exclusive cursor over `(lastActivityAt DESC, threadId DESC)`;
+  every page excludes Continue and Favorites, so equal activity times remain
+  stable without duplicating a chat.
 - Opening a thread sends `{ isUnread: false }` to
   `PATCH /api/threads/:threadId/user-state`. Mark-read/open clears the manual
   override and monotonically advances `last_opened_at` using database time;

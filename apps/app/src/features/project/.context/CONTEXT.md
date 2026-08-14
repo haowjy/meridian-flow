@@ -187,8 +187,9 @@ hydration cascade.
 `routes/_authenticated/project/$projectId.tsx` owns **all** workspace URL params
 (`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?ext=`) and is the
 single source of screen/thread ownership. The per-screen controllers
-(`HomePaneController`, `ChatPaneController`, `ContextPaneController`,
-`SettingsPaneController`) are **controlled** — they render into surfaces and call
+(`HomePaneController`, `WorkPaneController`, `ChatPaneController`,
+`ContextPaneController`, `SettingsPaneController`) are **controlled** — they
+render into surfaces and call
 the route's handlers; they never set the URL directly. (Full ownership rules:
 [`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
 

@@ -42,7 +42,7 @@ future chats, and selected-chat navigation remain distinct states and actions.
 The schema is `works` +
 `thread_works`; every new project receives a
 concrete default Work, and writers can create and manage additional Works from
-Home.
+the dedicated Work screen.
 
 ## Agency
 
