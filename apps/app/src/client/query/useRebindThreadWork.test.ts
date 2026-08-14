@@ -59,6 +59,7 @@ describe("thread Work binding convergence", () => {
 
   it("patches confirmed binding and preference synchronously", () => {
     const client = new QueryClient();
+    client.setQueryData(projectQueryKeys.homeFeed("project-1"), { fresh: true });
     client.setQueryData(projectQueryKeys.threads("project-1"), [
       { id: "thread-1", workId: "work-a" },
     ]);
@@ -77,6 +78,7 @@ describe("thread Work binding convergence", () => {
     expect(
       client.getQueryData<ListWorksResponse>(projectQueryKeys.works("project-1"))?.defaultWorkId,
     ).toBe("work-b");
+    expect(client.getQueryState(projectQueryKeys.homeFeed("project-1"))?.isInvalidated).toBe(true);
   });
 
   it("retries a causal read when a projection arrives during the first read", async () => {

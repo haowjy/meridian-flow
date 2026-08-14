@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`, `contracts`: converge Home from canonical thread,
+  Work, and open-read transitions; complete Work coarse-pointer and heading
+  semantics; delete the superseded project statistics API and contract.
+
 - `apps/app`: replace the project Home dashboard and separate phone list with
   one responsive Continue, Favorites, and paginated Recent chat feed, including
   server previews, accessible shared cards, direct New Chat, and field-scoped

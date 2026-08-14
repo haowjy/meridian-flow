@@ -12,7 +12,7 @@ import {
   type WorkScopedContextUriScheme,
 } from "../context-uri.js";
 import type { UserId, WorkId } from "../ids.js";
-import type { Project, ProjectStatsResponse } from "../projects/index.js";
+import type { Project } from "../projects/index.js";
 import type {
   Block,
   BlockType,
@@ -36,7 +36,6 @@ export type {
   Block,
   BlockType,
   ModelResponse,
-  ProjectStatsResponse,
   Thread,
   ThreadAttention,
   ThreadListItem,

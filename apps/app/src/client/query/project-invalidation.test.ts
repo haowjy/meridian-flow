@@ -1,0 +1,26 @@
+import { QueryClient } from "@tanstack/react-query";
+import { describe, expect, it } from "vitest";
+
+import { invalidateProjectThreadData } from "./project-invalidation";
+import { projectQueryKeys } from "./project-query-keys";
+
+describe("project projection invalidation", () => {
+  it("converges the thread, Work, and Home projections for one project", async () => {
+    const client = new QueryClient();
+    const owned = [
+      projectQueryKeys.threads("project-1"),
+      projectQueryKeys.works("project-1"),
+      projectQueryKeys.homeFeed("project-1"),
+    ] as const;
+    const unrelated = [
+      projectQueryKeys.homeFeed("project-2"),
+      projectQueryKeys.detail("project-1"),
+    ] as const;
+    for (const key of [...owned, ...unrelated]) client.setQueryData(key, { fresh: true });
+
+    await invalidateProjectThreadData(client, "project-1");
+
+    for (const key of owned) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    for (const key of unrelated) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+  });
+});

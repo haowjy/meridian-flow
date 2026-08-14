@@ -10,6 +10,7 @@ import type {
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
 import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
+import { invalidateProjectHomeFeed } from "./project-invalidation";
 import {
   isProjectContextTreeKey,
   isProjectWorkDerivedKey,
@@ -53,6 +54,7 @@ export function invalidateThreadProjectionDependencies(
 ): void {
   const ids = input.workIds === "all" ? undefined : input.workIds;
   void client.invalidateQueries({ queryKey: threadQueryKeys.thread(input.threadId) });
+  void invalidateProjectHomeFeed(client, input.projectId);
   if (input.refreshLists) {
     void client.invalidateQueries({
       queryKey: projectQueryKeys.threads(input.projectId),

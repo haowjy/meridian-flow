@@ -5,7 +5,7 @@
  * thread store. This is the only client snapshot path; AG-UI remains a live
  * streaming transport, not persisted history.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 import {
@@ -15,7 +15,7 @@ import {
   updateThreadUserState,
 } from "@/client/api/threads-api";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
-
+import { invalidateProjectHomeFeed } from "./project-invalidation";
 import { threadQueryKeys } from "./thread-query-keys";
 
 type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
@@ -44,6 +44,7 @@ export type ThreadSnapshotSyncStatus = {
  */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
+  const queryClient = useQueryClient();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
 
   const { data, isError, isFetching, refetch } = useQuery({
@@ -67,8 +68,9 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       if (data.attention === "unread") {
         actions.setThreadAttention(threadId, "none");
       }
+      void invalidateProjectHomeFeed(queryClient, data.thread.projectId);
     });
-  }, [actions, data, threadId]);
+  }, [actions, data, queryClient, threadId]);
 
   return {
     snapshot: data ?? null,
