@@ -41,7 +41,7 @@ export function HomeChatCard({
   const unread = getCommandState(item.id, "isUnread");
   const favoriteValue = !item.isFavorite;
   const unreadValue = item.attention === "none";
-  const favoriteSuppressed = favorite.pending && favorite.desiredValue === favoriteValue;
+  const favoriteSuppressed = favorite.pending;
   const unreadSuppressed = unread.pending && unread.desiredValue === unreadValue;
   return (
     <article
