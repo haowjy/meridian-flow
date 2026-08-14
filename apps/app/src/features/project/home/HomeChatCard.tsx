@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { MoreHorizontal, Star } from "lucide-react";
+import type { ThreadUserStateTransportState } from "@/client/query/thread-user-state-commands";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +24,7 @@ export type HomeChatCardProps = {
   getCommandState: (
     id: string,
     field: "isFavorite" | "isUnread",
-  ) => { pending: boolean; error: Error | null };
+  ) => ThreadUserStateTransportState & { error: Error | null };
 };
 export function HomeChatCard({
   item,
@@ -38,6 +39,10 @@ export function HomeChatCard({
   const attentionId = item.attention !== "none" ? `home-attention-${item.id}` : undefined;
   const favorite = getCommandState(item.id, "isFavorite");
   const unread = getCommandState(item.id, "isUnread");
+  const favoriteValue = !item.isFavorite;
+  const unreadValue = item.attention === "none";
+  const favoriteSuppressed = favorite.pending && favorite.desiredValue === favoriteValue;
+  const unreadSuppressed = unread.pending && unread.desiredValue === unreadValue;
   return (
     <article
       data-home-card={item.id}
@@ -114,13 +119,13 @@ export function HomeChatCard({
           data-home-favorite={item.id}
           className="[@media(pointer:coarse)]:size-11"
           aria-pressed={item.isFavorite}
-          aria-disabled={favorite.pending || undefined}
+          aria-disabled={favoriteSuppressed || undefined}
           aria-busy={favorite.pending || undefined}
           aria-label={
             item.isFavorite ? t`Remove ${title} from favorites` : t`Add ${title} to favorites`
           }
           onClick={(event) => {
-            if (!favorite.pending) onFavorite(item, !item.isFavorite, event.detail === 0);
+            if (!favoriteSuppressed) onFavorite(item, favoriteValue, event.detail === 0);
           }}
         >
           <Star className={cn("size-4", item.isFavorite && "fill-current text-cinnabar")} />
@@ -130,16 +135,17 @@ export function HomeChatCard({
             <IconButton
               className="[@media(pointer:coarse)]:size-11"
               aria-label={t`Actions for ${title}`}
-              aria-disabled={unread.pending || undefined}
+              aria-disabled={unreadSuppressed || undefined}
+              aria-busy={unread.pending || undefined}
             >
               <MoreHorizontal className="size-4" />
             </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem
-              aria-disabled={unread.pending || undefined}
+              aria-disabled={unreadSuppressed || undefined}
               onSelect={() => {
-                if (!unread.pending) void onUnread(item, item.attention === "none");
+                if (!unreadSuppressed) void onUnread(item, unreadValue);
               }}
             >
               <span>{item.attention === "none" ? t`Mark unread` : t`Mark read`}</span>

@@ -24,7 +24,7 @@ const cardProps = {
   onOpen: vi.fn(),
   onFavorite: vi.fn(),
   onUnread: vi.fn(async () => true),
-  getCommandState: vi.fn(() => ({ pending: false, error: null, outcome: null })),
+  getCommandState: vi.fn(() => ({ pending: false, error: null }) as const),
 };
 const base = {
   isPending: false,

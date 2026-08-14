@@ -11,7 +11,8 @@ import {
   useState,
 } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
+import { groupHomeFeed } from "@/client/query/home-chat-feed-cache";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
   type OpenAcknowledgementTransfer,
@@ -520,75 +521,59 @@ describe("visible Chat open caller boundary", () => {
   it.each([
     "success",
     "failure",
-  ] as const)("serializes the visible dock's false to true opening after first Mark unread %s", async (settlement) => {
+  ] as const)("queues one Home Mark unread behind the visible Chat's initial open %s", async (settlement) => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(threadQueryKeys.snapshot(threadId), {
-      attention: "none",
+      attention: "unread",
     } as ThreadSnapshotResponse);
-    const readPage: HomeChatFeedPage = {
-      ...page,
-      featured: {
-        continueChat: { ...page.featured?.continueChat, attention: "none" } as NonNullable<
-          HomeChatFeedPage["featured"]
-        >["continueChat"],
-        favoriteChats: [],
-      },
-    };
-    const patches = router(readPage);
+    const patches = router();
     useDockViewStore.getState().setDockView("home", "chat");
-
-    function Harness() {
-      const [visible, setVisible] = useState(false);
-      return (
-        <>
-          <button type="button" onClick={() => setVisible(true)}>
-            Reveal dock
-          </button>
-          <HomeScreen projectId={projectId} onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
-          <ChatSurface
-            projectId={projectId}
-            threadId={threadId}
-            activeWork={null}
-            activeScreen="home"
-            onSelectThread={vi.fn()}
-            placement="dock"
-            visible={visible}
-          />
-        </>
-      );
-    }
 
     await withReactRoot(
       <Providers client={client}>
-        <Harness />
+        <HomeScreen projectId={projectId} onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
+        <ChatSurface
+          projectId={projectId}
+          threadId={threadId}
+          activeWork={null}
+          activeScreen="home"
+          onSelectThread={vi.fn()}
+          placement="dock"
+          visible
+        />
       </Providers>,
       async () => {
+        await waitFor(() => patches.length === 1);
+        expect(patches[0]?.body).toEqual({ isUnread: false });
         await waitFor(() => Boolean(document.querySelector('[aria-label="Actions for River"]')));
         await chooseMarkUnread();
-        await waitFor(() => patches.length === 1);
-        expect(patches[0]?.body).toEqual({ isUnread: true });
-
-        await act(async () => buttonNamed("Reveal dock")?.click());
+        await chooseMarkUnread();
         expect(patches).toHaveLength(1);
 
         patches[0]?.resolve(
-          settlement === "success"
-            ? json({ ...success, manuallyUnread: true, attention: "unread" })
-            : json({ message: "manual offline" }, 503),
+          settlement === "success" ? json(success) : json({ message: "open offline" }, 503),
         );
         await waitFor(() => patches.length === 2);
         expect(patches.map((request) => request.body)).toEqual([
-          { isUnread: true },
           { isUnread: false },
+          { isUnread: true },
         ]);
-        expect(document.body.textContent).not.toContain("couldn’t save that you opened");
+        if (settlement === "failure") {
+          await waitFor(
+            () => document.body.textContent?.includes("couldn’t save that you opened") === true,
+          );
+        }
 
-        patches[1]?.resolve(json(success));
+        patches[1]?.resolve(json({ ...success, manuallyUnread: true, attention: "unread" }));
         await waitFor(
           () =>
-            client.getQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId))
-              ?.attention === "none",
+            groupHomeFeed(client.getQueryData(projectQueryKeys.homeFeed(projectId))).continueChat
+              ?.attention === "unread",
         );
+        expect(patches).toHaveLength(2);
+        if (settlement === "failure") {
+          expect(document.body.textContent).toContain("couldn’t save that you opened");
+        }
       },
       { drainMacrotask: true },
     );
