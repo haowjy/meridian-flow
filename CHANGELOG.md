@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: Home feed reads no longer retry automatically, and visible-chat
+  acknowledgement now converges the cached card without refetching Home or
+  treating a hidden persistent dock as opened.
 - `apps/app`: make Home favorite/read commands ordered and field-scoped,
   preserve action-required attention, reconcile authoritative responses, abort
   cancelled feed reads, and preserve scroll and keyboard focus across moves.

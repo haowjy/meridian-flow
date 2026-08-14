@@ -78,8 +78,9 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `project-invalidation` is the canonical project-level convergence seam: any
   thread or Work transition that can change Home also invalidates `homeFeed`.
   Terminal turns and Work rebinds enter through
-  `invalidateThreadProjectionDependencies`; snapshot open acknowledgement
-  invalidates Home only after the user-state write succeeds.
+  `invalidateThreadProjectionDependencies`. Snapshot synchronization only applies
+  history. A visible chat acknowledges unread state separately and converges the
+  cached Home item from the authoritative user-state response without invalidation.
   `useWorks` also exposes the server-resolved `defaultWorkId`; `useDefaultWorkId`
   is the chat-independent seam for work-scoped surfaces.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project

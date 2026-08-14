@@ -127,6 +127,19 @@ export function createHomeFeedCacheController(client: QueryClient, projectId: st
   const key = ["projects", projectId, "home-feed"] as const;
   const apply = () =>
     client.setQueryData<HomeFeedData>(key, (old) => (old ? project(old, s.overlays) : old));
+  const reconcile = (threadId: string, response: UpdateThreadUserStateResponse) =>
+    client.setQueryData<HomeFeedData>(key, (old) =>
+      old
+        ? project(
+            mapItems(old, (entry) =>
+              entry.id === threadId
+                ? { ...entry, isFavorite: response.isFavorite, attention: response.attention }
+                : entry,
+            ),
+            s.overlays,
+          )
+        : old,
+    );
   const retire = () => {
     for (const [id, fields] of s.overlays) {
       for (const field of ["isFavorite", "isUnread"] as const) {
@@ -139,6 +152,7 @@ export function createHomeFeedCacheController(client: QueryClient, projectId: st
     }
   };
   return {
+    reconcile,
     beginRequest() {
       const watermark = ++s.watermark;
       s.requests.add(watermark);
@@ -167,15 +181,7 @@ export function createHomeFeedCacheController(client: QueryClient, projectId: st
       return {
         succeed(response: UpdateThreadUserStateResponse) {
           if (fields[field]?.revision !== revision) return false;
-          client.setQueryData<HomeFeedData>(key, (old) =>
-            old
-              ? mapItems(old, (entry) =>
-                  entry.id === threadId
-                    ? { ...entry, isFavorite: response.isFavorite, attention: response.attention }
-                    : entry,
-                )
-              : old,
-          );
+          reconcile(threadId, response);
           fields[field] = { revision, value, retireAfter: ++s.watermark };
           apply();
           retire();

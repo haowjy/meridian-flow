@@ -30,6 +30,7 @@ export function useHomeChatFeed(projectId: string) {
       }
     },
     getNextPageParam: (page) => page.recentChats.nextCursor ?? undefined,
+    retry: false,
   });
   const inFlight = useRef(new Set<string>());
   const [commandState, setCommandState] = useState<
