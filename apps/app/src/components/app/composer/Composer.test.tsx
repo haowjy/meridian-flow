@@ -42,6 +42,28 @@ afterEach(async () => {
 });
 
 describe("Composer submission ownership", () => {
+  it("names the textarea and associates the caller's disabled reason with Send", async () => {
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <Composer
+          onSubmit={() => true}
+          submitDisabled
+          submitDisabledReason="Finishing write mode change"
+          busy
+        />,
+      ),
+    );
+    expect(host.querySelector('textarea[aria-label="Message"]')).not.toBeNull();
+    const send = host.querySelector('button[aria-label="Send message"]') as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    const reason = document.getElementById(send.getAttribute("aria-describedby") ?? "");
+    expect(reason?.textContent).toBe("Finishing write mode change");
+    expect(host.firstElementChild?.getAttribute("aria-busy")).toBe("true");
+  });
+
   it("retains the exact draft while an async caller rejects acceptance", async () => {
     let settle!: (accepted: boolean) => void;
     const onSubmit = vi.fn(

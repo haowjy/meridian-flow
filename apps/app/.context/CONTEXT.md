@@ -16,8 +16,9 @@ field command state never retains a shared settled error or outcome.
 The visible destination's inline error row is the only accessible alert owner
 for an open failure; manual read/unread failures remain with their initiating
 Home control.
-The Home feature keeps screen orchestration in `HomeScreen`, card semantics in
-`HomeChatCard`, collection layout in `HomeFeed`, date policy in
+The Home feature keeps screen composition in `HomeScreen`, stable-ID creation,
+ambiguity reconciliation, and route-only retry in `useHomeFirstSendAttempt`,
+card semantics in `HomeChatCard`, collection layout in `HomeFeed`, date policy in
 `home-activity-date`, and scroll/focus restoration in the favorite-movement
 hook. Do not duplicate any of those concerns in the screen orchestrator.
 
@@ -71,7 +72,9 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the matching shared Composer acknowledges an idempotent restoration; when a
   newer draft exists, the failed first send is prepended with a blank-line
   separator so both writer-authored texts survive. Ambiguous admission stays
-  quarantined without blind retry.
+  quarantined without blind retry. If a writer changes the Home draft after a
+  route failure, the immutable first message remains the admitted turn and the
+  newer text transfers separately into the destination Composer.
   This handoff lasts only for the authenticated provider lifetime and is not a
   durable outbox. Deferred project-creation flows separately use
   `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;

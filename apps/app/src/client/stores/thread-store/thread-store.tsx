@@ -174,11 +174,13 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     markPendingStream: state.markPendingStream,
     consumePendingStream: state.consumePendingStream,
     stageFirstSend: state.stageFirstSend,
+    preserveFirstSendRouteDraft: state.preserveFirstSendRouteDraft,
     armFirstSend: state.armFirstSend,
     claimFirstSend: state.claimFirstSend,
     ackFirstSend: state.ackFirstSend,
     rejectFirstSend: state.rejectFirstSend,
     ackFirstSendDraftRestored: state.ackFirstSendDraftRestored,
+    ackFirstSendRouteDraftRestored: state.ackFirstSendRouteDraftRestored,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
   };
@@ -588,6 +590,19 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           );
         },
 
+        preserveFirstSendRouteDraft(threadId, text) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (!pending || !text || text === pending.text) return state;
+            return {
+              firstSendByThreadId: {
+                ...state.firstSendByThreadId,
+                [threadId]: { ...pending, draftAfterRoute: text, draftAfterRouteRestored: false },
+              },
+            };
+          });
+        },
+
         armFirstSend(threadId) {
           set((state) => {
             const pending = state.firstSendByThreadId[threadId];
@@ -618,6 +633,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             threadId,
             text: pending.text,
             optimisticUserTurnId: pending.optimisticUserTurnId,
+            draftAfterRoute: pending.draftAfterRoute,
           };
         },
 
@@ -653,6 +669,19 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             const firstSendByThreadId = { ...state.firstSendByThreadId };
             delete firstSendByThreadId[threadId];
             return { firstSendByThreadId };
+          });
+        },
+
+        ackFirstSendRouteDraftRestored(threadId) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (!pending?.draftAfterRoute || pending.draftAfterRouteRestored) return state;
+            return {
+              firstSendByThreadId: {
+                ...state.firstSendByThreadId,
+                [threadId]: { ...pending, draftAfterRouteRestored: true },
+              },
+            };
           });
         },
 

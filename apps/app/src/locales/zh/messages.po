@@ -271,7 +271,7 @@ msgstr ""
 msgid "Active Work"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "其实…"
 
@@ -460,7 +460,7 @@ msgstr ""
 msgid "Bold"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Brainstorm away"
 msgstr "一起头脑风暴吧"
 
@@ -564,12 +564,20 @@ msgstr ""
 msgid "Chat"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Chat away"
 msgstr "随便聊聊"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat couldn’t start"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat was created but couldn’t open"
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
@@ -604,7 +612,7 @@ msgstr ""
 msgid "Checkout unavailable."
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Chime in"
 msgstr "我来说两句"
 
@@ -614,6 +622,10 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Choose a Work"
 msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
@@ -632,6 +644,19 @@ msgstr ""
 #: src/features/project/work/WorkScreen.tsx
 #~ msgid "Choose the context for new writing and chats."
 #~ msgstr ""
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat"
+msgstr ""
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat, current choice unavailable"
+msgstr ""
+
+#. placeholder {0}: work.name
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat, currently {0}"
+msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
@@ -721,6 +746,10 @@ msgstr ""
 
 #: src/features/project/lifecycle.ts
 msgid "Completed"
+msgstr ""
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Composer controls"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -944,6 +973,10 @@ msgstr ""
 msgid "Created a Work"
 msgstr ""
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Created chat didn’t match your choices"
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.created"
@@ -954,8 +987,12 @@ msgid "Creating a Work…"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Creating chat…"
+msgid "Creating chat"
 msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+#~ msgid "Creating chat…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
@@ -1325,6 +1362,10 @@ msgstr ""
 msgid "Files"
 msgstr ""
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Finishing write mode change"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
 msgstr "名"
@@ -1345,7 +1386,7 @@ msgstr ""
 msgid "Form payload is malformed."
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
 msgstr "说吧"
 
@@ -1405,11 +1446,10 @@ msgstr ""
 msgid "Hide source"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Hold on…"
 msgstr "等一下…"
 
-#: src/features/project/home/HomeFeed.tsx
 #: src/features/project/HomePaneController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
@@ -1511,7 +1551,7 @@ msgstr ""
 msgid "Interface language"
 msgstr "界面语言"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Interject"
 msgstr "插一句"
 
@@ -1577,7 +1617,7 @@ msgstr ""
 msgid "Left"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
 msgstr "我们开始吧"
 
@@ -1682,6 +1722,7 @@ msgid "Loading uploads…"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work"
 msgstr ""
@@ -1745,6 +1786,10 @@ msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
+msgstr ""
+
+#: src/components/app/composer/Composer.tsx
+msgid "Message"
 msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
@@ -1860,7 +1905,6 @@ msgstr ""
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/home/HomeChatCard.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -2211,7 +2255,7 @@ msgstr ""
 msgid "Put the caret in a table first."
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "突然想到"
 
@@ -2552,7 +2596,7 @@ msgstr ""
 msgid "Select…"
 msgstr ""
 
-#: src/features/chat/Composer.tsx
+#: src/components/app/composer/Composer.tsx
 msgid "Send message"
 msgstr "发送消息"
 
@@ -2631,11 +2675,15 @@ msgid "Split cell"
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
-msgid "Start a chat"
-msgstr ""
+#~ msgid "Start a chat"
+#~ msgstr ""
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Start with a scene, a question, or a problem to solve."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
@@ -2655,7 +2703,7 @@ msgstr ""
 #~ msgid "Status"
 #~ msgstr ""
 
-#: src/features/chat/Composer.tsx
+#: src/components/app/composer/Composer.tsx
 msgid "Stop"
 msgstr "停止"
 
@@ -2742,7 +2790,7 @@ msgstr ""
 msgid "Table placement"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "说出来理一理"
 
@@ -2899,7 +2947,7 @@ msgstr ""
 msgid "Thinking"
 msgstr "思考"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "边想边说？"
 
@@ -3169,6 +3217,10 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Unavailable"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr ""
@@ -3298,15 +3350,19 @@ msgstr "你正在研究什么？"
 msgid "What this figure shows"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/features/project/home/HomeScreen.tsx
+msgid "What will you write next?"
+msgstr ""
+
+#: src/components/app/composer/placeholders.ts
 msgid "What's next?"
 msgstr "接下来呢？"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "What's on your mind?"
 msgstr "你在想什么？"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
 
@@ -3315,6 +3371,7 @@ msgid "Why this is marked merged"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/home/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkScreen.tsx
@@ -3327,6 +3384,7 @@ msgstr ""
 msgid "workReceipt.upToDate"
 msgstr ""
 
+#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr ""
@@ -3361,7 +3419,7 @@ msgstr ""
 msgid "Wrap lines"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Write away"
 msgstr "开始写吧"
 
@@ -3392,8 +3450,12 @@ msgid "you answered"
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
-msgid "Your conversations will appear here."
+msgid "Your chats will appear here after you send a message."
 msgstr ""
+
+#: src/features/project/home/HomeFeed.tsx
+#~ msgid "Your conversations will appear here."
+#~ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."

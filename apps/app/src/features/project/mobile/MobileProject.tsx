@@ -68,7 +68,7 @@ export function MobileProject(props: MobileProjectProps) {
         }
         actions={trailingAction(props, setCreating)}
       />
-      <main className="main-pane min-h-0 flex-1 overflow-hidden">
+      <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
         {renderActiveView(props, creating, () => setCreating(null))}
       </main>
       <NavigationDrawer

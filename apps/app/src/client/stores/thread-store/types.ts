@@ -35,6 +35,8 @@ export type FirstSendClaim = {
   threadId: string;
   text: string;
   optimisticUserTurnId: string;
+  /** A newer Home draft transferred separately from the immutable first message. */
+  draftAfterRoute?: string;
 };
 
 export type FirstSendRejection = "definite" | "ambiguous";
@@ -42,6 +44,7 @@ export type FirstSendRejection = "definite" | "ambiguous";
 export type FirstSendHandoffState = Omit<FirstSendClaim, "claimId"> & {
   status: "staged" | "armed" | "claimed" | "failed" | "ambiguous";
   claimId?: number;
+  draftAfterRouteRestored?: boolean;
 };
 
 export type LiveTurnMeta = {
@@ -145,6 +148,7 @@ export type ThreadStoreActions = {
   consumePendingStream(threadId: string): PendingStreamStart | null;
   /** Stage before navigation. A staged send is invisible to mounted Chat surfaces. */
   stageFirstSend(args: Omit<FirstSendClaim, "claimId">): void;
+  preserveFirstSendRouteDraft(threadId: string, text: string): void;
   /** Make a staged send claimable after the matching primary Chat route commits. */
   armFirstSend(threadId: string): void;
   /** Atomically claim an armed send. Remounts and other Chat surfaces receive null. */
@@ -154,6 +158,7 @@ export type ThreadStoreActions = {
   rejectFirstSend(threadId: string, claimId: number, rejection: FirstSendRejection): void;
   /** Retire a failed handoff only after its matching Composer accepted the draft. */
   ackFirstSendDraftRestored(threadId: string, claimId: number): void;
+  ackFirstSendRouteDraftRestored(threadId: string): void;
   /**
    * Mark a (projectId, threadId) pair as pending server creation. Set by the
    * optimistic Home → Project flow before navigation; cleared by the chat

@@ -1,4 +1,7 @@
+// @vitest-environment jsdom
 /** Rendered Home/Chat caller contracts for visible-chat open operations. */
+
+import { I18nProvider } from "@lingui/react";
 import type { HomeChatFeedPage, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -20,6 +23,7 @@ import {
 } from "@/client/query/visible-thread-open-acknowledgements";
 import { ThreadStoreProvider } from "@/client/stores";
 import { AnnouncementRegion } from "@/components/app/AnnouncementRegion";
+import { i18n } from "@/lib/i18n";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ChatScreen } from "./chat/ChatScreen";
 import { ChatSurface } from "./chat/ChatSurface";
@@ -63,6 +67,7 @@ vi.mock("@/components/ui/dropdown-menu", async () => {
 vi.mock("@/features/chat/ChatView", () => ({
   ChatView: ({ threadId }: { threadId: string }) => <div>Conversation {threadId}</div>,
 }));
+vi.mock("./home/NewThreadComposerToolbar", () => ({ NewThreadComposerToolbar: () => null }));
 vi.mock("./chat/ProjectChatContextNavigationProvider", () => ({
   ProjectChatContextNavigationProvider: ({ children }: { children: ReactNode }) => children,
 }));
@@ -197,12 +202,14 @@ async function chooseMarkUnread() {
 
 function Providers({ client, children }: { client: QueryClient; children: ReactNode }) {
   return (
-    <QueryClientProvider client={client}>
-      <ThreadStoreProvider now={Date.now()}>
-        {children}
-        <AnnouncementRegion />
-      </ThreadStoreProvider>
-    </QueryClientProvider>
+    <I18nProvider i18n={i18n}>
+      <QueryClientProvider client={client}>
+        <ThreadStoreProvider now={Date.now()}>
+          {children}
+          <AnnouncementRegion />
+        </ThreadStoreProvider>
+      </QueryClientProvider>
+    </I18nProvider>
   );
 }
 
@@ -635,7 +642,7 @@ describe("visible Chat open caller boundary", () => {
     );
   });
 
-  it("creates an actual New Chat through raw selection without preparing an open transfer", async () => {
+  it("routes an actual Home first send without preparing an existing-chat open transfer", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const selects: string[] = [];
     const cardOpens: string[] = [];
@@ -648,8 +655,30 @@ describe("visible Chat open caller boundary", () => {
         const body = init?.body ? JSON.parse(String(init.body)) : undefined;
         requests.push({ path, method, body });
         if (path.includes("/home-feed")) return Promise.resolve(json(page));
+        if (path.includes(`/api/projects/${projectId}/works`)) {
+          return Promise.resolve(
+            json({
+              defaultWorkId: "work-1",
+              works: [{ id: "work-1", projectId, name: "Book 1", aiWriteMode: "draft" }],
+            }),
+          );
+        }
         if (path === `/api/projects/${projectId}/threads` && method === "POST") {
-          return Promise.resolve(json({ id: "thread-new" }));
+          return Promise.resolve(
+            json({
+              id: body && typeof body === "object" && "id" in body ? body.id : "thread-new",
+              projectId,
+              workId: "work-1",
+              currentAgent: null,
+              title: "Opening line",
+              kind: "primary",
+              status: "idle",
+              activeLeafTurnId: null,
+              parentThreadId: null,
+              createdAt: "2026-08-14T00:00:00.000Z",
+              updatedAt: "2026-08-14T00:00:00.000Z",
+            }),
+          );
         }
         throw new Error(`unexpected request: ${method} ${path}`);
       }),
@@ -659,13 +688,31 @@ describe("visible Chat open caller boundary", () => {
       <Providers client={client}>
         <HomeScreen
           projectId={projectId}
-          onSelectThread={(id) => selects.push(id)}
+          onSelectThread={async (id) => {
+            selects.push(id);
+          }}
           onOpenThread={(id) => cardOpens.push(id)}
         />
       </Providers>,
       async () => {
-        await waitFor(() => Boolean(buttonNamed("New chat")));
-        await act(async () => buttonNamed("New chat")?.click());
+        await waitFor(() => Boolean(document.querySelector('textarea[aria-label="Message"]')));
+        const textarea = document.querySelector(
+          'textarea[aria-label="Message"]',
+        ) as HTMLTextAreaElement;
+        await act(async () => {
+          const setter = Object.getOwnPropertyDescriptor(
+            HTMLTextAreaElement.prototype,
+            "value",
+          )?.set;
+          setter?.call(textarea, "Opening line");
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        await waitFor(
+          () => !(buttonNamed("Send message") as HTMLButtonElement | undefined)?.disabled,
+        );
+        await act(async () => {
+          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        });
         expect(
           requests.filter(
             (request) =>
@@ -678,13 +725,10 @@ describe("visible Chat open caller boundary", () => {
         const create = requests.find(
           (request) => request.path === `/api/projects/${projectId}/threads`,
         );
-        expect(create).toEqual({
-          path: `/api/projects/${projectId}/threads`,
-          method: "POST",
-          body: {},
-        });
+        expect(create?.body).toMatchObject({ title: "Opening line" });
+        expect(create?.body).toHaveProperty("id");
         expect(Object.hasOwn(create?.body as object, "workId")).toBe(false);
-        expect(selects).toEqual(["thread-new"]);
+        expect(selects).toHaveLength(1);
         expect(cardOpens).toEqual([]);
         expect(requests.filter((request) => request.path.includes("/user-state"))).toEqual([]);
       },

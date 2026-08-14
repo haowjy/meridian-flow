@@ -1,7 +1,11 @@
+// @vitest-environment jsdom
 /** Rendered Home interaction contracts spanning cards, movement, and command transport. */
+
+import { I18nProvider } from "@lingui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { i18n } from "@/lib/i18n";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { HomeScreen } from "./HomeScreen";
 
@@ -9,12 +13,26 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@lingui/core/macro", () => ({
+  msg: (parts: TemplateStringsArray) => parts.join(""),
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
 }));
-vi.mock("@/client/stores", () => ({
-  useAnnouncement: () => ({ announce: vi.fn(), announceError: vi.fn() }),
-}));
+vi.mock("./NewThreadComposerToolbar", () => ({ NewThreadComposerToolbar: () => null }));
+vi.mock("@/client/stores", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/client/stores")>();
+  return {
+    ...actual,
+    useIsProjectPendingCreation: () => false,
+    useAnnouncement: () => ({ announce: vi.fn(), announceError: vi.fn() }),
+    useThreadActions: () => ({
+      ensureThread: vi.fn(),
+      appendUserTurn: vi.fn(),
+      stageFirstSend: vi.fn(),
+      preserveFirstSendRouteDraft: vi.fn(),
+      armFirstSend: vi.fn(),
+    }),
+  };
+});
 
 const thread = {
   id: "thread-1",
@@ -84,9 +102,11 @@ describe("HomeScreen", () => {
     );
 
     await withReactRoot(
-      <QueryClientProvider client={client}>
-        <HomeScreen projectId="project-1" onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
-      </QueryClientProvider>,
+      <I18nProvider i18n={i18n}>
+        <QueryClientProvider client={client}>
+          <HomeScreen projectId="project-1" onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
+        </QueryClientProvider>
+      </I18nProvider>,
       async () => {
         await waitFor(() =>
           Boolean(document.querySelector('[aria-label="Add River to favorites"]')),

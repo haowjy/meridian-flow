@@ -1,23 +1,22 @@
 /** Composer-led Project Home and its independent, server-owned return feed. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { HomeChatItem, Thread } from "@meridian/contracts/protocol";
-import type { Work } from "@meridian/contracts/works";
-import { useEffect, useRef, useState } from "react";
-import { createProjectThread } from "@/client/api/projects-api";
+import type { HomeChatItem } from "@meridian/contracts/protocol";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useHomeChatFeed } from "@/client/query/useHomeChatFeed";
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement, useThreadActions } from "@/client/stores";
-import { Composer } from "@/components/app/composer";
+import { Composer, type ComposerHandle } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DEFAULT_AGENT_SLUG, threadCreateAgentField } from "@/features/agents";
+import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { HomeFeed } from "./HomeFeed";
 import { NewThreadComposerToolbar } from "./NewThreadComposerToolbar";
 import { useHomeFavoriteMovement } from "./use-home-favorite-movement";
+import { useHomeFirstSendAttempt } from "./use-home-first-send-attempt";
 
 export type HomeScreenProps = {
   projectId: string;
-  onSelectThread: (threadId: string) => unknown;
+  onSelectThread: (threadId: string) => Promise<void>;
   onOpenThread: (threadId: string) => void;
 };
 
@@ -29,14 +28,11 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   const movement = useHomeFavoriteMovement();
   const [now, setNow] = useState(Date.now());
   const [agentSlug, setAgentSlug] = useState(DEFAULT_AGENT_SLUG);
-  const [selectedWork, setSelectedWork] = useState<Work | null>(null);
-  const explicitWork = useRef(false);
-  const inFlight = useRef(false);
-  const lastSubmittedText = useRef("");
-  const [creating, setCreating] = useState(false);
-  const [failure, setFailure] = useState<null | { kind: "create" | "route"; thread?: Thread }>(
-    null,
-  );
+  const [workSelection, setWorkSelection] = useState<
+    { source: "current_default" } | { source: "writer"; workId: string }
+  >({ source: "current_default" });
+  const [modePending, setModePending] = useState(false);
+  const composerRef = useRef<ComposerHandle>(null);
   const [finePointer, setFinePointer] = useState(false);
 
   useEffect(() => {
@@ -44,58 +40,18 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     return () => clearInterval(timer);
   }, []);
   useEffect(() => {
-    const media = matchMedia("(hover: hover) and (pointer: fine)");
+    const media = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+    if (!media) return;
     const sync = () => setFinePointer(media.matches);
     sync();
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
-  useEffect(() => {
-    if (explicitWork.current) {
-      if (selectedWork && !worksQuery.works?.some(({ id }) => id === selectedWork.id))
-        setSelectedWork(null);
-      return;
-    }
-    setSelectedWork(worksQuery.currentWork);
-  }, [selectedWork, worksQuery.currentWork, worksQuery.works]);
-
-  async function routeCreatedThread(thread: Thread) {
-    try {
-      await onSelectThread(thread.id);
-      actions.armFirstSend(thread.id);
-      setFailure(null);
-      return true;
-    } catch {
-      setFailure({ kind: "route", thread });
-      return false;
-    }
-  }
-
-  async function submit(text: string) {
-    if (inFlight.current || !selectedWork) return false;
-    if (failure?.kind === "route" && failure.thread) return routeCreatedThread(failure.thread);
-    inFlight.current = true;
-    lastSubmittedText.current = text;
-    setCreating(true);
-    setFailure(null);
-    try {
-      const thread = await createProjectThread(projectId, {
-        id: crypto.randomUUID(),
-        workId: selectedWork.id,
-        ...threadCreateAgentField(agentSlug),
-      });
-      actions.ensureThread(thread);
-      const optimistic = actions.appendUserTurn(thread.id, text);
-      actions.stageFirstSend({ threadId: thread.id, text, optimisticUserTurnId: optimistic.id });
-      return await routeCreatedThread(thread);
-    } catch {
-      setFailure({ kind: "create" });
-      return false;
-    } finally {
-      inFlight.current = false;
-      setCreating(false);
-    }
-  }
+  const firstSend = useHomeFirstSendAttempt({ projectId, actions, onSelectThread });
+  const selectedWorkId =
+    workSelection.source === "writer" ? workSelection.workId : worksQuery.currentWorkId;
+  const selectedWork = worksQuery.works?.find(({ id }) => id === selectedWorkId) ?? null;
+  const handleModePendingChange = useCallback((pending: boolean) => setModePending(pending), []);
 
   const cardProps = {
     now,
@@ -125,29 +81,52 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     getCommandState: feed.getCommandState,
   };
   const worksReady = worksQuery.status === "ready" && selectedWork !== null;
+  const submitDisabledReason = firstSend.busy
+    ? t`Creating chat`
+    : modePending
+      ? t`Finishing write mode change`
+      : worksQuery.status === "loading"
+        ? t`Loading Work`
+        : !selectedWork
+          ? t`Choose a Work`
+          : undefined;
+  const submit = (text: string) => {
+    if (!selectedWork || modePending) return false;
+    return firstSend.submit(text, {
+      work:
+        workSelection.source === "writer"
+          ? { source: "writer", workId: selectedWork.id }
+          : { source: "current_default", displayedWorkId: selectedWork.id },
+      agentSlug,
+    });
+  };
 
   return (
-    <div ref={movement.scrollRef} className="app-scroll">
-      <div className="project-screen-column home-composer-page">
-        <section className="home-composer-entry">
-          <div className="home-composer-inner">
-            <h1 className="text-headline-hero">
-              <Trans>What will you write next?</Trans>
-            </h1>
-            <p className="mt-2 text-body text-muted-foreground">
-              <Trans>Start with a scene, a question, or a problem to solve.</Trans>
-            </p>
-            <div className="mt-4 @2xl/project-home:mt-6">
-              <Composer
-                variant="hero"
-                autoFocus={finePointer}
-                onSubmit={submit}
-                submitDisabled={!worksReady || creating}
-                toolbarLeft={
-                  selectedWork ? (
+    <div ref={movement.scrollRef} className="app-scroll main-pane">
+      <div className="project-screen-column">
+        <div className="home-composer-page">
+          <section className="home-composer-entry">
+            <div className="home-composer-inner">
+              <h1 className="home-composer-heading text-headline-section">
+                <Trans>What will you write next?</Trans>
+              </h1>
+              <p className="mt-2 text-body text-muted-foreground">
+                <Trans>Start with a scene, a question, or a problem to solve.</Trans>
+              </p>
+              <div className="mt-4 @2xl/project-home:mt-6">
+                <Composer
+                  ref={composerRef}
+                  variant="hero"
+                  autoFocus={finePointer}
+                  onSubmit={submit}
+                  submitDisabled={!worksReady || modePending || firstSend.busy}
+                  submitDisabledReason={submitDisabledReason}
+                  busy={firstSend.busy}
+                  toolbarLeft={
                     <NewThreadComposerToolbar
                       projectId={projectId}
                       work={selectedWork}
+                      selectedWorkId={selectedWorkId}
                       works={worksQuery.works ?? []}
                       worksStatus={
                         worksQuery.status === "error"
@@ -157,37 +136,43 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                             : "loading"
                       }
                       agentSlug={agentSlug}
-                      disabled={creating}
+                      disabled={firstSend.contextLocked}
                       onAgentChange={setAgentSlug}
-                      onWorkChange={(work) => {
-                        explicitWork.current = true;
-                        setSelectedWork(work);
-                      }}
+                      onWorkChange={(work) =>
+                        setWorkSelection({ source: "writer", workId: work.id })
+                      }
                       onRetryWorks={worksQuery.refetch}
+                      onModePendingChange={handleModePendingChange}
                     />
-                  ) : undefined
-                }
-              />
+                  }
+                />
+                {firstSend.busy ? (
+                  <p role="status" aria-live="polite" className="sr-only">
+                    <Trans>Creating chat</Trans>
+                  </p>
+                ) : null}
+              </div>
+              {worksQuery.status === "error" ? (
+                <InlineErrorRow message={t`Work couldn’t load`} onRetry={worksQuery.refetch} />
+              ) : null}
+              {firstSend.failure ? (
+                <InlineErrorRow
+                  message={
+                    firstSend.failure === "route"
+                      ? t`Chat was created but couldn’t open`
+                      : firstSend.failure === "mismatch"
+                        ? t`Created chat didn’t match your choices`
+                        : t`Chat couldn’t start`
+                  }
+                  onRetry={() => {
+                    void firstSend.retry(composerRef.current?.getDraft() ?? "");
+                  }}
+                />
+              ) : null}
             </div>
-            {worksQuery.status === "error" ? (
-              <InlineErrorRow message={t`Work couldn’t load`} onRetry={worksQuery.refetch} />
-            ) : null}
-            {failure ? (
-              <InlineErrorRow
-                message={
-                  failure.kind === "create"
-                    ? t`Chat couldn’t start`
-                    : t`Chat was created but couldn’t open`
-                }
-                onRetry={() => {
-                  if (failure.thread) void routeCreatedThread(failure.thread);
-                  else if (lastSubmittedText.current) void submit(lastSubmittedText.current);
-                }}
-              />
-            ) : null}
-          </div>
-        </section>
-        <HomeFeed feed={feed} cardProps={cardProps} />
+          </section>
+          <HomeFeed feed={feed} cardProps={cardProps} />
+        </div>
       </div>
     </div>
   );

@@ -24,9 +24,6 @@ export function HomeFeed({
 }: {
   feed: FeedQuery;
   cardProps: Omit<HomeChatCardProps, "item" | "variant">;
-  /** Superseded Home creation slot, accepted temporarily for direct feed callers. */
-  newChat?: React.ReactNode;
-  newChatError?: React.ReactNode;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {

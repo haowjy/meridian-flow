@@ -365,6 +365,8 @@
 }
 
 @utility home-composer-page {
+  display: flex;
+  flex-direction: column;
   gap: 2rem;
   padding-block-end: calc(2rem + env(safe-area-inset-bottom));
 }
@@ -381,6 +383,17 @@
 }
 
 @container project-home (min-width: 42rem) {
+  .home-composer-page {
+    gap: 2.5rem;
+  }
+
+  .home-composer-heading {
+    font-size: var(--text-headline-hero);
+    line-height: var(--text-headline-hero--line-height);
+    letter-spacing: var(--text-headline-hero--letter-spacing);
+    font-weight: var(--text-headline-hero--font-weight);
+  }
+
   @media (min-height: 42rem) {
     .home-composer-entry {
       min-block-size: clamp(20rem, 42svh, 26rem);
@@ -391,6 +404,10 @@
 @media (pointer: coarse) {
   .home-composer-page button {
     min-block-size: 44px;
+  }
+
+  .home-composer-page .composer-action {
+    min-inline-size: 44px;
   }
 }
 

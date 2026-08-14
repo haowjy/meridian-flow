@@ -11,6 +11,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
@@ -47,6 +48,10 @@ export type ComposerProps = {
   toolbarLeft?: ReactNode;
   /** Caller-owned readiness gate; the draft remains editable and intact. */
   submitDisabled?: boolean;
+  /** Caller-owned operation state; does not replace the visible draft. */
+  busy?: boolean;
+  /** Localized explanation associated with a disabled Send control. */
+  submitDisabledReason?: string;
 };
 
 export type ComposerDraftRestoration = {
@@ -57,6 +62,7 @@ export type ComposerDraftRestoration = {
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
 export type ComposerHandle = {
   focus: () => void;
+  getDraft: () => string;
   /** Restore a failed handoff into this actual textarea and acknowledge delivery. */
   restoreDraft: (restoration: ComposerDraftRestoration) => boolean;
 };
@@ -92,6 +98,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     variant = "hero",
     toolbarLeft,
     submitDisabled = false,
+    busy = false,
+    submitDisabledReason,
   },
   ref,
 ) {
@@ -103,11 +111,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const restoredDraftIdsRef = useRef(new Set<string>());
   const [submissionInFlight, setSubmissionInFlight] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const disabledReasonId = useId();
   const canSend = text.trim().length > 0 && !submitDisabled && !submissionInFlight;
 
   // Expose a focus() handle to parent components (e.g. ChatView).
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
+    getDraft: () => textRef.current,
     restoreDraft: ({ id, text: restoredText }) => {
       if (restoredDraftIdsRef.current.has(id)) return true;
       restoredDraftIdsRef.current.add(id);
@@ -187,7 +197,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   );
 
   return (
-    <div className={cn("px-4 pt-4 pb-3", containerClassName)}>
+    <div className={cn("px-4 pt-4 pb-3", containerClassName)} aria-busy={busy || undefined}>
       <Textarea
         ref={textareaRef}
         value={text}
@@ -195,6 +205,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder={resolvedPlaceholder}
+        aria-label={t`Message`}
         rows={1}
         // Force field-sizing: fixed so our JS auto-resize has full control.
         // Inline style intentionally overrides the base Textarea's
@@ -219,8 +230,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onClick={() => (streaming ? onStop?.() : void submit())}
           disabled={streaming ? false : !canSend}
           aria-label={streaming ? t`Stop` : t`Send message`}
+          aria-describedby={!streaming && submitDisabledReason ? disabledReasonId : undefined}
           className={cn(
             "transition-all duration-200 ease-out",
+            "composer-action",
             // Rounded square at rest (send) → circle while running (stop). Height
             // matches the toolbar's other controls (sm / 32px).
             streaming ? "rounded-full" : "rounded-field",
@@ -232,6 +245,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <ArrowUp className="size-4" />
           )}
         </Button>
+        {!streaming && submitDisabledReason ? (
+          <span id={disabledReasonId} className="sr-only">
+            {submitDisabledReason}
+          </span>
+        ) : null}
       </div>
     </div>
   );

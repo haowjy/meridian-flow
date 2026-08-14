@@ -15,7 +15,7 @@ export type HomePaneControllerProps = {
   projectId: string;
   sidebarToggle: PaneHeaderRailToggle;
   chatToggle: PaneHeaderRailToggle;
-  onSelectThread: (threadId: string) => void;
+  onSelectThread: (threadId: string) => Promise<void>;
   onOpenThread: (threadId: string) => void;
 };
 
@@ -37,7 +37,7 @@ export function HomePaneController({
         left={sidebarToggle}
         right={chatToggle}
       />
-      <div className="page-sheet">
+      <div className="page-sheet min-h-0">
         <HomeScreen
           projectId={projectId}
           onSelectThread={onSelectThread}

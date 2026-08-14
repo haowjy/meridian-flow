@@ -4,7 +4,9 @@
 
 - `apps/app`: make Project Home composer-led with the actual shared Composer,
   prospective Agent, write-mode, and Work controls, and route-armed first-send
-  creation while preserving the secondary Continue, Favorite, and Recent feed.
+  creation while preserving the secondary Continue, Favorite, and Recent feed;
+  stable-ID reconciliation, route-only retry, accessible pending states, and a
+  real phone scroll owner close the first-send runtime boundary.
 
 - `apps/app`: promote the real Composer to a neutral presentation boundary,
   make draft clearing caller-accepted, and add route-armed first-message

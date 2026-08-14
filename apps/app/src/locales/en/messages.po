@@ -271,7 +271,7 @@ msgstr "Actions for {title}"
 msgid "Active Work"
 msgstr "Active Work"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
 
@@ -460,7 +460,7 @@ msgstr "blockquote"
 msgid "Bold"
 msgstr "Bold"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Brainstorm away"
 msgstr "Brainstorm away"
 
@@ -564,13 +564,21 @@ msgstr "chart"
 msgid "Chat"
 msgstr "Chat"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Chat away"
 msgstr "Chat away"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
 msgstr "Chat context"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat couldn’t start"
+msgstr "Chat couldn’t start"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat was created but couldn’t open"
+msgstr "Chat was created but couldn’t open"
 
 #: src/features/project/home/HomeFeed.tsx
 msgid "Chats couldn’t load"
@@ -604,7 +612,7 @@ msgstr "Checking Work…"
 msgid "Checkout unavailable."
 msgstr "Checkout unavailable."
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Chime in"
 msgstr "Chime in"
 
@@ -615,6 +623,10 @@ msgstr "Choose a home"
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Choose a Work"
+msgstr "Choose a Work"
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
@@ -632,6 +644,19 @@ msgstr "Choose an option"
 #: src/features/project/work/WorkScreen.tsx
 #~ msgid "Choose the context for new writing and chats."
 #~ msgstr "Choose the context for new writing and chats."
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat"
+msgstr "Choose Work for new chat"
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat, current choice unavailable"
+msgstr "Choose Work for new chat, current choice unavailable"
+
+#. placeholder {0}: work.name
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat, currently {0}"
+msgstr "Choose Work for new chat, currently {0}"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
@@ -722,6 +747,10 @@ msgstr "Combines {0} AI turns"
 #: src/features/project/lifecycle.ts
 msgid "Completed"
 msgstr "Completed"
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Composer controls"
+msgstr "Composer controls"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
@@ -944,6 +973,10 @@ msgstr "Create the document"
 msgid "Created a Work"
 msgstr "Created a Work"
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Created chat didn’t match your choices"
+msgstr "Created chat didn’t match your choices"
+
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.created"
@@ -954,8 +987,12 @@ msgid "Creating a Work…"
 msgstr "Creating a Work…"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Creating chat…"
-msgstr "Creating chat…"
+msgid "Creating chat"
+msgstr "Creating chat"
+
+#: src/features/project/home/HomeScreen.tsx
+#~ msgid "Creating chat…"
+#~ msgstr "Creating chat…"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
@@ -1325,6 +1362,10 @@ msgstr "File suggestions"
 msgid "Files"
 msgstr "Files"
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Finishing write mode change"
+msgstr "Finishing write mode change"
+
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
 msgstr "First name"
@@ -1345,7 +1386,7 @@ msgstr "Folder name"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
 msgstr "Go ahead"
 
@@ -1405,11 +1446,10 @@ msgstr "Heading 3"
 msgid "Hide source"
 msgstr "Hide source"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Hold on…"
 msgstr "Hold on…"
 
-#: src/features/project/home/HomeFeed.tsx
 #: src/features/project/HomePaneController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
@@ -1511,7 +1551,7 @@ msgstr "Installed"
 msgid "Interface language"
 msgstr "Interface language"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Interject"
 msgstr "Interject"
 
@@ -1577,7 +1617,7 @@ msgstr "Leading or trailing whitespace detected in file or folder name."
 msgid "Left"
 msgstr "Left"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
 msgstr "Let's work on it"
 
@@ -1682,6 +1722,7 @@ msgid "Loading uploads…"
 msgstr "Loading uploads…"
 
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work"
 msgstr "Loading Work"
@@ -1746,6 +1787,10 @@ msgstr "Merging works on a rectangle of cells."
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 msgstr "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
+
+#: src/components/app/composer/Composer.tsx
+msgid "Message"
+msgstr "Message"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1860,7 +1905,6 @@ msgstr "New"
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/home/HomeChatCard.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"
@@ -2211,7 +2255,7 @@ msgstr "Protocol Designer"
 msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "Quick thought"
 
@@ -2552,7 +2596,7 @@ msgstr "Select the merged cell on its own to split it."
 msgid "Select…"
 msgstr "Select…"
 
-#: src/features/chat/Composer.tsx
+#: src/components/app/composer/Composer.tsx
 msgid "Send message"
 msgstr "Send message"
 
@@ -2631,12 +2675,16 @@ msgid "Split cell"
 msgstr "Split cell"
 
 #: src/features/project/home/HomeFeed.tsx
-msgid "Start a chat"
-msgstr "Start a chat"
+#~ msgid "Start a chat"
+#~ msgstr "Start a chat"
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
 msgstr "Start a quick chat without a project"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Start with a scene, a question, or a problem to solve."
+msgstr "Start with a scene, a question, or a problem to solve."
 
 #: src/features/editor/EditorView.tsx
 #: src/features/home/HomeView.tsx
@@ -2655,7 +2703,7 @@ msgstr "status"
 #~ msgid "Status"
 #~ msgstr "Status"
 
-#: src/features/chat/Composer.tsx
+#: src/components/app/composer/Composer.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -2742,7 +2790,7 @@ msgstr "Table options"
 msgid "Table placement"
 msgstr "Table placement"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "Talk it out"
 
@@ -2899,7 +2947,7 @@ msgstr "There is nowhere left to put that picture."
 msgid "Thinking"
 msgstr "Thinking"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "Thinking out loud?"
 
@@ -3169,6 +3217,10 @@ msgstr "Unarchive"
 msgid "workReceipt.unarchived"
 msgstr "Unarchived Work {name}"
 
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Unavailable"
+msgstr "Unavailable"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr "Undid"
@@ -3298,15 +3350,19 @@ msgstr "What are you working on?"
 msgid "What this figure shows"
 msgstr "What this figure shows"
 
-#: src/features/chat/placeholders.ts
+#: src/features/project/home/HomeScreen.tsx
+msgid "What will you write next?"
+msgstr "What will you write next?"
+
+#: src/components/app/composer/placeholders.ts
 msgid "What's next?"
 msgstr "What's next?"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "What's on your mind?"
 msgstr "What's on your mind?"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "Where were we?"
 
@@ -3315,6 +3371,7 @@ msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
 #: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/home/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkScreen.tsx
@@ -3327,6 +3384,7 @@ msgstr "Work"
 msgid "workReceipt.upToDate"
 msgstr "Work {name} was already up to date"
 
+#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"
@@ -3361,7 +3419,7 @@ msgstr "Workspace navigation"
 msgid "Wrap lines"
 msgstr "Wrap lines"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Write away"
 msgstr "Write away"
 
@@ -3392,8 +3450,12 @@ msgid "you answered"
 msgstr "you answered"
 
 #: src/features/project/home/HomeFeed.tsx
-msgid "Your conversations will appear here."
-msgstr "Your conversations will appear here."
+msgid "Your chats will appear here after you send a message."
+msgstr "Your chats will appear here after you send a message."
+
+#: src/features/project/home/HomeFeed.tsx
+#~ msgid "Your conversations will appear here."
+#~ msgstr "Your conversations will appear here."
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."

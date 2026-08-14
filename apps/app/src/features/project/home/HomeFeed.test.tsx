@@ -44,27 +44,20 @@ const base = {
 
 describe("HomeFeed", () => {
   it("owns Continue, Favorite, Recent, grids, and the sentinel", async () => {
-    await withReactRoot(
-      <HomeFeed
-        feed={base}
-        cardProps={cardProps}
-        newChat={<button type="button">New chat</button>}
-      />,
-      () => {
-        const container = document.getElementById("root") as HTMLElement;
-        expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
-          "Continue",
-          "Favorite chats",
-          "Recent chats",
-        ]);
-        expect(container.querySelectorAll("[data-home-card]")).toHaveLength(3);
-        expect(container.querySelector("[aria-hidden].h-px")).not.toBeNull();
-      },
-    );
+    await withReactRoot(<HomeFeed feed={base} cardProps={cardProps} />, () => {
+      const container = document.getElementById("root") as HTMLElement;
+      expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
+        "Continue",
+        "Favorite chats",
+        "Recent chats",
+      ]);
+      expect(container.querySelectorAll("[data-home-card]")).toHaveLength(3);
+      expect(container.querySelector("[aria-hidden].h-px")).not.toBeNull();
+    });
   });
   it("renders initial, empty, page-loading, and page-error recovery states", async () => {
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isPending: true }} cardProps={cardProps} newChat={null} />,
+      <HomeFeed feed={{ ...base, isPending: true }} cardProps={cardProps} />,
       () =>
         expect(document.querySelector('[role="status"]')?.textContent).toContain("Loading chats"),
     );
@@ -72,20 +65,15 @@ describe("HomeFeed", () => {
       <HomeFeed
         feed={{ ...base, grouped: { continueChat: null, favorites: [], recent: [] } }}
         cardProps={cardProps}
-        newChat={<button type="button">New chat</button>}
-        newChatError={<div role="alert">Create failed</div>}
       />,
       () => {
-        expect(document.body.textContent).toContain("Start a chat");
-        expect(document.body.textContent).toContain("Create failed");
+        expect(document.body.textContent).toContain(
+          "Your chats will appear here after you send a message.",
+        );
       },
     );
     await withReactRoot(
-      <HomeFeed
-        feed={{ ...base, isFetchingNextPage: true }}
-        cardProps={cardProps}
-        newChat={null}
-      />,
+      <HomeFeed feed={{ ...base, isFetchingNextPage: true }} cardProps={cardProps} />,
       () =>
         expect(document.querySelector('[role="status"]')?.textContent).toContain(
           "Loading more chats",
@@ -96,7 +84,6 @@ describe("HomeFeed", () => {
       <HomeFeed
         feed={{ ...base, isFetchNextPageError: true, fetchNextPage: retry }}
         cardProps={cardProps}
-        newChat={null}
       />,
       async () => {
         const button = [...document.querySelectorAll("button")].find(

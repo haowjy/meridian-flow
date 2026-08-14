@@ -143,6 +143,35 @@ afterEach(async () => {
 });
 
 describe("useThreadHandoff first-send settlement", () => {
+  it("restores a newer Home draft separately while admitting the immutable first message", async () => {
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    const admission = gate();
+    const controller = {
+      submit: vi.fn(() => admission.promise),
+      resume: vi.fn(),
+    } as unknown as ThreadRunController;
+
+    await renderDestination(controller, null);
+    if (!capturedActions) throw new Error("thread actions unavailable");
+    capturedActions.stageFirstSend({
+      threadId: "thread-1",
+      text: "immutable first message",
+      optimisticUserTurnId: "turn_local_1",
+      draftAfterRoute: "newer Home draft",
+    });
+    capturedActions.armFirstSend("thread-1");
+    await renderDestination(controller, "thread-1", true);
+
+    expect(controller.submit).toHaveBeenCalledWith(
+      "thread-1",
+      "immutable first message",
+      expect.objectContaining({ optimisticUserTurnId: "turn_local_1" }),
+    );
+    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("newer Home draft");
+  });
+
   it("rolls back and restores a provider-retained draft after an HTTP 409 refusal", async () => {
     host = document.createElement("div");
     document.body.append(host);
