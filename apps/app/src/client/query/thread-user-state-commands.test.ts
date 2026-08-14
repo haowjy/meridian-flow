@@ -3,7 +3,10 @@ import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { groupHomeFeed, type HomeFeedData } from "./home-chat-feed-cache";
-import { runThreadUserStateCommand } from "./thread-user-state-commands";
+import {
+  getThreadUserStateTransportState,
+  runThreadUserStateCommand,
+} from "./thread-user-state-commands";
 
 const thread = (attention: HomeChatItem["attention"] = "unread"): HomeChatItem => ({
   id: "thread-1",
@@ -131,6 +134,10 @@ describe.each([
       "isUnread",
       first,
     );
+    expect(getThreadUserStateTransportState(client, "project-1", "thread-1", "isUnread")).toEqual({
+      pending: true,
+      desiredValue: first,
+    });
     const secondCommand = runThreadUserStateCommand(
       client,
       "project-1",
@@ -138,6 +145,10 @@ describe.each([
       "isUnread",
       second,
     );
+    expect(getThreadUserStateTransportState(client, "project-1", "thread-1", "isUnread")).toEqual({
+      pending: true,
+      desiredValue: second,
+    });
     const joinedSecond = runThreadUserStateCommand(
       client,
       "project-1",
@@ -165,6 +176,9 @@ describe.each([
       { status: "success" },
       { status: "success" },
     ]);
+    expect(getThreadUserStateTransportState(client, "project-1", "thread-1", "isUnread")).toEqual({
+      pending: false,
+    });
     expect(transports).toHaveLength(2);
     expect(
       groupHomeFeed(client.getQueryData(["projects", "project-1", "home-feed"])).continueChat

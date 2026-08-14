@@ -77,7 +77,7 @@ export function useHomeChatFeed(projectId: string) {
   );
   const getCommandState = useCallback(
     (threadId: string, field: HomeStateField) => ({
-      pending: getThreadUserStateTransportState(client, projectId, threadId, field).pending,
+      ...getThreadUserStateTransportState(client, projectId, threadId, field),
       error: manualErrors[`${threadId}:${field}`] ?? null,
     }),
     [client, manualErrors, projectId, transportVersion],

@@ -8,7 +8,9 @@ import { createHomeFeedCacheController, type HomeStateField } from "./home-chat-
 export type ThreadUserStateOutcome =
   | { status: "success"; response: UpdateThreadUserStateResponse }
   | { status: "error"; error: Error };
-export type ThreadUserStateTransportState = { pending: boolean };
+export type ThreadUserStateTransportState =
+  | { pending: false; desiredValue?: never }
+  | { pending: true; desiredValue: boolean };
 export type ThreadUserStateLifecycle = { beforeRollback?: () => void };
 
 type QueuedCommand = {
@@ -80,7 +82,7 @@ export function runThreadUserStateCommand(
     resolve = done;
   });
   queue.entries.push({ value, promise, resolve, lifecycles: new Set([lifecycle]) });
-  publish(owner, id, { pending: true });
+  publish(owner, id, { pending: true, desiredValue: value });
   if (!queue.running)
     void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
   return promise;
@@ -131,7 +133,7 @@ async function advanceThreadUserStateQueue(
   queue.running = false;
   const next = queue.entries[0];
   if (!next) owner.active.delete(id);
-  publish(owner, id, { pending: Boolean(next) });
+  publish(owner, id, next ? { pending: true, desiredValue: next.value } : { pending: false });
   entry.resolve(outcome);
   if (next) void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
 }
