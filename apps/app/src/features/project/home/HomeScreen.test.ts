@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatHomeActivity } from "./HomeScreen";
+import { formatHomeActivity } from "./home-activity-date";
 
 describe("formatHomeActivity", () => {
   const now = Date.parse("2026-08-13T12:00:00Z");

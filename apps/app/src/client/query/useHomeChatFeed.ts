@@ -1,10 +1,14 @@
 /** Infinite Home feed plus field-scoped optimistic user-state commands. */
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { getProjectHomeFeed } from "@/client/api/projects-api";
 import { updateThreadUserState } from "@/client/api/threads-api";
-import { createHomeFeedCacheController, groupHomeFeed } from "./home-chat-feed-cache";
+import {
+  createHomeFeedCacheController,
+  groupHomeFeed,
+  type HomeStateField,
+} from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
 export function useHomeChatFeed(projectId: string) {
@@ -19,8 +23,7 @@ export function useHomeChatFeed(projectId: string) {
     queryFn: async ({ pageParam, signal }) => {
       const watermark = controller.beginRequest();
       try {
-        const page = await getProjectHomeFeed(projectId, pageParam);
-        if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+        const page = await getProjectHomeFeed(projectId, pageParam, signal);
         return controller.merge(page, watermark);
       } finally {
         controller.settleRequest(watermark);
@@ -28,37 +31,46 @@ export function useHomeChatFeed(projectId: string) {
     },
     getNextPageParam: (page) => page.recentChats.nextCursor ?? undefined,
   });
-  const state = useMutation({
-    mutationFn: ({
-      threadId,
-      field,
-      value,
-    }: {
-      threadId: string;
-      field: "isFavorite" | "isUnread";
-      value: boolean;
-    }) => {
+  const inFlight = useRef(new Set<string>());
+  const [commandState, setCommandState] = useState<
+    Record<string, { pending: boolean; error: Error | null }>
+  >({});
+  const runCommand = useCallback(
+    async (threadId: string, field: HomeStateField, value: boolean) => {
+      const id = `${threadId}:${field}`;
+      if (inFlight.current.has(id)) return false;
+      inFlight.current.add(id);
+      setCommandState((old) => ({ ...old, [id]: { pending: true, error: null } }));
       const command = controller.command(threadId, field, value);
-      return updateThreadUserState(
-        threadId,
-        field === "isFavorite" ? { isFavorite: value } : { isUnread: value },
-      )
-        .then((response) => {
-          command.succeed();
-          return response;
-        })
-        .catch((error) => {
-          command.fail();
-          throw error;
-        });
+      try {
+        const response = await updateThreadUserState(
+          threadId,
+          field === "isFavorite" ? { isFavorite: value } : { isUnread: value },
+        );
+        command.succeed(response);
+        setCommandState((old) => ({ ...old, [id]: { pending: false, error: null } }));
+        return true;
+      } catch (cause) {
+        command.fail();
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        setCommandState((old) => ({ ...old, [id]: { pending: false, error } }));
+        return false;
+      } finally {
+        inFlight.current.delete(id);
+      }
     },
-  });
+    [controller],
+  );
+  const getCommandState = useCallback(
+    (threadId: string, field: HomeStateField) =>
+      commandState[`${threadId}:${field}`] ?? { pending: false, error: null },
+    [commandState],
+  );
   return {
     ...query,
     grouped: groupHomeFeed(query.data as import("./home-chat-feed-cache").HomeFeedData | undefined),
-    setFavorite: (threadId: string, value: boolean) =>
-      state.mutate({ threadId, field: "isFavorite", value }),
-    setUnread: (threadId: string, value: boolean) =>
-      state.mutate({ threadId, field: "isUnread", value }),
+    setFavorite: (threadId: string, value: boolean) => runCommand(threadId, "isFavorite", value),
+    setUnread: (threadId: string, value: boolean) => runCommand(threadId, "isUnread", value),
+    getCommandState,
   };
 }
