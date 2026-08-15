@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 - `apps/app`: compact active and archived Work cards onto the shared shadcn card
-  composition with aligned 20 px insets and the canonical Home card radius.
+  composition with aligned 20 px insets, the rounded New York v4 card shape, and
+  a visible, accessible pending state while Work selection is in flight.
 
 - `apps/app`: give Home and Chat one neutral public boundary for shared Work
   picker and selected-Work write-mode presentation while keeping prospective

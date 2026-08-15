@@ -68,7 +68,7 @@ msgid "(also {0})"
 msgstr "(also {0})"
 
 #. placeholder {0}: work.unpushedChangeCount
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "{0, plural, one {# pending change} other {# pending changes}}"
 msgstr "{0, plural, one {# pending change} other {# pending changes}}"
 
@@ -998,7 +998,7 @@ msgstr "Creating chat"
 msgid "Creating…"
 msgstr "Creating…"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "Current"
 msgstr "Current"
 
@@ -1031,7 +1031,7 @@ msgstr "Dark"
 msgid "Data Analysis"
 msgstr "Data Analysis"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "Default"
 msgstr "Default"
 
@@ -1197,7 +1197,7 @@ msgid "Duplicate"
 msgstr "Duplicate"
 
 #. placeholder {0}: work.name
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "Edit {0}"
 msgstr "Edit {0}"
 
@@ -1995,7 +1995,7 @@ msgstr "No fields required; confirm to continue."
 msgid "No files uploaded yet."
 msgstr "No files uploaded yet."
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "No goal yet"
 msgstr "No goal yet"
 

@@ -122,6 +122,32 @@ describe("WorkScreen actions", () => {
     });
   });
 
+  it("marks and visibly owns the pending Work while both actions are disabled", async () => {
+    mockManagerWorks([
+      workFixture("work-a", "Work A", "Goal A"),
+      workFixture("work-b", "Work B", "Goal B"),
+    ]);
+    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
+      mutate: vi.fn(),
+      reset: vi.fn(),
+      isPending: true,
+      error: null,
+      variables: { type: "switch", workId: "work-b" },
+    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
+
+    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
+      const pendingCard = document.querySelector('[data-work-card="work-b"]');
+      expect(pendingCard?.getAttribute("aria-busy")).toBe("true");
+      expect(
+        pendingCard?.querySelector('[data-work-pending-content="work-b"]')?.className,
+      ).toContain("opacity-50");
+      expect(buttonContaining("Work B").disabled).toBe(true);
+      expect(
+        document.querySelector<HTMLButtonElement>('button[aria-label="Edit Work B"]')?.disabled,
+      ).toBe(true);
+    });
+  });
+
   it("keeps each failed row action beside its submitted Work and clears it on retry and success", async () => {
     const works = [
       workFixture("active-a", "Active A", "Goal A"),

@@ -13,18 +13,29 @@ card classes at `1a1b28705`.
 
 ## After
 
-Measured in authenticated Chromium against the Portless app route.
+Measured in authenticated Chromium against the Portless app route. The desktop
+capture and measurements use the same expanded left rail and expanded dock shell
+state; the center pane's two-column cards are 368 px wide. The phone capture uses
+the phone shell and a true coarse-pointer browser context.
 
 | Viewport | Card | Bounds | Insets | Title/menu top | Radius |
 | --- | --- | --- | --- | --- | --- |
-| 1440 × 840 | Arc Two, with description | 368 × 128 px | 20 px | 21 px including border | 8 px |
-| 1440 × 840 | Book 1, title + goal | 368 × 84 px | 20 px | 21 px including border | 8 px |
-| 390 × 844 | Arc Two, with description | 358 × 128 px | 20 px | 21 px including border | 8 px |
-| 390 × 844 | Book 1, title + goal | 358 × 84 px | 20 px | 21 px including border | 8 px |
+| 1440 × 840 | Arc Two, with description | 368 × 128 px | 20 px | 21 px including border | 12 px |
+| 1440 × 840 | Book 1, title + goal | 368 × 84 px | 20 px | 21 px including border | 12 px |
+| 390 × 844 | Arc Two, with description | 358 × 130 px | 20 px | 21 px including border | 12 px |
+| 390 × 844 | Book 1, title + goal | 358 × 86 px | 20 px | 21 px including border | 12 px |
 
 The menu's right inset is also 21 px including the 1 px border in both viewports. The
 coarse-pointer menu target remains 44 × 44 px through the existing `min-h-11`/`size-11`
 media rule; the fine-pointer Chromium probe rendered the standard 32 × 32 px icon button.
+
+Both linked screenshots hold the `Book 1` current-Work mutation in flight for four
+seconds. At capture time the card reported `aria-busy="true"`, both sibling buttons
+were natively disabled, and the title/goal owner and edit button each computed to
+opacity `0.5`. The card itself remained at opacity `1`, so the edit button was not
+dimmed twice. Exact geometry and pending-state values are recorded in the adjacent
+`desktop-runtime.json`, `phone-runtime.json`, `desktop-pending-runtime.json`, and
+`phone-pending-runtime.json` files.
 
 ## Sanitized screenshots
 

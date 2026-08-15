@@ -1,0 +1,253 @@
+{
+  "media": {
+    "viewport": [390, 844],
+    "dpr": 3,
+    "coarse": true,
+    "fine": false,
+    "hover": false,
+    "touch": 1
+  },
+  "geometry": {
+    "body": {
+      "clientW": 390,
+      "scrollW": 390
+    },
+    "document": {
+      "clientW": 390,
+      "scrollW": 390
+    },
+    "cards": [
+      {
+        "label": "Arc Two",
+        "pressed": "true",
+        "card": {
+          "x": 16,
+          "y": 241,
+          "w": 358,
+          "h": 130
+        },
+        "selection": {
+          "x": 17,
+          "y": 242,
+          "w": 356,
+          "h": 128
+        },
+        "header": {
+          "x": 17,
+          "y": 262,
+          "w": 356,
+          "h": 44
+        },
+        "title": {
+          "x": 37,
+          "y": 262,
+          "w": 260,
+          "h": 24
+        },
+        "action": {
+          "x": 309,
+          "y": 262,
+          "w": 44,
+          "h": 44
+        },
+        "content": {
+          "x": 17,
+          "y": 322,
+          "w": 356,
+          "h": 28
+        },
+        "radius": "12px",
+        "actionSize": [44, 44],
+        "insets": {
+          "top": 21,
+          "right": 21,
+          "left": 1,
+          "bottom": 21
+        },
+        "overflow": {
+          "scrollW": 356,
+          "clientW": 356,
+          "scrollH": 128,
+          "clientH": 128
+        }
+      },
+      {
+        "label": "Book 1",
+        "pressed": "false",
+        "card": {
+          "x": 16,
+          "y": 387,
+          "w": 358,
+          "h": 86
+        },
+        "selection": {
+          "x": 17,
+          "y": 388,
+          "w": 356,
+          "h": 84
+        },
+        "header": {
+          "x": 17,
+          "y": 408,
+          "w": 356,
+          "h": 44
+        },
+        "title": {
+          "x": 37,
+          "y": 408,
+          "w": 260,
+          "h": 24
+        },
+        "action": {
+          "x": 309,
+          "y": 408,
+          "w": 44,
+          "h": 44
+        },
+        "content": null,
+        "radius": "12px",
+        "actionSize": [44, 44],
+        "insets": {
+          "top": 21,
+          "right": 21,
+          "left": 1,
+          "bottom": 21
+        },
+        "overflow": {
+          "scrollW": 356,
+          "clientW": 356,
+          "scrollH": 84,
+          "clientH": 84
+        }
+      },
+      {
+        "label": "Archived Draft",
+        "pressed": "false",
+        "card": {
+          "x": 16,
+          "y": 586,
+          "w": 358,
+          "h": 116
+        },
+        "selection": {
+          "x": 17,
+          "y": 587,
+          "w": 356,
+          "h": 114
+        },
+        "header": {
+          "x": 17,
+          "y": 607,
+          "w": 356,
+          "h": 44
+        },
+        "title": {
+          "x": 37,
+          "y": 607,
+          "w": 260,
+          "h": 24
+        },
+        "action": {
+          "x": 309,
+          "y": 607,
+          "w": 44,
+          "h": 44
+        },
+        "content": {
+          "x": 17,
+          "y": 667,
+          "w": 356,
+          "h": 14
+        },
+        "radius": "12px",
+        "actionSize": [44, 44],
+        "insets": {
+          "top": 21,
+          "right": 21,
+          "left": 1,
+          "bottom": 21
+        },
+        "overflow": {
+          "scrollW": 356,
+          "clientW": 356,
+          "scrollH": 114,
+          "clientH": 114
+        }
+      },
+      {
+        "label": "Hidden Context Tail",
+        "pressed": "false",
+        "card": {
+          "x": 16,
+          "y": 718,
+          "w": 358,
+          "h": 130
+        },
+        "selection": {
+          "x": 17,
+          "y": 719,
+          "w": 356,
+          "h": 128
+        },
+        "header": {
+          "x": 17,
+          "y": 739,
+          "w": 356,
+          "h": 44
+        },
+        "title": {
+          "x": 37,
+          "y": 739,
+          "w": 260,
+          "h": 24
+        },
+        "action": {
+          "x": 309,
+          "y": 739,
+          "w": 44,
+          "h": 44
+        },
+        "content": {
+          "x": 17,
+          "y": 799,
+          "w": 356,
+          "h": 28
+        },
+        "radius": "12px",
+        "actionSize": [44, 44],
+        "insets": {
+          "top": 21,
+          "right": 21,
+          "left": 1,
+          "bottom": 21
+        },
+        "overflow": {
+          "scrollW": 356,
+          "clientW": 356,
+          "scrollH": 128,
+          "clientH": 128
+        }
+      }
+    ],
+    "regions": {
+      "active": null,
+      "archived": null
+    }
+  },
+  "keyboard": {
+    "label": "Edit Arc Two",
+    "focusVisible": true,
+    "rect": {
+      "x": 309,
+      "y": 262,
+      "w": 44,
+      "h": 44
+    },
+    "boxShadow": "oklch(0.78 0.05 175) 0px 0px 0px 2px, oklab(0.536 -0.081688 0.00714676 / 0.12) 0px 0px 0px 4px"
+  },
+  "errors": {
+    "consoleErrors": [],
+    "pageErrors": [],
+    "responseErrors": []
+  }
+}

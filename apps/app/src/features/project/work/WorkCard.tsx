@@ -6,6 +6,7 @@ import { Check, MoreHorizontal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export function WorkCard({
   work,
@@ -27,20 +28,30 @@ export function WorkCard({
   registerEditFocus?: (node: HTMLElement | null) => void;
 }) {
   return (
-    <Card className="group relative min-w-0">
+    <Card
+      aria-busy={pending || undefined}
+      className="group relative min-w-0 gap-4 py-5"
+      data-work-card={work.id}
+    >
       <button
         type="button"
         aria-pressed={current}
         aria-label={work.name}
-        className="focus-ring absolute inset-0 rounded-lg text-left disabled:cursor-not-allowed disabled:opacity-50"
+        className="focus-ring absolute inset-0 rounded-xl text-left disabled:cursor-not-allowed"
         data-work-selection={work.id}
         disabled={pending}
         onClick={onSelect}
       >
         <span className="sr-only">{work.name}</span>
       </button>
-      <CardHeader className="pointer-events-none relative">
-        <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
+      <CardHeader className="pointer-events-none relative gap-x-3 gap-y-1 px-5">
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-1.5 font-medium text-foreground transition-opacity",
+            pending && "opacity-50",
+          )}
+          data-work-pending-content={work.id}
+        >
           {current ? <Check className="size-4 shrink-0 text-primary" /> : null}
           <span className="truncate">{work.name}</span>
           {current ? (
@@ -54,7 +65,12 @@ export function WorkCard({
             </span>
           ) : null}
         </span>
-        <span className="col-start-1 line-clamp-2 text-meta text-muted-foreground">
+        <span
+          className={cn(
+            "col-start-1 line-clamp-2 text-meta text-muted-foreground transition-opacity",
+            pending && "opacity-50",
+          )}
+        >
           {work.goal || <Trans>No goal yet</Trans>}
         </span>
         <CardAction className="pointer-events-auto">
@@ -73,7 +89,12 @@ export function WorkCard({
         </CardAction>
       </CardHeader>
       {work.description || work.unpushedChangeCount || error ? (
-        <CardContent className="pointer-events-none relative space-y-2 text-meta text-muted-foreground">
+        <CardContent
+          className={cn(
+            "pointer-events-none relative space-y-2 px-5 text-meta text-muted-foreground transition-opacity",
+            pending && "opacity-50",
+          )}
+        >
           {work.description ? <p className="line-clamp-2">{work.description}</p> : null}
           {work.unpushedChangeCount ? (
             <p>

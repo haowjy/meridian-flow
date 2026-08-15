@@ -68,7 +68,7 @@ msgid "(also {0})"
 msgstr ""
 
 #. placeholder {0}: work.unpushedChangeCount
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "{0, plural, one {# pending change} other {# pending changes}}"
 msgstr ""
 
@@ -998,7 +998,7 @@ msgstr ""
 msgid "Creating…"
 msgstr ""
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "Current"
 msgstr ""
 
@@ -1031,7 +1031,7 @@ msgstr ""
 msgid "Data Analysis"
 msgstr ""
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "Default"
 msgstr ""
 
@@ -1197,7 +1197,7 @@ msgid "Duplicate"
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "Edit {0}"
 msgstr ""
 
@@ -1995,7 +1995,7 @@ msgstr ""
 msgid "No files uploaded yet."
 msgstr ""
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "No goal yet"
 msgstr ""
 
