@@ -109,7 +109,7 @@ function DraftReviewScope({
     const tab = tabs.byProject[projectId]?.tabs.find(
       (candidate) => candidate.documentId === activeSelection.documentId,
     );
-    if (tab?.kind !== "tracked" || !tab.draftOnly) return;
+    if (tab?.kind !== "tracked" || !tab.draftOnly || tab.reviewWorkId !== workId) return;
 
     // The active-only list cannot say why a remote disposition removed the
     // draft. For draft-created documents, manifest membership is authoritative:
@@ -123,7 +123,12 @@ function DraftReviewScope({
         const currentTab = currentTabs.byProject[projectId]?.tabs.find(
           (candidate) => candidate.documentId === activeSelection.documentId,
         );
-        if (currentTab?.kind !== "tracked" || !currentTab.draftOnly) return;
+        if (
+          currentTab?.kind !== "tracked" ||
+          !currentTab.draftOnly ||
+          currentTab.reviewWorkId !== workId
+        )
+          return;
         const currentDrafts =
           queryClient.getQueryData<ThreadDraftListItem[]>(
             projectQueryKeys.workDrafts(projectId, workId),
@@ -131,6 +136,7 @@ function DraftReviewScope({
         if (currentDrafts.some((draft) => draft.documentId === activeSelection.documentId)) return;
         currentTabs.resolveDraftOnlyTab(
           projectId,
+          workId,
           activeSelection.documentId,
           findContextFileByDocumentId(tree, activeSelection.documentId) ? "committed" : "discarded",
         );

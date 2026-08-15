@@ -19,7 +19,9 @@ Server-adopted routes are a seeding plan, not navigation instructions. The
 project layer resolves each against its live context tree, opens it inactive,
 and checks that the route remains desired immediately before the async commit.
 Work-scoped routes are meaningful only when their stored work matches the live
-route work.
+route work. Every asynchronous seed or validation commit is guarded by the live
+Project, Editor Work, and reconciliation generation so a repeated A to B to A
+transition cannot admit the first A request after the second A has won.
 
 ## Suspect baseline (recovery sweep errata)
 

@@ -150,7 +150,10 @@ is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 request from manifest membership (in the work manifest, not the live one),
 never stored. Local disposition events and remote membership reconciliation
 both route through
-`resolveDraftOnlyTab(projectId, documentId, "committed" | "discarded")`:
+`resolveDraftOnlyTab(projectId, reviewWorkId, documentId, "committed" | "discarded")`.
+The synthesized tab carries that transient `reviewWorkId`; it is not document
+location identity and is never persisted. A different Work reviewing the same
+project document therefore cannot resolve this Work's draft-only tab.
 
 - Every Apply path materializes the whole branch and resolves `"committed"` —
   keep the tab, drop the marker — after the awaited draft-list refresh but while

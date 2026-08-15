@@ -168,9 +168,15 @@ export class DeviceContextDeskStore {
   ): Record<string, PersistedProjectDesk> {
     const projects: Record<string, PersistedProjectDesk> = {};
     for (const [projectId, desk] of Object.entries(this.state?.projects ?? {})) {
-      const tabs = desk.tabs.filter(
-        (tab) => !tab.draftOnly && (tab.kind !== "new" || isUntitledPending(tab.documentId)),
-      );
+      const tabs = desk.tabs
+        .filter(
+          (tab) => !tab.draftOnly && (tab.kind !== "new" || isUntitledPending(tab.documentId)),
+        )
+        .map((tab) => {
+          if (tab.kind === "new" || tab.reviewWorkId === undefined) return tab;
+          const { reviewWorkId: _reviewWorkId, ...persisted } = tab;
+          return persisted as ContextTab;
+        });
       projects[projectId] = {
         tabs,
         activeTabId: tabs.some((tab) => tab.documentId === desk.activeTabId)

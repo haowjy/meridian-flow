@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: qualify Editor desk restore and asynchronous reconciliation by
+  live Work generation, and qualify transient draft-only review tabs by their
+  owning Work without changing manuscript document identity or persistence.
+
 - `apps/app`: make Editor Work ownership immutable from route resolution through
   desktop and phone create, identity, untitled, delete, document, and draft
   settlement; one route-owned context-open command now updates Work, scheme,

@@ -15,6 +15,17 @@ describe("context tabs draft-only lifecycle", () => {
       trackedTab(false),
     ]);
   });
+
+  it("resolves a draft-only tab only from its owning review Work", () => {
+    const store = useContextTabsStore.getState();
+    store.openTab("project-1", trackedTab(true));
+
+    store.resolveDraftOnlyTab("project-1", "work-b", "document-1", "discarded");
+    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([trackedTab(true)]);
+
+    store.resolveDraftOnlyTab("project-1", "work-a", "document-1", "discarded");
+    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([]);
+  });
 });
 
 function trackedTab(draftOnly: boolean) {
@@ -27,6 +38,6 @@ function trackedTab(draftOnly: boolean) {
     editable: true as const,
     filetype: "markdown" as const,
     schemaType: "document" as const,
-    ...(draftOnly ? { draftOnly: true } : {}),
+    ...(draftOnly ? { draftOnly: true, reviewWorkId: "work-a" } : {}),
   };
 }

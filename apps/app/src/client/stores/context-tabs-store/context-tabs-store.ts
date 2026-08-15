@@ -39,6 +39,8 @@ export type ContextTab =
       name: string;
       workId?: string;
       draftOnly?: boolean;
+      /** Transient owner of a draft-synthesized review tab; never persisted. */
+      reviewWorkId?: string;
       editable: true;
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
@@ -52,6 +54,8 @@ export type ContextTab =
       name: string;
       workId?: string;
       draftOnly?: boolean;
+      /** Transient owner of a draft-synthesized review tab; never persisted. */
+      reviewWorkId?: string;
       editable: false;
       fileType: DocumentFileType;
       mimeType?: string;
@@ -97,6 +101,7 @@ type ContextTabsActions = {
    */
   resolveDraftOnlyTab: (
     projectId: string,
+    reviewWorkId: string,
     documentId: string,
     outcome: "committed" | "discarded",
   ) => void;
@@ -129,7 +134,11 @@ function mergeTabMetadata(existing: ContextTab, incoming: ContextTab): ContextTa
   if (incoming.kind !== "tracked" || incoming.draftOnly) return merged;
   // A tracked tab from the live context tree proves that a draft-created
   // document was committed; omitted optional fields must not retain the marker.
-  const { draftOnly: _draftOnly, ...liveTab } = merged;
+  const {
+    draftOnly: _draftOnly,
+    reviewWorkId: _reviewWorkId,
+    ...liveTab
+  } = merged as ServerContextTab;
   return liveTab as ContextTab;
 }
 
@@ -262,11 +271,12 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         return removed.fallback;
       },
 
-      resolveDraftOnlyTab: (projectId, documentId, outcome) => {
+      resolveDraftOnlyTab: (projectId, reviewWorkId, documentId, outcome) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
           const tab = slice.tabs.find((t) => t.documentId === documentId);
-          if (tab?.kind !== "tracked" || !tab.draftOnly) return state;
+          if (tab?.kind !== "tracked" || !tab.draftOnly || tab.reviewWorkId !== reviewWorkId)
+            return state;
           if (outcome === "discarded") {
             return patchSlice(
               state,

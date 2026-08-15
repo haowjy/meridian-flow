@@ -42,6 +42,7 @@ vi.mock("@/client/stores", () => ({
                   kind: "tracked",
                   documentId: "doc-terminal",
                   draftOnly: true,
+                  reviewWorkId: "work-1",
                 },
               ]
             : [],
@@ -226,6 +227,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
 
       expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
         "project-1",
+        "work-1",
         "doc-terminal",
         "committed",
       );
@@ -245,6 +247,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
 
       expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
         "project-1",
+        "work-1",
         "doc-terminal",
         "discarded",
       );

@@ -214,7 +214,9 @@ name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
 projection, close fallbacks, scroll restoration, and screen-entry defaults:
 entering with no destination replays the remembered last file
 (`client/working-set/`; replay re-arms every entry because the controller is
-persistent). A known active route is projected as a loading tab and document
+persistent). Replay and the default-open ladder also re-arm when Editor Work
+changes; remembered Scratch and Uploads routes are eligible only for their
+owning Work, while project-scoped routes remain eligible everywhere. A known active route is projected as a loading tab and document
 surface until the context tree validates and materializes its durable tab; a
 resolved missing route drops that projection and returns to the empty state.
 A desk with nothing to restore and no tabs runs the

@@ -62,6 +62,7 @@ import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { WorkPaneController } from "./WorkPaneController";
 import {
+  type ContextDeskReconciliationScope,
   contextDeskReconciliation,
   seedWorkingSetTabs,
   validateContextDeskTabs,
@@ -207,6 +208,14 @@ export function ProjectView(props: ProjectViewProps) {
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
   const reconciledDeskRef = useRef<string | null>(null);
+  const deskReconciliationGenerationRef = useRef(0);
+  const liveDeskReconciliationRef = useRef<ContextDeskReconciliationScope | null>(null);
+  useEffect(
+    () => () => {
+      liveDeskReconciliationRef.current = null;
+    },
+    [],
+  );
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -222,19 +231,29 @@ export function ProjectView(props: ProjectViewProps) {
     const reconciliationKey = `${props.projectId}:${reconciliation}:${editorWorkId ?? "no-work"}`;
     if (reconciledDeskRef.current === reconciliationKey) return;
     reconciledDeskRef.current = reconciliationKey;
+    const scope = {
+      projectId: props.projectId,
+      editorWorkId,
+      generation: ++deskReconciliationGenerationRef.current,
+    };
+    liveDeskReconciliationRef.current = scope;
+    const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
+      liveDeskReconciliationRef.current?.projectId === candidate.projectId &&
+      liveDeskReconciliationRef.current.editorWorkId === candidate.editorWorkId &&
+      liveDeskReconciliationRef.current.generation === candidate.generation;
     if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
       void seedWorkingSetTabs({
         queryClient,
-        projectId: props.projectId,
         routes: workingSetHydration.row.recentRoutes,
-        routeWorkId: editorWorkId,
+        scope,
+        isLiveScope,
       });
       return;
     }
     void validateContextDeskTabs({
       queryClient,
-      projectId: props.projectId,
-      routeWorkId: editorWorkId,
+      scope,
+      isLiveScope,
     });
   }, [editorWorkId, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
   useEffect(() => {
