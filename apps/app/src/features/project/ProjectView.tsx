@@ -47,6 +47,7 @@ import {
   useProjectSurfacePrefsStore,
 } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
+import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -72,6 +73,10 @@ export type ProjectViewProps = {
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
   activeThreadId: string | null;
+  /** Explicit route Work state; loading/error never collapses into absence. */
+  routeWork: RouteWorkResolution;
+  /** Awaitable route-owner commands used by future collection/detail leaves. */
+  routeCommands: ProjectRouteCommands;
   /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
   activeContextScheme: ProjectContextTreeScheme | null;
   /** Active context folder, when `screen=context`. */

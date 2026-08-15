@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `apps/app`: establish the project route's canonical Work UUID grammar,
+  authoritative catalog resolution, stale-safe normalization, pure search
+  transition matrix, and awaitable typed navigation commands without changing
+  the existing Work collection UI.
+
 - `contracts`, `apps/app`, `apps/server`: add the typed Work-associated chat
   read seam while preserving historical membership and current-primary Work
   projection semantics.

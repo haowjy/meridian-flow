@@ -235,7 +235,7 @@ Settings and phone Results are auxiliary routed surfaces (`?settings=`,
 `?results=`), not drawer/sidebar destinations.
 
 `src/routes/_authenticated/project/$projectId.tsx` owns the workspace search
-params (`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?results`) and
+params (`?screen=`, `?thread=`, `?work=`, `?scheme=`, `?folder=`, `?path=`, `?results`) and
 is the single source of screen/thread/context ownership. `ProjectView` and its
 children are controlled — they never set the URL directly, only call the route's
 handlers. Direct `/chat/$threadId` renders the independent chat view inside the
@@ -268,8 +268,13 @@ Ownership rules:
 - **Stale/invalid params are normalized at the route.** A `?thread=` that isn't in
   the loaded thread set is stripped via a `replace` navigation once threads load;
   `validateSearch` rejects `folder`/`path` supplied without a `scheme` (no
-  contradictory KB state from hand-typed/stale URLs). Switching screens drops the
-  subordinate params of the screen left behind.
+  contradictory KB state from hand-typed/stale URLs). Explicit Work IDs use the
+  contracts-owned UUID grammar: malformed values return immediately to the Work
+  collection, uppercase values canonicalize, and a valid missing ID returns only
+  after the all-status Work catalog succeeds. Loading/error preserves the URL,
+  and every Work normalization compares its original `screen/work` pair before
+  replacing so stale validation cannot overwrite newer navigation. Switching
+  screens drops the subordinate params of the screen left behind.
 
 ## Visual conventions — tonal manuscript shell
 

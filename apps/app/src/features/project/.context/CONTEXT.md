@@ -196,13 +196,20 @@ hydration cascade.
 ## Screen routing & controllers
 
 `routes/_authenticated/project/$projectId.tsx` owns **all** workspace URL params
-(`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?ext=`) and is the
+(`?screen=`, `?thread=`, `?work=`, `?scheme=`, `?folder=`, `?path=`, `?results=`) and is the
 single source of screen/thread ownership. The per-screen controllers
 (`HomePaneController`, `WorkPaneController`, `ChatPaneController`,
 `ContextPaneController`, `SettingsPaneController`) are **controlled** — they
 render into surfaces and call
 the route's handlers; they never set the URL directly. (Full ownership rules:
 [`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
+
+`routing/project-route.ts` is the pure route grammar: it preserves absent,
+malformed, noncanonical, and canonical explicit Work inputs; resolves valid IDs
+only against a successful all-status catalog; owns the search transition matrix;
+and publishes awaitable typed commands. The route component remains the only
+TanStack Router adapter. Collection/detail leaves receive targets and commands
+rather than parsing or mutating search themselves.
 
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
