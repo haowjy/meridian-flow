@@ -13,8 +13,13 @@ The controller is the single client review-session owner. Its reducer owns
 messages. The synchronous disposition lock is the
 only pending-command source. Use controller transitions instead of pairing
 local `close` calls; `exitReview` is the single clear-all path.
-`DraftReviewProvider` keys that owner by Project + Work so review and dock-error
-state cannot cross a Work switch.
+`DraftReviewProvider` is the convenience boundary for one Project + Work owner.
+The project shell uses its lower-level split directly: it creates one persistent
+Chat value (with thread authority) and one persistent Editor value (without
+thread authority), then re-provides those values at sibling boundaries. The
+stable Chat surface and Chat context dock share the same Chat value; viewer and
+editor surfaces receive only the Editor value. A boundary never creates a
+controller, and the two scope owners are never nested.
 
 Every disposition is serialized by the session's synchronous lock
 (`controller.isDisposing`): while document-level Apply or per-card/whole-branch
@@ -46,11 +51,15 @@ owns one active Work-draft branch per `(documentId, workId)`, so there is no
 same-document neighbor to select after disposition. Apply has one terminal
 `applied` result; partial-Apply and stale-preview response states do not exist.
 
-Review mode is the dock's `Changes` view, plus a full-width editor when the
-writer is on the Editor screen — there is no in-editor review split. Entering
-review never changes `?screen` (`useAiDraftLauncher`): Changes is a dock view on
-every screen and its cards read the server preview, so review opens where the
-writer already is. The editor's review chrome is
+Review mode is the dock's `Changes` view plus a full-width Editor; there is no
+in-editor review split. `useAiDraftLauncher` submits an explicit Work/document/
+draft/path command to the route-level Editor handoff rather than commanding the
+ambient Chat controller. The handoff holds one provider-lifetime, latest-wins
+intent, navigates atomically to its Work and manuscript path, and lets the
+Editor boundary claim it only after route Work, path, mounted document, and
+active draft membership all agree. This owner sits above desktop/phone shell
+selection, so a phone Chat-to-Editor transition cannot destroy the intent or
+either scope controller. The editor's review chrome is
 `features/editor/DraftReviewHeader` (above the identity bar, review-only): LEFT
 "Back to live" exit and RIGHT whole-draft "Apply all" / "Discard all", all
 delegating to the controller. The server owns one active Work-draft branch per

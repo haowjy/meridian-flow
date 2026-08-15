@@ -37,6 +37,15 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/client/stores", () => ({
   useContextTabsActions: () => ({ openTab }),
 }));
+vi.mock("@/features/project/dock/editor-review-handoff", () => ({
+  useOpenEditorReview:
+    () =>
+    (target: { workId: string; documentId: string; draftId: string; contextPath: string }) => {
+      setInlineReview({ documentId: target.documentId, draftId: target.draftId });
+      navigate({ scheme: "manuscript", path: target.contextPath, workId: target.workId });
+      return Promise.resolve();
+    },
+}));
 vi.mock("./DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {
@@ -50,6 +59,7 @@ vi.mock("./DraftReviewProvider", () => ({
 const { DEFAULT_DOCK_PREFS, DEFAULT_SURFACE_PREFS, useProjectLayout, useProjectSurfacePrefsStore } =
   await import("@/features/project/layout");
 const { useAiDraftLauncher } = await import("@/features/project/dock/useAiDraftLauncher");
+const { useDraftReview } = await import("./DraftReviewProvider");
 const { useReviewProseFocus } = await import("./review-prose-focus");
 
 type DraftGroup = { documentId: string; contextPath: string };
@@ -68,7 +78,7 @@ let changeProject: (() => void) | null = null;
 /** The slice of `DesktopProject` that decides the rail's width during review. */
 function ReviewShell({ screen }: { screen: ScreenKey }) {
   const { openAiDraft } = useAiDraftLauncher();
-  const proseFocus = useReviewProseFocus(screen);
+  const proseFocus = useReviewProseFocus(screen, useDraftReview());
   const layout = useProjectLayout(screen, proseFocus.collapsedSlots);
   const setSurfaceCollapsed = useProjectSurfacePrefsStore((state) => state.setSurfaceCollapsed);
   useEffect(() => {

@@ -19,8 +19,13 @@ vi.mock("@/client/working-set", () => ({
   retryWorkingSetHydration: vi.fn(),
 }));
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
-  DraftReviewProvider: ({ children }: { children: ReactNode }) => children,
+  DraftReviewBoundary: ({ children }: { children: ReactNode }) => children,
+  useDraftReviewScopeValue: () => ({ controller: { inlineReview: null }, groups: [] }),
   useDraftReview: () => ({ groups: [] }),
+}));
+vi.mock("./dock/editor-review-handoff", () => ({
+  EditorReviewHandoffProvider: ({ children }: { children: ReactNode }) => children,
+  EditorReviewIntentClaimant: () => null,
 }));
 vi.mock("@/features/chat/ChatView", () => ({
   ChatView: ({ threadId }: { threadId: string }) => <div>Conversation {threadId}</div>,

@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type DesktopProjectSlotId, NO_COLLAPSED_SLOTS } from "@/features/project/layout";
 import type { ScreenKey } from "@/features/project/shell/screens";
 
-import { useDraftReview } from "./DraftReviewProvider";
+import type { DraftReviewContextValue } from "./DraftReviewProvider";
 
 const RAIL_YIELDED: readonly DesktopProjectSlotId[] = ["rail-l"];
 
@@ -29,8 +29,11 @@ export type ReviewProseFocus = {
   release: () => void;
 };
 
-export function useReviewProseFocus(screen: ScreenKey): ReviewProseFocus {
-  const { controller } = useDraftReview();
+export function useReviewProseFocus(
+  screen: ScreenKey,
+  review: DraftReviewContextValue,
+): ReviewProseFocus {
+  const { controller } = review;
   const yielding = screen === "context" && controller.inlineReview !== null;
   const [released, setReleased] = useState(false);
   const release = useCallback(() => setReleased(true), []);

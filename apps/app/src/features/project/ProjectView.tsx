@@ -30,7 +30,11 @@ import {
 } from "@/client/working-set";
 import { Button } from "@/components/ui/button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
-import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
+import {
+  DraftReviewBoundary,
+  type DraftReviewContextValue,
+  useDraftReviewScopeValue,
+} from "@/features/chat/DraftReviewProvider";
 import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -39,6 +43,10 @@ import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
+import {
+  EditorReviewHandoffProvider,
+  EditorReviewIntentClaimant,
+} from "./dock/editor-review-handoff";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import { HomePaneController } from "./HomePaneController";
 import {
@@ -293,13 +301,11 @@ export function ProjectView(props: ProjectViewProps) {
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <DraftReviewProvider
-          projectId={props.projectId}
-          workId={chatWorkId}
-          threadId={resolvedThreadId}
-        >
-          <HydratedProject {...resolvedProps} />
-        </DraftReviewProvider>
+        <HydratedReviewProject
+          {...resolvedProps}
+          chatWorkId={chatWorkId}
+          chatThreadId={resolvedThreadId}
+        />
       ) : null}
     </div>
   );
@@ -320,7 +326,38 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   onOpenTransferClaimed: (transfer: OpenAcknowledgementTransfer) => void;
 };
 
-function HydratedProject(props: ResolvedProjectViewProps) {
+export type ReviewScopedProjectProps = ResolvedProjectViewProps & {
+  chatReview: DraftReviewContextValue;
+  editorReview: DraftReviewContextValue;
+};
+
+function HydratedReviewProject({
+  chatWorkId,
+  chatThreadId,
+  ...props
+}: ResolvedProjectViewProps & { chatWorkId: string | null; chatThreadId: string | null }) {
+  const chatReview = useDraftReviewScopeValue({
+    projectId: props.projectId,
+    workId: chatWorkId,
+    threadId: chatThreadId,
+  });
+  const editorReview = useDraftReviewScopeValue({
+    projectId: props.projectId,
+    workId: props.editorWorkId,
+    threadId: null,
+  });
+
+  return (
+    <EditorReviewHandoffProvider
+      projectId={props.projectId}
+      openContextRoute={props.onOpenContextTarget}
+    >
+      <HydratedProject {...props} chatReview={chatReview} editorReview={editorReview} />
+    </EditorReviewHandoffProvider>
+  );
+}
+
+function HydratedProject(props: ReviewScopedProjectProps) {
   const usePhone = usePhoneShell();
   if (usePhone === null) return null;
   return usePhone ? <MobileProject {...props} /> : <DesktopProject {...props} />;
@@ -341,11 +378,11 @@ function expandToggle(
  * surfaces; per-screen rendering is delegated to pane controllers that receive
  * only the props they need.
  */
-function DesktopProject(props: ResolvedProjectViewProps) {
+function DesktopProject(props: ReviewScopedProjectProps) {
   // Inline review on the Editor screen holds the left rail collapsed to give
   // the manuscript prose width. The hold is derived from review being open and
   // never written to prefs, so the writer's saved rail state returns by itself.
-  const proseFocus = useReviewProseFocus(props.activeScreen);
+  const proseFocus = useReviewProseFocus(props.activeScreen, props.editorReview);
   // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
   // merged SurfaceLayoutMap; that single subscription drives all layout-driven
   // re-renders — no separate whole-prefs subscription is needed.
@@ -413,29 +450,38 @@ function DesktopProject(props: ResolvedProjectViewProps) {
     {
       id: "context-rail",
       children: (
-        <ContextSidebar
-          threadId={props.activeThreadId}
-          projectId={props.projectId}
-          onClose={close("context-rail")}
-        />
+        <DraftReviewBoundary value={props.chatReview}>
+          <ContextSidebar
+            threadId={props.activeThreadId}
+            projectId={props.projectId}
+            onClose={close("context-rail")}
+          />
+        </DraftReviewBoundary>
       ),
     },
     {
       id: "context-viewer",
       children:
         props.editorScope.status === "ready" ? (
-          <ContextViewerSurfaceController
-            projectId={props.projectId}
-            editorWorkId={props.editorWorkId}
-            activeContextScheme={props.activeContextScheme}
-            activeContextPath={props.activeContextPath}
-            active={props.activeScreen === "context"}
-            sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-            dockToggle={surfaceToggle("chat", t`Expand chat`)}
-            onSelectContextPath={props.onSelectContextPath}
-            onOpenContextTarget={props.onOpenContextTarget}
-            onClearContextDestination={props.onExitContextScheme}
-          />
+          <DraftReviewBoundary value={props.editorReview}>
+            <EditorReviewIntentClaimant
+              editorWorkId={props.editorWorkId}
+              activeScheme={props.activeContextScheme}
+              activePath={props.activeContextPath}
+            />
+            <ContextViewerSurfaceController
+              projectId={props.projectId}
+              editorWorkId={props.editorWorkId}
+              activeContextScheme={props.activeContextScheme}
+              activeContextPath={props.activeContextPath}
+              active={props.activeScreen === "context"}
+              sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+              dockToggle={surfaceToggle("chat", t`Expand chat`)}
+              onSelectContextPath={props.onSelectContextPath}
+              onOpenContextTarget={props.onOpenContextTarget}
+              onClearContextDestination={props.onExitContextScheme}
+            />
+          </DraftReviewBoundary>
         ) : (
           <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
         ),
@@ -461,27 +507,29 @@ function DesktopProject(props: ResolvedProjectViewProps) {
           ) : null}
           {/* This keyed surface remains the same mounted element when its slot
               moves between center and dock; placement changes only its chrome. */}
-          <ChatSurface
-            key="chat-surface"
-            projectId={props.projectId}
-            threadId={props.activeThreadId}
-            activeWork={props.chatWork}
-            activeScreen={screen}
-            // Centered chat owns the route (`?screen` follows it); the dock must
-            // only change which conversation it shows, never the screen — so it
-            // uses onSelectDockThread (sets `?thread`, keeps `?screen`).
-            onSelectThread={
-              chatPlacement === "center" ? props.onSelectThread : props.onSelectDockThread
-            }
-            placement={chatPlacement}
-            // Mounted-but-hidden when the dock is collapsed, so the live
-            // conversation survives a close/reopen.
-            visible={chatPlacement === "center" || isOpen("chat")}
-            openTransfer={props.openTransfer}
-            onOpenTransferClaimed={props.onOpenTransferClaimed}
-            onCloseDock={close("chat")}
-            onOpenContextTarget={props.onOpenContextTarget}
-          />
+          <DraftReviewBoundary value={props.chatReview}>
+            <ChatSurface
+              key="chat-surface"
+              projectId={props.projectId}
+              threadId={props.activeThreadId}
+              activeWork={props.chatWork}
+              activeScreen={screen}
+              // Centered chat owns the route (`?screen` follows it); the dock must
+              // only change which conversation it shows, never the screen — so it
+              // uses onSelectDockThread (sets `?thread`, keeps `?screen`).
+              onSelectThread={
+                chatPlacement === "center" ? props.onSelectThread : props.onSelectDockThread
+              }
+              placement={chatPlacement}
+              // Mounted-but-hidden when the dock is collapsed, so the live
+              // conversation survives a close/reopen.
+              visible={chatPlacement === "center" || isOpen("chat")}
+              openTransfer={props.openTransfer}
+              onOpenTransferClaimed={props.onOpenTransferClaimed}
+              onCloseDock={close("chat")}
+              onOpenContextTarget={props.onOpenContextTarget}
+            />
+          </DraftReviewBoundary>
         </div>
       ),
     },

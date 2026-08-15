@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: give persistent Chat and Editor separate sibling draft-review
+  controllers on desktop and phone, with a route-owned latest-wins handoff that
+  carries Chat or prospective Work review commands into the matching Editor.
+
 - `apps/app`: qualify Editor desk restore and asynchronous reconciliation by
   live Work generation, and qualify transient draft-only review tabs by their
   owning Work without changing manuscript document identity or persistence.

@@ -70,6 +70,15 @@ Chat lease consumes it without issuing an existing-chat open acknowledgement.
 Chat visibility includes the dock's Chat-versus-Changes selection, so hidden
 persistent chat content holds no visible-open lease.
 
+Draft review follows the same persistent-shell rule with two sibling owners.
+The hydrated project owns one Chat review value (Chat Work plus thread) and one
+Editor review value (Editor Work, no thread authority) above desktop/phone
+selection. Boundaries only re-provide those values: ChatSurface and the Chat
+context dock share the Chat value, while viewer/editor surfaces receive the
+Editor value. An explicit latest-wins route handoff carries review commands into
+the matching Editor after Work, manuscript path, mounted document, and draft
+membership commit; it survives phone view unmounts because the owner does not.
+
 A chat has one current Work. Creation fixes the initial binding by default, and
 the explicit composer Work control can rebind an idle existing chat through the
 canonical durable transition. Home's Work selection is prospective creation

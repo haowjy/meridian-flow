@@ -16,11 +16,13 @@ import { useEffect, useState } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
+import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { HomeScreen } from "../home/HomeScreen";
-import type { ResolvedProjectViewProps } from "../ProjectView";
+import type { ReviewScopedProjectProps } from "../ProjectView";
 import { WorkScreen } from "../work/WorkScreen";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
@@ -32,7 +34,7 @@ import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
 
-type MobileProjectProps = ResolvedProjectViewProps;
+type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -108,7 +110,7 @@ export function MobileProject(props: MobileProjectProps) {
  * screens leave the slot empty.
  */
 function trailingAction(
-  props: ResolvedProjectViewProps,
+  props: ReviewScopedProjectProps,
   onRequestCreate: (kind: ContextCreateKind) => void,
 ) {
   if (props.resultsOpen) {
@@ -154,15 +156,17 @@ function renderActiveView(
       return <WorkScreen projectId={props.projectId} />;
     case "chat":
       return (
-        <MobileChatHost
-          projectId={props.projectId}
-          threadId={props.activeThreadId}
-          activeWork={props.chatWork}
-          onSelectThread={props.onSelectThread}
-          onOpenContextTarget={props.onOpenContextTarget}
-          openTransfer={props.openTransfer}
-          onOpenTransferClaimed={props.onOpenTransferClaimed}
-        />
+        <DraftReviewBoundary value={props.chatReview}>
+          <MobileChatHost
+            projectId={props.projectId}
+            threadId={props.activeThreadId}
+            activeWork={props.chatWork}
+            onSelectThread={props.onSelectThread}
+            onOpenContextTarget={props.onOpenContextTarget}
+            openTransfer={props.openTransfer}
+            onOpenTransferClaimed={props.onOpenTransferClaimed}
+          />
+        </DraftReviewBoundary>
       );
     case "context":
       if (props.editorScope.status !== "ready") {
@@ -183,34 +187,43 @@ function renderActiveView(
           </div>
         );
       }
-      return props.activeContextPath ? (
-        <MobileDocumentHost
-          projectId={props.projectId}
-          editorWorkId={props.editorWorkId}
-          activeContextScheme={props.activeContextScheme}
-          activeContextPath={props.activeContextPath}
-        />
-      ) : (
-        <MobileContextBrowser
-          projectId={props.projectId}
-          editorWorkId={props.editorWorkId}
-          activeContextScheme={props.activeContextScheme}
-          activeContextFolder={props.activeContextFolder}
-          onSelectContextScheme={props.onSelectContextScheme}
-          onSelectContextFolder={props.onSelectContextFolder}
-          onSelectContextPath={props.onSelectContextPath}
-          creating={
-            creating?.scheme === props.activeContextScheme
-              ? {
-                  kind: creating.kind,
-                  scheme: creating.scheme,
-                  parentPath: creating.parentPath,
-                  workId: creating.workId,
-                }
-              : null
-          }
-          onCreateDone={onCreateDone}
-        />
+      return (
+        <DraftReviewBoundary value={props.editorReview}>
+          <EditorReviewIntentClaimant
+            editorWorkId={props.editorWorkId}
+            activeScheme={props.activeContextScheme}
+            activePath={props.activeContextPath}
+          />
+          {props.activeContextPath ? (
+            <MobileDocumentHost
+              projectId={props.projectId}
+              editorWorkId={props.editorWorkId}
+              activeContextScheme={props.activeContextScheme}
+              activeContextPath={props.activeContextPath}
+            />
+          ) : (
+            <MobileContextBrowser
+              projectId={props.projectId}
+              editorWorkId={props.editorWorkId}
+              activeContextScheme={props.activeContextScheme}
+              activeContextFolder={props.activeContextFolder}
+              onSelectContextScheme={props.onSelectContextScheme}
+              onSelectContextFolder={props.onSelectContextFolder}
+              onSelectContextPath={props.onSelectContextPath}
+              creating={
+                creating?.scheme === props.activeContextScheme
+                  ? {
+                      kind: creating.kind,
+                      scheme: creating.scheme,
+                      parentPath: creating.parentPath,
+                      workId: creating.workId,
+                    }
+                  : null
+              }
+              onCreateDone={onCreateDone}
+            />
+          )}
+        </DraftReviewBoundary>
       );
   }
 }
@@ -224,7 +237,7 @@ function renderActiveView(
  * routed Results auxiliary state suppresses the trail so the top bar shows its
  * plain centered title instead — Results is not part of the Files hierarchy.
  */
-function contextBreadcrumbSegments(props: ResolvedProjectViewProps): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
