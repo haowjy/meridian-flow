@@ -152,6 +152,46 @@ describe("project search transitions", () => {
     expect(transitionProjectSearch(editor, { kind: "screen", screen: "context" }).work).toBe(LOWER);
   });
 
+  it.each([
+    {
+      screen: "work" as const,
+      covered: { screen: "work", work: LOWER, scheme: "manuscript", path: "" },
+    },
+    {
+      screen: "home" as const,
+      covered: { screen: "home", scheme: "manuscript", path: "" },
+    },
+    {
+      screen: "chat" as const,
+      covered: { screen: "chat", scheme: "manuscript", path: "" },
+    },
+  ] as const)("preserves an untitled-tab pin across generic $screen navigation", ({
+    screen,
+    covered,
+  }) => {
+    const untitled = parseProjectSearch({
+      screen: "context",
+      work: LOWER,
+      scheme: "manuscript",
+      path: "",
+    });
+
+    expect(transitionProjectSearch(untitled, { kind: "screen", screen })).toEqual(covered);
+    expect(transitionProjectSearch(covered, { kind: "screen", screen: "context" })).toEqual({
+      ...covered,
+      screen: "context",
+    });
+  });
+
+  it("fully clears the untitled-tab pin for intentional Home and Chat commands", () => {
+    const untitled = parseProjectSearch({ work: LOWER, scheme: "manuscript", path: "" });
+
+    expect(transitionProjectSearch(untitled, { kind: "home" })).toEqual({ screen: "home" });
+    expect(transitionProjectSearch(untitled, { kind: "chat", threadId: "thread-2" })).toEqual({
+      thread: "thread-2",
+    });
+  });
+
   it("normal chat clears Work and all Editor state", () => {
     expect(transitionProjectSearch(editor, { kind: "chat", threadId: "thread-2" })).toEqual({
       thread: "thread-2",

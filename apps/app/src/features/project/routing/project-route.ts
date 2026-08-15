@@ -180,23 +180,18 @@ export function transitionProjectSearch(
         results: undefined,
       });
     case "screen": {
-      if (command.screen === "home") {
-        return transitionProjectSearch(current, { kind: "home" });
-      }
-      if (command.screen === "chat") {
-        return stripEmptySearch({
-          ...current,
-          screen: "chat",
-          work: undefined,
-          ...clearContext(),
-        });
-      }
-      if (command.screen === "work" || command.screen === "context") {
-        return command.screen === "context"
-          ? stripEmptySearch({ ...current, screen: command.screen, results: undefined })
-          : stripEmptySearch({ ...current, screen: command.screen, ...clearContext() });
-      }
-      return stripEmptySearch({ ...current, screen: command.screen, results: undefined });
+      // An explicit empty path pins a fresh untitled tab while another screen
+      // covers Editor. Named Home and Chat commands remain the full-clear seam.
+      const context =
+        command.screen !== "context" && current.path !== ""
+          ? clearContext()
+          : { results: undefined };
+      return stripEmptySearch({
+        ...current,
+        screen: command.screen,
+        work: command.screen === "home" || command.screen === "chat" ? undefined : current.work,
+        ...context,
+      });
     }
   }
 }
