@@ -74,6 +74,11 @@ and releases the owner on unmount. This is separate from the desktop tab strip's
 open-tab set; phone navigation derives the active tab from the context tree and
 does not write to desktop tabs.
 
+The same resolved editable document is published into the persistent Editor
+review value. When that value selects a draft, the host resolves its review room
+and supplies the Work-qualified review identity to the existing `EditorView`;
+phone review does not own a parallel controller or state machine.
+
 This ownership is mandatory. Mounting `EditorView` directly without `retain()`
 creates Yjs sessions that the registry cannot know are closed.
 

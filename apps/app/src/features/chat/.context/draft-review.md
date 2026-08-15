@@ -56,10 +56,13 @@ in-editor review split. `useAiDraftLauncher` submits an explicit Work/document/
 draft/path command to the route-level Editor handoff rather than commanding the
 ambient Chat controller. The handoff holds one provider-lifetime, latest-wins
 intent, navigates atomically to its Work and manuscript path, and lets the
-Editor boundary claim it only after route Work, path, mounted document, and
-active draft membership all agree. This owner sits above desktop/phone shell
+Editor boundary claim it only after the route command succeeds and route Work,
+path, mounted document, and active draft membership all agree. Pending and
+rejected commands are never advertised to the claimant. This owner sits above desktop/phone shell
 selection, so a phone Chat-to-Editor transition cannot destroy the intent or
-either scope controller. The editor's review chrome is
+either scope controller. The phone document host publishes its resolved editable
+document to that Editor value and binds the selected review room back into its
+read-only `EditorView`, just as the desktop host binds its active editor. The editor's review chrome is
 `features/editor/DraftReviewHeader` (above the identity bar, review-only): LEFT
 "Back to live" exit and RIGHT whole-draft "Apply all" / "Discard all", all
 delegating to the controller. The server owns one active Work-draft branch per

@@ -43,7 +43,9 @@ export function EditorReviewHandoffProvider({
     async (target) => {
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
-      setIntent(staged);
+      // Supersession cancels any advertised intent immediately. The new one
+      // does not become claimable until its route command has committed.
+      setIntent(null);
 
       const tab = contextTabFromDraftGroup(target);
       if (tab) openTab(projectId, tab);
@@ -54,6 +56,9 @@ export function EditorReviewHandoffProvider({
           path: target.contextPath,
           workId: target.workId,
         });
+        if (latest.current?.sequence === staged.sequence) {
+          setIntent(staged);
+        }
       } catch (error) {
         if (latest.current?.sequence === staged.sequence) {
           latest.current = null;

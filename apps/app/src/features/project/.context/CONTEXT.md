@@ -76,8 +76,9 @@ Editor review value (Editor Work, no thread authority) above desktop/phone
 selection. Boundaries only re-provide those values: ChatSurface and the Chat
 context dock share the Chat value, while viewer/editor surfaces receive the
 Editor value. An explicit latest-wins route handoff carries review commands into
-the matching Editor after Work, manuscript path, mounted document, and draft
-membership commit; it survives phone view unmounts because the owner does not.
+the matching Editor, advertises them only after route success, and claims them
+only after Work, manuscript path, mounted document, and draft membership agree;
+it survives phone view unmounts because the owner does not.
 
 A chat has one current Work. Creation fixes the initial binding by default, and
 the explicit composer Work control can rebind an idle existing chat through the

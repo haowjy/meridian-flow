@@ -18,6 +18,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo } from "react";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { contextTabFromFile } from "../context/context-tab-from-file";
@@ -43,6 +44,7 @@ export function MobileDocumentHost({
   activeContextPath,
 }: MobileDocumentHostProps) {
   const workId = editorWorkId;
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
   const { tree, isError, isFetching } = useProjectContextTree(
     projectId,
@@ -57,6 +59,28 @@ export function MobileDocumentHost({
     const file = findContextFile(tree, activeContextPath);
     return file ? contextTabFromFile(activeContextScheme, file, workId) : null;
   }, [activeContextPath, activeContextScheme, hasRouteDocument, tree, workId]);
+
+  const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
+  useEffect(() => {
+    setActiveEditorDocumentId(activeEditorDocumentId);
+    return () => setActiveEditorDocumentId(null);
+  }, [activeEditorDocumentId, setActiveEditorDocumentId]);
+  const selectedReviewDraftId =
+    activeEditorDocumentId && controller.inlineReview?.documentId === activeEditorDocumentId
+      ? controller.inlineReview.draftId
+      : null;
+  const reviewRoomName =
+    activeEditorDocumentId && selectedReviewDraftId
+      ? reviewRoomNameForDraft(activeEditorDocumentId, selectedReviewDraftId)
+      : null;
+  const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
+
+  useEffect(() => {
+    if (!activeEditorDocumentId || !selectedReviewDraftId) return;
+    const session = getDocumentSessionRegistry().get(activeEditorDocumentId);
+    session.suspendPresence();
+    return () => session.resumePresence();
+  }, [activeEditorDocumentId, selectedReviewDraftId]);
 
   useEffect(() => {
     if (activeTab?.editable) {
@@ -125,6 +149,10 @@ export function MobileDocumentHost({
           showToolbar={false}
           ariaLabel={t`Read-only live document`}
           showCollaborationDecorations={false}
+          reviewDraftId={reviewDraftId}
+          reviewRoomName={reviewRoomName}
+          reviewWorkId={reviewDraftId ? controller.workId : null}
+          onReviewSessionUnavailable={controller.exitInlineReview}
         />
       </Suspense>
     </div>

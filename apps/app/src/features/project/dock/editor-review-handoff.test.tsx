@@ -22,15 +22,15 @@ vi.mock("@/client/stores", () => ({ useContextTabsActions: () => ({ openTab }) }
 
 const draftA: AiDraftLaunchTarget = {
   workId: "work-a",
-  documentId: "document-a",
+  documentId: "document-shared",
   draftId: "draft-a",
-  contextPath: "chapters/a.md",
+  contextPath: "chapters/shared.md",
 };
 const draftB: AiDraftLaunchTarget = {
   workId: "work-b",
-  documentId: "document-b",
+  documentId: "document-shared",
   draftId: "draft-b",
-  contextPath: "chapters/b.md",
+  contextPath: "chapters/shared.md",
 };
 
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
@@ -53,7 +53,7 @@ function ScopeProbe({ name }: { name: string }) {
 }
 
 function reviewValue(workId: string, enterInlineReview = vi.fn()): DraftReviewContextValue {
-  const documentId = workId === "work-a" ? draftA.documentId : draftB.documentId;
+  const documentId = draftA.documentId;
   const draftId = workId === "work-a" ? draftA.draftId : draftB.draftId;
   const groups = [{ documentId, drafts: [{ draftId }] }];
   return {
@@ -118,10 +118,10 @@ async function withHarness(
     enterB: ReturnType<typeof vi.fn>;
     navigate: ReturnType<typeof vi.fn>;
   }) => Promise<void>,
+  navigate = vi.fn().mockResolvedValue(undefined),
 ) {
   const enterA = vi.fn();
   const enterB = vi.fn();
-  const navigate = vi.fn().mockResolvedValue(undefined);
   await withReactRoot(
     <Harness
       openContextRoute={navigate}
@@ -131,6 +131,16 @@ async function withHarness(
     />,
     () => children({ enterA, enterB, navigate }),
   );
+}
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
 }
 
 describe("Editor review handoff", () => {
@@ -152,36 +162,55 @@ describe("Editor review handoff", () => {
     });
   });
 
-  it("survives a phone Chat B to Editor B transition and claims only there", async () => {
-    await withHarness(async ({ enterA, enterB, navigate }) => {
+  it("does not advertise an already-matching intent when navigation rejects", async () => {
+    const route = deferred();
+    const navigate = vi.fn(() => route.promise);
+    await withHarness(async ({ enterB }) => {
+      await act(async () => showEditor?.(draftB));
+      let pending: Promise<void> | undefined;
       await act(async () => {
-        await openReview?.(draftB);
+        pending = openReview?.(draftB);
       });
-      expect(navigate).toHaveBeenCalledWith({
-        scheme: "manuscript",
-        path: draftB.contextPath,
-        workId: "work-b",
-      });
-      expect(enterA).not.toHaveBeenCalled();
       expect(enterB).not.toHaveBeenCalled();
 
-      await act(async () => showEditor?.(draftB));
-      expect(enterB).toHaveBeenCalledOnce();
-      expect(enterB).toHaveBeenCalledWith(draftB.documentId, draftB.draftId);
-      expect(enterA).not.toHaveBeenCalled();
-    });
+      route.reject(new Error("route rejected"));
+      await act(async () => {
+        await expect(pending).rejects.toThrow("route rejected");
+      });
+      expect(enterB).not.toHaveBeenCalled();
+    }, navigate);
   });
 
-  it("cancels a superseded staged intent before the Editor mounts", async () => {
+  it("claims only the latest of overlapping same-document route commands", async () => {
+    const routeA = deferred();
+    const routeB = deferred();
+    const navigate = vi
+      .fn()
+      .mockImplementationOnce(() => routeA.promise)
+      .mockImplementationOnce(() => routeB.promise);
     await withHarness(async ({ enterA, enterB }) => {
+      let pendingA: Promise<void> | undefined;
+      let pendingB: Promise<void> | undefined;
       await act(async () => {
-        await openReview?.(draftA);
-        await openReview?.(draftB);
+        pendingA = openReview?.(draftA);
+        pendingB = openReview?.(draftB);
       });
-      await act(async () => showEditor?.(draftA));
-      expect(enterA).not.toHaveBeenCalled();
-      await act(async () => showEditor?.(draftB));
+
+      routeB.resolve();
+      await act(async () => {
+        await pendingB;
+        showEditor?.(draftB);
+      });
       expect(enterB).toHaveBeenCalledOnce();
-    });
+      expect(enterA).not.toHaveBeenCalled();
+
+      routeA.resolve();
+      await act(async () => {
+        await pendingA;
+        showEditor?.(draftA);
+      });
+      expect(enterA).not.toHaveBeenCalled();
+      expect(enterB).toHaveBeenCalledOnce();
+    }, navigate);
   });
 });
