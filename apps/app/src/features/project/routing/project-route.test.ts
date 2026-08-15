@@ -2,6 +2,7 @@ import type { Work } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import {
   applyNormalizationIfCurrent,
+  openContextRouteSearch,
   parseExplicitWork,
   parseProjectSearch,
   planWorkNormalization,
@@ -33,6 +34,30 @@ describe("project search grammar", () => {
 
   it("rejects context subordinate values without a valid scheme", () => {
     expect(parseProjectSearch({ folder: "/one", path: "/one/two" })).toEqual({});
+  });
+});
+
+describe("context route command", () => {
+  it("updates Work, scheme, folder, path, and Results as one transition", () => {
+    expect(
+      openContextRouteSearch(
+        {
+          screen: "context",
+          work: "work-b",
+          scheme: "scratch",
+          folder: "/old",
+          path: "/old/file.md",
+          results: "",
+        },
+        { scheme: "manuscript", path: "/Act Two/Arrival.md", workId: "work-a" },
+      ),
+    ).toEqual({
+      screen: "context",
+      work: "work-a",
+      scheme: "manuscript",
+      folder: "/Act Two",
+      path: "/Act Two/Arrival.md",
+    });
   });
 });
 

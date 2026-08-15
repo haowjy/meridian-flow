@@ -6,7 +6,7 @@
  */
 import { act, useEffect, useState, useSyncExternalStore } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import { ProjectContextRouteProvider } from "@/features/project/routing/ProjectContextRoute";
 import type { ScreenKey } from "@/features/project/shell/screens";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
@@ -96,7 +96,11 @@ function Harness() {
       setProject((current) => current + 1);
     };
   });
-  return <ReviewShell key={project} screen="context" />;
+  return (
+    <ProjectContextRouteProvider openContextRoute={async (target) => navigate(target)}>
+      <ReviewShell key={project} screen="context" />
+    </ProjectContextRouteProvider>
+  );
 }
 
 function savedRailCollapsed(): boolean {
@@ -114,6 +118,7 @@ const documentTwo: DraftGroup = {
 
 describe("review prose focus", () => {
   beforeEach(() => {
+    navigate.mockClear();
     setInlineReview(null);
     useProjectSurfacePrefsStore.setState({
       prefs: DEFAULT_SURFACE_PREFS,
@@ -129,6 +134,11 @@ describe("review prose focus", () => {
 
       await act(async () => shell?.openAiDraft(documentOne, "draft-one"));
       expect(shell?.railCollapsed).toBe(true);
+      expect(navigate).toHaveBeenLastCalledWith({
+        scheme: "manuscript",
+        path: documentOne.contextPath,
+        workId: "work-a",
+      });
 
       // The defect: this second entry used to snapshot the already-collapsed
       // rail and restore THAT on exit.

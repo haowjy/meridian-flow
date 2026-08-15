@@ -29,6 +29,8 @@ export type IdentityCommitted = {
   path: string;
   name: string;
   workId?: string;
+  /** Editor route ownership captured when this command began. */
+  routeWorkId: string | null;
 };
 
 export type IdentityCommitOwnership = {
@@ -168,6 +170,7 @@ export function useIdentityCommit({
           path: `/${moved.path}`,
           name: moved.name,
           ...(destination.workId ? { workId: destination.workId } : {}),
+          routeWorkId: destination.workId ?? defaultWorkId,
         },
         { isLatest: moveReceipt.isLatest },
       );

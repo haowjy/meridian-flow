@@ -18,6 +18,7 @@ import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
+import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { HomeScreen } from "../home/HomeScreen";
 import type { ResolvedProjectViewProps } from "../ProjectView";
 import { WorkScreen } from "../work/WorkScreen";
@@ -38,9 +39,9 @@ export function MobileProject(props: MobileProjectProps) {
   // Pending inline create row (file/folder) in the Files browser. Lifted here
   // because the `+` entry point lives in the top bar's trailing slot while the
   // editable row renders inside MobileContextBrowser's folder listing. The
-  // create *location* is always "where you are" — the route's scheme+folder —
-  // so only the kind needs to be remembered.
-  const [creating, setCreating] = useState<ContextCreateKind | null>(null);
+  // The request is immutable command identity. A route Work change must not
+  // retarget a row the writer already opened.
+  const [creating, setCreating] = useState<TreeCreationRequest | null>(null);
   // Any navigation (screen switch, drill in/out, opening a file, Results)
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
@@ -67,7 +68,15 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        actions={trailingAction(props, setCreating)}
+        actions={trailingAction(props, (kind) => {
+          if (!props.activeContextScheme) return;
+          setCreating({
+            scheme: props.activeContextScheme,
+            kind,
+            parentPath: props.activeContextFolder ?? "",
+            workId: props.editorWorkId,
+          });
+        })}
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
         {renderActiveView(props, creating, () => setCreating(null))}
@@ -125,7 +134,7 @@ function trailingAction(
 
 function renderActiveView(
   props: MobileProjectProps,
-  creating: ContextCreateKind | null,
+  creating: TreeCreationRequest | null,
   onCreateDone: () => void,
 ) {
   if (props.resultsOpen) {
@@ -159,7 +168,8 @@ function renderActiveView(
       if (props.editorScope.status !== "ready") {
         return (
           <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground">
-            {props.editorScope.status === "loading" ? (
+            {props.editorScope.status === "loading" ||
+            props.editorScope.status === "normalizing" ? (
               <Trans>Loading Work…</Trans>
             ) : (
               <button
@@ -189,7 +199,16 @@ function renderActiveView(
           onSelectContextScheme={props.onSelectContextScheme}
           onSelectContextFolder={props.onSelectContextFolder}
           onSelectContextPath={props.onSelectContextPath}
-          creating={creating}
+          creating={
+            creating?.scheme === props.activeContextScheme
+              ? {
+                  kind: creating.kind,
+                  scheme: creating.scheme,
+                  parentPath: creating.parentPath,
+                  workId: creating.workId,
+                }
+              : null
+          }
           onCreateDone={onCreateDone}
         />
       );

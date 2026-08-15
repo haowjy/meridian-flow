@@ -26,17 +26,14 @@ import type { ContextPassageAnchor } from "@/features/chat/ChatContextNavigation
 import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-coordinator";
 import { findContextFile } from "@/features/project/context/context-tree";
 
-export type ContextRouteTarget = {
+export type PassageDoorTarget = {
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string | null;
 };
 
 /** Tell passage navigation that a door was opened. The passage is optional. */
-export type PassageDoorOpened = (
-  target: ContextRouteTarget,
-  passage?: ContextPassageAnchor,
-) => void;
+export type PassageDoorOpened = (target: PassageDoorTarget, passage?: ContextPassageAnchor) => void;
 
 export function usePassageDoors(projectId: string, activeWorkId: string | null): PassageDoorOpened {
   const coordinator = useRef(new LatestNavigationCoordinator());

@@ -78,6 +78,8 @@ export type EntryActionTarget = {
   kind: "file" | "dir";
 };
 
+type DeleteTarget = EntryActionTarget & { workId: string | null };
+
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
 export function ContextEntryMenu({
@@ -261,20 +263,23 @@ export function useDeleteConfirmation({
   workId: string | null;
   scheme: ProjectContextTreeScheme;
 }) {
-  const [target, setTarget] = useState<EntryActionTarget | null>(null);
+  const [target, setTarget] = useState<DeleteTarget | null>(null);
   const mutation = useDeleteContextEntry(projectId, scheme);
 
-  const requestDelete = useCallback((t: EntryActionTarget) => setTarget(t), []);
+  const requestDelete = useCallback(
+    (t: EntryActionTarget) => setTarget({ ...t, workId }),
+    [workId],
+  );
   const cancel = useCallback(() => setTarget(null), []);
 
   const confirm = useCallback(async () => {
     if (!target) return;
     try {
-      await mutation.mutateAsync({ path: target.path, workId });
+      await mutation.mutateAsync({ path: target.path, workId: target.workId });
     } finally {
       setTarget(null);
     }
-  }, [target, mutation, workId]);
+  }, [target, mutation]);
 
   return { target, isPending: mutation.isPending, requestDelete, cancel, confirm };
 }

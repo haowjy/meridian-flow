@@ -21,12 +21,11 @@ import {
   type ProjectContextTreeNode,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 
 import { getProjectContextTree } from "@/client/api/projects-api";
 import { useContextTabsActions } from "@/client/stores";
-
+import { useProjectContextRoute } from "../routing/ProjectContextRoute";
 import { contextTabFromFile } from "./context-tab-from-file";
 
 /** Where a document may live. Work-scoped schemes need the work to look in. */
@@ -45,7 +44,7 @@ export type OpenProjectDocumentRequest = {
 export type OpenProjectDocument = (request: OpenProjectDocumentRequest) => Promise<boolean>;
 
 export function useOpenProjectDocument(projectId: string | undefined): OpenProjectDocument {
-  const navigate = useNavigate();
+  const openContextRoute = useProjectContextRoute();
   const { openTab } = useContextTabsActions();
 
   return useCallback(
@@ -61,21 +60,13 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
       openTab(projectId, contextTabFromFile(scheme, file, workId));
       if (disposition === "background") return true;
 
-      await navigate({
-        to: "/project/$projectId",
-        params: { projectId },
-        search: (previous) => ({
-          ...previous,
-          screen: "context" as const,
-          scheme,
-          work: workId ?? undefined,
-          path: file.path,
-          results: undefined,
-        }),
-      });
+      if (!openContextRoute) {
+        throw new Error("Opening a project document requires the project route owner");
+      }
+      await openContextRoute({ scheme, path: file.path, workId });
       return !signal?.aborted;
     },
-    [navigate, openTab, projectId],
+    [openContextRoute, openTab, projectId],
   );
 }
 

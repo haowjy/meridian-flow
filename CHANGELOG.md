@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-- `apps/app`: resolve Editor Work once at the hydrated shell, propagate it explicitly through desktop and phone context reads and mutations, capture create and identity command ownership across navigation, and carry owning Work in typed Chat, document, and draft route targets.
+- `apps/app`: make Editor Work ownership immutable from route resolution through
+  desktop and phone create, identity, untitled, delete, document, and draft
+  settlement; one route-owned context-open command now updates Work, scheme,
+  folder, path, and Results atomically without borrowing Chat ownership.
 
 - `apps/app`: establish the project route's canonical Work UUID grammar,
   authoritative catalog resolution, stale-safe normalization, pure search

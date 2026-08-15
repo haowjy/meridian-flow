@@ -36,16 +36,21 @@ export type PendingUntitled = {
   home?: UntitledHome;
 };
 
+export type QueuedIdentityReceipt = MoveContextEntrySuccess & {
+  workId?: string;
+  routeWorkId: string;
+};
+
 type Candidate = {
   onReminted: (documentId: string) => void;
   onMaterialized: (result: CreateUntitledContextDocumentResponse) => void;
   /** Queued desired identity landed after materialization. */
-  onIdentityCommitted?: (result: MoveContextEntrySuccess) => void;
+  onIdentityCommitted?: (result: QueuedIdentityReceipt) => void;
 };
 
 type MaterializationReceipt = {
   result: CreateUntitledContextDocumentResponse;
-  identity?: MoveContextEntrySuccess;
+  identity?: QueuedIdentityReceipt;
 };
 
 /**
@@ -384,7 +389,7 @@ export class UntitledReconciler {
   ): Promise<{
     revision: number;
     result: CreateUntitledContextDocumentResponse;
-    identity?: MoveContextEntrySuccess;
+    identity?: QueuedIdentityReceipt;
   }> {
     const record = this.records.get(entry.documentId);
     const desired = record?.desiredIdentity;
@@ -405,7 +410,12 @@ export class UntitledReconciler {
         return { revision: finished ? attemptRevision + 1 : attemptRevision, result };
       }
       const finished = this.finishIdentityAttempt(entry.documentId, attemptRevision);
-      const identity = { ...moved, path: `/${moved.path}` };
+      const identity: QueuedIdentityReceipt = {
+        ...moved,
+        path: `/${moved.path}`,
+        ...(desired.destination.workId ? { workId: desired.destination.workId } : {}),
+        routeWorkId: desired.destination.workId ?? entry.home.workId,
+      };
       return {
         revision: finished ? attemptRevision + 1 : attemptRevision,
         result: {

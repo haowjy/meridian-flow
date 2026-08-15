@@ -208,7 +208,9 @@ describe("identity commit operation ownership", () => {
     );
 
     expect(rig.identityMove.calls[0]?.[2].destinationWorkId).toBe("work-a");
-    expect(committed).toEqual([expect.objectContaining({ workId: "work-a" })]);
+    expect(committed).toEqual([
+      expect.objectContaining({ workId: "work-a", routeWorkId: "work-a" }),
+    ]);
   });
 
   it("refuses navigation after the writer switches tabs", () => {

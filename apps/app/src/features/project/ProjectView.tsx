@@ -197,8 +197,12 @@ export function ProjectView(props: ProjectViewProps) {
   const chatWork = works?.find((work) => work.id === chatWorkId) ?? null;
   const editorScope = resolveEditorWorkScope(
     props.routeWork,
-    chatWork,
-    works?.find((work) => work.id === worksQuery.defaultWorkId) ?? null,
+    chatWorkId,
+    worksQuery.status === "error"
+      ? { status: "error" }
+      : worksQuery.status === "loading" || worksQuery.status === "disabled"
+        ? { status: "loading" }
+        : { status: "ready", workId: worksQuery.defaultWorkId },
   );
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
@@ -410,6 +414,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
             sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
             dockToggle={surfaceToggle("chat", t`Expand chat`)}
             onSelectContextPath={props.onSelectContextPath}
+            onOpenContextTarget={props.onOpenContextTarget}
             onClearContextDestination={props.onExitContextScheme}
           />
         ) : (
@@ -521,7 +526,7 @@ function EditorWorkRecovery({
 }) {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
-      {scope.status === "loading" ? (
+      {scope.status === "loading" || scope.status === "normalizing" ? (
         <p className="text-sm text-muted-foreground">
           <Trans>Loading Work…</Trans>
         </p>

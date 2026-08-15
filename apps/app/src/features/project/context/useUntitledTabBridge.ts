@@ -1,7 +1,7 @@
 /** Bridges background untitled reconciliation receipts into the open-tab store. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { type ContextTab, useContextTabsActions, useContextTabsStore } from "@/client/stores";
+import type { ContextRouteTarget } from "../routing/project-route";
 import {
   isUntitledPending,
   registerUntitledCandidate,
@@ -11,13 +11,11 @@ import {
 export function useUntitledTabBridge({
   projectId,
   tabs,
-  editorWorkId,
-  onSelectContextPath,
+  onOpenContextTarget,
 }: {
   projectId: string;
   tabs: ContextTab[];
-  editorWorkId: string | null;
-  onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget: (target: ContextRouteTarget) => void;
 }): void {
   const { remintNewTab, materializeNewTab, updateTrackedTab } = useContextTabsActions();
 
@@ -48,7 +46,11 @@ export function useUntitledTabBridge({
               provisionalName: true,
             });
             if (slice.activeTabId === tab.documentId) {
-              onSelectContextPath(result.path, result.scheme);
+              onOpenContextTarget({
+                path: result.path,
+                scheme: result.scheme,
+                workId: result.workId ?? null,
+              });
             }
           },
           onIdentityCommitted: (result) => {
@@ -56,13 +58,17 @@ export function useUntitledTabBridge({
               scheme: result.scheme,
               path: result.path,
               name: result.name,
-              workId: result.scheme === "scratch" ? (editorWorkId ?? undefined) : undefined,
+              workId: result.workId,
               provisionalName: false,
             });
             if (
               useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
             ) {
-              onSelectContextPath(result.path, result.scheme);
+              onOpenContextTarget({
+                path: result.path,
+                scheme: result.scheme,
+                workId: result.routeWorkId,
+              });
             }
           },
         }),
@@ -70,13 +76,5 @@ export function useUntitledTabBridge({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [
-    editorWorkId,
-    materializeNewTab,
-    onSelectContextPath,
-    projectId,
-    remintNewTab,
-    tabs,
-    updateTrackedTab,
-  ]);
+  }, [materializeNewTab, onOpenContextTarget, projectId, remintNewTab, tabs, updateTrackedTab]);
 }

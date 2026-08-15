@@ -52,7 +52,12 @@ export type MobileContextBrowserProps = Pick<
    * `+` entry point is top-bar chrome; the location is always the current
    * scheme+folder from the route ("create where you are").
    */
-  creating: ContextCreateKind | null;
+  creating: {
+    kind: ContextCreateKind;
+    scheme: ProjectContextTreeScheme;
+    parentPath: string;
+    workId: string | null;
+  } | null;
   /** Closes the create row (after commit, cancel, or empty blur). */
   onCreateDone: () => void;
 };
@@ -144,7 +149,7 @@ function MobileFolderListing({
   folder: string | null;
   onSelectContextFolder: MobileContextBrowserProps["onSelectContextFolder"];
   onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
-  creating: ContextCreateKind | null;
+  creating: MobileContextBrowserProps["creating"];
   onCreateDone: () => void;
 }) {
   const workId = editorWorkId;
@@ -169,10 +174,10 @@ function MobileFolderListing({
       {creating ? (
         <MobileCreateRow
           projectId={projectId}
-          editorWorkId={editorWorkId}
-          scheme={scheme}
-          parent={folder ?? ""}
-          kind={creating}
+          editorWorkId={creating.workId}
+          scheme={creating.scheme}
+          parent={creating.parentPath}
+          kind={creating.kind}
           siblingNames={siblingNames}
           onDone={onCreateDone}
         />

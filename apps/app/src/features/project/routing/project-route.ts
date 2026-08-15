@@ -49,8 +49,25 @@ export type WorkDetailTarget = {
 export type ContextRouteTarget = {
   scheme: ProjectContextTreeScheme;
   path: string;
-  workId: string;
+  workId: string | null;
 };
+
+export function openContextRouteSearch(
+  search: ProjectSearch,
+  target: ContextRouteTarget,
+): ProjectSearch {
+  const segments = target.path.split("/").filter(Boolean);
+  segments.pop();
+  return stripEmptySearch({
+    ...search,
+    screen: "context",
+    work: target.workId ?? undefined,
+    scheme: target.scheme,
+    folder: segments.length ? `/${segments.join("/")}` : undefined,
+    path: target.path,
+    results: undefined,
+  });
+}
 
 export type WorkContextTarget = {
   kind: "work-context";

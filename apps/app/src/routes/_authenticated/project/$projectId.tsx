@@ -18,10 +18,12 @@ import { useThreadStore } from "@/client/stores";
 import { setThread } from "@/client/working-set";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { ProjectView } from "@/features/project/ProjectView";
+import { ProjectContextRouteProvider } from "@/features/project/routing/ProjectContextRoute";
 import {
   applyNormalizationIfCurrent,
   type ContextRouteTarget,
   type NavigationOptions,
+  openContextRouteSearch,
   type ProjectRouteCommand,
   type ProjectRouteCommands,
   type ProjectSearch,
@@ -40,12 +42,6 @@ export const Route = createFileRoute("/_authenticated/project/$projectId")({
   component: RouteComponent,
   validateSearch: parseProjectSearch,
 });
-
-function dirname(path: string): string | undefined {
-  const segments = path.split("/").filter(Boolean);
-  segments.pop();
-  return segments.length ? `/${segments.join("/")}` : undefined;
-}
 
 function RouteComponent() {
   const { projectId } = Route.useParams();
@@ -173,43 +169,40 @@ function RouteComponent() {
   }
 
   function handleOpenContextTarget(target: ContextRouteTarget, options?: { replace?: boolean }) {
-    return patchSearch(
-      {
-        screen: "context",
-        work: target.workId,
-        scheme: target.scheme,
-        folder: target.path ? dirname(target.path) : undefined,
-        path: target.path,
-        results: undefined,
-      },
-      options,
-    );
+    return navigate({
+      to: "/project/$projectId",
+      params: { projectId },
+      search: (previous) => openContextRouteSearch(parseProjectSearch(previous), target),
+      replace: options?.replace ?? false,
+    });
   }
 
   return (
-    <ProjectView
-      key={projectId}
-      projectId={projectId}
-      workingSet={routeData.workingSet}
-      workingSetSyncEnabled={user.workingSetSyncEnabled === true}
-      activeScreen={resolvedScreen}
-      activeThreadId={activeThreadId}
-      routeWork={routeWork}
-      routeCommands={routeCommands}
-      activeContextScheme={scheme ?? null}
-      activeContextFolder={folder ?? null}
-      activeContextPath={path ?? null}
-      resultsOpen={results === ""}
-      onSelectScreen={handleSelectScreen}
-      onSelectThread={handleSelectThread}
-      onSelectDockThread={handleSelectDockThread}
-      onSelectContextScheme={handleSelectContextScheme}
-      onExitContextScheme={handleExitContextScheme}
-      onSelectContextFolder={handleSelectContextFolder}
-      onOpenContextTarget={handleOpenContextTarget}
-      onOpenResults={() => patchSearch({ results: "" })}
-      onCloseResults={() => patchSearch({ results: undefined })}
-    />
+    <ProjectContextRouteProvider openContextRoute={handleOpenContextTarget}>
+      <ProjectView
+        key={projectId}
+        projectId={projectId}
+        workingSet={routeData.workingSet}
+        workingSetSyncEnabled={user.workingSetSyncEnabled === true}
+        activeScreen={resolvedScreen}
+        activeThreadId={activeThreadId}
+        routeWork={routeWork}
+        routeCommands={routeCommands}
+        activeContextScheme={scheme ?? null}
+        activeContextFolder={folder ?? null}
+        activeContextPath={path ?? null}
+        resultsOpen={results === ""}
+        onSelectScreen={handleSelectScreen}
+        onSelectThread={handleSelectThread}
+        onSelectDockThread={handleSelectDockThread}
+        onSelectContextScheme={handleSelectContextScheme}
+        onExitContextScheme={handleExitContextScheme}
+        onSelectContextFolder={handleSelectContextFolder}
+        onOpenContextTarget={handleOpenContextTarget}
+        onOpenResults={() => patchSearch({ results: "" })}
+        onCloseResults={() => patchSearch({ results: undefined })}
+      />
+    </ProjectContextRouteProvider>
   );
 }
 

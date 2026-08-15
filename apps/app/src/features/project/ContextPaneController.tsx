@@ -32,6 +32,7 @@ import { untitledDocumentIsEmpty } from "./context/untitled-reconciler";
 import { appendPendingUntitled, isUntitledPending } from "./context/untitled-reconciler-browser";
 import { identityCommitMayNavigate } from "./context/use-identity-commit";
 import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
+import type { ContextRouteTarget } from "./routing/project-route";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
@@ -44,6 +45,7 @@ export type ContextViewerSurfaceControllerProps = {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
+  onOpenContextTarget: (target: ContextRouteTarget, options?: { replace?: boolean }) => void;
   /**
    * Clears the routed destination entirely (no scheme/path in the URL) —
    * closing the LAST tab must leave a fresh-entry URL so a reload runs
@@ -66,6 +68,7 @@ export function ContextViewerSurfaceController({
   sidebarToggle,
   dockToggle,
   onSelectContextPath,
+  onOpenContextTarget,
   onClearContextDestination,
 }: ContextViewerSurfaceControllerProps) {
   const routeWorkId = editorWorkId;
@@ -420,7 +423,7 @@ export function ContextViewerSurfaceController({
     [projectId, routeWorkId],
   );
 
-  useUntitledTabBridge({ projectId, tabs, editorWorkId: routeWorkId, onSelectContextPath });
+  useUntitledTabBridge({ projectId, tabs, onOpenContextTarget });
 
   return (
     <ContextViewer
@@ -468,7 +471,11 @@ export function ContextViewerSurfaceController({
           });
         }
         if (identityCommitMayNavigate(ownership, liveSlice?.activeTabId, documentId)) {
-          onSelectContextPath(next.path, next.scheme);
+          onOpenContextTarget({
+            path: next.path,
+            scheme: next.scheme,
+            workId: next.routeWorkId,
+          });
         }
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}

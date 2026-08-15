@@ -15,7 +15,7 @@
  * launcher never touches the writer's saved rail preference. The remembered
  * dock view is left as Changes — the writer switches back explicitly.
  */
-import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useParams, useSearch } from "@tanstack/react-router";
 import { useCallback } from "react";
 
 import { useContextTabsActions } from "@/client/stores";
@@ -23,6 +23,7 @@ import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
+import { useProjectContextRoute } from "@/features/project/routing/ProjectContextRoute";
 import type { ScreenKey } from "@/features/project/shell/screens";
 
 export type AiDraftLaunchTarget = {
@@ -44,7 +45,7 @@ export function useAiDraftLauncher() {
     path?: string;
     work?: string;
   };
-  const navigate = useNavigate();
+  const openContextRoute = useProjectContextRoute();
   // Mirrors the route's screen resolution — the dock view is read off the
   // screen the writer is actually on.
   const screen: ScreenKey = search.screen ?? (search.thread ? "chat" : "home");
@@ -81,17 +82,13 @@ export function useAiDraftLauncher() {
           search.path === targetPath &&
           search.work === target.workId;
         if (!showsTarget && params.projectId && targetPath) {
-          void navigate({
-            to: "/project/$projectId",
-            params: { projectId: params.projectId },
-            search: (prev) => ({
-              ...prev,
-              screen: "context" as const,
-              scheme: "manuscript" as const,
-              work: target.workId,
-              path: targetPath,
-              results: undefined,
-            }),
+          if (!openContextRoute) {
+            throw new Error("Opening a draft requires the project route owner");
+          }
+          void openContextRoute({
+            scheme: "manuscript",
+            path: targetPath,
+            workId: target.workId,
           });
         }
       }
@@ -100,7 +97,7 @@ export function useAiDraftLauncher() {
     },
     [
       controller,
-      navigate,
+      openContextRoute,
       openTab,
       params.projectId,
       screen,
