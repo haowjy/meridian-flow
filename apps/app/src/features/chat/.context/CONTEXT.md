@@ -13,7 +13,8 @@ draft-control changes can be understood independently.
 - [Turn edit receipts](turn-edit-receipts.md) — committed change records, Undo/Redo,
   and conversation reveal.
 - [Composer write mode](composer-write-mode.md) — the Work-scoped Draft /
-  Auto-apply control, confirmation, Home bootstrap, and composer sizing.
+  Auto-apply control, neutral shared presentation, Home and Chat adapters, and
+  composer sizing.
 - [Draft review](draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs.
 

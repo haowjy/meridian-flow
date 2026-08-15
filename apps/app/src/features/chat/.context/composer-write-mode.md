@@ -62,11 +62,14 @@ need the unresolved projection. Auto-apply remains selectable so its
 unconfirmed request can ask the server; loading client state must never imply
 that nothing is pending.
 
-Home bootstrap is a distinct path: its optimistic thread has no Work while the
-first message is handed off, and project plus default-Work creation occur
-mid-handoff. That first turn therefore uses the new Work's `direct` default
-before the composer can expose the mode control. In-project new threads already
-have a Work and do not have this gap.
+The shared Work picker and selected-Work write-mode presentation live in the
+neutral `components/app/work-composer-controls` boundary. Home and Chat adapt
+that presentation to different commands: Home edits prospective creation state,
+while Chat can durably rebind an idle existing thread. Home's selected Work is
+already durable, so its write-mode control reads and mutates that Work's real
+policy before thread creation; it does not invent a provisional mode. Draft
+review launch behavior is injected by each project-shell adapter rather than
+imported into the neutral controls.
 
 Each assistant turn durably records the Work write mode read when that turn is
 created. Tool vocabulary and receipt interpretation use the turn's recorded
