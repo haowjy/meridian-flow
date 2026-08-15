@@ -7,11 +7,15 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
 - No provider/database logic in components; use client API/query layers.
 - Server auth/config is WorkOS AuthKit (`wos-session` cookie) and lives under `src/server/`; do not add alternate auth adapters in app code.
 - No literal colors in TSX; use design tokens and app CSS utilities.
-- UI work starts from existing primitives: `Button`/`IconButton`, `Badge`,
-  `SectionLabel`, `PaneTitle`, and shared rail components. Do not add new
-  hand-rolled pills, icon buttons, uppercase labels, rail headers, arbitrary
-  `text-[...]`/`tracking-[...]`, or feature-specific style recipes unless the
-  local component owns genuinely new behavior that the primitive cannot express.
+- UI work starts from existing shared primitives. When a shadcn primitive fits,
+  adopt or extend its canonical API and composition in `components/ui/` instead
+  of inventing a parallel component. Preserve Meridian semantic tokens, and
+  keep product-specific density or variants at the usage site until they recur.
+  Deviate from the shadcn basis only for a concrete behavioral or design reason,
+  and keep the deviation local. Do not add hand-rolled pills, icon buttons,
+  uppercase labels, rail headers, arbitrary `text-[...]`/`tracking-[...]`, or
+  feature-specific style recipes unless the local component owns genuinely new
+  behavior that a shared primitive cannot express.
 - Preserve TipTap/Yjs document-session boundaries; do not invent a second editor sync path.
 - **Local-first invariant**: state a writer authors or arranges renders from
   device-local persistence first — the network only improves it, and

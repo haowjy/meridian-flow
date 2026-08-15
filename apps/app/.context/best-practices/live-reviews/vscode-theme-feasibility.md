@@ -292,6 +292,5 @@ Meridian Flow-flavored schema (not VS Code's):
 | VS Code extension point | `~/.meridian/ref/vscode/src/vs/project/services/themes/common/themeExtensionPoints.ts` |
 | VS Code default themes | `~/.meridian/ref/vscode/extensions/theme-defaults/` |
 | Meridian Flow tokens | `packages/design-tokens/src/warm-paper.css`, `apps/app/src/styles/globals.css` |
-| Meridian Flow token review | `apps/app/.context/best-practices/live-reviews/tokens-css-org.md` |
 | Twenty | `~/.meridian/ref/twenty/packages/twenty-ui/src/theme-constants/ThemeProvider.tsx` |
 | Documenso | `~/.meridian/ref/documenso/packages/ui/styles/theme.css`, `theme-switcher.tsx` |
