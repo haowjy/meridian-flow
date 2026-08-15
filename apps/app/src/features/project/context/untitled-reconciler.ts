@@ -43,9 +43,8 @@ export type QueuedIdentityReceipt = MoveContextEntrySuccess & {
 
 type Candidate = {
   onReminted: (documentId: string) => void;
-  onMaterialized: (result: CreateUntitledContextDocumentResponse) => void;
-  /** Queued desired identity landed after materialization. */
-  onIdentityCommitted?: (result: QueuedIdentityReceipt) => void;
+  /** One settled receipt; queued identity is the final tab and route location. */
+  onMaterialized: (receipt: MaterializationReceipt) => void;
 };
 
 type MaterializationReceipt = {
@@ -456,8 +455,7 @@ export class UntitledReconciler {
   }
 
   private publishMaterialization(candidate: Candidate, receipt: MaterializationReceipt): void {
-    candidate.onMaterialized(receipt.result);
-    if (receipt.identity) candidate.onIdentityCommitted?.(receipt.identity);
+    candidate.onMaterialized(receipt);
   }
 
   private rememberMaterializationReceipt(

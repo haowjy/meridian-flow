@@ -30,7 +30,7 @@ export function useUntitledTabBridge({
       .map((tab) =>
         registerUntitledCandidate(tab.documentId, {
           onReminted: (documentId) => remintNewTab(projectId, tab.documentId, documentId),
-          onMaterialized: (result) => {
+          onMaterialized: ({ result, identity }) => {
             const slice = useContextTabsStore.getState().byProject[projectId];
             if (!slice?.tabs.some((candidate) => candidate.documentId === tab.documentId)) return;
             materializeNewTab(projectId, tab.documentId, {
@@ -45,29 +45,21 @@ export function useUntitledTabBridge({
               schemaType: "document",
               provisionalName: true,
             });
-            if (slice.activeTabId === tab.documentId) {
-              onOpenContextTarget({
-                path: result.path,
-                scheme: result.scheme,
-                workId: result.workId ?? null,
+            if (identity) {
+              updateTrackedTab(projectId, tab.documentId, {
+                scheme: identity.scheme,
+                path: identity.path,
+                name: identity.name,
+                workId: identity.workId,
+                provisionalName: false,
               });
             }
-          },
-          onIdentityCommitted: (result) => {
-            updateTrackedTab(projectId, tab.documentId, {
-              scheme: result.scheme,
-              path: result.path,
-              name: result.name,
-              workId: result.workId,
-              provisionalName: false,
-            });
-            if (
-              useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
-            ) {
+            if (slice.activeTabId === tab.documentId) {
+              const settled = identity ?? result;
               onOpenContextTarget({
-                path: result.path,
-                scheme: result.scheme,
-                workId: result.routeWorkId,
+                path: settled.path,
+                scheme: settled.scheme,
+                workId: identity?.routeWorkId ?? result.workId ?? null,
               });
             }
           },

@@ -75,47 +75,44 @@ afterEach(() => {
   changeWork = null;
 });
 
-for (const viewport of ["desktop", "phone"] as const) {
-  it(`${viewport} tree/read/create/rename/delete stay on Editor Work A while Chat is Work B`, async () => {
-    await withReactRoot(
-      <Providers>
-        {/* Chat Work B is intentionally not an input to the Editor subtree. */}
-        <Harness workId="work-a" />
-      </Providers>,
-      async () => {
-        await vi.waitFor(() =>
-          expect(requests.map((request) => request.operation)).toEqual(
-            expect.arrayContaining(["tree", "read"]),
-          ),
-        );
-        await act(async () => {
-          const create = commands?.create.mutateAsync({
-            scheme: "scratch",
-            type: "file",
-            path: "/new.md",
-            workId: "work-a",
-          });
-          await commands?.rename.mutateAsync({
-            path: "/old.md",
-            newName: "new.md",
-            workId: "work-a",
-          });
-          await commands?.delete.mutateAsync({ path: "/gone.md", workId: "work-a" });
-          releaseCreate?.();
-          await create;
+it("sends scratch tree, read, and mutation requests with explicit Editor Work A", async () => {
+  await withReactRoot(
+    <Providers>
+      <Harness workId="work-a" />
+    </Providers>,
+    async () => {
+      await vi.waitFor(() =>
+        expect(requests.map((request) => request.operation)).toEqual(
+          expect.arrayContaining(["tree", "read"]),
+        ),
+      );
+      await act(async () => {
+        const create = commands?.create.mutateAsync({
+          scheme: "scratch",
+          type: "file",
+          path: "/new.md",
+          workId: "work-a",
         });
-        expect(
-          requests
-            .filter(({ operation }) =>
-              ["tree", "read", "create", "rename", "delete"].includes(operation),
-            )
-            .every(({ workId }) => workId === "work-a"),
-        ).toBe(true);
-      },
-      { drainMacrotask: true },
-    );
-  });
-}
+        await commands?.rename.mutateAsync({
+          path: "/old.md",
+          newName: "new.md",
+          workId: "work-a",
+        });
+        await commands?.delete.mutateAsync({ path: "/gone.md", workId: "work-a" });
+        releaseCreate?.();
+        await create;
+      });
+      expect(
+        requests
+          .filter(({ operation }) =>
+            ["tree", "read", "create", "rename", "delete"].includes(operation),
+          )
+          .every(({ workId }) => workId === "work-a"),
+      ).toBe(true);
+    },
+    { drainMacrotask: true },
+  );
+});
 
 describe("captured Editor commands", () => {
   it("keeps a pending create on A after the route changes to B", async () => {

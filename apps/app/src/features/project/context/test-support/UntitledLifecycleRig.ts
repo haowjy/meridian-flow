@@ -23,6 +23,7 @@ import type { DesiredIdentity } from "../identity-location";
 import {
   type PendingUntitled,
   type ReconciliationRecord,
+  type UntitledHome,
   UntitledReconciler,
   type UntitledReconcilerDeps,
 } from "../untitled-reconciler";
@@ -151,7 +152,7 @@ export class LifecycleSession {
   }
 }
 
-type ResolvedEntry = PendingUntitled & { home: typeof UNTITLED_HOME };
+type ResolvedEntry = PendingUntitled & { home: UntitledHome };
 type MoveSource = CreateUntitledContextDocumentResponse;
 
 export class UntitledLifecycleRig {
@@ -167,7 +168,7 @@ export class UntitledLifecycleRig {
   readonly identities: MoveContextEntrySuccess[] = [];
   readonly reminted: string[] = [];
 
-  readonly home = new OutcomePlan<[string], typeof UNTITLED_HOME | null>(async () => UNTITLED_HOME);
+  readonly home = new OutcomePlan<[string], UntitledHome | null>(async () => UNTITLED_HOME);
   readonly create = new OutcomePlan<[ResolvedEntry], CreateUntitledContextDocumentResult>(
     async (entry) => ({
       status: "created",
@@ -308,8 +309,10 @@ export class UntitledLifecycleRig {
   trackCandidate(documentId: string): void {
     this.reconciler.registerCandidate(documentId, {
       onReminted: (id) => this.reminted.push(id),
-      onMaterialized: (result) => this.materialized.push(result),
-      onIdentityCommitted: (result) => this.identities.push(result),
+      onMaterialized: ({ result, identity }) => {
+        this.materialized.push(result);
+        if (identity) this.identities.push(identity);
+      },
     });
   }
 

@@ -5,7 +5,8 @@
 - `apps/app`: make Editor Work ownership immutable from route resolution through
   desktop and phone create, identity, untitled, delete, document, and draft
   settlement; one route-owned context-open command now updates Work, scheme,
-  folder, path, and Results atomically without borrowing Chat ownership.
+  folder, path, and Results atomically without borrowing Chat ownership, and
+  queued identities settle their final tab and captured route in one receipt.
 
 - `apps/app`: establish the project route's canonical Work UUID grammar,
   authoritative catalog resolution, stale-safe normalization, pure search
