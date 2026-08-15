@@ -77,6 +77,10 @@ export type ListProjectThreadsResponse = {
   threads: ThreadListItem[];
 };
 
+export type ListWorkThreadsResponse = {
+  threads: ThreadListItem[];
+};
+
 export type { AiWriteMode, Work };
 
 export type ListWorksResponse = {

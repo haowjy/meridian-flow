@@ -26,6 +26,7 @@ import {
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
   apiProjectWorkWriteModePath,
+  apiWorkThreadsPath,
   type ContextReadResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
@@ -37,6 +38,7 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
+  type ListWorkThreadsResponse,
   type MoveContextEntryRequest,
   type MoveContextEntryResult,
   type ProjectContextRequestOptions,
@@ -97,6 +99,19 @@ export async function listProjectThreads(
   const response = await getJson<ListProjectThreadsResponse>(
     urlFor(apiProjectThreadsPath(projectId), init),
     { headers: init?.headers },
+  );
+  return response.threads;
+}
+
+export async function listWorkThreads(
+  workId: string,
+  init?: RequestInitOptions,
+): Promise<ThreadListItem[]> {
+  const response = await getJson<ListWorkThreadsResponse>(
+    urlFor(apiWorkThreadsPath(workId), init),
+    {
+      headers: init?.headers,
+    },
   );
   return response.threads;
 }

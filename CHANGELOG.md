@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `contracts`, `apps/app`, `apps/server`: add the typed Work-associated chat
+  read seam while preserving historical membership and current-primary Work
+  projection semantics.
+
 - `apps/server`: protect multi-Work project listing with a real-Postgres route
   regression covering two active Works, truthful fallback persistence, and
   cross-owner concealment.

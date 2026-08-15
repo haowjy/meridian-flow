@@ -1,4 +1,4 @@
-/** Lists live conversations whose primary membership is this owned Work. */
+/** Lists live conversations associated with this owned Work. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireWorkOwner } from "../../../../domains/projects/index.js";

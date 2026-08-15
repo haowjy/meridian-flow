@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { archiveWork, deleteWork, unarchiveWork, updateWork } from "./projects-api";
+import {
+  archiveWork,
+  deleteWork,
+  listWorkThreads,
+  unarchiveWork,
+  updateWork,
+} from "./projects-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -39,6 +45,25 @@ describe("Work lifecycle requests", () => {
       message: "Work still has conversations",
       status: 409,
     });
+  });
+});
+
+describe("Work-associated chat requests", () => {
+  it("requests the canonical endpoint and unwraps its typed collection", async () => {
+    const threads = [{ id: "thread-1", title: "Opening" }];
+    const fetchMock = vi.fn(async () => Response.json({ threads }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listWorkThreads("work-1", {
+        origin: "https://app.example",
+        headers: { "x-request": "typed" },
+      }),
+    ).resolves.toEqual(threads);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://app.example/api/works/work-1/threads",
+      expect.objectContaining({ headers: { "x-request": "typed" } }),
+    );
   });
 });
 
