@@ -11,6 +11,7 @@
  * destination keeps the tab strip and editor/viewer body only.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -27,6 +28,7 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
+import { Button } from "@/components/ui/button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
@@ -37,6 +39,7 @@ import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
+import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -47,7 +50,11 @@ import {
   useProjectSurfacePrefsStore,
 } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
-import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
+import type {
+  ContextRouteTarget,
+  ProjectRouteCommands,
+  RouteWorkResolution,
+} from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -94,11 +101,10 @@ export type ProjectViewProps = {
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
-  onSelectContextPath: (
-    path: string,
-    scheme?: ProjectContextTreeScheme,
+  onOpenContextTarget: (
+    target: ContextRouteTarget,
     options?: { replace?: boolean },
-  ) => void;
+  ) => Promise<void>;
   onOpenResults: () => void;
   onCloseResults: () => void;
 };
@@ -184,9 +190,17 @@ export function ProjectView(props: ProjectViewProps) {
     props.projectId,
     props.activeThreadId,
   );
-  const { works } = useWorks(props.projectId);
-  const workId = projectThreads?.find((thread) => thread.id === resolvedThreadId)?.workId ?? null;
-  const activeWork = works?.find((work) => work.id === workId) ?? null;
+  const worksQuery = useWorks(props.projectId);
+  const { works } = worksQuery;
+  const chatWorkId =
+    projectThreads?.find((thread) => thread.id === resolvedThreadId)?.workId ?? null;
+  const chatWork = works?.find((work) => work.id === chatWorkId) ?? null;
+  const editorScope = resolveEditorWorkScope(
+    props.routeWork,
+    chatWork,
+    works?.find((work) => work.id === worksQuery.defaultWorkId) ?? null,
+  );
+  const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
   const reconciledDeskRef = useRef<string | null>(null);
   useEffect(() => {
@@ -201,7 +215,7 @@ export function ProjectView(props: ProjectViewProps) {
   useEffect(() => {
     if (!deskHydrated || works === null) return;
     const reconciliation = contextDeskReconciliation(workingSetHydration);
-    const reconciliationKey = `${props.projectId}:${reconciliation}:${activeWork?.id ?? "no-work"}`;
+    const reconciliationKey = `${props.projectId}:${reconciliation}:${editorWorkId ?? "no-work"}`;
     if (reconciledDeskRef.current === reconciliationKey) return;
     reconciledDeskRef.current = reconciliationKey;
     if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
@@ -209,16 +223,16 @@ export function ProjectView(props: ProjectViewProps) {
         queryClient,
         projectId: props.projectId,
         routes: workingSetHydration.row.recentRoutes,
-        routeWorkId: activeWork?.id ?? null,
+        routeWorkId: editorWorkId,
       });
       return;
     }
     void validateContextDeskTabs({
       queryClient,
       projectId: props.projectId,
-      routeWorkId: activeWork?.id ?? null,
+      routeWorkId: editorWorkId,
     });
-  }, [activeWork?.id, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
+  }, [editorWorkId, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
     props.onSelectThread(resolvedThreadId);
@@ -234,10 +248,21 @@ export function ProjectView(props: ProjectViewProps) {
     pendingOpen.transfer.key.threadId === props.activeThreadId
       ? pendingOpen.transfer
       : undefined;
+  const onSelectEditorContextPath = useCallback(
+    (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {
+      if (!editorWorkId || !scheme) return;
+      void props.onOpenContextTarget({ path, scheme, workId: editorWorkId }, options);
+    },
+    [editorWorkId, props.onOpenContextTarget],
+  );
   const resolvedProps = {
     ...props,
+    onSelectContextPath: onSelectEditorContextPath,
     activeThreadId: resolvedThreadId,
-    activeWork,
+    chatWork,
+    editorScope,
+    editorWorkId,
+    retryEditorWork: worksQuery.refetch,
     onOpenThread,
     openTransfer: visibleOpenTransfer,
     onOpenTransferClaimed,
@@ -247,7 +272,7 @@ export function ProjectView(props: ProjectViewProps) {
       {hydrated ? (
         <DraftReviewProvider
           projectId={props.projectId}
-          workId={activeWork?.id ?? null}
+          workId={chatWorkId}
           threadId={resolvedThreadId}
         >
           <HydratedProject {...resolvedProps} />
@@ -258,7 +283,15 @@ export function ProjectView(props: ProjectViewProps) {
 }
 
 export type ResolvedProjectViewProps = ProjectViewProps & {
-  activeWork: Work | null;
+  onSelectContextPath: (
+    path: string,
+    scheme?: ProjectContextTreeScheme,
+    options?: { replace?: boolean },
+  ) => void;
+  chatWork: Work | null;
+  editorScope: EditorWorkScope;
+  editorWorkId: string | null;
+  retryEditorWork: () => void;
   onOpenThread: (threadId: string) => void;
   openTransfer?: OpenAcknowledgementTransfer;
   onOpenTransferClaimed: (transfer: OpenAcknowledgementTransfer) => void;
@@ -345,7 +378,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
         <LeftSidebar
           projectId={props.projectId}
           activeScreen={props.activeScreen}
-          activeThreadId={props.activeThreadId}
+          editorWorkId={props.editorWorkId}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           onSelectScreen={props.onSelectScreen}
@@ -366,19 +399,22 @@ function DesktopProject(props: ResolvedProjectViewProps) {
     },
     {
       id: "context-viewer",
-      children: (
-        <ContextViewerSurfaceController
-          projectId={props.projectId}
-          activeThreadId={props.activeThreadId}
-          activeContextScheme={props.activeContextScheme}
-          activeContextPath={props.activeContextPath}
-          active={props.activeScreen === "context"}
-          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-          dockToggle={surfaceToggle("chat", t`Expand chat`)}
-          onSelectContextPath={props.onSelectContextPath}
-          onClearContextDestination={props.onExitContextScheme}
-        />
-      ),
+      children:
+        props.editorScope.status === "ready" ? (
+          <ContextViewerSurfaceController
+            projectId={props.projectId}
+            editorWorkId={props.editorWorkId}
+            activeContextScheme={props.activeContextScheme}
+            activeContextPath={props.activeContextPath}
+            active={props.activeScreen === "context"}
+            sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+            dockToggle={surfaceToggle("chat", t`Expand chat`)}
+            onSelectContextPath={props.onSelectContextPath}
+            onClearContextDestination={props.onExitContextScheme}
+          />
+        ) : (
+          <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
+        ),
     },
     {
       id: "chat",
@@ -405,7 +441,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
             key="chat-surface"
             projectId={props.projectId}
             threadId={props.activeThreadId}
-            activeWork={props.activeWork}
+            activeWork={props.chatWork}
             activeScreen={screen}
             // Centered chat owns the route (`?screen` follows it); the dock must
             // only change which conversation it shows, never the screen — so it
@@ -420,7 +456,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
             openTransfer={props.openTransfer}
             onOpenTransferClaimed={props.onOpenTransferClaimed}
             onCloseDock={close("chat")}
-            onSelectContextPath={props.onSelectContextPath}
+            onOpenContextTarget={props.onOpenContextTarget}
           />
         </div>
       ),
@@ -474,6 +510,33 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
       // sidebar/dock expand toggles. See `ContextViewer`.
       return null;
   }
+}
+
+function EditorWorkRecovery({
+  scope,
+  onRetry,
+}: {
+  scope: Exclude<EditorWorkScope, { status: "ready" }>;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="grid h-full place-items-center px-6 text-center">
+      {scope.status === "loading" ? (
+        <p className="text-sm text-muted-foreground">
+          <Trans>Loading Work…</Trans>
+        </p>
+      ) : (
+        <div className="flex flex-col items-center gap-3">
+          <p className="font-medium">
+            <Trans>Work couldn’t load</Trans>
+          </p>
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <Trans>Retry</Trans>
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**

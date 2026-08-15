@@ -35,7 +35,10 @@ export function ChatComposerToolbar({
   const writeMode = useSelectedWorkWriteModeToolbarControl({
     projectId,
     work,
-    openDraftReview: openAiDraft,
+    openDraftReview: (group, draftId) => {
+      if (!group.contextPath) return;
+      openAiDraft({ ...group, workId: work.id, draftId, contextPath: group.contextPath });
+    },
   });
   const workControl = useComposerWorkToolbarControl({ projectId, threadId, work });
   const model = createComposerToolbarModel([agent, writeMode, workControl]);

@@ -49,17 +49,17 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const reviewRow = useCallback(
     (row: DockRow) => {
-      openAiDraft(
-        {
-          documentId: row.documentId,
-          contextPath: row.contextPath ?? undefined,
-          documentName: row.documentName ?? undefined,
-          isNewDocument: row.isNewDocument,
-        },
-        row.draft.draftId,
-      );
+      if (!row.contextPath) return;
+      openAiDraft({
+        workId: controller.workId,
+        documentId: row.documentId,
+        draftId: row.draft.draftId,
+        contextPath: row.contextPath,
+        documentName: row.documentName ?? undefined,
+        isNewDocument: row.isNewDocument,
+      });
     },
-    [openAiDraft],
+    [controller.workId, openAiDraft],
   );
 
   // Row click opens the LIVE document (Review — the pill — opens the review

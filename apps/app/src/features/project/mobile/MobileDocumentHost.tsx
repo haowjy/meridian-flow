@@ -16,7 +16,6 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo } from "react";
-import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -32,23 +31,23 @@ const MOBILE_DOCUMENT_OWNER = "mobile-project-document-host";
 
 export type MobileDocumentHostProps = {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
 };
 
 export function MobileDocumentHost({
   projectId,
-  activeThreadId,
+  editorWorkId,
   activeContextScheme,
   activeContextPath,
 }: MobileDocumentHostProps) {
-  const workId = useContextWorkId(projectId, activeThreadId);
+  const workId = editorWorkId;
   const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
   const { tree, isError, isFetching } = useProjectContextTree(
     projectId,
     activeContextScheme ?? "kb",
-    { enabled: hasRouteDocument, activeThreadId },
+    { enabled: hasRouteDocument, workId: editorWorkId },
   );
 
   const activeTab = useMemo(() => {
@@ -102,11 +101,7 @@ export function MobileDocumentHost({
 
   if (!activeTab.editable) {
     return (
-      <ContextViewerBareHost
-        projectId={projectId}
-        activeThreadId={activeThreadId}
-        tab={activeTab}
-      />
+      <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
     );
   }
 

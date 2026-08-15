@@ -28,14 +28,8 @@ function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tra
 
 export type ContextViewerProps = {
   projectId: string;
-  activeThreadId: string | null;
-  /** Active work for work-scoped destinations (Scratch) in identity commits. */
-  defaultWorkId: string | null;
-  /**
-   * The Work the open editors are in: the active thread's, or the project's
-   * default when no thread is bound. Scopes link resolution and the `[[` menu.
-   */
-  activeWorkId: string | null;
+  /** Shell-resolved Editor Work for all reads, suggestions, and mutations. */
+  editorWorkId: string | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
   onSelectTab: (documentId: string) => void;
@@ -75,9 +69,7 @@ export type ContextViewerProps = {
  */
 export function ContextViewer({
   projectId,
-  activeThreadId,
-  defaultWorkId,
-  activeWorkId,
+  editorWorkId,
   tabs,
   paneState,
   onSelectTab,
@@ -142,8 +134,7 @@ export function ContextViewer({
           <DocumentIdentityBar
             key={activeTab.documentId}
             projectId={projectId}
-            activeThreadId={activeThreadId}
-            defaultWorkId={defaultWorkId}
+            editorWorkId={editorWorkId}
             tab={activeTab}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
@@ -161,7 +152,7 @@ export function ContextViewer({
           >
             <ContextEditorMountHost
               projectId={projectId}
-              workId={activeWorkId}
+              workId={editorWorkId}
               trackedTabs={trackedTabs}
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
@@ -171,11 +162,7 @@ export function ContextViewer({
         ) : null}
         {activeTab?.kind === "viewer" ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <ContextViewerHost
-              projectId={projectId}
-              activeThreadId={activeThreadId}
-              tab={activeTab}
-            />
+            <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
           </div>
         ) : null}
         {optimisticTab ? <OptimisticDocumentLoading name={optimisticTab.name} /> : null}

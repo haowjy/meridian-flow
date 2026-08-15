@@ -73,7 +73,7 @@ function ReviewShell({ screen }: { screen: ScreenKey }) {
   const setSurfaceCollapsed = useProjectSurfacePrefsStore((state) => state.setSurfaceCollapsed);
   useEffect(() => {
     shell = {
-      openAiDraft,
+      openAiDraft: (group, draftId) => openAiDraft({ ...group, workId: "work-a", draftId }),
       railCollapsed: layout.threads.collapsed,
       expandRail: () => {
         proseFocus.release();

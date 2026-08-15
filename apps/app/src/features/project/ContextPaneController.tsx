@@ -8,9 +8,7 @@
  */
 import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { useDefaultWorkId } from "@/client/query/useWorks";
 import { useContextTabs, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import {
   buildWorkingSetRoute,
@@ -38,7 +36,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectContextPath: (
@@ -61,7 +59,7 @@ export type ContextViewerSurfaceControllerProps = {
 
 export function ContextViewerSurfaceController({
   projectId,
-  activeThreadId,
+  editorWorkId,
   activeContextScheme,
   activeContextPath,
   active,
@@ -70,9 +68,7 @@ export function ContextViewerSurfaceController({
   onSelectContextPath,
   onClearContextDestination,
 }: ContextViewerSurfaceControllerProps) {
-  const workId = useContextWorkId(projectId, activeThreadId);
-  const defaultWorkId = useDefaultWorkId(projectId);
-  const routeWorkId = workId ?? defaultWorkId;
+  const routeWorkId = editorWorkId;
 
   const { tabs, activeTabId } = useContextTabs(projectId);
   const { openTab, closeTab, updateTrackedTab, pruneWorkScopedTabs, selectTab } =
@@ -105,7 +101,6 @@ export function ContextViewerSurfaceController({
     isFetching: routeTreeIsFetching,
   } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
     enabled: activeContextScheme !== null && activeContextPath !== null,
-    activeThreadId,
     workId: routeWorkId,
   });
 
@@ -122,7 +117,7 @@ export function ContextViewerSurfaceController({
 
   useEffect(() => {
     previousRouteStateRef.current = { tabs: serverTabs, activeTab };
-  }, [projectId, workId]);
+  }, [projectId, routeWorkId]);
 
   useEffect(() => {
     pruneWorkScopedTabs(projectId, routeWorkId);
@@ -212,7 +207,6 @@ export function ContextViewerSurfaceController({
 
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
     enabled: wantsDefaultOpen,
-    activeThreadId,
     workId: routeWorkId,
   });
   useEffect(() => {
@@ -417,19 +411,21 @@ export function ContextViewerSurfaceController({
 
   const handleUntitledBecameNonEmpty = useCallback(
     (documentId: string) => {
-      appendPendingUntitled({ documentId, projectId });
+      appendPendingUntitled({
+        documentId,
+        projectId,
+        ...(routeWorkId ? { home: { scheme: "scratch" as const, workId: routeWorkId } } : {}),
+      });
     },
-    [projectId],
+    [projectId, routeWorkId],
   );
 
-  useUntitledTabBridge({ projectId, tabs, defaultWorkId, onSelectContextPath });
+  useUntitledTabBridge({ projectId, tabs, editorWorkId: routeWorkId, onSelectContextPath });
 
   return (
     <ContextViewer
       projectId={projectId}
-      activeThreadId={activeThreadId}
-      defaultWorkId={defaultWorkId}
-      activeWorkId={routeWorkId}
+      editorWorkId={routeWorkId}
       tabs={tabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}

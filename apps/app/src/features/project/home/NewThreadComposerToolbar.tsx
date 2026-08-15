@@ -100,7 +100,10 @@ function AvailableNewThreadControls({
   const mode = useSelectedWorkWriteModeToolbarControl({
     projectId,
     work,
-    openDraftReview: openAiDraft,
+    openDraftReview: (group, draftId) => {
+      if (!group.contextPath) return;
+      openAiDraft({ ...group, workId: work.id, draftId, contextPath: group.contextPath });
+    },
   });
   const modePending = "interaction" in mode && mode.interaction === "busy";
   const visibleMode = disabled ? { ...mode, interaction: "busy" as const } : mode;

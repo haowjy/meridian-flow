@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: resolve Editor Work once at the hydrated shell, propagate it explicitly through desktop and phone context reads and mutations, capture create and identity command ownership across navigation, and carry owning Work in typed Chat, document, and draft route targets.
+
 - `apps/app`: establish the project route's canonical Work UUID grammar,
   authoritative catalog resolution, stale-safe normalization, pure search
   transition matrix, and awaitable typed navigation commands without changing

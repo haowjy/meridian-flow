@@ -48,8 +48,7 @@ type IdentityNote =
 
 export function IdentityPlacementField({
   projectId,
-  activeThreadId,
-  defaultWorkId,
+  editorWorkId,
   tab,
   location,
   failure,
@@ -58,8 +57,7 @@ export function IdentityPlacementField({
   onOpenExisting,
 }: {
   projectId: string;
-  activeThreadId: string | null;
-  defaultWorkId: string | null;
+  editorWorkId: string | null;
   tab: ContextTab;
   location: TabLocation;
   failure: QueuedIdentityFailure | null;
@@ -125,10 +123,9 @@ export function IdentityPlacementField({
     () => ({
       schemes: [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],
       kinds: ["dir", "file"] as const,
-      activeThreadId,
-      workId: defaultWorkId ?? location.workId,
+      workId: editorWorkId ?? location.workId ?? null,
     }),
-    [activeThreadId, defaultWorkId, location.scheme, location.workId],
+    [editorWorkId, location.scheme, location.workId],
   );
   const { suggestions: allEntries } = useFileSuggestions(projectId, "", suggestionOptions);
   const rootRows: AnnotatedFileSuggestion[] = useMemo(
@@ -255,7 +252,7 @@ export function IdentityPlacementField({
       return;
     }
     await runCommit({
-      destination: identityDestination(location, defaultWorkId, destination ?? undefined),
+      destination: identityDestination(location, editorWorkId, destination ?? undefined),
       name,
     });
   }

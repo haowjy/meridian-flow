@@ -12,8 +12,7 @@ import {
 type Options = {
   schemes: readonly ProjectContextTreeScheme[];
   kinds: readonly FileSuggestionKind[];
-  activeThreadId: string | null;
-  workId?: string | null;
+  workId: string | null;
 };
 
 export function useFileSuggestions(
@@ -24,24 +23,22 @@ export function useFileSuggestions(
   const enabled = (scheme: ProjectContextTreeScheme) => options.schemes.includes(scheme);
   const manuscript = useProjectContextTree(projectId, "manuscript", {
     enabled: enabled("manuscript"),
-    activeThreadId: options.activeThreadId,
+    workId: options.workId,
   });
   const kb = useProjectContextTree(projectId, "kb", {
     enabled: enabled("kb"),
-    activeThreadId: options.activeThreadId,
+    workId: options.workId,
   });
   const user = useProjectContextTree(projectId, "user", {
     enabled: enabled("user"),
-    activeThreadId: options.activeThreadId,
+    workId: options.workId,
   });
   const scratch = useProjectContextTree(projectId, "scratch", {
     enabled: enabled("scratch"),
-    activeThreadId: options.activeThreadId,
     workId: options.workId,
   });
   const uploads = useProjectContextTree(projectId, "uploads", {
     enabled: enabled("uploads"),
-    activeThreadId: options.activeThreadId,
     workId: options.workId,
   });
   // Memoize from the stable `.tree` references (query wrapper objects get a

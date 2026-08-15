@@ -68,6 +68,7 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
           ...previous,
           screen: "context" as const,
           scheme,
+          work: workId ?? undefined,
           path: file.path,
           results: undefined,
         }),

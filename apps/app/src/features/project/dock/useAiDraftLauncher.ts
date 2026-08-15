@@ -18,13 +18,21 @@
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useCallback } from "react";
 
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { useContextTabsActions } from "@/client/stores";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
 import type { ScreenKey } from "@/features/project/shell/screens";
+
+export type AiDraftLaunchTarget = {
+  workId: string;
+  documentId: string;
+  draftId: string;
+  contextPath: string;
+  documentName?: string;
+  isNewDocument?: boolean;
+};
 
 export function useAiDraftLauncher() {
   const { controller } = useDraftReview();
@@ -34,6 +42,7 @@ export function useAiDraftLauncher() {
     thread?: string;
     scheme?: string;
     path?: string;
+    work?: string;
   };
   const navigate = useNavigate();
   // Mirrors the route's screen resolution — the dock view is read off the
@@ -44,14 +53,7 @@ export function useAiDraftLauncher() {
   const { openTab } = useContextTabsActions();
 
   const openAiDraft = useCallback(
-    (
-      group: Pick<ThreadDraftGroup, "documentId"> &
-        Partial<Pick<ThreadDraftGroup, "contextPath" | "documentName">> & {
-          /** Draft-created document — marks the synthesized tab `draftOnly`. */
-          isNewDocument?: boolean;
-        },
-      draftId: string,
-    ) => {
+    (target: AiDraftLaunchTarget) => {
       // Review appears where the writer is: the dock they can already see
       // switches to Changes, opened if they had it parked.
       setDockView(screen, "changes");
@@ -64,7 +66,7 @@ export function useAiDraftLauncher() {
       // this is the same tab the auto-open would create, and the store merges
       // by documentId so nothing duplicates.
       if (params.projectId) {
-        const tab = contextTabFromDraftGroup(group);
+        const tab = contextTabFromDraftGroup(target);
         if (tab) openTab(params.projectId, tab);
       }
 
@@ -73,8 +75,11 @@ export function useAiDraftLauncher() {
       // this screen, never a screen change. The server sends the canonical
       // manuscript path; document names are not unique and lose folder context.
       if (screen === "context") {
-        const targetPath = group.contextPath ?? undefined;
-        const showsTarget = search.scheme === "manuscript" && search.path === targetPath;
+        const targetPath = target.contextPath ?? undefined;
+        const showsTarget =
+          search.scheme === "manuscript" &&
+          search.path === targetPath &&
+          search.work === target.workId;
         if (!showsTarget && params.projectId && targetPath) {
           void navigate({
             to: "/project/$projectId",
@@ -83,6 +88,7 @@ export function useAiDraftLauncher() {
               ...prev,
               screen: "context" as const,
               scheme: "manuscript" as const,
+              work: target.workId,
               path: targetPath,
               results: undefined,
             }),
@@ -90,7 +96,7 @@ export function useAiDraftLauncher() {
         }
       }
 
-      controller.enterInlineReview(group.documentId, draftId);
+      controller.enterInlineReview(target.documentId, target.draftId);
     },
     [
       controller,
@@ -100,6 +106,7 @@ export function useAiDraftLauncher() {
       screen,
       search.path,
       search.scheme,
+      search.work,
       setDockCollapsed,
       setDockView,
     ],

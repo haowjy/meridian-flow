@@ -19,7 +19,7 @@ import { ReadOnlyViewerFrame, type ReadOnlyViewerHeader } from "./viewers/ReadOn
 
 export type ContextViewerHostProps = {
   projectId: string;
-  activeThreadId?: string | null;
+  editorWorkId: string | null;
   tab: Extract<ContextTab, { kind: "viewer" }>;
 };
 
@@ -35,13 +35,12 @@ export function ContextViewerBareHost(props: ContextViewerHostProps) {
 
 function ContextViewerContent({
   projectId,
-  activeThreadId = null,
+  editorWorkId,
   tab,
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
   const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
-    activeThreadId,
-    workId: tab.workId,
+    workId: tab.workId ?? editorWorkId,
   });
   if (read.status === "loading") {
     return (

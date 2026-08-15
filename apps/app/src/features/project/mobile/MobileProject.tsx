@@ -10,6 +10,7 @@
  * not a back button — the drawer trigger stays on every screen.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -76,7 +77,7 @@ export function MobileProject(props: MobileProjectProps) {
         onOpenChange={setDrawerOpen}
         projectId={props.projectId}
         activeScreen={props.activeScreen}
-        activeThreadId={props.activeThreadId}
+        editorWorkId={props.editorWorkId}
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
         onSelectScreen={props.onSelectScreen}
@@ -147,25 +148,42 @@ function renderActiveView(
         <MobileChatHost
           projectId={props.projectId}
           threadId={props.activeThreadId}
-          activeWork={props.activeWork}
+          activeWork={props.chatWork}
           onSelectThread={props.onSelectThread}
-          onSelectContextPath={props.onSelectContextPath}
+          onOpenContextTarget={props.onOpenContextTarget}
           openTransfer={props.openTransfer}
           onOpenTransferClaimed={props.onOpenTransferClaimed}
         />
       );
     case "context":
+      if (props.editorScope.status !== "ready") {
+        return (
+          <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground">
+            {props.editorScope.status === "loading" ? (
+              <Trans>Loading Work…</Trans>
+            ) : (
+              <button
+                type="button"
+                className="focus-ring rounded-md px-3 py-2"
+                onClick={props.retryEditorWork}
+              >
+                <Trans>Work couldn’t load</Trans> <Trans>Retry</Trans>
+              </button>
+            )}
+          </div>
+        );
+      }
       return props.activeContextPath ? (
         <MobileDocumentHost
           projectId={props.projectId}
-          activeThreadId={props.activeThreadId}
+          editorWorkId={props.editorWorkId}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
         />
       ) : (
         <MobileContextBrowser
           projectId={props.projectId}
-          activeThreadId={props.activeThreadId}
+          editorWorkId={props.editorWorkId}
           activeContextScheme={props.activeContextScheme}
           activeContextFolder={props.activeContextFolder}
           onSelectContextScheme={props.onSelectContextScheme}

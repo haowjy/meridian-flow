@@ -5,9 +5,10 @@
  * visualViewport bridge around them so desktop chat behavior and subscriptions
  * remain unchanged.
  */
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import type { Work } from "@meridian/contracts/protocol";
 import type { OpenAcknowledgementTransfer } from "@/client/query/visible-thread-open-acknowledgements";
 import { ChatScreen } from "../chat/ChatScreen";
+import type { ContextRouteTarget } from "../routing/project-route";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 
 export type MobileChatHostProps = {
@@ -15,7 +16,7 @@ export type MobileChatHostProps = {
   threadId: string | null;
   activeWork: Work | null;
   onSelectThread: (threadId: string) => void;
-  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
   openTransfer?: OpenAcknowledgementTransfer;
   onOpenTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
 };
@@ -25,7 +26,7 @@ export function MobileChatHost({
   threadId,
   activeWork,
   onSelectThread,
-  onSelectContextPath,
+  onOpenContextTarget,
   openTransfer,
   onOpenTransferClaimed,
 }: MobileChatHostProps) {
@@ -36,7 +37,7 @@ export function MobileChatHost({
         threadId={threadId}
         activeWork={activeWork}
         onSelectThread={onSelectThread}
-        onSelectContextPath={onSelectContextPath}
+        onOpenContextTarget={onOpenContextTarget}
         visible
         openTransfer={openTransfer}
         onOpenTransferClaimed={onOpenTransferClaimed}

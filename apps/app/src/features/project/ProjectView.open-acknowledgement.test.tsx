@@ -208,7 +208,7 @@ function projectProps(onSelectThread: (threadId: string) => Promise<void>) {
     onSelectContextScheme: vi.fn(),
     onExitContextScheme: vi.fn(),
     onSelectContextFolder: vi.fn(),
-    onSelectContextPath: vi.fn(),
+    onOpenContextTarget: vi.fn(),
     onOpenResults: vi.fn(),
     onCloseResults: vi.fn(),
   };

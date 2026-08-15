@@ -254,15 +254,15 @@ function DropdownActionItems({
 
 export function useDeleteConfirmation({
   projectId,
-  activeThreadId,
+  workId,
   scheme,
 }: {
   projectId: string;
-  activeThreadId: string | null;
+  workId: string | null;
   scheme: ProjectContextTreeScheme;
 }) {
   const [target, setTarget] = useState<EntryActionTarget | null>(null);
-  const mutation = useDeleteContextEntry(projectId, scheme, { activeThreadId });
+  const mutation = useDeleteContextEntry(projectId, scheme);
 
   const requestDelete = useCallback((t: EntryActionTarget) => setTarget(t), []);
   const cancel = useCallback(() => setTarget(null), []);
@@ -270,11 +270,11 @@ export function useDeleteConfirmation({
   const confirm = useCallback(async () => {
     if (!target) return;
     try {
-      await mutation.mutateAsync({ path: target.path });
+      await mutation.mutateAsync({ path: target.path, workId });
     } finally {
       setTarget(null);
     }
-  }, [target, mutation]);
+  }, [target, mutation, workId]);
 
   return { target, isPending: mutation.isPending, requestDelete, cancel, confirm };
 }

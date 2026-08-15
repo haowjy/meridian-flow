@@ -7,8 +7,8 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 
 import { getProjectContextTree } from "@/client/api/projects-api";
+import { contextRequestOptionsForScheme } from "./context-request-options";
 import { projectQueryKeys } from "./project-query-keys";
-import { contextRequestOptionsForScheme, useContextWorkId } from "./useContextWorkId";
 
 export function projectContextTreeQueryOptions(
   projectId: string,
@@ -36,7 +36,7 @@ export function projectContextTreeQueryOptions(
 export function useProjectContextTree(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  options?: { enabled?: boolean; activeThreadId?: string | null; workId?: string | null },
+  options: { enabled?: boolean; workId: string | null },
 ): {
   tree: ProjectContextTreeDirectory | null;
   capabilities: ContextSchemeCapabilities | null;
@@ -44,10 +44,9 @@ export function useProjectContextTree(
   isFetching: boolean;
   refetch: () => void;
 } {
-  const threadWorkId = useContextWorkId(projectId, options?.activeThreadId ?? null);
-  const workId = options?.workId !== undefined ? options.workId : threadWorkId;
+  const workId = options.workId;
   const workScoped = isWorkScopedProjectContextScheme(scheme);
-  const enabled = (options?.enabled ?? true) && (!workScoped || workId !== null);
+  const enabled = (options.enabled ?? true) && (!workScoped || workId !== null);
   const { data, isError, isFetching, refetch } = useQuery({
     ...projectContextTreeQueryOptions(projectId, scheme, workId),
     enabled,

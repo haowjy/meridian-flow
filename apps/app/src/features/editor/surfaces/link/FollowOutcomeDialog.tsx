@@ -140,7 +140,12 @@ function FollowOutcome({
             onClick={async () => {
               setFailedToCreate(false);
               const result = await createEntry
-                .mutateAsync({ scheme: "manuscript", type: "file", path: `/${name}.md` })
+                .mutateAsync({
+                  scheme: "manuscript",
+                  type: "file",
+                  path: `/${name}.md`,
+                  workId: null,
+                })
                 .catch(() => null);
               if (result?.status !== "created" || !result.documentId) {
                 setFailedToCreate(true);

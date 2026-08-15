@@ -78,15 +78,15 @@ export function DockChangesView({ className }: { className?: string }) {
             active={row.documentId === inlineReview?.documentId}
             preview={row.documentId === inlineReview?.documentId ? activePreview : null}
             onReview={() =>
-              openAiDraft(
-                {
-                  documentId: row.documentId,
-                  contextPath: row.contextPath ?? undefined,
-                  documentName: row.documentName ?? undefined,
-                  isNewDocument: row.isNewDocument,
-                },
-                row.draft.draftId,
-              )
+              row.contextPath &&
+              openAiDraft({
+                workId: controller.workId,
+                documentId: row.documentId,
+                draftId: row.draft.draftId,
+                contextPath: row.contextPath,
+                documentName: row.documentName ?? undefined,
+                isNewDocument: row.isNewDocument,
+              })
             }
           />
         ))

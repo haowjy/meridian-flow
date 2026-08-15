@@ -77,9 +77,7 @@ state only; it never invokes that rebind command.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
-with transparent headers. Scratch and Uploads resolve from the active thread's
-Work, whose real name appears in their header tooltip and accessible control
-name. Uploads is intake-only and exposes no file or folder creation affordances.
+with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; loading/error never falls back to Chat. Uploads is intake-only and exposes no file or folder creation affordances.
 
 ### Slot paints the material; surfaces must not
 

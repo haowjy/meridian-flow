@@ -4,7 +4,7 @@
  * owning thread routing itself.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme, Thread, Work } from "@meridian/contracts/protocol";
+import type { Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadOpenAcknowledgement } from "@/client/query/useThreadOpenAcknowledgement";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
@@ -12,6 +12,7 @@ import type { OpenAcknowledgementTransfer } from "@/client/query/visible-thread-
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
 import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
+import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
 import { SubagentTaskCard } from "./SubagentTaskCard";
@@ -23,7 +24,7 @@ export type ChatScreenProps = {
   activeWork: Work | null;
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
-  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
   /** False for a mounted but hidden persistent surface. */
   visible?: boolean;
   openTransfer?: OpenAcknowledgementTransfer;
@@ -36,7 +37,7 @@ export function ChatScreen({
   threadId,
   activeWork,
   onSelectThread,
-  onSelectContextPath,
+  onOpenContextTarget,
   visible = true,
   openTransfer,
   onOpenTransferClaimed,
@@ -68,7 +69,7 @@ export function ChatScreen({
       activeWork={activeWork}
       projectThreads={projectThreads ?? []}
       onSelectThread={onSelectThread}
-      onSelectContextPath={onSelectContextPath}
+      onOpenContextTarget={onOpenContextTarget}
       visible={visible}
       openTransfer={openTransfer}
       onOpenTransferClaimed={onOpenTransferClaimed}
@@ -82,7 +83,7 @@ function ChatScreenLoaded({
   activeWork,
   projectThreads,
   onSelectThread,
-  onSelectContextPath,
+  onOpenContextTarget,
   visible,
   openTransfer,
   onOpenTransferClaimed,
@@ -92,7 +93,7 @@ function ChatScreenLoaded({
   activeWork: Work | null;
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
-  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
   visible: boolean;
   openTransfer?: OpenAcknowledgementTransfer;
   onOpenTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
@@ -144,7 +145,7 @@ function ChatScreenLoaded({
         <ProjectChatContextNavigationProvider
           projectId={projectId}
           activeWork={activeWork}
-          onSelectContextPath={onSelectContextPath}
+          onOpenContextTarget={onOpenContextTarget}
         >
           <ChatView
             threadId={threadId}

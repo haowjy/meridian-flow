@@ -46,6 +46,12 @@ export type WorkDetailTarget = {
   workId: ParsedRequestId;
 };
 
+export type ContextRouteTarget = {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  workId: string;
+};
+
 export type WorkContextTarget = {
   kind: "work-context";
   workId: ParsedRequestId;

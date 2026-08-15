@@ -198,7 +198,7 @@ a freshly mounted inline row, and blur commits/cancels it.
 ## Creation targeting
 
 One required `TreeCreationRequest` serves every entry point:
-`{ scheme, kind, parentPath }` (`TreeCreationProvider` request, or the phone
+`{ scheme, kind, parentPath, workId }` (`TreeCreationProvider` request, or the phone
 drawer's controlled mirror), with `""` meaning the scheme root. Scheme headers request the root; a folder
 row requests itself; a file row requests its parent
 (`parentContextEntryPath`). The single `TreeChildren` renderer inserts the
@@ -208,7 +208,7 @@ explicitly reveals every target ancestor in the stored expansion model before
 the request starts. Clicking any scheme or folder disclosure while the row is
 open cancels creation and then performs the requested toggle; disclosure clicks
 must never feel inert. Sibling-collision
-validation uses the target folder's children. Starting a creation anywhere
+validation uses the target folder's children. The captured `workId` keeps an in-flight request on its initiating Editor scope across route changes. Starting a creation anywhere
 replaces a pending one; Escape/blur semantics are the shared
 `useInlineNameForm` contract.
 

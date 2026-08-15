@@ -20,6 +20,7 @@ import { useProjectThreadGroups } from "@/features/project/data/project-thread-g
 import { ProjectView } from "@/features/project/ProjectView";
 import {
   applyNormalizationIfCurrent,
+  type ContextRouteTarget,
   type NavigationOptions,
   type ProjectRouteCommand,
   type ProjectRouteCommands,
@@ -171,19 +172,18 @@ function RouteComponent() {
     });
   }
 
-  function handleSelectContextPath(
-    nextPath: string,
-    nextScheme?: ProjectContextTreeScheme,
-    options?: { replace?: boolean },
-  ) {
-    const patch: Partial<ProjectSearch> = {
-      screen: "context",
-      path: nextPath,
-      results: undefined,
-    };
-    if (nextScheme) patch.scheme = nextScheme;
-    if (nextPath) patch.folder = dirname(nextPath);
-    patchSearch(patch, options);
+  function handleOpenContextTarget(target: ContextRouteTarget, options?: { replace?: boolean }) {
+    return patchSearch(
+      {
+        screen: "context",
+        work: target.workId,
+        scheme: target.scheme,
+        folder: target.path ? dirname(target.path) : undefined,
+        path: target.path,
+        results: undefined,
+      },
+      options,
+    );
   }
 
   return (
@@ -206,7 +206,7 @@ function RouteComponent() {
       onSelectContextScheme={handleSelectContextScheme}
       onExitContextScheme={handleExitContextScheme}
       onSelectContextFolder={handleSelectContextFolder}
-      onSelectContextPath={handleSelectContextPath}
+      onOpenContextTarget={handleOpenContextTarget}
       onOpenResults={() => patchSearch({ results: "" })}
       onCloseResults={() => patchSearch({ results: undefined })}
     />

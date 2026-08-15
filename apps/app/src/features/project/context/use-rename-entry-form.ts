@@ -15,7 +15,7 @@ import { type InlineNameForm, useInlineNameForm } from "./use-inline-name-form";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
-  activeThreadId: string | null;
+  workId: string | null;
   scheme: ProjectContextTreeScheme;
   /** Current full path of the entry being renamed. */
   path: string;
@@ -32,7 +32,7 @@ export type RenameEntryForm = InlineNameForm;
 
 export function useRenameEntryForm({
   projectId,
-  activeThreadId,
+  workId,
   scheme,
   path,
   currentName,
@@ -40,7 +40,7 @@ export function useRenameEntryForm({
   kind,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
-  const mutation = useRenameContextEntry(projectId, scheme, { activeThreadId });
+  const mutation = useRenameContextEntry(projectId, scheme);
 
   // Exclude the current name from collision checks — renaming "foo" to "foo"
   // is a no-op, not a collision.
@@ -51,9 +51,9 @@ export function useRenameEntryForm({
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
-      await mutation.mutateAsync({ path, newName: trimmed });
+      await mutation.mutateAsync({ path, newName: trimmed, workId });
     },
-    [mutation, path],
+    [mutation, path, workId],
   );
 
   // Select the name sans extension on focus (e.g. "chapter-1" in "chapter-1.md").

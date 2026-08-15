@@ -22,7 +22,7 @@ import { useRenameEntryForm } from "./use-rename-entry-form";
 
 export type TreeEnv = {
   projectId: string;
-  activeThreadId: string | null;
+  workId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
@@ -265,7 +265,7 @@ function RenameRow({
   const env = useTreeEnv();
   const form = useRenameEntryForm({
     projectId: env.projectId,
-    activeThreadId: env.activeThreadId,
+    workId: env.workId,
     scheme: env.scheme,
     path,
     currentName,
@@ -312,7 +312,7 @@ function CreateRow({
   const env = useTreeEnv();
   const form = useCreateEntryForm({
     projectId: env.projectId,
-    activeThreadId: env.activeThreadId,
+    workId: env.workId,
     scheme: env.scheme,
     kind,
     parent,

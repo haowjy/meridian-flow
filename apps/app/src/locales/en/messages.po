@@ -1732,6 +1732,8 @@ msgid "Loading Work"
 msgstr "Loading Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/ProjectView.tsx
 msgid "Loading Work…"
 msgstr "Loading Work…"
 
@@ -2474,6 +2476,8 @@ msgstr "Resume where I left off on any device"
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/home/HomeChatCard.tsx
 #: src/features/project/home/HomeFeed.tsx
+#: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/ProjectView.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -3393,6 +3397,8 @@ msgid "workReceipt.upToDate"
 msgstr "Work {name} was already up to date"
 
 #: src/features/project/home/HomeScreen.tsx
+#: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/ProjectView.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"

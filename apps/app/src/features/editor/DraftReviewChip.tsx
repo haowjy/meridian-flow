@@ -34,15 +34,15 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
       type="button"
       data-draft-review-chip
       onClick={() =>
-        openAiDraft(
-          {
-            documentId: group.documentId,
-            contextPath: group.contextPath ?? undefined,
-            documentName: group.documentName ?? undefined,
-            isNewDocument: draft.isNewDocument === true,
-          },
-          draft.draftId,
-        )
+        group.contextPath &&
+        openAiDraft({
+          workId: controller.workId,
+          documentId: group.documentId,
+          draftId: draft.draftId,
+          contextPath: group.contextPath,
+          documentName: group.documentName ?? undefined,
+          isNewDocument: draft.isNewDocument === true,
+        })
       }
       disabled={controller.isDisposing}
       className={cn(

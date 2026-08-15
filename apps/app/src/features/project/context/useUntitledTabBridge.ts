@@ -11,12 +11,12 @@ import {
 export function useUntitledTabBridge({
   projectId,
   tabs,
-  defaultWorkId,
+  editorWorkId,
   onSelectContextPath,
 }: {
   projectId: string;
   tabs: ContextTab[];
-  defaultWorkId: string | null;
+  editorWorkId: string | null;
   onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
 }): void {
   const { remintNewTab, materializeNewTab, updateTrackedTab } = useContextTabsActions();
@@ -56,7 +56,7 @@ export function useUntitledTabBridge({
               scheme: result.scheme,
               path: result.path,
               name: result.name,
-              workId: result.scheme === "scratch" ? (defaultWorkId ?? undefined) : undefined,
+              workId: result.scheme === "scratch" ? (editorWorkId ?? undefined) : undefined,
               provisionalName: false,
             });
             if (
@@ -71,7 +71,7 @@ export function useUntitledTabBridge({
       for (const cleanup of cleanups) cleanup();
     };
   }, [
-    defaultWorkId,
+    editorWorkId,
     materializeNewTab,
     onSelectContextPath,
     projectId,

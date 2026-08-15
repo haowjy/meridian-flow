@@ -19,7 +19,6 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder, Loader2 } from "lucide-react";
 import { Fragment, useState } from "react";
-import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { cn } from "@/lib/utils";
@@ -35,13 +34,13 @@ import { contextTabFromFile } from "../context/context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextDir } from "../context/context-tree";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
-import type { ProjectViewProps } from "../ProjectView";
+import type { ResolvedProjectViewProps } from "../ProjectView";
 import { MobileEntryActionsMenu } from "./MobileEntryActionsMenu";
 
 export type MobileContextBrowserProps = Pick<
-  ProjectViewProps,
+  ResolvedProjectViewProps,
   | "projectId"
-  | "activeThreadId"
+  | "editorWorkId"
   | "activeContextScheme"
   | "activeContextFolder"
   | "onSelectContextScheme"
@@ -60,7 +59,7 @@ export type MobileContextBrowserProps = Pick<
 
 export function MobileContextBrowser({
   projectId,
-  activeThreadId,
+  editorWorkId,
   activeContextScheme,
   activeContextFolder,
   onSelectContextScheme,
@@ -69,7 +68,7 @@ export function MobileContextBrowser({
   creating,
   onCreateDone,
 }: MobileContextBrowserProps) {
-  const workId = useContextWorkId(projectId, activeThreadId);
+  const workId = editorWorkId;
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);
 
@@ -77,7 +76,7 @@ export function MobileContextBrowser({
     return (
       <MobileFolderListing
         projectId={projectId}
-        activeThreadId={activeThreadId}
+        editorWorkId={editorWorkId}
         scheme={activeContextScheme}
         folder={activeContextFolder}
         onSelectContextFolder={onSelectContextFolder}
@@ -130,7 +129,7 @@ export function MobileContextBrowser({
  */
 function MobileFolderListing({
   projectId,
-  activeThreadId,
+  editorWorkId,
   scheme,
   folder,
   onSelectContextFolder,
@@ -139,7 +138,7 @@ function MobileFolderListing({
   onCreateDone,
 }: {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   /** Current folder path (`/a/b`) or null for the scheme root. */
   folder: string | null;
@@ -148,9 +147,9 @@ function MobileFolderListing({
   creating: ContextCreateKind | null;
   onCreateDone: () => void;
 }) {
-  const workId = useContextWorkId(projectId, activeThreadId);
+  const workId = editorWorkId;
   const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme, {
-    activeThreadId,
+    workId: editorWorkId,
   });
 
   // Resolve the current folder's sibling names for collision detection. When
@@ -160,7 +159,7 @@ function MobileFolderListing({
   const currentDir = tree ? findContextDir(tree, folder ?? "") : null;
   const siblingNames = currentDir ? currentDir.children.map((child) => child.name) : [];
 
-  const deleteConfirm = useDeleteConfirmation({ projectId, activeThreadId, scheme });
+  const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
 
   // The create row pins above the scroll area (iOS Files style) so it stays
   // visible regardless of listing scroll position — and, with the on-screen
@@ -170,7 +169,7 @@ function MobileFolderListing({
       {creating ? (
         <MobileCreateRow
           projectId={projectId}
-          activeThreadId={activeThreadId}
+          editorWorkId={editorWorkId}
           scheme={scheme}
           parent={folder ?? ""}
           kind={creating}
@@ -184,7 +183,7 @@ function MobileFolderListing({
           isError={isError}
           isFetching={isFetching}
           projectId={projectId}
-          activeThreadId={activeThreadId}
+          editorWorkId={editorWorkId}
           scheme={scheme}
           folder={folder}
           workId={workId}
@@ -208,7 +207,7 @@ function FolderListingBody({
   isError,
   isFetching,
   projectId,
-  activeThreadId,
+  editorWorkId,
   scheme,
   folder,
   workId,
@@ -220,7 +219,7 @@ function FolderListingBody({
   isError: boolean;
   isFetching: boolean;
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   folder: string | null;
   workId: string | null;
@@ -287,7 +286,7 @@ function FolderListingBody({
           key={child.path}
           dir={child}
           projectId={projectId}
-          activeThreadId={activeThreadId}
+          editorWorkId={editorWorkId}
           scheme={scheme}
           siblingNames={siblingNames}
           onDrill={() => onSelectContextFolder(child.path)}
@@ -299,7 +298,7 @@ function FolderListingBody({
           key={child.path}
           file={child}
           projectId={projectId}
-          activeThreadId={activeThreadId}
+          editorWorkId={editorWorkId}
           scheme={scheme}
           siblingNames={siblingNames}
           onOpen={() => openFile(child)}
@@ -318,7 +317,7 @@ function FolderListingBody({
  */
 function MobileCreateRow({
   projectId,
-  activeThreadId,
+  editorWorkId,
   scheme,
   parent,
   kind,
@@ -326,7 +325,7 @@ function MobileCreateRow({
   onDone,
 }: {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   /** Parent folder path (`""` for the scheme root). */
   parent: string;
@@ -337,7 +336,7 @@ function MobileCreateRow({
 }) {
   const form = useCreateEntryForm({
     projectId,
-    activeThreadId,
+    workId: editorWorkId,
     scheme,
     kind,
     parent,
@@ -387,7 +386,7 @@ function MobileCreateRow({
 function MobileFolderRow({
   dir,
   projectId,
-  activeThreadId,
+  editorWorkId,
   scheme,
   siblingNames,
   onDrill,
@@ -395,7 +394,7 @@ function MobileFolderRow({
 }: {
   dir: ContextDir;
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   siblingNames: readonly string[];
   onDrill: () => void;
@@ -408,7 +407,7 @@ function MobileFolderRow({
       <li>
         <MobileRenameRow
           projectId={projectId}
-          activeThreadId={activeThreadId}
+          editorWorkId={editorWorkId}
           scheme={scheme}
           path={dir.path}
           currentName={dir.name}
@@ -444,7 +443,7 @@ function MobileFolderRow({
 function MobileFileRow({
   file,
   projectId,
-  activeThreadId,
+  editorWorkId,
   scheme,
   siblingNames,
   onOpen,
@@ -452,7 +451,7 @@ function MobileFileRow({
 }: {
   file: ContextFile;
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   siblingNames: readonly string[];
   onOpen: () => void;
@@ -466,7 +465,7 @@ function MobileFileRow({
       <li>
         <MobileRenameRow
           projectId={projectId}
-          activeThreadId={activeThreadId}
+          editorWorkId={editorWorkId}
           scheme={scheme}
           path={file.path}
           currentName={file.name}
@@ -501,7 +500,7 @@ function MobileFileRow({
 /** Mobile inline rename row — replaces the DrillRow while renaming. */
 function MobileRenameRow({
   projectId,
-  activeThreadId,
+  editorWorkId,
   scheme,
   path,
   currentName,
@@ -511,7 +510,7 @@ function MobileRenameRow({
   onDone,
 }: {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   path: string;
   currentName: string;
@@ -522,7 +521,7 @@ function MobileRenameRow({
 }) {
   const form = useRenameEntryForm({
     projectId,
-    activeThreadId,
+    workId: editorWorkId,
     scheme,
     path,
     currentName,
