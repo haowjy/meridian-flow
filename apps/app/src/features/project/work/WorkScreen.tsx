@@ -1,16 +1,8 @@
 /** WorkScreen — the project’s dedicated Work lifecycle surface. */
 import { t } from "@lingui/core/macro";
-import { Plural, Trans } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
-import {
-  Archive,
-  ArchiveRestore,
-  Check,
-  ChevronDown,
-  MoreHorizontal,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
@@ -25,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkCard } from "./WorkCard";
 
 export function WorkScreen({ projectId }: { projectId: string }) {
   const { works, currentWorkId, defaultWorkId, isError, isFetching, refetch } = useWorks(projectId);
@@ -139,7 +132,7 @@ export function WorkScreen({ projectId }: { projectId: string }) {
               <div
                 key={index}
                 aria-hidden
-                className="min-h-36 rounded-sm border border-border-subtle p-4"
+                className="surface-card rounded-lg border border-border-subtle px-5 py-5"
               >
                 <Skeleton className="h-4 w-2/5 motion-reduce:animate-none" />
                 <Skeleton className="mt-3 h-3 w-4/5 motion-reduce:animate-none" />
@@ -237,67 +230,17 @@ function WorkList({
   return (
     <ul className="grid gap-4 @2xl/project-home:grid-cols-2">
       {works.map((work) => (
-        <li
-          key={work.id}
-          className="surface-card flex min-h-36 min-w-0 flex-wrap items-stretch gap-3 rounded-sm border border-border-subtle p-4"
-        >
-          <button
-            type="button"
-            aria-pressed={work.id === currentWorkId}
-            className="focus-ring min-w-0 flex-1 self-stretch rounded-sm text-left disabled:cursor-not-allowed disabled:opacity-50"
-            data-work-selection={work.id}
-            disabled={pending}
-            onClick={() => onSelect(work.id)}
-          >
-            <span className="flex items-center gap-1.5 font-medium text-foreground">
-              {work.id === currentWorkId ? <Check className="size-4 text-primary" /> : null}
-              <span className="truncate">{work.name}</span>
-              {work.id === currentWorkId ? (
-                <span className="text-meta font-normal text-primary">
-                  <Trans>Current</Trans>
-                </span>
-              ) : null}
-              {work.id === defaultWorkId && work.id !== currentWorkId ? (
-                <span className="text-meta font-normal text-muted-foreground">
-                  <Trans>Default</Trans>
-                </span>
-              ) : null}
-            </span>
-            <span className="mt-1 block line-clamp-2 text-meta text-muted-foreground">
-              {work.goal || <Trans>No goal yet</Trans>}
-            </span>
-            {work.description ? (
-              <span className="mt-2 block line-clamp-2 text-meta text-muted-foreground">
-                {work.description}
-              </span>
-            ) : null}
-            {work.unpushedChangeCount ? (
-              <span className="mt-2 block text-meta text-muted-foreground">
-                <Plural
-                  value={work.unpushedChangeCount}
-                  one="# pending change"
-                  other="# pending changes"
-                />
-              </span>
-            ) : null}
-          </button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            disabled={pending}
-            aria-label={t`Edit ${work.name}`}
-            className="focus-ring self-start [@media(pointer:coarse)]:size-11"
-            data-work-focus={`edit:${work.id}`}
-            ref={registerFocus?.(`edit:${work.id}`)}
-            onClick={() => onEdit(work)}
-          >
-            <MoreHorizontal className="size-4" />
-          </Button>
-          {error && errorWorkId === work.id ? (
-            <p className="w-full text-sm text-destructive" role="alert" data-work-error={work.id}>
-              {error.message}
-            </p>
-          ) : null}
+        <li key={work.id} className="min-w-0">
+          <WorkCard
+            work={work}
+            current={work.id === currentWorkId}
+            isDefault={work.id === defaultWorkId}
+            pending={pending}
+            error={error && errorWorkId === work.id ? error : null}
+            onSelect={() => onSelect(work.id)}
+            onEdit={() => onEdit(work)}
+            registerEditFocus={registerFocus?.(`edit:${work.id}`)}
+          />
         </li>
       ))}
       {error && errorWorkId === null ? (

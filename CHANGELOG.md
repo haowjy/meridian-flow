@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: compact active and archived Work cards onto the shared shadcn card
+  composition with aligned 20 px insets and the canonical Home card radius.
+
 - `apps/app`: give Home and Chat one neutral public boundary for shared Work
   picker and selected-Work write-mode presentation while keeping prospective
   creation selection separate from durable existing-chat rebinding.

@@ -214,9 +214,6 @@ describe("WorkScreen actions", () => {
       const archivedSection = sectionNamed("Archived Work");
       const disclosure = buttonContaining("Archived Work");
       expect(document.querySelectorAll("h2")).toHaveLength(2);
-      const selection = document.querySelector<HTMLElement>('[data-work-selection="active-a"]');
-      expect(selection?.className).toContain("self-stretch");
-      expect(selection?.parentElement?.className).toContain("items-stretch");
       expect(buttonContaining("New Work").className).toContain("[@media(pointer:coarse)]:min-h-11");
       expect(
         document.querySelector<HTMLButtonElement>('[aria-label="Edit Active A"]')?.className,
@@ -225,12 +222,7 @@ describe("WorkScreen actions", () => {
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
       expect(disclosure.hasAttribute("aria-controls")).toBe(false);
       expect(document.body.textContent).not.toContain("Archived A");
-      expect(focusableLabels()).toEqual([
-        "NewWork",
-        "ActiveACurrentGoalADescriptionActiveA",
-        "EditActiveA",
-        "ArchivedWork(1)",
-      ]);
+      expect(focusableLabels()).toEqual(["NewWork", "ActiveA", "EditActiveA", "ArchivedWork(1)"]);
 
       await act(async () => disclosure.click());
       expect(disclosure.getAttribute("aria-expanded")).toBe("true");
@@ -238,10 +230,7 @@ describe("WorkScreen actions", () => {
       expect(panelId).toBeTruthy();
       expect(document.getElementById(panelId ?? "")).not.toBeNull();
       expect(document.body.textContent).toContain("Archived A");
-      expect(focusableLabels().slice(-2)).toEqual([
-        "ArchivedAGoalArchivedADescriptionArchivedA",
-        "EditArchivedA",
-      ]);
+      expect(focusableLabels().slice(-2)).toEqual(["ArchivedA", "EditArchivedA"]);
 
       await act(async () => disclosure.click());
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
