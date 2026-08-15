@@ -1331,8 +1331,12 @@ msgid "Failed to load image"
 msgstr "Failed to load image"
 
 #: src/features/project/home/HomeFeed.tsx
-msgid "Favorite chats"
-msgstr "Favorite chats"
+msgid "Favorite"
+msgstr "Favorite"
+
+#: src/features/project/home/HomeFeed.tsx
+#~ msgid "Favorite chats"
+#~ msgstr "Favorite chats"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Favorite wasn’t saved"

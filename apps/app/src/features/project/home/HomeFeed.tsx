@@ -79,7 +79,7 @@ export function HomeFeed({
         ) : null}
       </section>
       {favorites.length ? (
-        <Section title={t`Favorite chats`} items={favorites} cardProps={cardProps} />
+        <Section title={t`Favorite`} items={favorites} cardProps={cardProps} />
       ) : null}
       {recent.length || feed.hasNextPage ? (
         <section className="flex flex-col gap-3">

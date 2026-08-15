@@ -48,7 +48,7 @@ describe("HomeFeed", () => {
       const container = document.getElementById("root") as HTMLElement;
       expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
         "Continue",
-        "Favorite chats",
+        "Favorite",
         "Recent chats",
       ]);
       expect(container.querySelectorAll("[data-home-card]")).toHaveLength(3);
