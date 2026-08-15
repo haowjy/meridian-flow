@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/server`: protect multi-Work project listing with a real-Postgres route
+  regression covering two active Works, truthful fallback persistence, and
+  cross-owner concealment.
+
 - `apps/app`: compact active and archived Work cards onto the shared shadcn card
   composition with aligned 20 px insets, the rounded New York v4 card shape, and
   a visible, accessible pending state while Work selection is in flight.
