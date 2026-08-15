@@ -52,6 +52,11 @@ describe("HomeFeed", () => {
         "Recent chats",
       ]);
       expect(container.querySelectorAll("[data-home-card]")).toHaveLength(3);
+      const continueCard = container.querySelector('[data-home-card="Continue"]');
+      expect(continueCard?.querySelector('[data-slot="card-title"]')?.textContent).toBe("Continue");
+      expect(continueCard?.querySelector('[data-slot="card-footer"]')?.textContent).toContain(
+        "Work:",
+      );
       expect(container.querySelector("[aria-hidden].h-px")).not.toBeNull();
     });
   });
