@@ -48,7 +48,9 @@ function browserDeps(identityMutations: ContextIdentityMutationService): Untitle
     api: {
       async resolveHome(projectId) {
         const works = await listProjectWorks(projectId);
-        return resolveUntitledHome(works.newChatFallbackWorkId);
+        const catalogWork =
+          works.works.find(({ status }) => status === "active") ?? works.works[0] ?? null;
+        return resolveUntitledHome(catalogWork?.id ?? null);
       },
       async create(entry) {
         const result = await createUntitledContextDocument(

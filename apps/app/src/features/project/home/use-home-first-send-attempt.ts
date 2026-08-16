@@ -11,17 +11,13 @@ import type { ThreadStoreActions } from "@/client/stores";
 import { threadCreateAgentField, wireAgentSlug } from "@/features/agents";
 import { deriveTitleFromMessage } from "@/lib/thread-title";
 
-export type HomeWorkSelection =
-  | { source: "new_chat_fallback"; displayedWorkId: string }
-  | { source: "writer"; workId: string };
-
 export type HomeFirstSendEnvelope = {
   threadId: string;
   projectId: string;
   text: string;
   draftRevision: number;
   title: string;
-  work: HomeWorkSelection;
+  workId: string;
   agentSlug: string;
   phase: "creating" | "routing" | "failed_create" | "failed_route";
   canonicalThread: Thread | null;
@@ -50,10 +46,7 @@ function matchesEnvelope(thread: Thread, envelope: HomeFirstSendEnvelope): boole
     thread.id === envelope.threadId &&
     thread.projectId === envelope.projectId &&
     thread.currentAgent === expectedAgent &&
-    thread.workId ===
-      (envelope.work.source === "new_chat_fallback"
-        ? envelope.work.displayedWorkId
-        : envelope.work.workId)
+    thread.workId === envelope.workId
   );
 }
 
@@ -182,7 +175,7 @@ export function useHomeFirstSendAttempt({
       const request = {
         id: envelope.threadId,
         title: envelope.title,
-        ...(envelope.work.source === "writer" ? { workId: envelope.work.workId } : {}),
+        workId: envelope.workId,
         ...threadCreateAgentField(envelope.agentSlug),
       };
       try {
@@ -225,11 +218,7 @@ export function useHomeFirstSendAttempt({
   }, []);
 
   const submit = useCallback(
-    (
-      text: string,
-      context: { work: HomeWorkSelection; agentSlug: string },
-      draftRevision: number,
-    ) =>
+    (text: string, context: { workId: string; agentSlug: string }, draftRevision: number) =>
       run(async () => {
         if (attemptRef.current) return false;
         const envelope: HomeFirstSendEnvelope = {
@@ -238,7 +227,7 @@ export function useHomeFirstSendAttempt({
           text,
           draftRevision,
           title: deriveTitleFromMessage(text),
-          work: context.work,
+          workId: context.workId,
           agentSlug: context.agentSlug,
           phase: "creating",
           canonicalThread: null,
@@ -252,7 +241,7 @@ export function useHomeFirstSendAttempt({
   );
 
   const retry = useCallback(
-    (context: { work: HomeWorkSelection; agentSlug: string }) =>
+    (context: { workId: string; agentSlug: string }) =>
       run(async () => {
         const envelope = attemptRef.current;
         if (!envelope || failure === "mismatch") return false;

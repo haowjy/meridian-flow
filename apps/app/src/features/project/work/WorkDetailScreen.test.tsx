@@ -38,7 +38,6 @@ const mocks = vi.hoisted(() => ({
     isError: true,
     isFetching: false,
     refetch: vi.fn(),
-    newChatFallbackWorkId: null,
   },
 }));
 

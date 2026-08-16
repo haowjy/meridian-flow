@@ -85,7 +85,6 @@ export type { AiWriteMode, Work };
 
 export type ListWorksResponse = {
   works: Work[];
-  newChatFallbackWorkId: Work["id"];
 };
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;

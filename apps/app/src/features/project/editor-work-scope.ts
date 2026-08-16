@@ -2,12 +2,12 @@
 import type { RouteWorkResolution } from "./routing/project-route";
 
 export type EditorWorkScope =
-  | { status: "ready"; workId: string; source: "route" | "chat" | "fallback" }
+  | { status: "ready"; workId: string; source: "route" | "chat" | "catalog" }
   | { status: "loading"; workId: string }
   | { status: "error"; workId: string }
   | { status: "normalizing"; workId: string };
 
-export type FallbackWorkResolution =
+export type CatalogWorkResolution =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; workId: string | null };
@@ -15,7 +15,7 @@ export type FallbackWorkResolution =
 export function resolveEditorWorkScope(
   routeWork: RouteWorkResolution,
   chatWorkId: string | null,
-  fallbackWork: FallbackWorkResolution,
+  catalogWork: CatalogWorkResolution,
 ): EditorWorkScope {
   if (routeWork.status === "present")
     return { status: "ready", workId: routeWork.workId, source: "route" };
@@ -25,11 +25,11 @@ export function resolveEditorWorkScope(
   if (routeWork.status === "not-found") return { status: "normalizing", workId: routeWork.workId };
 
   // Only a genuinely absent route Work may consult the selected Chat and the
-  // temporary catalog fallback. A thread binding is authoritative identity;
+  // catalog-derived scope. A thread binding is authoritative identity;
   // displaying its Work name must not be a prerequisite for Editor commands.
   if (chatWorkId) return { status: "ready", workId: chatWorkId, source: "chat" };
-  if (fallbackWork.status === "error") return { status: "error", workId: "" };
-  if (fallbackWork.status === "ready" && fallbackWork.workId)
-    return { status: "ready", workId: fallbackWork.workId, source: "fallback" };
+  if (catalogWork.status === "error") return { status: "error", workId: "" };
+  if (catalogWork.status === "ready" && catalogWork.workId)
+    return { status: "ready", workId: catalogWork.workId, source: "catalog" };
   return { status: "loading", workId: "" };
 }

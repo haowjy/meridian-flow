@@ -40,7 +40,7 @@ describe("resolveEditorWorkScope", () => {
     ).toEqual({ status: "error", workId: routeWorkA });
   });
 
-  it("uses selected Chat then temporary creation fallback only when no route Work exists", () => {
+  it("uses selected Chat then the first available catalog Work only when no route Work exists", () => {
     const chatB = work("work-b");
     expect(
       resolveEditorWorkScope({ status: "absent" }, chatB.id, {
@@ -57,7 +57,7 @@ describe("resolveEditorWorkScope", () => {
     ).toMatchObject({
       status: "ready",
       workId: "fallback",
-      source: "fallback",
+      source: "catalog",
     });
   });
 

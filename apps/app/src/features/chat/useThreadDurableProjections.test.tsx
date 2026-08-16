@@ -145,7 +145,6 @@ describe("useThreadDurableProjections", () => {
     await act(async () => {});
     const client = view.queryClient();
     client.setQueryData(projectQueryKeys.works("project-1"), {
-      newChatFallbackWorkId: "work-a",
       works: [{ id: "work-c", name: "C" }],
     });
     client.setQueryData(projectQueryKeys.threads("project-1"), [

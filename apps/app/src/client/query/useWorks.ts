@@ -26,7 +26,6 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     enabled,
   });
   const works = list.data?.works ?? (list.isError ? [] : null);
-  const newChatFallbackWorkId = list.data?.newChatFallbackWorkId ?? null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
     ? "disabled"
@@ -39,16 +38,11 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
           : "ready";
   return {
     works,
-    newChatFallbackWorkId,
     isError: list.isError,
     isFetching: list.isFetching,
     status: status as "disabled" | "error" | "loading" | "empty" | "ready",
     refetch,
   };
-}
-
-export function useNewChatFallbackWorkId(projectId: string): string | null {
-  return useWorks(projectId).newChatFallbackWorkId;
 }
 
 export function useWorkMutations(projectId: string) {

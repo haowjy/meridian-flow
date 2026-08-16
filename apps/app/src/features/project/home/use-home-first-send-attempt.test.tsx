@@ -61,11 +61,11 @@ describe("useHomeFirstSendAttempt", () => {
       catalog: "Work",
       refusal: new HttpResponseError("Work is not available in this project", 400, null),
       initial: {
-        work: { source: "writer", workId: "work-stale" } as const,
+        workId: "work-stale",
         agentSlug: "general",
       },
       repaired: {
-        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
+        workId: "work-1",
         agentSlug: "general",
       },
       queryKey: projectQueryKeys.works("project-1"),
@@ -75,11 +75,11 @@ describe("useHomeFirstSendAttempt", () => {
       catalog: "Agent",
       refusal: new HttpResponseError("Agent not found: prose", 400, null),
       initial: {
-        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
+        workId: "work-1",
         agentSlug: "prose",
       },
       repaired: {
-        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
+        workId: "work-1",
         agentSlug: "general",
       },
       queryKey: projectQueryKeys.agents("project-1"),
@@ -206,7 +206,7 @@ describe("useHomeFirstSendAttempt", () => {
             controller.submit(
               "Exact opening",
               {
-                work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
+                workId: "work-1",
                 agentSlug: "prose",
               },
               0,
@@ -217,7 +217,7 @@ describe("useHomeFirstSendAttempt", () => {
         await act(async () => {
           await expect(
             controller.retry({
-              work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
+              workId: "work-1",
               agentSlug: "general",
             }),
           ).resolves.toBe(true);
@@ -226,11 +226,13 @@ describe("useHomeFirstSendAttempt", () => {
         expect(createThread).toHaveBeenNthCalledWith(1, "project-1", {
           id: "stable-thread",
           title: "Exact opening",
+          workId: "work-1",
           currentAgent: "prose",
         });
         expect(createThread).toHaveBeenNthCalledWith(2, "project-1", {
           id: "stable-thread",
           title: "Exact opening",
+          workId: "work-1",
         });
         expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
         expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
@@ -242,7 +244,7 @@ describe("useHomeFirstSendAttempt", () => {
     {
       name: "current default Work",
       context: {
-        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
+        workId: "work-1",
         agentSlug: "general",
       },
       reconciled: canonical({ workId: "work-other" }),
@@ -250,7 +252,7 @@ describe("useHomeFirstSendAttempt", () => {
     {
       name: "writer-selected Work",
       context: {
-        work: { source: "writer", workId: "work-explicit" } as const,
+        workId: "work-explicit",
         agentSlug: "general",
       },
       reconciled: canonical({ workId: "work-other" }),
@@ -258,7 +260,7 @@ describe("useHomeFirstSendAttempt", () => {
     {
       name: "non-General Agent",
       context: {
-        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
+        workId: "work-1",
         agentSlug: "prose",
       },
       reconciled: canonical({ currentAgent: "other-agent" }),
@@ -306,7 +308,7 @@ describe("useHomeFirstSendAttempt", () => {
     );
   });
 
-  it("reconciles an ambiguous default-Work create by stable ID, then stages and arms once", async () => {
+  it("reconciles an ambiguous selected-Work create by stable ID, then stages and arms once", async () => {
     const threadActions = actions();
     const createThread = vi.fn().mockRejectedValueOnce(new TypeError("connection closed"));
     const listThreads = vi.fn().mockResolvedValue([canonical()]);
@@ -336,7 +338,7 @@ describe("useHomeFirstSendAttempt", () => {
           first = controller.submit(
             "Opening line",
             {
-              work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
+              workId: "work-1",
               agentSlug: "general",
             },
             0,
@@ -344,7 +346,7 @@ describe("useHomeFirstSendAttempt", () => {
           duplicate = controller.submit(
             "Duplicate",
             {
-              work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
+              workId: "work-1",
               agentSlug: "general",
             },
             0,
@@ -357,6 +359,7 @@ describe("useHomeFirstSendAttempt", () => {
         expect(createThread).toHaveBeenCalledWith("project-1", {
           id: "stable-thread",
           title: "Opening line",
+          workId: "work-1",
         });
         expect(listThreads).toHaveBeenCalledOnce();
         expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
@@ -398,7 +401,7 @@ describe("useHomeFirstSendAttempt", () => {
             controller.submit(
               "Opening line",
               {
-                work: { source: "writer", workId: "work-explicit" },
+                workId: "work-explicit",
                 agentSlug: "general",
               },
               0,
@@ -414,7 +417,7 @@ describe("useHomeFirstSendAttempt", () => {
           controller.updateDraft("A newer follow-up", 1);
           await expect(
             controller.retry({
-              work: { source: "writer", workId: "work-explicit" },
+              workId: "work-explicit",
               agentSlug: "general",
             }),
           ).resolves.toBe(true);

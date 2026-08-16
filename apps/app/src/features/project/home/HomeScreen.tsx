@@ -28,9 +28,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   const movement = useHomeFavoriteMovement();
   const [now, setNow] = useState(Date.now());
   const [agentSlug, setAgentSlug] = useState(DEFAULT_AGENT_SLUG);
-  const [workSelection, setWorkSelection] = useState<
-    { source: "new_chat_fallback" } | { source: "writer"; workId: string }
-  >({ source: "new_chat_fallback" });
+  const [chosenWorkId, setChosenWorkId] = useState<string | null>(null);
   const [modePending, setModePending] = useState(false);
   const [finePointer, setFinePointer] = useState(false);
 
@@ -47,9 +45,9 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     return () => media.removeEventListener("change", sync);
   }, []);
   const firstSend = useHomeFirstSendAttempt({ projectId, actions, onSelectThread });
-  const selectedWorkId =
-    workSelection.source === "writer" ? workSelection.workId : worksQuery.newChatFallbackWorkId;
-  const selectedWork = worksQuery.works?.find(({ id }) => id === selectedWorkId) ?? null;
+  const catalogWork =
+    worksQuery.works?.find(({ status }) => status === "active") ?? worksQuery.works?.[0] ?? null;
+  const selectedWork = worksQuery.works?.find(({ id }) => id === chosenWorkId) ?? catalogWork;
   const handleModePendingChange = useCallback((pending: boolean) => setModePending(pending), []);
 
   const cardProps = {
@@ -96,10 +94,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     return firstSend.submit(
       text,
       {
-        work:
-          workSelection.source === "writer"
-            ? { source: "writer", workId: selectedWork.id }
-            : { source: "new_chat_fallback", displayedWorkId: selectedWork.id },
+        workId: selectedWork.id,
         agentSlug,
       },
       draftRevision,
@@ -133,7 +128,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                     <NewThreadComposerToolbar
                       projectId={projectId}
                       work={selectedWork}
-                      selectedWorkId={selectedWorkId}
+                      selectedWorkId={selectedWork?.id ?? null}
                       works={worksQuery.works ?? []}
                       worksStatus={
                         worksQuery.status === "error"
@@ -145,9 +140,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                       agentSlug={agentSlug}
                       disabled={firstSend.contextLocked}
                       onAgentChange={setAgentSlug}
-                      onWorkChange={(work) =>
-                        setWorkSelection({ source: "writer", workId: work.id })
-                      }
+                      onWorkChange={(work) => setChosenWorkId(work.id)}
                       onRetryWorks={worksQuery.refetch}
                       onModePendingChange={handleModePendingChange}
                     />
@@ -175,13 +168,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                     firstSend.retryable && selectedWork
                       ? () => {
                           void firstSend.retry({
-                            work:
-                              workSelection.source === "writer"
-                                ? { source: "writer", workId: selectedWork.id }
-                                : {
-                                    source: "new_chat_fallback",
-                                    displayedWorkId: selectedWork.id,
-                                  },
+                            workId: selectedWork.id,
                             agentSlug,
                           });
                         }

@@ -107,8 +107,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `invalidateThreadProjectionDependencies`. Snapshot synchronization only applies
   history. A visible chat acknowledges unread state separately and converges the
   cached Home item from the authoritative user-state response without invalidation.
-  `useWorks` also exposes the server-resolved `newChatFallbackWorkId`; it is only
-  the omitted-New-Chat fallback and never a project-wide Work selection.
+  `useWorks` exposes only the owned-project Work catalog. Home derives its
+  initial prospective choice from the first active (then first available) catalog
+  Work and sends that explicit ID; omitted root-chat creation remains the sole
+  server boundary that resolves or repairs the internal new-chat fallback.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
@@ -245,10 +247,10 @@ same provider stack.
 
 The dedicated Work screen presents Active Work first and keeps Archived Work in a
 default-collapsed disclosure. Work management has no project-wide selection state;
-collection actions never deliberately change the internal new-chat fallback or a
-thread binding. The shared Work-list payload currently exposes and may repair the
-fallback for Home prospective display; that transport coupling is not collection
-selection and diverges from the narrower repair-only-at-create intent.
+collection reads and actions never read, resolve, repair, or change the internal
+new-chat fallback, and never implicitly change a thread binding. The Work-list
+payload is catalog-only; fallback resolution belongs solely to omitted root-chat
+creation.
 Home and Work each own exactly one screen-level `app-scroll`; neither screen
 adds a nested scroll owner. Their bodies share `project-screen-column`, whose
 named inline-size container controls collection columns independently of the

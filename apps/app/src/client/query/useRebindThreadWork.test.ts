@@ -49,7 +49,6 @@ describe("thread Work binding convergence", () => {
   it("ignores an older projection cursor", () => {
     const client = new QueryClient();
     client.setQueryData(projectQueryKeys.works("project-1"), {
-      newChatFallbackWorkId: "work-a",
       works: [response.work],
     });
     convergeThreadWorkBinding(client, {
@@ -71,7 +70,6 @@ describe("thread Work binding convergence", () => {
   it("invalidates the affected Work catalog and every associated-chat leaf for a projected rebind", () => {
     const client = new QueryClient();
     client.setQueryData(projectQueryKeys.works("project-1"), {
-      newChatFallbackWorkId: "work-a",
       works: [response.work],
     });
     const keys = seedAssociatedChats(client);
@@ -88,14 +86,13 @@ describe("thread Work binding convergence", () => {
     expect(client.getQueryState(keys.unrelated)?.isInvalidated).toBe(false);
   });
 
-  it("patches the confirmed binding without changing the fallback", () => {
+  it("patches the confirmed binding without changing the Work collection", () => {
     const client = new QueryClient();
     client.setQueryData(projectQueryKeys.homeFeed("project-1"), { fresh: true });
     client.setQueryData(projectQueryKeys.threads("project-1"), [
       { id: "thread-1", workId: "work-a" },
     ]);
     client.setQueryData(projectQueryKeys.works("project-1"), {
-      newChatFallbackWorkId: "work-a",
       works: [response.work],
     });
     const associated = seedAssociatedChats(client);
@@ -107,10 +104,9 @@ describe("thread Work binding convergence", () => {
     expect(
       client.getQueryData<ThreadListItem[]>(projectQueryKeys.threads("project-1"))?.[0].workId,
     ).toBe("work-b");
-    expect(
-      client.getQueryData<ListWorksResponse>(projectQueryKeys.works("project-1"))
-        ?.newChatFallbackWorkId,
-    ).toBe("work-a");
+    expect(client.getQueryData<ListWorksResponse>(projectQueryKeys.works("project-1"))).toEqual({
+      works: [response.work],
+    });
     expect(client.getQueryState(associated.workA)?.isInvalidated).toBe(true);
     expect(client.getQueryState(associated.workB)?.isInvalidated).toBe(true);
     expect(client.getQueryState(associated.unrelated)?.isInvalidated).toBe(false);
@@ -128,7 +124,6 @@ describe("thread Work binding convergence", () => {
       previousWorkId: "work-a",
       threads: [{ id: "thread-1", projectId: "project-1", workId: "work-b" } as ThreadListItem],
       catalog: {
-        newChatFallbackWorkId: "work-a",
         works: [
           { id: "work-a", name: "A" },
           { id: "work-b", name: "B" },
@@ -153,7 +148,6 @@ describe("thread Work binding convergence", () => {
       })
       .mockResolvedValue([{ id: "thread-1", projectId: "project-1", workId: "work-c" }]);
     listProjectWorks.mockResolvedValue({
-      newChatFallbackWorkId: "work-c",
       works: [{ id: "work-c", name: "C" }],
     });
     await expect(
@@ -172,7 +166,6 @@ describe("thread Work binding convergence", () => {
       { id: "thread-1", projectId: "project-1", workId: "work-a" },
     ]);
     client.setQueryData(projectQueryKeys.works("project-1"), {
-      newChatFallbackWorkId: "work-a",
       works: [
         { id: "work-a", name: "A" },
         { id: "work-b", name: "B" },
@@ -189,7 +182,6 @@ describe("thread Work binding convergence", () => {
       { id: "thread-1", projectId: "project-1", workId: "work-c" },
     ]);
     listProjectWorks.mockResolvedValue({
-      newChatFallbackWorkId: "work-c",
       works: [{ id: "work-c", name: "C" }],
     });
 

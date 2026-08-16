@@ -32,7 +32,7 @@ describe("Work client queries", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("loads the complete Work catalog, including archived Works", async () => {
-    api.listProjectWorks.mockResolvedValue({ works: [], newChatFallbackWorkId: "work-current" });
+    api.listProjectWorks.mockResolvedValue({ works: [] });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const state: { value: ReturnType<typeof useWorks> | null } = { value: null };
 
@@ -49,7 +49,8 @@ describe("Work client queries", () => {
         async () => {
           await flush();
           expect(api.listProjectWorks).toHaveBeenCalledWith("project-1", { status: "all" });
-          expect(state.value?.newChatFallbackWorkId).toBe("work-current");
+          expect(state.value?.works).toEqual([]);
+          expect(state.value?.status).toBe("empty");
         },
         { drainMacrotask: true },
       );
@@ -104,7 +105,6 @@ describe("Work client queries", () => {
     const client = new QueryClient();
     client.setQueryData(projectQueryKeys.works("project-1"), {
       works: [],
-      newChatFallbackWorkId: "fallback",
     });
     const state: { value: ReturnType<typeof useWorkMutations> | null } = { value: null };
     function Harness() {
@@ -121,11 +121,9 @@ describe("Work client queries", () => {
         });
         const catalog = client.getQueryData<{
           works: (typeof created)[];
-          newChatFallbackWorkId: string;
         }>(projectQueryKeys.works("project-1"));
         expect(catalog).toEqual({
           works: [created],
-          newChatFallbackWorkId: "fallback",
         });
         expect(
           resolveRouteWork(parseExplicitWork(created.id), {

@@ -13,7 +13,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("GET Work collection (postgres)", async () => {
     const schema = await import("@meridian/database/schema");
-    const { eq } = await import("drizzle-orm");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
@@ -39,7 +38,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
     });
     let preferences: ReturnType<typeof createDrizzleProjectPreferencesRepository>;
-    let routeApp: object;
+    let routeApp: {
+      projectRepo: ReturnType<typeof createDrizzleProjectRepository>;
+      workRepo: ReturnType<typeof createDrizzleProjectWorkRepository>;
+      preferences: typeof preferences;
+      documentSync: { countUnpushedRowsForWork(workId: string): Promise<number> };
+    };
 
     beforeEach(async () => {
       const db = database.current;
@@ -88,36 +92,44 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       requireAppUser.mockResolvedValue({ user: { userId: OWNER_ID }, app: routeApp });
     });
 
-    function event() {
+    function event(status: "active" | "archived" | "all" = "all") {
       return {
-        req: new Request(`https://server.local/api/projects/${PROJECT_ID}/works?status=all`),
+        req: new Request(`https://server.local/api/projects/${PROJECT_ID}/works?status=${status}`),
         context: { params: { projectId: PROJECT_ID } },
         res: { status: 200 },
       };
     }
 
-    it("returns both active Works and persists the resolved new-chat fallback", async () => {
-      const response = await handler(event() as never);
+    it("returns both active Works without reading or repairing fallback preference", async () => {
+      await expect(
+        preferences.repairNewChatFallbackWorkId(OWNER_ID, PROJECT_ID, null, OLDER_WORK_ID),
+      ).resolves.toBe(true);
+
+      const response = await handler(event("all") as never);
 
       expect(response).toMatchObject({
         value: {
-          newChatFallbackWorkId: NEWER_WORK_ID,
           works: [
             { id: NEWER_WORK_ID, status: "active" },
             { id: OLDER_WORK_ID, status: "active" },
           ],
         },
       });
+      expect(Object.keys(response.value)).toEqual(["works"]);
       await expect(preferences.getNewChatFallbackWorkId(OWNER_ID, PROJECT_ID)).resolves.toBe(
-        NEWER_WORK_ID,
+        OLDER_WORK_ID,
       );
     });
 
-    it("clears the fallback pointer when its Work is physically purged", async () => {
-      const db = database.current;
-      await handler(event() as never);
-      await db.delete(schema.works).where(eq(schema.works.id, NEWER_WORK_ID));
+    it("honors archived collection filtering without touching fallback preference", async () => {
+      const archived = await routeApp.workRepo.archive(OLDER_WORK_ID);
+      expect(archived.status).toBe("archived");
 
+      const response = await handler(event("archived") as never);
+
+      expect(response).toMatchObject({
+        value: { works: [{ id: OLDER_WORK_ID, status: "archived" }] },
+      });
       await expect(preferences.getNewChatFallbackWorkId(OWNER_ID, PROJECT_ID)).resolves.toBeNull();
     });
 

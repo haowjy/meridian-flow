@@ -658,7 +658,6 @@ describe("visible Chat open caller boundary", () => {
         if (path.includes(`/api/projects/${projectId}/works`)) {
           return Promise.resolve(
             json({
-              newChatFallbackWorkId: "work-1",
               works: [{ id: "work-1", projectId, name: "Book 1", aiWriteMode: "draft" }],
             }),
           );
@@ -727,7 +726,7 @@ describe("visible Chat open caller boundary", () => {
         );
         expect(create?.body).toMatchObject({ title: "Opening line" });
         expect(create?.body).toHaveProperty("id");
-        expect(Object.hasOwn(create?.body as object, "workId")).toBe(false);
+        expect(create?.body).toMatchObject({ workId: "work-1" });
         expect(selects).toHaveLength(1);
         expect(cardOpens).toEqual([]);
         expect(requests.filter((request) => request.path.includes("/user-state"))).toEqual([]);
