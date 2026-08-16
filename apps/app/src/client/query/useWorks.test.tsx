@@ -1,7 +1,8 @@
+import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import { parseExplicitWork, resolveRouteWork } from "@/features/project/routing/project-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const api = vi.hoisted(() => ({
@@ -95,7 +96,10 @@ describe("Work client queries", () => {
   });
 
   it("adopts a created Work into the catalog before route resolution", async () => {
-    const created = { id: "11111111-1111-4111-8111-111111111111", name: "New Work" };
+    const created = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "New Work",
+    } as Work;
     api.createProjectWork.mockResolvedValue(created);
     const client = new QueryClient();
     client.setQueryData(projectQueryKeys.works("project-1"), {
@@ -115,10 +119,20 @@ describe("Work client queries", () => {
         await act(async () => {
           await state.value?.mutateAsync({ type: "create", data: { name: "New Work" } });
         });
-        expect(client.getQueryData(projectQueryKeys.works("project-1"))).toEqual({
+        const catalog = client.getQueryData<{
+          works: (typeof created)[];
+          newChatFallbackWorkId: string;
+        }>(projectQueryKeys.works("project-1"));
+        expect(catalog).toEqual({
           works: [created],
           newChatFallbackWorkId: "fallback",
         });
+        expect(
+          resolveRouteWork(parseExplicitWork(created.id), {
+            status: "success",
+            works: catalog?.works ?? [],
+          }).status,
+        ).toBe("present");
       },
     );
     client.clear();
