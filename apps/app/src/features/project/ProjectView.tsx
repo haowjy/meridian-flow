@@ -11,7 +11,6 @@
  * destination keeps the tab strip and editor/viewer body only.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -28,7 +27,6 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
-import { Button } from "@/components/ui/button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import {
   DraftReviewBoundary,
@@ -39,6 +37,7 @@ import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
+import { resolveCatalogWork } from "./catalog-work-resolution";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
@@ -47,6 +46,7 @@ import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
 } from "./dock/editor-review-handoff";
+import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import { HomePaneController } from "./HomePaneController";
 import {
@@ -204,18 +204,14 @@ export function ProjectView(props: ProjectViewProps) {
   const chatWorkId =
     projectThreads?.find((thread) => thread.id === resolvedThreadId)?.workId ?? null;
   const chatWork = works?.find((work) => work.id === chatWorkId) ?? null;
-  const editorScope = resolveEditorWorkScope(
-    props.routeWork,
-    chatWorkId,
+  const catalogWork = resolveCatalogWork(
     worksQuery.status === "error"
       ? { status: "error" }
       : worksQuery.status === "loading" || worksQuery.status === "disabled"
         ? { status: "loading" }
-        : {
-            status: "ready",
-            workId: works?.find(({ status }) => status === "active")?.id ?? works?.[0]?.id ?? null,
-          },
+        : { status: "ready", works: works ?? [] },
   );
+  const editorScope = resolveEditorWorkScope(props.routeWork, chatWorkId, catalogWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
   const reconciledDeskRef = useRef<string | null>(null);
@@ -486,7 +482,11 @@ function DesktopProject(props: ReviewScopedProjectProps) {
             />
           </DraftReviewBoundary>
         ) : (
-          <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
+          <EditorWorkRecovery
+            scope={props.editorScope}
+            onRetry={props.retryEditorWork}
+            onOpenWork={() => props.onSelectScreen("work")}
+          />
         ),
     },
     {
@@ -588,33 +588,6 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
       // sidebar/dock expand toggles. See `ContextViewer`.
       return null;
   }
-}
-
-function EditorWorkRecovery({
-  scope,
-  onRetry,
-}: {
-  scope: Exclude<EditorWorkScope, { status: "ready" }>;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="grid h-full place-items-center px-6 text-center">
-      {scope.status === "loading" || scope.status === "normalizing" ? (
-        <p className="text-sm text-muted-foreground">
-          <Trans>Loading Work…</Trans>
-        </p>
-      ) : (
-        <div className="flex flex-col items-center gap-3">
-          <p className="font-medium">
-            <Trans>Work couldn’t load</Trans>
-          </p>
-          <Button size="sm" variant="outline" onClick={onRetry}>
-            <Trans>Retry</Trans>
-          </Button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 /**

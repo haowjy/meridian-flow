@@ -9,6 +9,7 @@ import { useAnnouncement, useThreadActions } from "@/client/stores";
 import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
+import { resolveCatalogWork } from "../catalog-work-resolution";
 import { HomeFeed } from "./HomeFeed";
 import { NewThreadComposerToolbar } from "./NewThreadComposerToolbar";
 import { useHomeFavoriteMovement } from "./use-home-favorite-movement";
@@ -45,9 +46,16 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     return () => media.removeEventListener("change", sync);
   }, []);
   const firstSend = useHomeFirstSendAttempt({ projectId, actions, onSelectThread });
-  const catalogWork =
-    worksQuery.works?.find(({ status }) => status === "active") ?? worksQuery.works?.[0] ?? null;
-  const selectedWork = worksQuery.works?.find(({ id }) => id === chosenWorkId) ?? catalogWork;
+  const catalogWork = resolveCatalogWork(
+    worksQuery.status === "error"
+      ? { status: "error" }
+      : worksQuery.status === "loading" || worksQuery.status === "disabled"
+        ? { status: "loading" }
+        : { status: "ready", works: worksQuery.works ?? [] },
+  );
+  const selectedWork =
+    worksQuery.works?.find(({ id }) => id === chosenWorkId) ??
+    (catalogWork.status === "ready" ? catalogWork.work : null);
   const handleModePendingChange = useCallback((pending: boolean) => setModePending(pending), []);
 
   const cardProps = {
@@ -131,11 +139,11 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                       selectedWorkId={selectedWork?.id ?? null}
                       works={worksQuery.works ?? []}
                       worksStatus={
-                        worksQuery.status === "error"
+                        catalogWork.status === "error"
                           ? "error"
-                          : worksQuery.status === "ready"
-                            ? "ready"
-                            : "loading"
+                          : catalogWork.status === "loading"
+                            ? "loading"
+                            : "ready"
                       }
                       agentSlug={agentSlug}
                       disabled={firstSend.contextLocked}
@@ -154,6 +162,11 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
               </div>
               {worksQuery.status === "error" ? (
                 <InlineErrorRow message={t`Work couldn’t load`} onRetry={worksQuery.refetch} />
+              ) : null}
+              {catalogWork.status === "empty" ? (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  <Trans>No Work yet.</Trans>
+                </p>
               ) : null}
               {firstSend.failure ? (
                 <InlineErrorRow

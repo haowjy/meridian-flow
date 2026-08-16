@@ -1789,8 +1789,7 @@ msgid "Loading Work"
 msgstr "Loading Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/ProjectView.tsx
+#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work…"
 msgstr "Loading Work…"
@@ -2110,6 +2109,8 @@ msgid "No Work matches your search."
 msgstr "No Work matches your search."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/home/HomeScreen.tsx
 msgid "No Work yet."
 msgstr "No Work yet."
 
@@ -2555,10 +2556,9 @@ msgstr "Resume where I left off on any device"
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeChatCard.tsx
 #: src/features/project/home/HomeFeed.tsx
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/ProjectView.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -3486,6 +3486,7 @@ msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
 #: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
@@ -3499,9 +3500,8 @@ msgstr "Work"
 msgid "workReceipt.upToDate"
 msgstr "Work {name} was already up to date"
 
+#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/ProjectView.tsx
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"
 

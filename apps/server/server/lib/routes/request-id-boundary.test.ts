@@ -276,6 +276,14 @@ describe("malformed HTTP request IDs", () => {
     });
   });
 
+  it.each([
+    ["global", () => createThread(event({}, { projectId: VALID_ID, workId: null }))],
+    ["project-scoped", () => createProjectThread(event({ projectId: VALID_ID }, { workId: null }))],
+  ])("rejects explicit null Work on %s root creation before fallback resolution", async (_surface, invoke) => {
+    await expect(invoke()).rejects.toMatchObject({ statusCode: 400 });
+    expect(createThreadForProject).not.toHaveBeenCalled();
+  });
+
   it("normalizes project-scoped creation IDs before thread creation", async () => {
     createThreadForProject.mockResolvedValueOnce({ id: VALID_ID });
 

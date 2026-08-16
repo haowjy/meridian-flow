@@ -16,7 +16,7 @@ describe("resolveEditorWorkScope", () => {
     expect(
       resolveEditorWorkScope({ status: "present", workId: routeWorkA, work: editorA }, "work-b", {
         status: "ready",
-        workId: "fallback",
+        work: work("fallback"),
       }),
     ).toEqual({ status: "ready", workId: routeWorkA, source: "route" });
   });
@@ -26,7 +26,7 @@ describe("resolveEditorWorkScope", () => {
     expect(
       resolveEditorWorkScope({ status: "loading", workId: routeWorkA }, chatB.id, {
         status: "ready",
-        workId: null,
+        work: work("fallback"),
       }),
     ).toEqual({
       status: "loading",
@@ -35,7 +35,7 @@ describe("resolveEditorWorkScope", () => {
     expect(
       resolveEditorWorkScope({ status: "catalog-error", workId: routeWorkA }, chatB.id, {
         status: "ready",
-        workId: null,
+        work: work("fallback"),
       }),
     ).toEqual({ status: "error", workId: routeWorkA });
   });
@@ -45,7 +45,7 @@ describe("resolveEditorWorkScope", () => {
     expect(
       resolveEditorWorkScope({ status: "absent" }, chatB.id, {
         status: "ready",
-        workId: "fallback",
+        work: work("fallback"),
       }),
     ).toMatchObject({
       status: "ready",
@@ -53,7 +53,10 @@ describe("resolveEditorWorkScope", () => {
       source: "chat",
     });
     expect(
-      resolveEditorWorkScope({ status: "absent" }, null, { status: "ready", workId: "fallback" }),
+      resolveEditorWorkScope({ status: "absent" }, null, {
+        status: "ready",
+        work: work("fallback"),
+      }),
     ).toMatchObject({
       status: "ready",
       workId: "fallback",
@@ -61,17 +64,23 @@ describe("resolveEditorWorkScope", () => {
     });
   });
 
+  it("keeps an authoritative empty catalog distinct from loading", () => {
+    expect(resolveEditorWorkScope({ status: "absent" }, null, { status: "empty" })).toEqual({
+      status: "empty",
+    });
+  });
+
   it("never mounts malformed or confirmed-missing explicit Work under Chat B", () => {
     expect(
       resolveEditorWorkScope({ status: "malformed", value: "bad" }, "work-b", {
         status: "ready",
-        workId: "fallback",
+        work: work("fallback"),
       }),
     ).toEqual({ status: "normalizing", workId: "bad" });
     expect(
       resolveEditorWorkScope({ status: "not-found", workId: routeWorkA }, "work-b", {
         status: "ready",
-        workId: "fallback",
+        work: work("fallback"),
       }),
     ).toEqual({ status: "normalizing", workId: routeWorkA });
   });

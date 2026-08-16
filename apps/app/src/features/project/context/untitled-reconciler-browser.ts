@@ -9,6 +9,7 @@ import {
 } from "@/client/api/projects-api";
 import { flushContextDesks, useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { resolveCatalogWork } from "../catalog-work-resolution";
 import type { ContextIdentityMutationService } from "./context-identity-mutation";
 import type { DesiredIdentity } from "./identity-location";
 import {
@@ -46,12 +47,7 @@ function browserDeps(identityMutations: ContextIdentityMutationService): Untitle
     sessions: registry,
     newDocumentId: () => crypto.randomUUID(),
     api: {
-      async resolveHome(projectId) {
-        const works = await listProjectWorks(projectId);
-        const catalogWork =
-          works.works.find(({ status }) => status === "active") ?? works.works[0] ?? null;
-        return resolveUntitledHome(catalogWork?.id ?? null);
-      },
+      resolveHome: resolveUntitledCatalogHome,
       async create(entry) {
         const result = await createUntitledContextDocument(
           entry.projectId,
@@ -88,6 +84,15 @@ function browserDeps(identityMutations: ContextIdentityMutationService): Untitle
       },
     },
   };
+}
+
+export async function resolveUntitledCatalogHome(
+  projectId: string,
+  listWorks: typeof listProjectWorks = listProjectWorks,
+) {
+  const response = await listWorks(projectId, { status: "all" });
+  const catalogWork = resolveCatalogWork({ status: "ready", works: response.works });
+  return resolveUntitledHome(catalogWork.status === "ready" ? catalogWork.work.id : null);
 }
 
 let shared: UntitledReconciler | null = null;

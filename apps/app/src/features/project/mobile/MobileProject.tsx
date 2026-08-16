@@ -10,7 +10,6 @@
  * not a back button — the drawer trigger stays on every screen.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -21,6 +20,7 @@ import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
+import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import { HomeScreen } from "../home/HomeScreen";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import { WorkScreen } from "../work/WorkScreen";
@@ -178,20 +178,11 @@ function renderActiveView(
     case "context":
       if (props.editorScope.status !== "ready") {
         return (
-          <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground">
-            {props.editorScope.status === "loading" ||
-            props.editorScope.status === "normalizing" ? (
-              <Trans>Loading Work…</Trans>
-            ) : (
-              <button
-                type="button"
-                className="focus-ring rounded-md px-3 py-2"
-                onClick={props.retryEditorWork}
-              >
-                <Trans>Work couldn’t load</Trans> <Trans>Retry</Trans>
-              </button>
-            )}
-          </div>
+          <EditorWorkRecovery
+            scope={props.editorScope}
+            onRetry={props.retryEditorWork}
+            onOpenWork={() => props.onSelectScreen("work")}
+          />
         );
       }
       return (

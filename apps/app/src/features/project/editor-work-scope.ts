@@ -1,16 +1,14 @@
 /** Resolves the Editor's sole Work scope independently from persistent Chat ownership. */
+
+import type { CatalogWorkResolution } from "./catalog-work-resolution";
 import type { RouteWorkResolution } from "./routing/project-route";
 
 export type EditorWorkScope =
   | { status: "ready"; workId: string; source: "route" | "chat" | "catalog" }
   | { status: "loading"; workId: string }
   | { status: "error"; workId: string }
+  | { status: "empty" }
   | { status: "normalizing"; workId: string };
-
-export type CatalogWorkResolution =
-  | { status: "loading" }
-  | { status: "error" }
-  | { status: "ready"; workId: string | null };
 
 export function resolveEditorWorkScope(
   routeWork: RouteWorkResolution,
@@ -29,7 +27,8 @@ export function resolveEditorWorkScope(
   // displaying its Work name must not be a prerequisite for Editor commands.
   if (chatWorkId) return { status: "ready", workId: chatWorkId, source: "chat" };
   if (catalogWork.status === "error") return { status: "error", workId: "" };
-  if (catalogWork.status === "ready" && catalogWork.workId)
-    return { status: "ready", workId: catalogWork.workId, source: "catalog" };
+  if (catalogWork.status === "empty") return { status: "empty" };
+  if (catalogWork.status === "ready")
+    return { status: "ready", workId: catalogWork.work.id, source: "catalog" };
   return { status: "loading", workId: "" };
 }

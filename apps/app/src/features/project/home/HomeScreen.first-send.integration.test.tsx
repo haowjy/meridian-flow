@@ -401,4 +401,72 @@ describe("Home first send", () => {
       { drainMacrotask: true },
     );
   });
+
+  it("shows an authoritative empty catalog instead of perpetual loading", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const path = String(input);
+        if (path.includes("/home-feed")) return Promise.resolve(json(homeFeed));
+        if (path.includes("/drafts")) return Promise.resolve(json({ drafts: [] }));
+        if (path.includes("/works")) return Promise.resolve(json({ works: [] }));
+        if (path.includes("/agents")) return Promise.resolve(json({ agents }));
+        throw new Error(`unexpected request: ${path}`);
+      }),
+    );
+
+    await withReactRoot(
+      <Providers client={client}>
+        <HomeScreen projectId={projectId} onOpenThread={vi.fn()} onSelectThread={vi.fn()} />
+      </Providers>,
+      async () => {
+        await waitFor(() => document.body.textContent?.includes("No Work yet.") === true);
+        expect(document.body.textContent).not.toContain("Loading Work");
+        expect(
+          document.querySelector<HTMLButtonElement>('[aria-label="Send message"]')?.disabled,
+        ).toBe(true);
+      },
+      { drainMacrotask: true },
+    );
+  });
+
+  it("submits the first archived Work when the catalog has no active Work", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const archivedWork = { ...firstWork, status: "archived" as const };
+    const creates: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const path = String(input);
+        const method = init?.method ?? "GET";
+        if (path.includes("/home-feed")) return Promise.resolve(json(homeFeed));
+        if (path.includes("/drafts")) return Promise.resolve(json({ drafts: [] }));
+        if (path.includes("/works")) return Promise.resolve(json({ works: [archivedWork] }));
+        if (path.includes("/agents")) return Promise.resolve(json({ agents }));
+        if (method === "POST" && path.endsWith("/threads")) {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          creates.push(body);
+          return Promise.resolve(json(canonical(String(body.id), archivedWork.id)));
+        }
+        throw new Error(`unexpected request: ${method} ${path}`);
+      }),
+    );
+
+    await withReactRoot(
+      <Providers client={client}>
+        <HomeScreen projectId={projectId} onOpenThread={vi.fn()} onSelectThread={vi.fn()} />
+      </Providers>,
+      async () => {
+        await waitFor(() => Boolean(document.querySelector('[aria-label*="currently Book 1"]')));
+        const textarea = await setTextarea("Archived opening");
+        await act(async () =>
+          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+        );
+        await waitFor(() => creates.length === 1);
+        expect(creates[0]).toMatchObject({ workId: archivedWork.id });
+      },
+      { drainMacrotask: true },
+    );
+  });
 });

@@ -373,7 +373,7 @@ export type CreateThreadRequest = {
   systemPrompt?: string;
   /** Mars agent slug — when set, agent body becomes the thread system prompt. */
   currentAgent?: string;
-  workId?: string | null;
+  workId?: string;
 };
 
 export type CreateThreadResponse = Thread;

@@ -91,6 +91,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ id: ARCHIVED, status: "archived" });
     });
 
+    it("clears the saved fallback when its Work is physically purged", async () => {
+      await saveFallback(ARCHIVED);
+
+      await db.delete(schema.works).where(eq(schema.works.id, ARCHIVED));
+
+      await expect(preferences.getNewChatFallbackWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
+    });
+
     it("repairs a soft-deleted dangling fallback to the newest active Work", async () => {
       await saveFallback(ARCHIVED);
       await db

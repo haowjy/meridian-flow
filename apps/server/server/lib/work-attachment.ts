@@ -39,7 +39,7 @@ export interface ResolveWorkMembershipArgs {
   /** Required only when resolving the omitted-root new-chat fallback. */
   userId?: UserId;
   /** Explicit work assignment from the request, if any. */
-  workId?: string | null;
+  workId?: string;
   /** When set, this is a subagent thread — inherit the parent's primary Work. */
   parentThreadId?: string | null;
 }
@@ -59,7 +59,7 @@ export async function resolveWorkMembership(
 ): Promise<string> {
   let primaryWorkId: string;
 
-  if (args.workId) {
+  if (args.workId !== undefined) {
     const work = await deps.workRepo.findById(args.workId);
     if (!work || work.deletedAt || work.projectId !== args.projectId) {
       throw new InvalidWorkAttachmentError("Work is not available in this project");
