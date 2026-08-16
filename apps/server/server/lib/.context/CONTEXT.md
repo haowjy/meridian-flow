@@ -139,7 +139,7 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | File | One-liner |
 |---|---|
 | `thread-creation.ts` | Ownership-gated primary thread creation shared by global and project workspace-scoped routes; resolves work attachment and touches the work. |
-| `work-attachment.ts` | Determines a new thread's work: explicit `workId`, subagent parent inheritance, or default work for primary threads. |
+| `work-attachment.ts` | Determines a new thread's Work: explicit `workId`, subagent parent inheritance, or the omitted-root new-chat fallback. |
 | `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
 | `project-stats.ts` | Pure projection folding thread list + works into `ProjectStatsResponse`. |
 | `project-results-route.ts` | Ownership-gated project result listing and signed artifact URL refresh. |

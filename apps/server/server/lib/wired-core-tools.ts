@@ -53,6 +53,7 @@ import {
   updateWorkTransition,
   type WorkContextDelivery,
   WorkDeleteBlockedError,
+  WorkNameRequiredError,
   type WorkRepository,
 } from "../domains/projects/index.js";
 import {
@@ -713,6 +714,9 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           },
         };
       } catch (error) {
+        if (error instanceof WorkNameRequiredError) {
+          return toolError({ code: "invalid_work_name", message: error.message });
+        }
         if (error instanceof WorkDeleteBlockedError) {
           return toolError({
             code: "work_delete_blocked",

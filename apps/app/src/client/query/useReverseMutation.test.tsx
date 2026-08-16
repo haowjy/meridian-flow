@@ -153,7 +153,15 @@ describe("useReverseTurnMutation", () => {
     reverseTurnMock.mockResolvedValue({
       status: "reversed",
       documents: [],
-      workReceipts: [{ command: "restore", workId: "w1", name: "Arc", status: "reversed" }],
+      workReceipts: [
+        {
+          command: "restore",
+          projectId: "project-1",
+          workId: "w1",
+          name: "Arc",
+          status: "reversed",
+        },
+      ],
     });
 
     try {
@@ -174,6 +182,67 @@ describe("useReverseTurnMutation", () => {
           ).toBe(true);
           expect(queryClient.getQueryState(workA)?.isInvalidated).toBe(true);
           expect(queryClient.getQueryState(workB)?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(unrelated)?.isInvalidated).toBe(false);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      queryClient.clear();
+    }
+  });
+
+  it("converges only the owning project when reversal succeeds without a thread snapshot", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { projectQueryKeys } = await import("./project-query-keys");
+    queryClient.setQueryData(projectQueryKeys.works("project-1"), { works: [] });
+    const workA = projectQueryKeys.workThreads("project-1", "work-a");
+    const workB = projectQueryKeys.workThreads("project-1", "work-b");
+    const unrelatedCatalog = projectQueryKeys.works("project-2");
+    const unrelated = projectQueryKeys.workThreads("project-2", "work-z");
+    queryClient.setQueryData(workA, []);
+    queryClient.setQueryData(workB, []);
+    queryClient.setQueryData(unrelatedCatalog, { works: [] });
+    queryClient.setQueryData(unrelated, []);
+    const harnessRef: { reverse: ReturnType<typeof useReverseTurnMutation> | null } = {
+      reverse: null,
+    };
+
+    function Harness() {
+      harnessRef.reverse = useReverseTurnMutation("thread-1");
+      return null;
+    }
+
+    reverseTurnMock.mockResolvedValue({
+      status: "reversed",
+      documents: [],
+      workReceipts: [
+        {
+          command: "restore",
+          projectId: "project-1",
+          workId: "w1",
+          name: "Arc",
+          status: "reversed",
+        },
+      ],
+    });
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+        async () => {
+          await act(async () => {
+            await harnessRef.reverse?.mutateAsync({ turnId: "turn-1", direction: "undo" });
+          });
+
+          expect(queryClient.getQueryState(threadQueryKeys.snapshot("thread-1"))).toBeUndefined();
+          expect(
+            queryClient.getQueryState(projectQueryKeys.works("project-1"))?.isInvalidated,
+          ).toBe(true);
+          expect(queryClient.getQueryState(workA)?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(workB)?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(unrelatedCatalog)?.isInvalidated).toBe(false);
           expect(queryClient.getQueryState(unrelated)?.isInvalidated).toBe(false);
         },
         { drainMacrotask: true },

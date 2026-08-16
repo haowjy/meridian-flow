@@ -42,19 +42,19 @@ describe("createThreadForProject work activity", () => {
     expect(touchedIds).toEqual([thread.workId]);
   });
 
-  it("attaches implicitly to the writer's current Work when multiple Works are active", async () => {
+  it("attaches an omitted root thread to the saved new-chat fallback", async () => {
     const projects = createInMemoryProjectRepository();
     const workRepo = createInMemoryWorkRepository();
     const repos = createInMemoryRepositories({ projects });
     const preferences = createInMemoryProjectPreferencesRepository();
     const project = await projects.create({ userId: "user-1", title: "Sample Project" });
     await workRepo.create({ projectId: project.id, createdByUserId: "user-1", name: "One" });
-    const current = await workRepo.create({
+    const fallback = await workRepo.create({
       projectId: project.id,
       createdByUserId: "user-1",
       name: "Two",
     });
-    await preferences.repairNewChatFallbackWorkId("user-1", project.id, null, current.id);
+    await preferences.repairNewChatFallbackWorkId("user-1", project.id, null, fallback.id);
 
     const thread = await createThreadForProject(
       {
@@ -69,6 +69,6 @@ describe("createThreadForProject work activity", () => {
       { projectId: project.id, userId: "user-1", title: "Root thread" },
     );
 
-    expect(thread.workId).toBe(current.id);
+    expect(thread.workId).toBe(fallback.id);
   });
 });

@@ -77,14 +77,27 @@ describe("PATCH /api/works/:workId", () => {
     expect(f.projectChanged).toHaveBeenCalledWith(PROJECT_ID);
   });
 
-  it("rejects invalid metadata before persistence", async () => {
+  it.each([
+    { kind: "valid", raw: "Revised", expected: "Revised" },
+    { kind: "trimmed", raw: "  Revised  ", expected: "Revised" },
+    { kind: "blank", raw: " \n\t ", expected: null },
+  ])("handles $kind human Name input before persistence", async ({ raw, expected }) => {
     const f = fixture();
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
 
-    await expect(handler(event({ name: "   " }) as never)).rejects.toMatchObject({
-      statusCode: 400,
+    if (expected === null) {
+      await expect(handler(event({ name: raw }) as never)).rejects.toMatchObject({
+        statusCode: 400,
+        message: "Work name must be a non-empty string",
+      });
+      expect(f.update).not.toHaveBeenCalled();
+      return;
+    }
+
+    await expect(handler(event({ name: raw }) as never)).resolves.toMatchObject({
+      value: { name: expected },
     });
-    expect(f.update).not.toHaveBeenCalled();
+    expect(f.update).toHaveBeenCalledWith(WORK_ID, expect.objectContaining({ name: expected }));
   });
 
   it("clears and trims optional metadata through the shared domain normalizer", async () => {

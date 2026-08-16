@@ -8,6 +8,13 @@ import type { WorkContextDelivery } from "./work-context-delivery.js";
 export type UpdateWorkCommandInput = UpdateWorkInput & { status?: WorkStatus };
 export type WorkTransition = { before: Work; after: Work; changed: boolean };
 
+export class WorkNameRequiredError extends Error {
+  constructor() {
+    super("Work name must be a non-empty string");
+    this.name = "WorkNameRequiredError";
+  }
+}
+
 /** Canonical metadata semantics for every human, model, and reversal caller. */
 export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateWorkCommandInput {
   const optionalText = (value: string | null | undefined): string | null | undefined => {
@@ -15,8 +22,10 @@ export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateW
     const trimmed = value.trim();
     return trimmed || null;
   };
+  const name = input.name?.trim();
+  if (name !== undefined && !name) throw new WorkNameRequiredError();
   return {
-    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(name !== undefined ? { name } : {}),
     ...(input.goal !== undefined ? { goal: optionalText(input.goal) } : {}),
     ...(input.description !== undefined ? { description: optionalText(input.description) } : {}),
     ...(input.status !== undefined ? { status: input.status } : {}),

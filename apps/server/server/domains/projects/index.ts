@@ -474,6 +474,7 @@ export {
   type UpdateWorkCommandInput,
   updateWork,
   updateWorkTransition,
+  WorkNameRequiredError,
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";

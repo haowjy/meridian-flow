@@ -2,7 +2,12 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-import { normalizeWorkUpdateInput, updateWork, updateWorkTransition } from "./update-work.js";
+import {
+  normalizeWorkUpdateInput,
+  updateWork,
+  updateWorkTransition,
+  WorkNameRequiredError,
+} from "./update-work.js";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000801";
 
@@ -23,6 +28,18 @@ describe("updateWork", () => {
     { raw: {}, normalized: {} },
   ])("normalizes shared metadata intent: $raw", ({ raw, normalized }) => {
     expect(normalizeWorkUpdateInput(raw)).toEqual(normalized);
+  });
+
+  it.each([
+    { kind: "valid", name: "Revised", normalized: "Revised" },
+    { kind: "trimmed", name: "  Revised  ", normalized: "Revised" },
+    { kind: "blank", name: " \n\t ", normalized: null },
+  ])("validates $kind Name intent at the metadata boundary", ({ name, normalized }) => {
+    if (normalized === null) {
+      expect(() => normalizeWorkUpdateInput({ name })).toThrow(WorkNameRequiredError);
+      return;
+    }
+    expect(normalizeWorkUpdateInput({ name })).toEqual({ name: normalized });
   });
 
   it("emits one project refresh for a compound metadata and lifecycle command", async () => {

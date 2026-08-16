@@ -246,6 +246,34 @@ describe("wired work tool", () => {
     });
   });
 
+  it.each([
+    { kind: "valid", raw: "Revised", expected: "Revised" },
+    { kind: "trimmed", raw: "  Revised  ", expected: "Revised" },
+    { kind: "blank", raw: " \n\t ", expected: null },
+  ])("handles $kind model Name input before persistence", async ({ raw, expected }) => {
+    const fixture = await setup();
+    const update = vi.spyOn(fixture.works, "update");
+    const outcome = await fixture.handler(
+      { command: "update", work: fixture.target.slug, name: raw },
+      toolContext(),
+    );
+
+    if (expected === null) {
+      expect(outcome).toMatchObject({
+        isError: true,
+        output: { code: "invalid_work_name", message: "Work name must be a non-empty string" },
+      });
+      expect(update).not.toHaveBeenCalled();
+      return;
+    }
+
+    expect(outcome).toMatchObject({ output: { name: expected } });
+    expect(update).toHaveBeenCalledWith(
+      fixture.target.id,
+      expect.objectContaining({ name: expected }),
+    );
+  });
+
   it("emits no inverse or projection invalidation for a content-identical update", async () => {
     const fixture = await setup();
     const original = await fixture.works.findById(fixture.target.id);

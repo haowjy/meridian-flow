@@ -76,13 +76,26 @@ export async function reverseWorkReceipts(
       const applied: WorkReceiptReversal[] = [];
       for (const step of plan) {
         if (!step.executable) {
-          applied.push(result(step.receipt, step.command, "unavailable", step.message));
+          applied.push(
+            result(
+              step.receipt,
+              context.thread.projectId,
+              step.command,
+              "unavailable",
+              step.message,
+            ),
+          );
           continue;
         }
         await applyStep(deps, step.receipt, input.direction);
         changedProjects.add(context.thread.projectId);
         applied.push(
-          result(step.receipt, step.command, input.direction === "undo" ? "reversed" : "redone"),
+          result(
+            step.receipt,
+            context.thread.projectId,
+            step.command,
+            input.direction === "undo" ? "reversed" : "redone",
+          ),
         );
       }
       await Promise.all(
@@ -94,7 +107,13 @@ export async function reverseWorkReceipts(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
-      result(receipt, commandFor(receipt, input.direction), "failed", message),
+      result(
+        receipt,
+        context.thread.projectId,
+        commandFor(receipt, input.direction),
+        "failed",
+        message,
+      ),
     );
   }
 }
@@ -275,12 +294,14 @@ function commandFor(
 
 function result(
   receipt: WorkMutationReceipt,
+  projectId: string,
   command: WorkReversalResult["command"],
   status: WorkReversalResult["status"],
   message?: string,
 ): WorkReceiptReversal {
   return {
     command,
+    projectId,
     workId: receipt.workId,
     name: receipt.workName,
     status,

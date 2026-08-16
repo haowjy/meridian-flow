@@ -6,6 +6,7 @@ import {
   requireWorkOwner,
   updateWork,
   WorkNameConflictError,
+  WorkNameRequiredError,
 } from "../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
@@ -17,8 +18,8 @@ export default defineEventHandler(async (event) => {
     (await readBody<Partial<Record<keyof UpdateWorkRequest, unknown>> & Record<string, unknown>>(
       event,
     )) ?? {};
-  if (body.name !== undefined && (typeof body.name !== "string" || !body.name.trim())) {
-    throw createError({ statusCode: 400, message: "name must be a non-empty string" });
+  if (body.name !== undefined && typeof body.name !== "string") {
+    throw createError({ statusCode: 400, message: "name must be a string" });
   }
   if (body.goal !== undefined && typeof body.goal !== "string") {
     throw createError({ statusCode: 400, message: "goal must be a string" });
@@ -40,6 +41,9 @@ export default defineEventHandler(async (event) => {
       description: body.description as string | undefined,
     },
   ).catch((error: unknown) => {
+    if (error instanceof WorkNameRequiredError) {
+      throw createError({ statusCode: 400, message: error.message });
+    }
     if (error instanceof WorkNameConflictError) {
       throw createError({ statusCode: 409, message: error.message });
     }

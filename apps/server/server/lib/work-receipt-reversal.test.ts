@@ -54,14 +54,30 @@ describe("Work receipt reversal", () => {
     expect(
       combineWorkReversalOutcome(
         { status: "nothing_to_undo", documents: [] },
-        [{ command: "restore", workId: "w1" as never, name: "Arc", status: "reversed" }],
+        [
+          {
+            command: "restore",
+            projectId: "project-1",
+            workId: "w1" as never,
+            name: "Arc",
+            status: "reversed",
+          },
+        ],
         "undo",
       ).status,
     ).toBe("reversed");
     expect(
       combineWorkReversalOutcome(
         { status: "reconciled", documents: [{ uri: "manuscript://a", status: "reconciled" }] },
-        [{ command: "restore", workId: "w1" as never, name: "Arc", status: "failed" }],
+        [
+          {
+            command: "restore",
+            projectId: "project-1",
+            workId: "w1" as never,
+            name: "Arc",
+            status: "failed",
+          },
+        ],
         "undo",
       ).status,
     ).toBe("partial_failure");
@@ -129,7 +145,9 @@ describe("Work receipt reversal", () => {
       turnId: TURN_ID,
       direction: "undo",
     });
-    expect(result).toEqual([expect.objectContaining({ status: "reversed" })]);
+    expect(result).toEqual([
+      expect.objectContaining({ projectId: "project-1", status: "reversed" }),
+    ]);
     await expect(h.works.findById(work.id)).resolves.toMatchObject(state("Arc"));
 
     expect(result[0]?.status).toBe("reversed");
