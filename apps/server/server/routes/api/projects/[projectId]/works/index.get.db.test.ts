@@ -96,7 +96,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("returns both active Works and persists the truthful fallback default", async () => {
+    it("returns both active Works and persists the resolved new-chat fallback", async () => {
       const response = await handler(event() as never);
 
       expect(response).toMatchObject({

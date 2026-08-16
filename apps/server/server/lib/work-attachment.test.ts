@@ -1,4 +1,4 @@
-/** Attachment precedence: explicit, parent primary, writer current, final default. */
+/** Attachment precedence: explicit, parent primary, then the new-chat fallback. */
 import type { Project } from "@meridian/contracts/projects";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
@@ -15,7 +15,7 @@ function work(id: string): Work {
 }
 
 describe("resolveWorkMembership", () => {
-  it("prefers an explicit Work over parent and current selections", async () => {
+  it("prefers an explicit Work over parent inheritance and the new-chat fallback", async () => {
     const explicit = work("explicit");
     const findPrimary = vi.fn();
     const getNewChatFallbackWorkId = vi.fn();
@@ -43,7 +43,7 @@ describe("resolveWorkMembership", () => {
     expect(addMembership).toHaveBeenCalledWith(THREAD_ID, explicit.id, true);
   });
 
-  it("inherits a parent's primary Work before consulting current preference", async () => {
+  it("inherits a parent's primary Work before resolving the new-chat fallback", async () => {
     const parent = work("parent");
     const getNewChatFallbackWorkId = vi.fn();
     const addMembership = vi.fn();
@@ -69,23 +69,23 @@ describe("resolveWorkMembership", () => {
     expect(addMembership).toHaveBeenCalledWith(THREAD_ID, parent.id, true);
   });
 
-  it("uses the writer's current preference for a new root conversation", async () => {
-    const current = work("current");
+  it("uses the saved new-chat fallback for a new root conversation", async () => {
+    const fallback = work("fallback");
     const listByProject = vi.fn();
 
     await expect(
       resolveWorkMembership(
         {
           workRepo: {
-            findById: async () => current,
+            findById: async () => fallback,
             listByProject,
           } as never,
-          preferences: { getNewChatFallbackWorkId: async () => current.id } as never,
+          preferences: { getNewChatFallbackWorkId: async () => fallback.id } as never,
           threadWorks: { addMembership: async () => {} } as never,
         },
         { threadId: THREAD_ID, projectId: PROJECT_ID, project, userId: USER_ID },
       ),
-    ).resolves.toBe(current.id);
+    ).resolves.toBe(fallback.id);
     expect(listByProject).not.toHaveBeenCalled();
   });
 

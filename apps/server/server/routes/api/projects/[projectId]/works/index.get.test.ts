@@ -65,18 +65,18 @@ describe("GET /api/projects/:projectId/works", () => {
     });
   });
 
-  it("includes the archived current Work in the default active list", async () => {
+  it("includes the archived new-chat fallback Work in the active-filtered collection", async () => {
     const active = work("active");
-    const current = { ...work("current"), status: "archived" as const };
+    const fallback = { ...work("fallback"), status: "archived" as const };
     vi.mocked(requireAppUser).mockResolvedValue({
       user: { userId: USER_ID },
       app: {
         projectRepo: { findById: async () => project },
         workRepo: {
-          findById: async () => current,
+          findById: async () => fallback,
           listByProject: async () => [active],
         },
-        preferences: { getNewChatFallbackWorkId: async () => current.id },
+        preferences: { getNewChatFallbackWorkId: async () => fallback.id },
         documentSync: { countUnpushedRowsForWork: async () => 0 },
       },
     } as never);
@@ -90,9 +90,9 @@ describe("GET /api/projects/:projectId/works", () => {
 
     expect(response).toMatchObject({
       value: {
-        newChatFallbackWorkId: current.id,
+        newChatFallbackWorkId: fallback.id,
         works: [
-          { id: current.id, status: "archived" },
+          { id: fallback.id, status: "archived" },
           { id: active.id, status: "active" },
         ],
       },

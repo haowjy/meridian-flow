@@ -13,7 +13,7 @@ function work(id: string, status: Work["status"] = "active"): Work {
 }
 
 describe("resolveNewChatFallbackWork", () => {
-  it("materializes an implicit choice so archiving it does not change the new-chat fallback Work", async () => {
+  it("persists the resolved fallback so archiving its Work does not change it", async () => {
     const older = work("older");
     const newer = work("newer");
     let fallbackWorkId: string | null = null;
@@ -50,24 +50,24 @@ describe("resolveNewChatFallbackWork", () => {
     );
   });
 
-  it("keeps an archived preference current", async () => {
-    const preferred = work("preferred", "archived");
+  it("keeps a saved archived Work as the new-chat fallback", async () => {
+    const fallback = work("fallback", "archived");
     const listByProject = vi.fn();
 
     await expect(
       resolveNewChatFallbackWork(
         {
-          preferences: { getNewChatFallbackWorkId: async () => preferred.id } as never,
-          works: { findById: async () => preferred, listByProject } as never,
+          preferences: { getNewChatFallbackWorkId: async () => fallback.id } as never,
+          works: { findById: async () => fallback, listByProject } as never,
         },
         { userId: USER_ID },
         project,
       ),
-    ).resolves.toBe(preferred);
+    ).resolves.toBe(fallback);
     expect(listByProject).not.toHaveBeenCalled();
   });
 
-  it("falls back from a dangling preference to the most recently updated active Work", async () => {
+  it("repairs a dangling fallback pointer to the most recently updated active Work", async () => {
     const active = work("active");
     const listByProject = vi.fn(async (_projectId, options) =>
       options?.status === "active" ? [active] : [],
@@ -89,7 +89,7 @@ describe("resolveNewChatFallbackWork", () => {
     expect(listByProject).toHaveBeenCalledWith(PROJECT_ID, { status: "active" });
   });
 
-  it("repairs a soft-deleted preference so restoring the old Work does not select it again", async () => {
+  it("repairs a soft-deleted fallback so restoring the old Work does not reclaim the pointer", async () => {
     const deleted = work("deleted");
     deleted.deletedAt = new Date().toISOString();
     const active = work("active");
