@@ -135,6 +135,12 @@ describe("useReverseTurnMutation", () => {
     // Seeded as fresh; only invalidation can mark them stale.
     queryClient.setQueryData(projectQueryKeys.works("project-1"), { works: [] });
     queryClient.setQueryData(projectQueryKeys.threads("project-1"), []);
+    const workA = projectQueryKeys.workThreads("project-1", "work-a");
+    const workB = projectQueryKeys.workThreads("project-1", "work-b");
+    const unrelated = projectQueryKeys.workThreads("project-2", "work-z");
+    queryClient.setQueryData(workA, []);
+    queryClient.setQueryData(workB, []);
+    queryClient.setQueryData(unrelated, []);
     const harnessRef: { reverse: ReturnType<typeof useReverseTurnMutation> | null } = {
       reverse: null,
     };
@@ -166,6 +172,9 @@ describe("useReverseTurnMutation", () => {
           expect(
             queryClient.getQueryState(projectQueryKeys.threads("project-1"))?.isInvalidated,
           ).toBe(true);
+          expect(queryClient.getQueryState(workA)?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(workB)?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(unrelated)?.isInvalidated).toBe(false);
         },
         { drainMacrotask: true },
       );

@@ -496,7 +496,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
-    preferences: ports.preferences,
     drafts: ports.documentSync,
     workContextDelivery,
     obligations: ports.threadRepos.workContextDeliveries,

@@ -39,6 +39,7 @@ const expectedSuites = [
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
   "apps/server/server/domains/notices/adapters/drizzle-notice-port.db.test.ts",
   "apps/server/server/domains/projects/create-work.db.test.ts",
+  "apps/server/server/domains/projects/new-chat-fallback-work.db.test.ts",
   "apps/server/server/domains/projects/project-bootstrap-authority-head.db.test.ts",
   "apps/server/server/domains/projects/project-bootstrap-readiness.db.test.ts",
   "apps/server/server/domains/projects/provisioning-race.db.test.ts",

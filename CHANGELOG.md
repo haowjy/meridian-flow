@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- `database`, `contracts`, `apps/server`, `apps/app`: cut over the former project-wide current Work to a narrowly named new-chat fallback with CAS repair; delete its GET/PUT selection API and all creation/rebind/receipt side effects; preserve fallback-only omitted root creation; and add canonical metadata and associated-chat invalidation seams for Work detail.
+- `database`, `contracts`, `apps/server`, `apps/app`: cut over the former project-wide current Work to a narrowly named new-chat fallback with CAS repair; delete its GET/PUT selection API and all creation/rebind/receipt side effects; preserve fallback-only omitted root creation; canonicalize human/model Work metadata (including blank-field clearing); converge Work catalogs and associated chats from writer, model, reconciliation, and reversal paths; and prove fallback precedence and contention against PostgreSQL.
 
 - `apps/app`: give persistent Chat and Editor separate sibling draft-review
   controllers on desktop and phone, with a route-owned latest-wins handoff that

@@ -47,7 +47,6 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   createWork,
   deleteWorkTransition,
@@ -80,7 +79,6 @@ export interface ToolWiringDeps {
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
-  preferences: ProjectPreferencesRepository;
   workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   drafts: Pick<CollabDrafts, "draftReview">;
@@ -362,10 +360,6 @@ async function workBySlug(
   });
 }
 
-function cleared(value: string | undefined): string | null | undefined {
-  return value === "" ? null : value;
-}
-
 function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorOutput {
   return (
     typeof value === "object" &&
@@ -642,8 +636,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             selected.id,
             {
               name: command.name,
-              goal: cleared(command.goal),
-              description: cleared(command.description),
+              goal: command.goal,
+              description: command.description,
               status: command.status,
             },
           );

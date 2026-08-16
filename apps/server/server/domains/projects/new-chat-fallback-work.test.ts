@@ -1,4 +1,4 @@
-/** Current-Work resolution policy: preference, active recency, archive fallback, creation. */
+/** Fast policy checks for new-chat fallback ownership and resolver sequencing. */
 import type { Project } from "@meridian/contracts/projects";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
@@ -48,31 +48,6 @@ describe("resolveNewChatFallbackWork", () => {
     await expect(resolveNewChatFallbackWork(deps, { userId: USER_ID }, project)).resolves.toBe(
       newer,
     );
-  });
-
-  it("keeps an explicit switch that races fallback persistence", async () => {
-    const fallback = work("fallback");
-    const concurrentRepair = work("explicit");
-    let fallbackWorkId: string | null = null;
-    const deps = {
-      preferences: {
-        getNewChatFallbackWorkId: async () => fallbackWorkId,
-        repairNewChatFallbackWorkId: async () => {
-          fallbackWorkId = concurrentRepair.id;
-          return false;
-        },
-      },
-      works: {
-        findById: async (id: string) => (id === concurrentRepair.id ? concurrentRepair : null),
-        listByProject: async (_projectId: string, options?: { status?: Work["status"] }) =>
-          options?.status === "active" ? [fallback] : [],
-      },
-    } as never;
-
-    await expect(resolveNewChatFallbackWork(deps, { userId: USER_ID }, project)).resolves.toBe(
-      concurrentRepair,
-    );
-    expect(fallbackWorkId).toBe(concurrentRepair.id);
   });
 
   it("keeps an archived preference current", async () => {

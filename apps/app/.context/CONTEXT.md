@@ -99,14 +99,15 @@ Two interfaces are the only paths between the visual layer and the substrate:
   for placement, interaction ownership, and mid-thread rebind behavior.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
-  `project-invalidation` is the canonical project-level convergence seam: any
+  `project-invalidation` supplies project-level invalidators;
+  `work-projection-cache` is the one Work-entity/binding convergence policy. Any
   thread or Work transition that can change Home also invalidates `homeFeed`.
   Terminal turns and Work rebinds enter through
   `invalidateThreadProjectionDependencies`. Snapshot synchronization only applies
   history. A visible chat acknowledges unread state separately and converges the
   cached Home item from the authoritative user-state response without invalidation.
-  `useWorks` also exposes the server-resolved `defaultWorkId`; `useDefaultWorkId`
-  is the chat-independent seam for work-scoped surfaces.
+  `useWorks` also exposes the server-resolved `newChatFallbackWorkId`; it is only
+  the omitted-New-Chat fallback and never a project-wide Work selection.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries

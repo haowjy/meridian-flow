@@ -44,7 +44,6 @@ export interface UpdateWorkRequest {
   name?: string;
   goal?: string;
   description?: string;
-  status?: WorkStatus;
 }
 
 /** Strict body for changing the Work bound to an existing thread. */

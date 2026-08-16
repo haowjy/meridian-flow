@@ -470,6 +470,7 @@ export {
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
 export {
+  normalizeWorkUpdateInput,
   type UpdateWorkCommandInput,
   updateWork,
   updateWorkTransition,

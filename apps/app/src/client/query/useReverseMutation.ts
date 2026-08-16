@@ -14,9 +14,9 @@ import {
   reverseTurn,
   successfulWorkReversals,
 } from "@/client/api/reverse-api";
-import { invalidateProjectThreadData } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
+import { convergeWorkProjection } from "./work-projection-cache";
 
 export function useReverseDocumentMutation(threadId: string) {
   return useMutation({
@@ -36,7 +36,11 @@ export function useReverseTurnMutation(threadId: string) {
         threadQueryKeys.snapshot(threadId),
       )?.thread.projectId;
       if (projectId) {
-        void invalidateProjectThreadData(queryClient, projectId);
+        convergeWorkProjection(queryClient, {
+          kind: "entity",
+          projectId,
+          operation: "restore",
+        });
         return;
       }
       // Without a cached snapshot the owning project is unknown here; refresh

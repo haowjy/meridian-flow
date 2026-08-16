@@ -135,7 +135,6 @@ describe("wired write tool", () => {
         rebindPrimary: async () => ({ previousWorkId: currentId, changed: false }),
       },
       works,
-      preferences: {} as never,
       workContextDelivery: {
         projectChanged: async () => {},
       },
@@ -362,7 +361,6 @@ function wiredWriteHandler(input: {
       rebindPrimary: async () => ({ previousWorkId: null, changed: true }),
     },
     works: { listByProject: async () => [] } as never,
-    preferences: {} as never,
     workContextDelivery: {
       projectChanged: async () => {},
     },

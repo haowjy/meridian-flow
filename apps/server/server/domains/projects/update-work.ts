@@ -8,6 +8,21 @@ import type { WorkContextDelivery } from "./work-context-delivery.js";
 export type UpdateWorkCommandInput = UpdateWorkInput & { status?: WorkStatus };
 export type WorkTransition = { before: Work; after: Work; changed: boolean };
 
+/** Canonical metadata semantics for every human, model, and reversal caller. */
+export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateWorkCommandInput {
+  const optionalText = (value: string | null | undefined): string | null | undefined => {
+    if (value === undefined || value === null) return value;
+    const trimmed = value.trim();
+    return trimmed || null;
+  };
+  return {
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(input.goal !== undefined ? { goal: optionalText(input.goal) } : {}),
+    ...(input.description !== undefined ? { description: optionalText(input.description) } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+  };
+}
+
 export async function updateWork(
   deps: {
     works: WorkRepository;
@@ -27,14 +42,16 @@ export async function updateWorkTransition(
   workId: WorkId,
   input: UpdateWorkCommandInput,
 ): Promise<WorkTransition> {
+  const normalized = normalizeWorkUpdateInput(input);
   const result = await deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
     if (!before || before.deletedAt) throw new Error(`Work not found: ${workId}`);
     const requested = {
-      name: input.name === undefined ? before.name : input.name.trim(),
-      goal: input.goal === undefined ? before.goal : input.goal,
-      description: input.description === undefined ? before.description : input.description,
-      status: input.status ?? before.status,
+      name: normalized.name === undefined ? before.name : normalized.name,
+      goal: normalized.goal === undefined ? before.goal : normalized.goal,
+      description:
+        normalized.description === undefined ? before.description : normalized.description,
+      status: normalized.status ?? before.status,
     };
     const changed =
       before.name !== requested.name ||

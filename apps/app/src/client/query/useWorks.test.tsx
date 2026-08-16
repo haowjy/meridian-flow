@@ -86,7 +86,7 @@ describe("Work client queries", () => {
             await state.value?.mutateAsync(action);
           });
           expect(client.getQueryState(homeKey)?.isInvalidated).toBe(true);
-          expect(client.getQueryState(associated)?.isInvalidated).toBe(action.type === "update");
+          expect(client.getQueryState(associated)?.isInvalidated).toBe(action.type !== "create");
         },
       );
     } finally {

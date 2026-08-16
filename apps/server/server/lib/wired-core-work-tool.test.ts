@@ -1,7 +1,6 @@
 /** Work command wiring protocol coverage. */
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
-import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/index.js";
 import { createInMemoryWorkRepository, WorkDeleteBlockedError } from "../domains/projects/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
@@ -34,7 +33,6 @@ describe("wired work tool", () => {
     let primaryWorkId = current.id;
     const invalidateThread = vi.fn(async () => {});
     const threadChanged = vi.fn(async () => {});
-    const preferences = createInMemoryProjectPreferencesRepository();
     const registrations = createWiredCoreToolRegistrations({
       threads: {
         findById: async () =>
@@ -63,7 +61,6 @@ describe("wired work tool", () => {
         },
       },
       works: works as never,
-      preferences,
       workContextDelivery: {
         projectChanged: async () => {},
       },
@@ -89,7 +86,6 @@ describe("wired work tool", () => {
       current,
       target,
       works: baseWorks,
-      preferences,
       invalidateThread,
       threadChanged,
     };
@@ -186,23 +182,17 @@ describe("wired work tool", () => {
     });
   });
 
-  it("marks changed switches for post-result delivery without changing the fallback", async () => {
+  it("marks changed switches for post-result delivery", async () => {
     const primary = await setup("primary", true);
     await expect(
       primary.handler({ command: "switch", work: primary.target.slug }, toolContext()),
     ).resolves.toMatchObject({ metadata: { workContextChanged: true } });
     expect(primary.invalidateThread).not.toHaveBeenCalled();
     expect(primary.threadChanged).toHaveBeenCalledOnce();
-    await expect(
-      primary.preferences.getNewChatFallbackWorkId("user-1", "project-1"),
-    ).resolves.toBeNull();
 
     const subagent = await setup("subagent", false);
     await subagent.handler({ command: "switch", work: subagent.target.slug }, toolContext());
     expect(subagent.invalidateThread).not.toHaveBeenCalled();
-    await expect(
-      subagent.preferences.getNewChatFallbackWorkId("user-1", "project-1"),
-    ).resolves.toBeNull();
   });
 
   it("keeps an already-current switch side-effect free beyond its receipt", async () => {
@@ -235,6 +225,24 @@ describe("wired work tool", () => {
     });
     expect(second).toMatchObject({
       metadata: { workReceipt: { before: { name: "Target B" }, after: { name: "Target C" } } },
+    });
+  });
+
+  it("uses the shared metadata normalizer for model updates", async () => {
+    const fixture = await setup();
+
+    await expect(
+      fixture.handler(
+        {
+          command: "update",
+          work: fixture.target.slug,
+          goal: "   ",
+          description: "  Private notes  ",
+        },
+        toolContext(),
+      ),
+    ).resolves.toMatchObject({
+      output: { goal: null, description: "Private notes" },
     });
   });
 

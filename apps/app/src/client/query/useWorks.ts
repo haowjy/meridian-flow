@@ -13,9 +13,9 @@ import {
   updateWorkWriteMode,
 } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
-import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
+import { convergeWorkProjection } from "./work-projection-cache";
 
 export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   const enabled = (options?.enabled ?? true) && !useIsProjectPendingCreation(projectId);
@@ -51,10 +51,6 @@ export function useNewChatFallbackWorkId(projectId: string): string | null {
   return useWorks(projectId).newChatFallbackWorkId;
 }
 
-async function refreshWorks(client: QueryClient, projectId: string) {
-  await invalidateProjectThreadData(client, projectId);
-}
-
 export function useWorkMutations(projectId: string) {
   const client = useQueryClient();
   const mutation = useMutation({
@@ -78,9 +74,12 @@ export function useWorkMutations(projectId: string) {
           return null;
       }
     },
-    onSuccess: async (_result, action) => {
-      await refreshWorks(client, projectId);
-      if (action.type === "update") await invalidateWorkThreads(client, projectId);
+    onSuccess: (_result, action) => {
+      convergeWorkProjection(client, {
+        kind: "entity",
+        projectId,
+        operation: action.type,
+      });
     },
   });
   return mutation;

@@ -29,8 +29,8 @@ flowchart TD
 
 Acyclic at the domain level: threads reference project/work ownership, never
 the reverse (the only projects↔threads imports are test fixtures).
-Root thread creation omits a Work choice from the client: the server resolves
-the writer's current/default Work transactionally. An existing thread may be
+Root thread creation may omit a Work choice from the client: the server resolves
+the narrow new-chat fallback transactionally. An existing thread may be
 rebound afterward through the composer-backed canonical Work command.
 `apps/server/server/lib/app.ts` is the composition root that wires the runtime,
 thread repositories, gateway, event hub, package repository, preferences,

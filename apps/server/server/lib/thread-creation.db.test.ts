@@ -83,5 +83,44 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: thread.workId,
       });
     });
+
+    it("repairs a soft-deleted fallback before attaching an omitted-root thread", async () => {
+      await db.insert(schema.projectUserPreferences).values({
+        userId: USER_ID,
+        projectId: PROJECT_ID,
+        newChatFallbackWorkId: TARGET_WORK_ID,
+      });
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.works.id, TARGET_WORK_ID));
+      const createdThreadId = "00000000-0000-4000-8000-000000000478";
+
+      const thread = await createThreadForProject(
+        {
+          projects: createDrizzleProjectRepository({ db }),
+          workRepo: works,
+          preferences,
+          threads: threads.threads,
+          threadWorks: threads.threadWorks,
+          transaction: threads.transaction,
+          eventSink: createInMemoryEventSink(),
+        },
+        {
+          id: createdThreadId,
+          projectId: PROJECT_ID,
+          userId: USER_ID,
+          title: "Repaired conversation",
+        },
+      );
+
+      expect(thread.workId).toBe(WORK_ID);
+      await expect(preferences.getNewChatFallbackWorkId(USER_ID, PROJECT_ID)).resolves.toBe(
+        WORK_ID,
+      );
+      await expect(threads.threadWorks.findPrimary(createdThreadId)).resolves.toEqual({
+        workId: WORK_ID,
+      });
+    });
   });
 }

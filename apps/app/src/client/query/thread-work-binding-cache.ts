@@ -10,7 +10,7 @@ import type {
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
 import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
-import { invalidateProjectHomeFeed, invalidateWorkThreads } from "./project-invalidation";
+import { invalidateProjectHomeFeed } from "./project-invalidation";
 import {
   isProjectContextTreeKey,
   isProjectWorkDerivedKey,
@@ -19,6 +19,7 @@ import {
 } from "./project-query-keys";
 import { patchThreadInProjectCaches } from "./project-thread-cache";
 import { threadQueryKeys } from "./thread-query-keys";
+import { convergeWorkProjection } from "./work-projection-cache";
 
 export type ThreadWorkProjectionCursor = { seq: string; workId: string };
 
@@ -107,10 +108,11 @@ export function convergeThreadWorkBinding(
       invalidateThreadProjectionDependencies(client, {
         threadId: signal.threadId,
         projectId: signal.projectId,
-        refreshLists: true,
+        refreshLists: false,
         workIds: "all",
         contextTrees: "work-scoped",
       });
+      convergeWorkProjection(client, { kind: "binding", projectId: signal.projectId });
     });
     return;
   }
@@ -139,11 +141,11 @@ export function convergeThreadWorkBinding(
       invalidateThreadProjectionDependencies(client, {
         threadId,
         projectId,
-        refreshLists: true,
+        refreshLists: false,
         workIds: new Set([result.previousWorkId, result.work.id]),
         contextTrees: "work-scoped",
       });
-      void invalidateWorkThreads(client, projectId);
+      convergeWorkProjection(client, { kind: "binding", projectId });
       return;
     }
 
@@ -159,7 +161,7 @@ export function convergeThreadWorkBinding(
       workIds: ids.size ? ids : "all",
       contextTrees: "work-scoped",
     });
-    void invalidateWorkThreads(client, projectId);
+    convergeWorkProjection(client, { kind: "binding", projectId });
   });
 }
 

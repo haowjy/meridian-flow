@@ -1,14 +1,14 @@
 # domains/preferences — project preferences
 
 Manages per-project user preferences (thread grouping, pinned threads, default
-agent, auto-resume settings, and current Work). Copy-on-write merge semantics
+agent, auto-resume settings, and the narrow new-chat fallback). Copy-on-write merge semantics
 keep in-memory and Drizzle adapters behaviorally identical.
 
 ## What it owns
 
 - **`ProjectPreferencesRepository` port** — `read` / `upsert` with
-  `defaultProjectPreferences()` fallback, plus current-Work get/set and
-  compare-and-swap (`setCurrentWorkIdIfUnchanged`).
+  `defaultProjectPreferences()` fallback, plus new-chat fallback lookup and
+  compare-and-set repair (`repairNewChatFallbackWorkId`).
 - **Domain helpers** — `copyProjectPreferences` (defensive copy),
   `mergeProjectPreferences` (patch application),
   `defaultProjectPreferences` (canonical defaults).
@@ -19,7 +19,7 @@ keep in-memory and Drizzle adapters behaviorally identical.
 
 | Port | Surface |
 |---|---|
-| `ProjectPreferencesRepository` | Reads/upserts UI preferences and gets/sets the writer’s current Work for one project; compare-and-swap protects fallback repair from overwriting a concurrent selection. |
+| `ProjectPreferencesRepository` | Reads/upserts UI preferences and reads or compare-and-set repairs the omitted-New-Chat fallback. It exposes no general fallback setter. |
 
 ## Adapters
 
@@ -42,10 +42,10 @@ hermetic tests and local reference behavior.
 - **Patch semantics.** Nullable fields (`autoResume`) can be set to `undefined`
   via `UpdateProjectPreferencesRequest`.
 - **Persistence.** Production preferences survive server restart through Drizzle/Postgres.
-- **Current Work is an identity, not UI state.** It stays on the same
-  `(userId, projectId)` row, and archive does not clear it. A resolver may
-  repair only a null or dangling value; that write is compare-and-swap against
-  the value it read, then retries on contention.
+- **Fallback is not selection.** It stays on the same `(userId, projectId)` row,
+  and archive does not clear it. Only omitted-root-chat resolution may repair a
+  null or dangling value; that write is compare-and-set against the value read,
+  then retries on contention. A thread's “current Work” is its primary binding.
 
 ## Cross-domain dependencies
 

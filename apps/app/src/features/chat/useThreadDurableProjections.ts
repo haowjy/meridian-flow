@@ -1,6 +1,7 @@
 /** Persistent owner for durable thread projections, including Work binding and trails. */
 import { EventType } from "@meridian/contracts/protocol";
 import {
+  parseWorkReceipt,
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
@@ -17,6 +18,7 @@ import {
   convergeThreadWorkBinding,
   readStableThreadWorkBinding,
 } from "@/client/query/thread-work-binding-cache";
+import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 
 type TrailEventValue = {
   threadId: string;
@@ -44,6 +46,13 @@ function decodeWorkProjection(
   return eventThreadId === threadId && typeof projectId === "string" && typeof workId === "string"
     ? { seq, signal: { threadId, projectId, workId } }
     : null;
+}
+
+function decodeWorkReceipt(event: { type: string; metadata?: unknown }) {
+  if (event.type !== EventType.TOOL_CALL_RESULT) return null;
+  const metadata = event.metadata;
+  if (!metadata || typeof metadata !== "object") return null;
+  return parseWorkReceipt((metadata as Record<string, unknown>).workReceipt);
 }
 
 export function useThreadDurableProjections({
@@ -121,6 +130,15 @@ export function useThreadDurableProjections({
     void reconcile(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ seq, event }) => {
+        const receipt = decodeWorkReceipt(event);
+        if (projectId && receipt?.changed) {
+          convergeWorkProjection(
+            queryClient,
+            receipt.category === "binding"
+              ? { kind: "binding", projectId }
+              : { kind: "entity", projectId, operation: receipt.operation },
+          );
+        }
         const projection = decodeWorkProjection(threadId, seq, event);
         if (projection) {
           convergeThreadWorkBinding(queryClient, { source: "projected", ...projection });

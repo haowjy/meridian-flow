@@ -13,7 +13,10 @@ import { requireRequestId } from "../../../../lib/request-id.js";
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const workId = requireRequestId(getRouterParam(event, "workId"), "workId");
-  const body = (await readBody<Partial<Record<keyof UpdateWorkRequest, unknown>>>(event)) ?? {};
+  const body =
+    (await readBody<Partial<Record<keyof UpdateWorkRequest, unknown>> & Record<string, unknown>>(
+      event,
+    )) ?? {};
   if (body.name !== undefined && (typeof body.name !== "string" || !body.name.trim())) {
     throw createError({ statusCode: 400, message: "name must be a non-empty string" });
   }
@@ -23,8 +26,8 @@ export default defineEventHandler(async (event) => {
   if (body.description !== undefined && typeof body.description !== "string") {
     throw createError({ statusCode: 400, message: "description must be a string" });
   }
-  if (body.status !== undefined && body.status !== "active" && body.status !== "archived") {
-    throw createError({ statusCode: 400, message: "status must be active or archived" });
+  if (body.status !== undefined) {
+    throw createError({ statusCode: 400, message: "status is changed through archive actions" });
   }
 
   await requireWorkOwner({ works: app.workRepo, projects: app.projectRepo }, workId, user.userId);
@@ -32,10 +35,9 @@ export default defineEventHandler(async (event) => {
     { works: app.workRepo, workContextDelivery: app.workContextDelivery },
     workId,
     {
-      name: body.name?.trim(),
-      goal: body.goal,
-      description: body.description,
-      status: body.status,
+      name: body.name as string | undefined,
+      goal: body.goal as string | undefined,
+      description: body.description as string | undefined,
     },
   ).catch((error: unknown) => {
     if (error instanceof WorkNameConflictError) {

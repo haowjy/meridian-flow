@@ -86,4 +86,29 @@ describe("PATCH /api/works/:workId", () => {
     });
     expect(f.update).not.toHaveBeenCalled();
   });
+
+  it("clears and trims optional metadata through the shared domain normalizer", async () => {
+    const f = fixture();
+    vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
+
+    await expect(
+      handler(event({ goal: "   ", description: "  Private notes  " }) as never),
+    ).resolves.toMatchObject({ value: { goal: null, description: "Private notes" } });
+    expect(f.update).toHaveBeenCalledWith(WORK_ID, {
+      name: "Draft",
+      goal: null,
+      description: "Private notes",
+      status: "active",
+    });
+  });
+
+  it("rejects lifecycle status on the metadata route", async () => {
+    const f = fixture();
+    vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
+
+    await expect(handler(event({ status: "archived" }) as never)).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(f.update).not.toHaveBeenCalled();
+  });
 });

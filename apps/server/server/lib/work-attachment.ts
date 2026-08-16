@@ -34,9 +34,9 @@ export interface ResolveWorkMembershipDeps {
 export interface ResolveWorkMembershipArgs {
   threadId: string;
   projectId: string;
-  /** Required only when selecting the current Work for a primary thread. */
+  /** Required only when resolving the omitted-root new-chat fallback. */
   project?: Project;
-  /** Required only when selecting the current Work for a primary thread. */
+  /** Required only when resolving the omitted-root new-chat fallback. */
   userId?: UserId;
   /** Explicit work assignment from the request, if any. */
   workId?: string | null;
@@ -49,7 +49,7 @@ export interface ResolveWorkMembershipArgs {
  *
  * - An explicit `workId` wins: creates one membership (isPrimary = true).
  * - A subagent inherits its parent's primary Work as its own primary.
- * - A primary thread with no explicit work: attaches to the writer's current Work.
+ * - A primary thread with no explicit work: attaches to the new-chat fallback.
  *
  * Returns the primary Work ID.
  */
@@ -73,7 +73,7 @@ export async function resolveWorkMembership(
     primaryWorkId = parentPrimary.workId;
   } else {
     if (!args.project || !args.userId) {
-      throw new Error("Project and user are required to resolve a primary thread's current Work");
+      throw new Error("Project and user are required to resolve the new-chat fallback Work");
     }
     primaryWorkId = (
       await resolveNewChatFallbackWork(
