@@ -6,7 +6,7 @@
 import type { Project } from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { resolveCurrentWork, type WorkRepository } from "../domains/projects/index.js";
+import { resolveNewChatFallbackWork, type WorkRepository } from "../domains/projects/index.js";
 import type { ThreadWorksRepository } from "../domains/threads/index.js";
 
 export class InvalidWorkAttachmentError extends Error {
@@ -76,7 +76,7 @@ export async function resolveWorkMembership(
       throw new Error("Project and user are required to resolve a primary thread's current Work");
     }
     primaryWorkId = (
-      await resolveCurrentWork(
+      await resolveNewChatFallbackWork(
         { works: deps.workRepo, preferences: deps.preferences },
         { userId: args.userId },
         args.project,

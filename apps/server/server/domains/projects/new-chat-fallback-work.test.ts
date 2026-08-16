@@ -2,7 +2,7 @@
 import type { Project } from "@meridian/contracts/projects";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
-import { resolveCurrentWork } from "./current-work.js";
+import { resolveNewChatFallbackWork } from "./new-chat-fallback-work.js";
 
 const USER_ID = "user-1";
 const PROJECT_ID = "project-1";
@@ -12,26 +12,23 @@ function work(id: string, status: Work["status"] = "active"): Work {
   return { id, projectId: PROJECT_ID, status, deletedAt: null } as Work;
 }
 
-describe("resolveCurrentWork", () => {
-  it("materializes an implicit choice so archiving it does not change the current Work", async () => {
+describe("resolveNewChatFallbackWork", () => {
+  it("materializes an implicit choice so archiving it does not change the new-chat fallback Work", async () => {
     const older = work("older");
     const newer = work("newer");
-    let currentWorkId: string | null = null;
+    let fallbackWorkId: string | null = null;
     const rows = [newer, older];
     const deps = {
       preferences: {
-        getCurrentWorkId: async () => currentWorkId,
-        setCurrentWorkId: async (_userId: string, _projectId: string, workId: string) => {
-          currentWorkId = workId;
-        },
-        setCurrentWorkIdIfUnchanged: async (
+        getNewChatFallbackWorkId: async () => fallbackWorkId,
+        repairNewChatFallbackWorkId: async (
           _userId: string,
           _projectId: string,
           expectedWorkId: string | null,
           workId: string,
         ) => {
-          if (currentWorkId !== expectedWorkId) return false;
-          currentWorkId = workId;
+          if (fallbackWorkId !== expectedWorkId) return false;
+          fallbackWorkId = workId;
           return true;
         },
       },
@@ -42,36 +39,40 @@ describe("resolveCurrentWork", () => {
       },
     } as never;
 
-    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(newer);
-    expect(currentWorkId).toBe(newer.id);
+    await expect(resolveNewChatFallbackWork(deps, { userId: USER_ID }, project)).resolves.toBe(
+      newer,
+    );
+    expect(fallbackWorkId).toBe(newer.id);
 
     newer.status = "archived";
-    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(newer);
+    await expect(resolveNewChatFallbackWork(deps, { userId: USER_ID }, project)).resolves.toBe(
+      newer,
+    );
   });
 
   it("keeps an explicit switch that races fallback persistence", async () => {
     const fallback = work("fallback");
-    const explicitlySelected = work("explicit");
-    let currentWorkId: string | null = null;
+    const concurrentRepair = work("explicit");
+    let fallbackWorkId: string | null = null;
     const deps = {
       preferences: {
-        getCurrentWorkId: async () => currentWorkId,
-        setCurrentWorkIdIfUnchanged: async () => {
-          currentWorkId = explicitlySelected.id;
+        getNewChatFallbackWorkId: async () => fallbackWorkId,
+        repairNewChatFallbackWorkId: async () => {
+          fallbackWorkId = concurrentRepair.id;
           return false;
         },
       },
       works: {
-        findById: async (id: string) => (id === explicitlySelected.id ? explicitlySelected : null),
+        findById: async (id: string) => (id === concurrentRepair.id ? concurrentRepair : null),
         listByProject: async (_projectId: string, options?: { status?: Work["status"] }) =>
           options?.status === "active" ? [fallback] : [],
       },
     } as never;
 
-    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(
-      explicitlySelected,
+    await expect(resolveNewChatFallbackWork(deps, { userId: USER_ID }, project)).resolves.toBe(
+      concurrentRepair,
     );
-    expect(currentWorkId).toBe(explicitlySelected.id);
+    expect(fallbackWorkId).toBe(concurrentRepair.id);
   });
 
   it("keeps an archived preference current", async () => {
@@ -79,9 +80,9 @@ describe("resolveCurrentWork", () => {
     const listByProject = vi.fn();
 
     await expect(
-      resolveCurrentWork(
+      resolveNewChatFallbackWork(
         {
-          preferences: { getCurrentWorkId: async () => preferred.id } as never,
+          preferences: { getNewChatFallbackWorkId: async () => preferred.id } as never,
           works: { findById: async () => preferred, listByProject } as never,
         },
         { userId: USER_ID },
@@ -98,11 +99,11 @@ describe("resolveCurrentWork", () => {
     );
 
     await expect(
-      resolveCurrentWork(
+      resolveNewChatFallbackWork(
         {
           preferences: {
-            getCurrentWorkId: async () => "deleted",
-            setCurrentWorkIdIfUnchanged: async () => true,
+            getNewChatFallbackWorkId: async () => "deleted",
+            repairNewChatFallbackWorkId: async () => true,
           } as never,
           works: { findById: async () => null, listByProject } as never,
         },
@@ -117,21 +118,18 @@ describe("resolveCurrentWork", () => {
     const deleted = work("deleted");
     deleted.deletedAt = new Date().toISOString();
     const active = work("active");
-    let currentWorkId = deleted.id;
+    let fallbackWorkId = deleted.id;
     const deps = {
       preferences: {
-        getCurrentWorkId: async () => currentWorkId,
-        setCurrentWorkId: async (_userId: string, _projectId: string, workId: string) => {
-          currentWorkId = workId;
-        },
-        setCurrentWorkIdIfUnchanged: async (
+        getNewChatFallbackWorkId: async () => fallbackWorkId,
+        repairNewChatFallbackWorkId: async (
           _userId: string,
           _projectId: string,
           expectedWorkId: string | null,
           workId: string,
         ) => {
-          if (currentWorkId !== expectedWorkId) return false;
-          currentWorkId = workId;
+          if (fallbackWorkId !== expectedWorkId) return false;
+          fallbackWorkId = workId;
           return true;
         },
       },
@@ -146,11 +144,15 @@ describe("resolveCurrentWork", () => {
       },
     } as never;
 
-    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(active);
-    expect(currentWorkId).toBe(active.id);
+    await expect(resolveNewChatFallbackWork(deps, { userId: USER_ID }, project)).resolves.toBe(
+      active,
+    );
+    expect(fallbackWorkId).toBe(active.id);
 
     deleted.deletedAt = null;
-    await expect(resolveCurrentWork(deps, { userId: USER_ID }, project)).resolves.toBe(active);
+    await expect(resolveNewChatFallbackWork(deps, { userId: USER_ID }, project)).resolves.toBe(
+      active,
+    );
   });
 
   it("uses the newest archived Work when no active Work remains", async () => {
@@ -160,11 +162,11 @@ describe("resolveCurrentWork", () => {
     );
 
     await expect(
-      resolveCurrentWork(
+      resolveNewChatFallbackWork(
         {
           preferences: {
-            getCurrentWorkId: async () => null,
-            setCurrentWorkIdIfUnchanged: async () => true,
+            getNewChatFallbackWorkId: async () => null,
+            repairNewChatFallbackWorkId: async () => true,
           } as never,
           works: { listByProject } as never,
         },
@@ -179,11 +181,11 @@ describe("resolveCurrentWork", () => {
     const ensureDefaultForProject = vi.fn(async () => created);
 
     await expect(
-      resolveCurrentWork(
+      resolveNewChatFallbackWork(
         {
           preferences: {
-            getCurrentWorkId: async () => null,
-            setCurrentWorkIdIfUnchanged: async () => true,
+            getNewChatFallbackWorkId: async () => null,
+            repairNewChatFallbackWorkId: async () => true,
           } as never,
           works: {
             listByProject: async () => [],

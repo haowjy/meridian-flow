@@ -40,7 +40,7 @@ describe("identity commit operation ownership", () => {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
-        defaultWorkId: "work-1",
+        editorWorkId: "work-1",
         identityMutations: rig.identityMutations,
         onCommitted: (...receipt) => committed.push(receipt),
       });
@@ -70,7 +70,7 @@ describe("identity commit operation ownership", () => {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
-        defaultWorkId: "work-1",
+        editorWorkId: "work-1",
         identityMutations: rig.identityMutations,
         onCommitted: () => {},
       });
@@ -114,7 +114,7 @@ describe("identity commit operation ownership", () => {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
-        defaultWorkId: "work-1",
+        editorWorkId: "work-1",
         identityMutations: rig.identityMutations,
         onCommitted: (_documentId, receipt, ownership) =>
           committed.push({ name: receipt.name, isLatest: ownership.isLatest }),
@@ -180,7 +180,7 @@ describe("identity commit operation ownership", () => {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
-        defaultWorkId: workId,
+        editorWorkId: workId,
         identityMutations: rig.identityMutations,
         onCommitted: (_documentId, receipt) => committed.push(receipt),
       });

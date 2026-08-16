@@ -34,12 +34,12 @@ export type DesiredIdentity = {
 /** Resolve a surface's folder choice into the complete final destination. */
 export function identityDestination(
   location: TabLocation,
-  defaultWorkId: string | null,
+  editorWorkId: string | null,
   choice?: Pick<IdentityDestination, "scheme" | "folderPath">,
 ): IdentityDestination {
   const scheme = choice?.scheme ?? location.scheme;
   const workId = isWorkScopedProjectContextScheme(scheme)
-    ? ((scheme === location.scheme ? location.workId : undefined) ?? defaultWorkId ?? undefined)
+    ? ((scheme === location.scheme ? location.workId : undefined) ?? editorWorkId ?? undefined)
     : undefined;
   return {
     scheme,

@@ -585,17 +585,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "create") {
-          const previousCurrentWorkId = await deps.preferences.getCurrentWorkId(
-            thread.userId,
-            thread.projectId,
-          );
           const work = await createWork(
             {
               works: deps.works,
-              preferences: deps.preferences,
               workContextDelivery: deps.workContextDelivery,
             },
-            thread.userId,
             {
               projectId: thread.projectId,
               createdByUserId: thread.userId,
@@ -615,7 +609,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 workName: work.name,
                 before: null,
                 after: receiptState(work),
-                inverse: { command: "delete", workId: work.id, previousCurrentWorkId },
+                inverse: { command: "delete", workId: work.id },
               } satisfies WorkReceipt,
               workContextChanged: true,
             },
@@ -709,13 +703,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               threads: deps.threads,
               threadWorks: deps.threadWorks,
               works: deps.works,
-              preferences: deps.preferences,
               obligations: deps.obligations,
             },
             {
               threadId: thread.id,
               targetWorkId: selected.id,
-              preferenceUserId: thread.userId,
             },
           ),
         );

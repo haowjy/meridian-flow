@@ -9,7 +9,6 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000101" as ThreadId;
 const SOURCE_ID = "00000000-0000-4000-8000-000000000102" as WorkId;
 const TARGET_ID = "00000000-0000-4000-8000-000000000103" as WorkId;
 const USER_ID = "00000000-0000-4000-8000-000000000104" as UserId;
-const PREFERENCE_USER_ID = "00000000-0000-4000-8000-000000000105" as UserId;
 
 function work(id: WorkId, name: string, projectId = "project-1"): Work {
   return {
@@ -41,7 +40,6 @@ function fixture(
   const source = work(SOURCE_ID, "Source");
   const target = options.target === undefined ? work(TARGET_ID, "Target") : options.target;
   let currentId = options.sameTarget ? TARGET_ID : SOURCE_ID;
-  const setCurrentWorkId = vi.fn(async () => {});
   const enqueueThread = vi.fn(async () => [THREAD_ID]);
   const thread = {
     id: THREAD_ID,
@@ -53,7 +51,6 @@ function fixture(
   return {
     source,
     target,
-    setCurrentWorkId,
     enqueueThread,
     deps: {
       threads: { findById: async () => thread },
@@ -70,19 +67,17 @@ function fixture(
           return { previousWorkId, changed };
         },
       },
-      preferences: { setCurrentWorkId },
       obligations: { enqueueThread },
     },
   };
 }
 
 describe("rebindThreadWork", () => {
-  it("commits one exact receipt, primary preference, and context-refresh enqueue", async () => {
+  it("commits one exact receipt and context-refresh enqueue", async () => {
     const h = fixture();
     const result = await rebindThreadWork(h.deps, {
       threadId: THREAD_ID,
       targetWorkId: TARGET_ID,
-      preferenceUserId: PREFERENCE_USER_ID,
     });
 
     expect(result).toMatchObject({
@@ -90,7 +85,6 @@ describe("rebindThreadWork", () => {
       previousWorkId: SOURCE_ID,
       work: { id: TARGET_ID, name: "Target" },
       changed: true,
-      preferenceChanged: true,
       receipt: {
         operation: "switch",
         category: "binding",
@@ -100,7 +94,6 @@ describe("rebindThreadWork", () => {
         inverse: null,
       },
     });
-    expect(h.setCurrentWorkId).toHaveBeenCalledWith(PREFERENCE_USER_ID, "project-1", TARGET_ID);
     expect(h.enqueueThread).toHaveBeenCalledOnce();
   });
 
@@ -109,27 +102,23 @@ describe("rebindThreadWork", () => {
     const result = await rebindThreadWork(h.deps, {
       threadId: THREAD_ID,
       targetWorkId: TARGET_ID,
-      preferenceUserId: USER_ID,
     });
 
     expect(result).toMatchObject({
       changed: false,
-      preferenceChanged: false,
       receipt: { changed: false, inverse: null },
     });
-    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
     expect(h.enqueueThread).not.toHaveBeenCalled();
   });
 
-  it("does not change sticky preference for subagent threads", async () => {
+  it("rebinds subagent threads through the same binding-only transition", async () => {
     const h = fixture({ kind: "subagent" });
     const result = await rebindThreadWork(h.deps, {
       threadId: THREAD_ID,
       targetWorkId: TARGET_ID,
-      preferenceUserId: USER_ID,
     });
-    expect(result.preferenceChanged).toBe(false);
-    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
+    expect(result.changed).toBe(true);
+    expect(h.enqueueThread).toHaveBeenCalledOnce();
   });
 
   it("rejects missing, deleted, and cross-project targets before mutation", async () => {
@@ -143,7 +132,6 @@ describe("rebindThreadWork", () => {
         rebindThreadWork(h.deps, {
           threadId: THREAD_ID,
           targetWorkId: TARGET_ID,
-          preferenceUserId: USER_ID,
         }),
       ).rejects.toBeInstanceOf(RebindThreadWorkError);
       expect(h.enqueueThread).not.toHaveBeenCalled();
@@ -157,14 +145,12 @@ describe("rebindThreadWork", () => {
       rebindThreadWork(h.deps, {
         threadId: THREAD_ID,
         targetWorkId: TARGET_ID,
-        preferenceUserId: USER_ID,
       }),
     ).rejects.toMatchObject({
       name: "RebindThreadWorkError",
       reason: "missing_primary",
       threadId: THREAD_ID,
     });
-    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
     expect(h.enqueueThread).not.toHaveBeenCalled();
   });
 });

@@ -211,7 +211,7 @@ export function ProjectView(props: ProjectViewProps) {
       ? { status: "error" }
       : worksQuery.status === "loading" || worksQuery.status === "disabled"
         ? { status: "loading" }
-        : { status: "ready", workId: worksQuery.defaultWorkId },
+        : { status: "ready", workId: worksQuery.newChatFallbackWorkId },
   );
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);

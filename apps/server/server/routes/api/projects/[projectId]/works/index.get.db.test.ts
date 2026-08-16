@@ -13,6 +13,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("GET Work collection (postgres)", async () => {
     const schema = await import("@meridian/database/schema");
+    const { eq } = await import("drizzle-orm");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
@@ -100,14 +101,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(response).toMatchObject({
         value: {
-          defaultWorkId: NEWER_WORK_ID,
+          newChatFallbackWorkId: NEWER_WORK_ID,
           works: [
             { id: NEWER_WORK_ID, status: "active" },
             { id: OLDER_WORK_ID, status: "active" },
           ],
         },
       });
-      await expect(preferences.getCurrentWorkId(OWNER_ID, PROJECT_ID)).resolves.toBe(NEWER_WORK_ID);
+      await expect(preferences.getNewChatFallbackWorkId(OWNER_ID, PROJECT_ID)).resolves.toBe(
+        NEWER_WORK_ID,
+      );
+    });
+
+    it("clears the fallback pointer when its Work is physically purged", async () => {
+      const db = database.current;
+      await handler(event() as never);
+      await db.delete(schema.works).where(eq(schema.works.id, NEWER_WORK_ID));
+
+      await expect(preferences.getNewChatFallbackWorkId(OWNER_ID, PROJECT_ID)).resolves.toBeNull();
     });
 
     it("conceals a project owned by another writer", async () => {
@@ -117,7 +128,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         statusCode: 404,
         message: "Project not found",
       });
-      await expect(preferences.getCurrentWorkId(OTHER_USER_ID, PROJECT_ID)).resolves.toBeNull();
+      await expect(
+        preferences.getNewChatFallbackWorkId(OTHER_USER_ID, PROJECT_ID),
+      ).resolves.toBeNull();
     });
   });
 }

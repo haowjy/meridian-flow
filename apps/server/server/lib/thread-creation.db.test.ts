@@ -76,7 +76,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
 
       expect(thread.workId).toBeTruthy();
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(thread.workId);
+      await expect(preferences.getNewChatFallbackWorkId(USER_ID, PROJECT_ID)).resolves.toBe(
+        thread.workId,
+      );
       await expect(threads.threadWorks.findPrimary(thread.id)).resolves.toEqual({
         workId: thread.workId,
       });

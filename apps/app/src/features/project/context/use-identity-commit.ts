@@ -54,16 +54,16 @@ type IdentityCommitPlan =
 export function deriveIdentityCommitPlan(
   tab: ContextTab,
   target: DesiredIdentity,
-  defaultWorkId: string | null,
+  editorWorkId: string | null,
 ): IdentityCommitPlan {
   const location = tabLocation(tab);
   const desired = {
-    destination: identityDestination(location, defaultWorkId, target.destination),
+    destination: identityDestination(location, editorWorkId, target.destination),
     name: target.name.trim(),
   };
   if (tab.kind === "new") return { kind: "queue", desired };
 
-  const current = identityDestination(location, defaultWorkId);
+  const current = identityDestination(location, editorWorkId);
   const sameDestination =
     desired.destination.scheme === current.scheme &&
     desired.destination.folderPath === current.folderPath &&
@@ -78,13 +78,13 @@ export function deriveIdentityCommitPlan(
 export function useIdentityCommit({
   projectId,
   tab,
-  defaultWorkId,
+  editorWorkId,
   onCommitted,
   identityMutations: suppliedIdentityMutations,
 }: {
   projectId: string;
   tab: ContextTab;
-  defaultWorkId: string | null;
+  editorWorkId: string | null;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -97,13 +97,13 @@ export function useIdentityCommit({
   const identityMutations =
     suppliedIdentityMutations ?? createContextIdentityMutationService(queryClient);
   return async (target) => {
-    const plan = deriveIdentityCommitPlan(tab, target, defaultWorkId);
+    const plan = deriveIdentityCommitPlan(tab, target, editorWorkId);
     if (plan.kind === "queue") {
       queueUntitledIdentity(
         {
           documentId: tab.documentId,
           projectId,
-          ...(defaultWorkId ? { home: { scheme: "scratch" as const, workId: defaultWorkId } } : {}),
+          ...(editorWorkId ? { home: { scheme: "scratch" as const, workId: editorWorkId } } : {}),
         },
         plan.desired,
       );
@@ -132,7 +132,7 @@ export function useIdentityCommit({
             message: t`This document changed elsewhere. Reopen it and try again.`,
           };
         }
-        const freshPlan = deriveIdentityCommitPlan(freshTab, target, defaultWorkId);
+        const freshPlan = deriveIdentityCommitPlan(freshTab, target, editorWorkId);
         if (freshPlan.kind === "no-op") return { status: "committed" };
         if (freshPlan.kind !== "commit" || freshTab.kind === "new") {
           return {
@@ -177,7 +177,7 @@ export function useIdentityCommit({
           path: `/${moved.path}`,
           name: moved.name,
           ...(destination.workId ? { workId: destination.workId } : {}),
-          routeWorkId: destination.workId ?? defaultWorkId,
+          routeWorkId: destination.workId ?? editorWorkId,
         },
         { isLatest: moveReceipt.isLatest },
       );

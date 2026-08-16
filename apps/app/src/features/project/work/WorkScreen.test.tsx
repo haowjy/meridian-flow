@@ -80,155 +80,6 @@ describe("WorkDialog identity", () => {
 });
 
 describe("WorkScreen actions", () => {
-  it("announces switch failure and synchronously rejects a competing switch", async () => {
-    const mutate = vi.fn();
-    vi.mocked(queryHooks.useWorks).mockReturnValue({
-      works: [workFixture("work-a", "Work A", "Goal A"), workFixture("work-b", "Work B", "Goal B")],
-      currentWork: workFixture("work-a", "Work A", "Goal A"),
-      currentWorkId: "work-a",
-      defaultWorkId: "work-a",
-      isError: false,
-      isFetching: false,
-      status: "ready",
-      refetch: vi.fn(),
-    });
-    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
-      mutate,
-      reset: vi.fn(),
-      isPending: false,
-      error: new Error("Could not switch Work"),
-      variables: { type: "switch", workId: "work-b" },
-    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
-
-    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
-      expect(document.querySelector("h1")?.textContent).toBe("Work");
-      expect(document.querySelector("h1")?.className).toContain("sr-only");
-      expect(document.body.textContent).toContain("New chats use the current Work.");
-      expect(buttonContaining("Work A").getAttribute("aria-pressed")).toBe("true");
-      expect(buttonContaining("Work B").getAttribute("aria-pressed")).toBe("false");
-      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-        "Could not switch Work",
-      );
-      expect(
-        document.querySelector('[data-work-error="work-b"]')?.closest("li")?.textContent,
-      ).toContain("Work B");
-      buttonContaining("Work A").click();
-      buttonContaining("Work B").click();
-      expect(mutate).toHaveBeenCalledTimes(1);
-      expect(mutate).toHaveBeenCalledWith(
-        { type: "switch", workId: "work-b" },
-        expect.objectContaining({ onSettled: expect.any(Function) }),
-      );
-    });
-  });
-
-  it("marks and visibly owns the pending Work while both actions are disabled", async () => {
-    mockManagerWorks([
-      workFixture("work-a", "Work A", "Goal A"),
-      workFixture("work-b", "Work B", "Goal B"),
-    ]);
-    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
-      mutate: vi.fn(),
-      reset: vi.fn(),
-      isPending: true,
-      error: null,
-      variables: { type: "switch", workId: "work-b" },
-    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
-
-    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
-      const pendingCard = document.querySelector('[data-work-card="work-b"]');
-      expect(pendingCard?.getAttribute("aria-busy")).toBe("true");
-      expect(
-        pendingCard?.querySelector('[data-work-pending-content="work-b"]')?.className,
-      ).toContain("opacity-50");
-      expect(buttonContaining("Work B").disabled).toBe(true);
-      expect(
-        document.querySelector<HTMLButtonElement>('button[aria-label="Edit Work B"]')?.disabled,
-      ).toBe(true);
-    });
-  });
-
-  it("keeps each failed row action beside its submitted Work and clears it on retry and success", async () => {
-    const works = [
-      workFixture("active-a", "Active A", "Goal A"),
-      workFixture("active-b", "Active B", "Goal B"),
-      workFixture("active-c", "Active C", "Goal C"),
-      archivedWorkFixture("archived-a", "Archived A"),
-    ];
-    type MutationOptions = { onSuccess?: (result: Work) => void; onSettled?: () => void };
-    let rerender: (() => void) | null = null;
-    let mutationError: Error | null = null;
-    let variables: { type: "switch"; workId: string } | undefined;
-    let submitted: { action: { type: "switch"; workId: string }; options: MutationOptions } | null =
-      null;
-    const reset = vi.fn(() => {
-      mutationError = null;
-      variables = undefined;
-      rerender?.();
-    });
-    const mutate = vi.fn((action: { type: "switch"; workId: string }, options: MutationOptions) => {
-      variables = action;
-      submitted = { action, options };
-      rerender?.();
-    });
-    vi.mocked(queryHooks.useWorks).mockReturnValue({
-      works,
-      currentWork: works[0],
-      currentWorkId: works[0].id,
-      defaultWorkId: works[0].id,
-      isError: false,
-      isFetching: false,
-      status: "ready",
-      refetch: vi.fn(),
-    });
-    vi.mocked(queryHooks.useWorkMutations).mockImplementation(
-      () =>
-        ({
-          mutate,
-          reset,
-          isPending: false,
-          error: mutationError,
-          variables,
-        }) as unknown as ReturnType<typeof queryHooks.useWorkMutations>,
-    );
-
-    function Harness() {
-      const [, setVersion] = useState(0);
-      rerender = () => setVersion((value) => value + 1);
-      return <WorkScreen projectId="project-1" />;
-    }
-
-    await withReactRoot(<Harness />, async () => {
-      await act(async () => buttonContaining("Active B").click());
-      mutationError = new Error("Active switch failed");
-      submitted?.options.onSettled?.();
-      await act(async () => rerender?.());
-      expect(document.querySelector('[data-work-error="active-b"]')?.textContent).toBe(
-        "Active switch failed",
-      );
-      expect(
-        document.querySelector('[data-work-selection="active-c"]')?.closest("li")?.textContent,
-      ).not.toContain("Active switch failed");
-
-      await act(async () => buttonContaining("Active B").click());
-      expect(document.querySelector("[data-work-error]")).toBeNull();
-      submitted?.options.onSuccess?.(works[1]);
-      submitted?.options.onSettled?.();
-      await act(async () => rerender?.());
-      expect(document.querySelector("[data-work-error]")).toBeNull();
-
-      await act(async () => buttonContaining("Archived Work").click());
-      await act(async () => buttonContaining("Archived A").click());
-      mutationError = new Error("Archived switch failed");
-      submitted?.options.onSettled?.();
-      await act(async () => rerender?.());
-      expect(document.querySelector('[data-work-error="archived-a"]')?.textContent).toBe(
-        "Archived switch failed",
-      );
-      expect(document.querySelector('[data-work-error="active-b"]')).toBeNull();
-    });
-  });
-
   it("names active and archived sections and keeps archived controls out of focus order until expanded", async () => {
     mockManagerWorks([
       workFixture("active-a", "Active A", "Goal A"),
@@ -248,7 +99,7 @@ describe("WorkScreen actions", () => {
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
       expect(disclosure.hasAttribute("aria-controls")).toBe(false);
       expect(document.body.textContent).not.toContain("Archived A");
-      expect(focusableLabels()).toEqual(["NewWork", "ActiveA", "EditActiveA", "ArchivedWork(1)"]);
+      expect(focusableLabels()).toEqual(["NewWork", "EditActiveA", "ArchivedWork(1)"]);
 
       await act(async () => disclosure.click());
       expect(disclosure.getAttribute("aria-expanded")).toBe("true");
@@ -256,114 +107,13 @@ describe("WorkScreen actions", () => {
       expect(panelId).toBeTruthy();
       expect(document.getElementById(panelId ?? "")).not.toBeNull();
       expect(document.body.textContent).toContain("Archived A");
-      expect(focusableLabels().slice(-2)).toEqual(["ArchivedA", "EditArchivedA"]);
+      expect(focusableLabels().slice(-1)).toEqual(["EditArchivedA"]);
 
       await act(async () => disclosure.click());
       expect(disclosure.getAttribute("aria-expanded")).toBe("false");
       expect(disclosure.hasAttribute("aria-controls")).toBe(false);
       expect(document.getElementById(panelId ?? "")).toBeNull();
       expect(document.body.textContent).not.toContain("Archived A");
-    });
-  });
-
-  it("opens Archived Work when the current Work becomes archived", async () => {
-    const active = workFixture("active-a", "Active A", "Goal A");
-    const archived = archivedWorkFixture("archived-a", "Archived A");
-    let currentWorkId = active.id;
-    let rerender: (() => void) | null = null;
-    mockManagerWorks([active, archived], () => currentWorkId);
-
-    function Harness() {
-      const [, setVersion] = useState(0);
-      rerender = () => setVersion((value) => value + 1);
-      return <WorkScreen projectId="project-1" />;
-    }
-
-    await withReactRoot(<Harness />, async () => {
-      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
-      currentWorkId = archived.id;
-      await act(async () => rerender?.());
-      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("true");
-      expect(buttonContaining("Archived A").getAttribute("aria-pressed")).toBe("true");
-    });
-  });
-
-  it("preserves a deliberate close across rerenders of the same current Work", async () => {
-    const archived = archivedWorkFixture("archived-a", "Archived A");
-    let rerender: (() => void) | null = null;
-    mockManagerWorks([archived], () => archived.id);
-
-    function Harness() {
-      const [, setVersion] = useState(0);
-      rerender = () => setVersion((value) => value + 1);
-      return <WorkScreen projectId="project-1" />;
-    }
-
-    await withReactRoot(<Harness />, async () => {
-      const disclosure = buttonContaining("Archived Work");
-      expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-      await act(async () => disclosure.click());
-      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-
-      await act(async () => rerender?.());
-      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-      expect(disclosure.textContent).toContain("Current: Archived A");
-      expect(document.body.textContent?.match(/Archived A/g)).toHaveLength(1);
-    });
-  });
-
-  it("contains a long current Work name in the collapsed trigger without duplicating it expanded", async () => {
-    const longName = "The Immortal Sovereign's Very Long Chronicle Beyond the Ninth Heaven";
-    const archived = archivedWorkFixture("archived-a", longName);
-    mockManagerWorks([archived], () => archived.id);
-
-    await withReactRoot(<WorkScreen projectId="project-1" />, async () => {
-      const disclosure = buttonContaining("Archived Work");
-      expect(disclosure.textContent).not.toContain("Current:");
-      expect(summaryIn(disclosure)).toBeUndefined();
-
-      await act(async () => disclosure.click());
-      const summary = summaryIn(disclosure);
-      expect(summary?.textContent).toBe(`Current: ${longName}`);
-      expect(summary?.className).toContain("truncate");
-      expect(summary?.parentElement?.className).toContain("min-w-0");
-      expect(disclosure.className).toContain("w-full");
-      expect(disclosure.className).toContain("min-h-11");
-    });
-  });
-
-  it("reopens Archived Work when the archived current Work changes identity", async () => {
-    const archivedA = archivedWorkFixture("archived-a", "Archived A");
-    const archivedB = archivedWorkFixture("archived-b", "Archived B");
-    let currentWorkId = archivedA.id;
-    let rerender: (() => void) | null = null;
-    mockManagerWorks([archivedA, archivedB], () => currentWorkId);
-
-    function Harness() {
-      const [, setVersion] = useState(0);
-      rerender = () => setVersion((value) => value + 1);
-      return <WorkScreen projectId="project-1" />;
-    }
-
-    await withReactRoot(<Harness />, async () => {
-      const disclosure = buttonContaining("Archived Work");
-      await act(async () => disclosure.click());
-      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-
-      currentWorkId = archivedB.id;
-      await act(async () => rerender?.());
-      expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-      expect(buttonContaining("Archived B").getAttribute("aria-pressed")).toBe("true");
-    });
-  });
-
-  it("opens Archived Work on load when it contains the current Work", async () => {
-    const archived = archivedWorkFixture("archived-a", "Archived A");
-    mockManagerWorks([archived], () => archived.id);
-
-    await withReactRoot(<WorkScreen projectId="project-1" />, () => {
-      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("true");
-      expect(buttonContaining("Archived A").getAttribute("aria-pressed")).toBe("true");
     });
   });
 
@@ -376,7 +126,7 @@ describe("WorkScreen actions", () => {
   });
 
   it("keeps the Active Work empty state and New Work action beside archived records", async () => {
-    mockManagerWorks([archivedWorkFixture("archived-a", "Archived A")], () => null);
+    mockManagerWorks([archivedWorkFixture("archived-a", "Archived A")]);
     await withReactRoot(<WorkScreen projectId="project-1" />, () => {
       expect(sectionNamed("Active Work")?.textContent).toContain("No active Work yet.");
       expect(buttonContaining("New Work")).not.toBeNull();
@@ -418,9 +168,7 @@ describe("WorkScreen actions", () => {
   it("restores cancelled creation focus while Work is still loading", async () => {
     vi.mocked(queryHooks.useWorks).mockReturnValue({
       works: null,
-      currentWork: null,
-      currentWorkId: null,
-      defaultWorkId: null,
+      newChatFallbackWorkId: null,
       isError: false,
       isFetching: true,
       status: "loading",
@@ -465,9 +213,7 @@ describe("WorkScreen actions", () => {
     let rerender: (() => void) | null = null;
     vi.mocked(queryHooks.useWorks).mockImplementation(() => ({
       works,
-      currentWork: works[0] ?? null,
-      currentWorkId: works[0]?.id ?? null,
-      defaultWorkId: works[0]?.id ?? null,
+      newChatFallbackWorkId: null,
       isError: false,
       isFetching: false,
       status: "ready",
@@ -514,7 +260,8 @@ describe("WorkScreen actions", () => {
 
     await withReactRoot(<Harness />, async () => {
       await settleDialog();
-      if (kind === "delete") await act(async () => buttonContaining("Archived Work").click());
+      if (kind === "delete" || kind === "unarchive")
+        await act(async () => buttonContaining("Archived Work").click());
       const openerButton =
         document.querySelector<HTMLButtonElement>(`button[aria-label="${opener}"]`) ??
         buttonContaining(opener);
@@ -537,42 +284,6 @@ describe("WorkScreen actions", () => {
         expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
     });
   });
-
-  it("falls back to the deliberately closed Archived disclosure after save", async () => {
-    const archived = archivedWorkFixture("archived-a", "Archived A");
-    let rerender: (() => void) | null = null;
-    mockManagerWorks([archived], () => archived.id);
-    vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
-      mutate: (
-        _action: unknown,
-        options: { onSuccess?: (result: Work) => void; onSettled?: () => void },
-      ) => {
-        options.onSuccess?.(archived);
-        rerender?.();
-        options.onSettled?.();
-      },
-      reset: vi.fn(),
-      isPending: false,
-      error: null,
-    } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
-    function Harness() {
-      const [, setVersion] = useState(0);
-      rerender = () => setVersion((value) => value + 1);
-      return <WorkScreen projectId="project-1" />;
-    }
-    await withReactRoot(<Harness />, async () => {
-      await settleDialog();
-      await act(async () =>
-        document.querySelector<HTMLButtonElement>('button[aria-label="Edit Archived A"]')?.click(),
-      );
-      await settleDialog();
-      await act(async () => buttonContaining("Archived Work").click());
-      await act(async () => clickButton("Save Work"));
-      await settleDialog();
-      expect(document.activeElement?.getAttribute("data-work-focus")).toBe("archived-disclosure");
-      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
-    });
-  });
 });
 
 async function settleDialog() {
@@ -581,21 +292,10 @@ async function settleDialog() {
   });
 }
 
-function summaryIn(disclosure: HTMLButtonElement) {
-  return Array.from(disclosure.querySelectorAll("span")).find((span) =>
-    span.textContent?.startsWith("Current:"),
-  );
-}
-
-function mockManagerWorks(
-  works: Work[],
-  currentId: () => string | null = () => works[0]?.id ?? null,
-) {
+function mockManagerWorks(works: Work[]) {
   vi.mocked(queryHooks.useWorks).mockImplementation(() => ({
     works,
-    currentWork: works.find((work) => work.id === currentId()) ?? null,
-    currentWorkId: currentId(),
-    defaultWorkId: works[0]?.id ?? null,
+    newChatFallbackWorkId: null,
     isError: false,
     isFetching: false,
     status: "ready",

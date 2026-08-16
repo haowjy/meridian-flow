@@ -29,8 +29,8 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   const [now, setNow] = useState(Date.now());
   const [agentSlug, setAgentSlug] = useState(DEFAULT_AGENT_SLUG);
   const [workSelection, setWorkSelection] = useState<
-    { source: "current_default" } | { source: "writer"; workId: string }
-  >({ source: "current_default" });
+    { source: "new_chat_fallback" } | { source: "writer"; workId: string }
+  >({ source: "new_chat_fallback" });
   const [modePending, setModePending] = useState(false);
   const [finePointer, setFinePointer] = useState(false);
 
@@ -48,7 +48,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   }, []);
   const firstSend = useHomeFirstSendAttempt({ projectId, actions, onSelectThread });
   const selectedWorkId =
-    workSelection.source === "writer" ? workSelection.workId : worksQuery.currentWorkId;
+    workSelection.source === "writer" ? workSelection.workId : worksQuery.newChatFallbackWorkId;
   const selectedWork = worksQuery.works?.find(({ id }) => id === selectedWorkId) ?? null;
   const handleModePendingChange = useCallback((pending: boolean) => setModePending(pending), []);
 
@@ -99,7 +99,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
         work:
           workSelection.source === "writer"
             ? { source: "writer", workId: selectedWork.id }
-            : { source: "current_default", displayedWorkId: selectedWork.id },
+            : { source: "new_chat_fallback", displayedWorkId: selectedWork.id },
         agentSlug,
       },
       draftRevision,
@@ -179,7 +179,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                               workSelection.source === "writer"
                                 ? { source: "writer", workId: selectedWork.id }
                                 : {
-                                    source: "current_default",
+                                    source: "new_chat_fallback",
                                     displayedWorkId: selectedWork.id,
                                   },
                             agentSlug,

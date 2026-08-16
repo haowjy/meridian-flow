@@ -15,7 +15,10 @@ import {
   isThreadAdmissionError,
   type ThreadRunController,
 } from "@/client/copilot/ThreadRunController";
-import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
+import {
+  invalidateProjectThreadData,
+  invalidateWorkThreads,
+} from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError, useThreadStore } from "@/client/stores";
 import type { ComposerDraftRestoration } from "@/components/app/composer";
@@ -159,7 +162,12 @@ export function useThreadHandoff(
             actions.ensureThread(thread);
             // Server confirmation arrived: gated queries can now fire safely.
             actions.clearPendingCreation({ projectId, threadId });
-            await invalidateProjectThreadData(queryClient, projectId);
+            await Promise.all([
+              invalidateProjectThreadData(queryClient, projectId),
+              ...(thread.workId
+                ? [invalidateWorkThreads(queryClient, projectId, thread.workId)]
+                : []),
+            ]);
             if (text) {
               startSubmit(text, optimisticUserTurnId);
             } else {

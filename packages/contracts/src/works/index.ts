@@ -60,7 +60,6 @@ export interface RebindThreadWorkResult {
   previousWorkId: WorkId;
   work: Work;
   changed: boolean;
-  preferenceChanged: boolean;
   receipt: WorkReceipt;
 }
 

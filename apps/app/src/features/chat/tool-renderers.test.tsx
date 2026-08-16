@@ -122,7 +122,7 @@ describe("work tool renderer", () => {
           workName: "Tournament arc",
           before: null,
           after: { name: "Tournament arc", goal: null, description: null, status: "active" },
-          inverse: { command: "delete", workId: "w1", previousCurrentWorkId: null },
+          inverse: { command: "delete", workId: "w1" },
         },
       },
     });

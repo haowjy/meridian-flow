@@ -1,29 +1,30 @@
-/** Resolves a writer's current Work without turning repository order into policy. */
+/** Resolves the internal Work fallback used only when a new chat omits workId. */
 import type { Project } from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import type { ProjectPreferencesRepository } from "../preferences/index.js";
 import type { WorkRepository } from "./ports/work-repository.js";
 
-export interface ResolveCurrentWorkDeps {
+export interface ResolveNewChatFallbackWorkDeps {
   works: WorkRepository;
   preferences: ProjectPreferencesRepository;
 }
 
-export async function resolveCurrentWork(
-  deps: ResolveCurrentWorkDeps,
+export async function resolveNewChatFallbackWork(
+  deps: ResolveNewChatFallbackWorkDeps,
   user: { userId: UserId },
   project: Project,
 ): Promise<Work> {
   if (project.userId !== user.userId) {
-    throw new Error("Cannot resolve current Work for a project the user does not own");
+    throw new Error("Cannot resolve new-chat fallback Work for a project the user does not own");
   }
 
-  let preferredId = await deps.preferences.getCurrentWorkId(user.userId, project.id);
+  let fallbackId = await deps.preferences.getNewChatFallbackWorkId(user.userId, project.id);
   for (;;) {
-    if (preferredId) {
-      const preferred = await deps.works.findById(preferredId);
-      if (preferred && !preferred.deletedAt && preferred.projectId === project.id) return preferred;
+    if (fallbackId) {
+      const savedFallback = await deps.works.findById(fallbackId);
+      if (savedFallback && !savedFallback.deletedAt && savedFallback.projectId === project.id)
+        return savedFallback;
     }
 
     const [active] = await deps.works.listByProject(project.id, { status: "active" });
@@ -32,13 +33,13 @@ export async function resolveCurrentWork(
       : await deps.works.listByProject(project.id, { status: "archived" });
     const fallback =
       active ?? archived ?? (await deps.works.ensureDefaultForProject(project.id, project.name));
-    const persisted = await deps.preferences.setCurrentWorkIdIfUnchanged(
+    const persisted = await deps.preferences.repairNewChatFallbackWorkId(
       user.userId,
       project.id,
-      preferredId,
+      fallbackId,
       fallback.id,
     );
     if (persisted) return fallback;
-    preferredId = await deps.preferences.getCurrentWorkId(user.userId, project.id);
+    fallbackId = await deps.preferences.getNewChatFallbackWorkId(user.userId, project.id);
   }
 }

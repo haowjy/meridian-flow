@@ -1,6 +1,6 @@
 /**
- * Project preferences persistence port: stores the authenticated user's UI defaults for one project.
- * The boundary is intentionally small: reads return the contract default when absent, and upserts merge partial updates into the current/default value.
+ * Project preferences persistence port for project UI settings plus the internal
+ * omitted-new-chat fallback pointer. Only compare-and-set repair can write that pointer.
  */
 import type {
   ProjectPreferences,
@@ -15,9 +15,8 @@ export interface ProjectPreferencesRepository {
     projectId: ProjectId,
     input: UpdateProjectPreferencesRequest,
   ): Promise<ProjectPreferences>;
-  getCurrentWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null>;
-  setCurrentWorkId(userId: UserId, projectId: ProjectId, workId: WorkId): Promise<void>;
-  setCurrentWorkIdIfUnchanged(
+  getNewChatFallbackWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null>;
+  repairNewChatFallbackWorkId(
     userId: UserId,
     projectId: ProjectId,
     expectedWorkId: WorkId | null,

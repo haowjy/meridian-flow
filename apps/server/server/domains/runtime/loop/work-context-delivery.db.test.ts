@@ -19,9 +19,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { count, eq } = await import("drizzle-orm");
-    const { createDrizzleProjectPreferencesRepository } = await import(
-      "../../preferences/index.js"
-    );
     const { createWork } = await import("../../projects/create-work.js");
     const { createDrizzleProjectWorkRepository } = await import("../../projects/index.js");
     const { restoreWork } = await import("../../projects/delete-work.js");
@@ -130,10 +127,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const created = await createWork(
         {
           works,
-          preferences: createDrizzleProjectPreferencesRepository({ db }),
           workContextDelivery: delivery(repos),
         },
-        USER_ID,
         {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,

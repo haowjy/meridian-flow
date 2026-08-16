@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { Archive, ArchiveRestore, ChevronDown, Plus, Trash2 } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { WorkCard } from "./WorkCard";
 
 export function WorkScreen({ projectId }: { projectId: string }) {
-  const { works, currentWorkId, defaultWorkId, isError, isFetching, refetch } = useWorks(projectId);
+  const { works, isError, isFetching, refetch } = useWorks(projectId);
   const mutation = useWorkMutations(projectId);
   const actionInFlight = useRef(false);
   const [editing, setEditing] = useState<Work | "new" | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [closedArchiveId, setClosedArchiveId] = useState<string | null>(null);
   const focusRefs = useRef(new Map<FocusTarget, HTMLElement>());
   const [pendingFocus, setPendingFocus] = useState<PendingFocusIntent | null>(null);
   const active = works?.filter((work) => work.status === "active") ?? [];
@@ -70,7 +69,6 @@ export function WorkScreen({ projectId }: { projectId: string }) {
       onSuccess: closeOnSuccess
         ? (result) => {
             const intent = focusIntentForAction(action, works ?? [], result, archivedOpen);
-            if (action.type === "archive" && !archivedOpen) setClosedArchiveId(action.workId);
             setEditing(null);
             setPendingFocus(intent);
           }
@@ -88,9 +86,6 @@ export function WorkScreen({ projectId }: { projectId: string }) {
           <Trans>Work</Trans>
         </h1>
         <div className="flex flex-col items-start gap-3 @2xl/project-home:flex-row @2xl/project-home:items-center @2xl/project-home:justify-between">
-          <p className="text-sm text-muted-foreground">
-            <Trans>New chats use the current Work.</Trans>
-          </p>
           <Button
             size="sm"
             className="[@media(pointer:coarse)]:min-h-11"
@@ -146,14 +141,9 @@ export function WorkScreen({ projectId }: { projectId: string }) {
               {active.length > 0 ? (
                 <WorkList
                   works={active}
-                  currentWorkId={currentWorkId}
-                  defaultWorkId={defaultWorkId}
                   pending={mutation.isPending}
                   error={errorPlacement.section === "active" ? nonDialogError : null}
                   errorWorkId={errorPlacement.workId}
-                  onSelect={(workId) => {
-                    if (workId !== currentWorkId) runAction({ type: "switch", workId });
-                  }}
                   onEdit={(work) => {
                     mutation.reset();
                     setEditing(work);
@@ -170,20 +160,13 @@ export function WorkScreen({ projectId }: { projectId: string }) {
               <ArchivedWorkSection
                 works={archived}
                 open={archivedOpen}
-                closedArchiveId={closedArchiveId}
                 onOpenChange={(open) => {
-                  setClosedArchiveId(null);
                   setArchivedOpen(open);
                 }}
                 registerFocus={registerFocus}
-                currentWorkId={currentWorkId}
-                defaultWorkId={defaultWorkId}
                 pending={mutation.isPending}
                 error={errorPlacement.section === "archived" ? nonDialogError : null}
                 errorWorkId={errorPlacement.workId}
-                onSelect={(workId) => {
-                  if (workId !== currentWorkId) runAction({ type: "switch", workId });
-                }}
                 onEdit={(work) => {
                   mutation.reset();
                   setEditing(work);
@@ -208,22 +191,16 @@ export function WorkScreen({ projectId }: { projectId: string }) {
 
 function WorkList({
   works,
-  currentWorkId,
-  defaultWorkId,
   pending,
   error,
   errorWorkId,
-  onSelect,
   onEdit,
   registerFocus,
 }: {
   works: Work[];
-  currentWorkId: string | null;
-  defaultWorkId: string | null;
   pending: boolean;
   error: Error | null;
   errorWorkId: string | null;
-  onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
   registerFocus?: (target: FocusTarget) => (node: HTMLElement | null) => void;
 }) {
@@ -233,11 +210,8 @@ function WorkList({
         <li key={work.id} className="min-w-0">
           <WorkCard
             work={work}
-            current={work.id === currentWorkId}
-            isDefault={work.id === defaultWorkId}
             pending={pending}
             error={error && errorWorkId === work.id ? error : null}
-            onSelect={() => onSelect(work.id)}
             onEdit={() => onEdit(work)}
             registerEditFocus={registerFocus?.(`edit:${work.id}`)}
           />
@@ -254,39 +228,25 @@ function WorkList({
 
 function ArchivedWorkSection({
   works,
-  currentWorkId,
-  defaultWorkId,
   pending,
   error,
   errorWorkId,
-  onSelect,
   onEdit,
   open,
-  closedArchiveId,
   onOpenChange,
   registerFocus,
 }: {
   works: Work[];
-  currentWorkId: string | null;
-  defaultWorkId: string | null;
   pending: boolean;
   error: Error | null;
   errorWorkId: string | null;
-  onSelect: (workId: string) => void;
   onEdit: (work: Work) => void;
   open: boolean;
-  closedArchiveId: string | null;
   onOpenChange: (open: boolean) => void;
   registerFocus: (target: FocusTarget) => (node: HTMLElement | null) => void;
 }) {
   const panelId = useId();
   const headingId = useId();
-  const archivedCurrentWork = works.find((work) => work.id === currentWorkId) ?? null;
-  const archivedCurrentWorkId = archivedCurrentWork?.id ?? null;
-  useEffect(() => {
-    if (archivedCurrentWorkId !== null && archivedCurrentWorkId !== closedArchiveId)
-      onOpenChange(true);
-  }, [archivedCurrentWorkId, closedArchiveId]);
 
   return (
     <section className="mt-4 border-t border-border-subtle pt-3" aria-labelledby={headingId}>
@@ -305,11 +265,6 @@ function ArchivedWorkSection({
               <Trans>Archived Work</Trans>
               <span className="ml-2 font-normal text-muted-foreground">({works.length})</span>
             </span>
-            {!open && archivedCurrentWork ? (
-              <span className="truncate text-meta font-normal text-muted-foreground">
-                <Trans>Current: {archivedCurrentWork.name}</Trans>
-              </span>
-            ) : null}
           </span>
           <ChevronDown
             aria-hidden
@@ -321,12 +276,9 @@ function ArchivedWorkSection({
         <div id={panelId} className="mt-2">
           <WorkList
             works={works}
-            currentWorkId={currentWorkId}
-            defaultWorkId={defaultWorkId}
             pending={pending}
             error={error}
             errorWorkId={errorWorkId}
-            onSelect={onSelect}
             onEdit={onEdit}
             registerFocus={registerFocus}
           />

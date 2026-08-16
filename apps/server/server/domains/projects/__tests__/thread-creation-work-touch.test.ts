@@ -54,7 +54,7 @@ describe("createThreadForProject work activity", () => {
       createdByUserId: "user-1",
       name: "Two",
     });
-    await preferences.setCurrentWorkId("user-1", project.id, current.id);
+    await preferences.repairNewChatFallbackWorkId("user-1", project.id, null, current.id);
 
     const thread = await createThreadForProject(
       {

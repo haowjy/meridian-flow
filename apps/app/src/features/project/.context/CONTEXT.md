@@ -49,15 +49,15 @@ the persistent project tree, and account controls. The navigation rows are
 shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
 are desktop shell grammar.
 
-Work is the dedicated live Work-management surface. It reads the Work collection
-and the writer's explicit current Work through TanStack Query, and owns create,
-switch, metadata, archive, unarchive, and guarded delete actions.
+Work is the dedicated collection/detail management destination. The collection reads
+active and archived Work and owns creation and lifecycle entry points; it never selects
+a project-wide Work or rebinds a chat. Route-owned detail and inline metadata consume
+the typed catalog, PATCH mutation, and associated-chat query seams.
 
 Home is the shared, container-responsive Composer-led entry surface on desktop
 and phone, followed by the server-owned Continue, Favorites, and
 cursor-paginated Recent feed. First send creates and reconciles the canonical
-thread under one stable client-chosen ID before routing. An untouched
-current/default Work control omits `workId` so the server resolves its
+thread under one stable client-chosen ID before routing. An untouched new-chat-fallback Work control omits `workId` so the server resolves its
 transactional fallback; an explicit writer selection submits `workId`. In both
 cases the displayed Work ID remains an immutable reconciliation fact, along
 with project and Agent, and no cache, handoff, visibility, admission, or route

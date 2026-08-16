@@ -242,10 +242,8 @@ handlers. Direct `/chat/$threadId` renders the independent chat view inside the
 same provider stack.
 
 The dedicated Work screen presents Active Work first and keeps Archived Work in a
-default-collapsed disclosure. If the current Work is archived at load or becomes
-archived, the disclosure opens. Changing directly from one archived current Work
-to another also reopens it once; a deliberate close wins across rerenders while
-that same Work remains current, and the collapsed trigger continues to name it.
+default-collapsed disclosure. Work management has no project-wide selection state;
+collection actions never change the internal new-chat fallback or a thread binding.
 Home and Work each own exactly one screen-level `app-scroll`; neither screen
 adds a nested scroll owner. Their bodies share `project-screen-column`, whose
 named inline-size container controls collection columns independently of the

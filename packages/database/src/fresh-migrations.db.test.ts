@@ -36,6 +36,7 @@ if (!enabled || !databaseUrl) {
         "0070_opposite_white_queen",
         "0071_shallow_karnak",
         "0072_aberrant_callisto",
+        "0073_mean_silver_surfer",
       ]);
       for (let index = 1; index < tail.length; index += 1) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);

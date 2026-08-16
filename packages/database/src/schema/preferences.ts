@@ -24,7 +24,7 @@ export const projectUserPreferences = pgTable(
       .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    currentWorkId: uuid("current_work_id")
+    newChatFallbackWorkId: uuid("new_chat_fallback_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
     threadGroupBy: text("thread_group_by").notNull().default("work"),

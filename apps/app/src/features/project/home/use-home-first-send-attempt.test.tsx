@@ -65,7 +65,7 @@ describe("useHomeFirstSendAttempt", () => {
         agentSlug: "general",
       },
       repaired: {
-        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
         agentSlug: "general",
       },
       queryKey: projectQueryKeys.works("project-1"),
@@ -75,11 +75,11 @@ describe("useHomeFirstSendAttempt", () => {
       catalog: "Agent",
       refusal: new HttpResponseError("Agent not found: prose", 400, null),
       initial: {
-        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
         agentSlug: "prose",
       },
       repaired: {
-        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
         agentSlug: "general",
       },
       queryKey: projectQueryKeys.agents("project-1"),
@@ -206,7 +206,7 @@ describe("useHomeFirstSendAttempt", () => {
             controller.submit(
               "Exact opening",
               {
-                work: { source: "current_default", displayedWorkId: "work-1" },
+                work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
                 agentSlug: "prose",
               },
               0,
@@ -217,7 +217,7 @@ describe("useHomeFirstSendAttempt", () => {
         await act(async () => {
           await expect(
             controller.retry({
-              work: { source: "current_default", displayedWorkId: "work-1" },
+              work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
               agentSlug: "general",
             }),
           ).resolves.toBe(true);
@@ -242,7 +242,7 @@ describe("useHomeFirstSendAttempt", () => {
     {
       name: "current default Work",
       context: {
-        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
         agentSlug: "general",
       },
       reconciled: canonical({ workId: "work-other" }),
@@ -258,7 +258,7 @@ describe("useHomeFirstSendAttempt", () => {
     {
       name: "non-General Agent",
       context: {
-        work: { source: "current_default", displayedWorkId: "work-1" } as const,
+        work: { source: "new_chat_fallback", displayedWorkId: "work-1" } as const,
         agentSlug: "prose",
       },
       reconciled: canonical({ currentAgent: "other-agent" }),
@@ -336,7 +336,7 @@ describe("useHomeFirstSendAttempt", () => {
           first = controller.submit(
             "Opening line",
             {
-              work: { source: "current_default", displayedWorkId: "work-1" },
+              work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
               agentSlug: "general",
             },
             0,
@@ -344,7 +344,7 @@ describe("useHomeFirstSendAttempt", () => {
           duplicate = controller.submit(
             "Duplicate",
             {
-              work: { source: "current_default", displayedWorkId: "work-1" },
+              work: { source: "new_chat_fallback", displayedWorkId: "work-1" },
               agentSlug: "general",
             },
             0,

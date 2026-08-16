@@ -42,8 +42,8 @@ describe("GET /api/projects/:projectId/works", () => {
           listByProject: async () => works,
         },
         preferences: {
-          getCurrentWorkId: async () => null,
-          setCurrentWorkIdIfUnchanged: async () => true,
+          getNewChatFallbackWorkId: async () => null,
+          repairNewChatFallbackWorkId: async () => true,
         },
         documentSync: { countUnpushedRowsForWork: async () => 0 },
       },
@@ -59,7 +59,7 @@ describe("GET /api/projects/:projectId/works", () => {
     expect(event.res.status).toBe(200);
     expect(response).toMatchObject({
       value: {
-        defaultWorkId: "work-2",
+        newChatFallbackWorkId: "work-2",
         works: [{ id: "work-2" }, { id: "work-1" }],
       },
     });
@@ -76,7 +76,7 @@ describe("GET /api/projects/:projectId/works", () => {
           findById: async () => current,
           listByProject: async () => [active],
         },
-        preferences: { getCurrentWorkId: async () => current.id },
+        preferences: { getNewChatFallbackWorkId: async () => current.id },
         documentSync: { countUnpushedRowsForWork: async () => 0 },
       },
     } as never);
@@ -90,7 +90,7 @@ describe("GET /api/projects/:projectId/works", () => {
 
     expect(response).toMatchObject({
       value: {
-        defaultWorkId: current.id,
+        newChatFallbackWorkId: current.id,
         works: [
           { id: current.id, status: "archived" },
           { id: active.id, status: "active" },
@@ -110,7 +110,7 @@ describe("GET /api/projects/:projectId/works", () => {
           findById: async () => works[0],
           listByProject,
         },
-        preferences: { getCurrentWorkId: async () => works[0]?.id },
+        preferences: { getNewChatFallbackWorkId: async () => works[0]?.id },
         documentSync: { countUnpushedRowsForWork: async () => 0 },
       },
     } as never);

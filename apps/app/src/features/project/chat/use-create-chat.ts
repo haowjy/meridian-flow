@@ -11,7 +11,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 
 import { createProjectThread } from "@/client/api/projects-api";
-import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
+import {
+  invalidateProjectThreadData,
+  invalidateWorkThreads,
+} from "@/client/query/project-invalidation";
 import { DEFAULT_AGENT_SLUG, threadCreateAgentField } from "@/features/agents";
 
 export function useCreateChat(projectId: string, onSelectThread: (threadId: string) => void) {
@@ -24,7 +27,10 @@ export function useCreateChat(projectId: string, onSelectThread: (threadId: stri
         ...threadCreateAgentField(DEFAULT_AGENT_SLUG),
       }),
     onSuccess: async (thread) => {
-      await invalidateProjectThreadData(queryClient, projectId);
+      await Promise.all([
+        invalidateProjectThreadData(queryClient, projectId),
+        ...(thread.workId ? [invalidateWorkThreads(queryClient, projectId, thread.workId)] : []),
+      ]);
       onSelectThread(thread.id);
     },
   });

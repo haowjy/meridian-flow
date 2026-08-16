@@ -57,19 +57,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threads: threads.threads,
             threadWorks: threads.threadWorks,
             works: workRepository,
-            preferences,
             obligations: threads.workContextDeliveries,
           },
           {
             threadId: THREAD_ID,
             targetWorkId: TARGET_WORK_ID,
-            preferenceUserId: USER_ID,
           },
         ),
       );
     }
 
-    it("atomically rebinds to an archived Work, updates preference, and enqueues context", async () => {
+    it("atomically rebinds to an archived Work, preserves fallback and enqueues context", async () => {
       await expect(rebindWith()).resolves.toMatchObject({
         previousWorkId: WORK_ID,
         work: { id: TARGET_WORK_ID, status: "archived" },
@@ -78,11 +76,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: TARGET_WORK_ID,
       });
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(TARGET_WORK_ID);
+      await expect(preferences.getNewChatFallbackWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
       await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
     });
 
-    it("rolls back binding and preference when durable context enqueue fails", async () => {
+    it("rolls back binding when durable context enqueue fails", async () => {
       await expect(
         threads.transaction(() =>
           rebindThreadWork(
@@ -90,7 +88,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threads: threads.threads,
               threadWorks: threads.threadWorks,
               works,
-              preferences,
               obligations: {
                 enqueueThread: async () => {
                   throw new Error("injected durable enqueue failure");
@@ -100,7 +97,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               threadId: THREAD_ID,
               targetWorkId: TARGET_WORK_ID,
-              preferenceUserId: USER_ID,
             },
           ),
         ),
@@ -108,7 +104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: WORK_ID,
       });
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
+      await expect(preferences.getNewChatFallbackWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
       await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
     });
 

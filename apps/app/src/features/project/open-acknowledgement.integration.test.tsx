@@ -658,7 +658,7 @@ describe("visible Chat open caller boundary", () => {
         if (path.includes(`/api/projects/${projectId}/works`)) {
           return Promise.resolve(
             json({
-              defaultWorkId: "work-1",
+              newChatFallbackWorkId: "work-1",
               works: [{ id: "work-1", projectId, name: "Book 1", aiWriteMode: "draft" }],
             }),
           );

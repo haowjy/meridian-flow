@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
 import { createProjectThread, listProjectThreads } from "@/client/api/projects-api";
+import { invalidateWorkThreads } from "@/client/query/project-invalidation";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { prepareCreatedThreadVisibility } from "@/client/query/visible-thread-open-acknowledgements";
 import type { ThreadStoreActions } from "@/client/stores";
@@ -11,7 +12,7 @@ import { threadCreateAgentField, wireAgentSlug } from "@/features/agents";
 import { deriveTitleFromMessage } from "@/lib/thread-title";
 
 export type HomeWorkSelection =
-  | { source: "current_default"; displayedWorkId: string }
+  | { source: "new_chat_fallback"; displayedWorkId: string }
   | { source: "writer"; workId: string };
 
 export type HomeFirstSendEnvelope = {
@@ -50,7 +51,7 @@ function matchesEnvelope(thread: Thread, envelope: HomeFirstSendEnvelope): boole
     thread.projectId === envelope.projectId &&
     thread.currentAgent === expectedAgent &&
     thread.workId ===
-      (envelope.work.source === "current_default"
+      (envelope.work.source === "new_chat_fallback"
         ? envelope.work.displayedWorkId
         : envelope.work.workId)
   );
@@ -129,6 +130,7 @@ export function useHomeFirstSendAttempt({
         optimisticUserTurnId: optimistic.id,
         draftAfterRoute,
       });
+      if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
       prepareCreatedThreadVisibility(queryClient, {
         projectId: envelope.projectId,
         threadId: thread.id,
@@ -136,7 +138,7 @@ export function useHomeFirstSendAttempt({
       publish(canonical);
       return route(canonical);
     },
-    [actions, publish, queryClient, route, routeDraft],
+    [actions, projectId, publish, queryClient, route, routeDraft],
   );
 
   const reconcile = useCallback(

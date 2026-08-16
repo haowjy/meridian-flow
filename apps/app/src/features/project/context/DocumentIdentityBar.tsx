@@ -61,7 +61,12 @@ export function DocumentIdentityBar({
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
-  const commit = useIdentityCommit({ projectId, tab, defaultWorkId: editorWorkId, onCommitted });
+  const commit = useIdentityCommit({
+    projectId,
+    tab,
+    editorWorkId: editorWorkId,
+    onCommitted,
+  });
 
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery

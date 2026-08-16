@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
-import { Check, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
@@ -10,20 +10,14 @@ import { cn } from "@/lib/utils";
 
 export function WorkCard({
   work,
-  current,
-  isDefault,
   pending,
   error,
-  onSelect,
   onEdit,
   registerEditFocus,
 }: {
   work: Work;
-  current: boolean;
-  isDefault: boolean;
   pending: boolean;
   error: Error | null;
-  onSelect: () => void;
   onEdit: () => void;
   registerEditFocus?: (node: HTMLElement | null) => void;
 }) {
@@ -33,17 +27,6 @@ export function WorkCard({
       className="group relative min-w-0 gap-4 py-5"
       data-work-card={work.id}
     >
-      <button
-        type="button"
-        aria-pressed={current}
-        aria-label={work.name}
-        className="focus-ring absolute inset-0 rounded-xl text-left disabled:cursor-not-allowed"
-        data-work-selection={work.id}
-        disabled={pending}
-        onClick={onSelect}
-      >
-        <span className="sr-only">{work.name}</span>
-      </button>
       <CardHeader className="pointer-events-none relative gap-x-3 gap-y-1 px-5">
         <span
           className={cn(
@@ -52,18 +35,7 @@ export function WorkCard({
           )}
           data-work-pending-content={work.id}
         >
-          {current ? <Check className="size-4 shrink-0 text-primary" /> : null}
           <span className="truncate">{work.name}</span>
-          {current ? (
-            <span className="shrink-0 text-meta font-normal text-primary">
-              <Trans>Current</Trans>
-            </span>
-          ) : null}
-          {isDefault && !current ? (
-            <span className="shrink-0 text-meta font-normal text-muted-foreground">
-              <Trans>Default</Trans>
-            </span>
-          ) : null}
         </span>
         <span
           className={cn(

@@ -10,7 +10,7 @@ import type {
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
 import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
-import { invalidateProjectHomeFeed } from "./project-invalidation";
+import { invalidateProjectHomeFeed, invalidateWorkThreads } from "./project-invalidation";
 import {
   isProjectContextTreeKey,
   isProjectWorkDerivedKey,
@@ -131,7 +131,6 @@ export function convergeThreadWorkBinding(
         const known = current.works.some(({ id }) => id === result.work.id);
         return {
           ...current,
-          defaultWorkId: result.preferenceChanged ? result.work.id : current.defaultWorkId,
           works: known
             ? current.works.map((work) => (work.id === result.work.id ? result.work : work))
             : [...current.works, result.work],
@@ -144,6 +143,7 @@ export function convergeThreadWorkBinding(
         workIds: new Set([result.previousWorkId, result.work.id]),
         contextTrees: "work-scoped",
       });
+      void invalidateWorkThreads(client, projectId);
       return;
     }
 
@@ -159,6 +159,7 @@ export function convergeThreadWorkBinding(
       workIds: ids.size ? ids : "all",
       contextTrees: "work-scoped",
     });
+    void invalidateWorkThreads(client, projectId);
   });
 }
 

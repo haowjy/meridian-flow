@@ -192,7 +192,7 @@ describe("Home first send", () => {
         if (path.includes("/home-feed")) return Promise.resolve(json(homeFeed));
         if (path.includes("/drafts")) return Promise.resolve(json({ drafts: [] }));
         if (path.includes("/works"))
-          return Promise.resolve(json({ defaultWorkId: firstWork.id, works: [firstWork] }));
+          return Promise.resolve(json({ newChatFallbackWorkId: firstWork.id, works: [firstWork] }));
         if (path.includes("/agents")) return Promise.resolve(json({ agents }));
         if (method === "POST" && path.endsWith("/threads")) return creation.promise;
         throw new Error(`unexpected request: ${method} ${path}`);
@@ -264,7 +264,7 @@ describe("Home first send", () => {
         if (path.includes("/home-feed")) return Promise.resolve(json(homeFeed));
         if (path.includes("/drafts")) return Promise.resolve(json({ drafts: [] }));
         if (path.includes("/works"))
-          return Promise.resolve(json({ defaultWorkId: firstWork.id, works: [firstWork] }));
+          return Promise.resolve(json({ newChatFallbackWorkId: firstWork.id, works: [firstWork] }));
         if (path.includes("/agents")) return Promise.resolve(json({ agents }));
         if (method === "POST" && path.endsWith("/threads")) return creation.promise;
         throw new Error(`unexpected request: ${method} ${path}`);
@@ -335,7 +335,7 @@ describe("Home first send", () => {
           worksReads += 1;
           return Promise.resolve(
             json({
-              defaultWorkId: firstWork.id,
+              newChatFallbackWorkId: firstWork.id,
               works: worksReads === 1 ? [firstWork, secondWork] : [firstWork],
             }),
           );

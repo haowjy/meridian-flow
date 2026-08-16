@@ -90,7 +90,6 @@ function routeFixture(
           };
         },
       },
-      preferences: { setCurrentWorkId: vi.fn(async () => {}) },
       obligations: {
         enqueueThread: async () => {
           return [THREAD_ID];
@@ -137,7 +136,6 @@ describe("thread Work rebind writer adapter", () => {
         },
       },
     });
-    expect(h.deps.preferences.setCurrentWorkId).not.toHaveBeenCalled();
     expect(h.recordNotice).not.toHaveBeenCalled();
   });
 
@@ -260,11 +258,9 @@ describe("thread Work rebind writer adapter", () => {
       }),
     ).resolves.toMatchObject({
       changed: false,
-      preferenceChanged: false,
       contextUpdate: "not_required",
       receipt: { inverse: null },
     });
-    expect(h.deps.preferences.setCurrentWorkId).not.toHaveBeenCalled();
     expect(h.recordNotice).not.toHaveBeenCalled();
   });
 

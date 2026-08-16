@@ -15,7 +15,6 @@ export default defineEventHandler(async (event) => {
       threadWorks: app.repos.threadWorks,
       projects: app.projectRepo,
       works: app.workRepo,
-      preferences: app.preferences,
       obligations: app.repos.workContextDeliveries,
       workContextDelivery: app.workContextDelivery,
       notices: app.notices,

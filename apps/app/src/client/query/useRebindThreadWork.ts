@@ -16,7 +16,6 @@ export type NormalizedCommit = {
   threadId: string;
   work: Work;
   changed: boolean;
-  preferenceChanged: boolean;
 };
 
 export type ThreadWorkMutationOutcome =
@@ -61,7 +60,6 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
             threadId,
             work: currentWork,
             changed: true,
-            preferenceChanged: false,
           },
         };
       }

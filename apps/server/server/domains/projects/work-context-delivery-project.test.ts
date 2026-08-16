@@ -1,6 +1,5 @@
 /** Work command trigger coverage for create, delete, and restore lifecycle changes. */
 import { describe, expect, it } from "vitest";
-import { createInMemoryProjectPreferencesRepository } from "../preferences/index.js";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 import { createWork } from "./create-work.js";
 import { deleteWork, restoreWork } from "./delete-work.js";
@@ -20,10 +19,8 @@ describe("Work context update triggers", () => {
     const work = await createWork(
       {
         works,
-        preferences: createInMemoryProjectPreferencesRepository(),
         workContextDelivery,
       },
-      USER_ID,
       { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Book 2" },
     );
     await deleteWork({ works, workContextDelivery }, work.id);

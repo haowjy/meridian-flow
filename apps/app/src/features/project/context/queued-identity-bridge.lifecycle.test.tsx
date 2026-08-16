@@ -46,7 +46,7 @@ it("settles a queued identity once under the initiating Editor Work", async () =
     commit = useIdentityCommit({
       projectId: "project-1",
       tab: NEW_TAB,
-      defaultWorkId: workId,
+      editorWorkId: workId,
       identityMutations: rig.identityMutations,
       onCommitted: () => {},
     });

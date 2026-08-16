@@ -1,4 +1,4 @@
-/** POST Work collection coverage for current-Work selection on creation. */
+/** POST Work collection coverage without fallback mutation. */
 import type { Project } from "@meridian/contracts/projects";
 import type { Work } from "@meridian/contracts/works";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ describe("POST /api/projects/:projectId/works", () => {
     vi.mocked(requireAppUser).mockReset();
   });
 
-  it("makes the created Work current for its creator", async () => {
+  it("creates a Work without changing the new-chat fallback", async () => {
     const project = { id: PROJECT_ID, userId: USER_ID, deletedAt: null } as Project;
     const created = {
       id: WORK_ID,
@@ -27,7 +27,6 @@ describe("POST /api/projects/:projectId/works", () => {
       status: "active",
       deletedAt: null,
     } as Work;
-    const setCurrentWorkId = vi.fn();
     const projectChanged = vi.fn();
     vi.mocked(requireAppUser).mockResolvedValue({
       user: { userId: USER_ID },
@@ -37,7 +36,6 @@ describe("POST /api/projects/:projectId/works", () => {
           transaction: async (operation: () => Promise<unknown>) => operation(),
           create: async () => created,
         },
-        preferences: { setCurrentWorkId },
         workContextDelivery: { projectChanged },
       },
     } as never);
@@ -54,7 +52,6 @@ describe("POST /api/projects/:projectId/works", () => {
     await expect(handler(event as never)).resolves.toMatchObject({
       value: { id: WORK_ID, name: "Act 2" },
     });
-    expect(setCurrentWorkId).toHaveBeenCalledWith(USER_ID, PROJECT_ID, WORK_ID);
     expect(projectChanged).toHaveBeenCalledWith(PROJECT_ID);
     expect(event.res.status).toBe(201);
   });

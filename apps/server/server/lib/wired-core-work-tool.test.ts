@@ -186,21 +186,23 @@ describe("wired work tool", () => {
     });
   });
 
-  it("marks changed switches for post-result delivery and only sticks primary switches", async () => {
+  it("marks changed switches for post-result delivery without changing the fallback", async () => {
     const primary = await setup("primary", true);
     await expect(
       primary.handler({ command: "switch", work: primary.target.slug }, toolContext()),
     ).resolves.toMatchObject({ metadata: { workContextChanged: true } });
     expect(primary.invalidateThread).not.toHaveBeenCalled();
     expect(primary.threadChanged).toHaveBeenCalledOnce();
-    await expect(primary.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBe(
-      primary.target.id,
-    );
+    await expect(
+      primary.preferences.getNewChatFallbackWorkId("user-1", "project-1"),
+    ).resolves.toBeNull();
 
     const subagent = await setup("subagent", false);
     await subagent.handler({ command: "switch", work: subagent.target.slug }, toolContext());
     expect(subagent.invalidateThread).not.toHaveBeenCalled();
-    await expect(subagent.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBeNull();
+    await expect(
+      subagent.preferences.getNewChatFallbackWorkId("user-1", "project-1"),
+    ).resolves.toBeNull();
   });
 
   it("keeps an already-current switch side-effect free beyond its receipt", async () => {

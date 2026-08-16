@@ -14,7 +14,6 @@ vi.mock("@/client/api/projects-api", () => ({
   archiveWork: vi.fn(),
   createProjectWork: vi.fn(),
   deleteWork: vi.fn(),
-  setCurrentWork: vi.fn(),
   unarchiveWork: vi.fn(),
   updateWork: vi.fn(),
 }));
@@ -32,7 +31,7 @@ describe("Work client queries", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("loads the complete Work catalog, including archived Works", async () => {
-    api.listProjectWorks.mockResolvedValue({ works: [], defaultWorkId: "work-current" });
+    api.listProjectWorks.mockResolvedValue({ works: [], newChatFallbackWorkId: "work-current" });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const state: { value: ReturnType<typeof useWorks> | null } = { value: null };
 
@@ -49,7 +48,7 @@ describe("Work client queries", () => {
         async () => {
           await flush();
           expect(api.listProjectWorks).toHaveBeenCalledWith("project-1", { status: "all" });
-          expect(state.value?.currentWorkId).toBe("work-current");
+          expect(state.value?.newChatFallbackWorkId).toBe("work-current");
         },
         { drainMacrotask: true },
       );
@@ -60,7 +59,6 @@ describe("Work client queries", () => {
 
   it.each([
     { type: "create", data: { name: "New Work" } },
-    { type: "switch", workId: "work-1" },
     { type: "update", workId: "work-1", data: { name: "Renamed Work" } },
     { type: "archive", workId: "work-1" },
     { type: "unarchive", workId: "work-1" },
@@ -68,7 +66,9 @@ describe("Work client queries", () => {
   ] as const)("invalidates Home after Work $type", async (action) => {
     const client = new QueryClient();
     const homeKey = projectQueryKeys.homeFeed("project-1");
+    const associated = projectQueryKeys.workThreads("project-1", "work-1");
     client.setQueryData(homeKey, { fresh: true });
+    client.setQueryData(associated, { fresh: true });
     const state: { value: ReturnType<typeof useWorkMutations> | null } = { value: null };
 
     function Harness() {
@@ -86,6 +86,7 @@ describe("Work client queries", () => {
             await state.value?.mutateAsync(action);
           });
           expect(client.getQueryState(homeKey)?.isInvalidated).toBe(true);
+          expect(client.getQueryState(associated)?.isInvalidated).toBe(action.type === "update");
         },
       );
     } finally {

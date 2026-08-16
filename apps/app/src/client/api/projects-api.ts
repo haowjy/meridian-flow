@@ -137,20 +137,6 @@ export function createProjectWork(
   });
 }
 
-export function setCurrentWork(
-  projectId: string,
-  workId: string,
-  init?: RequestInitOptions,
-): Promise<Work> {
-  return putJson<Work>(
-    urlFor(`${apiProjectPath(projectId)}/current-work`, init),
-    { workId },
-    {
-      headers: init?.headers,
-    },
-  );
-}
-
 export function updateWork(
   workId: string,
   data: UpdateWorkRequest,

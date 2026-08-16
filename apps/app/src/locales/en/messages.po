@@ -262,10 +262,6 @@ msgstr "Actions"
 msgid "Actions for {title}"
 msgstr "Actions for {title}"
 
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Active"
-#~ msgstr "Active"
-
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Active Work"
@@ -378,10 +374,6 @@ msgstr "Applying…"
 #: src/features/project/work/WorkScreen.tsx
 msgid "Archive"
 msgstr "Archive"
-
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Archived"
-#~ msgstr "Archived"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
@@ -640,10 +632,6 @@ msgstr "Choose agent, currently {0}"
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
 msgstr "Choose an option"
-
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Choose the context for new writing and chats."
-#~ msgstr "Choose the context for new writing and chats."
 
 #: src/features/project/home/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat"
@@ -990,17 +978,9 @@ msgstr "Creating a Work…"
 msgid "Creating chat"
 msgstr "Creating chat"
 
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Creating chat…"
-#~ msgstr "Creating chat…"
-
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
 msgstr "Creating…"
-
-#: src/features/project/work/WorkCard.tsx
-msgid "Current"
-msgstr "Current"
 
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 msgid "Current block type"
@@ -1009,11 +989,6 @@ msgstr "Current block type"
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Current Work for this chat."
 msgstr "Current Work for this chat."
-
-#. placeholder {0}: archivedCurrentWork.name
-#: src/features/project/work/WorkScreen.tsx
-msgid "Current: {0}"
-msgstr "Current: {0}"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
@@ -1030,10 +1005,6 @@ msgstr "Dark"
 #: src/features/home/first-party-packages.ts
 msgid "Data Analysis"
 msgstr "Data Analysis"
-
-#: src/features/project/work/WorkCard.tsx
-msgid "Default"
-msgstr "Default"
 
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Default alignment"
@@ -1281,10 +1252,6 @@ msgstr "epigraph"
 msgid "Errored"
 msgstr "Errored"
 
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Every chat across your work"
-#~ msgstr "Every chat across your work"
-
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
 msgstr "Expand changes"
@@ -1333,10 +1300,6 @@ msgstr "Failed to load image"
 #: src/features/project/home/HomeFeed.tsx
 msgid "Favorite"
 msgstr "Favorite"
-
-#: src/features/project/home/HomeFeed.tsx
-#~ msgid "Favorite chats"
-#~ msgstr "Favorite chats"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Favorite wasn’t saved"
@@ -1683,11 +1646,6 @@ msgstr "Loading agents…"
 msgid "Loading chats"
 msgstr "Loading chats"
 
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
-#~ msgid "Loading chats…"
-#~ msgstr "Loading chats…"
-
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "Loading file…"
 msgstr "Loading file…"
@@ -1915,10 +1873,6 @@ msgstr "New"
 msgid "New chat"
 msgstr "New chat"
 
-#: src/features/project/work/WorkScreen.tsx
-msgid "New chats use the current Work."
-msgstr "New chats use the current Work."
-
 #: src/features/project/context/ContextViewer.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "New document"
@@ -1970,11 +1924,6 @@ msgstr "No answer"
 #: src/features/billing/BillingPage.tsx
 msgid "No billing activity yet."
 msgstr "No billing activity yet."
-
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
-#~ msgid "No chats yet — start one to get going."
-#~ msgstr "No chats yet — start one to get going."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "No column has been resized yet."
@@ -2053,11 +2002,6 @@ msgstr "Nothing carries that name yet"
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
 
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
-#~ msgid "Nothing matches this filter."
-#~ msgstr "Nothing matches this filter."
-
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to redo yet."
 msgstr "Nothing to redo yet."
@@ -2087,10 +2031,6 @@ msgstr "ol"
 #: src/lib/date-groups.ts
 msgid "Older"
 msgstr "Older"
-
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
-#~ msgstr "One surface for every chat in this project. Jump into any chat, or start a new one."
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Only on this device"
@@ -2249,10 +2189,6 @@ msgstr "Preview not available"
 msgid "Profile"
 msgstr "Profile"
 
-#: src/features/project/mobile/MobileTopBar.tsx
-#~ msgid "Project"
-#~ msgstr "Project"
-
 #: src/features/home/first-party-packages.ts
 msgid "Protocol Designer"
 msgstr "Protocol Designer"
@@ -2285,10 +2221,6 @@ msgstr "Read status wasn’t saved"
 #: src/features/project/home/HomeChatCard.tsx
 msgid "Read status wasn’t saved."
 msgstr "Read status wasn’t saved."
-
-#: src/features/chat/OpenAcknowledgementError.tsx
-#~ msgid "Read status wasn’t saved. This chat is still unread."
-#~ msgstr "Read status wasn’t saved. This chat is still unread."
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
@@ -2520,10 +2452,6 @@ msgstr "Row options"
 msgid "rule"
 msgstr "rule"
 
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Running"
-#~ msgstr "Running"
-
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
@@ -2677,18 +2605,9 @@ msgstr "Something went wrong while changing {name}."
 msgid "Something went wrong while making that change."
 msgstr "Something went wrong while making that change."
 
-#. placeholder {0}: direction === "asc" ? "ascending" : "descending"
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Sorted {0}"
-#~ msgstr "Sorted {0}"
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
 msgstr "Split cell"
-
-#: src/features/project/home/HomeFeed.tsx
-#~ msgid "Start a chat"
-#~ msgstr "Start a chat"
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
@@ -2710,10 +2629,6 @@ msgstr "stat block"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "status"
 msgstr "status"
-
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Status"
-#~ msgstr "Status"
 
 #: src/components/app/composer/Composer.tsx
 msgid "Stop"
@@ -3037,11 +2952,6 @@ msgstr "This chapter was opened in a newer version of Meridian. Refresh to keep 
 msgid "This chat now uses {0}."
 msgstr "This chat now uses {0}."
 
-#. placeholder {0}: commit.work.name
-#: src/features/chat/useComposerWorkBinding.ts
-msgid "This chat now uses {0}. New chats will use it too."
-msgstr "This chat now uses {0}. New chats will use it too."
-
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
@@ -3276,10 +3186,6 @@ msgstr "Untitled project"
 msgid "Update link"
 msgstr "Update link"
 
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Updated"
-#~ msgstr "Updated"
-
 #: src/features/chat/command-descriptor.ts
 msgid "Updated a Work"
 msgstr "Updated a Work"
@@ -3345,10 +3251,6 @@ msgstr "Wait for this response to finish, then try again."
 #: src/features/project/lifecycle.ts
 msgid "Waiting for you"
 msgstr "Waiting for you"
-
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Waiting on you"
-#~ msgstr "Waiting on you"
 
 #: src/features/chat/OpenAcknowledgementError.tsx
 msgid "We couldn’t save that you opened this chat."
@@ -3466,10 +3368,6 @@ msgstr "you answered"
 #: src/features/project/home/HomeFeed.tsx
 msgid "Your chats will appear here after you send a message."
 msgstr "Your chats will appear here after you send a message."
-
-#: src/features/project/home/HomeFeed.tsx
-#~ msgid "Your conversations will appear here."
-#~ msgstr "Your conversations will appear here."
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."

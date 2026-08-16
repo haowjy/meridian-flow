@@ -101,15 +101,12 @@ export function useComposerWorkBinding({
           threadId: result.threadId,
           work: result.work,
           changed: result.changed,
-          preferenceChanged: result.preferenceChanged,
         };
         dispatch({
           type: "change.committed",
           requestId: request.id,
           commit,
-          message: commit.preferenceChanged
-            ? t`This chat now uses ${commit.work.name}. New chats will use it too.`
-            : t`This chat now uses ${commit.work.name}.`,
+          message: t`This chat now uses ${commit.work.name}.`,
         });
       } catch (cause) {
         let failure: WorkBindingFailure;

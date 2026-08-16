@@ -8,13 +8,12 @@ import {
   createProjectWork,
   deleteWork,
   listProjectWorks,
-  setCurrentWork,
   unarchiveWork,
   updateWork,
   updateWorkWriteMode,
 } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
-import { invalidateProjectThreadData } from "./project-invalidation";
+import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
@@ -27,7 +26,7 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     enabled,
   });
   const works = list.data?.works ?? (list.isError ? [] : null);
-  const currentWorkId = list.data?.defaultWorkId ?? null;
+  const newChatFallbackWorkId = list.data?.newChatFallbackWorkId ?? null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
     ? "disabled"
@@ -40,10 +39,7 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
           : "ready";
   return {
     works,
-    currentWork: works?.find((work) => work.id === currentWorkId) ?? null,
-    currentWorkId,
-    // Context document placement historically calls this the default Work.
-    defaultWorkId: currentWorkId,
+    newChatFallbackWorkId,
     isError: list.isError,
     isFetching: list.isFetching,
     status: status as "disabled" | "error" | "loading" | "empty" | "ready",
@@ -51,8 +47,8 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   };
 }
 
-export function useDefaultWorkId(projectId: string): string | null {
-  return useWorks(projectId).currentWorkId;
+export function useNewChatFallbackWorkId(projectId: string): string | null {
+  return useWorks(projectId).newChatFallbackWorkId;
 }
 
 async function refreshWorks(client: QueryClient, projectId: string) {
@@ -65,15 +61,12 @@ export function useWorkMutations(projectId: string) {
     mutationFn: async (
       action:
         | { type: "create"; data: CreateWorkRequest }
-        | { type: "switch"; workId: string }
         | { type: "update"; workId: string; data: UpdateWorkRequest }
         | { type: "archive" | "unarchive" | "delete"; workId: string },
     ) => {
       switch (action.type) {
         case "create":
           return createProjectWork(projectId, action.data);
-        case "switch":
-          return setCurrentWork(projectId, action.workId);
         case "update":
           return updateWork(action.workId, action.data);
         case "archive":
@@ -85,7 +78,10 @@ export function useWorkMutations(projectId: string) {
           return null;
       }
     },
-    onSuccess: () => refreshWorks(client, projectId),
+    onSuccess: async (_result, action) => {
+      await refreshWorks(client, projectId);
+      if (action.type === "update") await invalidateWorkThreads(client, projectId);
+    },
   });
   return mutation;
 }

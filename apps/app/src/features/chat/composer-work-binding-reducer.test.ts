@@ -29,7 +29,6 @@ describe("composer Work binding reducer", () => {
         threadId: "thread",
         work: work("b"),
         changed: true,
-        preferenceChanged: false,
       },
     });
     const settled = state;
@@ -56,7 +55,6 @@ describe("composer Work binding reducer", () => {
         threadId: "thread",
         work: work("b"),
         changed: true,
-        preferenceChanged: false,
       },
     });
     expect(state).toMatchObject({

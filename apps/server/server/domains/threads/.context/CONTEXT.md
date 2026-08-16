@@ -16,8 +16,7 @@ instead of the N:1 `threads.workId` column.
   same-project Work-authority URIs do not require membership.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
   changing an existing thread's primary Work. It owns lifecycle validation,
-  the transaction-composable binding transition, primary-thread sticky
-  preference, the exact binding receipt, idempotent no-op behavior, and the
+  the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
   targeted durable context refresh obligation. Writer and model commands share
   that transition; switch receipts are factual and are not reversible through
   turn Undo/Redo. The authenticated writer adapter additionally holds
@@ -78,7 +77,7 @@ instead of the N:1 `threads.workId` column.
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships, reads the primary, and rebinds the primary membership through one Work-before-thread critical section. Rebind accepts active or archived same-project Works and preserves exactly one primary. |
-| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, preference, receipt, and targeted durable obligation have one policy owner. Actor adapters own transaction and post-commit delivery. |
+| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, and targeted durable obligation have one policy owner. Thread rebind never writes the new-chat fallback. Actor adapters own transaction and post-commit delivery. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 

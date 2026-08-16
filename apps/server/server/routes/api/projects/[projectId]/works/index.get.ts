@@ -2,7 +2,10 @@
 import { serializeTransport } from "@meridian/contracts/protocol";
 import type { WorkStatus } from "@meridian/contracts/works";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
-import { requireProjectOwner, resolveCurrentWork } from "../../../../../domains/projects/index.js";
+import {
+  requireProjectOwner,
+  resolveNewChatFallbackWork,
+} from "../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
@@ -22,14 +25,18 @@ export default defineEventHandler(async (event) => {
   const status = rawStatus ?? "active";
 
   const project = await requireProjectOwner({ projects: projectRepo }, projectId, userId);
-  const currentWork = await resolveCurrentWork({ works: workRepo, preferences }, user, project);
+  const fallbackWork = await resolveNewChatFallbackWork(
+    { works: workRepo, preferences },
+    user,
+    project,
+  );
   const listedWorks = await workRepo.listByProject(
     projectId,
     status === "all" ? undefined : { status: status as WorkStatus },
   );
-  const works = listedWorks.some((work) => work.id === currentWork.id)
+  const works = listedWorks.some((work) => work.id === fallbackWork.id)
     ? listedWorks
-    : [currentWork, ...listedWorks];
+    : [fallbackWork, ...listedWorks];
   const enrichedWorks = await Promise.all(
     works.map(async (work) => ({
       ...work,
@@ -37,5 +44,5 @@ export default defineEventHandler(async (event) => {
     })),
   );
 
-  return serializeTransport({ works: enrichedWorks, defaultWorkId: currentWork.id });
+  return serializeTransport({ works: enrichedWorks, newChatFallbackWorkId: fallbackWork.id });
 });
