@@ -1,5 +1,7 @@
 # Changelog
 
+- Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
+
 ## [Unreleased]
 
 - `database`, `contracts`, `apps/server`, `apps/app`: cut over the former project-wide current Work to a narrowly named new-chat fallback with CAS repair; delete its GET/PUT selection API and all creation/rebind/receipt side effects; preserve fallback-only omitted root creation; canonicalize human/model Work metadata (including blank-field clearing); converge Work catalogs and associated chats from writer, model, reconciliation, and reversal paths; and prove fallback precedence and contention against PostgreSQL.

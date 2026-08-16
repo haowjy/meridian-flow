@@ -1,87 +1,58 @@
-/** WorkCard — compact Work identity and selection surface. */
+/** Shared compact card for Work collection rows. */
 import { t } from "@lingui/core/macro";
-import { Plural, Trans } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
+import type { MouseEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 
 export function WorkCard({
   work,
+  href,
   pending,
-  error,
-  onEdit,
-  registerEditFocus,
+  onOpen,
+  onLifecycle,
 }: {
   work: Work;
+  href: string;
   pending: boolean;
-  error: Error | null;
-  onEdit: () => void;
-  registerEditFocus?: (node: HTMLElement | null) => void;
+  onOpen: (event: MouseEvent<HTMLAnchorElement>) => void;
+  onLifecycle: () => void;
 }) {
   return (
-    <Card
-      aria-busy={pending || undefined}
-      className="group relative min-w-0 gap-4 py-5"
-      data-work-card={work.id}
-    >
-      <CardHeader className="pointer-events-none relative gap-x-3 gap-y-1 px-5">
-        <span
-          className={cn(
-            "flex min-w-0 items-center gap-1.5 font-medium text-foreground transition-opacity",
-            pending && "opacity-50",
-          )}
-          data-work-pending-content={work.id}
+    <Card className="relative min-w-0 gap-3 py-5" aria-busy={pending || undefined}>
+      <CardHeader className="gap-y-1 px-5">
+        <a
+          href={href}
+          onClick={onOpen}
+          className="focus-ring rounded-sm font-medium text-foreground after:absolute after:inset-0"
         >
-          <span className="truncate">{work.name}</span>
-        </span>
-        <span
-          className={cn(
-            "col-start-1 line-clamp-2 text-meta text-muted-foreground transition-opacity",
-            pending && "opacity-50",
-          )}
-        >
+          <span className="sr-only">{t`Open ${work.name}`}</span>
+          <span aria-hidden className="line-clamp-1">
+            {work.name}
+          </span>
+        </a>
+        <p className="col-start-1 line-clamp-2 whitespace-pre-line text-meta text-muted-foreground">
           {work.goal || <Trans>No goal yet</Trans>}
-        </span>
-        <CardAction className="pointer-events-auto">
+        </p>
+        <CardAction className="relative z-10">
           <Button
             variant="ghost"
             size="icon-sm"
             disabled={pending}
-            aria-label={t`Edit ${work.name}`}
-            className="focus-ring [@media(pointer:coarse)]:size-11"
-            data-work-focus={`edit:${work.id}`}
-            ref={registerEditFocus}
-            onClick={onEdit}
+            aria-label={t`Manage ${work.name}`}
+            onClick={onLifecycle}
+            className="[@media(pointer:coarse)]:size-11"
           >
             <MoreHorizontal className="size-4" />
           </Button>
         </CardAction>
       </CardHeader>
-      {work.description || work.unpushedChangeCount || error ? (
-        <CardContent
-          className={cn(
-            "pointer-events-none relative space-y-2 px-5 text-meta text-muted-foreground transition-opacity",
-            pending && "opacity-50",
-          )}
-        >
-          {work.description ? <p className="line-clamp-2">{work.description}</p> : null}
-          {work.unpushedChangeCount ? (
-            <p>
-              <Plural
-                value={work.unpushedChangeCount}
-                one="# pending change"
-                other="# pending changes"
-              />
-            </p>
-          ) : null}
-          {error ? (
-            <p className="text-sm text-destructive" role="alert" data-work-error={work.id}>
-              {error.message}
-            </p>
-          ) : null}
+      {work.description ? (
+        <CardContent className="line-clamp-2 px-5 text-meta text-muted-foreground">
+          {work.description}
         </CardContent>
       ) : null}
     </Card>

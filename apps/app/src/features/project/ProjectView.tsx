@@ -571,6 +571,9 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
       return (
         <WorkPaneController
           projectId={props.projectId}
+          routeWork={props.routeWork}
+          routeCommands={props.routeCommands}
+          onOpenThread={props.onOpenThread}
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
         />

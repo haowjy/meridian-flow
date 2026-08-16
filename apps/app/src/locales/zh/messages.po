@@ -69,8 +69,8 @@ msgstr ""
 
 #. placeholder {0}: work.unpushedChangeCount
 #: src/features/project/work/WorkCard.tsx
-msgid "{0, plural, one {# pending change} other {# pending changes}}"
-msgstr ""
+#~ msgid "{0, plural, one {# pending change} other {# pending changes}}"
+#~ msgstr ""
 
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -90,6 +90,11 @@ msgstr ""
 #. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
+msgstr ""
+
+#. placeholder {0}: existing.status === "archived" ? "This Work is archived." : "This Work is active."
+#: src/features/project/work/WorkScreen.tsx
+msgid "{0}"
 msgstr ""
 
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
@@ -262,6 +267,10 @@ msgstr ""
 msgid "Actions for {title}"
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Active"
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Active Work"
@@ -342,6 +351,10 @@ msgstr ""
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "All Work"
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr ""
@@ -372,7 +385,15 @@ msgid "Applying…"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Archive"
+#~ msgid "Archive"
+#~ msgstr ""
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Archive Work"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Archived"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -485,6 +506,7 @@ msgstr ""
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/work/WorkMetadata.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Cancel"
 msgstr ""
@@ -848,6 +870,10 @@ msgstr ""
 msgid "Couldn't finish that step"
 msgstr ""
 
+#: src/features/project/work/WorkScreen.tsx
+msgid "couldn’t load"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
 msgstr ""
@@ -957,6 +983,10 @@ msgstr ""
 msgid "Create the document"
 msgstr ""
 
+#: src/features/project/work/WorkScreen.tsx
+msgid "Create Work"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Created a Work"
 msgstr ""
@@ -1015,7 +1045,6 @@ msgstr ""
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Delete"
 msgstr ""
 
@@ -1037,6 +1066,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete table"
+msgstr ""
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Delete Work"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1065,8 +1098,8 @@ msgid "Describe the picture for a reader who cannot see it"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Description"
-msgstr ""
+#~ msgid "Description"
+#~ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Dev login"
@@ -1169,8 +1202,8 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkCard.tsx
-msgid "Edit {0}"
-msgstr ""
+#~ msgid "Edit {0}"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
@@ -1692,10 +1725,12 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/ProjectView.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work…"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Loading…"
 msgstr ""
 
@@ -1707,8 +1742,18 @@ msgstr ""
 msgid "Looking for the document this link names."
 msgstr ""
 
+#. placeholder {0}: work.name
+#: src/features/project/work/WorkCard.tsx
+msgid "Manage {0}"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkScreen.tsx
+msgid "Manage Work"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -2038,6 +2083,11 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Only part of this change could be reversed."
+msgstr ""
+
+#. placeholder {0}: work.name
+#: src/features/project/work/WorkCard.tsx
+msgid "Open {0}"
 msgstr ""
 
 #. placeholder {0}: documentDisplayName(path)
@@ -2414,6 +2464,10 @@ msgstr ""
 msgid "Retry"
 msgstr ""
 
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Retry save"
+msgstr ""
+
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr ""
@@ -2457,11 +2511,15 @@ msgid "Save name and location"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Save Work"
-msgstr ""
+#~ msgid "Save Work"
+#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Saving…"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -3131,7 +3189,11 @@ msgid "Unable to render diagram"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Unarchive"
+#~ msgid "Unarchive"
+#~ msgstr ""
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Unarchive Work"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -3301,13 +3363,12 @@ msgstr ""
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/ProjectView.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Work details"
-msgstr ""
+#~ msgid "Work details"
+#~ msgstr ""
 
 #: src/features/project/home/HomeChatCard.tsx
 msgid "Work unavailable"

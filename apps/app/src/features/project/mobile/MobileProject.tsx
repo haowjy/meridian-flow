@@ -153,7 +153,14 @@ function renderActiveView(
         />
       );
     case "work":
-      return <WorkScreen projectId={props.projectId} />;
+      return (
+        <WorkScreen
+          projectId={props.projectId}
+          routeWork={props.routeWork}
+          routeCommands={props.routeCommands}
+          onOpenThread={props.onOpenThread}
+        />
+      );
     case "chat":
       return (
         <DraftReviewBoundary value={props.chatReview}>
