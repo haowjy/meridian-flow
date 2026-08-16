@@ -14,11 +14,10 @@ instead of the N:1 `threads.workId` column.
 - **Thread↔Work membership** — `thread_works` join table (one primary per
   thread). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
-- **Known thread-rebind divergence** — `rebindThreadWork` still changes an
-  existing thread's primary Work although settled intent fixes the binding at
-  creation. Until removal, it owns lifecycle validation,
+- **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
+  explicitly changing an existing thread's primary Work. It owns lifecycle validation,
   the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
-  targeted durable context refresh obligation. Legacy writer and model commands share
+  targeted durable context refresh obligation. Writer and model commands share
   that transition; switch receipts are factual and are not reversible through
   turn Undo/Redo. The authenticated writer adapter additionally holds
   cross-process thread-run ownership across its transaction. Preflight
@@ -77,8 +76,8 @@ instead of the N:1 `threads.workId` column.
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
-| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. It still exposes the legacy primary-rebind operation through one Work-before-thread critical section; that operation accepts active or archived same-project Works and preserves exactly one primary. |
-| `rebindThreadWork` | Divergent transaction-composable mutation above `rebindPrimary`; while it exists, binding, receipt, and targeted durable obligation have one policy owner and never write the new-chat fallback. Actor adapters own transaction and post-commit delivery. |
+| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. It exposes the primary-rebind operation through one Work-before-thread critical section; that operation accepts active or archived same-project Works and preserves exactly one primary. |
+| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, and targeted durable obligation have one policy owner and never write the new-chat fallback. Actor adapters own transaction and post-commit delivery. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -177,10 +176,10 @@ contract shapes.
   non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
   Collisions use `-2`, `-3`, and later mutations never regenerate the handle;
   untitled threads keep `slug = null`.
-- **Work membership mutation is serialized.** Primary additions and legacy rebinds lock
+- **Work membership mutation is serialized.** Primary additions and rebinds lock
   the current and target Works in canonical id order before the thread row;
   non-primary additions lock their target Work before the thread. A changed
-  primary snapshot retries the whole transaction. Until rebind removal, this prevents deletion races,
+  primary snapshot retries the whole transaction. This prevents deletion races,
   opposite lock orders, and concurrent moves validating stale primary state.
 - Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.

@@ -54,8 +54,8 @@ This domain is not the full project CRUD surface; that lives in
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
 - The new-chat fallback is internal and sticky per `(userId, projectId)`: an archived
-  fallback remains valid. Work management, creation, metadata, lifecycle, and the
-  checkout's divergent thread-rebind commands never write it.
+  fallback remains valid. Work management, creation, metadata, lifecycle, and explicit thread-rebind
+  commands never write it.
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`.
 - Work slugs are stable project-unique handles assigned at creation. Rename does
@@ -72,6 +72,9 @@ This domain is not the full project CRUD surface; that lives in
 
 `domains/projects` carries the copied upstream repository and owner-gate
 surface: project CRUD, work list/search/touch, user provisioning, and
-`requireProjectOwner`. Only omitted root-chat creation resolves through `resolveNewChatFallbackWork`;
-repository ordering is not a project-wide Work selection policy. Route
-wrappers under `/api/projects/*` should stay thin over this domain.
+`requireProjectOwner`. Omitted root-chat creation resolves through `resolveNewChatFallbackWork`. The
+current Work-list route also calls that resolver, may repair the pointer, and
+returns `newChatFallbackWorkId` for Home prospective display. That route coupling
+diverges from the narrower repair-only-at-create intent; it does not establish
+project-wide Work selection, and repository ordering is not selection policy.
+Route wrappers under `/api/projects/*` should stay thin over this domain.

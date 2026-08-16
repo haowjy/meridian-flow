@@ -89,7 +89,7 @@ free of Meridian URI schemes and database concerns.
 | Tool | Backend |
 |---|---|
 | `write` | Command grammar (`read` / `diff` / `create` / `insert` / `replace` / `delete` / `undo` / `redo`). Handler resolves context paths to tracked document IDs and returns the package's versioned JSON result for successes and failures. With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
-| `work` | The checkout still has a six-branch strict union (list/show/create/update/delete/switch), but `switch` diverges from the settled fixed-at-creation binding contract. The retained branches resolve slugs, delegate to locked domain transitions, and project through the UUID-stripping model-facing identity boundary. Human PATCH and model `update` converge on `updateWorkTransition`; receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; the legacy switch receipt has no inverse. Do not extend the switch branch while it awaits deletion. |
+| `work` | Six-branch strict union (list/show/create/update/delete/switch). Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Human PATCH and model `update` converge on `updateWorkTransition`; receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; switch receipts are factual and have no inverse. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
 | `list` | Lists the resolved unified `ContextPort` path/URI. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `search` | Searches the resolved unified `ContextPort` scope. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `ask_user` | Creates a interrupt component block and keeps the assistant turn interruptible/resumable. |
@@ -153,11 +153,11 @@ Context ports and runtime tool algorithms live in their owning domains
 (`domains/context/*` and `domains/runtime/*`), not in `lib/`. `lib` composes
 those pieces into `AppServices` and route/WebSocket entry points.
 
-The divergent writer-origin thread Work rebind records a durable `work_switched` Notice inside
+Writer-origin thread Work rebinds record a durable `work_switched` Notice inside
 the binding transaction. It is appended after the next writer message for one
 model request while the independent hidden `<system_update>` keeps the new Work
 context authoritative on later requests. Selecting the previous Work is an
-ordinary reverse rebind. The divergent model-origin `work.switch` does not emit the notice.
+ordinary reverse rebind. Model-origin `work.switch` does not emit the notice.
 
 ## Request flow (HTTP)
 

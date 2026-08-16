@@ -12,10 +12,9 @@ into what the reader sees — and the **transcript viewport** (`TurnList.tsx`), 
 single scroll container for the conversation. It is NOT the chat session,
 thread management, or shared Composer and Work-control presentation — those are
 adjacent concerns (`useChatThreadSession`, `components/app/composer`, and
-`components/app/work-composer-controls`). Existing-thread Work rebinding stays
-here as a legacy Chat adapter in this checkout; prospective Home selection does
-not. Settled intent fixes Work at chat creation, so do not extend or copy the
-rebind adapter while it awaits removal.
+`components/app/work-composer-controls`). Explicit existing-thread Work rebinding stays here as a Chat adapter; prospective
+Home selection does not. Work management and navigation must not call or copy
+the rebind adapter.
 
 ## Mental model
 

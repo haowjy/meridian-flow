@@ -94,10 +94,10 @@ the matching Editor, advertises them only after route success, and claims them
 only after Work, manuscript path, mounted document, and draft membership agree;
 it survives phone view unmounts because the owner does not.
 
-A chat has one Work fixed at creation. Home's Work choice is prospective
-creation state only. The checkout's composer control can still rebind an idle
-chat through a durable transition; this is a known divergence from the settled
-fixed-binding contract and must not be extended to Work management or navigation.
+A chat has one current Work binding. Home's Work choice is prospective creation
+state only; it never invokes the rebind command. The Chat composer may explicitly
+rebind an idle existing chat through the canonical durable transition. Work
+management and navigation never rebind a chat implicitly.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings

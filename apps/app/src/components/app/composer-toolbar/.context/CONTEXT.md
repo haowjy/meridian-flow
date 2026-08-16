@@ -99,5 +99,5 @@ reservation always matches the rendered owner.
 - Feature-authored trigger ARIA or native-disabled transient triggers: they can
   contradict the one toolbar-owned dialog and strand focus.
 
-Feature-adapter behavior and the checkout's divergent mid-thread Work rebinding are documented in
+Feature-adapter behavior and explicit mid-thread Work rebinding are documented in
 [`../../../../features/chat/.context/composer-write-mode.md`](../../../../features/chat/.context/composer-write-mode.md).
