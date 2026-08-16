@@ -67,6 +67,9 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const newWorkButton = useRef<HTMLButtonElement>(null);
   const openRefs = useRef(new Map<string, HTMLAnchorElement>());
+  const lifecycleRefs = useRef(new Map<string, HTMLButtonElement>());
+  const archivedDisclosure = useRef<HTMLButtonElement>(null);
+  const lifecycleFocus = useRef<{ workId: string; status: Work["status"] } | null>(null);
   const focusHandled = useRef(false);
   const [focusIntent, setFocusIntent] = useState<WorkCollectionFocusIntent | null>(() =>
     takeWorkCollectionFocus(projectId),
@@ -95,6 +98,19 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
       focusHandled.current = true;
     }
   }, [archivedOpen, focusIntent, works]);
+  useEffect(() => {
+    const intent = lifecycleFocus.current;
+    if (!intent || works === null) return;
+    const committed = works.find((work) => work.id === intent.workId);
+    if (committed?.status !== intent.status) return;
+    const target =
+      intent.status === "archived" && !archivedOpen
+        ? archivedDisclosure.current
+        : lifecycleRefs.current.get(intent.workId);
+    if (!target) return;
+    target.focus();
+    lifecycleFocus.current = null;
+  }, [archivedOpen, works]);
   const active = works?.filter((work) => work.status === "active") ?? [];
   const archived = works?.filter((work) => work.status === "archived") ?? [];
   const headingId = useId();
@@ -158,6 +174,10 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                           if (node) openRefs.current.set(work.id, node);
                           else openRefs.current.delete(work.id);
                         }}
+                        registerLifecycleFocus={(node) => {
+                          if (node) lifecycleRefs.current.set(work.id, node);
+                          else lifecycleRefs.current.delete(work.id);
+                        }}
                       />
                     </li>
                   ))}
@@ -172,6 +192,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
               <section className="border-t border-border-subtle pt-3" aria-labelledby={headingId}>
                 <h2 id={headingId}>
                   <button
+                    ref={archivedDisclosure}
                     type="button"
                     aria-expanded={archivedOpen}
                     onClick={() => setArchivedOpen((value) => !value)}
@@ -211,6 +232,10 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                             if (node) openRefs.current.set(work.id, node);
                             else openRefs.current.delete(work.id);
                           }}
+                          registerLifecycleFocus={(node) => {
+                            if (node) lifecycleRefs.current.set(work.id, node);
+                            else lifecycleRefs.current.delete(work.id);
+                          }}
                         />
                       </li>
                     ))}
@@ -231,6 +256,12 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
           onAction={(action) => {
             const deletionFocus =
               action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
+            if (action.type === "archive" || action.type === "unarchive") {
+              lifecycleFocus.current = {
+                workId: action.workId,
+                status: action.type === "archive" ? "archived" : "active",
+              };
+            }
             mutation.mutate(action, {
               onSuccess: (result) => {
                 setDialog(null);
@@ -239,6 +270,9 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                   setFocusIntent(deletionFocus);
                 }
                 if (action.type === "create" && result) openWork(result);
+              },
+              onError: () => {
+                lifecycleFocus.current = null;
               },
             });
           }}

@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "effective-styles.pw.ts",
+  testMatch: ["effective-styles.pw.ts", "work-detail-geometry.pw.ts"],
   fullyParallel: false,
   workers: 1,
   reporter: "list",

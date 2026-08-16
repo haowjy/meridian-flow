@@ -15,6 +15,7 @@ export function WorkCard({
   onOpen,
   onLifecycle,
   registerOpenFocus,
+  registerLifecycleFocus,
 }: {
   work: Work;
   href: string;
@@ -22,6 +23,7 @@ export function WorkCard({
   onOpen: (event: MouseEvent<HTMLAnchorElement>) => void;
   onLifecycle: () => void;
   registerOpenFocus?: (node: HTMLAnchorElement | null) => void;
+  registerLifecycleFocus?: (node: HTMLButtonElement | null) => void;
 }) {
   return (
     <Card className="relative min-w-0 gap-3 py-5" aria-busy={pending || undefined}>
@@ -42,6 +44,7 @@ export function WorkCard({
         </p>
         <CardAction className="relative z-10">
           <Button
+            ref={registerLifecycleFocus}
             variant="ghost"
             size="icon-sm"
             disabled={pending}
