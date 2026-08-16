@@ -17,7 +17,8 @@ There is no first/default-Work fallback.
 Undo. `useThreadDurableProjections` owns transport projection, while
 `convergeThreadWorkBinding` owns all cache effects. `ComposerWorkControl`
 renders the measured inline/overflow entry only in the composer; headers remain
-chat identity surfaces.
+chat identity surfaces. This rebind capability is present in the checkout but
+diverges from the settled fixed-at-creation Work contract.
 
 The row passes Agent, Draft / Auto-apply, and Work descriptors to the shared
 measured `ComposerToolbar`. It observes the actual flex allocation left beside
@@ -32,9 +33,10 @@ The shared toolbar owns popup topology, trigger policy, placement, and page-awar
 focus; feature controls own domain state and page content. See the
 [composer-toolbar contracts](../../../components/app/composer-toolbar/.context/CONTEXT.md).
 
-`ComposerWorkControl` can rebind an idle existing thread. The controller carries
-that behavior through cache convergence and durable projection. Writer and LLM
-rebinding share the canonical server transition.
+`ComposerWorkControl` can currently rebind an idle existing thread. The
+controller carries that legacy behavior through cache convergence and durable
+projection, and writer and LLM adapters share one server transition. Treat this
+as containment knowledge for removal, not as permission to add entry points.
 
 The neutral `useSelectedWorkWriteModeToolbarControl` owns the selected-Work
 mutation and uses the active-draft count only to open confirmation quickly.
@@ -65,7 +67,7 @@ that nothing is pending.
 The shared Work picker and selected-Work write-mode presentation live in the
 neutral `components/app/work-composer-controls` boundary. Home and Chat adapt
 that presentation to different commands: Home edits prospective creation state,
-while Chat can durably rebind an idle existing thread. Home's selected Work is
+while Chat still contains the divergent durable-rebind adapter. Home's selected Work is
 already durable, so its write-mode control reads and mutates that Work's real
 policy before thread creation; it does not invent a provisional mode. Draft
 review launch behavior is injected by each project-shell adapter rather than

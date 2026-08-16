@@ -23,7 +23,7 @@ This domain is not the full project CRUD surface; that lives in
 | `DefaultBootstrap` | Project, work, thread, document, context source, agent definition, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
 | `createWork(input)` | Creates a Work and durably enqueues affected thread Work context in the same transaction; it never changes the new-chat fallback. |
-| `updateWorkTransition(workId, input)` | Locks the Work lifecycle row, compares normalized requested semantic fields, and applies metadata and archive state in one write only when they differ. It returns exact before/after/changed facts used by receipts; `updateWork` projects its final Work for routes. |
+| `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
 | `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. |
 | `resolveNewChatFallbackWork(user, project)` | Reads the internal omitted-create fallback. Only a null or dangling pointer falls back to newest active Work, newest archived Work, then concrete default creation; it repairs that pointer with CAS and retries if another repair won. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
@@ -54,8 +54,8 @@ This domain is not the full project CRUD surface; that lives in
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
 - The new-chat fallback is internal and sticky per `(userId, projectId)`: an archived
-  fallback remains valid. Work management, creation, metadata, lifecycle, and thread
-  rebind commands never write it.
+  fallback remains valid. Work management, creation, metadata, lifecycle, and the
+  checkout's divergent thread-rebind commands never write it.
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`.
 - Work slugs are stable project-unique handles assigned at creation. Rename does

@@ -61,6 +61,12 @@ draft owner.
 Incoming authoritative Work revisions update the clean baseline without replacing the
 active draft. One-shot focus intents bridge detail close/delete to the collection;
 they are route continuity, not Work selection or persistent state.
+Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
+Uploads, and associated chats. Resource sections fail independently. Archive and
+unarchive preserve the detail route; delete replaces to collection and restores focus
+to an adjacent row. Both shells share this route-owned module. At phone geometry, text
+must wrap without horizontal overflow and product controls retain coarse-pointer touch
+targets.
 
 Home is the shared, container-responsive Composer-led entry surface on desktop
 and phone, followed by the server-owned Continue, Favorites, and
@@ -88,10 +94,10 @@ the matching Editor, advertises them only after route success, and claims them
 only after Work, manuscript path, mounted document, and draft membership agree;
 it survives phone view unmounts because the owner does not.
 
-A chat has one current Work. Creation fixes the initial binding by default, and
-the explicit composer Work control can rebind an idle existing chat through the
-canonical durable transition. Home's Work selection is prospective creation
-state only; it never invokes that rebind command.
+A chat has one Work fixed at creation. Home's Work choice is prospective
+creation state only. The checkout's composer control can still rebind an idle
+chat through a durable transition; this is a known divergence from the settled
+fixed-binding contract and must not be extended to Work management or navigation.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings

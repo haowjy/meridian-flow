@@ -91,18 +91,20 @@ Two interfaces are the only paths between the visual layer and the substrate:
 - **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
   thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
   (cache-only today, no PATCH endpoint) rather than on the thread store.
-- **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
-  reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
-  `convergeThreadWorkBinding` is the one cache-effect boundary, while
-  `useThreadDurableProjections` is the one persistent transport owner. See
+- **Known thread-binding divergence:** settled intent fixes Work at chat
+  creation, but this checkout still exposes `useRebindThreadWork` to
+  `ComposerWorkControl`. Its confirmed/reconciled/superseded outcomes converge
+  through `convergeThreadWorkBinding`, while `useThreadDurableProjections` owns
+  persistent transport. Preserve that single boundary while deleting the stale
+  capability; do not extend it to another surface. See
   [`features/chat/.context/composer-write-mode.md`](../src/features/chat/.context/composer-write-mode.md)
-  for placement, interaction ownership, and mid-thread rebind behavior.
+  for the current implementation.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
   `project-invalidation` supplies project-level invalidators;
   `work-projection-cache` is the one Work-entity/binding convergence policy. Any
   thread or Work transition that can change Home also invalidates `homeFeed`.
-  Terminal turns and Work rebinds enter through
+  Terminal turns and the divergent Work-rebind path enter through
   `invalidateThreadProjectionDependencies`. Snapshot synchronization only applies
   history. A visible chat acknowledges unread state separately and converges the
   cached Home item from the authoritative user-state response without invalidation.
