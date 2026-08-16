@@ -14,6 +14,61 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 
 describe("WorkMetadata", () => {
+  it.each([
+    ["name", "Edit Work name", "  Renamed Work  ", { name: "Renamed Work" }],
+    ["goal", "Add a goal", "  Finish act two  ", { goal: "Finish act two" }],
+    [
+      "description",
+      "Add a description",
+      "  A quiet description  ",
+      { description: "A quiet description" },
+    ],
+  ] as const)("commits a normalized %s with an exact one-field body", async (field, label, value, body) => {
+    const save = vi.fn(async (data) => ({ ...fixture(), ...data }));
+    await withReactRoot(<Harness save={save} />, async () => {
+      click(label);
+      const editor = field === "name" ? input() : textarea();
+      change(editor, value);
+      if (field === "name") await press(editor, "Enter");
+      else click(`Save ${field}`);
+      await tick();
+      expect(save).toHaveBeenCalledOnce();
+      expect(save).toHaveBeenCalledWith(body);
+      const announcement =
+        field === "name" ? "Work name saved" : `${field[0]?.toUpperCase()}${field.slice(1)} saved`;
+      expect(document.body.textContent).toContain(announcement);
+      expect(document.activeElement?.textContent).toContain(
+        field === "name" ? "Renamed Work" : Object.values(body)[0],
+      );
+    });
+  });
+
+  it.each([
+    ["goal", "Goal text", "Goal text", { goal: null }],
+    ["description", "Description text", "Description text", { description: null }],
+  ] as const)("clears optional %s to null", async (field, initial, label, body) => {
+    const save = vi.fn(async (data) => ({ ...fixture({ [field]: initial }), ...data }));
+    await withReactRoot(<Harness save={save} work={fixture({ [field]: initial })} />, async () => {
+      click(label);
+      change(textarea(), "   ");
+      click(`Save ${field}`);
+      await tick();
+      expect(save).toHaveBeenCalledWith(body);
+    });
+  });
+
+  it("keeps required Name open when its normalized value is empty", async () => {
+    const save = vi.fn();
+    await withReactRoot(<Harness save={save} />, async () => {
+      click("Edit Work name");
+      change(input(), "   ");
+      await press(input(), "Enter");
+      expect(save).not.toHaveBeenCalled();
+      expect(input().getAttribute("aria-describedby")).toBe("work-name-error");
+      expect(document.querySelector("[role=alert]")?.textContent).toContain("required");
+    });
+  });
+
   it("normalizes unchanged Name without a request and restores display focus", async () => {
     const save = vi.fn();
     await withReactRoot(<Harness save={save} />, async () => {
@@ -22,6 +77,21 @@ describe("WorkMetadata", () => {
       await press(input(), "Enter");
       expect(save).not.toHaveBeenCalled();
       expect(document.activeElement?.textContent).toContain("Work A");
+    });
+  });
+
+  it.each([
+    ["Goal text", "Goal text", "  Goal text  "],
+    ["Description text", "Description text", "  Description text  "],
+  ])("normalizes unchanged optional metadata without a request", async (label, initial, draft) => {
+    const field = label.startsWith("Goal") ? "goal" : "description";
+    const save = vi.fn();
+    await withReactRoot(<Harness save={save} work={fixture({ [field]: initial })} />, async () => {
+      click(label);
+      change(textarea(), draft);
+      click(`Save ${field}`);
+      await tick();
+      expect(save).not.toHaveBeenCalled();
     });
   });
 
@@ -34,6 +104,32 @@ describe("WorkMetadata", () => {
       expect(save).toHaveBeenCalledWith({ goal: "New goal" });
       expect(document.body.textContent).toContain("Returned goal");
       expect(document.body.textContent).toContain("Goal saved");
+    });
+  });
+
+  it("inserts ordinary textarea Enter, saves on Mod+Enter, and ignores IME shortcuts", async () => {
+    const save = vi.fn(async (data) => ({ ...fixture(), ...data }));
+    await withReactRoot(<Harness save={save} />, async () => {
+      click("Add a goal");
+      change(textarea(), "Draft");
+      await press(textarea(), "Enter");
+      expect(save).not.toHaveBeenCalled();
+      await press(textarea(), "Enter", { ctrlKey: true, isComposing: true });
+      expect(save).not.toHaveBeenCalled();
+      await press(textarea(), "Enter", { metaKey: true });
+      expect(save).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("ignores Name Enter and Escape while IME composition is active", async () => {
+    const save = vi.fn(async (data) => ({ ...fixture(), ...data }));
+    await withReactRoot(<Harness save={save} />, async () => {
+      click("Edit Work name");
+      change(input(), "Composing");
+      await press(input(), "Enter", { isComposing: true });
+      await press(input(), "Escape", { isComposing: true });
+      expect(save).not.toHaveBeenCalled();
+      expect(input().value).toBe("Composing");
     });
   });
 
@@ -54,12 +150,63 @@ describe("WorkMetadata", () => {
       click("Save changes");
       await tick();
       expect(document.activeElement).toBe(textarea());
+      expect(save).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it.each(["Discard changes", "Keep editing"])("resolves a held intent with %s", async (choice) => {
+    const save = vi.fn();
+    const canceled = vi.fn();
+    const resumed = vi.fn();
+    await withReactRoot(
+      <IntentHarness save={save} canceled={canceled} resumed={resumed} />,
+      async () => {
+        click("Add a goal");
+        change(textarea(), "Local draft");
+        click("Leave detail");
+        click(choice);
+        await tick();
+        if (choice === "Discard changes") {
+          expect(resumed).toHaveBeenCalledOnce();
+          expect(document.body.textContent).toContain("Add a goal");
+        } else {
+          expect(canceled).toHaveBeenCalledOnce();
+          expect(textarea().value).toBe("Local draft");
+          expect(document.activeElement).toBe(textarea());
+        }
+        expect(save).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  it("holds navigation during a save and runs the exact held intent once after success", async () => {
+    const pending = deferred<Work>();
+    const resumed = vi.fn();
+    const save = vi.fn(() => pending.promise);
+    await withReactRoot(<IntentHarness save={save} resumed={resumed} />, async () => {
+      click("Add a goal");
+      change(textarea(), "New goal");
+      click("Save goal");
+      click("Leave detail");
+      expect(save).toHaveBeenCalledOnce();
+      expect(resumed).not.toHaveBeenCalled();
+      expect(button("Save changes").disabled).toBe(true);
+      await act(async () => pending.resolve(fixture({ goal: "New goal" })));
+      await tick();
+      expect(save).toHaveBeenCalledOnce();
+      expect(resumed).toHaveBeenCalledOnce();
     });
   });
 });
 
-function Harness({ save }: { save: (data: UpdateWorkRequest) => Promise<Work> }) {
-  const controller = useWorkMetadataController(fixture(), save);
+function Harness({
+  save,
+  work = fixture(),
+}: {
+  save: (data: UpdateWorkRequest) => Promise<Work>;
+  work?: Work;
+}) {
+  const controller = useWorkMetadataController(work, save);
   return (
     <>
       <WorkMetadata controller={controller} />
@@ -80,7 +227,49 @@ function Harness({ save }: { save: (data: UpdateWorkRequest) => Promise<Work> })
     </>
   );
 }
-function fixture(): Work {
+function IntentHarness({
+  save,
+  canceled = vi.fn(),
+  resumed,
+}: {
+  save: (data: UpdateWorkRequest) => Promise<Work>;
+  canceled?: () => void;
+  resumed: () => void;
+}) {
+  const controller = useWorkMetadataController(fixture(), save);
+  return (
+    <>
+      <WorkMetadata controller={controller} />
+      <button
+        type="button"
+        onClick={() =>
+          controller.request({ label: "Leave detail", run: resumed, cancel: canceled })
+        }
+      >
+        Leave detail
+      </button>
+      {controller.held ? (
+        <div>
+          <span>Save metadata changes?</span>
+          <button
+            type="button"
+            disabled={controller.saving}
+            onClick={() => void controller.saveAndResume()}
+          >
+            Save changes
+          </button>
+          <button type="button" disabled={controller.saving} onClick={controller.discardAndResume}>
+            Discard changes
+          </button>
+          <button type="button" disabled={controller.saving} onClick={controller.keepEditing}>
+            Keep editing
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+function fixture(overrides: Partial<Work> = {}): Work {
   return {
     id: "11111111-1111-4111-8111-111111111111",
     projectId: "project-1",
@@ -97,6 +286,7 @@ function fixture(): Work {
     lastActivityAt: "2026-08-15T00:00:00.000Z",
     createdAt: "2026-08-15T00:00:00.000Z",
     updatedAt: "2026-08-15T00:00:00.000Z",
+    ...overrides,
   };
 }
 function click(label: string) {
@@ -105,6 +295,13 @@ function click(label: string) {
   );
   if (!node) throw new Error(`missing ${label}`);
   act(() => (node as HTMLButtonElement).click());
+}
+function button(label: string): HTMLButtonElement {
+  const node = [...document.querySelectorAll("button")].find(
+    (item) => item.textContent?.includes(label) || item.getAttribute("aria-label") === label,
+  );
+  if (!(node instanceof window.HTMLButtonElement)) throw new Error(`missing ${label}`);
+  return node;
 }
 function input() {
   const node = document.querySelector("input");
@@ -138,4 +335,11 @@ async function tick() {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }

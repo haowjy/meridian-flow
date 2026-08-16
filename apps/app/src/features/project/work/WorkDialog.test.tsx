@@ -34,13 +34,18 @@ describe("WorkDialog lifecycle admission", () => {
     }
     await withReactRoot(<Harness />, () => {
       const archive = button("Archive Work");
+      const remove = button("Delete Work");
       act(() => {
         archive.click();
-        archive.click();
+        remove.click();
       });
       expect(action).toHaveBeenCalledOnce();
+      expect(action).toHaveBeenCalledWith({ type: "archive", workId: fixture().id });
       expect(button("Archive Work").disabled).toBe(true);
+      expect(button("Delete Work").disabled).toBe(true);
       expect(button("Cancel").disabled).toBe(true);
+      act(() => button("Cancel").click());
+      expect(document.body.textContent).toContain("Manage Work");
       expect(button("Archive Work").className).toContain("pointer:coarse");
     });
   });
