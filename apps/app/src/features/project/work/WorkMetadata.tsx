@@ -33,8 +33,8 @@ export function useWorkMetadataController(
   useEffect(() => {
     if (sameMetadata(initialRef.current, initial)) return;
     initialRef.current = initial;
-    if (!field) setWork(initial);
-  }, [field, initial]);
+    setWork(initial);
+  }, [initial]);
   useEffect(() => {
     if (saving || field || !held) return;
     const intent = held;
@@ -75,7 +75,7 @@ export function useWorkMetadataController(
     setError(null);
     try {
       const returned = await saveWork({
-        [target]: target === "name" ? normalizedDraft : normalizedDraft || null,
+        [target]: normalizedDraft,
       });
       setWork(returned);
       setField(null);
@@ -155,7 +155,13 @@ export function useWorkMetadataController(
 }
 export type WorkMetadataController = ReturnType<typeof useWorkMetadataController>;
 
-export function WorkMetadata({ controller }: { controller: WorkMetadataController }) {
+export function WorkMetadata({
+  controller,
+  identityChrome,
+}: {
+  controller: WorkMetadataController;
+  identityChrome?: React.ReactNode;
+}) {
   const c = controller;
   const headingRef = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
@@ -195,16 +201,20 @@ export function WorkMetadata({ controller }: { controller: WorkMetadataControlle
           <Editor field="name" controller={c} keyDown={keyDown} />
         ) : (
           <div className="flex min-w-0 items-start gap-2">
-            <button
-              type="button"
-              ref={refFor("name")}
-              className="focus-ring min-h-11 min-w-0 rounded-sm text-left [@media(pointer:coarse)]:min-h-11"
+            <h1
+              ref={(node) => {
+                headingRef.current = node;
+                refFor("name")(node);
+              }}
+              tabIndex={-1}
+              className="focus-ring min-h-11 min-w-0 cursor-text rounded-sm break-words text-2xl font-semibold [@media(pointer:coarse)]:min-h-11"
               onClick={() => c.activate("name")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") c.activate("name");
+              }}
             >
-              <h1 ref={headingRef} tabIndex={-1} className="break-words text-2xl font-semibold">
-                {c.work.name}
-              </h1>
-            </button>
+              {c.work.name}
+            </h1>
             <Button
               size="icon-sm"
               variant="ghost"
@@ -217,6 +227,7 @@ export function WorkMetadata({ controller }: { controller: WorkMetadataControlle
           </div>
         )}
       </div>
+      {identityChrome}
       <Field
         field="goal"
         label={t`Goal`}

@@ -9,11 +9,13 @@ import {
   Archive,
   ArchiveRestore,
   ChevronLeft,
+  FileText,
+  Folder,
   MessageSquare,
   NotebookPen,
   Upload,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useWorkMutations } from "@/client/query/useWorks";
@@ -32,14 +34,16 @@ import {
   WorkMetadata,
   type WorkMetadataController,
 } from "./WorkMetadata";
-import { ResourceError, WorkDialog, type WorkScreenProps } from "./WorkScreen";
+import { focusAfterDelete, ResourceError, WorkDialog, type WorkScreenProps } from "./WorkScreen";
+import { holdWorkCollectionFocus } from "./work-focus-intent";
 
 export function WorkDetailScreen({
   projectId,
   work,
   routeCommands,
   onOpenThread,
-}: WorkScreenProps & { work: Work }) {
+  catalogWorks = [work],
+}: WorkScreenProps & { work: Work; catalogWorks?: Work[] }) {
   const metadataMutation = useWorkMutations(projectId);
   const lifecycleMutation = useWorkMutations(projectId);
   const controller = useWorkMetadataController(
@@ -48,6 +52,7 @@ export function WorkDetailScreen({
       metadataMutation.mutateAsync({ type: "update", workId: work.id, data }) as Promise<Work>,
   );
   const [manage, setManage] = useState(false);
+  const manageButton = useRef<HTMLButtonElement>(null);
   const blocker = useBlocker({
     shouldBlockFn: () => controller.dirty || controller.saving,
     enableBeforeUnload: () => controller.dirty,
@@ -61,58 +66,61 @@ export function WorkDetailScreen({
         cancel: blocker.reset,
       });
   }, [blocker, controller]);
-  useEffect(() => {
-    const unload = (event: BeforeUnloadEvent) => {
-      if (controller.dirty) event.preventDefault();
-    };
-    window.addEventListener("beforeunload", unload);
-    return () => window.removeEventListener("beforeunload", unload);
-  }, [controller.dirty]);
   return (
     <div className="app-scroll">
       <article className="project-screen-column gap-10 pb-12">
-        <WorkMetadata controller={controller} />
-        <div className="flex items-center justify-between gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void routeCommands.closeWork({ replace: true })}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
-            <ChevronLeft className="size-4" />
-            <Trans>All Work</Trans>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              controller.request({
-                label: t`Manage Work`,
-                run: () => {
-                  lifecycleMutation.reset();
-                  setManage(true);
-                },
-              })
-            }
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
-            {controller.work.status === "archived" ? (
-              <ArchiveRestore className="size-4" />
-            ) : (
-              <Archive className="size-4" />
-            )}
-            <Trans>Manage Work</Trans>
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full border border-border-subtle px-2 py-0.5 text-meta text-muted-foreground">
-            {controller.work.status === "archived" ? (
-              <Trans>Archived</Trans>
-            ) : (
-              <Trans>Active</Trans>
-            )}
-          </span>
-        </div>
+        <WorkMetadata
+          controller={controller}
+          identityChrome={
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-border-subtle px-2 py-0.5 text-meta text-muted-foreground">
+                  {controller.work.status === "archived" ? (
+                    <Trans>Archived</Trans>
+                  ) : (
+                    <Trans>Active</Trans>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    holdWorkCollectionFocus(projectId, { kind: "heading" });
+                    void routeCommands.closeWork({ replace: true });
+                  }}
+                  className="[@media(pointer:coarse)]:min-h-11"
+                >
+                  <ChevronLeft className="size-4" />
+                  <Trans>All Work</Trans>
+                </Button>
+                <Button
+                  ref={manageButton}
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    controller.request({
+                      label: t`Manage Work`,
+                      run: () => {
+                        lifecycleMutation.reset();
+                        setManage(true);
+                      },
+                    })
+                  }
+                  className="[@media(pointer:coarse)]:min-h-11"
+                >
+                  {controller.work.status === "archived" ? (
+                    <ArchiveRestore className="size-4" />
+                  ) : (
+                    <Archive className="size-4" />
+                  )}
+                  <Trans>Manage Work</Trans>
+                </Button>
+              </div>
+            </div>
+          }
+        />
         <Drafts
           projectId={projectId}
           work={controller.work}
@@ -157,7 +165,10 @@ export function WorkDetailScreen({
             lifecycleMutation.mutate(action, {
               onSuccess: () => {
                 setManage(false);
-                if (action.type === "delete") void routeCommands.closeWork({ replace: true });
+                if (action.type === "delete") {
+                  holdWorkCollectionFocus(projectId, focusAfterDelete(catalogWorks, action.workId));
+                  void routeCommands.closeWork({ replace: true });
+                } else requestAnimationFrame(() => manageButton.current?.focus());
               },
             })
           }
@@ -261,34 +272,37 @@ function TreeSummary({
       ) : !query.tree ? (
         <Loading />
       ) : (
-        <button
-          type="button"
-          className="focus-ring flex min-h-16 w-full items-center gap-3 rounded-lg border px-4 text-left"
-          onClick={() =>
-            controller.request({
-              label: t`Open ${label}`,
-              run: () => {
-                if (workId)
-                  void commands.openWorkContext(
-                    { kind: "work-context", workId, scheme },
-                    { replace: false },
-                  );
-              },
-            })
-          }
-        >
-          <Icon className="size-4" />
-          <span>
-            <span className="block text-sm font-medium">{t`Open ${label}`}</span>
-            <span className="text-meta text-muted-foreground">
-              {count ? (
-                <Plural value={count} one="# item" other="# items" />
-              ) : (
-                <Trans>Nothing here yet</Trans>
-              )}
+        <div className="space-y-2">
+          <button
+            type="button"
+            className="focus-ring flex min-h-16 w-full items-center gap-3 rounded-lg border px-4 text-left"
+            onClick={() =>
+              controller.request({
+                label: t`Open ${label}`,
+                run: () => {
+                  if (workId)
+                    void commands.openWorkContext(
+                      { kind: "work-context", workId, scheme },
+                      { replace: false },
+                    );
+                },
+              })
+            }
+          >
+            <Icon className="size-4" />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{t`Open ${label}`}</span>
+              <span className="text-meta text-muted-foreground">
+                {count ? (
+                  <Plural value={count} one="# item" other="# items" />
+                ) : (
+                  <Trans>Nothing here yet</Trans>
+                )}
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+          <TreePreview tree={query.tree} />
+        </div>
       )}
     </ResourceSection>
   );
@@ -378,6 +392,36 @@ function countFiles(node: ProjectContextTreeDirectory): number {
   return node.children.reduce(
     (sum, child) => sum + (child.kind === "dir" ? countFiles(child) : 1),
     0,
+  );
+}
+function TreePreview({ tree }: { tree: ProjectContextTreeDirectory }) {
+  const visible = tree.children.slice(0, 3);
+  if (!visible.length) return null;
+  return (
+    <ul className="space-y-1 px-1" aria-label={t`Contents preview`}>
+      {visible.map((node) => (
+        <li
+          key={node.path}
+          className="flex min-w-0 items-center gap-2 text-meta text-muted-foreground"
+        >
+          {node.kind === "dir" ? (
+            <Folder className="size-3.5 shrink-0" aria-hidden />
+          ) : (
+            <FileText className="size-3.5 shrink-0" aria-hidden />
+          )}
+          <span className="truncate">{node.name}</span>
+        </li>
+      ))}
+      {tree.children.length > visible.length ? (
+        <li className="text-meta text-muted-foreground">
+          <Plural
+            value={tree.children.length - visible.length}
+            one="# more item"
+            other="# more items"
+          />
+        </li>
+      ) : null}
+    </ul>
   );
 }
 

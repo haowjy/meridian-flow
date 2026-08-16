@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { WorkCard } from "./WorkCard";
 import { WorkDetailScreen } from "./WorkDetailScreen";
+import { takeWorkCollectionFocus, type WorkCollectionFocusIntent } from "./work-focus-intent";
 
 export type WorkScreenProps = {
   projectId: string;
@@ -31,7 +32,9 @@ export type WorkScreenProps = {
 export function WorkScreen(props: WorkScreenProps) {
   const catalog = useWorks(props.projectId);
   if (props.routeWork.status === "present") {
-    return <WorkDetailScreen {...props} work={props.routeWork.work} />;
+    return (
+      <WorkDetailScreen {...props} work={props.routeWork.work} catalogWorks={catalog.works ?? []} />
+    );
   }
   if (props.routeWork.status === "catalog-error") {
     return (
@@ -62,9 +65,36 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   const [dialog, setDialog] = useState<"new" | Work | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
+  const newWorkButton = useRef<HTMLButtonElement>(null);
+  const openRefs = useRef(new Map<string, HTMLAnchorElement>());
+  const focusHandled = useRef(false);
+  const [focusIntent, setFocusIntent] = useState<WorkCollectionFocusIntent | null>(() =>
+    takeWorkCollectionFocus(projectId),
+  );
   useEffect(() => {
-    collectionHeading.current?.focus();
-  }, []);
+    if (focusHandled.current) return;
+    if (works === null) return;
+    if (!focusIntent || focusIntent.kind === "heading") {
+      collectionHeading.current?.focus();
+      focusHandled.current = true;
+      return;
+    }
+    if (focusIntent.kind === "new-work") {
+      newWorkButton.current?.focus();
+      focusHandled.current = true;
+      return;
+    }
+    const target = works.find((work) => work.id === focusIntent.workId);
+    if (target?.status === "archived" && !archivedOpen) {
+      setArchivedOpen(true);
+      return;
+    }
+    const node = openRefs.current.get(focusIntent.workId);
+    if (node) {
+      node.focus();
+      focusHandled.current = true;
+    }
+  }, [archivedOpen, focusIntent, works]);
   const active = works?.filter((work) => work.status === "active") ?? [];
   const archived = works?.filter((work) => work.status === "archived") ?? [];
   const headingId = useId();
@@ -84,6 +114,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
             <Trans>Work</Trans>
           </h1>
           <Button
+            ref={newWorkButton}
             size="sm"
             className="[@media(pointer:coarse)]:min-h-11"
             onClick={() => setDialog("new")}
@@ -123,6 +154,10 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                           openWork(work);
                         }}
                         onLifecycle={() => setDialog(work)}
+                        registerOpenFocus={(node) => {
+                          if (node) openRefs.current.set(work.id, node);
+                          else openRefs.current.delete(work.id);
+                        }}
                       />
                     </li>
                   ))}
@@ -172,6 +207,10 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                             openWork(work);
                           }}
                           onLifecycle={() => setDialog(work)}
+                          registerOpenFocus={(node) => {
+                            if (node) openRefs.current.set(work.id, node);
+                            else openRefs.current.delete(work.id);
+                          }}
                         />
                       </li>
                     ))}
@@ -189,14 +228,20 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
             mutation.reset();
             setDialog(null);
           }}
-          onAction={(action) =>
+          onAction={(action) => {
+            const deletionFocus =
+              action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
             mutation.mutate(action, {
               onSuccess: (result) => {
                 setDialog(null);
+                if (deletionFocus) {
+                  focusHandled.current = false;
+                  setFocusIntent(deletionFocus);
+                }
                 if (action.type === "create" && result) openWork(result);
               },
-            })
-          }
+            });
+          }}
         />
       </section>
     </div>
@@ -219,13 +264,26 @@ function LoadingCards() {
     </div>
   );
 }
+export function focusAfterDelete(works: Work[], deletedId: string): WorkCollectionFocusIntent {
+  const deleted = works.find((work) => work.id === deletedId);
+  if (!deleted) return { kind: "new-work" };
+  const peers = works.filter((work) => work.status === deleted.status);
+  const index = peers.findIndex((work) => work.id === deletedId);
+  const sibling = peers[index + 1] ?? peers[index - 1];
+  return sibling ? { kind: "work", workId: sibling.id } : { kind: "new-work" };
+}
 export function ResourceError({ label, retry }: { label: string; retry: () => void }) {
   return (
     <div role="alert" className="flex items-center gap-3">
       <p className="text-sm text-destructive">
         {label} <Trans>couldn’t load</Trans>
       </p>
-      <Button variant="outline" size="sm" onClick={retry}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={retry}
+        className="[@media(pointer:coarse)]:min-h-11"
+      >
         <Trans>Retry</Trans> {label}
       </Button>
     </div>

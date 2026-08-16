@@ -67,6 +67,11 @@ msgstr "'.' and '..' cannot be used as names"
 msgid "(also {0})"
 msgstr "(also {0})"
 
+#. placeholder {0}: tree.children.length - visible.length
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{0, plural, one {# more item} other {# more items}}"
+msgstr "{0, plural, one {# more item} other {# more items}}"
+
 #. placeholder {0}: work.unpushedChangeCount
 #: src/features/project/work/WorkCard.tsx
 #~ msgid "{0, plural, one {# pending change} other {# pending changes}}"
@@ -810,6 +815,10 @@ msgstr "Confirm"
 #: src/components/app/ConnectionBanner.tsx
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr "Connection lost. Retrying… attempt {0}"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Contents preview"
+msgstr "Contents preview"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Context"

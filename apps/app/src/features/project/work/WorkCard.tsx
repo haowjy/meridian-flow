@@ -14,17 +14,20 @@ export function WorkCard({
   pending,
   onOpen,
   onLifecycle,
+  registerOpenFocus,
 }: {
   work: Work;
   href: string;
   pending: boolean;
   onOpen: (event: MouseEvent<HTMLAnchorElement>) => void;
   onLifecycle: () => void;
+  registerOpenFocus?: (node: HTMLAnchorElement | null) => void;
 }) {
   return (
     <Card className="relative min-w-0 gap-3 py-5" aria-busy={pending || undefined}>
       <CardHeader className="gap-y-1 px-5">
         <a
+          ref={registerOpenFocus}
           href={href}
           onClick={onOpen}
           className="focus-ring rounded-sm font-medium text-foreground after:absolute after:inset-0"

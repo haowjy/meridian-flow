@@ -58,6 +58,9 @@ authoritative returned Work, field-local failure, and an awaited Save/Discard/Ke
 editing decision with the TanStack route blocker; leaves only submit intents through it.
 Hard unload uses the router's native before-unload integration rather than a second
 draft owner.
+Incoming authoritative Work revisions update the clean baseline without replacing the
+active draft. One-shot focus intents bridge detail close/delete to the collection;
+they are route continuity, not Work selection or persistent state.
 
 Home is the shared, container-responsive Composer-led entry surface on desktop
 and phone, followed by the server-owned Continue, Favorites, and

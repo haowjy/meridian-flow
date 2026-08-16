@@ -9,12 +9,12 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 const mocks = vi.hoisted(() => ({
   drafts: { status: "success", groups: [] as unknown[], refetch: vi.fn() },
   scratch: {
-    tree: { kind: "dir", name: "", path: "", children: [] },
+    tree: { kind: "dir", name: "", path: "", children: [] as unknown[] },
     isError: false,
     refetch: vi.fn(),
   },
   uploads: {
-    tree: { kind: "dir", name: "", path: "", children: [] },
+    tree: { kind: "dir", name: "", path: "", children: [] as unknown[] },
     isError: false,
     refetch: vi.fn(),
   },
@@ -68,7 +68,7 @@ vi.mock("@/client/query/useWorks", () => ({
 }));
 
 const { WorkDetailScreen } = await import("./WorkDetailScreen");
-const { WorkScreen } = await import("./WorkScreen");
+const { focusAfterDelete, WorkScreen } = await import("./WorkScreen");
 
 describe("WorkDetailScreen resource boundaries", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -106,6 +106,13 @@ describe("WorkDetailScreen resource boundaries", () => {
     mocks.uploads.isError = true;
     mocks.chats.isError = true;
     await withReactRoot(<WorkDetailScreen {...props()} work={fixture()} />, () => {
+      for (const label of [
+        "Retry Pending drafts",
+        "Retry Scratch",
+        "Retry Uploads",
+        "Retry Associated chats",
+      ])
+        expect(button(label).className).toContain("pointer:coarse");
       click("Retry Pending drafts");
       click("Retry Scratch");
       click("Retry Uploads");
@@ -198,12 +205,53 @@ describe("WorkDetailScreen resource boundaries", () => {
 
   it("exposes focusable entry identity and coarse-pointer action contracts", async () => {
     resetResources();
+    const longName =
+      "A very long Work name that must wrap safely on a narrow phone without pushing actions outside the viewport";
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    await withReactRoot(
+      <WorkDetailScreen {...props()} work={fixture({ name: longName })} />,
+      () => {
+        expect(document.activeElement?.textContent).toBe(longName);
+        expect(button("All Work").className).toContain("pointer:coarse");
+        expect(button("Manage Work").className).toContain("pointer:coarse");
+        expect(button("Edit Work name").className).toContain("pointer:coarse");
+        const heading = document.querySelector("h1");
+        expect(heading?.closest("button")).toBeNull();
+        expect(heading?.className).toContain("break-words");
+        expect(heading?.parentElement?.className).toContain("min-w-0");
+      },
+    );
+  });
+
+  it("renders a bounded truthful Scratch and Uploads discovery preview", async () => {
+    resetResources();
+    mocks.scratch.tree.children = [
+      { kind: "dir", name: "Notes", path: "/Notes", children: [] },
+      { kind: "file", name: "beats.md", path: "/beats.md" },
+      { kind: "file", name: "scene.md", path: "/scene.md" },
+      { kind: "file", name: "extra.md", path: "/extra.md" },
+    ];
     await withReactRoot(<WorkDetailScreen {...props()} work={fixture()} />, () => {
-      expect(document.activeElement?.textContent).toBe("Work A");
-      expect(button("All Work").className).toContain("pointer:coarse");
-      expect(button("Manage Work").className).toContain("pointer:coarse");
-      expect(button("Edit Work name").className).toContain("pointer:coarse");
+      expect(document.body.textContent).toContain("Notes");
+      expect(document.body.textContent).toContain("beats.md");
+      expect(document.body.textContent).toContain("1 more item");
+      expect(document.body.textContent).not.toContain("extra.md");
     });
+  });
+
+  it("chooses next, previous, then New Work focus after deletion", () => {
+    const first = fixture({ id: "work-a" });
+    const middle = fixture({ id: "work-b" });
+    const last = fixture({ id: "work-c" });
+    expect(focusAfterDelete([first, middle, last], middle.id)).toEqual({
+      kind: "work",
+      workId: last.id,
+    });
+    expect(focusAfterDelete([first, middle], middle.id)).toEqual({
+      kind: "work",
+      workId: first.id,
+    });
+    expect(focusAfterDelete([middle], middle.id)).toEqual({ kind: "new-work" });
   });
 });
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { act } from "react";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useWorkMetadataController, WorkMetadata } from "./WorkMetadata";
@@ -14,6 +14,21 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 
 describe("WorkMetadata", () => {
+  it("keeps a valid heading boundary with pointer and focused Enter activation", async () => {
+    await withReactRoot(<Harness save={vi.fn()} />, async () => {
+      const heading = document.querySelector("h1");
+      if (!(heading instanceof window.HTMLHeadingElement)) throw new Error("missing heading");
+      expect(heading.closest("button")).toBeNull();
+      act(() => heading.click());
+      expect(input()).toBe(document.activeElement);
+    });
+    await withReactRoot(<Harness save={vi.fn()} />, async () => {
+      const heading = document.querySelector("h1") as HTMLHeadingElement;
+      heading.focus();
+      await press(heading, "Enter");
+      expect(input()).toBe(document.activeElement);
+    });
+  });
   it.each([
     ["name", "Edit Work name", "  Renamed Work  ", { name: "Renamed Work" }],
     ["goal", "Add a goal", "  Finish act two  ", { goal: "Finish act two" }],
@@ -44,16 +59,53 @@ describe("WorkMetadata", () => {
   });
 
   it.each([
-    ["goal", "Goal text", "Goal text", { goal: null }],
-    ["description", "Description text", "Description text", { description: null }],
-  ] as const)("clears optional %s to null", async (field, initial, label, body) => {
-    const save = vi.fn(async (data) => ({ ...fixture({ [field]: initial }), ...data }));
+    ["goal", "Goal text", "Goal text", { goal: "" }],
+    ["description", "Description text", "Description text", { description: "" }],
+  ] as const)("clears optional %s over the string PATCH contract", async (field, initial, label, body) => {
+    const save = vi.fn(async (data) => ({
+      ...fixture({ [field]: initial }),
+      ...data,
+      [field]: null,
+    }));
     await withReactRoot(<Harness save={save} work={fixture({ [field]: initial })} />, async () => {
       click(label);
       change(textarea(), "   ");
       click(`Save ${field}`);
       await tick();
       expect(save).toHaveBeenCalledWith(body);
+      expect(document.body.textContent).toContain(
+        field === "goal" ? "Add a goal" : "Add a description",
+      );
+    });
+  });
+
+  it("keeps the active draft while adopting an external authoritative refresh for Cancel", async () => {
+    const save = vi.fn();
+    let refresh: ((work: Work) => void) | null = null;
+    function RefreshHarness() {
+      const [work, setWork] = useState(fixture({ goal: "Original goal" }));
+      refresh = setWork;
+      return <Harness save={save} work={work} />;
+    }
+    await withReactRoot(<RefreshHarness />, async () => {
+      click("Original goal");
+      change(textarea(), "Local draft");
+      await act(async () =>
+        refresh?.(
+          fixture({
+            goal: "Server goal",
+            description: "Server description",
+            status: "archived",
+            updatedAt: "2026-08-16T00:00:00.000Z",
+          }),
+        ),
+      );
+      expect(textarea().value).toBe("Local draft");
+      expect(document.body.textContent).toContain("Server description");
+      click("Cancel");
+      await tick();
+      expect(document.body.textContent).toContain("Server goal");
+      expect(save).not.toHaveBeenCalled();
     });
   });
 

@@ -46,6 +46,18 @@ describe("Work lifecycle requests", () => {
       status: 409,
     });
   });
+
+  it("sends optional metadata clears as accepted empty strings", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      Response.json(workResponse()),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await updateWork("work-1", { goal: "", description: "" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      goal: "",
+      description: "",
+    });
+  });
 });
 
 describe("Work-associated chat requests", () => {
