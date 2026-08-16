@@ -25,7 +25,7 @@ This domain is not the full project CRUD surface; that lives in
 | `createWork(input)` | Creates a Work and durably enqueues affected thread Work context in the same transaction; it never changes the new-chat fallback. |
 | `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
 | `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. |
-| `resolveNewChatFallbackWork(user, project)` | Reads the internal omitted-create fallback. Only a null or dangling pointer falls back to newest active Work, newest archived Work, then concrete default creation; it repairs that pointer with CAS and retries if another repair won. |
+| `resolveNewChatFallbackWork(user, project)` | Reads the internal repair-only fallback for root creation whose `workId` was actually omitted. A null or dangling pointer falls back to newest active Work, newest archived Work, then concrete default creation; it repairs that pointer with CAS and retries if another repair won. Explicit JSON `workId: null` is invalid at the route boundary. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 
 ## Invariants
@@ -55,9 +55,13 @@ This domain is not the full project CRUD surface; that lives in
   are durable, rather than merely after row existence.
 - The new-chat fallback is internal and sticky per `(userId, projectId)`: an archived
   fallback remains valid. Work management, creation, metadata, lifecycle, and explicit thread-rebind
-  commands never write it.
+  commands never write it. Only an actually omitted root-create `workId` reaches
+  fallback resolution and repair; explicit null is invalid. Human Chat rebind and
+  model `work.switch` remain explicit, separate commands.
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
-  their thread lists are flat under `/api/works/:workId`.
+  their thread lists are flat under `/api/works/:workId`. Collection responses
+  contain only the requested catalog Works and never resolve, repair, or expose
+  the new-chat fallback.
 - Work slugs are stable project-unique handles assigned at creation. Rename does
   not change a slug; soft deletion releases both active name and slug uniqueness.
 - Work deletion refuses live thread memberships, unreviewed drafts, and live
@@ -72,9 +76,6 @@ This domain is not the full project CRUD surface; that lives in
 
 `domains/projects` carries the copied upstream repository and owner-gate
 surface: project CRUD, work list/search/touch, user provisioning, and
-`requireProjectOwner`. Omitted root-chat creation resolves through `resolveNewChatFallbackWork`. The
-current Work-list route also calls that resolver, may repair the pointer, and
-returns `newChatFallbackWorkId` for Home prospective display. That route coupling
-diverges from the narrower repair-only-at-create intent; it does not establish
-project-wide Work selection, and repository ordering is not selection policy.
+`requireProjectOwner`. Only omitted root-chat creation resolves through
+`resolveNewChatFallbackWork`; Work-list routes are pure catalog reads.
 Route wrappers under `/api/projects/*` should stay thin over this domain.

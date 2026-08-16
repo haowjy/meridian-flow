@@ -51,7 +51,8 @@ are desktop shell grammar.
 
 Work is the dedicated collection/detail management destination. The collection reads
 active and archived Work and owns creation and lifecycle entry points; it never selects
-a project-wide Work or rebinds a chat. Route-owned detail and inline metadata consume
+a project-wide Work or rebinds a chat. Its response contains only catalog Works and
+never resolves, repairs, or exposes the internal new-chat fallback. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and associated-chat query seams.
 Work detail owns one page-scoped metadata controller. It coordinates the active field,
 authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep
@@ -71,11 +72,12 @@ targets.
 Home is the shared, container-responsive Composer-led entry surface on desktop
 and phone, followed by the server-owned Continue, Favorites, and
 cursor-paginated Recent feed. First send creates and reconciles the canonical
-thread under one stable client-chosen ID before routing. An untouched new-chat-fallback Work control omits `workId` so the server resolves its
-transactional fallback; an explicit writer selection submits `workId`. In both
-cases the displayed Work ID remains an immutable reconciliation fact, along
-with project and Agent, and no cache, handoff, visibility, admission, or route
-effect may run until the canonical thread matches those captured facts.
+thread under one stable client-chosen ID before routing. Home derives the first
+active, then first available, catalog Work and submits its `workId` explicitly;
+loading, error, and authoritative empty catalogs remain distinct. The submitted
+Work ID is an immutable reconciliation fact, along with project and Agent, and
+no cache, handoff, visibility, admission, or route effect may run until the
+canonical thread matches those captured facts.
 
 The QueryClient owns pending favorite and read overlays so navigation and stale
 page arrival cannot discard desired state. Fresh creation also prepares one
@@ -96,12 +98,13 @@ it survives phone view unmounts because the owner does not.
 
 A chat has one current Work binding. Home's Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
-rebind an idle existing chat through the canonical durable transition. Work
+rebind an idle existing chat through the canonical durable transition, and the
+model's explicit `work.switch` command uses that same separate authority. Work
 management and navigation never rebind a chat implicitly.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
-with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; malformed, loading, catalog-error, and confirmed-missing explicit values never fall back to Chat or mount Work-scoped leaves. With no explicit Work, the selected thread's durable Work ID remains authoritative even when catalog display data fails. Uploads is intake-only and exposes no file or folder creation affordances.
+with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; malformed, loading, catalog-error, and confirmed-missing explicit values never fall back to Chat or mount Work-scoped leaves. With no explicit Work, the selected thread's durable Work ID remains authoritative even when catalog display data fails. With neither an explicit Work nor a selected thread, Editor and untitled recovery derive first active, then first available, from the all-Work catalog, including archived-only catalogs; loading, error, and empty remain distinct. Uploads is intake-only and exposes no file or folder creation affordances.
 
 ### Slot paints the material; surfaces must not
 
