@@ -192,7 +192,7 @@ export function WorkMetadata({
     else c.displayRefs.current.delete(field);
   };
   return (
-    <section className="space-y-7" aria-label={t`Work identity`}>
+    <section className="min-w-0 space-y-7" aria-label={t`Work identity`}>
       <p className="sr-only" aria-live="polite">
         {c.announcement}
       </p>
@@ -207,7 +207,7 @@ export function WorkMetadata({
                 refFor("name")(node);
               }}
               tabIndex={-1}
-              className="focus-ring min-h-11 min-w-0 cursor-text rounded-sm break-words text-2xl font-semibold [@media(pointer:coarse)]:min-h-11"
+              className="focus-ring min-h-11 min-w-0 cursor-text rounded-sm break-words text-2xl font-semibold [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11"
               onClick={() => c.activate("name")}
               onKeyDown={(event) => {
                 if (event.key === "Enter") c.activate("name");
@@ -259,7 +259,7 @@ function Field({
   keyDown: (event: React.KeyboardEvent) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <h2 className="text-sm font-medium">{label}</h2>
       {c.field === field ? (
         <Editor field={field} controller={c} keyDown={keyDown} />
@@ -267,7 +267,7 @@ function Field({
         <button
           type="button"
           ref={displayRef}
-          className={`focus-ring min-h-11 max-w-3xl rounded-sm text-left whitespace-pre-line [@media(pointer:coarse)]:min-h-11 ${field === "goal" ? "text-base" : "text-sm text-muted-foreground"}`}
+          className={`focus-ring min-h-11 min-w-0 w-full max-w-3xl rounded-sm break-words text-left whitespace-pre-line [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11 ${field === "goal" ? "text-base" : "text-sm text-muted-foreground"}`}
           onClick={() => c.activate(field)}
         >
           {c.work[field] || (field === "goal" ? t`Add a goal` : t`Add a description`)}
@@ -296,11 +296,12 @@ function Editor({
     onKeyDown: keyDown,
   };
   return (
-    <div className="max-w-3xl space-y-2">
+    <div className="min-w-0 w-full max-w-3xl space-y-2">
       {field === "name" ? (
         <Input
           ref={c.editorRef as React.Ref<HTMLInputElement>}
           {...common}
+          className="min-w-0 w-full"
           onBlur={(event) => {
             if (
               !(
@@ -315,7 +316,7 @@ function Editor({
         <Textarea
           ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
           {...common}
-          className="min-h-24 resize-none"
+          className="min-h-24 min-w-0 w-full resize-none [overflow-wrap:anywhere]"
           onInput={(event) => {
             event.currentTarget.style.height = "auto";
             event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;

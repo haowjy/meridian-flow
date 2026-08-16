@@ -68,11 +68,11 @@ export function WorkDetailScreen({
   }, [blocker, controller]);
   return (
     <div className="app-scroll">
-      <article className="project-screen-column gap-10 pb-12">
+      <article className="project-screen-column min-w-0 gap-10 pb-12">
         <WorkMetadata
           controller={controller}
           identityChrome={
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="rounded-full border border-border-subtle px-2 py-0.5 text-meta text-muted-foreground">
                   {controller.work.status === "archived" ? (
@@ -82,7 +82,7 @@ export function WorkDetailScreen({
                   )}
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 flex-wrap items-center gap-3 sm:justify-between">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -127,7 +127,7 @@ export function WorkDetailScreen({
           commands={routeCommands}
           controller={controller}
         />
-        <div className="grid gap-6 @2xl/project-home:grid-cols-2">
+        <div className="grid min-w-0 gap-6 @2xl/project-home:grid-cols-2">
           <TreeSummary
             projectId={projectId}
             work={controller.work}
@@ -199,12 +199,12 @@ function Drafts({
       ) : query.status === "error" ? (
         <ResourceError label={t`Pending drafts`} retry={query.refetch} />
       ) : groups.length ? (
-        <ul className="divide-y divide-border-subtle rounded-lg border">
+        <ul className="min-w-0 divide-y divide-border-subtle rounded-lg border">
           {groups.map((group) => (
             <li key={group.documentId}>
               <button
                 type="button"
-                className="focus-ring flex min-h-11 w-full items-center justify-between px-4 py-3 text-left text-sm"
+                className="focus-ring flex min-h-11 min-w-0 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm"
                 disabled={!group.contextPath || !workId}
                 onClick={() =>
                   controller.request({
@@ -224,7 +224,7 @@ function Drafts({
                   })
                 }
               >
-                <span className="min-w-0 break-words">
+                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
                   {group.documentName || group.contextPath || t`Untitled manuscript`}
                 </span>
                 <span className="shrink-0 text-muted-foreground">
@@ -272,10 +272,10 @@ function TreeSummary({
       ) : !query.tree ? (
         <Loading />
       ) : (
-        <div className="space-y-2">
+        <div className="min-w-0 space-y-2">
           <button
             type="button"
-            className="focus-ring flex min-h-16 w-full items-center gap-3 rounded-lg border px-4 text-left"
+            className="focus-ring flex min-h-16 min-w-0 w-full items-center gap-3 rounded-lg border px-4 text-left"
             onClick={() =>
               controller.request({
                 label: t`Open ${label}`,
@@ -289,7 +289,7 @@ function TreeSummary({
               })
             }
           >
-            <Icon className="size-4" />
+            <Icon className="size-4 shrink-0" />
             <span className="min-w-0">
               <span className="block text-sm font-medium">{t`Open ${label}`}</span>
               <span className="text-meta text-muted-foreground">
@@ -326,18 +326,18 @@ function Chats({
       ) : query.threads === null ? (
         <Loading />
       ) : query.threads.length ? (
-        <ul className="divide-y divide-border-subtle rounded-lg border">
+        <ul className="min-w-0 divide-y divide-border-subtle rounded-lg border">
           {query.threads.map((thread) => (
             <li key={thread.id}>
               <button
                 type="button"
-                className="focus-ring flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left"
+                className="focus-ring flex min-h-11 min-w-0 w-full items-center gap-3 px-4 py-3 text-left"
                 onClick={() =>
                   controller.request({ label: t`Open chat`, run: () => onOpenThread(thread.id) })
                 }
               >
-                <MessageSquare className="size-4" />
-                <span className="min-w-0">
+                <MessageSquare className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">
                     {thread.title || t`Untitled chat`}
                   </span>
@@ -372,7 +372,7 @@ function Chats({
 }
 function ResourceSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-3">
+    <section className="min-w-0 space-y-3">
       <h2 className="text-base font-semibold">{title}</h2>
       {children}
     </section>
@@ -409,7 +409,7 @@ function TreePreview({ tree }: { tree: ProjectContextTreeDirectory }) {
           ) : (
             <FileText className="size-3.5 shrink-0" aria-hidden />
           )}
-          <span className="truncate">{node.name}</span>
+          <span className="min-w-0 truncate">{node.name}</span>
         </li>
       ))}
       {tree.children.length > visible.length ? (

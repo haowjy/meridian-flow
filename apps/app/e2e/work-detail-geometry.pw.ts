@@ -1,4 +1,4 @@
-/** Real-browser phone geometry contract for the Work detail information boundary. */
+/** Real Chromium geometry regression mounted through the production Work detail component. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -6,15 +6,27 @@ import tailwindcss from "@tailwindcss/vite";
 import { build, type Rollup } from "vite";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-let compiledCss: string;
-
+let compiledCss = "";
+let compiledJs = "";
 test.beforeAll(async () => {
+  const mocks = path.join(appRoot, "e2e/support/work-detail-browser-mocks.tsx");
   const result = await build({
     configFile: false,
     root: appRoot,
     logLevel: "silent",
     plugins: [tailwindcss()],
-    build: { write: false, rollupOptions: { input: "src/styles/globals.css" } },
+    resolve: {
+      alias: [
+        "@lingui/core/macro",
+        "@lingui/react/macro",
+        "@tanstack/react-router",
+        "@/client/query/useWorkDrafts",
+        "@/client/query/useProjectContextTree",
+        "@/client/query/useWorkThreads",
+        "@/client/query/useWorks",
+      ].map((find) => ({ find, replacement: mocks })),
+    },
+    build: { write: false, rollupOptions: { input: "e2e/support/work-detail-browser-entry.tsx" } },
   });
   const output = (Array.isArray(result) ? result : [result]).flatMap((item) =>
     "output" in item ? item.output : [],
@@ -22,61 +34,97 @@ test.beforeAll(async () => {
   const css = output.find(
     (item): item is Rollup.OutputAsset => item.type === "asset" && item.fileName.endsWith(".css"),
   );
-  if (!css) throw new Error("Vite did not emit the app stylesheet");
+  const js = output.find(
+    (item): item is Rollup.OutputChunk => item.type === "chunk" && item.isEntry,
+  );
+  if (!css || !js) throw new Error("Vite did not emit the Work detail fixture");
   compiledCss = String(css.source);
+  compiledJs = js.code;
 });
 
-test("contains long Work detail content at 390px with touch-sized identity actions", async ({
-  page,
-}, testInfo) => {
+test("production Work detail contains long content at 390px", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "coarse-pointer", "coarse-pointer geometry contract");
   await page.setViewportSize({ width: 390, height: 844 });
-  const long =
-    "The Unreasonably Long Ascension Chronicle Whose Identity Must Wrap Inside a Narrow Phone";
-  await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1">
-    <main data-testid="detail" class="app-scroll main-pane">
-      <article class="project-screen-column min-w-0 gap-8">
-        <header class="min-w-0"><div class="flex min-w-0 items-start justify-between gap-3">
-          <div class="min-w-0"><h1 class="break-words text-2xl font-semibold">${long}</h1></div>
-          <button aria-label="Edit Work name" class="shrink-0 [@media(pointer:coarse)]:size-11">Edit</button>
-        </div>
-        <div data-testid="identity" class="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-          <button class="[@media(pointer:coarse)]:min-h-11">All Work</button><span>Active</span>
-          <button class="[@media(pointer:coarse)]:min-h-11">Manage Work</button>
-        </div></header>
-        <section class="min-w-0"><p class="whitespace-pre-line break-words">Goal ${long.repeat(3)}</p></section>
-        <section class="min-w-0"><ul class="min-w-0"><li class="flex min-w-0 items-center gap-2">
-          <span data-testid="resource" class="min-w-0 truncate">${long}.manuscript-resource-with-metadata</span>
-          <span class="shrink-0">Updated today</span><button class="shrink-0 [@media(pointer:coarse)]:min-h-11">Open Scratch</button>
-        </li></ul></section>
-      </article>
-    </main>`);
+  const unbroken = "X".repeat(500);
+  await page.setContent(
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div>',
+  );
+  await page.evaluate(
+    ({ unbroken }) => {
+      window.__WORK_DETAIL_FIXTURE__ = {
+        work: {
+          id: "11111111-1111-4111-8111-111111111111",
+          projectId: "project-1",
+          createdByUserId: "user-1",
+          name: `Long breakable Work identity ${unbroken}`,
+          slug: "long",
+          goal: unbroken,
+          description: `Description ${unbroken}`,
+          status: "active",
+          archivedAt: null,
+          deletedAt: null,
+          aiWriteMode: "draft",
+          unpushedChangeCount: 0,
+          lastActivityAt: "2026-08-16T00:00:00Z",
+          createdAt: "2026-08-16T00:00:00Z",
+          updatedAt: "2026-08-16T00:00:00Z",
+        },
+        drafts: [
+          {
+            documentId: "doc",
+            documentName: unbroken,
+            contextPath: `/${unbroken}`,
+            drafts: [{ status: "active" }],
+          },
+        ],
+        scratch: {
+          kind: "dir",
+          name: "",
+          path: "",
+          children: [{ kind: "file", name: unbroken, path: `/${unbroken}` }],
+        },
+        uploads: {
+          kind: "dir",
+          name: "",
+          path: "",
+          children: [{ kind: "file", name: unbroken, path: `/${unbroken}` }],
+        },
+        threads: [
+          { id: "thread", title: unbroken, runningTurnId: null, attention: "none", turnCount: 1 },
+        ],
+      };
+    },
+    { unbroken },
+  );
   await page.addStyleTag({ content: compiledCss });
+  await page.addScriptTag({ content: compiledJs, type: "module" });
+  const scroll = page.locator(".app-scroll");
+  await expect(scroll).toBeVisible();
+  const width = await scroll.evaluate((node) => ({
+    client: node.clientWidth,
+    scroll: node.scrollWidth,
+  }));
+  expect(width.client).toBe(390);
+  expect(width.scroll).toBe(width.client);
+  await expect(page.getByRole("button", { name: "All Work" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Manage Work" })).toBeVisible();
+  const targets = await page
+    .locator("button")
+    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+  expect(targets.every((height) => height >= 44)).toBe(true);
+  const bounds = await page.locator("article button, article h1, article li").evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      left: node.getBoundingClientRect().left,
+      right: node.getBoundingClientRect().right,
+    })),
+  );
+  expect(bounds.every(({ left, right }) => left >= 0 && right <= 390)).toBe(true);
 
-  const geometry = await page.evaluate(() => {
-    const target = document.querySelector<HTMLElement>("[data-testid=detail]");
-    if (!target) throw new Error("missing detail");
-    const buttons = [...document.querySelectorAll("button")];
-    return {
-      viewport: document.documentElement.clientWidth,
-      overflow: target.scrollWidth - target.clientWidth,
-      targets: buttons.map((node) => ({
-        name: node.textContent,
-        height: node.getBoundingClientRect().height,
-      })),
-      identity: document.querySelector("[data-testid=identity]")?.textContent,
-      resourceOverflow: (() => {
-        const node = document.querySelector<HTMLElement>("[data-testid=resource]");
-        return node ? node.scrollWidth > node.clientWidth : false;
-      })(),
-    };
-  });
-  expect(geometry.viewport).toBe(390);
-  expect(geometry.overflow).toBeLessThanOrEqual(0);
-  expect(geometry.identity).toContain("All Work");
-  expect(geometry.identity).toContain("Active");
-  expect(geometry.identity).toContain("Manage Work");
-  expect(geometry.resourceOverflow).toBe(true);
-  expect(geometry.targets.every((target) => target.height >= 44)).toBe(true);
-  await expect(page.getByRole("heading", { name: long })).toBeVisible();
+  await page.getByRole("heading", { level: 1 }).click();
+  await expect(page.locator('input[value^="Long breakable"]')).toBeVisible();
+  expect(await scroll.evaluate((node) => node.scrollWidth)).toBe(390);
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: unbroken, exact: true }).click();
+  await expect(page.locator("textarea")).toBeVisible();
+  expect(await scroll.evaluate((node) => node.scrollWidth)).toBe(390);
 });
