@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { ChevronDown, Plus } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
@@ -29,10 +29,20 @@ export type WorkScreenProps = {
 };
 
 export function WorkScreen(props: WorkScreenProps) {
+  const catalog = useWorks(props.projectId);
   if (props.routeWork.status === "present") {
     return <WorkDetailScreen {...props} work={props.routeWork.work} />;
   }
-  if (props.routeWork.status === "loading" || props.routeWork.status === "catalog-error") {
+  if (props.routeWork.status === "catalog-error") {
+    return (
+      <div className="app-scroll">
+        <div className="project-screen-column">
+          <ResourceError label={t`Work`} retry={catalog.refetch} />
+        </div>
+      </div>
+    );
+  }
+  if (props.routeWork.status === "loading") {
     return (
       <div className="app-scroll">
         <div className="project-screen-column">
@@ -51,6 +61,10 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   const mutation = useWorkMutations(projectId);
   const [dialog, setDialog] = useState<"new" | Work | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const collectionHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    collectionHeading.current?.focus();
+  }, []);
   const active = works?.filter((work) => work.status === "active") ?? [];
   const archived = works?.filter((work) => work.status === "archived") ?? [];
   const headingId = useId();
@@ -58,11 +72,15 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
     const workId = parseRequestId(work.id);
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
   };
+  const hrefFor = (work: Work) => {
+    const workId = parseRequestId(work.id);
+    return workId ? routeCommands.workHref({ kind: "work-detail", workId }) : "?screen=work";
+  };
   return (
     <div className="app-scroll" aria-busy={isFetching}>
       <section className="project-screen-column gap-8">
         <div className="flex items-center justify-between gap-4">
-          <h1 ref={(node) => node?.focus()} tabIndex={-1} className="text-xl font-semibold">
+          <h1 ref={collectionHeading} tabIndex={-1} className="text-xl font-semibold">
             <Trans>Work</Trans>
           </h1>
           <Button
@@ -90,7 +108,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                     <li key={work.id}>
                       <WorkCard
                         work={work}
-                        href={`?screen=work&work=${work.id}`}
+                        href={hrefFor(work)}
                         pending={mutation.isPending}
                         onOpen={(event) => {
                           if (
@@ -139,7 +157,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                       <li key={work.id}>
                         <WorkCard
                           work={work}
-                          href={`?screen=work&work=${work.id}`}
+                          href={hrefFor(work)}
                           pending={mutation.isPending}
                           onOpen={(event) => {
                             if (
@@ -230,6 +248,10 @@ export function WorkDialog({
 }) {
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
+  const admitted = useRef(false);
+  useEffect(() => {
+    if (!pending) admitted.current = false;
+  }, [pending]);
   if (!work) return null;
   const existing = work === "new" ? null : work;
   return (
@@ -239,7 +261,14 @@ export function WorkDialog({
         if (!open && !pending) onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent
+        onEscapeKeyDown={(event) => {
+          if (pending) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (pending) event.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {existing ? <Trans>Manage Work</Trans> : <Trans>New Work</Trans>}
@@ -247,9 +276,11 @@ export function WorkDialog({
         </DialogHeader>
         {existing ? (
           <p className="text-sm">
-            <Trans>
-              {existing.status === "archived" ? "This Work is archived." : "This Work is active."}
-            </Trans>
+            {existing.status === "archived" ? (
+              <Trans>This Work is archived.</Trans>
+            ) : (
+              <Trans>This Work is active.</Trans>
+            )}
           </p>
         ) : (
           <>
@@ -259,6 +290,7 @@ export function WorkDialog({
                 id="new-work-name"
                 autoFocus
                 value={name}
+                disabled={pending}
                 onChange={(event) => setName(event.target.value)}
               />
             </label>
@@ -267,6 +299,7 @@ export function WorkDialog({
               <Input
                 id="new-work-goal"
                 value={goal}
+                disabled={pending}
                 onChange={(event) => setGoal(event.target.value)}
               />
             </label>
@@ -282,12 +315,16 @@ export function WorkDialog({
             <>
               <Button
                 variant="outline"
-                onClick={() =>
+                disabled={pending}
+                className="[@media(pointer:coarse)]:min-h-11"
+                onClick={() => {
+                  if (admitted.current) return;
+                  admitted.current = true;
                   onAction({
                     type: existing.status === "archived" ? "unarchive" : "archive",
                     workId: existing.id,
-                  })
-                }
+                  });
+                }}
               >
                 {existing.status === "archived" ? (
                   <Trans>Unarchive Work</Trans>
@@ -297,20 +334,36 @@ export function WorkDialog({
               </Button>
               <Button
                 variant="destructive"
-                onClick={() => onAction({ type: "delete", workId: existing.id })}
+                disabled={pending}
+                className="[@media(pointer:coarse)]:min-h-11"
+                onClick={() => {
+                  if (admitted.current) return;
+                  admitted.current = true;
+                  onAction({ type: "delete", workId: existing.id });
+                }}
               >
                 <Trans>Delete Work</Trans>
               </Button>
             </>
           ) : (
             <Button
-              disabled={!name.trim()}
-              onClick={() => onAction({ type: "create", data: { name, goal } })}
+              disabled={pending || !name.trim()}
+              className="[@media(pointer:coarse)]:min-h-11"
+              onClick={() => {
+                if (admitted.current) return;
+                admitted.current = true;
+                onAction({ type: "create", data: { name, goal } });
+              }}
             >
               <Trans>Create Work</Trans>
             </Button>
           )}
-          <Button variant="ghost" onClick={onClose}>
+          <Button
+            variant="ghost"
+            disabled={pending}
+            onClick={onClose}
+            className="[@media(pointer:coarse)]:min-h-11"
+          >
             <Trans>Cancel</Trans>
           </Button>
         </DialogFooter>

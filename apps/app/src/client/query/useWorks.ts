@@ -74,7 +74,19 @@ export function useWorkMutations(projectId: string) {
           return null;
       }
     },
-    onSuccess: (_result, action) => {
+    onSuccess: (result, action) => {
+      if (result) {
+        client.setQueryData<ListWorksResponse>(projectQueryKeys.works(projectId), (current) => {
+          if (!current) return current;
+          const present = current.works.some((work) => work.id === result.id);
+          return {
+            ...current,
+            works: present
+              ? current.works.map((work) => (work.id === result.id ? result : work))
+              : [...current.works, result],
+          };
+        });
+      }
       convergeWorkProjection(client, {
         kind: "entity",
         projectId,

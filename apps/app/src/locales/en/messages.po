@@ -72,6 +72,16 @@ msgstr "(also {0})"
 #~ msgid "{0, plural, one {# pending change} other {# pending changes}}"
 #~ msgstr "{0, plural, one {# pending change} other {# pending changes}}"
 
+#. placeholder {0}: group.drafts.length
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
+msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
+
+#. placeholder {0}: thread.turnCount
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{0, plural, one {# turn} other {# turns}}"
+msgstr "{0, plural, one {# turn} other {# turns}}"
+
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
@@ -94,8 +104,8 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: existing.status === "archived" ? "This Work is archived." : "This Work is active."
 #: src/features/project/work/WorkScreen.tsx
-msgid "{0}"
-msgstr "{0}"
+#~ msgid "{0}"
+#~ msgstr "{0}"
 
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
@@ -106,6 +116,11 @@ msgstr "{0} additional balance"
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr "{0} documents"
+
+#. placeholder {0}: fieldLabel(target)
+#: src/features/project/work/WorkMetadata.tsx
+msgid "{0} edit canceled"
+msgstr "{0} edit canceled"
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/image-imports.ts
@@ -137,6 +152,11 @@ msgstr "{0} moved to Favorite chats"
 msgid "{0} moved to Recent chats"
 msgstr "{0} moved to Recent chats"
 
+#. placeholder {0}: fieldLabel(target)
+#: src/features/project/work/WorkMetadata.tsx
+msgid "{0} saved"
+msgstr "{0} saved"
+
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -147,6 +167,10 @@ msgstr "{0} source copied"
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "{0}, Archived"
 msgstr "{0}, Archived"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{count, plural, one {# item} other {# items}}"
+msgstr "{count, plural, one {# item} other {# items}}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
@@ -284,6 +308,14 @@ msgstr "Actually…"
 msgid "Add {title} to favorites"
 msgstr "Add {title} to favorites"
 
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Add a description"
+msgstr "Add a description"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Add a goal"
+msgstr "Add a goal"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add column"
 msgstr "Add column"
@@ -413,6 +445,10 @@ msgstr "Ask about your data, methods, or the next step in your work—plain lang
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Associated chats"
+msgstr "Associated chats"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Auto-apply"
@@ -655,6 +691,10 @@ msgstr "Choose agent, currently {0}"
 msgid "Choose an option"
 msgstr "Choose an option"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Choose what to do before continuing."
+msgstr "Choose what to do before continuing."
+
 #: src/features/project/home/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat"
 msgstr "Choose Work for new chat"
@@ -778,6 +818,10 @@ msgstr "Context"
 #: src/features/project/home/HomeFeed.tsx
 msgid "Continue"
 msgstr "Continue"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Continue navigation"
+msgstr "Continue navigation"
 
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
@@ -1097,9 +1141,9 @@ msgstr "Demo image"
 msgid "Describe the picture for a reader who cannot see it"
 msgstr "Describe the picture for a reader who cannot see it"
 
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Description"
-#~ msgstr "Description"
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Description"
+msgstr "Description"
 
 #: src/routes/dev-login.tsx
 msgid "Dev login"
@@ -1127,6 +1171,10 @@ msgstr "Discard all"
 #: src/features/chat/DraftDock.tsx
 msgid "Discard all changes?"
 msgstr "Discard all changes?"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Discard changes"
+msgstr "Discard changes"
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Dismiss"
@@ -1200,10 +1248,10 @@ msgstr "Drop image to insert it"
 msgid "Duplicate"
 msgstr "Duplicate"
 
-#. placeholder {0}: work.name
-#: src/features/project/work/WorkCard.tsx
-#~ msgid "Edit {0}"
-#~ msgstr "Edit {0}"
+#. placeholder {0}: fieldLabel(next)
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Edit {0}"
+msgstr "Edit {0}"
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
@@ -1214,6 +1262,10 @@ msgstr "Edit link"
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Edit source"
 msgstr "Edit source"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Edit Work name"
+msgstr "Edit Work name"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Edited"
@@ -1390,6 +1442,7 @@ msgstr "Form payload is malformed."
 msgid "Go ahead"
 msgstr "Go ahead"
 
+#: src/features/project/work/WorkMetadata.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Goal"
 msgstr "Goal"
@@ -1579,6 +1632,10 @@ msgstr "Italic"
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
 msgstr "Keep"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Keep editing"
+msgstr "Keep editing"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
@@ -1902,6 +1959,10 @@ msgstr "Names cannot contain '{0}'"
 msgid "Names cannot end with '/'"
 msgstr "Names cannot end with '/'"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Needs attention"
+msgstr "Needs attention"
+
 #: src/features/project/lifecycle.ts
 msgid "Needs your answer"
 msgstr "Needs your answer"
@@ -1970,6 +2031,10 @@ msgstr "No answer"
 msgid "No billing activity yet."
 msgstr "No billing activity yet."
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "No chats are associated with this Work."
+msgstr "No chats are associated with this Work."
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "No column has been resized yet."
 msgstr "No column has been resized yet."
@@ -2015,6 +2080,10 @@ msgstr "No messages yet."
 msgid "No pending changes"
 msgstr "No pending changes"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "No pending drafts."
+msgstr "No pending drafts."
+
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
 msgstr "No plans available."
@@ -2044,6 +2113,7 @@ msgid "Nothing carries that name yet"
 msgstr "Nothing carries that name yet"
 
 #: src/features/project/context/IdentityPlacementField.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
 
@@ -2096,6 +2166,10 @@ msgstr "Open {0}"
 msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Open {label}"
+msgstr "Open {label}"
+
 #: src/features/chat/DocumentName.tsx
 #: src/features/project/home/HomeChatCard.tsx
 msgid "Open {title}"
@@ -2112,6 +2186,10 @@ msgstr "Open a chat to see what the AI referenced."
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open a project to see its results."
 msgstr "Open a project to see its results."
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Open chat"
+msgstr "Open chat"
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open context files"
@@ -2132,6 +2210,10 @@ msgstr "Open full screen"
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Open link"
 msgstr "Open link"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Open manuscript draft"
+msgstr "Open manuscript draft"
 
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"
@@ -2201,6 +2283,10 @@ msgstr "Paste"
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Paste a link or type [[a document name]]"
 msgstr "Paste a link or type [[a document name]]"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Pending drafts"
+msgstr "Pending drafts"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
@@ -2287,6 +2373,10 @@ msgstr "Reading text size"
 #: src/features/chat/command-descriptor.ts
 msgid "Reading…"
 msgstr "Reading…"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Ready"
+msgstr "Ready"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
@@ -2506,6 +2596,23 @@ msgstr "Row options"
 msgid "rule"
 msgstr "rule"
 
+#. placeholder {0}: fieldLabel(field).toLowerCase()
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Save {0}"
+msgstr "Save {0}"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Save changes"
+msgstr "Save changes"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Save failed"
+msgstr "Save failed"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Save metadata changes?"
+msgstr "Save metadata changes?"
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
@@ -2518,6 +2625,7 @@ msgstr "Save name and location"
 msgid "Saved locally (offline)"
 msgstr "Saved locally (offline)"
 
+#: src/features/project/work/WorkDetailScreen.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Saving…"
 msgstr "Saving…"
@@ -2527,6 +2635,7 @@ msgid "scene break"
 msgstr "scene break"
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Scratch"
 msgstr "Scratch"
 
@@ -3137,6 +3246,14 @@ msgstr "This week"
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 msgstr "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 
+#: src/features/project/work/WorkScreen.tsx
+msgid "This Work is active."
+msgstr "This Work is active."
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "This Work is archived."
+msgstr "This Work is archived."
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
 msgstr "title"
@@ -3235,10 +3352,22 @@ msgstr "Undoing…"
 msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Unread"
+msgstr "Unread"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Untitled chat"
+msgstr "Untitled chat"
+
 #: src/features/chat/document-display-name.ts
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Untitled document"
 msgstr "Untitled document"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Untitled manuscript"
+msgstr "Untitled manuscript"
 
 #: src/lib/project-title.ts
 msgid "Untitled project"
@@ -3289,6 +3418,7 @@ msgstr "Uploading elsewhere…"
 
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/shell/ContextSidebar.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Uploads"
 msgstr "Uploads"
 
@@ -3370,6 +3500,18 @@ msgstr "Work couldn’t load"
 #~ msgid "Work details"
 #~ msgstr "Work details"
 
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Work identity"
+msgstr "Work identity"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Work name"
+msgstr "Work name"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Work name is required"
+msgstr "Work name is required"
+
 #: src/features/project/home/HomeChatCard.tsx
 msgid "Work unavailable"
 msgstr "Work unavailable"
@@ -3403,6 +3545,10 @@ msgstr "Write away"
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Write mode"
 msgstr "Write mode"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Writing"
+msgstr "Writing"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Writing…"

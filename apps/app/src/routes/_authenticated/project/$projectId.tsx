@@ -30,6 +30,7 @@ import {
   parseExplicitWork,
   parseProjectSearch,
   planWorkNormalization,
+  projectSearchHref,
   resolveRouteWork,
   stripEmptySearch,
   transitionProjectSearch,
@@ -120,6 +121,7 @@ function RouteComponent() {
     openDockThread: (threadId, options) =>
       runCommand({ kind: "dock-thread", threadId: threadId || undefined, resolvedScreen }, options),
     openWork: (target, options) => runCommand(target, options),
+    workHref: (target) => projectSearchHref(transitionProjectSearch(search, target)),
     closeWork: (options) => runCommand({ kind: "work-collection" }, options),
     openWorkContext: (target, options) => runCommand(target, options),
   };

@@ -196,6 +196,7 @@ function projectProps(onSelectThread: (threadId: string) => Promise<void>) {
     activeThreadId: null,
     routeWork: { status: "absent" as const },
     routeCommands: {
+      workHref: vi.fn(() => "?screen=work"),
       openHome: vi.fn(async () => undefined),
       openChat: vi.fn(async () => undefined),
       openDockThread: vi.fn(async () => undefined),

@@ -91,9 +91,17 @@ export type ProjectRouteCommands = {
   openChat: (threadId: string, options: NavigationOptions) => Promise<void>;
   openDockThread: (threadId: string, options: NavigationOptions) => Promise<void>;
   openWork: (target: WorkDetailTarget, options: NavigationOptions) => Promise<void>;
+  workHref: (target: WorkDetailTarget) => string;
   closeWork: (options: NavigationOptions) => Promise<void>;
   openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
 };
+
+export function projectSearchHref(search: ProjectSearch): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(stripEmptySearch(search))) params.set(key, value);
+  const query = params.toString();
+  return query ? `?${query}` : "?";
+}
 
 function isScreenKey(value: unknown): value is ScreenKey {
   return typeof value === "string" && SCREENS.some((screen) => screen.key === value);

@@ -6,13 +6,13 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const api = vi.hoisted(() => ({
   listProjectWorks: vi.fn(),
+  createProjectWork: vi.fn(),
   updateWorkWriteMode: vi.fn(),
 }));
 
 vi.mock("@/client/api/projects-api", () => ({
   ...api,
   archiveWork: vi.fn(),
-  createProjectWork: vi.fn(),
   deleteWork: vi.fn(),
   unarchiveWork: vi.fn(),
   updateWork: vi.fn(),
@@ -92,6 +92,36 @@ describe("Work client queries", () => {
     } finally {
       client.clear();
     }
+  });
+
+  it("adopts a created Work into the catalog before route resolution", async () => {
+    const created = { id: "11111111-1111-4111-8111-111111111111", name: "New Work" };
+    api.createProjectWork.mockResolvedValue(created);
+    const client = new QueryClient();
+    client.setQueryData(projectQueryKeys.works("project-1"), {
+      works: [],
+      newChatFallbackWorkId: "fallback",
+    });
+    const state: { value: ReturnType<typeof useWorkMutations> | null } = { value: null };
+    function Harness() {
+      state.value = useWorkMutations("project-1");
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => {
+          await state.value?.mutateAsync({ type: "create", data: { name: "New Work" } });
+        });
+        expect(client.getQueryData(projectQueryKeys.works("project-1"))).toEqual({
+          works: [created],
+          newChatFallbackWorkId: "fallback",
+        });
+      },
+    );
+    client.clear();
   });
 
   it.each([

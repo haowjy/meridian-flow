@@ -53,6 +53,11 @@ Work is the dedicated collection/detail management destination. The collection r
 active and archived Work and owns creation and lifecycle entry points; it never selects
 a project-wide Work or rebinds a chat. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and associated-chat query seams.
+Work detail owns one page-scoped metadata controller. It coordinates the active field,
+authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep
+editing decision with the TanStack route blocker; leaves only submit intents through it.
+Hard unload uses the router's native before-unload integration rather than a second
+draft owner.
 
 Home is the shared, container-responsive Composer-led entry surface on desktop
 and phone, followed by the server-owned Continue, Favorites, and

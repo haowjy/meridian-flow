@@ -1,247 +1,360 @@
-/** Display-first, field-local Work metadata editing. */
+/** Page-scoped metadata edit lifecycle and its display-first view. */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { Pencil } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-type Field = "name" | "goal" | "description";
-export function WorkMetadata({
-  work,
-  save,
-  onDirtyChange,
-}: {
-  work: Work;
-  save: (data: UpdateWorkRequest) => Promise<Work>;
-  onDirtyChange: (dirty: boolean) => void;
-}) {
-  const [active, setActive] = useState<Field | null>(null);
+export type MetadataField = "name" | "goal" | "description";
+type HeldIntent = { run: () => void; cancel?: () => void; label: string } | null;
+const normalize = (field: MetadataField, value: string) =>
+  field === "name" ? value.trim() : value.trim() || "";
+
+export function useWorkMetadataController(
+  initial: Work,
+  saveWork: (data: UpdateWorkRequest) => Promise<Work>,
+) {
+  const [work, setWork] = useState(initial);
+  const [field, setField] = useState<MetadataField | null>(null);
   const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const editor = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-  const baseline = active ? (work[active] ?? "") : "";
-  const dirty = active !== null && draft !== baseline;
-  useLayoutEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
-  useLayoutEffect(() => {
-    if (active) {
-      editor.current?.focus();
-      if (active === "name" && editor.current instanceof HTMLInputElement) editor.current.select();
-    }
-  }, [active]);
-  const begin = (field: Field) => {
-    if (dirty) return;
-    setActive(field);
-    setDraft(work[field] ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [held, setHeld] = useState<HeldIntent>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const displayRefs = useRef(new Map<MetadataField, HTMLElement>());
+  const editorRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const initialRef = useRef(initial);
+  const baseline = field ? normalize(field, work[field] ?? "") : "";
+  const normalizedDraft = field ? normalize(field, draft) : "";
+  const dirty = field !== null && normalizedDraft !== baseline;
+  useEffect(() => {
+    if (sameMetadata(initialRef.current, initial)) return;
+    initialRef.current = initial;
+    if (!field) setWork(initial);
+  }, [field, initial]);
+  useEffect(() => {
+    if (saving || field || !held) return;
+    const intent = held;
+    setHeld(null);
+    intent.run();
+  }, [field, held, saving]);
+
+  const focusDisplay = useCallback(
+    (target: MetadataField) =>
+      requestAnimationFrame(() => displayRefs.current.get(target)?.focus()),
+    [],
+  );
+  const cancel = useCallback(() => {
+    if (!field || saving) return;
+    const target = field;
+    setField(null);
     setError(null);
-  };
-  const cancel = () => {
-    setActive(null);
-    setError(null);
-  };
-  const commit = async () => {
-    if (!active || saving) return;
-    if (active === "name" && !draft.trim()) {
-      setError("Work name is required");
-      return;
+    setHeld(null);
+    setAnnouncement(t`${fieldLabel(target)} edit canceled`);
+    focusDisplay(target);
+  }, [field, focusDisplay, saving]);
+  const save = useCallback(async (): Promise<boolean> => {
+    if (!field) return true;
+    if (saving) return false;
+    if (field === "name" && !normalizedDraft) {
+      setError(t`Work name is required`);
+      return false;
     }
-    if (draft === baseline) {
-      cancel();
-      return;
+    if (!dirty) {
+      const target = field;
+      setField(null);
+      setError(null);
+      focusDisplay(target);
+      return true;
     }
+    const target = field;
     setSaving(true);
     setError(null);
     try {
-      await save({ [active]: draft });
-      setActive(null);
+      const returned = await saveWork({
+        [target]: target === "name" ? normalizedDraft : normalizedDraft || null,
+      });
+      setWork(returned);
+      setField(null);
+      setAnnouncement(t`${fieldLabel(target)} saved`);
+      focusDisplay(target);
+      return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Save failed");
+      setError(cause instanceof Error ? cause.message : t`Save failed`);
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [dirty, field, focusDisplay, normalizedDraft, saveWork, saving]);
+  const request = useCallback(
+    (intent: NonNullable<HeldIntent>) => {
+      if (saving || dirty) {
+        setHeld(intent);
+        return;
+      }
+      intent.run();
+    },
+    [dirty, saving],
+  );
+  const activate = useCallback(
+    (next: MetadataField) =>
+      request({
+        label: t`Edit ${fieldLabel(next)}`,
+        run: () => {
+          setField(next);
+          setDraft(work[next] ?? "");
+          setError(null);
+        },
+      }),
+    [request, work],
+  );
+  const saveAndResume = useCallback(async () => {
+    const intent = held;
+    if (!intent) return;
+    if (await save()) {
+      setHeld(null);
+      intent.run();
+    }
+  }, [held, save]);
+  const discardAndResume = useCallback(() => {
+    const intent = held;
+    if (!intent || saving) return;
+    setField(null);
+    setError(null);
+    setHeld(null);
+    intent.run();
+  }, [held, saving]);
+  const keepEditing = useCallback(() => {
+    held?.cancel?.();
+    setHeld(null);
+    requestAnimationFrame(() => editorRef.current?.focus());
+  }, [held]);
+  return {
+    work,
+    field,
+    draft,
+    setDraft,
+    dirty,
+    saving,
+    error,
+    held,
+    announcement,
+    editorRef,
+    displayRefs,
+    activate,
+    cancel,
+    save,
+    request,
+    saveAndResume,
+    discardAndResume,
+    keepEditing,
   };
+}
+export type WorkMetadataController = ReturnType<typeof useWorkMetadataController>;
+
+export function WorkMetadata({ controller }: { controller: WorkMetadataController }) {
+  const c = controller;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    headingRef.current?.focus();
+  }, [c.work.id]);
+  useLayoutEffect(() => {
+    if (!c.field) return;
+    c.editorRef.current?.focus();
+    if (c.field === "name" && c.editorRef.current instanceof HTMLInputElement)
+      c.editorRef.current.select();
+  }, [c.editorRef, c.field]);
   const keyDown = (event: React.KeyboardEvent) => {
     if (event.nativeEvent.isComposing) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      cancel();
+      c.cancel();
     }
     if (
-      (active === "name" && event.key === "Enter") ||
-      (active !== "name" && event.key === "Enter" && (event.metaKey || event.ctrlKey))
+      (c.field === "name" && event.key === "Enter") ||
+      (c.field !== "name" && event.key === "Enter" && (event.metaKey || event.ctrlKey))
     ) {
       event.preventDefault();
-      void commit();
+      void c.save();
     }
   };
+  const refFor = (field: MetadataField) => (node: HTMLElement | null) => {
+    if (node) c.displayRefs.current.set(field, node);
+    else c.displayRefs.current.delete(field);
+  };
   return (
-    <section className="space-y-7" aria-label="Work identity">
-      <div>
-        {active === "name" ? (
-          <div className="max-w-xl">
-            <Input
-              ref={editor as React.Ref<HTMLInputElement>}
-              value={draft}
-              disabled={saving}
-              aria-invalid={Boolean(error)}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={keyDown}
-              onBlur={() => {
-                if (!error) void commit();
-              }}
-            />
-          </div>
+    <section className="space-y-7" aria-label={t`Work identity`}>
+      <p className="sr-only" aria-live="polite">
+        {c.announcement}
+      </p>
+      <div className="min-w-0">
+        {c.field === "name" ? (
+          <Editor field="name" controller={c} keyDown={keyDown} />
         ) : (
-          <div className="flex items-start gap-2">
-            <h1 tabIndex={-1} className="text-2xl font-semibold">
-              {work.name}
-            </h1>
+          <div className="flex min-w-0 items-start gap-2">
+            <button
+              type="button"
+              ref={refFor("name")}
+              className="focus-ring min-h-11 min-w-0 rounded-sm text-left [@media(pointer:coarse)]:min-h-11"
+              onClick={() => c.activate("name")}
+            >
+              <h1 ref={headingRef} tabIndex={-1} className="break-words text-2xl font-semibold">
+                {c.work.name}
+              </h1>
+            </button>
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="Edit Work name"
-              onClick={() => begin("name")}
+              aria-label={t`Edit Work name`}
+              onClick={() => c.activate("name")}
+              className="shrink-0 [@media(pointer:coarse)]:size-11"
             >
               <Pencil className="size-4" />
             </Button>
           </div>
         )}
-        {active === "name" ? (
-          <Feedback saving={saving} error={error} retry={commit} cancel={cancel} />
-        ) : null}
       </div>
-      <MetadataField
-        label="Goal"
+      <Field
         field="goal"
-        value={work.goal}
-        prominent
-        active={active}
-        draft={draft}
-        saving={saving}
-        error={error}
-        editor={editor}
-        begin={begin}
-        setDraft={setDraft}
-        commit={commit}
-        cancel={cancel}
+        label={t`Goal`}
+        controller={c}
+        displayRef={refFor("goal")}
         keyDown={keyDown}
       />
-      <MetadataField
-        label="Description"
+      <Field
         field="description"
-        value={work.description}
-        active={active}
-        draft={draft}
-        saving={saving}
-        error={error}
-        editor={editor}
-        begin={begin}
-        setDraft={setDraft}
-        commit={commit}
-        cancel={cancel}
+        label={t`Description`}
+        controller={c}
+        displayRef={refFor("description")}
         keyDown={keyDown}
       />
     </section>
   );
 }
-function MetadataField(props: {
-  label: string;
+function Field({
+  field,
+  label,
+  controller: c,
+  displayRef,
+  keyDown,
+}: {
   field: "goal" | "description";
-  value: string | null;
-  prominent?: boolean;
-  active: Field | null;
-  draft: string;
-  saving: boolean;
-  error: string | null;
-  editor: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
-  begin: (field: Field) => void;
-  setDraft: (value: string) => void;
-  commit: () => Promise<void>;
-  cancel: () => void;
+  label: string;
+  controller: WorkMetadataController;
+  displayRef: (node: HTMLElement | null) => void;
   keyDown: (event: React.KeyboardEvent) => void;
 }) {
-  const editing = props.active === props.field;
   return (
     <div className="space-y-2">
-      <h2 className="text-sm font-medium">{props.label}</h2>
-      {editing ? (
-        <>
-          <Textarea
-            ref={props.editor as React.Ref<HTMLTextAreaElement>}
-            value={props.draft}
-            disabled={props.saving}
-            aria-invalid={Boolean(props.error)}
-            className="min-h-24 resize-none"
-            onInput={(event) => {
-              const node = event.currentTarget;
-              node.style.height = "auto";
-              node.style.height = `${node.scrollHeight}px`;
-            }}
-            onChange={(event) => props.setDraft(event.target.value)}
-            onKeyDown={props.keyDown}
-          />
-          <Feedback
-            saving={props.saving}
-            error={props.error}
-            retry={props.commit}
-            cancel={props.cancel}
-            save={() => void props.commit()}
-            label={props.label.toLowerCase()}
-          />
-        </>
+      <h2 className="text-sm font-medium">{label}</h2>
+      {c.field === field ? (
+        <Editor field={field} controller={c} keyDown={keyDown} />
       ) : (
         <button
           type="button"
-          className={`focus-ring max-w-3xl rounded-sm text-left whitespace-pre-line ${props.prominent ? "text-base text-foreground" : "text-sm text-muted-foreground"}`}
-          onClick={() => props.begin(props.field)}
+          ref={displayRef}
+          className={`focus-ring min-h-11 max-w-3xl rounded-sm text-left whitespace-pre-line [@media(pointer:coarse)]:min-h-11 ${field === "goal" ? "text-base" : "text-sm text-muted-foreground"}`}
+          onClick={() => c.activate(field)}
         >
-          {props.value || `Add a ${props.field}`}
+          {c.work[field] || (field === "goal" ? t`Add a goal` : t`Add a description`)}
         </button>
       )}
     </div>
   );
 }
-function Feedback({
-  saving,
-  error,
-  retry,
-  cancel,
-  save,
-  label,
+function Editor({
+  field,
+  controller: c,
+  keyDown,
 }: {
-  saving: boolean;
-  error: string | null;
-  retry: () => Promise<void>;
-  cancel: () => void;
-  save?: () => void;
-  label?: string;
+  field: MetadataField;
+  controller: WorkMetadataController;
+  keyDown: (event: React.KeyboardEvent) => void;
 }) {
+  const errorId = `work-${field}-error`;
+  const common = {
+    value: c.draft,
+    disabled: c.saving,
+    "aria-invalid": Boolean(c.error),
+    "aria-describedby": c.error ? errorId : undefined,
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      c.setDraft(event.target.value),
+    onKeyDown: keyDown,
+  };
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {saving ? (
-        <span role="status" className="text-sm text-muted-foreground">
-          <Trans>Saving…</Trans>
-        </span>
+    <div className="max-w-3xl space-y-2">
+      {field === "name" ? (
+        <Input
+          ref={c.editorRef as React.Ref<HTMLInputElement>}
+          {...common}
+          onBlur={(event) => {
+            if (
+              !(
+                event.relatedTarget instanceof HTMLElement &&
+                event.relatedTarget.closest("button,a")
+              )
+            )
+              void c.save();
+          }}
+        />
+      ) : (
+        <Textarea
+          ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
+          {...common}
+          className="min-h-24 resize-none"
+          onInput={(event) => {
+            event.currentTarget.style.height = "auto";
+            event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
+          }}
+        />
+      )}
+      {c.error ? (
+        <p id={errorId} role="alert" className="text-sm text-destructive">
+          {c.error}
+        </p>
       ) : null}
-      {error ? (
-        <>
-          <span role="alert" className="text-sm text-destructive">
-            {error}
+      <div className="flex flex-wrap gap-2">
+        {c.saving ? (
+          <span role="status" className="text-sm text-muted-foreground">
+            <Trans>Saving…</Trans>
           </span>
-          <Button size="sm" variant="outline" onClick={() => void retry()}>
-            <Trans>Retry save</Trans>
+        ) : (
+          <Button
+            size="sm"
+            onClick={() => void c.save()}
+            className="[@media(pointer:coarse)]:min-h-11"
+          >
+            {c.error ? <Trans>Retry save</Trans> : t`Save ${fieldLabel(field).toLowerCase()}`}
           </Button>
-        </>
-      ) : save ? (
-        <Button size="sm" onClick={save}>
-          Save {label}
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={c.saving}
+          onClick={c.cancel}
+          className="[@media(pointer:coarse)]:min-h-11"
+        >
+          <Trans>Cancel</Trans>
         </Button>
-      ) : null}
-      <Button size="sm" variant="ghost" onClick={cancel}>
-        <Trans>Cancel</Trans>
-      </Button>
+      </div>
     </div>
+  );
+}
+function fieldLabel(field: MetadataField): string {
+  if (field === "name") return t`Work name`;
+  if (field === "goal") return t`Goal`;
+  return t`Description`;
+}
+function sameMetadata(left: Work, right: Work): boolean {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.goal === right.goal &&
+    left.description === right.description &&
+    left.status === right.status &&
+    left.updatedAt === right.updatedAt
   );
 }
