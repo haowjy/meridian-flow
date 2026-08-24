@@ -23,7 +23,7 @@ export function InlineErrorRow({
           ref={retryRef}
           type="button"
           onClick={onRetry}
-          className="text-button shrink-0 text-xs [@media(pointer:coarse)]:min-h-11"
+          className="text-button shrink-0 text-xs [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
         >
           <Trans>Retry</Trans>
         </button>

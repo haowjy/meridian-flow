@@ -185,7 +185,7 @@ export function HomeChatCard({
           <Trans>Read status wasn’t saved.</Trans>
           <button
             type="button"
-            className="focus-ring rounded-sm font-semibold underline underline-offset-2 [@media(pointer:coarse)]:min-h-11"
+            className="focus-ring rounded-sm font-semibold underline underline-offset-2 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
             onClick={() => void onUnread(item, item.attention === "none")}
           >
             <Trans>Retry</Trans>
