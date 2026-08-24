@@ -9,6 +9,7 @@ vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => str
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children,
 }));
+vi.mock("@lingui/react", () => ({ useLingui: () => ({ i18n: { locale: "en" } }) }));
 
 const item = (id: string, favorite = false): HomeChatItem => ({
   id,
@@ -43,6 +44,38 @@ const base = {
 };
 
 describe("HomeFeed", () => {
+  it("fetches the next eligible page once when its sentinel intersects", async () => {
+    let notify!: IntersectionObserverCallback;
+    const observeSpy = vi.fn();
+    const disconnectSpy = vi.fn();
+    class TestIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        notify = callback;
+      }
+      observe(target: Element) {
+        observeSpy(target);
+      }
+      disconnect() {
+        disconnectSpy();
+      }
+    }
+    globalThis.IntersectionObserver = TestIntersectionObserver as typeof IntersectionObserver;
+    const fetchNextPage = vi.fn(async () => undefined);
+    await withReactRoot(
+      <HomeFeed feed={{ ...base, hasNextPage: true, fetchNextPage }} rowProps={rowProps} />,
+      async () => {
+        const sentinel = document.querySelector("[data-home-feed-sentinel]") as HTMLElement;
+        expect(observeSpy.mock.calls[0]?.[0]).toBe(sentinel);
+        await act(async () => {
+          notify([{ isIntersecting: false } as IntersectionObserverEntry], undefined as never);
+          notify([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
+          notify([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
+        });
+        expect(fetchNextPage).toHaveBeenCalledOnce();
+      },
+    );
+    expect(disconnectSpy).toHaveBeenCalledOnce();
+  });
   it("owns one-column Continue, Favorite, and Recent lists plus the sentinel", async () => {
     await withReactRoot(<HomeFeed feed={base} rowProps={rowProps} />, () => {
       const container = document.getElementById("root") as HTMLElement;

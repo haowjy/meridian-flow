@@ -57,8 +57,8 @@ export function useHomeFavoriteMovement() {
         const rect = element.getBoundingClientRect();
         return rect.bottom > bounds.top && rect.top < bounds.bottom;
       };
-      const destination = [...scroll.querySelectorAll<HTMLElement>("[data-home-favorite]")].find(
-        (control) => control.dataset.homeFavorite === move.threadId,
+      const destination = [...scroll.querySelectorAll<HTMLElement>("[data-home-row-actions]")].find(
+        (control) => control.dataset.homeRowActions === move.threadId,
       );
       const survivors = [...scroll.querySelectorAll<HTMLElement>("[data-home-row] button")]
         .filter(

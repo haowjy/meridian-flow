@@ -1,8 +1,9 @@
 /** One accessible, borderless Home chat row with independent state controls. */
 import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { MoreHorizontal } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { ThreadUserStateTransportState } from "@/client/query/thread-user-state-commands";
 import {
   DropdownMenu,
@@ -34,6 +35,8 @@ export function HomeChatRow({
   onUnread,
   getCommandState,
 }: HomeChatRowProps) {
+  const { i18n } = useLingui();
+  const [menuOpen, setMenuOpen] = useState(false);
   const title = item.title || t`New chat`;
   const attentionId = item.attention !== "none" ? `home-attention-${item.id}` : undefined;
   const readErrorId = `home-read-error-${item.id}`;
@@ -43,7 +46,11 @@ export function HomeChatRow({
   const unreadValue = item.attention === "none";
   const favoriteSuppressed = favorite.pending;
   const unreadSuppressed = unread.pending && unread.desiredValue === unreadValue;
-  const activity = formatHomeActivity(item.lastActivityAt, now);
+  const activity = formatHomeActivity(item.lastActivityAt, now, i18n.locale);
+  const fullActivity = new Intl.DateTimeFormat(i18n.locale, {
+    dateStyle: "full",
+    timeStyle: "short",
+  }).format(new Date(item.lastActivityAt));
   const workLabel = item.work?.title ? t`Work: ${item.work.title}` : t`Work unavailable`;
   const favoritePointer = useRef(false);
 
@@ -74,7 +81,10 @@ export function HomeChatRow({
         </span>
       ) : null}
 
-      <div className="pointer-events-none relative z-10 flex min-w-0 items-center gap-2 pr-8 text-sm [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:pr-12">
+      <div
+        data-home-row-line
+        className="pointer-events-none relative z-10 flex min-w-0 items-center gap-2 pr-8 text-sm [@media(hover:none)]:min-h-11 [@media(hover:none)]:pr-12 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:pr-12"
+      >
         {item.attention !== "none" ? (
           <span
             aria-hidden
@@ -100,7 +110,10 @@ export function HomeChatRow({
         </span>
       </div>
 
-      <div className="pointer-events-none relative z-10 min-w-0 pr-16 text-compact text-muted-foreground [@media(hover:none)]:pr-12 [@media(pointer:coarse)]:pr-12">
+      <div
+        data-home-row-line
+        className="pointer-events-none relative z-10 min-w-0 pr-16 text-compact text-muted-foreground [@media(hover:none)]:pr-12 [@media(pointer:coarse)]:pr-12"
+      >
         <div className="inline-flex max-w-full min-w-0 items-center gap-2">
           <p className="min-w-0 max-w-[65ch] truncate">
             {item.lastMessagePreview ?? t`No messages yet.`}
@@ -108,10 +121,7 @@ export function HomeChatRow({
           <time
             className="hidden shrink-0 whitespace-nowrap tabular-nums [@media(hover:none)]:inline [@media(pointer:coarse)]:inline"
             dateTime={item.lastActivityAt}
-            title={new Intl.DateTimeFormat(undefined, {
-              dateStyle: "full",
-              timeStyle: "short",
-            }).format(new Date(item.lastActivityAt))}
+            title={fullActivity}
           >
             {activity === "now" ? t`now` : activity}
           </time>
@@ -119,22 +129,30 @@ export function HomeChatRow({
       </div>
 
       <time
-        className="pointer-events-none absolute bottom-1.5 right-2 z-10 w-14 truncate text-right text-compact text-muted-foreground tabular-nums transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 motion-reduce:transition-none [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden"
+        className={cn(
+          "pointer-events-none absolute bottom-1.5 right-2 z-10 w-14 truncate text-right text-compact text-muted-foreground tabular-nums group-hover:invisible group-focus-within:invisible [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden",
+          menuOpen && "invisible",
+        )}
         dateTime={item.lastActivityAt}
-        title={new Intl.DateTimeFormat(undefined, {
-          dateStyle: "full",
-          timeStyle: "short",
-        }).format(new Date(item.lastActivityAt))}
+        title={fullActivity}
       >
         {activity === "now" ? t`now` : activity}
       </time>
 
-      <div className="absolute right-2 top-1/2 z-20 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100">
-        <DropdownMenu>
+      <div
+        className={cn(
+          "pointer-events-none absolute right-2 top-1/2 z-20 -translate-y-1/2 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100",
+          menuOpen && "pointer-events-auto opacity-100",
+        )}
+      >
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <IconButton
-              data-home-favorite={item.id}
-              className={cn("[@media(pointer:coarse)]:size-11", unread.error && "text-destructive")}
+              data-home-row-actions={item.id}
+              className={cn(
+                "[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11",
+                unread.error && "text-destructive",
+              )}
               aria-label={t`Actions for ${title}`}
               aria-describedby={unread.error ? readErrorId : undefined}
               aria-invalid={unread.error ? true : undefined}

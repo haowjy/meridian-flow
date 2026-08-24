@@ -34,9 +34,13 @@ export function HomeFeed({
       feed.isFetchNextPageError
     )
       return;
+    let requested = false;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting) void feed.fetchNextPage();
+        if (entry?.isIntersecting && !requested) {
+          requested = true;
+          void feed.fetchNextPage();
+        }
       },
       { rootMargin: "240px" },
     );

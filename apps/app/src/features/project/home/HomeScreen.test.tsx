@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Rendered Home interaction contracts spanning cards, movement, and command transport. */
+/** Rendered Home interaction contracts spanning rows, movement, and command transport. */
 
 import { I18nProvider } from "@lingui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -110,7 +110,7 @@ describe("HomeScreen", () => {
       async () => {
         await waitFor(() => Boolean(document.querySelector('[aria-label="Actions for River"]')));
         vi.spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect(20));
-        const scroll = document.querySelector(".app-scroll") as HTMLElement;
+        const scroll = document.querySelector("[data-home-scroll-owner]") as HTMLElement;
         Object.defineProperties(scroll, {
           scrollTop: { value: 100, writable: true },
           scrollHeight: { value: 1_000 },

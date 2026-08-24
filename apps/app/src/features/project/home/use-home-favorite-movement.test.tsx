@@ -23,8 +23,8 @@ describe("useHomeFavoriteMovement", () => {
       return (
         <div ref={movement.scrollRef}>
           <article data-home-row="moved">
-            <button type="button" data-home-favorite="moved">
-              star
+            <button type="button" data-home-row-actions="moved">
+              actions
             </button>
           </article>
           <article data-home-row="anchor">
@@ -44,15 +44,15 @@ describe("useHomeFavoriteMovement", () => {
       scroll.getBoundingClientRect = () => rect(0, 300) as DOMRect;
       const moved = container.querySelector('[data-home-row="moved"]') as HTMLElement;
       const anchor = container.querySelector('[data-home-row="anchor"]') as HTMLElement;
-      const star = container.querySelector('[data-home-favorite="moved"]') as HTMLElement;
+      const actions = container.querySelector('[data-home-row-actions="moved"]') as HTMLElement;
       moved.getBoundingClientRect = () => rect(20) as DOMRect;
       anchor.getBoundingClientRect = () => rect(80) as DOMRect;
-      star.getBoundingClientRect = () => rect(20) as DOMRect;
+      actions.getBoundingClientRect = () => rect(20) as DOMRect;
       const token = movement.capture("moved", true);
       anchor.getBoundingClientRect = () => rect(110) as DOMRect;
       await act(async () => movement.commit(token));
       expect(scroll.scrollTop).toBe(130);
-      expect(document.activeElement).toBe(star);
+      expect(document.activeElement).toBe(actions);
     });
   });
   it("uses nearest survivor, temporary heading/scrollport tabindex, and never focuses for pointer", async () => {
@@ -63,8 +63,8 @@ describe("useHomeFavoriteMovement", () => {
         <div ref={movement.scrollRef}>
           <h2>Recent</h2>
           <article data-home-row="moved">
-            <button type="button" data-home-favorite="moved">
-              star
+            <button type="button" data-home-row-actions="moved">
+              actions
             </button>
           </article>
           <article data-home-row="near">
@@ -85,13 +85,13 @@ describe("useHomeFavoriteMovement", () => {
       });
       scroll.getBoundingClientRect = () => rect(0, 200) as DOMRect;
       const moved = container.querySelector('[data-home-row="moved"]') as HTMLElement;
-      const star = container.querySelector('[data-home-favorite="moved"]') as HTMLElement;
+      const actions = container.querySelector('[data-home-row-actions="moved"]') as HTMLElement;
       const near = container.querySelector("[data-near]") as HTMLElement;
-      const nearCard = container.querySelector('[data-home-row="near"]') as HTMLElement;
+      const nearRow = container.querySelector('[data-home-row="near"]') as HTMLElement;
       const heading = container.querySelector("h2") as HTMLElement;
       moved.getBoundingClientRect = () => rect(20) as DOMRect;
-      nearCard.getBoundingClientRect = () => rect(80) as DOMRect;
-      star.getBoundingClientRect = () => rect(500) as DOMRect;
+      nearRow.getBoundingClientRect = () => rect(80) as DOMRect;
+      actions.getBoundingClientRect = () => rect(500) as DOMRect;
       near.getBoundingClientRect = () => rect(80) as DOMRect;
       heading.getBoundingClientRect = () => rect(10) as DOMRect;
       await act(async () => movement.commit(movement.capture("moved", true)));

@@ -110,7 +110,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   };
 
   return (
-    <div ref={movement.scrollRef} className="app-scroll main-pane">
+    <div ref={movement.scrollRef} data-home-scroll-owner className="app-scroll main-pane">
       <div className="project-screen-column">
         <div className="home-composer-page">
           <section>
