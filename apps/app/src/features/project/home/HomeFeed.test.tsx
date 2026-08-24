@@ -62,7 +62,8 @@ describe("HomeFeed", () => {
       }
     }
     globalThis.IntersectionObserver = TestIntersectionObserver as typeof IntersectionObserver;
-    const fetchNextPage = vi.fn(async () => undefined);
+    const fetchCursorA = vi.fn(async () => undefined);
+    const fetchCursorB = vi.fn(async () => undefined);
     const cursorA = "project-1:cursor-a" as HomeFeedNextPageIdentity;
     const cursorB = "project-1:cursor-b" as HomeFeedNextPageIdentity;
     let replaceFeed!: (identity: HomeFeedNextPageIdentity, data: unknown) => void;
@@ -79,7 +80,7 @@ describe("HomeFeed", () => {
             data: state.data,
             hasNextPage: true,
             nextPageIdentity: state.identity,
-            fetchNextPage,
+            fetchNextPage: state.identity === cursorA ? fetchCursorA : fetchCursorB,
           }}
           rowProps={rowProps}
         />
@@ -102,37 +103,41 @@ describe("HomeFeed", () => {
           undefined as never,
         );
       });
-      expect(fetchNextPage).toHaveBeenCalledOnce();
+      const observerA = notifications.at(-1);
+      expect(fetchCursorA).toHaveBeenCalledOnce();
+      expect(fetchCursorB).not.toHaveBeenCalled();
       await act(async () => replaceFeed(cursorA, { optimisticRevision: 2 }));
       notifications.at(-1)?.(
         [{ isIntersecting: true } as IntersectionObserverEntry],
         undefined as never,
       );
-      expect(fetchNextPage).toHaveBeenCalledOnce();
+      expect(fetchCursorA).toHaveBeenCalledOnce();
       await act(async () => replaceFeed(cursorB, { revision: 3 }));
+      const observerB = notifications.at(-1);
       await act(async () => {
-        notifications.at(-1)?.(
-          [{ isIntersecting: true } as IntersectionObserverEntry],
-          undefined as never,
-        );
-        notifications.at(-1)?.(
-          [{ isIntersecting: true } as IntersectionObserverEntry],
-          undefined as never,
-        );
+        observerA?.([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
+        observerB?.([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
+        observerA?.([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
+        observerB?.([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
       });
-      expect(fetchNextPage).toHaveBeenCalledTimes(2);
+      expect(fetchCursorA).toHaveBeenCalledOnce();
+      expect(fetchCursorB).toHaveBeenCalledOnce();
       await act(async () => replaceFeed(cursorA, { authoritativeRevision: 4 }));
+      const returnedObserverA = notifications.at(-1);
       await act(async () => {
-        notifications.at(-1)?.(
+        observerB?.([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
+        returnedObserverA?.(
           [{ isIntersecting: true } as IntersectionObserverEntry],
           undefined as never,
         );
-        notifications.at(-1)?.(
+        observerB?.([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
+        returnedObserverA?.(
           [{ isIntersecting: true } as IntersectionObserverEntry],
           undefined as never,
         );
       });
-      expect(fetchNextPage).toHaveBeenCalledTimes(3);
+      expect(fetchCursorA).toHaveBeenCalledTimes(2);
+      expect(fetchCursorB).toHaveBeenCalledOnce();
     });
     expect(disconnectSpy).toHaveBeenCalledTimes(3);
   });

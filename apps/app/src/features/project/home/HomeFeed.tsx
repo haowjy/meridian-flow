@@ -39,8 +39,10 @@ export function HomeFeed({
     )
       return;
     const pageIdentity = feed.nextPageIdentity;
+    let active = true;
     const observer = new IntersectionObserver(
       ([entry]) => {
+        if (!active) return;
         if (entry?.isIntersecting && requestedPage.current !== pageIdentity) {
           requestedPage.current = pageIdentity;
           void feed.fetchNextPage();
@@ -49,7 +51,10 @@ export function HomeFeed({
       { rootMargin: "240px" },
     );
     observer.observe(sentinel.current);
-    return () => observer.disconnect();
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
   }, [
     feed.fetchNextPage,
     feed.hasNextPage,
