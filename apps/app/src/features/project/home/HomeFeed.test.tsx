@@ -58,7 +58,7 @@ describe("HomeFeed", () => {
       expect(continueCard?.querySelector('[data-slot="card-footer"]')?.textContent).toContain(
         "Work:",
       );
-      expect(container.querySelector("[aria-hidden].h-px")).not.toBeNull();
+      expect(container.querySelector("[data-home-feed-sentinel]")).not.toBeNull();
     });
   });
   it("renders initial, empty, page-loading, and page-error recovery states", async () => {
@@ -80,11 +80,17 @@ describe("HomeFeed", () => {
         );
       },
     );
+    const refetch = vi.fn(async () => undefined);
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isError: true, data: null }} cardProps={cardProps} />,
-      () => {
+      <HomeFeed feed={{ ...base, isError: true, data: null, refetch }} cardProps={cardProps} />,
+      async () => {
         expect(document.querySelector("h2")?.textContent).toBe("Chats couldn’t load");
         expect(document.querySelector("h1")).toBeNull();
+        const retry = [...document.querySelectorAll("button")].find(
+          (node) => node.textContent === "Retry",
+        );
+        await act(async () => retry?.click());
+        expect(refetch).toHaveBeenCalledOnce();
       },
     );
     await withReactRoot(
@@ -106,7 +112,7 @@ describe("HomeFeed", () => {
         );
         await act(async () => button?.click());
         expect(retry).toHaveBeenCalledOnce();
-        expect(document.querySelector("[aria-hidden].h-px")).toBeNull();
+        expect(document.querySelector("[data-home-feed-sentinel]")).toBeNull();
       },
     );
   });

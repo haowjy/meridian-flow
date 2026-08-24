@@ -52,7 +52,11 @@ export function HomeFeed({
         title={t`Chats couldn’t load`}
         caption={t`Check your connection and try again.`}
         action={
-          <Button variant="outline" onClick={() => void feed.refetch()}>
+          <Button
+            variant="outline"
+            className="[@media(pointer:coarse)]:min-h-11"
+            onClick={() => void feed.refetch()}
+          >
             <Trans>Retry</Trans>
           </Button>
         }
@@ -104,12 +108,16 @@ export function HomeFeed({
               className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
             >
               <Trans>More chats couldn’t load.</Trans>
-              <Button variant="link" onClick={() => void feed.fetchNextPage()}>
+              <Button
+                variant="link"
+                className="[@media(pointer:coarse)]:min-h-11"
+                onClick={() => void feed.fetchNextPage()}
+              >
                 <Trans>Retry</Trans>
               </Button>
             </div>
           ) : (
-            <div ref={sentinel} aria-hidden className="h-px" />
+            <div ref={sentinel} data-home-feed-sentinel aria-hidden className="h-px" />
           )}
         </section>
       ) : null}
