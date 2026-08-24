@@ -1,7 +1,8 @@
 /** Rendered contracts for the deep Home feed presentation boundary. */
 import type { HomeChatItem } from "@meridian/contracts/protocol";
-import { act } from "react";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { HomeFeed } from "./HomeFeed";
 
@@ -39,18 +40,19 @@ const base = {
   hasNextPage: false,
   isFetchingNextPage: false,
   isFetchNextPageError: false,
+  nextPageIdentity: null,
   fetchNextPage: vi.fn(async () => undefined),
   refetch: vi.fn(async () => undefined),
 };
 
 describe("HomeFeed", () => {
-  it("fetches the next eligible page once when its sentinel intersects", async () => {
-    let notify!: IntersectionObserverCallback;
+  it("suppresses repeats for cursor A while allowing one request for replacement cursor B", async () => {
+    const notifications: IntersectionObserverCallback[] = [];
     const observeSpy = vi.fn();
     const disconnectSpy = vi.fn();
     class TestIntersectionObserver {
       constructor(callback: IntersectionObserverCallback) {
-        notify = callback;
+        notifications.push(callback);
       }
       observe(target: Element) {
         observeSpy(target);
@@ -61,20 +63,66 @@ describe("HomeFeed", () => {
     }
     globalThis.IntersectionObserver = TestIntersectionObserver as typeof IntersectionObserver;
     const fetchNextPage = vi.fn(async () => undefined);
-    await withReactRoot(
-      <HomeFeed feed={{ ...base, hasNextPage: true, fetchNextPage }} rowProps={rowProps} />,
-      async () => {
-        const sentinel = document.querySelector("[data-home-feed-sentinel]") as HTMLElement;
-        expect(observeSpy.mock.calls[0]?.[0]).toBe(sentinel);
-        await act(async () => {
-          notify([{ isIntersecting: false } as IntersectionObserverEntry], undefined as never);
-          notify([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
-          notify([{ isIntersecting: true } as IntersectionObserverEntry], undefined as never);
-        });
-        expect(fetchNextPage).toHaveBeenCalledOnce();
-      },
-    );
-    expect(disconnectSpy).toHaveBeenCalledOnce();
+    const cursorA = "project-1:cursor-a" as HomeFeedNextPageIdentity;
+    const cursorB = "project-1:cursor-b" as HomeFeedNextPageIdentity;
+    let replaceFeed!: (identity: HomeFeedNextPageIdentity, data: unknown) => void;
+    function PaginationHarness() {
+      const [state, setState] = useState<{
+        identity: HomeFeedNextPageIdentity;
+        data: unknown;
+      }>({ identity: cursorA, data: { revision: 1 } });
+      replaceFeed = (identity, data) => setState({ identity, data });
+      return (
+        <HomeFeed
+          feed={{
+            ...base,
+            data: state.data,
+            hasNextPage: true,
+            nextPageIdentity: state.identity,
+            fetchNextPage,
+          }}
+          rowProps={rowProps}
+        />
+      );
+    }
+    await withReactRoot(<PaginationHarness />, async () => {
+      const sentinel = document.querySelector("[data-home-feed-sentinel]") as HTMLElement;
+      expect(observeSpy.mock.calls[0]?.[0]).toBe(sentinel);
+      await act(async () => {
+        notifications.at(-1)?.(
+          [{ isIntersecting: false } as IntersectionObserverEntry],
+          undefined as never,
+        );
+        notifications.at(-1)?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          undefined as never,
+        );
+        notifications.at(-1)?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          undefined as never,
+        );
+      });
+      expect(fetchNextPage).toHaveBeenCalledOnce();
+      await act(async () => replaceFeed(cursorA, { optimisticRevision: 2 }));
+      notifications.at(-1)?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        undefined as never,
+      );
+      expect(fetchNextPage).toHaveBeenCalledOnce();
+      await act(async () => replaceFeed(cursorB, { revision: 3 }));
+      await act(async () => {
+        notifications.at(-1)?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          undefined as never,
+        );
+        notifications.at(-1)?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          undefined as never,
+        );
+      });
+      expect(fetchNextPage).toHaveBeenCalledTimes(2);
+    });
+    expect(disconnectSpy).toHaveBeenCalledTimes(2);
   });
   it("owns one-column Continue, Favorite, and Recent lists plus the sentinel", async () => {
     await withReactRoot(<HomeFeed feed={base} rowProps={rowProps} />, () => {

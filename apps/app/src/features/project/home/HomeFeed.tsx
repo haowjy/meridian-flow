@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
+import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HomeChatRow, type HomeChatRowProps } from "./HomeChatRow";
@@ -15,6 +16,7 @@ type FeedQuery = {
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
+  nextPageIdentity: HomeFeedNextPageIdentity | null;
   fetchNextPage: () => Promise<unknown>;
   refetch: () => Promise<unknown>;
 };
@@ -26,19 +28,21 @@ export function HomeFeed({
   rowProps: Omit<HomeChatRowProps, "item">;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
+  const requestedPages = useRef(new Set<HomeFeedNextPageIdentity>());
   useEffect(() => {
     if (
       !sentinel.current ||
       !feed.hasNextPage ||
+      !feed.nextPageIdentity ||
       feed.isFetchingNextPage ||
       feed.isFetchNextPageError
     )
       return;
-    let requested = false;
+    const pageIdentity = feed.nextPageIdentity;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting && !requested) {
-          requested = true;
+        if (entry?.isIntersecting && !requestedPages.current.has(pageIdentity)) {
+          requestedPages.current.add(pageIdentity);
           void feed.fetchNextPage();
         }
       },
@@ -46,7 +50,13 @@ export function HomeFeed({
     );
     observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, [feed.fetchNextPage, feed.hasNextPage, feed.isFetchNextPageError, feed.isFetchingNextPage]);
+  }, [
+    feed.fetchNextPage,
+    feed.hasNextPage,
+    feed.isFetchNextPageError,
+    feed.isFetchingNextPage,
+    feed.nextPageIdentity,
+  ]);
 
   if (feed.isPending) return <HomeLoading />;
   if (feed.isError && !feed.data)

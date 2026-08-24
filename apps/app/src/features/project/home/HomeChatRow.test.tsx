@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /** Behavioral contracts for Home's two-line row and overflow-owned commands. */
+import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { i18n } from "@/lib/i18n";
+import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { HomeChatRow, type HomeChatRowProps } from "./HomeChatRow";
 
@@ -12,11 +12,6 @@ vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
 }));
-vi.mock("@lingui/react", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@lingui/react")>();
-  return { ...actual, useLingui: () => ({ i18n }) };
-});
-
 const chat = (favorite = false): HomeChatItem => ({
   id: "thread-1",
   title: "River",
@@ -58,44 +53,52 @@ const menuItem = (name: string) =>
     (item) => item.textContent === name,
   ) as HTMLElement;
 
-afterEach(() => {
-  i18n.activate("en");
-});
+const withRow = (row: React.ReactNode, run: () => Promise<void> | void, locale = "en") => {
+  const testI18n = setupI18n({ locale, messages: { [locale]: {} } });
+  return withReactRoot(<I18nProvider i18n={testI18n}>{row}</I18nProvider>, run);
+};
+
+async function waitFor(assertion: () => void) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    }
+  }
+  throw lastError;
+}
 
 describe("HomeChatRow", () => {
   it("owns Favorite and Remove favorite in the overflow with pointer and keyboard modality", async () => {
     const pointerFavorite = vi.fn();
-    await withReactRoot(
-      <I18nProvider i18n={i18n}>
-        <HomeChatRow {...props({ onFavorite: pointerFavorite })} />
-      </I18nProvider>,
-      async () => {
-        await openActions();
-        const add = menuItem("Add to favorites");
-        await act(async () => {
-          const PointerEventConstructor = window.PointerEvent ?? window.MouseEvent;
-          add.dispatchEvent(
-            new PointerEventConstructor("pointerdown", {
-              bubbles: true,
-              button: 0,
-              pointerType: "mouse",
-            } as PointerEventInit),
-          );
-          add.click();
-        });
-        expect(pointerFavorite).toHaveBeenCalledWith(
-          expect.objectContaining({ id: "thread-1" }),
-          true,
-          false,
+    await withRow(<HomeChatRow {...props({ onFavorite: pointerFavorite })} />, async () => {
+      await openActions();
+      const add = menuItem("Add to favorites");
+      await act(async () => {
+        const PointerEventConstructor = window.PointerEvent ?? window.MouseEvent;
+        add.dispatchEvent(
+          new PointerEventConstructor("pointerdown", {
+            bubbles: true,
+            button: 0,
+            pointerType: "mouse",
+          } as PointerEventInit),
         );
-      },
-    );
+        add.click();
+      });
+      expect(pointerFavorite).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "thread-1" }),
+        true,
+        false,
+      );
+    });
 
     const keyboardFavorite = vi.fn();
-    await withReactRoot(
-      <I18nProvider i18n={i18n}>
-        <HomeChatRow {...props({ item: chat(true), onFavorite: keyboardFavorite })} />
-      </I18nProvider>,
+    await withRow(
+      <HomeChatRow {...props({ item: chat(true), onFavorite: keyboardFavorite })} />,
       async () => {
         await openActions();
         const remove = menuItem("Remove from favorites");
@@ -113,38 +116,33 @@ describe("HomeChatRow", () => {
   });
 
   it("keeps menu-open ownership and restores trigger focus on Escape", async () => {
-    await withReactRoot(
-      <I18nProvider i18n={i18n}>
-        <HomeChatRow {...props()} />
-      </I18nProvider>,
-      async () => {
-        const trigger = await openActions();
-        expect(trigger.getAttribute("aria-expanded")).toBe("true");
-        menuItem("Add to favorites").focus();
-        expect(trigger.getAttribute("aria-expanded")).toBe("true");
-        await act(async () => {
-          document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
-        });
+    await withRow(<HomeChatRow {...props()} />, async () => {
+      const trigger = await openActions();
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      await act(async () => menuItem("Add to favorites").focus());
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
+      });
+      await waitFor(() => {
         expect(trigger.getAttribute("aria-expanded")).toBe("false");
         expect(document.activeElement).toBe(trigger);
-      },
-    );
+      });
+    });
   });
 
   it("keeps failed read retry in the menu without a third row", async () => {
     const onUnread = vi.fn(async () => true);
-    await withReactRoot(
-      <I18nProvider i18n={i18n}>
-        <HomeChatRow
-          {...props({
-            onUnread,
-            getCommandState: vi.fn((_id, field) => ({
-              pending: false as const,
-              error: field === "isUnread" ? new Error("offline") : null,
-            })),
-          })}
-        />
-      </I18nProvider>,
+    await withRow(
+      <HomeChatRow
+        {...props({
+          onUnread,
+          getCommandState: vi.fn((_id, field) => ({
+            pending: false as const,
+            error: field === "isUnread" ? new Error("offline") : null,
+          })),
+        })}
+      />,
       async () => {
         const row = document.querySelector("[data-home-row]") as HTMLElement;
         expect(row.querySelector('[role="alert"]')).toBeNull();
@@ -157,16 +155,14 @@ describe("HomeChatRow", () => {
   });
 
   it("formats compact and full activity dates with the active locale", async () => {
-    i18n.activate("zh");
-    await withReactRoot(
-      <I18nProvider i18n={i18n}>
-        <HomeChatRow {...props()} />
-      </I18nProvider>,
+    await withRow(
+      <HomeChatRow {...props()} />,
       () => {
         const dates = [...document.querySelectorAll("time")];
         expect(dates[0]?.textContent).toContain("8月");
         expect(dates[0]?.title).toContain("2025年");
       },
+      "zh",
     );
   });
 });

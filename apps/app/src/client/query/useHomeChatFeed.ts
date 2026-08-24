@@ -17,6 +17,11 @@ import {
   type ThreadUserStateLifecycle,
 } from "./thread-user-state-commands";
 
+declare const homeFeedNextPageIdentity: unique symbol;
+export type HomeFeedNextPageIdentity = string & {
+  readonly [homeFeedNextPageIdentity]: true;
+};
+
 export function useHomeChatFeed(projectId: string) {
   const client = useQueryClient();
   const controller = useMemo(
@@ -82,8 +87,20 @@ export function useHomeChatFeed(projectId: string) {
     }),
     [client, manualErrors, projectId, transportVersion],
   );
+  const nextCursor = query.data?.pages.at(-1)?.recentChats.nextCursor ?? null;
+  const nextPageIdentity = useMemo(
+    () =>
+      nextCursor === null
+        ? null
+        : (JSON.stringify([
+            projectQueryKeys.homeFeed(projectId),
+            nextCursor,
+          ]) as HomeFeedNextPageIdentity),
+    [nextCursor, projectId],
+  );
   return {
     ...query,
+    nextPageIdentity,
     grouped: groupHomeFeed(query.data as import("./home-chat-feed-cache").HomeFeedData | undefined),
     setFavorite: (threadId: string, value: boolean, lifecycle?: ThreadUserStateLifecycle) =>
       runCommand(threadId, "isFavorite", value, lifecycle),

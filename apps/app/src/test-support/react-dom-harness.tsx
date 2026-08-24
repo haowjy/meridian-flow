@@ -9,7 +9,10 @@ import { createRoot } from "react-dom/client";
 
 const require = createRequire(import.meta.url);
 const { JSDOM } = require("jsdom") as {
-  JSDOM: new (html: string) => { window: Window & typeof globalThis & { close: () => void } };
+  JSDOM: new (
+    html: string,
+    options?: { url?: string },
+  ) => { window: Window & typeof globalThis & { close: () => void } };
 };
 
 type ActGlobal = typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -30,7 +33,9 @@ export async function withReactRoot(
   run?: () => Promise<void> | void,
   options: WithReactRootOptions = {},
 ): Promise<void> {
-  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
+    url: "https://app.meridian.test/",
+  });
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   const previousActEnvironment = (globalThis as ActGlobal).IS_REACT_ACT_ENVIRONMENT;
