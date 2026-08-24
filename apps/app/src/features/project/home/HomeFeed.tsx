@@ -28,7 +28,7 @@ export function HomeFeed({
   rowProps: Omit<HomeChatRowProps, "item">;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
-  const requestedPages = useRef(new Set<HomeFeedNextPageIdentity>());
+  const requestedPage = useRef<HomeFeedNextPageIdentity | null>(null);
   useEffect(() => {
     if (
       !sentinel.current ||
@@ -41,8 +41,8 @@ export function HomeFeed({
     const pageIdentity = feed.nextPageIdentity;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting && !requestedPages.current.has(pageIdentity)) {
-          requestedPages.current.add(pageIdentity);
+        if (entry?.isIntersecting && requestedPage.current !== pageIdentity) {
+          requestedPage.current = pageIdentity;
           void feed.fetchNextPage();
         }
       },

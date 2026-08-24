@@ -46,7 +46,7 @@ const base = {
 };
 
 describe("HomeFeed", () => {
-  it("suppresses repeats for cursor A while allowing one request for replacement cursor B", async () => {
+  it("requests each current cursor once across A to B to A replacements", async () => {
     const notifications: IntersectionObserverCallback[] = [];
     const observeSpy = vi.fn();
     const disconnectSpy = vi.fn();
@@ -121,8 +121,20 @@ describe("HomeFeed", () => {
         );
       });
       expect(fetchNextPage).toHaveBeenCalledTimes(2);
+      await act(async () => replaceFeed(cursorA, { authoritativeRevision: 4 }));
+      await act(async () => {
+        notifications.at(-1)?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          undefined as never,
+        );
+        notifications.at(-1)?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          undefined as never,
+        );
+      });
+      expect(fetchNextPage).toHaveBeenCalledTimes(3);
     });
-    expect(disconnectSpy).toHaveBeenCalledTimes(2);
+    expect(disconnectSpy).toHaveBeenCalledTimes(3);
   });
   it("owns one-column Continue, Favorite, and Recent lists plus the sentinel", async () => {
     await withReactRoot(<HomeFeed feed={base} rowProps={rowProps} />, () => {
