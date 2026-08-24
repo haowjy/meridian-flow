@@ -58,7 +58,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     (catalogWork.status === "ready" ? catalogWork.work : null);
   const handleModePendingChange = useCallback((pending: boolean) => setModePending(pending), []);
 
-  const cardProps = {
+  const rowProps = {
     now,
     onOpen: (item: HomeChatItem) => onOpenThread(item.id),
     onFavorite: (item: HomeChatItem, value: boolean, keyboard: boolean) => {
@@ -191,7 +191,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
               ) : null}
             </div>
           </section>
-          <HomeFeed feed={feed} cardProps={cardProps} />
+          <HomeFeed feed={feed} rowProps={rowProps} />
         </div>
       </div>
     </div>

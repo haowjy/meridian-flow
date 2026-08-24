@@ -19,7 +19,7 @@ const item = (id: string, favorite = false): HomeChatItem => ({
   attention: "none",
   isFavorite: favorite,
 });
-const cardProps = {
+const rowProps = {
   now: Date.now(),
   onOpen: vi.fn(),
   onFavorite: vi.fn(),
@@ -44,26 +44,31 @@ const base = {
 
 describe("HomeFeed", () => {
   it("owns one-column Continue, Favorite, and Recent lists plus the sentinel", async () => {
-    await withReactRoot(<HomeFeed feed={base} cardProps={cardProps} />, () => {
+    await withReactRoot(<HomeFeed feed={base} rowProps={rowProps} />, () => {
       const container = document.getElementById("root") as HTMLElement;
       expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
         "Continue",
         "Favorite",
         "Recent chats",
       ]);
-      expect(container.querySelectorAll("[data-home-card]")).toHaveLength(3);
-      expect(container.querySelectorAll("ul")).toHaveLength(2);
-      const continueCard = container.querySelector('[data-home-card="Continue"]');
-      expect(continueCard?.querySelector('[data-slot="card-title"]')?.textContent).toBe("Continue");
-      expect(continueCard?.querySelector('[data-slot="card-footer"]')?.textContent).toContain(
-        "Work:",
-      );
+      expect(container.querySelectorAll("[data-home-row]")).toHaveLength(3);
+      expect(container.querySelectorAll("ul")).toHaveLength(3);
+      const continueRow = container.querySelector('[data-home-row="Continue"]');
+      expect(continueRow?.textContent).toContain("Continue");
+      expect(continueRow?.textContent).toContain("Work unavailable");
+      expect(continueRow?.textContent).toContain("Preview");
+      expect(continueRow?.querySelectorAll("button")).toHaveLength(2);
+      expect(
+        [...(continueRow?.querySelectorAll("button") ?? [])].map((button) =>
+          button.getAttribute("aria-label"),
+        ),
+      ).toEqual(["Open ", "Actions for "]);
       expect(container.querySelector("[data-home-feed-sentinel]")).not.toBeNull();
     });
   });
   it("renders initial, empty, page-loading, and page-error recovery states", async () => {
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isPending: true }} cardProps={cardProps} />,
+      <HomeFeed feed={{ ...base, isPending: true }} rowProps={rowProps} />,
       () => {
         const status = document.querySelector('[role="status"]');
         expect(status?.textContent).toContain("Loading chats");
@@ -72,7 +77,7 @@ describe("HomeFeed", () => {
     await withReactRoot(
       <HomeFeed
         feed={{ ...base, grouped: { continueChat: null, favorites: [], recent: [] } }}
-        cardProps={cardProps}
+        rowProps={rowProps}
       />,
       () => {
         expect(document.body.textContent).toContain(
@@ -82,7 +87,7 @@ describe("HomeFeed", () => {
     );
     const refetch = vi.fn(async () => undefined);
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isError: true, data: null, refetch }} cardProps={cardProps} />,
+      <HomeFeed feed={{ ...base, isError: true, data: null, refetch }} rowProps={rowProps} />,
       async () => {
         expect(document.querySelector("h2")?.textContent).toBe("Chats couldn’t load");
         expect(document.querySelector("h1")).toBeNull();
@@ -94,7 +99,7 @@ describe("HomeFeed", () => {
       },
     );
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isFetchingNextPage: true }} cardProps={cardProps} />,
+      <HomeFeed feed={{ ...base, isFetchingNextPage: true }} rowProps={rowProps} />,
       () =>
         expect(document.querySelector('[role="status"]')?.textContent).toContain(
           "Loading more chats",
@@ -104,7 +109,7 @@ describe("HomeFeed", () => {
     await withReactRoot(
       <HomeFeed
         feed={{ ...base, isFetchNextPageError: true, fetchNextPage: retry }}
-        cardProps={cardProps}
+        rowProps={rowProps}
       />,
       async () => {
         const button = [...document.querySelectorAll("button")].find(
@@ -115,5 +120,21 @@ describe("HomeFeed", () => {
         expect(document.querySelector("[data-home-feed-sentinel]")).toBeNull();
       },
     );
+  });
+  it("keeps read failure and retry in the existing overflow owner", async () => {
+    const errorProps = {
+      ...rowProps,
+      getCommandState: vi.fn((_id: string, field: "isFavorite" | "isUnread") => ({
+        pending: false as const,
+        error: field === "isUnread" ? new Error("offline") : null,
+      })),
+    };
+    await withReactRoot(<HomeFeed feed={base} rowProps={errorProps} />, async () => {
+      const row = document.querySelector('[data-home-row="Continue"]') as HTMLElement;
+      expect(row.textContent).toContain("Read status wasn’t saved. Open actions to retry.");
+      expect(row.querySelector('[role="alert"]')).toBeNull();
+      const actions = row.querySelector('button[aria-invalid="true"]') as HTMLButtonElement;
+      expect(actions.getAttribute("aria-describedby")).toContain("home-read-error-Continue");
+    });
   });
 });

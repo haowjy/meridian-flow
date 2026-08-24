@@ -1,4 +1,4 @@
-/** Preserves scroll geometry and keyboard focus across explicit card-movement commits. */
+/** Preserves scroll geometry and keyboard focus across explicit row-movement commits. */
 import { useLayoutEffect, useRef, useState } from "react";
 
 export type HomeMovementToken = {
@@ -17,15 +17,15 @@ export function useHomeFavoriteMovement() {
     const scroll = scrollRef.current;
     if (!scroll) return null;
     const bounds = scroll.getBoundingClientRect();
-    const cards = [...scroll.querySelectorAll<HTMLElement>("[data-home-card]")];
-    const origin = cards.find((card) => card.dataset.homeCard === threadId);
-    const anchor = cards.find((card) => {
-      const rect = card.getBoundingClientRect();
-      return card !== origin && rect.bottom > bounds.top && rect.top < bounds.bottom;
+    const rows = [...scroll.querySelectorAll<HTMLElement>("[data-home-row]")];
+    const origin = rows.find((row) => row.dataset.homeRow === threadId);
+    const anchor = rows.find((row) => {
+      const rect = row.getBoundingClientRect();
+      return row !== origin && rect.bottom > bounds.top && rect.top < bounds.bottom;
     });
     return {
       threadId,
-      anchorId: anchor?.dataset.homeCard,
+      anchorId: anchor?.dataset.homeRow,
       anchorTop: anchor?.getBoundingClientRect().top ?? 0,
       originTop: origin?.getBoundingClientRect().top ?? bounds.top,
       scrollTop: scroll.scrollTop,
@@ -40,9 +40,9 @@ export function useHomeFavoriteMovement() {
     const move = pending;
     const scroll = scrollRef.current;
     if (!move || !scroll) return;
-    const cards = [...scroll.querySelectorAll<HTMLElement>("[data-home-card]")];
+    const rows = [...scroll.querySelectorAll<HTMLElement>("[data-home-row]")];
     const anchor = move.anchorId
-      ? (cards.find((card) => card.dataset.homeCard === move.anchorId) ?? null)
+      ? (rows.find((row) => row.dataset.homeRow === move.anchorId) ?? null)
       : null;
     if (anchor) scroll.scrollTop += anchor.getBoundingClientRect().top - move.anchorTop;
     else
@@ -60,10 +60,10 @@ export function useHomeFavoriteMovement() {
       const destination = [...scroll.querySelectorAll<HTMLElement>("[data-home-favorite]")].find(
         (control) => control.dataset.homeFavorite === move.threadId,
       );
-      const survivors = [...scroll.querySelectorAll<HTMLElement>("[data-home-card] button")]
+      const survivors = [...scroll.querySelectorAll<HTMLElement>("[data-home-row] button")]
         .filter(
           (control) =>
-            control.closest<HTMLElement>("[data-home-card]")?.dataset.homeCard !== move.threadId,
+            control.closest<HTMLElement>("[data-home-row]")?.dataset.homeRow !== move.threadId,
         )
         .filter(visible)
         .sort(

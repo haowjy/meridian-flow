@@ -5,7 +5,7 @@ import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { HomeChatCard, type HomeChatCardProps } from "./HomeChatCard";
+import { HomeChatRow, type HomeChatRowProps } from "./HomeChatRow";
 
 type FeedQuery = {
   isPending: boolean;
@@ -20,10 +20,10 @@ type FeedQuery = {
 };
 export function HomeFeed({
   feed,
-  cardProps,
+  rowProps,
 }: {
   feed: FeedQuery;
-  cardProps: Omit<HomeChatCardProps, "item" | "variant">;
+  rowProps: Omit<HomeChatRowProps, "item">;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -72,28 +72,29 @@ export function HomeFeed({
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-3">
-        <div className="flex min-h-9 items-center gap-4">
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center gap-4">
           <h2 className="text-headline-section">
             <Trans>Continue</Trans>
           </h2>
         </div>
-        {continueChat ? (
-          <HomeChatCard item={continueChat} variant="continue" {...cardProps} />
-        ) : null}
+        {continueChat ? <ChatList items={[continueChat]} rowProps={rowProps} /> : null}
       </section>
       {favorites.length ? (
-        <Section title={t`Favorite`} items={favorites} cardProps={cardProps} />
+        <Section title={t`Favorite`} items={favorites} rowProps={rowProps} />
       ) : null}
       {recent.length || feed.hasNextPage ? (
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-2">
           <h2 className="text-headline-section">
             <Trans>Recent chats</Trans>
           </h2>
-          <ul className="flex flex-col gap-4" aria-busy={feed.isFetchingNextPage || undefined}>
+          <ul
+            className="divide-y divide-border-subtle"
+            aria-busy={feed.isFetchingNextPage || undefined}
+          >
             {recent.map((item) => (
               <li key={item.id}>
-                <HomeChatCard item={item} {...cardProps} />
+                <HomeChatRow item={item} {...rowProps} />
               </li>
             ))}
           </ul>
@@ -128,23 +129,34 @@ export function HomeFeed({
 function Section({
   title,
   items,
-  cardProps,
+  rowProps,
 }: {
   title: string;
   items: HomeChatItem[];
-  cardProps: Omit<HomeChatCardProps, "item" | "variant">;
+  rowProps: Omit<HomeChatRowProps, "item">;
 }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-2">
       <h2 className="text-headline-section">{title}</h2>
-      <ul className="flex flex-col gap-4">
-        {items.map((item) => (
-          <li key={item.id}>
-            <HomeChatCard item={item} {...cardProps} />
-          </li>
-        ))}
-      </ul>
+      <ChatList items={items} rowProps={rowProps} />
     </section>
+  );
+}
+function ChatList({
+  items,
+  rowProps,
+}: {
+  items: HomeChatItem[];
+  rowProps: Omit<HomeChatRowProps, "item">;
+}) {
+  return (
+    <ul className="divide-y divide-border-subtle">
+      {items.map((item) => (
+        <li key={item.id}>
+          <HomeChatRow item={item} {...rowProps} />
+        </li>
+      ))}
+    </ul>
   );
 }
 function HomeState({
@@ -173,19 +185,33 @@ function HomeLoading() {
         <Trans>Loading chats</Trans>
       </span>
       <div aria-hidden className="contents">
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-2">
           <Skeleton className="h-7 w-28 motion-reduce:animate-none" />
-          <Skeleton className="h-44 rounded-lg motion-reduce:animate-none" />
+          <SkeletonRows count={1} />
         </section>
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-2">
           <Skeleton className="h-7 w-36 motion-reduce:animate-none" />
-          <div className="flex flex-col gap-4">
-            {[0, 1, 2, 3].map((x) => (
-              <Skeleton key={x} className="h-40 rounded-lg motion-reduce:animate-none" />
-            ))}
-          </div>
+          <SkeletonRows count={4} />
         </section>
       </div>
     </div>
+  );
+}
+function SkeletonRows({ count }: { count: number }) {
+  return (
+    <ul className="divide-y divide-border-subtle">
+      {Array.from({ length: count }, (_, x) => (
+        <li key={x} className="space-y-2 px-2 py-2">
+          <div className="flex items-center gap-2 pr-14">
+            <Skeleton className="h-4 flex-1 motion-reduce:animate-none" />
+            <Skeleton className="h-4 w-20 motion-reduce:animate-none" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-3 flex-1 motion-reduce:animate-none" />
+            <Skeleton className="h-3 w-12 motion-reduce:animate-none" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

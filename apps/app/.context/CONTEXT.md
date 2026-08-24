@@ -19,7 +19,7 @@ for an open failure; manual read/unread failures remain with their initiating
 Home control.
 The Home feature keeps screen composition in `HomeScreen`, stable-ID creation,
 ambiguity reconciliation, and route-only retry in `useHomeFirstSendAttempt`,
-card semantics in `HomeChatCard`, collection layout in `HomeFeed`, date policy in
+borderless two-line row semantics in `HomeChatRow`, list and section layout in `HomeFeed`, date policy in
 `home-activity-date`, and scroll/focus restoration in the favorite-movement
 hook. Do not duplicate any of those concerns in the screen orchestrator.
 

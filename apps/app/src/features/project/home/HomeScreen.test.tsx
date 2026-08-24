@@ -108,9 +108,7 @@ describe("HomeScreen", () => {
         </QueryClientProvider>
       </I18nProvider>,
       async () => {
-        await waitFor(() =>
-          Boolean(document.querySelector('[aria-label="Add River to favorites"]')),
-        );
+        await waitFor(() => Boolean(document.querySelector('[aria-label="Actions for River"]')));
         vi.spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect(20));
         const scroll = document.querySelector(".app-scroll") as HTMLElement;
         Object.defineProperties(scroll, {
@@ -120,26 +118,41 @@ describe("HomeScreen", () => {
         });
         scroll.getBoundingClientRect = () => rect(0, 300);
 
-        const add = document.querySelector(
-          '[aria-label="Add River to favorites"]',
+        const actions = document.querySelector(
+          '[aria-label="Actions for River"]',
         ) as HTMLButtonElement;
-        add.focus();
-        await act(async () => add.click());
+        actions.focus();
+        await act(async () => {
+          const PointerEventConstructor = window.PointerEvent ?? window.MouseEvent;
+          actions.dispatchEvent(
+            new PointerEventConstructor("pointerdown", {
+              bubbles: true,
+              button: 0,
+              pointerType: "mouse",
+            } as PointerEventInit),
+          );
+          actions.click();
+        });
+        await waitFor(() => document.body.textContent?.includes("Add to favorites") === true);
+        const add = [...document.querySelectorAll('[role="menuitem"]')].find(
+          (node) => node.textContent === "Add to favorites",
+        ) as HTMLElement;
+        await act(async () => {
+          add.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+          add.click();
+        });
 
-        await waitFor(() =>
-          Boolean(document.querySelector('[aria-label="Remove River from favorites"]')),
+        await waitFor(
+          () => document.activeElement?.getAttribute("aria-label") === "Actions for River",
         );
-        const remove = document.querySelector(
-          '[aria-label="Remove River from favorites"]',
+        const movedActions = document.querySelector(
+          '[aria-label="Actions for River"]',
         ) as HTMLButtonElement;
-        expect(document.activeElement).toBe(remove);
-        expect(remove.getAttribute("aria-disabled")).toBe("true");
+        expect(movedActions.getAttribute("aria-busy")).toBe("true");
         const settledScrollTop = scroll.scrollTop;
 
-        await act(async () => remove.click());
         expect(patches.map(({ body }) => body)).toEqual([{ isFavorite: true }]);
-        expect(document.activeElement).toBe(remove);
-        expect(remove.getAttribute("aria-disabled")).toBe("true");
+        expect(document.activeElement).toBe(movedActions);
         expect(scroll.scrollTop).toBe(settledScrollTop);
 
         patches[0]?.resolve(
@@ -151,10 +164,10 @@ describe("HomeScreen", () => {
             attention: "none",
           }),
         );
-        await waitFor(() => remove.getAttribute("aria-disabled") === null);
+        await waitFor(() => movedActions.getAttribute("aria-busy") === null);
 
         expect(patches.map(({ body }) => body)).toEqual([{ isFavorite: true }]);
-        expect(document.activeElement).toBe(remove);
+        expect(document.activeElement).toBe(movedActions);
         expect(scroll.scrollTop).toBe(settledScrollTop);
       },
       { drainMacrotask: true },

@@ -22,12 +22,12 @@ describe("useHomeFavoriteMovement", () => {
       movement = useHomeFavoriteMovement();
       return (
         <div ref={movement.scrollRef}>
-          <article data-home-card="moved">
+          <article data-home-row="moved">
             <button type="button" data-home-favorite="moved">
               star
             </button>
           </article>
-          <article data-home-card="anchor">
+          <article data-home-row="anchor">
             <button type="button">open</button>
           </article>
         </div>
@@ -42,8 +42,8 @@ describe("useHomeFavoriteMovement", () => {
         clientHeight: { value: 300 },
       });
       scroll.getBoundingClientRect = () => rect(0, 300) as DOMRect;
-      const moved = container.querySelector('[data-home-card="moved"]') as HTMLElement;
-      const anchor = container.querySelector('[data-home-card="anchor"]') as HTMLElement;
+      const moved = container.querySelector('[data-home-row="moved"]') as HTMLElement;
+      const anchor = container.querySelector('[data-home-row="anchor"]') as HTMLElement;
       const star = container.querySelector('[data-home-favorite="moved"]') as HTMLElement;
       moved.getBoundingClientRect = () => rect(20) as DOMRect;
       anchor.getBoundingClientRect = () => rect(80) as DOMRect;
@@ -62,12 +62,12 @@ describe("useHomeFavoriteMovement", () => {
       return (
         <div ref={movement.scrollRef}>
           <h2>Recent</h2>
-          <article data-home-card="moved">
+          <article data-home-row="moved">
             <button type="button" data-home-favorite="moved">
               star
             </button>
           </article>
-          <article data-home-card="near">
+          <article data-home-row="near">
             <button type="button" data-near>
               near
             </button>
@@ -84,10 +84,10 @@ describe("useHomeFavoriteMovement", () => {
         clientHeight: { value: 200 },
       });
       scroll.getBoundingClientRect = () => rect(0, 200) as DOMRect;
-      const moved = container.querySelector('[data-home-card="moved"]') as HTMLElement;
+      const moved = container.querySelector('[data-home-row="moved"]') as HTMLElement;
       const star = container.querySelector('[data-home-favorite="moved"]') as HTMLElement;
       const near = container.querySelector("[data-near]") as HTMLElement;
-      const nearCard = container.querySelector('[data-home-card="near"]') as HTMLElement;
+      const nearCard = container.querySelector('[data-home-row="near"]') as HTMLElement;
       const heading = container.querySelector("h2") as HTMLElement;
       moved.getBoundingClientRect = () => rect(20) as DOMRect;
       nearCard.getBoundingClientRect = () => rect(80) as DOMRect;

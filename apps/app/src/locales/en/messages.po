@@ -292,7 +292,7 @@ msgstr "Account settings."
 msgid "Actions"
 msgstr "Actions"
 
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "Actions for {title}"
 msgstr "Actions for {title}"
 
@@ -309,9 +309,9 @@ msgstr "Active Work"
 msgid "Actually…"
 msgstr "Actually…"
 
-#: src/features/project/home/HomeChatCard.tsx
-msgid "Add {title} to favorites"
-msgstr "Add {title} to favorites"
+#: src/features/project/home/HomeChatRow.tsx
+#~ msgid "Add {title} to favorites"
+#~ msgstr "Add {title} to favorites"
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Add a description"
@@ -333,6 +333,10 @@ msgstr "Add link"
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add row"
 msgstr "Add row"
+
+#: src/features/project/home/HomeChatRow.tsx
+msgid "Add to favorites"
+msgstr "Add to favorites"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Added"
@@ -1825,11 +1829,11 @@ msgstr "Manage Work"
 msgid "Manuscript"
 msgstr "Manuscript"
 
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "Mark read"
 msgstr "Mark read"
 
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "Mark unread"
 msgstr "Mark unread"
 
@@ -1982,7 +1986,7 @@ msgstr "New"
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"
@@ -2009,7 +2013,7 @@ msgid "New project started"
 msgstr "New project started"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "New reply since you last opened"
 msgstr "New reply since you last opened"
 
@@ -2080,7 +2084,7 @@ msgstr "No matching chats"
 msgid "No matching files"
 msgstr "No matching files"
 
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "No messages yet."
 msgstr "No messages yet."
 
@@ -2135,7 +2139,7 @@ msgstr "Nothing to redo yet."
 msgid "Nothing to undo yet."
 msgstr "Nothing to undo yet."
 
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "now"
@@ -2181,7 +2185,7 @@ msgid "Open {label}"
 msgstr "Open {label}"
 
 #: src/features/chat/DocumentName.tsx
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
 
@@ -2365,8 +2369,12 @@ msgid "Read status wasn’t saved"
 msgstr "Read status wasn’t saved"
 
 #: src/features/project/home/HomeChatCard.tsx
-msgid "Read status wasn’t saved."
-msgstr "Read status wasn’t saved."
+#~ msgid "Read status wasn’t saved."
+#~ msgstr "Read status wasn’t saved."
+
+#: src/features/project/home/HomeChatRow.tsx
+msgid "Read status wasn’t saved. Open actions to retry."
+msgstr "Read status wasn’t saved. Open actions to retry."
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
@@ -2463,9 +2471,13 @@ msgstr "remaining"
 msgid "Remove"
 msgstr "Remove"
 
-#: src/features/project/home/HomeChatCard.tsx
-msgid "Remove {title} from favorites"
-msgstr "Remove {title} from favorites"
+#: src/features/project/home/HomeChatRow.tsx
+#~ msgid "Remove {title} from favorites"
+#~ msgstr "Remove {title} from favorites"
+
+#: src/features/project/home/HomeChatRow.tsx
+msgid "Remove from favorites"
+msgstr "Remove from favorites"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -2557,11 +2569,18 @@ msgstr "Resume where I left off on any device"
 #: src/features/account/SettingsDialog.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/home/HomeChatCard.tsx
 #: src/features/project/home/HomeFeed.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Retry"
 msgstr "Retry"
+
+#: src/features/project/home/HomeChatRow.tsx
+msgid "Retry mark read"
+msgstr "Retry mark read"
+
+#: src/features/project/home/HomeChatRow.tsx
+msgid "Retry mark unread"
+msgstr "Retry mark unread"
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
@@ -2984,7 +3003,7 @@ msgid "The {skillName} skill isn't available in this chat."
 msgstr "The {skillName} skill isn't available in this chat."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
 
@@ -3521,7 +3540,7 @@ msgstr "Work name"
 msgid "Work name is required"
 msgstr "Work name is required"
 
-#: src/features/project/home/HomeChatCard.tsx
+#: src/features/project/home/HomeChatRow.tsx
 msgid "Work unavailable"
 msgstr "Work unavailable"
 
@@ -3529,8 +3548,8 @@ msgstr "Work unavailable"
 msgid "Work: \"{workName}\""
 msgstr "Work: \"{workName}\""
 
-#. placeholder {0}: item.work?.title ?? t`Work unavailable`
-#: src/features/project/home/HomeChatCard.tsx
+#. placeholder {0}: item.work.title
+#: src/features/project/home/HomeChatRow.tsx
 msgid "Work: {0}"
 msgstr "Work: {0}"
 
