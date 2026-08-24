@@ -26,8 +26,8 @@ hook. Do not duplicate any of those concerns in the screen orchestrator.
 Home and ordinary Chat share the neutral, shadowless Composer surface. Its
 landing and pinned placements intentionally keep their own radius and input
 height; shared implementation does not mean identical geometry. Continue,
-Favorites, and Recent remain one compact vertical flow at every width.
-Compactness removes layout ceremony, never information or the actual 44 × 44px
+Favorite, and Recent chats remain one compact vertical flow at every width.
+Compactness removes layout ceremony, never information or the actual 44 × 44 px
 coarse-pointer boxes for Send and Retry controls.
 
 ## Server config and auth surface
