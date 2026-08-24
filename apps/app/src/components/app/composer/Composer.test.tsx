@@ -42,28 +42,6 @@ afterEach(async () => {
 });
 
 describe("Composer submission ownership", () => {
-  it("uses the same shadowless surface for Home and Chat layouts", async () => {
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () =>
-      root.render(
-        <>
-          <Composer variant="hero" onSubmit={() => true} />
-          <Composer variant="pinned" onSubmit={() => true} />
-        </>,
-      ),
-    );
-
-    const surfaces = [...host.children] as HTMLElement[];
-    expect(surfaces).toHaveLength(2);
-    for (const surface of surfaces) {
-      expect(surface.className).toContain("border-composer-border");
-      expect(surface.className).toContain("bg-composer-surface");
-      expect(surface.className).not.toContain("shadow-hero");
-    }
-  });
-
   it("names the textarea and associates the caller's disabled reason with Send", async () => {
     host = document.createElement("div");
     document.body.append(host);

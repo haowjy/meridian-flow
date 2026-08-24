@@ -113,7 +113,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     <div ref={movement.scrollRef} className="app-scroll main-pane">
       <div className="project-screen-column">
         <div className="home-composer-page">
-          <section className="home-composer-entry">
+          <section>
             <div className="home-composer-inner">
               <h1 className="home-composer-heading text-headline-section">
                 <Trans>What will you write next?</Trans>

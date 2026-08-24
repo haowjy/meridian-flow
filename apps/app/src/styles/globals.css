@@ -368,12 +368,6 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  padding-block-end: calc(1.5rem + env(safe-area-inset-bottom));
-}
-
-@utility home-composer-entry {
-  display: flex;
-  align-items: center;
 }
 
 @utility home-composer-inner {
@@ -390,16 +384,6 @@
     font-weight: var(--text-headline-hero--font-weight);
   }
 
-}
-
-@media (pointer: coarse) {
-  .home-composer-page button {
-    min-block-size: 44px;
-  }
-
-  .home-composer-page .composer-action {
-    min-inline-size: 44px;
-  }
 }
 
 @utility user-turn {

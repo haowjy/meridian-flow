@@ -101,7 +101,7 @@ export function HomeFeed({
           {feed.isFetchNextPageError ? (
             <div
               role="alert"
-              className="col-span-full flex items-center justify-center gap-2 text-sm text-muted-foreground"
+              className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
             >
               <Trans>More chats couldn’t load.</Trans>
               <Button variant="link" onClick={() => void feed.fetchNextPage()}>
@@ -152,7 +152,7 @@ function HomeState({
 }) {
   return (
     <div className="py-8 text-center" role={role}>
-      <h1 className="text-headline-section">{title}</h1>
+      <h2 className="text-headline-section">{title}</h2>
       <p className="mt-2 text-compact text-muted-foreground">{caption}</p>
       {action ? <div className="mt-5">{action}</div> : null}
     </div>

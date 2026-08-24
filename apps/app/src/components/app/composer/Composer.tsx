@@ -237,8 +237,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           aria-label={streaming ? t`Stop` : t`Send message`}
           aria-describedby={!streaming && submitDisabledReason ? disabledReasonId : undefined}
           className={cn(
-            "transition-all duration-200 ease-out",
-            "composer-action",
+            "transition-all duration-200 ease-out [@media(pointer:coarse)]:size-11",
             // Rounded square at rest (send) → circle while running (stop). Height
             // matches the toolbar's other controls (sm / 32px).
             streaming ? "rounded-full" : "rounded-field",

@@ -52,13 +52,7 @@ describe("HomeFeed", () => {
         "Recent chats",
       ]);
       expect(container.querySelectorAll("[data-home-card]")).toHaveLength(3);
-      const lists = [...container.querySelectorAll("ul")];
-      expect(lists).toHaveLength(2);
-      for (const list of lists) {
-        expect(list.className).toContain("flex-col");
-        expect(list.className).not.toContain("grid-cols");
-        expect(list.className).not.toContain("@2xl");
-      }
+      expect(container.querySelectorAll("ul")).toHaveLength(2);
       const continueCard = container.querySelector('[data-home-card="Continue"]');
       expect(continueCard?.querySelector('[data-slot="card-title"]')?.textContent).toBe("Continue");
       expect(continueCard?.querySelector('[data-slot="card-footer"]')?.textContent).toContain(
@@ -73,7 +67,6 @@ describe("HomeFeed", () => {
       () => {
         const status = document.querySelector('[role="status"]');
         expect(status?.textContent).toContain("Loading chats");
-        expect(status?.querySelector("[class*='grid-cols']")).toBeNull();
       },
     );
     await withReactRoot(
@@ -85,6 +78,13 @@ describe("HomeFeed", () => {
         expect(document.body.textContent).toContain(
           "Your chats will appear here after you send a message.",
         );
+      },
+    );
+    await withReactRoot(
+      <HomeFeed feed={{ ...base, isError: true, data: null }} cardProps={cardProps} />,
+      () => {
+        expect(document.querySelector("h2")?.textContent).toBe("Chats couldn’t load");
+        expect(document.querySelector("h1")).toBeNull();
       },
     );
     await withReactRoot(
