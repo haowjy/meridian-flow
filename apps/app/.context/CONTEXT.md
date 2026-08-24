@@ -19,9 +19,22 @@ for an open failure; manual read/unread failures remain with their initiating
 Home control.
 The Home feature keeps screen composition in `HomeScreen`, stable-ID creation,
 ambiguity reconciliation, and route-only retry in `useHomeFirstSendAttempt`,
-borderless two-line row semantics in `HomeChatRow`, list and section layout in `HomeFeed`, date policy in
-`home-activity-date`, and scroll/focus restoration in the favorite-movement
-hook. Do not duplicate any of those concerns in the screen orchestrator.
+borderless two-line row semantics in `HomeChatRow`, list and section layout plus
+cursor-observer lifecycle in `HomeFeed`, date policy in `home-activity-date`,
+and scroll/focus restoration in the favorite-movement hook. Do not duplicate
+any of those concerns in the screen orchestrator.
+
+A Home row is a borderless resume-list entry, not a card: title and Work share
+line one; preview and activity date share line two; overflow owns Favorite and
+has no standing-star counterpart. On fine pointers, a stable trailing slot
+shows date at rest and overflow on hover, focus-within, or an open menu; the
+swap never reflows text. On coarse/no-hover inputs, date remains inline and
+overflow stays visible with a 44 × 44 px target. Continue, Favorite, and Recent
+are exclusive one-column sections. `useHomeChatFeed` brands next-page identity
+from both the project query key and opaque cursor. `HomeFeed` retains only the
+last requested identity, and each observer callback must first prove its own
+effect is active: a stale disconnected observer can neither fetch nor overwrite
+that bounded guard.
 
 Home and ordinary Chat share the neutral, shadowless Composer surface. Its
 landing and pinned placements intentionally keep their own radius and input
