@@ -121,7 +121,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
               <p className="mt-2 text-body text-muted-foreground">
                 <Trans>Start with a scene, a question, or a problem to solve.</Trans>
               </p>
-              <div className="mt-4 @2xl/project-home:mt-6">
+              <div className="mt-4">
                 <Composer
                   variant="hero"
                   autoFocus={finePointer}

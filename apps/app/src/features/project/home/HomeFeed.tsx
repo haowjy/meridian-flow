@@ -1,4 +1,4 @@
-/** Complete Home feed presentation: sections, grids, pagination, and screen states. */
+/** Complete Home feed presentation: sections, lists, pagination, and screen states. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { HomeChatItem } from "@meridian/contracts/protocol";
@@ -67,7 +67,7 @@ export function HomeFeed({
     );
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <div className="flex min-h-9 items-center gap-4">
           <h2 className="text-headline-section">
@@ -86,10 +86,7 @@ export function HomeFeed({
           <h2 className="text-headline-section">
             <Trans>Recent chats</Trans>
           </h2>
-          <ul
-            className="grid grid-cols-1 gap-4 @2xl/project-home:grid-cols-2"
-            aria-busy={feed.isFetchingNextPage || undefined}
-          >
+          <ul className="flex flex-col gap-4" aria-busy={feed.isFetchingNextPage || undefined}>
             {recent.map((item) => (
               <li key={item.id}>
                 <HomeChatCard item={item} {...cardProps} />
@@ -132,7 +129,7 @@ function Section({
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-headline-section">{title}</h2>
-      <ul className="grid grid-cols-1 gap-4 @2xl/project-home:grid-cols-2">
+      <ul className="flex flex-col gap-4">
         {items.map((item) => (
           <li key={item.id}>
             <HomeChatCard item={item} {...cardProps} />
@@ -163,7 +160,7 @@ function HomeState({
 }
 function HomeLoading() {
   return (
-    <div className="flex flex-col gap-8" role="status" aria-busy="true">
+    <div className="flex flex-col gap-6" role="status" aria-busy="true">
       <span className="sr-only">
         <Trans>Loading chats</Trans>
       </span>
@@ -174,7 +171,7 @@ function HomeLoading() {
         </section>
         <section className="flex flex-col gap-3">
           <Skeleton className="h-7 w-36 motion-reduce:animate-none" />
-          <div className="grid grid-cols-1 gap-4 @2xl/project-home:grid-cols-2">
+          <div className="flex flex-col gap-4">
             {[0, 1, 2, 3].map((x) => (
               <Skeleton key={x} className="h-40 rounded-lg motion-reduce:animate-none" />
             ))}

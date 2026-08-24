@@ -1,5 +1,5 @@
 /**
- * Composer — shared message input presentation for landing and chat surfaces.
+ * Composer — shared message input presentation for Home and chat surfaces.
  * It owns textarea growth, keyboard submit/stop behaviour, and the send control
  * while callers own message dispatch and streaming state.
  */
@@ -38,12 +38,11 @@ export type ComposerProps = {
   streaming?: boolean;
   /** Placeholder shown while the draft is empty. */
   placeholder?: string;
-  /** Focus the textarea on mount (the Home hero uses this). */
+  /** Focus the textarea on mount (Home uses this for fine pointers). */
   autoFocus?: boolean;
   /**
-   * Visual treatment. `hero` is the prominent Home surface (large shadow, taller
-   * default height); `pinned` is the compact footer used by the ChatView in
-   * Phase 3. Behaviour is identical across variants.
+   * Layout treatment. Home uses the roomier `hero` input height while Chat uses
+   * `pinned`; both share the same ordinary, shadowless Composer surface.
    */
   variant?: "hero" | "pinned";
   /** Footer toolbar slot for caller-owned controls such as the agent selector. */
@@ -198,10 +197,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }
 
   const containerClassName = cn(
-    "border transition-[border-color] focus-within:border-border-focus",
-    variant === "hero"
-      ? "rounded-composer border-border bg-card shadow-hero"
-      : "rounded-composer-pinned border-composer-border bg-composer-surface",
+    "border border-composer-border bg-composer-surface transition-[border-color] focus-within:border-border-focus",
+    variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
   );
 
   return (

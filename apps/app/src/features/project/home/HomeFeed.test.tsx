@@ -43,7 +43,7 @@ const base = {
 };
 
 describe("HomeFeed", () => {
-  it("owns Continue, Favorite, Recent, grids, and the sentinel", async () => {
+  it("owns one-column Continue, Favorite, and Recent lists plus the sentinel", async () => {
     await withReactRoot(<HomeFeed feed={base} cardProps={cardProps} />, () => {
       const container = document.getElementById("root") as HTMLElement;
       expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
@@ -52,6 +52,13 @@ describe("HomeFeed", () => {
         "Recent chats",
       ]);
       expect(container.querySelectorAll("[data-home-card]")).toHaveLength(3);
+      const lists = [...container.querySelectorAll("ul")];
+      expect(lists).toHaveLength(2);
+      for (const list of lists) {
+        expect(list.className).toContain("flex-col");
+        expect(list.className).not.toContain("grid-cols");
+        expect(list.className).not.toContain("@2xl");
+      }
       const continueCard = container.querySelector('[data-home-card="Continue"]');
       expect(continueCard?.querySelector('[data-slot="card-title"]')?.textContent).toBe("Continue");
       expect(continueCard?.querySelector('[data-slot="card-footer"]')?.textContent).toContain(
@@ -63,8 +70,11 @@ describe("HomeFeed", () => {
   it("renders initial, empty, page-loading, and page-error recovery states", async () => {
     await withReactRoot(
       <HomeFeed feed={{ ...base, isPending: true }} cardProps={cardProps} />,
-      () =>
-        expect(document.querySelector('[role="status"]')?.textContent).toContain("Loading chats"),
+      () => {
+        const status = document.querySelector('[role="status"]');
+        expect(status?.textContent).toContain("Loading chats");
+        expect(status?.querySelector("[class*='grid-cols']")).toBeNull();
+      },
     );
     await withReactRoot(
       <HomeFeed
