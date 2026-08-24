@@ -87,6 +87,12 @@ SSR and the rotated descriptor on the client, while locale resolution happens
 inside the hook. Composer owns rotation; its `placeholder` prop remains the
 explicit override used by the Home hero.
 
+Home and ordinary Chat share a neutral, shadowless Composer surface. Their
+different placements intentionally retain different radius and input-height
+geometry: Home's entry placement is not the Chat footer. Do not add a
+Home-only shadow or flatten those placement-specific geometry differences in
+the name of shared implementation.
+
 The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript
 resize loop requires `field-sizing: fixed`. Keep that override inline:
 Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.

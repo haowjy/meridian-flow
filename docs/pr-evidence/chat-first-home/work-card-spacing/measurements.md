@@ -26,8 +26,10 @@ the phone shell and a true coarse-pointer browser context.
 | 390 × 844 | Book 1, title + goal | 358 × 86 px | 20 px | 21 px including border | 12 px |
 
 The menu's right inset is also 21 px including the 1 px border in both viewports. The
-coarse-pointer menu target remains 44 × 44 px through the existing `min-h-11`/`size-11`
-media rule; the fine-pointer Chromium probe rendered the standard 32 × 32 px icon button.
+coarse-pointer menu target remains 44 × 44 px through its `size-11` media rule; text
+Retry controls separately use both `min-h-11` and `min-w-11` to meet the same actual
+hit-box contract. The fine-pointer Chromium probe rendered the standard 32 × 32 px icon
+button.
 
 Both linked screenshots hold the `Book 1` current-Work mutation in flight for four
 seconds. At capture time the card reported `aria-busy="true"`, both sibling buttons

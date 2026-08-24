@@ -23,6 +23,13 @@ card semantics in `HomeChatCard`, collection layout in `HomeFeed`, date policy i
 `home-activity-date`, and scroll/focus restoration in the favorite-movement
 hook. Do not duplicate any of those concerns in the screen orchestrator.
 
+Home and ordinary Chat share the neutral, shadowless Composer surface. Its
+landing and pinned placements intentionally keep their own radius and input
+height; shared implementation does not mean identical geometry. Continue,
+Favorites, and Recent remain one compact vertical flow at every width.
+Compactness removes layout ceremony, never information or the actual 44 × 44px
+coarse-pointer boxes for Send and Retry controls.
+
 ## Server config and auth surface
 
 `src/server/config.ts` is the app server's config seam. It parses the
@@ -480,6 +487,11 @@ Before merging a change that touches visuals: grep the touched files for
 `#`-hex colors, `rgba(...)`, `rounded-[N]`, `text-[N]px`, `gap-[N]px`,
 `mt-[N]px`. Each one is either justified (genuinely surface-specific
 geometry) or it's a token that wants promoting.
+
+UI tests assert a behavior or semantic seam—roles, names, state, callback
+outcomes, accessible errors, or a public component boundary—not Tailwind
+styling vocabulary. Browser-measure real layout and hit boxes; JSDOM cannot
+establish geometry.
 
 ## Dev limitations (pilot)
 
