@@ -49,62 +49,144 @@ test("keeps centered Work geometry and preserves ordinary identity", async ({ pa
 
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });
-    const geometry = await page.locator("[data-home-row-layout]").evaluateAll((layouts) =>
-      layouts.map((layout) => {
-        const work = layout.querySelector("[data-home-row-work]");
-        if (!work) throw new Error("Home row lacks its Work lane");
-        const rowBox = layout.getBoundingClientRect();
-        const workBox = work.getBoundingClientRect();
-        return {
-          centerDelta: Math.abs((rowBox.left + rowBox.right - workBox.left - workBox.right) / 2),
-          workFontSize: getComputedStyle(work).fontSize,
-        };
-      }),
-    );
-    expect(geometry.every(({ centerDelta }) => centerDelta <= 0.5)).toBe(true);
-    expect(geometry.slice(0, 35).every(({ workFontSize }) => workFontSize === "12px")).toBe(true);
-    const realGeometry = await page.locator("[data-home-row]").evaluateAll((rows) =>
-      rows.map((row) => {
-        const title = row.querySelector("span[data-home-row-line]");
-        const date = row.querySelector("time");
-        const action = row.querySelector("[data-home-row-actions]");
-        if (!title || !date || !action) throw new Error("Incomplete Home row fixture");
-        const actionBox = action.getBoundingClientRect();
-        return {
-          titleFontSize: getComputedStyle(title).fontSize,
-          dateFontSize: getComputedStyle(date).fontSize,
-          actionWidth: actionBox.width,
-          actionHeight: actionBox.height,
-        };
-      }),
-    );
+    const realGeometry = await page
+      .locator("#real-rows [data-home-row-work]")
+      .evaluateAll((works) =>
+        works.map((work) => {
+          const row = work.closest("[data-home-row]");
+          if (!row) throw new Error("Home Work lane lacks its full row");
+          const title = row.querySelector("span[data-home-row-line]");
+          const preview = row.querySelector("[data-home-row-line] p");
+          const inlineDate = row.querySelector("[data-home-row-line] time");
+          const trailingDate = row.querySelector("[data-home-row-trailing] time");
+          const action = row.querySelector("[data-home-row-actions]");
+          if (!title || !preview || !inlineDate || !trailingDate || !action) {
+            throw new Error("Incomplete Home row fixture");
+          }
+          const rowBox = row.getBoundingClientRect();
+          const workBox = work.getBoundingClientRect();
+          const previewBox = preview.getBoundingClientRect();
+          const inlineDateBox = inlineDate.getBoundingClientRect();
+          const trailingDateBox = trailingDate.getBoundingClientRect();
+          const actionBox = action.getBoundingClientRect();
+          return {
+            centerDelta: Math.abs((rowBox.left + rowBox.right - workBox.left - workBox.right) / 2),
+            height: rowBox.height,
+            titleFontSize: getComputedStyle(title).fontSize,
+            previewFontSize: getComputedStyle(preview).fontSize,
+            workFontSize: getComputedStyle(work).fontSize,
+            inlineDateFontSize: getComputedStyle(inlineDate).fontSize,
+            trailingDateFontSize: getComputedStyle(trailingDate).fontSize,
+            trailingCenterDelta: {
+              x: Math.abs(
+                (trailingDateBox.left + trailingDateBox.right - actionBox.left - actionBox.right) /
+                  2,
+              ),
+              y: Math.abs(
+                (trailingDateBox.top + trailingDateBox.bottom - actionBox.top - actionBox.bottom) /
+                  2,
+              ),
+            },
+            previewDateGap: inlineDateBox.left - previewBox.right,
+            actionWidth: actionBox.width,
+            actionHeight: actionBox.height,
+            hasOverflow: row.scrollWidth > row.clientWidth,
+            titleFits: title.scrollWidth <= title.clientWidth,
+            workFits: work.scrollWidth <= work.clientWidth,
+          };
+        }),
+      );
+    expect(realGeometry.every(({ centerDelta }) => centerDelta <= 0.5)).toBe(true);
     expect(realGeometry.every(({ titleFontSize }) => titleFontSize === "13px")).toBe(true);
-    expect(realGeometry.every(({ dateFontSize }) => dateFontSize === "12px")).toBe(true);
+    expect(realGeometry.every(({ previewFontSize }) => previewFontSize === "13px")).toBe(true);
+    expect(realGeometry.every(({ workFontSize }) => workFontSize === "12px")).toBe(true);
+    expect(realGeometry.every(({ hasOverflow }) => !hasOverflow)).toBe(true);
+    expect(
+      realGeometry.every(
+        ({ inlineDateFontSize, trailingDateFontSize }) =>
+          inlineDateFontSize === "12px" && trailingDateFontSize === "12px",
+      ),
+    ).toBe(true);
+    expect(
+      realGeometry.slice(0, 34).every(({ titleFits, workFits }) => titleFits && workFits),
+    ).toBe(true);
+
+    const loadingGeometry = await page
+      .locator("#loading-rows [data-home-row-work]")
+      .evaluateAll((works) =>
+        works.map((work) => {
+          const row = work.closest("li[data-home-row-layout]");
+          if (!row) throw new Error("Loading Work lane lacks its full row");
+          const rowBox = row.getBoundingClientRect();
+          const workBox = work.getBoundingClientRect();
+          const rowStyle = getComputedStyle(row);
+          return {
+            centerDelta: Math.abs((rowBox.left + rowBox.right - workBox.left - workBox.right) / 2),
+            height:
+              rowBox.height -
+              Number.parseFloat(rowStyle.borderTopWidth) -
+              Number.parseFloat(rowStyle.borderBottomWidth),
+            hasOverflow: row.scrollWidth > row.clientWidth,
+          };
+        }),
+      );
+    expect(loadingGeometry.every(({ centerDelta }) => centerDelta <= 0.5)).toBe(true);
+    expect(loadingGeometry.every(({ hasOverflow }) => !hasOverflow)).toBe(true);
+
+    const expectedHeight = testInfo.project.name === "coarse-pointer" ? 56 : 53.59375;
+    expect(realGeometry.every(({ height }) => Math.abs(height - expectedHeight) <= 0.05)).toBe(
+      true,
+    );
+    expect(loadingGeometry.every(({ height }) => Math.abs(height - expectedHeight) <= 0.05)).toBe(
+      true,
+    );
+
     if (testInfo.project.name === "coarse-pointer") {
       expect(
         realGeometry.every(
           ({ actionWidth, actionHeight }) => actionWidth === 44 && actionHeight === 44,
         ),
       ).toBe(true);
+      expect(realGeometry.every(({ previewDateGap }) => previewDateGap === 8)).toBe(true);
+    } else {
+      expect(
+        realGeometry.every(
+          ({ trailingCenterDelta }) => trailingCenterDelta.x <= 0.5 && trailingCenterDelta.y <= 0.5,
+        ),
+      ).toBe(true);
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+
+    const longGeometry = await page.locator('[data-home-row="long"]').evaluate((row) => {
+      const nodes = [
+        row.querySelector("span[data-home-row-line]"),
+        row.querySelector("[data-home-row-work]"),
+        row.querySelector("[data-home-row-line] p"),
+      ];
+      if (nodes.some((node) => !node)) throw new Error("Incomplete long Home row fixture");
+      return nodes.map((node) => {
+        const element = node as HTMLElement;
+        const style = getComputedStyle(element);
+        return {
+          overflows: element.scrollWidth > element.clientWidth,
+          overflow: style.overflow,
+          textOverflow: style.textOverflow,
+          whiteSpace: style.whiteSpace,
+        };
+      });
+    });
+    expect(
+      longGeometry.every(
+        ({ overflows, overflow, textOverflow, whiteSpace }) =>
+          overflows &&
+          overflow === "hidden" &&
+          textOverflow === "ellipsis" &&
+          whiteSpace === "nowrap",
+      ),
+    ).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth === document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
   }
-
-  const ordinaryText = await page
-    .locator('[data-home-row^="ordinary-"] span[data-home-row-line]')
-    .evaluateAll((titles) =>
-      titles.map((title) => ({ client: title.clientWidth, scroll: title.scrollWidth })),
-    );
-  expect(ordinaryText.every(({ client, scroll }) => scroll <= client)).toBe(true);
-  const ordinaryWorks = await page
-    .locator('[data-home-row^="ordinary-"] [data-home-row-work]')
-    .evaluateAll((works) =>
-      works.map((work) => ({ client: work.clientWidth, scroll: work.scrollWidth })),
-    );
-  expect(ordinaryWorks.every(({ client, scroll }) => scroll <= client)).toBe(true);
-
-  const longTitle = page.locator('[data-home-row="long"] span[data-home-row-line]');
-  const longWork = page.locator('[data-home-row="long"] [data-home-row-work]');
-  expect(await longTitle.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
-  expect(await longWork.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
 });
