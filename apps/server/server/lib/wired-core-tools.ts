@@ -617,12 +617,12 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "show") {
           const [threads, drafts] = await Promise.all([
-            deps.threads.listByWork(thread.projectId, selected.id),
+            deps.threads.listRecentByWork(thread.projectId, selected.id, 10),
             deps.drafts.draftReview.list({ projectId: thread.projectId, workId: selected.id }),
           ]);
           return {
             work: modelWork(selected),
-            recentThreads: threads.slice(0, 10).map(({ title, updatedAt, status }) => ({
+            recentThreads: threads.map(({ title, updatedAt, status }) => ({
               title,
               updatedAt,
               status,

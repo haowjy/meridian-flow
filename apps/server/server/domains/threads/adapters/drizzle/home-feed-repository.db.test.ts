@@ -290,14 +290,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect([archived.continueChat, ...archived.favorites, ...archived.recent]).toHaveLength(1);
       await repos.threadUserState.update({ threadId, userId: USER_ID, isUnread: true });
-      const archivedWorkList = await repos.threads.listByWork(
-        PROJECT_ID,
-        "00000000-0000-4000-8000-000000000531",
-      );
-      const secondaryWorkList = await repos.threads.listByWork(
-        PROJECT_ID,
-        "00000000-0000-4000-8000-000000000532",
-      );
+      const workItems = async (workId: string) =>
+        (
+          await repos.workChatFeed.queryPage({
+            projectId: PROJECT_ID,
+            workId,
+            userId: USER_ID,
+            after: null,
+            limit: 5,
+          })
+        ).map(({ item }) => item);
+      const archivedWorkList = await workItems("00000000-0000-4000-8000-000000000531");
+      const secondaryWorkList = await workItems("00000000-0000-4000-8000-000000000532");
       expect(archivedWorkList).toHaveLength(1);
       expect(secondaryWorkList).toHaveLength(1);
       expect(archivedWorkList[0]?.attention).toBe("unread");

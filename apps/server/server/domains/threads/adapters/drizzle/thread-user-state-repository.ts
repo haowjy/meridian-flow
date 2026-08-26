@@ -1,5 +1,5 @@
 /** One-statement desired-state persistence and effective-attention projection. */
-import type { ProjectChatAttention } from "@meridian/contracts/threads";
+import type { ThreadAttention } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import type { ThreadUserStateRepository } from "../../ports/repositories.js";
@@ -11,7 +11,7 @@ type StateRow = {
   is_favorite: boolean;
   manually_unread: boolean;
   last_opened_at: Date | string | null;
-  attention: ProjectChatAttention;
+  attention: ThreadAttention;
 };
 
 function timestamp(value: Date | string | null): string | null {
@@ -24,7 +24,7 @@ async function readEffectiveAttention(
   db: DrizzleDatabase,
   threadId: string,
   userId: string,
-): Promise<ProjectChatAttention> {
+): Promise<ThreadAttention> {
   const rows = await currentDrizzleDb(db).execute(sql`
     WITH RECURSIVE lineage AS (
       SELECT tr.id, tr.parent_turn_id, tr.role, tr.status, tr.metadata,
@@ -57,8 +57,7 @@ async function readEffectiveAttention(
     WHERE t.id = ${threadId}::uuid
   `);
   return (
-    Array.from(rows as unknown as Iterable<{ attention: ProjectChatAttention }>)[0]?.attention ??
-    "none"
+    Array.from(rows as unknown as Iterable<{ attention: ThreadAttention }>)[0]?.attention ?? "none"
   );
 }
 

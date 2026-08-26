@@ -3,7 +3,6 @@ import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireWorkOwner } from "../../../../domains/projects/index.js";
 import {
-  decodeWorkChatFeedCursor,
   getWorkChatFeedPage,
   InvalidWorkChatFeedCursorError,
 } from "../../../../domains/threads/domain/work-chat-feed.js";
@@ -17,7 +16,6 @@ export default defineEventHandler(async (event) => {
   if (Array.isArray(cursor))
     throw createError({ statusCode: 400, statusMessage: "Invalid Work chat cursor" });
   try {
-    if (cursor !== undefined) decodeWorkChatFeedCursor(cursor);
     const work = await requireWorkOwner(
       { works: app.workRepo, projects: app.projectRepo },
       workId,

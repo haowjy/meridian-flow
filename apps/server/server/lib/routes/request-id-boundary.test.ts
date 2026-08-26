@@ -74,7 +74,7 @@ function event(
 ): TestEvent {
   const projectRepo = { findById: databaseCall, create: databaseCall };
   const repos = {
-    threads: { findById: databaseCall, listByWork: databaseCall },
+    threads: { findById: databaseCall, listRecentByWork: databaseCall },
     turns: { findById: databaseCall },
     threadWorks: {},
     blocks: {},

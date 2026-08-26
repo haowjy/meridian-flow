@@ -136,29 +136,29 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             return { previousWorkId: currentWorkId, changed: false };
           }
 
-          await activeDb
-            .delete(schema.threadWorks)
-            .where(
-              and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.workId, workId)),
-            );
           if (currentWorkId) {
             await activeDb
               .update(schema.threadWorks)
-              .set({ workId, projectId })
+              .set({ isPrimary: false })
               .where(
                 and(
                   eq(schema.threadWorks.threadId, threadId),
                   eq(schema.threadWorks.isPrimary, true),
                 ),
               );
-          } else {
-            await activeDb.insert(schema.threadWorks).values({
+          }
+          await activeDb
+            .insert(schema.threadWorks)
+            .values({
               threadId,
               workId,
               projectId,
               isPrimary: true,
+            })
+            .onConflictDoUpdate({
+              target: [schema.threadWorks.threadId, schema.threadWorks.workId],
+              set: { projectId, isPrimary: true },
             });
-          }
           return { previousWorkId: currentWorkId, changed: true };
         },
       );

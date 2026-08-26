@@ -57,6 +57,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       journalSeqForEventSeq: (seq) => seq,
     };
 
+    async function queryWorkItems(workId: string) {
+      const rows = await repos.workChatFeed.queryPage({
+        projectId: PROJECT_ID,
+        workId,
+        userId: USER_ID,
+        after: null,
+        limit: 50,
+      });
+      return rows.map(({ item }) => item);
+    }
+
     beforeEach(async () => {
       db = database.current;
       repos = createDrizzleRepositories(db);
@@ -122,7 +133,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("converges project/work lists and snapshot when user and assistant timestamps tie", async () => {
       const [projectThreads, workThreads, snapshot] = await Promise.all([
         repos.threads.listByProject(PROJECT_ID),
-        repos.threads.listByWork(PROJECT_ID, WORK_ID),
+        queryWorkItems(WORK_ID),
         buildThreadSnapshot(repos, emptyHub, { getRunningTurnId: () => null }, THREAD_ID, USER_ID),
       ]);
 
@@ -153,8 +164,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const [historicalRows, currentRows] = await Promise.all([
-        repos.threads.listByWork(PROJECT_ID, WORK_ID),
-        repos.threads.listByWork(PROJECT_ID, CURRENT_WORK_ID),
+        queryWorkItems(WORK_ID),
+        queryWorkItems(CURRENT_WORK_ID),
       ]);
 
       expect(historicalRows).toMatchObject([
@@ -168,8 +179,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(schema.threads)
         .set({ deletedAt: new Date() })
         .where(eq(schema.threads.id, THREAD_ID));
-      await expect(repos.threads.listByWork(PROJECT_ID, WORK_ID)).resolves.toEqual([]);
-      await expect(repos.threads.listByWork(PROJECT_ID, CURRENT_WORK_ID)).resolves.toEqual([]);
+      await expect(queryWorkItems(WORK_ID)).resolves.toEqual([]);
+      await expect(queryWorkItems(CURRENT_WORK_ID)).resolves.toEqual([]);
     });
 
     it("clears unread after the writer opens the thread", async () => {

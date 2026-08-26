@@ -1,6 +1,6 @@
 /** Wire-boundary validation for the unified thread user-state command. */
 import { describe, expect, it } from "vitest";
-import { updateThreadUserStateRequestSchema } from "./home-feed.js";
+import { updateThreadUserStateRequestSchema } from "./project-chat-feed.js";
 
 describe("updateThreadUserStateRequestSchema", () => {
   it("accepts either or both desired fields", () => {

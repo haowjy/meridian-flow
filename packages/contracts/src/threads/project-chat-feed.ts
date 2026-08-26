@@ -1,7 +1,6 @@
-/** Server-owned projection used by the chat-first project Home. */
+/** Neutral Project-chat projection shared by Home and Work feeds. */
 import { z } from "zod";
-
-export type ProjectChatAttention = "actionRequired" | "unread" | "none";
+import type { ThreadAttention } from "./projections.js";
 
 export interface ProjectChatItem {
   id: string;
@@ -9,7 +8,7 @@ export interface ProjectChatItem {
   work: { id: string; title: string } | null;
   lastMessagePreview: string | null;
   lastActivityAt: string;
-  attention: ProjectChatAttention;
+  attention: ThreadAttention;
   isFavorite: boolean;
 }
 
@@ -46,5 +45,5 @@ export interface UpdateThreadUserStateResponse {
   isFavorite: boolean;
   manuallyUnread: boolean;
   lastOpenedAt: string | null;
-  attention: ProjectChatAttention;
+  attention: ThreadAttention;
 }

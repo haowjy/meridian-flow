@@ -37,7 +37,7 @@ import type {
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
 import { ThreadWorkProjectMismatchError } from "../../ports/repositories.js";
-import { createInMemoryHomeStateAdapter } from "./home-state-adapter.js";
+import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
 // ledger are the money truth. Keep this local float helper out of billing
@@ -310,7 +310,8 @@ export function createInMemoryRepositories(
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
     },
-    async listByWork(projectId, workId) {
+    async listRecentByWork(projectId, workId, limit) {
+      const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
       const visible: Thread[] = [];
       for (const thread of threads.values()) {
         if (
@@ -321,11 +322,13 @@ export function createInMemoryRepositories(
           !thread.deletedAt &&
           (await threadInActiveProject(thread))
         ) {
-          visible.push(projectThread(thread));
+          visible.push(thread);
         }
       }
-      const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      return Promise.all(ordered.map(toListItem));
+      return visible
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+        .slice(0, boundedLimit)
+        .map(({ title, updatedAt, status }) => ({ title, updatedAt, status }));
     },
     async updateStatus(id, status) {
       const thread = threads.get(id);
@@ -468,8 +471,11 @@ export function createInMemoryRepositories(
       }
       const previousWorkId = primaryWorkIdForThread(threadId);
       if (previousWorkId === workId) return { previousWorkId, changed: false };
-      if (previousWorkId) threadWorks.delete(membershipKey(threadId, previousWorkId));
-      threadWorks.delete(membershipKey(threadId, workId));
+      if (previousWorkId) {
+        const previousKey = membershipKey(threadId, previousWorkId);
+        const previous = threadWorks.get(previousKey);
+        if (previous) threadWorks.set(previousKey, { ...previous, isPrimary: false });
+      }
       threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
       return { previousWorkId, changed: true };
     },
@@ -767,14 +773,16 @@ export function createInMemoryRepositories(
     },
   };
 
-  const { homeFeed, threadUserState, conversationalHead, projectChatItem } =
-    createInMemoryHomeStateAdapter(
+  const { homeFeed, workChatFeed, threadUserState, conversationalHead } =
+    createInMemoryProjectChatAdapter(
       {
         threads: () => threads.values(),
         turn: (id) => turns.get(id),
         blocks: () => blocks.values(),
         isProjectVisible: threadInActiveProject,
         primaryWorkId: primaryWorkIdForThread,
+        hasWorkMembership: (threadId, workId) =>
+          threadWorks.has(membershipKey(threadId, workId as WorkId)),
         work: async (id) => options.works?.findById(id) ?? null,
       },
       userStateByThreadUser,
@@ -783,33 +791,7 @@ export function createInMemoryRepositories(
   return {
     threads: threadRepo,
     homeFeed,
-    workChatFeed: {
-      async queryPage(input) {
-        const associated = [...threads.values()]
-          .filter(
-            (thread) =>
-              thread.projectId === input.projectId &&
-              !thread.deletedAt &&
-              [...threadWorks.values()].some(
-                (row) => row.threadId === thread.id && row.workId === input.workId,
-              ),
-          )
-          .filter(
-            (thread) =>
-              !input.after ||
-              thread.updatedAt < input.after.updatedAt ||
-              (thread.updatedAt === input.after.updatedAt && thread.id < input.after.threadId),
-          )
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
-          .slice(0, input.limit);
-        return Promise.all(
-          associated.map(async (thread) => ({
-            item: await projectChatItem(thread, input.userId),
-            updatedAt: thread.updatedAt.replace(/\.(\d{3})Z$/, ".$1000Z"),
-          })),
-        );
-      },
-    },
+    workChatFeed,
     threadUserState,
     threadWorks: threadWorksRepo,
     turns: turnRepo,

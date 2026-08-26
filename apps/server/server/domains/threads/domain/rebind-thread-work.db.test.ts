@@ -50,7 +50,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(() => db.close());
 
-    function rebindWith(workRepository: Pick<typeof works, "findById"> = works) {
+    function rebindWith(
+      workRepository: Pick<typeof works, "findById"> = works,
+      targetWorkId: typeof WORK_ID | typeof TARGET_WORK_ID = TARGET_WORK_ID,
+    ) {
       return threads.transaction(() =>
         rebindThreadWork(
           {
@@ -61,13 +64,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             threadId: THREAD_ID,
-            targetWorkId: TARGET_WORK_ID,
+            targetWorkId,
           },
         ),
       );
     }
 
-    it("atomically rebinds to an archived Work, preserves fallback and enqueues context", async () => {
+    it("retains both Work associations while atomically moving the sole primary", async () => {
       await expect(rebindWith()).resolves.toMatchObject({
         previousWorkId: WORK_ID,
         work: { id: TARGET_WORK_ID, status: "archived" },
@@ -76,6 +79,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: TARGET_WORK_ID,
       });
+      await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual(
+        expect.arrayContaining([
+          { workId: WORK_ID, isPrimary: false },
+          { workId: TARGET_WORK_ID, isPrimary: true },
+        ]),
+      );
+      const feeds = await Promise.all(
+        [WORK_ID, TARGET_WORK_ID].map((workId) =>
+          threads.workChatFeed.queryPage({
+            projectId: PROJECT_ID,
+            workId,
+            userId: USER_ID,
+            after: null,
+            limit: 2,
+          }),
+        ),
+      );
+      for (const feed of feeds) {
+        expect(feed).toHaveLength(1);
+        expect(feed[0]?.item).toMatchObject({
+          id: THREAD_ID,
+          work: { id: TARGET_WORK_ID, title: "Rebound target" },
+        });
+      }
+      await expect(rebindWith(works, WORK_ID)).resolves.toMatchObject({
+        previousWorkId: TARGET_WORK_ID,
+        work: { id: WORK_ID },
+        changed: true,
+      });
+      await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual(
+        expect.arrayContaining([
+          { workId: WORK_ID, isPrimary: true },
+          { workId: TARGET_WORK_ID, isPrimary: false },
+        ]),
+      );
+      for (const workId of [WORK_ID, TARGET_WORK_ID]) {
+        const feed = await threads.workChatFeed.queryPage({
+          projectId: PROJECT_ID,
+          workId,
+          userId: USER_ID,
+          after: null,
+          limit: 2,
+        });
+        expect(feed[0]?.item.work).toEqual({ id: WORK_ID, title: "Race target" });
+      }
       await expect(preferences.getNewChatFallbackWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
       await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
     });
