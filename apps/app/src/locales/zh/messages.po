@@ -112,8 +112,8 @@ msgstr ""
 #~ msgid "{0}"
 #~ msgstr ""
 
-#. placeholder {0}: item.title
-#: src/features/project/work/WorkDetailScreen.tsx
+#. placeholder {0}: chat.title
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "{0} added to favorites"
 msgstr ""
 
@@ -162,8 +162,8 @@ msgstr ""
 msgid "{0} moved to Recent chats"
 msgstr ""
 
-#. placeholder {0}: item.title
-#: src/features/project/work/WorkDetailScreen.tsx
+#. placeholder {0}: chat.title
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "{0} removed from favorites"
 msgstr ""
 
@@ -465,7 +465,7 @@ msgstr "用日常语言描述你的数据、方法或下一步即可。"
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Associated chats"
 msgstr ""
 
@@ -1410,7 +1410,7 @@ msgid "Favorite"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
 msgstr ""
 
@@ -1743,7 +1743,7 @@ msgstr ""
 msgid "Live view"
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Load more chats"
 msgstr ""
 
@@ -1814,6 +1814,7 @@ msgid "Loading Work…"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Loading…"
 msgstr ""
@@ -2058,7 +2059,7 @@ msgstr ""
 msgid "No billing activity yet."
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "No chats are associated with this Work."
 msgstr ""
 
@@ -2380,7 +2381,7 @@ msgid "Read file"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Read status wasn’t saved"
 msgstr ""
 

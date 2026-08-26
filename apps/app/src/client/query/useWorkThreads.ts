@@ -1,10 +1,10 @@
 /** Infinite, identity-guarded query for chats historically associated with one Work. */
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
 
 import { listWorkThreads } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
-
+import { createProjectChatFeedCacheController } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 import { useProjectChatCommands } from "./useProjectChatCommands";
 
@@ -17,10 +17,25 @@ export function useWorkThreads(projectId: string, workId: string, options?: { en
   const isPendingCreation = useIsProjectPendingCreation(projectId);
   const enabled = (options?.enabled ?? true) && !isPendingCreation;
   const commands = useProjectChatCommands(projectId);
+  const client = useQueryClient();
+  const controller = useMemo(
+    () => createProjectChatFeedCacheController(client, projectId),
+    [client, projectId],
+  );
   const query = useInfiniteQuery({
     queryKey: projectQueryKeys.workThreads(projectId, workId),
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam, signal }) => listWorkThreads(workId, { cursor: pageParam, signal }),
+    queryFn: async ({ pageParam, signal }) => {
+      const watermark = controller.beginRequest();
+      try {
+        return controller.mergeWork(
+          await listWorkThreads(workId, { cursor: pageParam, signal }),
+          watermark,
+        );
+      } finally {
+        controller.settleRequest(watermark);
+      }
+    },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 30_000,
     retry: false,

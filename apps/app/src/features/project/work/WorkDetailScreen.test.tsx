@@ -65,6 +65,8 @@ vi.mock("@tanstack/react-router", () => ({
   useBlocker: () => ({ status: "idle", proceed: vi.fn(), reset: vi.fn() }),
 }));
 vi.mock("@tanstack/react-virtual", () => ({
+  defaultRangeExtractor: ({ startIndex, endIndex }: { startIndex: number; endIndex: number }) =>
+    Array.from({ length: endIndex - startIndex + 1 }, (_, index) => startIndex + index),
   useVirtualizer: ({ count, scrollMargin = 0 }: { count: number; scrollMargin?: number }) => ({
     options: { scrollMargin },
     getTotalSize: () => count * 52,

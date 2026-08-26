@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ProjectChatItem, WorkChatFeedPage } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
@@ -91,6 +91,41 @@ describe("useWorkThreads", () => {
           refetchType: "none",
         });
         expect(client.getQueryState(unrelated)?.isInvalidated).toBe(false);
+      },
+      { drainMacrotask: true },
+    );
+    client.clear();
+  });
+
+  it("does not deliver an old Work page across project and Work identity transitions", async () => {
+    let resolveOld!: (value: WorkChatFeedPage) => void;
+    api.listWorkThreads
+      .mockReturnValueOnce(
+        new Promise<WorkChatFeedPage>((resolve) => {
+          resolveOld = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(page(["new"]));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let select!: (identity: { projectId: string; workId: string }) => void;
+    let current: ReturnType<typeof useWorkThreads> | null = null;
+    function Harness() {
+      const [identity, setIdentity] = useState({ projectId: "project-1", workId: "work-1" });
+      select = setIdentity;
+      current = useWorkThreads(identity.projectId, identity.workId);
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => select({ projectId: "project-2", workId: "work-2" }));
+        await flush();
+        expect(current?.threads?.map(({ id }) => id)).toEqual(["new"]);
+        resolveOld(page(["old"]));
+        await flush();
+        expect(current?.threads?.map(({ id }) => id)).toEqual(["new"]);
       },
       { drainMacrotask: true },
     );

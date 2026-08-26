@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { getProjectHomeFeed } from "@/client/api/projects-api";
-import { createHomeFeedCacheController, groupHomeFeed } from "./home-chat-feed-cache";
+import { createProjectChatFeedCacheController, groupHomeFeed } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 import { useProjectChatCommands } from "./useProjectChatCommands";
 
@@ -16,7 +16,7 @@ export function useHomeChatFeed(projectId: string) {
   const client = useQueryClient();
   const commands = useProjectChatCommands(projectId);
   const controller = useMemo(
-    () => createHomeFeedCacheController(client, projectId),
+    () => createProjectChatFeedCacheController(client, projectId),
     [client, projectId],
   );
   const query = useInfiniteQuery({

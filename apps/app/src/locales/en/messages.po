@@ -112,8 +112,8 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 #~ msgid "{0}"
 #~ msgstr "{0}"
 
-#. placeholder {0}: item.title
-#: src/features/project/work/WorkDetailScreen.tsx
+#. placeholder {0}: chat.title
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "{0} added to favorites"
 msgstr "{0} added to favorites"
 
@@ -162,8 +162,8 @@ msgstr "{0} moved to Favorite chats"
 msgid "{0} moved to Recent chats"
 msgstr "{0} moved to Recent chats"
 
-#. placeholder {0}: item.title
-#: src/features/project/work/WorkDetailScreen.tsx
+#. placeholder {0}: chat.title
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "{0} removed from favorites"
 msgstr "{0} removed from favorites"
 
@@ -465,7 +465,7 @@ msgstr "Ask about your data, methods, or the next step in your work—plain lang
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Associated chats"
 msgstr "Associated chats"
 
@@ -1410,7 +1410,7 @@ msgid "Favorite"
 msgstr "Favorite"
 
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
 msgstr "Favorite wasn’t saved"
 
@@ -1743,7 +1743,7 @@ msgstr "Live artifact view"
 msgid "Live view"
 msgstr "Live view"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Load more chats"
 msgstr "Load more chats"
 
@@ -1814,6 +1814,7 @@ msgid "Loading Work…"
 msgstr "Loading Work…"
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Loading…"
 msgstr "Loading…"
@@ -2058,7 +2059,7 @@ msgstr "No answer"
 msgid "No billing activity yet."
 msgstr "No billing activity yet."
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "No chats are associated with this Work."
 msgstr "No chats are associated with this Work."
 
@@ -2380,7 +2381,7 @@ msgid "Read file"
 msgstr "Read file"
 
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Read status wasn’t saved"
 msgstr "Read status wasn’t saved"
 

@@ -3,8 +3,7 @@ import type { UpdateThreadUserStateResponse } from "@meridian/contracts/protocol
 import type { QueryClient } from "@tanstack/react-query";
 
 import { updateThreadUserState } from "@/client/api/threads-api";
-import { createHomeFeedCacheController, type HomeStateField } from "./home-chat-feed-cache";
-import { createWorkChatFeedCacheCommand } from "./work-chat-feed-cache";
+import { createProjectChatFeedCacheController, type HomeStateField } from "./home-chat-feed-cache";
 
 export type ThreadUserStateOutcome =
   | { status: "success"; response: UpdateThreadUserStateResponse }
@@ -101,14 +100,7 @@ async function advanceThreadUserStateQueue(
   const entry = queue?.entries[0];
   if (!queue || !entry || queue.running) return;
   queue.running = true;
-  const cacheCommand = createHomeFeedCacheController(client, projectId).command(
-    threadId,
-    field,
-    entry.value,
-  );
-  const workCacheCommand = createWorkChatFeedCacheCommand(
-    client,
-    projectId,
+  const cacheCommand = createProjectChatFeedCacheController(client, projectId).command(
     threadId,
     field,
     entry.value,
@@ -122,14 +114,12 @@ async function advanceThreadUserStateQueue(
     // Let stale query observer delivery finish before applying the mutation response.
     await new Promise<void>((resolveTurn) => setTimeout(resolveTurn, 0));
     cacheCommand.succeed(response);
-    workCacheCommand.succeed(response);
     outcome = { status: "success", response };
   } catch (cause) {
     entry.lifecycles.forEach((item) => {
       item.beforeRollback?.();
     });
     cacheCommand.fail();
-    workCacheCommand.fail();
     outcome = {
       status: "error",
       error: cause instanceof Error ? cause : new Error(String(cause)),

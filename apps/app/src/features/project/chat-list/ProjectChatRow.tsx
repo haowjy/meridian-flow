@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { MoreHorizontal } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ThreadUserStateTransportState } from "@/client/query/thread-user-state-commands";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import {
@@ -26,6 +26,7 @@ export type ProjectChatRowProps = {
     id: string,
     field: "isFavorite" | "isUnread",
   ) => ThreadUserStateTransportState & { error: Error | null };
+  onActiveChange?: (id: string, active: boolean) => void;
 };
 
 export function ProjectChatRow({
@@ -35,9 +36,11 @@ export function ProjectChatRow({
   onFavorite,
   onUnread,
   getCommandState,
+  onActiveChange,
 }: ProjectChatRowProps) {
   const { i18n } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   const title = item.title || t`New chat`;
   const attentionId = item.attention !== "none" ? `home-attention-${item.id}` : undefined;
   const readErrorId = `home-read-error-${item.id}`;
@@ -54,11 +57,20 @@ export function ProjectChatRow({
   }).format(new Date(item.lastActivityAt));
   const workLabel = item.work?.title ? t`Work: ${item.work.title}` : t`Work unavailable`;
   const favoritePointer = useRef(false);
+  const active = menuOpen || focusWithin;
+  useEffect(() => {
+    onActiveChange?.(item.id, active);
+    return () => onActiveChange?.(item.id, false);
+  }, [active, item.id, onActiveChange]);
 
   return (
     <div
       data-home-row={item.id}
       className="group relative min-w-0 px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-muted/40"
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
+      }}
     >
       <button
         type="button"

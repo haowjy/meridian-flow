@@ -1,6 +1,7 @@
 import type { ProjectChatItem, WorkChatFeedPage } from "@meridian/contracts/protocol";
 import { type InfiniteData, QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
+import { createProjectChatFeedCacheController } from "./home-chat-feed-cache";
 import { createWorkChatFeedCacheCommand } from "./work-chat-feed-cache";
 
 const item: ProjectChatItem = {
@@ -73,5 +74,61 @@ describe("Work chat user-state cache", () => {
     expect(
       client.getQueryData<InfiniteData<WorkChatFeedPage>>(key)?.pages[0]?.items[0]?.attention,
     ).toBe("unread");
+  });
+
+  it("keeps an acknowledged field over a late Work page begun before the command", () => {
+    const client = new QueryClient();
+    const controller = createProjectChatFeedCacheController(client, "project-1");
+    const request = controller.beginRequest();
+    controller.command("thread-1", "isFavorite", true).succeed({
+      threadId: "thread-1",
+      isFavorite: true,
+      manuallyUnread: true,
+      lastOpenedAt: null,
+      attention: "unread",
+    });
+    expect(
+      controller.mergeWork(data().pages[0] ?? { items: [], nextCursor: null }, request).items[0],
+    ).toMatchObject({
+      isFavorite: true,
+      attention: "unread",
+    });
+    controller.settleRequest(request);
+  });
+
+  it("settles overlapping fields independently in both failure orderings", () => {
+    const key = ["projects", "project-1", "work-threads", "work-a"] as const;
+
+    const favoriteFails = new QueryClient();
+    favoriteFails.setQueryData(key, data());
+    const first = createProjectChatFeedCacheController(favoriteFails, "project-1");
+    const favorite = first.command("thread-1", "isFavorite", true);
+    first.command("thread-1", "isUnread", false).succeed({
+      threadId: "thread-1",
+      isFavorite: false,
+      manuallyUnread: false,
+      lastOpenedAt: null,
+      attention: "none",
+    });
+    favorite.fail();
+    expect(
+      favoriteFails.getQueryData<InfiniteData<WorkChatFeedPage>>(key)?.pages[0]?.items[0],
+    ).toMatchObject({ isFavorite: false, attention: "none" });
+
+    const unreadFails = new QueryClient();
+    unreadFails.setQueryData(key, data());
+    const second = createProjectChatFeedCacheController(unreadFails, "project-1");
+    const unread = second.command("thread-1", "isUnread", false);
+    second.command("thread-1", "isFavorite", true).succeed({
+      threadId: "thread-1",
+      isFavorite: true,
+      manuallyUnread: true,
+      lastOpenedAt: null,
+      attention: "unread",
+    });
+    unread.fail();
+    expect(
+      unreadFails.getQueryData<InfiniteData<WorkChatFeedPage>>(key)?.pages[0]?.items[0],
+    ).toMatchObject({ isFavorite: true, attention: "unread" });
   });
 });

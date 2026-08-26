@@ -1,6 +1,7 @@
 /** Deterministic browser adapters for mounting the production Work detail boundary. */
-import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
+import type { ProjectChatItem, ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
+import { useState } from "react";
 export const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
   parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
 export function Trans({ children }: { children: React.ReactNode }) {
@@ -27,17 +28,24 @@ export const useProjectContextTree = (_projectId: string, scheme: "scratch" | "u
   isError: false,
   refetch: () => undefined,
 });
-export const useWorkThreads = () => ({
-  threads: state().threads,
-  isError: false,
-  isFetchingNextPage: false,
-  nextPageIdentity: null,
-  fetchNextPageFor: () => undefined,
-  setFavorite: async () => true,
-  setUnread: async () => true,
-  getCommandState: () => ({ pending: false as const, error: null }),
-  refetch: () => undefined,
-});
+export const useWorkThreads = () => {
+  const [threads, setThreads] = useState(state().threads);
+  const [hasNextPage, setHasNextPage] = useState(Boolean(state().nextThreads?.length));
+  return {
+    threads,
+    isError: false,
+    isFetchingNextPage: false,
+    nextPageIdentity: hasNextPage ? "next-page" : null,
+    fetchNextPageFor: () => {
+      setThreads((current) => [...current, ...(state().nextThreads ?? [])]);
+      setHasNextPage(false);
+    },
+    setFavorite: async () => true,
+    setUnread: async () => true,
+    getCommandState: () => ({ pending: false as const, error: null }),
+    refetch: () => undefined,
+  };
+};
 export const useAnnouncement = () => ({
   announce: () => undefined,
   announceError: () => undefined,
@@ -68,15 +76,8 @@ declare global {
       }>;
       scratch: ProjectContextTreeDirectory;
       uploads: ProjectContextTreeDirectory;
-      threads: Array<{
-        id: string;
-        title: string;
-        work: { id: string; title: string } | null;
-        lastMessagePreview: string | null;
-        lastActivityAt: string;
-        attention: "none" | "unread" | "actionRequired";
-        isFavorite: boolean;
-      }>;
+      threads: ProjectChatItem[];
+      nextThreads?: ProjectChatItem[];
     };
   }
 }

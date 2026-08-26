@@ -1,7 +1,9 @@
 # Project Home — Boundary and layout contract
 
-`src/client/query/home-chat-feed-cache.ts` owns Home's QueryClient-scoped
-desired-state overlays, request watermarks, and authoritative reconciliation.
+`src/client/query/home-chat-feed-cache.ts` owns the project-scoped favorite/read
+overlays and request watermarks shared by Home and every Work chat-feed leaf.
+Home's featured/recent movement remains a Home-only projection inside that module;
+Work pages consume only field overlays and never inherit Home ordering policy.
 `src/client/query/thread-user-state-commands.ts` is the QueryClient-scoped
 transport, per-thread/per-field command serialization, and cache-command authority.
 `useHomeChatFeed` owns the Home query plus mounted-caller presentation and orchestration.

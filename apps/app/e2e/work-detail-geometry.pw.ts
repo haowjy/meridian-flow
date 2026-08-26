@@ -102,6 +102,17 @@ test("production Work detail contains long content at 390px", async ({ page }, t
             isFavorite: false,
           },
         ],
+        nextThreads: [
+          {
+            id: "thread-next",
+            title: "Next chat",
+            work: { id: "work-current", title: "Current Work" },
+            lastMessagePreview: "Preview",
+            lastActivityAt: "2026-08-16T00:00:00.000000Z",
+            attention: "none",
+            isFavorite: false,
+          },
+        ],
       };
     },
     { unbroken },
@@ -137,6 +148,75 @@ test("production Work detail contains long content at 390px", async ({ page }, t
   await page.getByRole("button", { name: unbroken, exact: true }).click();
   await expect(page.locator("textarea")).toBeVisible();
   expect(await scroll.evaluate((node) => node.scrollWidth)).toBe(390);
+});
+
+test("virtual range pins focused and open-menu rows across a loaded page boundary", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "fine-pointer", "desktop virtual focus contract");
+  await page.setContent(
+    '<style>html, body, #root { height: 100%; margin: 0; } .app-scroll { height: 100%; }</style><div id="root"></div>',
+  );
+  await page.evaluate(() => {
+    const work = {
+      id: "11111111-1111-4111-8111-111111111111",
+      projectId: "project-1",
+      createdByUserId: "user-1",
+      name: "Paged Work",
+      slug: "paged-work",
+      goal: null,
+      description: null,
+      status: "active" as const,
+      archivedAt: null,
+      deletedAt: null,
+      aiWriteMode: "draft" as const,
+      unpushedChangeCount: 0,
+      lastActivityAt: "2026-08-16T00:00:00Z",
+      createdAt: "2026-08-16T00:00:00Z",
+      updatedAt: "2026-08-16T00:00:00Z",
+    };
+    const chats = (start: number) =>
+      Array.from({ length: 50 }, (_, offset) => ({
+        id: `thread-${start + offset}`,
+        title: `Chat ${start + offset}`,
+        work: { id: work.id, title: work.name },
+        lastMessagePreview: `Preview ${start + offset}`,
+        lastActivityAt: "2026-08-16T00:00:00.000000Z",
+        attention: "none" as const,
+        isFavorite: false,
+      }));
+    window.__WORK_DETAIL_FIXTURE__ = {
+      work,
+      drafts: [],
+      scratch: { kind: "dir", name: "", path: "", children: [] },
+      uploads: { kind: "dir", name: "", path: "", children: [] },
+      threads: chats(0),
+      nextThreads: chats(50),
+    };
+  });
+  await page.addStyleTag({ content: compiledCss });
+  await page.addScriptTag({ content: compiledJs, type: "module" });
+  const scroll = page.locator(".app-scroll");
+  await page.getByRole("heading", { name: "Associated chats" }).scrollIntoViewIfNeeded();
+  const firstTrigger = page.getByRole("button", { name: "Actions for Chat 0" });
+  await firstTrigger.focus();
+  await scroll.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect(firstTrigger).toBeFocused();
+
+  await page.getByRole("button", { name: "Load more chats" }).click();
+  await expect(page.getByRole("button", { name: "Load more chats" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Actions for Chat 49" }).click();
+  await expect(page.getByRole("menuitem", { name: "Add to favorites" })).toBeVisible();
+  await scroll.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect
+    .poll(() => page.getByRole("menu").evaluate((menu) => menu.contains(document.activeElement)))
+    .toBe(true);
+  await expect(page.locator('[data-home-row="thread-49"]')).toHaveCount(1);
+  expect(await page.locator("[data-home-row]").count()).toBeLessThan(40);
 });
 
 for (const associationCount of [100, 500, 2_500]) {

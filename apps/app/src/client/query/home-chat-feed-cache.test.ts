@@ -2,7 +2,7 @@ import type { HomeChatFeedPage, ProjectChatItem } from "@meridian/contracts/prot
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
-  createHomeFeedCacheController,
+  createProjectChatFeedCacheController,
   groupHomeFeed,
   type HomeFeedData,
 } from "./home-chat-feed-cache";
@@ -48,7 +48,7 @@ describe("Home feed projection", () => {
       pageParams: [null],
       pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
     });
-    const controller = createHomeFeedCacheController(client, "p");
+    const controller = createProjectChatFeedCacheController(client, "p");
     const favorite = controller.command("a", "isFavorite", true);
     controller.command("a", "isUnread", false);
     favorite.fail();
@@ -64,7 +64,7 @@ describe("Home feed projection", () => {
       pageParams: [null],
       pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
     });
-    const controller = createHomeFeedCacheController(client, "p");
+    const controller = createProjectChatFeedCacheController(client, "p");
     const old = controller.command("a", "isFavorite", true);
     controller.command("a", "isFavorite", false);
     old.fail();
@@ -78,7 +78,11 @@ describe("Home feed projection", () => {
       pageParams: [null],
       pages: [page({ continueChat: action, favoriteChats: [] }, [])],
     });
-    const command = createHomeFeedCacheController(client, "p").command("a", "isUnread", value);
+    const command = createProjectChatFeedCacheController(client, "p").command(
+      "a",
+      "isUnread",
+      value,
+    );
     expect(
       groupHomeFeed(client.getQueryData(["projects", "p", "home-feed"])).continueChat?.attention,
     ).toBe("actionRequired");
@@ -95,7 +99,7 @@ describe("Home feed projection", () => {
       pageParams: [null],
       pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
     });
-    const controller = createHomeFeedCacheController(client, "p");
+    const controller = createProjectChatFeedCacheController(client, "p");
     const before = controller.beginRequest();
     const command = controller.command("a", "isFavorite", true);
     command.succeed(response("actionRequired", true));
@@ -118,7 +122,7 @@ describe("Home feed projection", () => {
       pageParams: [null],
       pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
     });
-    const controller = createHomeFeedCacheController(client, "p");
+    const controller = createProjectChatFeedCacheController(client, "p");
     controller.command("a", "isFavorite", true).fail();
     const request = controller.beginRequest();
     expect(
