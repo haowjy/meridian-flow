@@ -297,7 +297,7 @@ export interface ThreadDocumentRepository {
 export interface ThreadWorksRepository {
   /** When primary, demotes the old primary and upserts this membership atomically. */
   addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void>;
-  /** Replaces the primary membership in place under the thread row lock. */
+  /** Demotes the previous membership and promotes/upserts the target under the thread row lock. */
   rebindPrimary(
     threadId: ThreadId,
     workId: WorkId,

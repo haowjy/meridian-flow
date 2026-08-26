@@ -468,8 +468,11 @@ export function createInMemoryRepositories(
       }
       const previousWorkId = primaryWorkIdForThread(threadId);
       if (previousWorkId === workId) return { previousWorkId, changed: false };
-      if (previousWorkId) threadWorks.delete(membershipKey(threadId, previousWorkId));
-      threadWorks.delete(membershipKey(threadId, workId));
+      if (previousWorkId) {
+        const previousKey = membershipKey(threadId, previousWorkId);
+        const previous = threadWorks.get(previousKey);
+        if (previous) threadWorks.set(previousKey, { ...previous, isPrimary: false });
+      }
       threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
       return { previousWorkId, changed: true };
     },
