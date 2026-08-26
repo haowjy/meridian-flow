@@ -22,6 +22,7 @@ export {
   type RebindThreadWorkInput,
   rebindThreadWork,
 } from "./domain/rebind-thread-work.js";
+export { restoreThreadFromTrash } from "./domain/thread-trash-lifecycle.js";
 export {
   TurnStartConflictError,
   type TurnStartConflictReason,

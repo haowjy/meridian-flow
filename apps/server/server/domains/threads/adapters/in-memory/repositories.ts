@@ -174,8 +174,13 @@ export function createInMemoryRepositories(
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
 
-  function receivesWorkContextUpdate(thread: Thread | undefined): thread is Thread {
-    return !!thread && thread.status !== "archived";
+  async function receivesWorkContextUpdate(thread: Thread | undefined): Promise<boolean> {
+    return (
+      !!thread &&
+      !thread.deletedAt &&
+      thread.status !== "archived" &&
+      (await threadInActiveProject(thread))
+    );
   }
 
   function nextSlug(projectId: string, title: string | null | undefined): string | null {
@@ -801,29 +806,37 @@ export function createInMemoryRepositories(
     documentTouches: documentTouchRepo,
     workContextDeliveries: {
       async enqueueThread(threadId) {
-        if (receivesWorkContextUpdate(threads.get(threadId))) workContextDeliveries.add(threadId);
-        return workContextDeliveries.has(threadId) ? [threadId] : [];
+        if (!(await receivesWorkContextUpdate(threads.get(threadId)))) return [];
+        workContextDeliveries.add(threadId);
+        return [threadId];
       },
       async enqueueProject(projectId: ProjectId) {
+        const selected: ThreadId[] = [];
         for (const thread of threads.values()) {
-          if (thread.projectId === projectId && receivesWorkContextUpdate(thread)) {
+          if (thread.projectId === projectId && (await receivesWorkContextUpdate(thread))) {
             workContextDeliveries.add(thread.id);
+            selected.push(thread.id as ThreadId);
           }
         }
-        return [...workContextDeliveries].filter(
-          (threadId) => threads.get(threadId)?.projectId === projectId,
-        ) as ThreadId[];
+        return selected;
       },
       async listPendingThreadIds() {
-        return [...workContextDeliveries].filter((threadId) =>
-          receivesWorkContextUpdate(threads.get(threadId)),
-        ) as ThreadId[];
+        const selected: ThreadId[] = [];
+        for (const threadId of workContextDeliveries) {
+          if (await receivesWorkContextUpdate(threads.get(threadId))) {
+            selected.push(threadId as ThreadId);
+          }
+        }
+        return selected;
       },
       async isPending(threadId) {
         return workContextDeliveries.has(threadId);
       },
       async lockPending(threadId) {
-        return workContextDeliveries.has(threadId);
+        return (
+          workContextDeliveries.has(threadId) &&
+          (await receivesWorkContextUpdate(threads.get(threadId)))
+        );
       },
       async acknowledge(threadId) {
         workContextDeliveries.delete(threadId);

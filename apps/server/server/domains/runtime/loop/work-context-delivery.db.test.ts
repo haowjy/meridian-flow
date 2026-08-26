@@ -8,6 +8,8 @@ const USER_ID = "00000000-0000-4000-8000-000000000711";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000712";
 const THREAD_ID = "00000000-0000-4000-8000-000000000713";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000714";
+const HIDDEN_PROJECT_ID = "00000000-0000-4000-8000-000000000715";
+const HIDDEN_THREAD_ID = "00000000-0000-4000-8000-000000000716";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("Work-context delivery (postgres)", () => {});
@@ -26,6 +28,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleEventJournalReader,
       createDrizzleEventJournalWriter,
       createThreadEventHub,
+      restoreThreadFromTrash,
     } = await import("../../threads/index.js");
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
@@ -116,6 +119,131 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.workContextDeliveryObligations)
         .where(eq(schema.workContextDeliveryObligations.threadId, THREAD_ID));
       expect(row?.value).toBe(1);
+    });
+
+    it("uses canonical deliverability for direct enqueue, project enqueue, and pending selection", async () => {
+      await db.insert(schema.projects).values({
+        id: HIDDEN_PROJECT_ID,
+        userId: USER_ID,
+        name: "Deleted project",
+        slug: "deleted-project",
+        deletedAt: new Date(),
+      });
+      await db.insert(schema.threads).values({
+        id: HIDDEN_THREAD_ID,
+        projectId: HIDDEN_PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Project-hidden thread",
+        bakedSkillSlugs: null,
+      });
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
+      const repos = createDrizzleRepositories(db);
+
+      await expect(repos.workContextDeliveries.enqueueThread(OTHER_THREAD_ID)).resolves.toEqual([]);
+      await expect(repos.workContextDeliveries.enqueueThread(HIDDEN_THREAD_ID)).resolves.toEqual(
+        [],
+      );
+      await expect(repos.workContextDeliveries.enqueueProject(PROJECT_ID)).resolves.toEqual([
+        THREAD_ID,
+      ]);
+      await expect(repos.workContextDeliveries.enqueueProject(HIDDEN_PROJECT_ID)).resolves.toEqual(
+        [],
+      );
+      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([
+        THREAD_ID,
+      ]);
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
+      await expect(repos.workContextDeliveries.isPending(HIDDEN_THREAD_ID)).resolves.toBe(false);
+    });
+
+    it("parks obligations across thread deletion and resumes one current delivery after restore", async () => {
+      const repos = createDrizzleRepositories(db);
+      await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
+
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(true);
+      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([
+        THREAD_ID,
+      ]);
+      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
+      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
+      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
+      await expect(repos.turns.listByThread(OTHER_THREAD_ID)).resolves.toHaveLength(0);
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(true);
+
+      await restoreThreadFromTrash(
+        {
+          repos,
+          workContextDelivery: delivery(repos),
+        },
+        OTHER_THREAD_ID,
+      );
+      await delivery(repos).sweep();
+      await expect(repos.turns.listByThread(OTHER_THREAD_ID)).resolves.toHaveLength(1);
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
+    });
+
+    it("parks obligations across project deletion and resumes after restore", async () => {
+      const repos = createDrizzleRepositories(db);
+      await repos.workContextDeliveries.enqueueThread(THREAD_ID);
+      await db
+        .update(schema.projects)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.projects.id, PROJECT_ID));
+
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([]);
+      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
+      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
+      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(0);
+
+      await db
+        .update(schema.projects)
+        .set({ deletedAt: null })
+        .where(eq(schema.projects.id, PROJECT_ID));
+      await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
+      await delivery(repos).sweep();
+      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+    });
+
+    it("revalidates deliverability when deletion wins after pending selection", async () => {
+      const repos = createDrizzleRepositories(db);
+      await repos.workContextDeliveries.enqueueThread(THREAD_ID);
+      let entered!: () => void;
+      const claimEntered = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let release!: () => void;
+      const claimGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const runOwnership = {
+        async tryAcquire() {
+          entered();
+          await claimGate;
+          return { async release() {} };
+        },
+      };
+
+      const sweeping = delivery(repos, createDrizzleEventJournalWriter(db), runOwnership).sweep();
+      await claimEntered;
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, THREAD_ID));
+      release();
+
+      await expect(sweeping).resolves.toBeUndefined();
+      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(0);
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
     });
 
     it("survives recreation and repeated append failure, then atomically appends and acknowledges", async () => {
