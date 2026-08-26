@@ -1,4 +1,6 @@
 /** Real-Postgres regression for the multi-Work collection route (#452). */
+
+import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -186,6 +188,98 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: NEWER_WORK_ID, unpushedChangeCount: 2 },
         { id: OLDER_WORK_ID, unpushedChangeCount: 0 },
       ]);
+    });
+
+    it("uses the Work-led partial index for the grouped pending-draft query", async () => {
+      await database.current.insert(schema.contextSources).values({
+        id: SOURCE_ID,
+        projectId: PROJECT_ID,
+        name: "Catalog plan",
+        slug: "catalog-plan",
+        scope: "project",
+      });
+      await database.current.insert(schema.documents).values({
+        id: PENDING_DOCUMENT_A,
+        contextSourceId: SOURCE_ID,
+        name: "selected-plan-document",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await database.current
+        .insert(schema.documentBranches)
+        .values(branch("selected-plan-branch", PENDING_DOCUMENT_A, NEWER_WORK_ID));
+      await database.current
+        .insert(schema.branchWriteJournal)
+        .values(journal("selected-plan-branch"));
+      await database.current.execute(
+        sql.raw(`
+        INSERT INTO works (id, project_id, created_by_user_id, name, slug)
+        SELECT md5('plan-work-' || value)::uuid,
+               '${PROJECT_ID}'::uuid,
+               '${OWNER_ID}'::uuid,
+               'Plan Work ' || value,
+               'plan-work-' || value
+        FROM generate_series(1, 200) AS value;
+
+        INSERT INTO documents (id, context_source_id, name, extension, file_type)
+        SELECT md5('plan-document-' || value)::uuid,
+               '${SOURCE_ID}'::uuid,
+               'plan-document-' || value,
+               'md',
+               'markdown'
+        FROM generate_series(1, 4000) AS value;
+
+        INSERT INTO document_branches (
+          id, document_id, kind, work_id, state, state_vector
+        )
+        SELECT 'plan-branch-' || value,
+               md5('plan-document-' || value)::uuid,
+               'work_draft',
+               md5('plan-work-' || (1 + ((value - 1) % 200)))::uuid,
+               decode('', 'hex'),
+               decode('', 'hex')
+        FROM generate_series(1, 4000) AS value;
+
+        INSERT INTO branch_write_journal (
+          branch_id, generation, source, update_data, draft_base_update_seq, status
+        )
+        SELECT 'plan-branch-' || value,
+               1,
+               'agent',
+               decode('', 'hex'),
+               0,
+               'active'
+        FROM generate_series(1, 4000) AS value;
+
+        ANALYZE document_branches;
+        ANALYZE branch_write_journal;
+      `),
+      );
+
+      const result = await database.current.execute<{ "QUERY PLAN": unknown }>(
+        sql.raw(`
+        EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+        SELECT branches.work_id, count(DISTINCT branches.id)
+        FROM document_branches AS branches
+        INNER JOIN branch_write_journal AS journal
+          ON journal.branch_id = branches.id
+          AND journal.generation = branches.generation
+          AND journal.status IN ('active', 'rollback_pending')
+        WHERE branches.work_id IN ('${NEWER_WORK_ID}'::uuid, '${OLDER_WORK_ID}'::uuid)
+          AND branches.kind = 'work_draft'
+          AND branches.status = 'active'
+          AND (
+            journal.update_meta->>'kind' IS DISTINCT FROM 'manifest_membership'
+            OR jsonb_typeof(journal.update_meta->'documentId') IS DISTINCT FROM 'string'
+          )
+        GROUP BY branches.work_id
+      `),
+      );
+      const plan = result[0]?.["QUERY PLAN"];
+      const renderedPlan = JSON.stringify(plan);
+
+      expect(renderedPlan).toContain("document_branches_active_work_draft_by_work");
+      expect(renderedPlan).toMatch(/Index Cond[^}]*work_id/);
     });
 
     it("honors archived collection filtering without touching fallback preference", async () => {

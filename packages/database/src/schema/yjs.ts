@@ -83,6 +83,9 @@ export const documentBranches = pgTable(
     uniqueIndex("document_branches_active_work_draft")
       .on(table.documentId, table.workId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
+    index("document_branches_active_work_draft_by_work")
+      .on(table.workId, table.id, table.generation)
+      .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
     uniqueIndex("document_branches_active_thread_peer")
       .on(table.documentId, table.threadId)
       .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
