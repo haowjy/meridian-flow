@@ -26,11 +26,16 @@ any of those concerns in the screen orchestrator.
 
 A Home row is a borderless resume-list entry, not a card: title and Work share
 line one; preview and activity date share line two; overflow owns Favorite and
-has no standing-star counterpart. On fine pointers, a stable trailing slot
-shows date at rest and overflow on hover, focus-within, or an open menu; the
-swap never reflows text. On coarse/no-hover inputs, date remains inline and
-overflow stays visible with a 44 × 44 px target. Continue, Favorite, and Recent
-are exclusive one-column sections. `useHomeChatFeed` brands next-page identity
+has no standing-star counterpart. Real and loading rows use the same two-line
+layout: a flexible title/preview lane, a consistently centered Work lane, and a
+centered trailing lane. On fine pointers, the date and overflow share that
+trailing center; the action replaces the date on hover, focus-within, or an open
+menu without reflow. On coarse/no-hover inputs, the 44 × 44 px action remains
+in the trailing lane and the date follows the preview inline. Fine rows retain a
+53.6 px rhythm and coarse rows a 56 px rhythm (plus any separator); loading must
+match it. Home uses no colored attention dots: read/action state remains
+semantic and accessible without a visual status badge. Continue, Favorite, and
+Recent are exclusive one-column sections. `useHomeChatFeed` brands next-page identity
 from both the project query key and opaque cursor. `HomeFeed` retains only the
 last requested identity, and each observer callback must first prove its own
 effect is active: a stale disconnected observer can neither fetch nor overwrite
