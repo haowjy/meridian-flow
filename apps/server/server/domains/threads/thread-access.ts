@@ -9,14 +9,11 @@ import type { UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
 import { parseRequestId } from "../../shared/uuid.js";
+import type { ProjectRepository, WorkContextDelivery } from "../projects/index.js";
 import {
-  type ProjectRepository,
-  requireProjectOwner,
-  type WorkContextDelivery,
-} from "../projects/index.js";
-import {
-  restoreThreadFromTrashTransition,
+  type ThreadTrashState,
   ThreadTrashUnavailableError,
+  transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
 import type {
   ThreadRepositories,
@@ -52,33 +49,30 @@ export async function requireThreadOwner(
   return thread;
 }
 
-export interface RestoreOwnedThreadFromTrashDeps {
+export interface SetOwnedThreadTrashStateDeps {
   repos: Pick<ThreadRepositories, "threads" | "transaction">;
   projects: Pick<ProjectRepository, "findById">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
 }
 
-/** Authenticated adapter that owns trash authorization and the post-commit wake. */
-export async function restoreOwnedThreadFromTrash(
-  deps: RestoreOwnedThreadFromTrashDeps,
+/** Authenticated adapter for the serialized trash command and restore wake. */
+export async function setOwnedThreadTrashState(
+  deps: SetOwnedThreadTrashStateDeps,
   threadId: string,
   userId: UserId,
+  target: ThreadTrashState,
 ): Promise<Thread> {
   const parsedThreadId = parseRequestId(threadId);
   if (!parsedThreadId) {
     throwHttpInterruptForStatus(400, "`threadId` must be a canonical UUID");
   }
-  const projectId = await deps.repos.threads.findProjectIdByIdIncludingDeleted(parsedThreadId);
-  if (!projectId) throwHttpInterruptForStatus(404, "Thread not found");
-  await requireProjectOwner({ projects: deps.projects }, projectId, userId);
-
-  let transition: Awaited<ReturnType<typeof restoreThreadFromTrashTransition>>;
+  let transition: Awaited<ReturnType<typeof transitionThreadTrash>>;
   try {
-    transition = await restoreThreadFromTrashTransition(deps, {
+    transition = await transitionThreadTrash(deps, {
       threadId: parsedThreadId,
       userId,
-      expectedProjectId: projectId,
+      target,
     });
   } catch (cause) {
     if (cause instanceof ThreadTrashUnavailableError) {
@@ -86,6 +80,24 @@ export async function restoreOwnedThreadFromTrash(
     }
     throw cause;
   }
-  if (transition.changed) await deps.workContextDelivery.deliverAfterCommit(parsedThreadId);
+  if (transition.changed && target === "visible") {
+    await deps.workContextDelivery.deliverAfterCommit(parsedThreadId);
+  }
   return transition.thread;
+}
+
+export function restoreOwnedThreadFromTrash(
+  deps: SetOwnedThreadTrashStateDeps,
+  threadId: string,
+  userId: UserId,
+): Promise<Thread> {
+  return setOwnedThreadTrashState(deps, threadId, userId, "visible");
+}
+
+export function deleteOwnedThreadToTrash(
+  deps: SetOwnedThreadTrashStateDeps,
+  threadId: string,
+  userId: UserId,
+): Promise<Thread> {
+  return setOwnedThreadTrashState(deps, threadId, userId, "deleted");
 }

@@ -408,25 +408,18 @@ export function createInMemoryRepositories(
         updatedAt: toIsoString(new Date()),
       });
     },
-    async softDelete(id) {
+    async setTrashState(id, target) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (thread.deletedAt) return projectThread(thread);
+      if ((target === "deleted") === Boolean(thread.deletedAt)) {
+        throw new Error(`Thread trash transition requires a changed locked row: ${id}`);
+      }
       const now = toIsoString(new Date());
       const updated = {
         ...thread,
-        deletedAt: now,
+        deletedAt: target === "deleted" ? now : null,
         updatedAt: now,
       };
-      threads.set(id, updated);
-      return projectThread(updated);
-    },
-    async restore(id) {
-      const thread = threads.get(id);
-      if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (!thread.deletedAt)
-        throw new Error(`Thread restore requires a deleted lifecycle row: ${id}`);
-      const updated = { ...thread, deletedAt: null, updatedAt: toIsoString(new Date()) };
       threads.set(id, updated);
       return projectThread(updated);
     },

@@ -431,41 +431,21 @@ export function createDrizzleThreadRepository(
     async updateCost(id, deltaCostUsd, turnCountIncrement = 0) {
       await writeThreadCostUpdate(db, id, deltaCostUsd, turnCountIncrement);
     },
-    async softDelete(id) {
-      const [existingRow] = await currentDrizzleDb(db)
-        .select()
-        .from(schema.threads)
-        .where(eq(schema.threads.id, id));
-      if (!existingRow) throw new Error(`Thread not found: ${id}`);
-      if (existingRow.deletedAt) {
-        const primary = await currentDrizzleDb(db)
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-          .limit(1);
-        return mapThread({ ...existingRow, workId: primary[0]?.workId ?? null });
-      }
-      const now = new Date();
+    async setTrashState(id, target) {
+      const deletedAt = target === "deleted" ? new Date() : null;
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
-        .set({ deletedAt: now, updatedAt: now })
-        .where(eq(schema.threads.id, id))
+        .set({ deletedAt, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.threads.id, id),
+            target === "deleted"
+              ? isNull(schema.threads.deletedAt)
+              : isNotNull(schema.threads.deletedAt),
+          ),
+        )
         .returning();
-      if (!row) throw new Error(`Thread not found: ${id}`);
-      const primary = await currentDrizzleDb(db)
-        .select({ workId: schema.threadWorks.workId })
-        .from(schema.threadWorks)
-        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-        .limit(1);
-      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-    },
-    async restore(id) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({ deletedAt: null, updatedAt: new Date() })
-        .where(and(eq(schema.threads.id, id), isNotNull(schema.threads.deletedAt)))
-        .returning();
-      if (!row) throw new Error(`Thread restore requires a deleted lifecycle row: ${id}`);
+      if (!row) throw new Error(`Thread trash transition requires a changed locked row: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
         .from(schema.threadWorks)

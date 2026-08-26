@@ -174,13 +174,14 @@ contract shapes.
 - **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen)
   when `bakedSkillSlugs` is non-null. Before bake, `composedSystemPrompt` may
   carry a raw pre-bake system prompt.
-- Soft-delete (`deletedAt`) is idempotent for both threads and the
-  `requireThreadOwner` gate treats soft-deleted threads as 404.
-- **Trash restore is a serialized transition.** The authenticated boundary
-  resolves the including-deleted thread's project for concealment, then locks
-  and rereads the thread inside the mutation transaction. Only a real
-  `deleted -> visible` transition enqueues its targeted Work-context obligation;
-  retry and concurrent no-ops never wake delivery.
+- The owner-aware trash command is the sole thread soft-delete/restore boundary.
+  It locks the including-deleted thread row, then revalidates thread and live
+  project ownership before deciding either desired state. Missing and concealed
+  threads have the same thread-scoped not-found result.
+- **The complete trash command set is serialized.** Delete and restore decide
+  changed/no-op from the locked row. Only a real `deleted -> visible` transition
+  enqueues its targeted Work-context obligation; retries, concurrent no-ops, and
+  deletion never wake delivery.
 - A thread receives its project-unique slug when created with its first
   non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
   Collisions use `-2`, `-3`, and later mutations never regenerate the handle;

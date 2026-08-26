@@ -1,4 +1,6 @@
 /** PostgreSQL repository and lifecycle coverage for Work-context delivery obligations. */
+import { setTimeout as delay } from "node:timers/promises";
+import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -23,9 +25,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { count, eq } = await import("drizzle-orm");
     const { createDrizzleProjectRepository } = await import("../../projects/index.js");
-    const { createDrizzleEventJournalWriter, restoreOwnedThreadFromTrash } = await import(
-      "../../threads/index.js"
-    );
+    const {
+      createDrizzleEventJournalWriter,
+      deleteOwnedThreadToTrash,
+      restoreOwnedThreadFromTrash,
+    } = await import("../../threads/index.js");
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createWorkContextDelivery } = await import("./work-context-delivery.js");
@@ -35,6 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
+    const control = postgres(DATABASE_URL, { max: 1 });
     const sharedRunOwnership = createDrizzleThreadRunOwnership(db);
     const projects = createDrizzleProjectRepository({ db });
 
@@ -66,8 +71,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     afterAll(async () => {
+      await control.end();
       await db.close();
     });
+
+    async function waitForLock(waitEvent: string): Promise<void> {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const [row] = await control<{ count: string }[]>`
+          SELECT count(*)::text AS count
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event = ${waitEvent}
+        `;
+        if (Number(row?.count ?? 0) >= 1) return;
+        await delay(10);
+      }
+      throw new Error(`Timed out waiting for a PostgreSQL ${waitEvent} lock`);
+    }
 
     function delivery(
       repos: ReturnType<typeof createDrizzleRepositories>,
@@ -237,7 +257,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("makes sequential restore retries one visibility transition and one delivery", async () => {
       const repos = createDrizzleRepositories(db);
-      await repos.threads.softDelete(OTHER_THREAD_ID);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
       const restore = () =>
         restoreOwnedThreadFromTrash(
           {
@@ -260,7 +283,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("serializes concurrent restores into one visibility transition and one delivery", async () => {
       const first = createDrizzleRepositories(db);
       const second = createDrizzleRepositories(db);
-      await first.threads.softDelete(OTHER_THREAD_ID);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
       const restore = (repos: typeof first) =>
         restoreOwnedThreadFromTrash(
           {
@@ -279,9 +305,91 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(first.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
     });
 
+    it("serializes delete after an in-flight restore without losing delete intent", async () => {
+      const restoringRepos = createDrizzleRepositories(db);
+      const deletingRepos = createDrizzleRepositories(db);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
+
+      let announceRestoreLock!: () => void;
+      let releaseRestore!: () => void;
+      const restoreHasLock = new Promise<void>((resolve) => {
+        announceRestoreLock = resolve;
+      });
+      const restoreGate = new Promise<void>((resolve) => {
+        releaseRestore = resolve;
+      });
+
+      const restoring = restoreOwnedThreadFromTrash(
+        {
+          repos: restoringRepos,
+          projects,
+          obligations: {
+            async enqueueThread(threadId) {
+              const result = await restoringRepos.workContextDeliveries.enqueueThread(threadId);
+              announceRestoreLock();
+              await restoreGate;
+              return result;
+            },
+          },
+          workContextDelivery: delivery(restoringRepos),
+        },
+        OTHER_THREAD_ID,
+        USER_ID,
+      );
+
+      await restoreHasLock;
+      const deleting = deleteOwnedThreadToTrash(
+        {
+          repos: deletingRepos,
+          projects,
+          obligations: deletingRepos.workContextDeliveries,
+          workContextDelivery: delivery(deletingRepos),
+        },
+        OTHER_THREAD_ID,
+        USER_ID,
+      );
+
+      try {
+        await waitForLock("transactionid");
+      } finally {
+        releaseRestore();
+      }
+
+      await expect(restoring).resolves.toMatchObject({ deletedAt: null });
+      await expect(deleting).resolves.toMatchObject({ deletedAt: expect.any(String) });
+      await expect(
+        deletingRepos.threads.lockByIdIncludingDeleted(OTHER_THREAD_ID),
+      ).resolves.toMatchObject({ deletedAt: expect.any(String) });
+    });
+
+    it("applies sequential delete and restore desired states idempotently", async () => {
+      const repos = createDrizzleRepositories(db);
+      const deps = {
+        repos,
+        projects,
+        obligations: repos.workContextDeliveries,
+        workContextDelivery: delivery(repos),
+      };
+
+      await deleteOwnedThreadToTrash(deps, OTHER_THREAD_ID, USER_ID);
+      await restoreOwnedThreadFromTrash(deps, OTHER_THREAD_ID, USER_ID);
+      await deleteOwnedThreadToTrash(deps, OTHER_THREAD_ID, USER_ID);
+      await deleteOwnedThreadToTrash(deps, OTHER_THREAD_ID, USER_ID);
+
+      await expect(repos.threads.lockByIdIncludingDeleted(OTHER_THREAD_ID)).resolves.toMatchObject({
+        deletedAt: expect.any(String),
+      });
+    });
+
     it("conceals a deleted thread from non-owners without changing lifecycle state", async () => {
       const repos = createDrizzleRepositories(db);
-      await repos.threads.softDelete(OTHER_THREAD_ID);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
 
       await expect(
         restoreOwnedThreadFromTrash(
@@ -294,7 +402,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           OTHER_THREAD_ID,
           OTHER_USER_ID,
         ),
-      ).rejects.toThrow("Project not found");
+      ).rejects.toThrow("Thread not found");
+
+      await expect(
+        restoreOwnedThreadFromTrash(
+          {
+            repos,
+            projects,
+            obligations: repos.workContextDeliveries,
+            workContextDelivery: delivery(repos),
+          },
+          "00000000-0000-4000-8000-000000000799",
+          OTHER_USER_ID,
+        ),
+      ).rejects.toThrow("Thread not found");
 
       await expect(repos.threads.lockByIdIncludingDeleted(OTHER_THREAD_ID)).resolves.toMatchObject({
         deletedAt: expect.any(String),
@@ -304,7 +425,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls deletion and obligation state back when restore enqueue fails", async () => {
       const repos = createDrizzleRepositories(db);
-      await repos.threads.softDelete(OTHER_THREAD_ID);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
 
       await expect(
         restoreOwnedThreadFromTrash(

@@ -23,9 +23,10 @@ export {
   rebindThreadWork,
 } from "./domain/rebind-thread-work.js";
 export {
-  type RestoreThreadFromTrashTransition,
-  restoreThreadFromTrashTransition,
+  type ThreadTrashState,
+  type ThreadTrashTransition,
   ThreadTrashUnavailableError,
+  transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
 export {
   TurnStartConflictError,
@@ -34,9 +35,11 @@ export {
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export {
-  type RestoreOwnedThreadFromTrashDeps,
+  deleteOwnedThreadToTrash,
   requireThreadOwner,
   restoreOwnedThreadFromTrash,
+  type SetOwnedThreadTrashStateDeps,
+  setOwnedThreadTrashState,
 } from "./thread-access.js";
 export {
   createThreadEventHub,

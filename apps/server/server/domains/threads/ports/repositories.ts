@@ -158,10 +158,8 @@ export interface ThreadRepository {
   //     updateStatus) so a chat can be filed away and brought back.
   //   - exclude status:"archived" from listByProject / Work feeds by default, and
   //     add a listing path for the "Archived" view to read them back.
-  /** Sets `deletedAt`; idempotent if already soft-deleted. */
-  softDelete(id: ThreadId): Promise<Thread>;
-  /** Clears `deletedAt`; lifecycle commands must first hold `lockByIdIncludingDeleted`. */
-  restore(id: ThreadId): Promise<Thread>;
+  /** Applies a changed trash state; lifecycle commands must first hold the thread row lock. */
+  setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
 }
 
 export interface WorkThreadSummary {
