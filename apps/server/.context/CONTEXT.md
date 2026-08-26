@@ -55,7 +55,7 @@ The shipped route surface covers:
 - Agent and skill definition reads, saves, revision lists, revision restores,
   restore-original, and agent skill-link patching.
 - Package preview/apply, update check/apply, and export.
-- Global thread list/create, snapshot, delete, turn cancel, model-request debug,
+- Global thread list/create, snapshot, delete/restore, turn cancel, model-request debug,
   turn-context preview, and owner-gated favorite/read desired-state mutation.
 - Authenticated `PUT /api/threads/:threadId/work` explicitly rebinds an idle
   owned thread through the shared thread-domain transition while holding the

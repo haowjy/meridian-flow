@@ -1,4 +1,4 @@
-/** PostgreSQL coverage for durable, atomic Work-context delivery obligations. */
+/** PostgreSQL coverage for runtime Work-context claims and model-visible delivery. */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -10,9 +10,9 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000713";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000714";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("Work-context delivery (postgres)", () => {});
+  describe.skip("Work-context runtime delivery (postgres)", () => {});
 } else {
-  describe("Work-context delivery (postgres)", async () => {
+  describe("Work-context runtime delivery (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
@@ -21,7 +21,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { count, eq } = await import("drizzle-orm");
     const { createWork } = await import("../../projects/create-work.js");
     const { createDrizzleProjectWorkRepository } = await import("../../projects/index.js");
-    const { restoreWork } = await import("../../projects/delete-work.js");
     const {
       createDrizzleEventJournalReader,
       createDrizzleEventJournalWriter,
@@ -97,25 +96,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     }
 
-    it("rolls enqueue back with its transaction and coalesces repeated requests", async () => {
+    it("revalidates deliverability when deletion wins after pending selection", async () => {
       const repos = createDrizzleRepositories(db);
-      await expect(
-        repos.transaction(async () => {
-          await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-          throw new Error("business mutation rolled back");
-        }),
-      ).rejects.toThrow("business mutation rolled back");
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
-
-      await repos.transaction(async () => {
-        await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-        await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
+      await repos.workContextDeliveries.enqueueThread(THREAD_ID);
+      let entered!: () => void;
+      const claimEntered = new Promise<void>((resolve) => {
+        entered = resolve;
       });
-      const [row] = await db
-        .select({ value: count() })
-        .from(schema.workContextDeliveryObligations)
-        .where(eq(schema.workContextDeliveryObligations.threadId, THREAD_ID));
-      expect(row?.value).toBe(1);
+      let release!: () => void;
+      const claimGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const runOwnership = {
+        async tryAcquire() {
+          entered();
+          await claimGate;
+          return { async release() {} };
+        },
+      };
+
+      const sweeping = delivery(repos, createDrizzleEventJournalWriter(db), runOwnership).sweep();
+      await claimEntered;
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, THREAD_ID));
+      release();
+
+      await expect(sweeping).resolves.toBeUndefined();
+      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(0);
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
     });
 
     it("survives recreation and repeated append failure, then atomically appends and acknowledges", async () => {
@@ -339,68 +350,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(firstResult.block.id).toBe(secondResult.block.id);
       await expect(first.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
       await expect(first.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
-    });
-
-    it("serializes restore and enqueues only the transition that actually restores", async () => {
-      const works = createDrizzleProjectWorkRepository({
-        db,
-        hasUnreviewedDraft: async () => false,
-      });
-      const work = await works.create({
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Restorable",
-      });
-      await works.softDelete(work.id);
-      const repos = createDrizzleRepositories(db);
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let firstEnqueues = 0;
-      let secondEnqueues = 0;
-      let entered!: () => void;
-      const firstEntered = new Promise<void>((resolve) => {
-        entered = resolve;
-      });
-
-      const first = restoreWork(
-        {
-          works,
-          workContextDelivery: {
-            async projectChanged(projectId) {
-              firstEnqueues += 1;
-              await repos.workContextDeliveries.enqueueProject(projectId);
-              entered();
-              await gate;
-            },
-          },
-        },
-        work.id,
-      );
-      await firstEntered;
-      const second = restoreWork(
-        {
-          works,
-          workContextDelivery: {
-            async projectChanged(projectId) {
-              secondEnqueues += 1;
-              await repos.workContextDeliveries.enqueueProject(projectId);
-            },
-          },
-        },
-        work.id,
-      );
-      const secondState = await Promise.race([
-        second.then(() => "completed"),
-        new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 30)),
-      ]);
-      expect(secondState).toBe("blocked");
-      release();
-      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
-      expect(firstEnqueues).toBe(1);
-      expect(secondEnqueues).toBe(0);
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
     });
   });
 }

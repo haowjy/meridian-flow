@@ -174,7 +174,10 @@ facet.
   transaction, whether or not the first prompt has frozen. Delivery renders
   current state under the thread-head transition and deletes the obligation only
   in the transaction that commits the update and its typed
-  `work_context.changed` journal event. Direct writer mutations conservatively
+  `work_context.changed` journal event. A thread is deliverable only while it,
+  its project, and its non-archived status are visible. Soft deletion and archive
+  park the raw obligation without acknowledging it; restore coalesces a targeted
+  refresh, and hard deletion removes it by cascade. Direct writer mutations conservatively
   finish through one non-throwing `deliverAfterCommit`; in-run tool dispatch is
   the sole `deliverNow` owner. A
   post-commit wake and the startup/poll sweep drain idle obligations without

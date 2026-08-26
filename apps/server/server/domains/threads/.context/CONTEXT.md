@@ -79,6 +79,7 @@ instead of the N:1 `threads.workId` column.
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind demotes the old membership and promotes/upserts the target, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, and targeted durable obligation have one policy owner and never write the new-chat fallback. Actor adapters own transaction and post-commit delivery. |
+| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; authorizes through the including-deleted thread's project, revalidates thread and project ownership under the lifecycle lock, and wakes delivery only after the exact restore transition commits. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -173,8 +174,14 @@ contract shapes.
 - **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen)
   when `bakedSkillSlugs` is non-null. Before bake, `composedSystemPrompt` may
   carry a raw pre-bake system prompt.
-- Soft-delete (`deletedAt`) is idempotent for both threads and the
-  `requireThreadOwner` gate treats soft-deleted threads as 404.
+- The owner-aware trash command is the sole thread soft-delete/restore boundary.
+  It locks the including-deleted thread row, then revalidates thread and live
+  project ownership before deciding either desired state. Missing and concealed
+  threads have the same thread-scoped not-found result.
+- **The complete trash command set is serialized.** Delete and restore decide
+  changed/no-op from the locked row. Only a real `deleted -> visible` transition
+  enqueues its targeted Work-context obligation; retries, concurrent no-ops, and
+  deletion never wake delivery.
 - A thread receives its project-unique slug when created with its first
   non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
   Collisions use `-2`, `-3`, and later mutations never regenerate the handle;
