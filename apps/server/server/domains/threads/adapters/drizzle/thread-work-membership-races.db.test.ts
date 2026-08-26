@@ -45,7 +45,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async (workId) => (await draftPending.count(workId)) > 0,
+      hasUnreviewedDraft: async (workId) =>
+        ((await draftPending.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
     });
     const branches = createDrizzleBranchStore(db, undefined);
 
@@ -238,7 +239,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         advisoryLockHeld = false;
         await deletion;
         await expect(draft).rejects.toThrow(`Work not found: ${WORK_ID}`);
-        await expect(draftPending.count(WORK_ID)).resolves.toBe(0);
+        await expect(
+          draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
+        ).resolves.toBe(0);
       } finally {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`

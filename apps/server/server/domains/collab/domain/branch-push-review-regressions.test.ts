@@ -283,6 +283,9 @@ function serviceFixture(input: {
       commitStore: stores,
       workPushPolicyStore: unsupportedWorkPolicyStore(),
       workDraftPendingStore: {
+        async countPendingByWorkIds() {
+          throw new Error("review regression store does not support pending Work counts");
+        },
         async listReviewableEvidenceForWork() {
           throw new Error("review regression store does not support pending Work reads");
         },

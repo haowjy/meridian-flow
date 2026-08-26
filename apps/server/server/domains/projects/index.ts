@@ -447,6 +447,7 @@ export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } fro
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
 export { deleteWork, deleteWorkTransition, restoreWork } from "./delete-work.js";
+export { listWorkCatalog, type WorkCatalogEntry } from "./list-work-catalog.js";
 export { resolveNewChatFallbackWork } from "./new-chat-fallback-work.js";
 export type {
   CreateProjectInput,
@@ -459,6 +460,7 @@ export {
   type EnsureUserInput,
   type UserRepository,
 } from "./ports/user-repository.js";
+export type { WorkDraftPendingCounts } from "./ports/work-draft-pending-counts.js";
 export {
   type CreateWorkInput,
   type ListWorksOptions,
