@@ -34,7 +34,10 @@ export interface InMemoryProjectChatSource {
 }
 
 function exactTimestamp(value: string): string {
-  return value.replace(/\.(\d{3})Z$/, ".$1000Z");
+  return value.replace(
+    /(?:\.(\d{1,6}))?Z$/,
+    (_match, fraction = "") => `.${fraction.padEnd(6, "0")}Z`,
+  );
 }
 
 export function createInMemoryProjectChatAdapter(
@@ -141,26 +144,34 @@ export function createInMemoryProjectChatAdapter(
 
   const workChatFeed: WorkChatFeedRepository = {
     async queryPage(input) {
-      const associated = [...source.threads()]
-        .filter(
-          (thread) =>
-            thread.projectId === input.projectId &&
-            !thread.deletedAt &&
-            source.hasWorkMembership(thread.id as ThreadId, input.workId),
-        )
-        .filter(
-          (thread) =>
-            !input.after ||
-            thread.updatedAt < input.after.sortAt ||
-            (thread.updatedAt === input.after.sortAt && thread.id < input.after.threadId),
-        )
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
-        .slice(0, input.limit);
+      const associated: Array<{ thread: Thread; updatedAt: string }> = [];
+      for (const thread of source.threads()) {
+        if (
+          thread.projectId === input.projectId &&
+          !thread.deletedAt &&
+          source.hasWorkMembership(thread.id as ThreadId, input.workId) &&
+          (await source.isProjectVisible(thread))
+        ) {
+          associated.push({ thread, updatedAt: exactTimestamp(thread.updatedAt) });
+        }
+      }
       return Promise.all(
-        associated.map(async (thread) => ({
-          item: await projectChatItem(thread, input.userId),
-          updatedAt: exactTimestamp(thread.updatedAt),
-        })),
+        associated
+          .filter(
+            ({ thread, updatedAt }) =>
+              !input.after ||
+              updatedAt < input.after.sortAt ||
+              (updatedAt === input.after.sortAt && thread.id < input.after.threadId),
+          )
+          .sort(
+            (a, b) =>
+              b.updatedAt.localeCompare(a.updatedAt) || b.thread.id.localeCompare(a.thread.id),
+          )
+          .slice(0, input.limit)
+          .map(async ({ thread, updatedAt }) => ({
+            item: await projectChatItem(thread, input.userId),
+            updatedAt,
+          })),
       );
     },
   };
