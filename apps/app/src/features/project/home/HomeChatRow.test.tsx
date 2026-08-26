@@ -73,18 +73,19 @@ async function waitFor(assertion: () => void) {
 }
 
 describe("HomeChatRow", () => {
-  it("keeps attention semantics without a visual mark in the shared row grid", async () => {
+  it("describes attention to screen readers without exposing a visual status", async () => {
     await withRow(
       <HomeChatRow {...props({ item: { ...chat(), attention: "actionRequired" } })} />,
       () => {
         const row = document.querySelector("[data-home-row]") as HTMLElement;
-        expect(row.querySelector("[data-home-row-layout]")).not.toBeNull();
-        expect(row.querySelector("[data-home-row-work]")).not.toBeNull();
-        expect(row.querySelector("[data-home-row-trailing]")).not.toBeNull();
-        expect(
-          row.querySelector('[class*="bg-status-warning"], [class*="bg-jade-text"]'),
-        ).toBeNull();
-        expect(row.textContent).toContain("The AI asked you a question");
+        const open = row.querySelector('[aria-label="Open River"]') as HTMLButtonElement;
+        const descriptionId = open.getAttribute("aria-describedby");
+        const description = document.getElementById(descriptionId ?? "");
+
+        expect(descriptionId).toBe("home-attention-thread-1");
+        expect(description?.textContent).toBe("The AI asked you a question");
+        expect(row.querySelector('[role="status"]')).toBeNull();
+        expect(row.querySelector('[aria-label="The AI asked you a question"]')).toBeNull();
       },
     );
   });

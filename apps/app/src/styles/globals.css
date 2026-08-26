@@ -335,8 +335,8 @@
    sizing keeps Work readable on phones without letting residual title width
    move its center from one row to the next. */
 @utility home-row-layout {
-  grid-template-columns: minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) 3.5rem;
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(0, 1fr) clamp(6.6875rem, 22cqi, 10rem) 3.5rem;
+  grid-template-rows: minmax(1.3rem, auto) minmax(1.3rem, auto);
 }
 
 @utility chat-scroll-fade-bottom {
