@@ -221,13 +221,12 @@ function SkeletonRows({ count }: { count: number }) {
     <ul className="divide-y divide-border-subtle">
       {Array.from({ length: count }, (_, x) => (
         <li key={x} data-home-row-layout className="home-row-layout grid px-2 py-1.5">
-          <Skeleton className="col-span-2 col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
-          <Skeleton
-            data-home-row-work
-            className="col-start-3 row-start-1 mx-2 h-4 motion-reduce:animate-none"
-          />
-          <Skeleton className="col-span-4 col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />
-          <div className="col-start-5 row-span-2 row-start-1 grid place-items-center [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11">
+          <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
+          <div data-home-row-work className="col-start-2 row-start-1 min-w-0 px-1">
+            <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+          </div>
+          <Skeleton className="col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />
+          <div className="col-start-3 row-span-2 row-start-1 grid place-items-center [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11">
             <Skeleton className="h-3 w-12 motion-reduce:animate-none" />
           </div>
         </li>

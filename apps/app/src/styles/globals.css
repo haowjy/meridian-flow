@@ -331,13 +331,10 @@
   }
 }
 
-/* Home's real and loading rows share a symmetric center axis. Equal flexible
-   lanes and mirrored trailing reservations keep Work centered on the whole row
-   while title, preview, and actions remain independently truncatable. */
+/* Home's real and loading rows share three stable lanes: flexible copy, Work,
+   and the trailing date/action slot. */
 @utility home-row-layout {
-  grid-template-columns:
-    3.5rem minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) minmax(0, 1fr)
-    3.5rem;
+  grid-template-columns: minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) 3.5rem;
   grid-template-rows: minmax(1.3rem, auto) minmax(1.3rem, auto);
 }
 

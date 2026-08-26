@@ -38,7 +38,9 @@ test.beforeAll(async () => {
   compiledJs = js.code;
 });
 
-test("keeps centered Work geometry and preserves ordinary identity", async ({ page }, testInfo) => {
+test("keeps a stable right-side Work column and preserves ordinary identity", async ({
+  page,
+}, testInfo) => {
   const widths = testInfo.project.name === "fine-pointer" ? [1440, 1100, 840, 390] : [390];
   await page.setContent(
     '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div>',
@@ -64,17 +66,25 @@ test("keeps centered Work geometry and preserves ordinary identity", async ({ pa
             throw new Error("Incomplete Home row fixture");
           }
           const rowBox = row.getBoundingClientRect();
+          const titleBox = title.getBoundingClientRect();
           const workBox = work.getBoundingClientRect();
+          const trailingBox = trailingDate.parentElement?.getBoundingClientRect();
+          if (!trailingBox) throw new Error("Home row lacks its trailing lane");
           const previewBox = preview.getBoundingClientRect();
           const inlineDateBox = inlineDate.getBoundingClientRect();
           const trailingDateBox = trailingDate.getBoundingClientRect();
           const actionBox = action.getBoundingClientRect();
           return {
-            centerDelta: Math.abs((rowBox.left + rowBox.right - workBox.left - workBox.right) / 2),
+            rowLeft: rowBox.left,
+            rowRight: rowBox.right,
+            workLeft: workBox.left,
+            workRight: workBox.right,
+            lanesDoNotOverlap: titleBox.right <= workBox.left && workBox.right <= trailingBox.left,
             height: rowBox.height,
             titleFontSize: getComputedStyle(title).fontSize,
             previewFontSize: getComputedStyle(preview).fontSize,
             workFontSize: getComputedStyle(work).fontSize,
+            workTextAlign: getComputedStyle(work).textAlign,
             inlineDateFontSize: getComputedStyle(inlineDate).fontSize,
             trailingDateFontSize: getComputedStyle(trailingDate).fontSize,
             trailingCenterDelta: {
@@ -96,10 +106,26 @@ test("keeps centered Work geometry and preserves ordinary identity", async ({ pa
           };
         }),
       );
-    expect(realGeometry.every(({ centerDelta }) => centerDelta <= 0.5)).toBe(true);
+    const [firstReal] = realGeometry;
+    expect(firstReal).toBeDefined();
+    expect(
+      realGeometry.every(
+        ({ workLeft, workRight }) =>
+          Math.abs(workLeft - firstReal.workLeft) <= 0.5 &&
+          Math.abs(workRight - firstReal.workRight) <= 0.5,
+      ),
+    ).toBe(true);
+    expect(
+      realGeometry.every(
+        ({ rowLeft, rowRight, workLeft, workRight }) =>
+          (workLeft + workRight) / 2 > (rowLeft + rowRight) / 2 + 8,
+      ),
+    ).toBe(true);
     expect(realGeometry.every(({ titleFontSize }) => titleFontSize === "13px")).toBe(true);
     expect(realGeometry.every(({ previewFontSize }) => previewFontSize === "13px")).toBe(true);
     expect(realGeometry.every(({ workFontSize }) => workFontSize === "12px")).toBe(true);
+    expect(realGeometry.every(({ workTextAlign }) => workTextAlign === "center")).toBe(true);
+    expect(realGeometry.every(({ lanesDoNotOverlap }) => lanesDoNotOverlap)).toBe(true);
     expect(realGeometry.every(({ hasOverflow }) => !hasOverflow)).toBe(true);
     expect(
       realGeometry.every(
@@ -121,7 +147,8 @@ test("keeps centered Work geometry and preserves ordinary identity", async ({ pa
           const workBox = work.getBoundingClientRect();
           const rowStyle = getComputedStyle(row);
           return {
-            centerDelta: Math.abs((rowBox.left + rowBox.right - workBox.left - workBox.right) / 2),
+            workLeft: workBox.left,
+            workRight: workBox.right,
             height:
               rowBox.height -
               Number.parseFloat(rowStyle.borderTopWidth) -
@@ -130,7 +157,13 @@ test("keeps centered Work geometry and preserves ordinary identity", async ({ pa
           };
         }),
       );
-    expect(loadingGeometry.every(({ centerDelta }) => centerDelta <= 0.5)).toBe(true);
+    expect(
+      loadingGeometry.every(
+        ({ workLeft, workRight }) =>
+          Math.abs(workLeft - firstReal.workLeft) <= 0.5 &&
+          Math.abs(workRight - firstReal.workRight) <= 0.5,
+      ),
+    ).toBe(true);
     expect(loadingGeometry.every(({ hasOverflow }) => !hasOverflow)).toBe(true);
 
     const expectedHeight = testInfo.project.name === "coarse-pointer" ? 56 : 53.59375;

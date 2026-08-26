@@ -24,9 +24,9 @@ any of those concerns in the screen orchestrator.
 A Home row is a borderless resume-list entry, not a card: title and Work share
 line one; preview and activity date share line two; overflow owns Favorite and
 has no standing-star counterpart. Real and loading rows use the same two-line
-layout: symmetric flexible lanes around a Work lane centered on the whole row,
-plus mirrored reservations for the trailing slot. Title and preview consume the
-leftward space without moving that center axis. Title and preview are 13 px;
+layout: a flexible title/preview lane, a right-side Work lane, and a trailing
+date/action slot. The Work lane has the same position and width in every row,
+and its text is centered within that lane. Title and preview are 13 px;
 Work and both date presentations are 12 px. At 390 px, ordinary titles and Work
 labels fit while genuinely long titles, Work labels, and previews truncate without
 horizontal overflow. On fine pointers, the date and overflow share that trailing
@@ -34,8 +34,8 @@ center; the action replaces the date on hover, focus-within, or an open menu
 without reflow. On coarse/no-hover inputs, the 44 × 44 px action remains in the
 trailing lane and the date follows the preview inline. Fine rows retain a 53.6 px
 rhythm and coarse rows a 56 px rhythm (plus any separator); loading must match it.
-`e2e/home-row-geometry.pw.ts` protects the production component's actual
-full-row center, not just its inner grid. A fine-pointer menu assertion requires
+`e2e/home-row-geometry.pw.ts` protects the production component's stable
+right-side Work column, including loading parity. A fine-pointer menu assertion requires
 a focused browser page: a top-level `window.blur` closes the Radix menu normally,
 so the prior observed close was an automation artifact, not a Home defect. Home
 uses no colored attention dots: read/action state remains semantic and accessible
