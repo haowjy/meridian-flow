@@ -53,6 +53,9 @@ describe("GET /api/projects/:projectId/works", () => {
           ? [work("active"), work("archived", "archived")]
           : [work("work-2"), work("work-1")];
     const listByProject = vi.fn(async () => works);
+    const countPendingByWorkIds = vi.fn(
+      async (workIds: readonly string[]) => new Map(workIds.map((workId) => [workId, 0])),
+    );
     const preferences = {
       getNewChatFallbackWorkId: vi.fn(async () => {
         throw new Error("collection GET must not read fallback preference");
@@ -67,7 +70,7 @@ describe("GET /api/projects/:projectId/works", () => {
         projectRepo: { findById: async () => project },
         workRepo: { listByProject },
         preferences,
-        documentSync: { countUnpushedRowsForWork: async () => 0 },
+        documentSync: { countPendingByWorkIds },
       },
     } as never);
 
@@ -80,6 +83,8 @@ describe("GET /api/projects/:projectId/works", () => {
     });
     expect(Object.keys(response.value)).toEqual(["works"]);
     expect(listByProject).toHaveBeenCalledWith(PROJECT_ID, expectedFilter);
+    expect(countPendingByWorkIds).toHaveBeenCalledOnce();
+    expect(countPendingByWorkIds).toHaveBeenCalledWith(works.map(({ id }) => id));
     expect(preferences.getNewChatFallbackWorkId).not.toHaveBeenCalled();
     expect(preferences.repairNewChatFallbackWorkId).not.toHaveBeenCalled();
   });

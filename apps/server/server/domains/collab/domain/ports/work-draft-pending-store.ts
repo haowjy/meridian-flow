@@ -16,4 +16,5 @@ export type WorkDraftPendingEvidence = {
 
 export type WorkDraftPendingStore = {
   listReviewableEvidenceForWork(workId: WorkId): Promise<WorkDraftPendingEvidence[]>;
+  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };

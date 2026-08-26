@@ -969,7 +969,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
       });
       expect(drafts).toHaveLength(1);
-      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(drafts.length);
+      await expect(
+        collab
+          .countPendingByWorkIds([WORK_ID as never])
+          .then((counts) => counts.get(WORK_ID as never) ?? 0),
+      ).resolves.toBe(drafts.length);
       // The dock's Review verb navigates by contextPath; null here silently
       // breaks review-from-dock for every document. The leading slash is
       // load-bearing: the client's findContextFile matches route paths
@@ -1011,7 +1015,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
 
-      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(0);
+      await expect(
+        collab
+          .countPendingByWorkIds([WORK_ID as never])
+          .then((counts) => counts.get(WORK_ID as never) ?? 0),
+      ).resolves.toBe(0);
       await expect(
         collab.draftReview.list({
           projectId: PROJECT_ID as never,
@@ -1070,7 +1078,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
       });
       expect(drafts).toHaveLength(1);
-      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(drafts.length);
+      await expect(
+        collab
+          .countPendingByWorkIds([WORK_ID as never])
+          .then((counts) => counts.get(WORK_ID as never) ?? 0),
+      ).resolves.toBe(drafts.length);
       await expect(
         collab.setWorkPushPolicy({
           workId: WORK_ID as never,
@@ -1093,7 +1105,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(readMarkdown(collab, CREATED_DOC_ID)).resolves.toContain(
         "Published with membership.",
       );
-      await expect(collab.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(0);
+      await expect(
+        collab
+          .countPendingByWorkIds([WORK_ID as never])
+          .then((counts) => counts.get(WORK_ID as never) ?? 0),
+      ).resolves.toBe(0);
       await expect(
         collab.draftReview.list({
           projectId: PROJECT_ID as never,

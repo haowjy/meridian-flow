@@ -19,6 +19,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectPreferencesRepository } = await import(
       "../../../../../domains/preferences/index.js"
     );
+    const { createDrizzleWorkDraftPendingStore } = await import(
+      "../../../../../domains/collab/adapters/drizzle-branch-push.js"
+    );
+    const { createWorkDraftPending } = await import(
+      "../../../../../domains/collab/domain/work-draft-pending.js"
+    );
     const { createDrizzleProjectRepository, createDrizzleProjectWorkRepository } = await import(
       "../../../../../domains/projects/index.js"
     );
@@ -33,6 +39,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const PROJECT_ID = "00000000-0000-4000-8000-000000000953";
     const OLDER_WORK_ID = "00000000-0000-4000-8000-000000000954";
     const NEWER_WORK_ID = "00000000-0000-4000-8000-000000000955";
+    const SOURCE_ID = "00000000-0000-4000-8000-000000000956";
+    const PENDING_DOCUMENT_A = "00000000-0000-4000-8000-000000000957";
+    const PENDING_DOCUMENT_B = "00000000-0000-4000-8000-000000000958";
+    const MANIFEST_DOCUMENT = "00000000-0000-4000-8000-000000000959";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
       prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
@@ -42,7 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       projectRepo: ReturnType<typeof createDrizzleProjectRepository>;
       workRepo: ReturnType<typeof createDrizzleProjectWorkRepository>;
       preferences: typeof preferences;
-      documentSync: { countUnpushedRowsForWork(workId: string): Promise<number> };
+      documentSync: ReturnType<typeof createWorkDraftPending>;
     };
 
     beforeEach(async () => {
@@ -87,7 +97,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           hasUnreviewedDraft: async () => false,
         }),
         preferences,
-        documentSync: { countUnpushedRowsForWork: async () => 0 },
+        documentSync: createWorkDraftPending(createDrizzleWorkDraftPendingStore(db)),
       };
       requireAppUser.mockResolvedValue({ user: { userId: OWNER_ID }, app: routeApp });
     });
@@ -121,6 +131,63 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
+    it("groups pending branches for multiple Works and projects missing counts as zero", async () => {
+      await database.current.insert(schema.contextSources).values({
+        id: SOURCE_ID,
+        projectId: PROJECT_ID,
+        name: "Catalog drafts",
+        slug: "catalog-drafts",
+        scope: "project",
+      });
+      await database.current.insert(schema.documents).values([
+        {
+          id: PENDING_DOCUMENT_A,
+          contextSourceId: SOURCE_ID,
+          name: "pending-a",
+          extension: "md",
+          fileType: "markdown",
+        },
+        {
+          id: PENDING_DOCUMENT_B,
+          contextSourceId: SOURCE_ID,
+          name: "pending-b",
+          extension: "md",
+          fileType: "markdown",
+        },
+        {
+          id: MANIFEST_DOCUMENT,
+          contextSourceId: SOURCE_ID,
+          name: "manifest",
+          extension: "md",
+          fileType: "markdown",
+        },
+      ]);
+      await database.current
+        .insert(schema.documentBranches)
+        .values([
+          branch("pending-a", PENDING_DOCUMENT_A, NEWER_WORK_ID),
+          branch("pending-b", PENDING_DOCUMENT_B, NEWER_WORK_ID),
+          branch("manifest-only", MANIFEST_DOCUMENT, OLDER_WORK_ID),
+        ]);
+      await database.current.insert(schema.branchWriteJournal).values([
+        journal("pending-a"),
+        journal("pending-a"),
+        journal("pending-b", "rollback_pending"),
+        journal("manifest-only", "active", {
+          kind: "manifest_membership",
+          documentId: PENDING_DOCUMENT_A,
+          present: true,
+        }),
+      ]);
+
+      const response = await handler(event("all") as never);
+
+      expect(response.value.works).toMatchObject([
+        { id: NEWER_WORK_ID, unpushedChangeCount: 2 },
+        { id: OLDER_WORK_ID, unpushedChangeCount: 0 },
+      ]);
+    });
+
     it("honors archived collection filtering without touching fallback preference", async () => {
       const archived = await routeApp.workRepo.archive(OLDER_WORK_ID);
       expect(archived.status).toBe("archived");
@@ -145,4 +212,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toBeNull();
     });
   });
+}
+
+function branch(id: string, documentId: string, workId: string) {
+  return {
+    id,
+    documentId,
+    workId,
+    kind: "work_draft" as const,
+    state: Buffer.from([]),
+    stateVector: Buffer.from([]),
+  };
+}
+
+function journal(
+  branchId: string,
+  status: "active" | "rollback_pending" = "active",
+  updateMeta: unknown = null,
+) {
+  return {
+    branchId,
+    generation: 1,
+    source: "agent" as const,
+    updateData: Buffer.from([]),
+    draftBaseUpdateSeq: 0,
+    status,
+    updateMeta,
+  };
 }

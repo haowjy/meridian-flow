@@ -45,7 +45,7 @@ function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
   };
   const workDraftPending: WorkDraftPending = {
     list: vi.fn(async () => []),
-    count: vi.fn(async () => 0),
+    countPendingByWorkIds: vi.fn(async () => new Map()),
   };
   const pushToLive = vi.fn(async ({ branchId }: { branchId: string }) => {
     events.push(`push:${branchId}`);

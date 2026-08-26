@@ -388,7 +388,8 @@ export async function createProductionAppPorts(input: {
   });
   workRepo = createDrizzleProjectWorkRepository({
     db,
-    hasUnreviewedDraft: async (workId) => (await documentSync.countUnpushedRowsForWork(workId)) > 0,
+    hasUnreviewedDraft: async (workId) =>
+      ((await documentSync.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)

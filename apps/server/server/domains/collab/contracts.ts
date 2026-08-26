@@ -306,7 +306,7 @@ export type TurnLiveLineageAccess = {
 export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
-  countUnpushedRowsForWork(workId: WorkId): Promise<number>;
+  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
   setWorkPushPolicy(input: {
     workId: WorkId;
     policy: "manual" | "auto";

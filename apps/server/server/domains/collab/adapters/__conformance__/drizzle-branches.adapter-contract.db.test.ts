@@ -468,11 +468,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
       });
       const pendingDrafts = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
-      await expect(pendingDrafts.count(WORK_ID as never)).resolves.toBe(1);
+      await expect(
+        pendingDrafts
+          .countPendingByWorkIds([WORK_ID as never])
+          .then((counts) => counts.get(WORK_ID as never) ?? 0),
+      ).resolves.toBe(1);
 
       await coordinator.resetFromDoc(work.branchId, live);
 
-      await expect(pendingDrafts.count(WORK_ID as never)).resolves.toBe(0);
+      await expect(
+        pendingDrafts
+          .countPendingByWorkIds([WORK_ID as never])
+          .then((counts) => counts.get(WORK_ID as never) ?? 0),
+      ).resolves.toBe(0);
       const rows = await db
         .select({ generation: branchWriteJournal.generation, status: branchWriteJournal.status })
         .from(branchWriteJournal)

@@ -202,8 +202,8 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async pushToLive() {
     throw new Error("Branch push service is not configured");
   },
-  async countUnpushedRowsForWork() {
-    return 0;
+  async countPendingByWorkIds() {
+    return new Map();
   },
   async setWorkPushPolicy() {
     throw new Error("Branch push service is not configured");

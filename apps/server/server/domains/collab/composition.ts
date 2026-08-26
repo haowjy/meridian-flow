@@ -438,7 +438,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
       pushToLive: branchPush.pushToLive,
-      countUnpushedRowsForWork: workDraftPending.count,
+      countPendingByWorkIds: workDraftPending.countPendingByWorkIds,
       setWorkPushPolicy: branchPush.setWorkPushPolicy,
       markFailedResponseRollbackPending: branchReview.markFailedResponseRollbackPending,
     },
