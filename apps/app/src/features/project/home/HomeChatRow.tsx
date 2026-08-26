@@ -5,6 +5,7 @@ import type { HomeChatItem } from "@meridian/contracts/protocol";
 import { MoreHorizontal } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ThreadUserStateTransportState } from "@/client/query/thread-user-state-commands";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -94,13 +95,14 @@ export function HomeChatRow({
         >
           {title}
         </span>
-        <span
+        <WorkIdentity
           data-home-row-work
-          className="col-start-2 row-start-1 min-w-0 truncate px-1 text-center text-xs text-muted-foreground"
+          className="px-1"
+          name={item.work?.title}
+          unavailableLabel={t`Unavailable`}
+          aria-label={workLabel}
           title={item.work?.title}
-        >
-          {workLabel}
-        </span>
+        />
         <div
           data-home-row-line
           className="col-start-1 row-start-2 flex min-w-0 items-center gap-2 text-compact text-muted-foreground"

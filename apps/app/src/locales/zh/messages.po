@@ -3346,6 +3346,8 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
+#: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/home/HomeChatRow.tsx
 #: src/features/project/home/NewThreadComposerToolbar.tsx
 msgid "Unavailable"
 msgstr ""

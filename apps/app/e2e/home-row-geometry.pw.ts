@@ -38,7 +38,7 @@ test.beforeAll(async () => {
   compiledJs = js.code;
 });
 
-test("keeps a stable right-side Work column and preserves ordinary identity", async ({
+test("right-aligns Work in its stable column and centers it across the full row", async ({
   page,
 }, testInfo) => {
   const widths = testInfo.project.name === "fine-pointer" ? [1440, 1100, 840, 390] : [390];
@@ -79,11 +79,16 @@ test("keeps a stable right-side Work column and preserves ordinary identity", as
             rowRight: rowBox.right,
             workLeft: workBox.left,
             workRight: workBox.right,
+            workVerticalCenterDelta: Math.abs(
+              (rowBox.top + rowBox.bottom - workBox.top - workBox.bottom) / 2,
+            ),
             lanesDoNotOverlap: titleBox.right <= workBox.left && workBox.right <= trailingBox.left,
             height: rowBox.height,
             titleFontSize: getComputedStyle(title).fontSize,
             previewFontSize: getComputedStyle(preview).fontSize,
             workFontSize: getComputedStyle(work).fontSize,
+            workFontWeight: getComputedStyle(work).fontWeight,
+            workColorMatchesTitle: getComputedStyle(work).color === getComputedStyle(title).color,
             workTextAlign: getComputedStyle(work).textAlign,
             inlineDateFontSize: getComputedStyle(inlineDate).fontSize,
             trailingDateFontSize: getComputedStyle(trailingDate).fontSize,
@@ -124,7 +129,12 @@ test("keeps a stable right-side Work column and preserves ordinary identity", as
     expect(realGeometry.every(({ titleFontSize }) => titleFontSize === "13px")).toBe(true);
     expect(realGeometry.every(({ previewFontSize }) => previewFontSize === "13px")).toBe(true);
     expect(realGeometry.every(({ workFontSize }) => workFontSize === "12px")).toBe(true);
-    expect(realGeometry.every(({ workTextAlign }) => workTextAlign === "center")).toBe(true);
+    expect(realGeometry.every(({ workTextAlign }) => workTextAlign === "right")).toBe(true);
+    expect(
+      realGeometry.every(({ workVerticalCenterDelta }) => workVerticalCenterDelta <= 0.5),
+    ).toBe(true);
+    expect(realGeometry.every(({ workFontWeight }) => workFontWeight === "500")).toBe(true);
+    expect(realGeometry.every(({ workColorMatchesTitle }) => workColorMatchesTitle)).toBe(true);
     expect(realGeometry.every(({ lanesDoNotOverlap }) => lanesDoNotOverlap)).toBe(true);
     expect(realGeometry.every(({ hasOverflow }) => !hasOverflow)).toBe(true);
     expect(
@@ -149,6 +159,9 @@ test("keeps a stable right-side Work column and preserves ordinary identity", as
           return {
             workLeft: workBox.left,
             workRight: workBox.right,
+            workVerticalCenterDelta: Math.abs(
+              (rowBox.top + rowBox.bottom - workBox.top - workBox.bottom) / 2,
+            ),
             height:
               rowBox.height -
               Number.parseFloat(rowStyle.borderTopWidth) -
@@ -163,6 +176,9 @@ test("keeps a stable right-side Work column and preserves ordinary identity", as
           Math.abs(workLeft - firstReal.workLeft) <= 0.5 &&
           Math.abs(workRight - firstReal.workRight) <= 0.5,
       ),
+    ).toBe(true);
+    expect(
+      loadingGeometry.every(({ workVerticalCenterDelta }) => workVerticalCenterDelta <= 0.5),
     ).toBe(true);
     expect(loadingGeometry.every(({ hasOverflow }) => !hasOverflow)).toBe(true);
 

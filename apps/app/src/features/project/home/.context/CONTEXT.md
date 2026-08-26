@@ -26,7 +26,10 @@ line one; preview and activity date share line two; overflow owns Favorite and
 has no standing-star counterpart. Real and loading rows use the same two-line
 layout: a flexible title/preview lane, a right-side Work lane, and a trailing
 date/action slot. The Work lane has the same position and width in every row,
-and its text is centered within that lane. Title and preview are 13 px;
+and its text is right-aligned within that lane and vertically centered across
+the full two-line row. Its compact current-value treatment follows the Composer:
+the Work name is medium foreground text, while the Work label remains in its
+accessible name. Title and preview are 13 px;
 Work and both date presentations are 12 px. At 390 px, ordinary titles and Work
 labels fit while genuinely long titles, Work labels, and previews truncate without
 horizontal overflow. On fine pointers, the date and overflow share that trailing

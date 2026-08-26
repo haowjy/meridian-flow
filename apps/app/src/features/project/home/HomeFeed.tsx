@@ -222,7 +222,7 @@ function SkeletonRows({ count }: { count: number }) {
       {Array.from({ length: count }, (_, x) => (
         <li key={x} data-home-row-layout className="home-row-layout grid px-2 py-1.5">
           <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
-          <div data-home-row-work className="col-start-2 row-start-1 min-w-0 px-1">
+          <div data-home-row-work className="px-1">
             <Skeleton className="h-4 w-full motion-reduce:animate-none" />
           </div>
           <Skeleton className="col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />

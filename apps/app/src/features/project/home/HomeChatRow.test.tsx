@@ -73,6 +73,14 @@ async function waitFor(assertion: () => void) {
 }
 
 describe("HomeChatRow", () => {
+  it("shows the Composer-style Work value while preserving its accessible label", async () => {
+    await withRow(<HomeChatRow {...props()} />, () => {
+      const work = document.querySelector("[data-home-row-work]");
+      expect(work?.textContent).toBe("First Work");
+      expect(work?.getAttribute("aria-label")).toBe("Work: First Work");
+    });
+  });
+
   it("describes attention to screen readers without exposing a visual status", async () => {
     await withRow(
       <HomeChatRow {...props({ item: { ...chat(), attention: "actionRequired" } })} />,

@@ -153,7 +153,7 @@ describe("HomeFeed", () => {
       expect(container.querySelectorAll("ul")).toHaveLength(3);
       const continueRow = container.querySelector('[data-home-row="Continue"]');
       expect(continueRow?.textContent).toContain("Continue");
-      expect(continueRow?.textContent).toContain("Work unavailable");
+      expect(continueRow?.textContent).toContain("Unavailable");
       expect(continueRow?.textContent).toContain("Preview");
       expect(continueRow?.querySelectorAll("button")).toHaveLength(2);
       expect(

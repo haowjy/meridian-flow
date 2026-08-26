@@ -9,6 +9,7 @@ import {
   type ComposerToolbarControl,
   createComposerToolbarModel,
 } from "@/components/app/composer-toolbar";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import {
   deriveWorkPickerViewModel,
   useSelectedWorkWriteModeToolbarControl,
@@ -160,7 +161,7 @@ function useProspectiveWorkControl({
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger binding={trigger} ariaLabel={label}>
-        {work?.name ?? t`Unavailable`}
+        <WorkIdentity name={work?.name} unavailableLabel={t`Unavailable`} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {
