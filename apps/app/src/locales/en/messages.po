@@ -642,8 +642,12 @@ msgid "Chat context"
 msgstr "Chat context"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Chat couldn’t start"
-msgstr "Chat couldn’t start"
+#~ msgid "Chat couldn’t start"
+#~ msgstr "Chat couldn’t start"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat creation is still being reconciled"
+msgstr "Chat creation is still being reconciled"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Chat was created but couldn’t open"
@@ -1437,6 +1441,10 @@ msgstr "File suggestions"
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
 msgstr "Files"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Finish the current chat attempt"
+msgstr "Finish the current chat attempt"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Finishing write mode change"
@@ -2535,8 +2543,8 @@ msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Repair your choices, then retry"
-msgstr "Repair your choices, then retry"
+#~ msgid "Repair your choices, then retry"
+#~ msgstr "Repair your choices, then retry"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -2824,6 +2832,10 @@ msgstr "Split cell"
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
 msgstr "Start a quick chat without a project"
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Start over"
+msgstr "Start over"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Start with a scene, a question, or a problem to solve."
@@ -3638,6 +3650,10 @@ msgstr "Your monthly plan covers included usage. Top up extra usage any time to 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
 msgstr "Your saved preference is unavailable. Sync is paused until retry succeeds."
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Your Work or Agent choice is no longer available"
+msgstr "Your Work or Agent choice is no longer available"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."

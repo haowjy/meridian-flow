@@ -149,8 +149,12 @@ staged handoff → route → arm. The matching Chat visibility lease claims a
 creation-owned no-command epoch rather than acknowledging the new thread as if
 it were an existing chat. A definite stale Work or Agent refusal, whether
 returned by the initial create or its guarded same-ID retry after absence
-reconciliation, refreshes the relevant catalog and unlocks prospective context
-repair while retaining the stable ID and immutable first text.
+reconciliation, is identified only by the named `work_unavailable` or
+`agent_not_found` code, refreshes the relevant catalog, and unlocks prospective
+context repair while retaining the stable ID and immutable first text. Every
+other uncertain create remains locked to that original envelope while same-ID
+reconciliation continues. A canonical mismatch is never handed off; Start over
+retires it before a later submission allocates a fresh ID.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),

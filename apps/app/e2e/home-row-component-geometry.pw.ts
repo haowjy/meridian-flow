@@ -1,4 +1,4 @@
-/** Real Chromium geometry contract for production Home rows and their loading state. */
+/** Real Chromium component-fixture geometry contract for Home rows and their loading state. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";

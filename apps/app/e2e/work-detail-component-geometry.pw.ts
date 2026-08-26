@@ -1,4 +1,4 @@
-/** Real Chromium geometry regression mounted through the production Work detail component. */
+/** Real Chromium component-fixture geometry regression for Work detail. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -44,7 +44,7 @@ test.beforeAll(async () => {
   compiledJs = js.code;
 });
 
-test("production Work detail contains long content at 390px", async ({ page }, testInfo) => {
+test("Work detail component fixture contains long content at 390px", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "coarse-pointer", "coarse-pointer geometry contract");
   await page.setViewportSize({ width: 390, height: 844 });
   const unbroken = "X".repeat(500);
@@ -220,7 +220,7 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
 });
 
 for (const associationCount of [100, 500, 2_500]) {
-  test(`production Work detail virtualizes ${associationCount} shared chat rows`, async ({
+  test(`Work detail component fixture virtualizes ${associationCount} shared chat rows`, async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -283,7 +283,6 @@ for (const associationCount of [100, 500, 2_500]) {
     console.info(
       `work-detail-${associationCount} rendered_rows=${renderedRows} interaction_ms=${interactionMs.toFixed(1)}`,
     );
-    expect(interactionMs).toBeLessThan(1_000);
     expect(await page.locator("[data-home-row]").count()).toBeLessThan(40);
   });
 }

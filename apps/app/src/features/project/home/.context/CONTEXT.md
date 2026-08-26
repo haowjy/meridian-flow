@@ -22,6 +22,16 @@ and scroll/focus restoration in the favorite-movement hook. Do not duplicate
 any of those concerns in the screen orchestrator. Work detail renders that same
 row component; Work identity inside every list row is display-only.
 
+`HomeFirstSendLifecycle` is the sole Home creation authority: `idle`, `creating`,
+`reconciling`, `refused`, `ambiguous`, `routing`, `route_failed`, and
+`mismatched` are exhaustive. Only the named `work_unavailable` and
+`agent_not_found` server refusals unlock creation-context repair. Ambiguous
+attempts retain their stable ID, text, Work, and Agent until same-ID
+reconciliation succeeds. A mismatch is never staged or opened; **Start over**
+retires it so the next submission allocates a fresh ID. The thread store begins
+its distinct destination handoff lifecycle only after a matching canonical
+thread has been prepared; it does not model Home creation.
+
 ## Row layout and feed behavior
 
 A Home row is a borderless resume-list entry, not a card: title and Work share
@@ -40,7 +50,7 @@ center; the action replaces the date on hover, focus-within, or an open menu
 without reflow. On coarse/no-hover inputs, the 44 × 44 px action remains in the
 trailing lane and the date follows the preview inline. Fine rows retain a 53.6 px
 rhythm and coarse rows a 56 px rhythm (plus any separator); loading must match it.
-`e2e/home-row-geometry.pw.ts` protects the production component's stable
+`e2e/home-row-component-geometry.pw.ts` protects the component fixture's stable
 right-side Work column, including loading parity. A fine-pointer menu assertion requires
 a focused browser page: a top-level `window.blur` closes the Radix menu normally,
 so the prior observed close was an automation artifact, not a Home defect. Home
