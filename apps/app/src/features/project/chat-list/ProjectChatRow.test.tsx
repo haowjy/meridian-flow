@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Behavioral contracts for Home's two-line row and overflow-owned commands. */
+/** Behavioral contracts for the shared project chat row and overflow-owned commands. */
 import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
@@ -96,6 +96,22 @@ describe("ProjectChatRow", () => {
         expect(description?.textContent).toBe("The AI asked you a question");
         expect(row.querySelector('[role="status"]')).toBeNull();
         expect(row.querySelector('[aria-label="The AI asked you a question"]')).toBeNull();
+      },
+    );
+  });
+
+  it("uses distinct IDREF targets for repeated instances of one thread", async () => {
+    await withRow(
+      <>
+        <ProjectChatRow {...props({ item: { ...chat(), attention: "unread" } })} />
+        <ProjectChatRow {...props({ item: { ...chat(), attention: "unread" } })} />
+      </>,
+      () => {
+        const ids = [...document.querySelectorAll<HTMLElement>("[aria-describedby]")]
+          .map((node) => node.getAttribute("aria-describedby"))
+          .filter((id): id is string => Boolean(id));
+        expect(new Set(ids).size).toBe(ids.length);
+        expect(ids.every((id) => document.getElementById(id))).toBe(true);
       },
     );
   });

@@ -49,6 +49,38 @@ describe("WorkDialog lifecycle admission", () => {
       expect(button("Archive Work").className).toContain("pointer:coarse");
     });
   });
+
+  it("starts a clean creation form after the open session unmounts", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open
+          </button>
+          {open ? (
+            <WorkDialog
+              work="new"
+              pending={false}
+              error={null}
+              onClose={() => setOpen(false)}
+              onAction={() => undefined}
+            />
+          ) : null}
+        </>
+      );
+    }
+    await withReactRoot(<Harness />, async () => {
+      const name = document.querySelector("#new-work-name") as HTMLInputElement;
+      act(() => {
+        name.value = "Abandoned name";
+        name.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      act(() => button("Cancel").click());
+      act(() => button("Open").click());
+      expect((document.querySelector("#new-work-name") as HTMLInputElement).value).toBe("");
+    });
+  });
 });
 function button(label: string): HTMLButtonElement {
   const node = [...document.querySelectorAll("button")].find((item) =>

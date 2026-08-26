@@ -65,7 +65,9 @@ they are route continuity, not Work selection or persistent state.
 Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as Home without adding a nested
-scroll owner. Their membership is historical while the displayed Work is the
+scroll owner. The external-scroll hook measures the list in that owner's
+coordinates and owns stable keys plus focused/menu row pinning. Their membership
+is historical while the displayed Work is the
 chat's current primary Work. Resource sections fail independently. Archive and
 unarchive preserve the detail route; delete replaces to collection and restores focus
 to an adjacent row. Both shells share this route-owned module. At phone geometry, text
@@ -82,8 +84,10 @@ Work ID is an immutable reconciliation fact, along with project and Agent, and
 no cache, handoff, visibility, admission, or route effect may run until the
 canonical thread matches those captured facts.
 
-The QueryClient owns pending favorite and read overlays so navigation and stale
-page arrival cannot discard desired state. Fresh creation also prepares one
+The QueryClient owns one normalized user-state record per project/thread so
+navigation and stale page arrival cannot discard pending favorite/read intent.
+Work feeds remain immutable membership/order pages; only Home moves the affected
+thread between its categories. Fresh creation also prepares one
 creation-owned no-command visibility epoch before routing; the matching visible
 Chat lease consumes it without issuing an existing-chat open acknowledgement.
 Chat visibility includes the dock's Chat-versus-Changes selection, so hidden
