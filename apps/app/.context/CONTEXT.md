@@ -27,8 +27,9 @@ any of those concerns in the screen orchestrator.
 A Home row is a borderless resume-list entry, not a card: title and Work share
 line one; preview and activity date share line two; overflow owns Favorite and
 has no standing-star counterpart. Real and loading rows use the same two-line
-layout: a flexible title/preview lane, a consistently centered Work lane, and a
-centered trailing lane. On fine pointers, the date and overflow share that
+layout: symmetric flexible lanes around a Work lane centered on the whole row,
+plus mirrored reservations for the trailing slot. Title and preview consume the
+leftward space without moving that center axis. On fine pointers, the date and overflow share that
 trailing center; the action replaces the date on hover, focus-within, or an open
 menu without reflow. On coarse/no-hover inputs, the 44 × 44 px action remains
 in the trailing lane and the date follows the preview inline. Fine rows retain a

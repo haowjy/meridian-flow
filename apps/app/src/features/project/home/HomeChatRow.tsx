@@ -88,7 +88,7 @@ export function HomeChatRow({
         <span
           data-home-row-line
           className={cn(
-            "col-start-1 row-start-1 min-w-0 truncate pr-2",
+            "col-span-2 col-start-1 row-start-1 min-w-0 truncate pr-2",
             item.attention !== "none" ? "font-semibold" : "font-medium",
           )}
         >
@@ -96,20 +96,20 @@ export function HomeChatRow({
         </span>
         <span
           data-home-row-work
-          className="col-start-2 row-start-1 min-w-0 truncate px-2 text-center text-compact text-muted-foreground"
+          className="col-start-3 row-start-1 min-w-0 truncate px-2 text-center text-xs text-muted-foreground"
           title={item.work?.title}
         >
           {workLabel}
         </span>
         <div
           data-home-row-line
-          className="col-span-2 col-start-1 row-start-2 flex min-w-0 items-center gap-2 text-compact text-muted-foreground"
+          className="col-span-4 col-start-1 row-start-2 flex min-w-0 items-center gap-2 text-compact text-muted-foreground"
         >
           <p className="min-w-0 max-w-[65ch] truncate">
             {item.lastMessagePreview ?? t`No messages yet.`}
           </p>
           <time
-            className="hidden shrink-0 whitespace-nowrap tabular-nums [@media(hover:none)]:inline [@media(pointer:coarse)]:inline"
+            className="hidden shrink-0 whitespace-nowrap text-xs tabular-nums [@media(hover:none)]:inline [@media(pointer:coarse)]:inline"
             dateTime={item.lastActivityAt}
             title={fullActivity}
           >
@@ -119,11 +119,11 @@ export function HomeChatRow({
 
         <div
           data-home-row-trailing
-          className="pointer-events-none col-start-3 row-span-2 row-start-1 grid place-items-center"
+          className="pointer-events-none col-start-5 row-span-2 row-start-1 grid place-items-center"
         >
           <time
             className={cn(
-              "col-start-1 row-start-1 max-w-full truncate text-center text-compact text-muted-foreground tabular-nums group-hover:invisible group-focus-within:invisible [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden",
+              "col-start-1 row-start-1 max-w-full truncate text-center text-xs text-muted-foreground tabular-nums group-hover:invisible group-focus-within:invisible [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden",
               menuOpen && "invisible",
             )}
             dateTime={item.lastActivityAt}
