@@ -200,6 +200,11 @@ test("right-aligns Work in its stable column and centers it across the full row"
     } else {
       expect(
         realGeometry.every(
+          ({ actionWidth, actionHeight }) => actionWidth === 32 && actionHeight === 32,
+        ),
+      ).toBe(true);
+      expect(
+        realGeometry.every(
           ({ trailingCenterDelta }) => trailingCenterDelta.x <= 0.5 && trailingCenterDelta.y <= 0.5,
         ),
       ).toBe(true);

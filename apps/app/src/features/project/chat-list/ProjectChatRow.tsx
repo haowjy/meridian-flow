@@ -139,6 +139,7 @@ export function ProjectChatRow({
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <IconButton
+                  size="sm"
                   data-project-chat-row-actions={item.id}
                   className="[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11"
                   aria-label={t`Actions for ${title}`}
