@@ -22,7 +22,6 @@ export type ThreadUserStateRecord = {
   base: BaseState;
   admittedAt: Record<ThreadUserStateField, number>;
   barriers?: Partial<Record<ThreadUserStateField, number>>;
-  revisions?: Partial<Record<ThreadUserStateField, number>>;
   commands?: Partial<Record<ThreadUserStateField, PendingField>>;
   errors?: Partial<Record<ThreadUserStateField, Error>>;
 };
@@ -220,7 +219,6 @@ export function runThreadUserStateCommand(
     return {
       ...current,
       commands,
-      revisions: { ...current.revisions, [field]: revision },
       errors: Object.keys(errors).length ? errors : undefined,
     };
   });
@@ -258,19 +256,10 @@ async function advance(
     );
     const barrier = ++owner.generation;
     writeRecord(client, projectId, threadId, (current) => {
-      const other: ThreadUserStateField = field === "isFavorite" ? "isUnread" : "isFavorite";
-      const acceptOther = (current.revisions?.[other] ?? 0) <= entry.revision;
-      const base = {
-        isFavorite:
-          field === "isFavorite" || acceptOther ? response.isFavorite : current.base.isFavorite,
-        attention:
-          field === "isUnread" || acceptOther ? response.attention : current.base.attention,
-      };
-      const barriers = {
-        ...current.barriers,
-        [field]: barrier,
-        ...(acceptOther ? { [other]: barrier } : {}),
-      };
+      const base =
+        field === "isFavorite"
+          ? { ...current.base, isFavorite: response.isFavorite }
+          : { ...current.base, attention: response.attention };
       const commands = { ...current.commands };
       if (commands[field]?.revision === entry.revision) delete commands[field];
       const errors = { ...current.errors };
@@ -278,9 +267,8 @@ async function advance(
       return {
         ...current,
         base,
-        barriers,
+        barriers: { ...current.barriers, [field]: barrier },
         commands: Object.keys(commands).length ? commands : undefined,
-        revisions: Object.keys(commands).length ? current.revisions : undefined,
         errors: Object.keys(errors).length ? errors : undefined,
       };
     });
@@ -297,7 +285,6 @@ async function advance(
       return {
         ...current,
         commands: Object.keys(commands).length ? commands : undefined,
-        revisions: Object.keys(commands).length ? current.revisions : undefined,
         errors: isLatest ? { ...current.errors, [field]: error } : current.errors,
       };
     });

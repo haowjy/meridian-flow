@@ -145,9 +145,37 @@ describe("thread user-state command authority", () => {
     expect(projectThreadUserState(thread(), record).isFavorite).toBe(false);
   });
 
-  it("retains the newer field when overlapping mutation responses settle out of order", async () => {
+  it.each([
+    {
+      name: "unread commits before favorite but responds after it",
+      commands: [
+        { field: "isFavorite", value: true },
+        { field: "isUnread", value: false },
+      ],
+      responseArrival: [
+        { field: "isFavorite", snapshot: { ...response(true), attention: "none" } },
+        { field: "isUnread", snapshot: { ...response(false), attention: "none" } },
+      ],
+    },
+    {
+      name: "favorite commits before unread but responds after it",
+      commands: [
+        { field: "isUnread", value: false },
+        { field: "isFavorite", value: true },
+      ],
+      responseArrival: [
+        { field: "isUnread", snapshot: { ...response(true), attention: "none" } },
+        { field: "isFavorite", snapshot: { ...response(true), attention: "unread" } },
+      ],
+    },
+  ] as const)("preserves final server truth when $name", async ({ commands, responseArrival }) => {
     const client = new QueryClient();
     seed(client);
+    const workItem = thread();
+    client.setQueryData(projectQueryKeys.workThreads("project-1", "work-1"), {
+      pages: [{ items: [workItem], nextCursor: null }],
+      pageParams: [null],
+    });
     const transports: Array<{ body: Record<string, boolean>; resolve: (value: Response) => void }> =
       [];
     vi.stubGlobal(
@@ -159,19 +187,25 @@ describe("thread user-state command authority", () => {
           }),
       ),
     );
-    const favorite = runThreadUserStateCommand(client, "project-1", "thread-1", "isFavorite", true);
-    const read = runThreadUserStateCommand(client, "project-1", "thread-1", "isUnread", false);
-    const favoriteTransport = transports.find(({ body }) => "isFavorite" in body);
-    const readTransport = transports.find(({ body }) => "isUnread" in body);
-    readTransport?.resolve(json({ ...response(false), attention: "none" }));
-    await read;
-    favoriteTransport?.resolve(json({ ...response(true), attention: "unread" }));
-    await favorite;
+    const pending = commands.map(({ field, value }) =>
+      runThreadUserStateCommand(client, "project-1", "thread-1", field, value),
+    );
+    for (const { field, snapshot } of responseArrival) {
+      const transport = transports.find(({ body }) => field in body);
+      transport?.resolve(json(snapshot));
+      await pending[commands.findIndex((command) => command.field === field)];
+    }
+
     const record = getThreadUserStateRecord(client, "project-1", thread());
-    expect(projectThreadUserState(thread(), record)).toMatchObject({
+    const expected = {
       isFavorite: true,
       attention: "none",
-    });
+    } as const;
+    expect(record.base).toEqual(expected);
+    expect(
+      groupHomeFeed(client.getQueryData(projectQueryKeys.homeFeed("project-1"))).continueChat,
+    ).toMatchObject(expected);
+    expect(projectThreadUserState(workItem, record)).toMatchObject(expected);
   });
 
   it("lets Home open and visible Chat join one transport and one result", async () => {
@@ -195,7 +229,10 @@ describe("thread user-state command authority", () => {
     ]);
     expect(
       groupHomeFeed(client.getQueryData(["projects", "project-1", "home-feed"])).continueChat,
-    ).toMatchObject({ attention: "none", isFavorite: true });
+    ).toMatchObject({ attention: "none", isFavorite: false });
+    const record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(record.base).toEqual({ attention: "none", isFavorite: false });
+    expect(record.barriers).toEqual({ isUnread: expect.any(Number) });
   });
 
   it("captures the inverse before rollback commits and does not let joined callers diverge", async () => {
