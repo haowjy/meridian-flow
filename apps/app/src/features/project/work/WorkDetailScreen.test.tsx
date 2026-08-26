@@ -83,6 +83,13 @@ vi.mock("@/client/query/useProjectContextTree", () => ({
   useProjectContextTree: (_projectId: string, scheme: "scratch" | "uploads") => mocks[scheme],
 }));
 vi.mock("@/client/query/useWorkThreads", () => ({ useWorkThreads: () => mocks.chats }));
+vi.mock("@/client/query/useProjectChatUserState", () => ({
+  useProjectChatUserState: (_projectId: string, item: unknown) => ({
+    item,
+    favorite: { pending: false },
+    unread: { pending: false },
+  }),
+}));
 vi.mock("@/client/query/useWorks", () => ({
   useWorks: () => mocks.catalog,
   useWorkMutations: () => mocks.metadata,
@@ -208,7 +215,7 @@ describe("WorkDetailScreen resource boundaries", () => {
     resetResources();
     mocks.chats.threads = [chat("thread-1", "Planning")];
     await withReactRoot(<WorkDetailScreen {...props()} work={fixture()} />, async () => {
-      expect(document.querySelector('[data-home-row="thread-1"]')).not.toBeNull();
+      expect(document.querySelector('[data-project-chat-row="thread-1"]')).not.toBeNull();
       const workIdentity = [...document.querySelectorAll("span")].find(
         (node) => node.textContent === "Current Work",
       );

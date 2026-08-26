@@ -1,25 +1,28 @@
-/** Browser entry that mounts the shipped Work detail component with deterministic adapters. */
+/** Browser entry that mounts the shipped Work pane shell with deterministic adapters. */
 import { createRoot } from "react-dom/client";
-import { WorkDetailScreen } from "../../src/features/project/work/WorkDetailScreen";
+import { WorkPaneController } from "../../src/features/project/WorkPaneController";
 import "../../src/styles/globals.css";
 
 const fixture = window.__WORK_DETAIL_FIXTURE__;
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing browser fixture root");
 createRoot(root).render(
-  <WorkDetailScreen
-    projectId={fixture.work.projectId}
-    work={fixture.work}
-    routeWork={{ status: "absent" }}
-    routeCommands={{
-      openHome: async () => undefined,
-      openChat: async () => undefined,
-      openDockThread: async () => undefined,
-      openWork: async () => undefined,
-      workHref: () => "?screen=work",
-      closeWork: async () => undefined,
-      openWorkContext: async () => undefined,
-    }}
-    onOpenThread={() => undefined}
-  />,
+  <div className="flex h-svh w-full">
+    <WorkPaneController
+      projectId={fixture.work.projectId}
+      sidebarToggle={{ open: true, label: "Open sidebar", onExpand: () => undefined }}
+      chatToggle={{ open: true, label: "Open chat", onExpand: () => undefined }}
+      routeWork={{ status: "present", work: fixture.work }}
+      routeCommands={{
+        openHome: async () => undefined,
+        openChat: async () => undefined,
+        openDockThread: async () => undefined,
+        openWork: async () => undefined,
+        workHref: () => "?screen=work",
+        closeWork: async () => undefined,
+        openWorkContext: async () => undefined,
+      }}
+      onOpenThread={() => undefined}
+    />
+  </div>,
 );
