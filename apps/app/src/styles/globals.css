@@ -331,13 +331,13 @@
   }
 }
 
-/* Home's real and loading rows share three stable lanes: flexible copy, Work,
-   and the trailing date/action slot. */
-@utility home-row-layout {
+/* Project chat rows and their loading states share three stable lanes: flexible
+   copy, Work, and the trailing date/action slot. */
+@utility project-chat-row-layout {
   grid-template-columns: minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) 3.5rem;
   grid-template-rows: minmax(1.3rem, auto) minmax(1.3rem, auto);
 
-  & > [data-home-row-work] {
+  & > [data-project-chat-row-work] {
     grid-column: 2;
     grid-row: 1 / span 2;
     align-self: center;

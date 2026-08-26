@@ -61,12 +61,12 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   const rowProps = {
     now,
     onOpen: (item: ProjectChatItem) => onOpenThread(item.id),
-    onFavorite: (item: ProjectChatItem, value: boolean, keyboard: boolean) => {
-      const optimistic = movement.capture(item.id, keyboard);
+    onFavorite: (item: ProjectChatItem, value: boolean) => {
+      const optimistic = movement.capture(item.id);
       movement.commit(optimistic);
       void feed
         .setFavorite(item.id, value, {
-          beforeRollback: () => movement.commit(movement.capture(item.id, keyboard)),
+          beforeRollback: () => movement.commit(movement.capture(item.id)),
         })
         .then((saved) => {
           if (saved)
@@ -83,7 +83,6 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
       if (!saved) announceError(t`Read status wasn’t saved`);
       return saved;
     },
-    getCommandState: feed.getCommandState,
   };
   const worksReady = worksQuery.status === "ready" && selectedWork !== null;
   const submitDisabledReason = firstSend.busy
@@ -110,7 +109,12 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   };
 
   return (
-    <div ref={movement.scrollRef} data-home-scroll-owner className="app-scroll main-pane">
+    <div
+      ref={movement.scrollRef}
+      data-home-scroll-owner
+      className="app-scroll main-pane"
+      {...movement.interactionProps}
+    >
       <div className="project-screen-column">
         <div className="home-composer-page">
           <section>
@@ -191,7 +195,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
               ) : null}
             </div>
           </section>
-          <HomeFeed feed={feed} rowProps={rowProps} />
+          <HomeFeed projectId={projectId} feed={feed} rowProps={rowProps} />
         </div>
       </div>
     </div>

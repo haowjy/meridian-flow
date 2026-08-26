@@ -6,11 +6,20 @@ import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { HomeFeed } from "./HomeFeed";
 
+const userState = vi.hoisted(() => ({ readError: undefined as Error | undefined }));
+
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children,
 }));
 vi.mock("@lingui/react", () => ({ useLingui: () => ({ i18n: { locale: "en" } }) }));
+vi.mock("@/client/query/useProjectChatUserState", () => ({
+  useProjectChatUserState: (_projectId: string, chat: ProjectChatItem) => ({
+    item: chat,
+    favorite: { pending: false },
+    unread: { pending: false, error: userState.readError },
+  }),
+}));
 
 const item = (id: string, favorite = false): ProjectChatItem => ({
   id,
@@ -26,7 +35,6 @@ const rowProps = {
   onOpen: vi.fn(),
   onFavorite: vi.fn(),
   onUnread: vi.fn(async () => true),
-  getCommandState: vi.fn(() => ({ pending: false, error: null }) as const),
 };
 const base = {
   isPending: false,
@@ -75,6 +83,7 @@ describe("HomeFeed", () => {
       replaceFeed = (identity, data) => setState({ identity, data });
       return (
         <HomeFeed
+          projectId="project-1"
           feed={{
             ...base,
             data: state.data,
@@ -142,16 +151,16 @@ describe("HomeFeed", () => {
     expect(disconnectSpy).toHaveBeenCalledTimes(3);
   });
   it("owns one-column Continue, Favorite, and Recent lists plus the sentinel", async () => {
-    await withReactRoot(<HomeFeed feed={base} rowProps={rowProps} />, () => {
+    await withReactRoot(<HomeFeed projectId="project-1" feed={base} rowProps={rowProps} />, () => {
       const container = document.getElementById("root") as HTMLElement;
       expect([...container.querySelectorAll("h2")].map((node) => node.textContent)).toEqual([
         "Continue",
         "Favorite",
         "Recent chats",
       ]);
-      expect(container.querySelectorAll("[data-home-row]")).toHaveLength(3);
+      expect(container.querySelectorAll("[data-project-chat-row]")).toHaveLength(3);
       expect(container.querySelectorAll("ul")).toHaveLength(3);
-      const continueRow = container.querySelector('[data-home-row="Continue"]');
+      const continueRow = container.querySelector('[data-project-chat-row="Continue"]');
       expect(continueRow?.textContent).toContain("Continue");
       expect(continueRow?.textContent).toContain("Unavailable");
       expect(continueRow?.textContent).toContain("Preview");
@@ -166,7 +175,7 @@ describe("HomeFeed", () => {
   });
   it("renders initial, empty, page-loading, and page-error recovery states", async () => {
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isPending: true }} rowProps={rowProps} />,
+      <HomeFeed projectId="project-1" feed={{ ...base, isPending: true }} rowProps={rowProps} />,
       () => {
         const status = document.querySelector('[role="status"]');
         expect(status?.textContent).toContain("Loading chats");
@@ -174,6 +183,7 @@ describe("HomeFeed", () => {
     );
     await withReactRoot(
       <HomeFeed
+        projectId="project-1"
         feed={{ ...base, grouped: { continueChat: null, favorites: [], recent: [] } }}
         rowProps={rowProps}
       />,
@@ -185,7 +195,11 @@ describe("HomeFeed", () => {
     );
     const refetch = vi.fn(async () => undefined);
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isError: true, data: null, refetch }} rowProps={rowProps} />,
+      <HomeFeed
+        projectId="project-1"
+        feed={{ ...base, isError: true, data: null, refetch }}
+        rowProps={rowProps}
+      />,
       async () => {
         expect(document.querySelector("h2")?.textContent).toBe("Chats couldn’t load");
         expect(document.querySelector("h1")).toBeNull();
@@ -197,7 +211,11 @@ describe("HomeFeed", () => {
       },
     );
     await withReactRoot(
-      <HomeFeed feed={{ ...base, isFetchingNextPage: true }} rowProps={rowProps} />,
+      <HomeFeed
+        projectId="project-1"
+        feed={{ ...base, isFetchingNextPage: true }}
+        rowProps={rowProps}
+      />,
       () =>
         expect(document.querySelector('[role="status"]')?.textContent).toContain(
           "Loading more chats",
@@ -206,6 +224,7 @@ describe("HomeFeed", () => {
     const retry = vi.fn(async () => undefined);
     await withReactRoot(
       <HomeFeed
+        projectId="project-1"
         feed={{ ...base, isFetchNextPageError: true, fetchNextPage: retry }}
         rowProps={rowProps}
       />,
@@ -220,19 +239,21 @@ describe("HomeFeed", () => {
     );
   });
   it("keeps read failure and retry in the existing overflow owner", async () => {
-    const errorProps = {
-      ...rowProps,
-      getCommandState: vi.fn((_id: string, field: "isFavorite" | "isUnread") => ({
-        pending: false as const,
-        error: field === "isUnread" ? new Error("offline") : null,
-      })),
-    };
-    await withReactRoot(<HomeFeed feed={base} rowProps={errorProps} />, async () => {
-      const row = document.querySelector('[data-home-row="Continue"]') as HTMLElement;
-      expect(row.textContent).toContain("Read status wasn’t saved. Open actions to retry.");
-      expect(row.querySelector('[role="alert"]')).toBeNull();
-      const actions = row.querySelector('button[aria-invalid="true"]') as HTMLButtonElement;
-      expect(actions.getAttribute("aria-describedby")).toContain("home-read-error-Continue");
-    });
+    userState.readError = new Error("offline");
+    const errorProps = rowProps;
+    await withReactRoot(
+      <HomeFeed projectId="project-1" feed={base} rowProps={errorProps} />,
+      async () => {
+        const row = document.querySelector('[data-project-chat-row="Continue"]') as HTMLElement;
+        expect(row.textContent).toContain("Read status wasn’t saved. Open actions to retry.");
+        expect(row.querySelector('[role="alert"]')).toBeNull();
+        const actions = row.querySelector('button[aria-invalid="true"]') as HTMLButtonElement;
+        const describedBy = actions.getAttribute("aria-describedby");
+        expect(describedBy).toBeTruthy();
+        expect(document.getElementById(describedBy ?? "")?.textContent).toContain(
+          "Read status wasn’t saved",
+        );
+      },
+    );
   });
 });

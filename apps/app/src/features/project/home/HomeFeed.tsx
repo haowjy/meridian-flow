@@ -4,6 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
 import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
+import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
@@ -25,11 +26,13 @@ type FeedQuery = {
   refetch: () => Promise<unknown>;
 };
 export function HomeFeed({
+  projectId,
   feed,
   rowProps,
 }: {
+  projectId: string;
   feed: FeedQuery;
-  rowProps: Omit<ProjectChatRowProps, "item">;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const requestedPage = useRef<HomeFeedNextPageIdentity | null>(null);
@@ -101,10 +104,12 @@ export function HomeFeed({
             <Trans>Continue</Trans>
           </h2>
         </div>
-        {continueChat ? <ChatList items={[continueChat]} rowProps={rowProps} /> : null}
+        {continueChat ? (
+          <ChatList projectId={projectId} items={[continueChat]} rowProps={rowProps} />
+        ) : null}
       </section>
       {favorites.length ? (
-        <Section title={t`Favorite`} items={favorites} rowProps={rowProps} />
+        <Section projectId={projectId} title={t`Favorite`} items={favorites} rowProps={rowProps} />
       ) : null}
       {recent.length || feed.hasNextPage ? (
         <section className="flex flex-col gap-2">
@@ -117,7 +122,7 @@ export function HomeFeed({
           >
             {recent.map((item) => (
               <li key={item.id}>
-                <ProjectChatRow item={item} {...rowProps} />
+                <HomeProjectChatRow projectId={projectId} item={item} rowProps={rowProps} />
               </li>
             ))}
           </ul>
@@ -150,37 +155,54 @@ export function HomeFeed({
 }
 
 function Section({
+  projectId,
   title,
   items,
   rowProps,
 }: {
+  projectId: string;
   title: string;
   items: ProjectChatItem[];
-  rowProps: Omit<ProjectChatRowProps, "item">;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
 }) {
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-headline-section">{title}</h2>
-      <ChatList items={items} rowProps={rowProps} />
+      <ChatList projectId={projectId} items={items} rowProps={rowProps} />
     </section>
   );
 }
 function ChatList({
+  projectId,
   items,
   rowProps,
 }: {
+  projectId: string;
   items: ProjectChatItem[];
-  rowProps: Omit<ProjectChatRowProps, "item">;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
 }) {
   return (
     <ul className="divide-y divide-border-subtle">
       {items.map((item) => (
         <li key={item.id}>
-          <ProjectChatRow item={item} {...rowProps} />
+          <HomeProjectChatRow projectId={projectId} item={item} rowProps={rowProps} />
         </li>
       ))}
     </ul>
   );
+}
+
+function HomeProjectChatRow({
+  projectId,
+  item,
+  rowProps,
+}: {
+  projectId: string;
+  item: ProjectChatItem;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
+}) {
+  const state = useProjectChatUserState(projectId, item);
+  return <ProjectChatRow {...rowProps} {...state} />;
 }
 function HomeState({
   title,
@@ -224,9 +246,13 @@ function SkeletonRows({ count }: { count: number }) {
   return (
     <ul className="divide-y divide-border-subtle">
       {Array.from({ length: count }, (_, x) => (
-        <li key={x} data-home-row-layout className="home-row-layout grid px-2 py-1.5">
+        <li
+          key={x}
+          data-project-chat-row-layout
+          className="project-chat-row-layout grid px-2 py-1.5"
+        >
           <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
-          <div data-home-row-work className="px-1">
+          <div data-project-chat-row-work className="px-1">
             <Skeleton className="h-4 w-full motion-reduce:animate-none" />
           </div>
           <Skeleton className="col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />

@@ -28,7 +28,8 @@ const props = (overrides: Partial<ProjectChatRowProps> = {}): ProjectChatRowProp
   onOpen: vi.fn(),
   onFavorite: vi.fn(),
   onUnread: vi.fn(async () => true),
-  getCommandState: vi.fn(() => ({ pending: false, error: null }) as const),
+  favorite: { pending: false },
+  unread: { pending: false },
   ...overrides,
 });
 
@@ -75,7 +76,7 @@ async function waitFor(assertion: () => void) {
 describe("ProjectChatRow", () => {
   it("shows the Composer-style Work value while preserving its accessible label", async () => {
     await withRow(<ProjectChatRow {...props()} />, () => {
-      const work = document.querySelector("[data-home-row-work]");
+      const work = document.querySelector("[data-project-chat-row-work]");
       expect(work?.textContent).toBe("First Work");
       expect(work?.getAttribute("aria-label")).toBe("Work: First Work");
     });
@@ -85,12 +86,13 @@ describe("ProjectChatRow", () => {
     await withRow(
       <ProjectChatRow {...props({ item: { ...chat(), attention: "actionRequired" } })} />,
       () => {
-        const row = document.querySelector("[data-home-row]") as HTMLElement;
+        const row = document.querySelector("[data-project-chat-row]") as HTMLElement;
         const open = row.querySelector('[aria-label="Open River"]') as HTMLButtonElement;
         const descriptionId = open.getAttribute("aria-describedby");
         const description = document.getElementById(descriptionId ?? "");
 
-        expect(descriptionId).toBe("home-attention-thread-1");
+        expect(descriptionId).toBeTruthy();
+        expect(descriptionId).not.toContain("thread-1");
         expect(description?.textContent).toBe("The AI asked you a question");
         expect(row.querySelector('[role="status"]')).toBeNull();
         expect(row.querySelector('[aria-label="The AI asked you a question"]')).toBeNull();
@@ -117,7 +119,6 @@ describe("ProjectChatRow", () => {
       expect(pointerFavorite).toHaveBeenCalledWith(
         expect.objectContaining({ id: "thread-1" }),
         true,
-        false,
       );
     });
 
@@ -134,7 +135,6 @@ describe("ProjectChatRow", () => {
         expect(keyboardFavorite).toHaveBeenCalledWith(
           expect.objectContaining({ id: "thread-1" }),
           false,
-          true,
         );
       },
     );
@@ -162,16 +162,13 @@ describe("ProjectChatRow", () => {
       <ProjectChatRow
         {...props({
           onUnread,
-          getCommandState: vi.fn((_id, field) => ({
-            pending: false as const,
-            error: field === "isUnread" ? new Error("offline") : null,
-          })),
+          unread: { pending: false, error: new Error("offline") },
         })}
       />,
       async () => {
-        const row = document.querySelector("[data-home-row]") as HTMLElement;
+        const row = document.querySelector("[data-project-chat-row]") as HTMLElement;
         expect(row.querySelector('[role="alert"]')).toBeNull();
-        expect(row.querySelectorAll("[data-home-row-line]")).toHaveLength(2);
+        expect(row.querySelectorAll("[data-project-chat-row-line]")).toHaveLength(2);
         await openActions();
         await act(async () => menuItem("Retry mark unread").click());
         expect(onUnread).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-1" }), true);

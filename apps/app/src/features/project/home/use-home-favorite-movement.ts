@@ -12,20 +12,24 @@ export type HomeMovementToken = {
 
 export function useHomeFavoriteMovement() {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const keyboardActivation = useRef(false);
   const [pending, setPending] = useState<HomeMovementToken | null>(null);
-  const capture = (threadId: string, keyboard: boolean): HomeMovementToken | null => {
+  const capture = (
+    threadId: string,
+    keyboard = keyboardActivation.current,
+  ): HomeMovementToken | null => {
     const scroll = scrollRef.current;
     if (!scroll) return null;
     const bounds = scroll.getBoundingClientRect();
-    const rows = [...scroll.querySelectorAll<HTMLElement>("[data-home-row]")];
-    const origin = rows.find((row) => row.dataset.homeRow === threadId);
+    const rows = [...scroll.querySelectorAll<HTMLElement>("[data-project-chat-row]")];
+    const origin = rows.find((row) => row.dataset.projectChatRow === threadId);
     const anchor = rows.find((row) => {
       const rect = row.getBoundingClientRect();
       return row !== origin && rect.bottom > bounds.top && rect.top < bounds.bottom;
     });
     return {
       threadId,
-      anchorId: anchor?.dataset.homeRow,
+      anchorId: anchor?.dataset.projectChatRow,
       anchorTop: anchor?.getBoundingClientRect().top ?? 0,
       originTop: origin?.getBoundingClientRect().top ?? bounds.top,
       scrollTop: scroll.scrollTop,
@@ -40,9 +44,9 @@ export function useHomeFavoriteMovement() {
     const move = pending;
     const scroll = scrollRef.current;
     if (!move || !scroll) return;
-    const rows = [...scroll.querySelectorAll<HTMLElement>("[data-home-row]")];
+    const rows = [...scroll.querySelectorAll<HTMLElement>("[data-project-chat-row]")];
     const anchor = move.anchorId
-      ? (rows.find((row) => row.dataset.homeRow === move.anchorId) ?? null)
+      ? (rows.find((row) => row.dataset.projectChatRow === move.anchorId) ?? null)
       : null;
     if (anchor) scroll.scrollTop += anchor.getBoundingClientRect().top - move.anchorTop;
     else
@@ -57,13 +61,14 @@ export function useHomeFavoriteMovement() {
         const rect = element.getBoundingClientRect();
         return rect.bottom > bounds.top && rect.top < bounds.bottom;
       };
-      const destination = [...scroll.querySelectorAll<HTMLElement>("[data-home-row-actions]")].find(
-        (control) => control.dataset.homeRowActions === move.threadId,
-      );
-      const survivors = [...scroll.querySelectorAll<HTMLElement>("[data-home-row] button")]
+      const destination = [
+        ...scroll.querySelectorAll<HTMLElement>("[data-project-chat-row-actions]"),
+      ].find((control) => control.dataset.projectChatRowActions === move.threadId);
+      const survivors = [...scroll.querySelectorAll<HTMLElement>("[data-project-chat-row] button")]
         .filter(
           (control) =>
-            control.closest<HTMLElement>("[data-home-row]")?.dataset.homeRow !== move.threadId,
+            control.closest<HTMLElement>("[data-project-chat-row]")?.dataset.projectChatRow !==
+            move.threadId,
         )
         .filter(visible)
         .sort(
@@ -85,5 +90,17 @@ export function useHomeFavoriteMovement() {
     }
     setPending(null);
   }, [pending]);
-  return { scrollRef, capture, commit };
+  return {
+    scrollRef,
+    capture,
+    commit,
+    interactionProps: {
+      onKeyDownCapture: () => {
+        keyboardActivation.current = true;
+      },
+      onPointerDownCapture: () => {
+        keyboardActivation.current = false;
+      },
+    },
+  };
 }

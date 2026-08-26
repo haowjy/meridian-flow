@@ -30,7 +30,6 @@ const rowProps = {
   onOpen: () => undefined,
   onFavorite: () => undefined,
   onUnread: async () => true,
-  getCommandState: () => ({ pending: false, error: null }),
 };
 const pendingFeed = {
   isPending: true,
@@ -51,11 +50,17 @@ createRoot(root).render(
   <main className="project-screen-column">
     <section id="real-rows">
       {[...ordinary, long].map((item) => (
-        <ProjectChatRow key={item.id} item={item} {...rowProps} />
+        <ProjectChatRow
+          key={item.id}
+          item={item}
+          favorite={{ pending: false }}
+          unread={{ pending: false }}
+          {...rowProps}
+        />
       ))}
     </section>
     <section id="loading-rows">
-      <HomeFeed feed={pendingFeed} rowProps={rowProps} />
+      <HomeFeed projectId="project-1" feed={pendingFeed} rowProps={rowProps} />
     </section>
   </main>,
 );

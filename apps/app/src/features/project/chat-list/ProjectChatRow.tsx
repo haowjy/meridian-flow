@@ -3,8 +3,8 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { ThreadUserStateTransportState } from "@/client/query/thread-user-state-commands";
+import { useEffect, useId, useState } from "react";
+import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import {
   DropdownMenu,
@@ -20,12 +20,10 @@ export type ProjectChatRowProps = {
   item: ProjectChatItem;
   now: number;
   onOpen: (item: ProjectChatItem) => void;
-  onFavorite: (item: ProjectChatItem, value: boolean, keyboard: boolean) => void;
+  onFavorite: (item: ProjectChatItem, value: boolean) => void;
   onUnread: (item: ProjectChatItem, value: boolean) => Promise<boolean>;
-  getCommandState: (
-    id: string,
-    field: "isFavorite" | "isUnread",
-  ) => ThreadUserStateTransportState & { error: Error | null };
+  favorite: ThreadUserStateCommandView;
+  unread: ThreadUserStateCommandView;
   onActiveChange?: (id: string, active: boolean) => void;
 };
 
@@ -35,17 +33,17 @@ export function ProjectChatRow({
   onOpen,
   onFavorite,
   onUnread,
-  getCommandState,
+  favorite,
+  unread,
   onActiveChange,
 }: ProjectChatRowProps) {
   const { i18n } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
+  const instanceId = useId();
   const title = item.title || t`New chat`;
-  const attentionId = item.attention !== "none" ? `home-attention-${item.id}` : undefined;
-  const readErrorId = `home-read-error-${item.id}`;
-  const favorite = getCommandState(item.id, "isFavorite");
-  const unread = getCommandState(item.id, "isUnread");
+  const attentionId = item.attention !== "none" ? `${instanceId}-attention` : undefined;
+  const readErrorId = `${instanceId}-read-error`;
   const favoriteValue = !item.isFavorite;
   const unreadValue = item.attention === "none";
   const favoriteSuppressed = favorite.pending;
@@ -56,7 +54,6 @@ export function ProjectChatRow({
     timeStyle: "short",
   }).format(new Date(item.lastActivityAt));
   const workLabel = item.work?.title ? t`Work: ${item.work.title}` : t`Work unavailable`;
-  const favoritePointer = useRef(false);
   const active = menuOpen || focusWithin;
   useEffect(() => {
     onActiveChange?.(item.id, active);
@@ -65,7 +62,7 @@ export function ProjectChatRow({
 
   return (
     <div
-      data-home-row={item.id}
+      data-project-chat-row={item.id}
       className="group relative min-w-0 px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-muted/40"
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
@@ -95,11 +92,11 @@ export function ProjectChatRow({
       ) : null}
 
       <div
-        data-home-row-layout
-        className="home-row-layout pointer-events-none relative z-10 grid min-w-0 text-sm"
+        data-project-chat-row-layout
+        className="project-chat-row-layout pointer-events-none relative z-10 grid min-w-0 text-sm"
       >
         <span
-          data-home-row-line
+          data-project-chat-row-line
           className={cn(
             "col-start-1 row-start-1 min-w-0 truncate",
             item.attention !== "none" ? "font-semibold" : "font-medium",
@@ -108,7 +105,7 @@ export function ProjectChatRow({
           {title}
         </span>
         <WorkIdentity
-          data-home-row-work
+          data-project-chat-row-work
           className="px-1"
           name={item.work?.title}
           unavailableLabel={t`Unavailable`}
@@ -116,7 +113,7 @@ export function ProjectChatRow({
           title={item.work?.title}
         />
         <div
-          data-home-row-line
+          data-project-chat-row-line
           className="col-start-1 row-start-2 flex min-w-0 items-center gap-2 text-compact text-muted-foreground"
         >
           <p className="min-w-0 max-w-[65ch] truncate">
@@ -132,7 +129,7 @@ export function ProjectChatRow({
         </div>
 
         <div
-          data-home-row-trailing
+          data-project-chat-row-trailing
           className="pointer-events-none col-start-3 row-span-2 row-start-1 grid place-items-center"
         >
           <time
@@ -155,7 +152,7 @@ export function ProjectChatRow({
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <IconButton
-                  data-home-row-actions={item.id}
+                  data-project-chat-row-actions={item.id}
                   className={cn(
                     "[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11",
                     unread.error && "text-destructive",
@@ -171,17 +168,8 @@ export function ProjectChatRow({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   aria-disabled={favoriteSuppressed || undefined}
-                  onPointerDown={() => {
-                    favoritePointer.current = true;
-                  }}
-                  onKeyDown={() => {
-                    favoritePointer.current = false;
-                  }}
                   onSelect={() => {
-                    if (!favoriteSuppressed) {
-                      onFavorite(item, favoriteValue, !favoritePointer.current);
-                    }
-                    favoritePointer.current = false;
+                    if (!favoriteSuppressed) onFavorite(item, favoriteValue);
                   }}
                 >
                   <span>{item.isFavorite ? t`Remove from favorites` : t`Add to favorites`}</span>
