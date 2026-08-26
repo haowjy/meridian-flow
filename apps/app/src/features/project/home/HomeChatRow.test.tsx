@@ -73,6 +73,22 @@ async function waitFor(assertion: () => void) {
 }
 
 describe("HomeChatRow", () => {
+  it("keeps attention semantics without a visual mark in the shared row grid", async () => {
+    await withRow(
+      <HomeChatRow {...props({ item: { ...chat(), attention: "actionRequired" } })} />,
+      () => {
+        const row = document.querySelector("[data-home-row]") as HTMLElement;
+        expect(row.querySelector("[data-home-row-layout]")).not.toBeNull();
+        expect(row.querySelector("[data-home-row-work]")).not.toBeNull();
+        expect(row.querySelector("[data-home-row-trailing]")).not.toBeNull();
+        expect(
+          row.querySelector('[class*="bg-status-warning"], [class*="bg-jade-text"]'),
+        ).toBeNull();
+        expect(row.textContent).toContain("The AI asked you a question");
+      },
+    );
+  });
+
   it("owns Favorite and Remove favorite in the overflow with pointer and keyboard modality", async () => {
     const pointerFavorite = vi.fn();
     await withRow(<HomeChatRow {...props({ onFavorite: pointerFavorite })} />, async () => {

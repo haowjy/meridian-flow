@@ -331,6 +331,14 @@
   }
 }
 
+/* Home's real and loading rows share fixed metadata lanes. Container-relative
+   sizing keeps Work readable on phones without letting residual title width
+   move its center from one row to the next. */
+@utility home-row-layout {
+  grid-template-columns: minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) 3.5rem;
+  grid-template-rows: auto auto;
+}
+
 @utility chat-scroll-fade-bottom {
   /* Reserve gutter so dual-mask scrollbar width matches layout (see PQINA pattern). */
   scrollbar-gutter: stable;

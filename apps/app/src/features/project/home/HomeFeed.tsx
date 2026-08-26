@@ -220,13 +220,11 @@ function SkeletonRows({ count }: { count: number }) {
   return (
     <ul className="divide-y divide-border-subtle">
       {Array.from({ length: count }, (_, x) => (
-        <li key={x} className="space-y-2 px-2 py-2">
-          <div className="flex items-center gap-2 pr-14">
-            <Skeleton className="h-4 flex-1 motion-reduce:animate-none" />
-            <Skeleton className="h-4 w-20 motion-reduce:animate-none" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-3 flex-1 motion-reduce:animate-none" />
+        <li key={x} className="home-row-layout grid px-2 py-1.5">
+          <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
+          <Skeleton className="col-start-2 row-start-1 mx-2 h-4 motion-reduce:animate-none" />
+          <Skeleton className="col-span-2 col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />
+          <div className="col-start-3 row-span-2 row-start-1 grid place-items-center">
             <Skeleton className="h-3 w-12 motion-reduce:animate-none" />
           </div>
         </li>
