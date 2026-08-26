@@ -3,7 +3,7 @@ import type { Work } from "@meridian/contracts/works";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { WorkDialog } from "./WorkScreen";
+import { WorkDialog } from "./WorkDialog";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>

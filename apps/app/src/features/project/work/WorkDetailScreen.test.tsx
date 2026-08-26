@@ -89,7 +89,8 @@ vi.mock("@/client/query/useWorks", () => ({
 }));
 
 const { WorkDetailScreen } = await import("./WorkDetailScreen");
-const { focusAfterDelete, WorkScreen } = await import("./WorkScreen");
+const { WorkScreen } = await import("./WorkScreen");
+const { focusAfterDelete } = await import("./work-focus-intent");
 
 describe("WorkDetailScreen resource boundaries", () => {
   beforeEach(() => vi.clearAllMocks());

@@ -28,13 +28,22 @@ import {
 } from "@/components/ui/dialog";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkAssociatedChats } from "./WorkAssociatedChats";
+import { WorkDialog } from "./WorkDialog";
 import {
   useWorkMetadataController,
   WorkMetadata,
   type WorkMetadataController,
 } from "./WorkMetadata";
-import { focusAfterDelete, ResourceError, WorkDialog, type WorkScreenProps } from "./WorkScreen";
-import { holdWorkCollectionFocus } from "./work-focus-intent";
+import { WorkResourceError } from "./WorkResourceState";
+import { focusAfterDelete, holdWorkCollectionFocus } from "./work-focus-intent";
+
+export type WorkDetailScreenProps = {
+  projectId: string;
+  work: Work;
+  routeCommands: ProjectRouteCommands;
+  onOpenThread: (threadId: string) => void;
+  catalogWorks?: Work[];
+};
 
 export function WorkDetailScreen({
   projectId,
@@ -42,7 +51,7 @@ export function WorkDetailScreen({
   routeCommands,
   onOpenThread,
   catalogWorks = [work],
-}: WorkScreenProps & { work: Work; catalogWorks?: Work[] }) {
+}: WorkDetailScreenProps) {
   const metadataMutation = useWorkMutations(projectId);
   const lifecycleMutation = useWorkMutations(projectId);
   const controller = useWorkMetadataController(
@@ -153,28 +162,33 @@ export function WorkDetailScreen({
             controller.request({ label: t`Open chat`, run: () => onOpenThread(item.id) })
           }
         />
-        <WorkDialog
-          work={manage ? controller.work : null}
-          pending={lifecycleMutation.isPending}
-          error={lifecycleMutation.error}
-          onClose={() => {
-            if (!lifecycleMutation.isPending) {
-              lifecycleMutation.reset();
-              setManage(false);
-            }
-          }}
-          onAction={(action) =>
-            lifecycleMutation.mutate(action, {
-              onSuccess: () => {
+        {manage ? (
+          <WorkDialog
+            work={controller.work}
+            pending={lifecycleMutation.isPending}
+            error={lifecycleMutation.error}
+            onClose={() => {
+              if (!lifecycleMutation.isPending) {
+                lifecycleMutation.reset();
                 setManage(false);
-                if (action.type === "delete") {
-                  holdWorkCollectionFocus(projectId, focusAfterDelete(catalogWorks, action.workId));
-                  void routeCommands.closeWork({ replace: true });
-                } else requestAnimationFrame(() => manageButton.current?.focus());
-              },
-            })
-          }
-        />
+              }
+            }}
+            onAction={(action) =>
+              lifecycleMutation.mutate(action, {
+                onSuccess: () => {
+                  setManage(false);
+                  if (action.type === "delete") {
+                    holdWorkCollectionFocus(
+                      projectId,
+                      focusAfterDelete(catalogWorks, action.workId),
+                    );
+                    void routeCommands.closeWork({ replace: true });
+                  } else requestAnimationFrame(() => manageButton.current?.focus());
+                },
+              })
+            }
+          />
+        ) : null}
         <DirtyDecision controller={controller} />
       </article>
     </div>
@@ -199,7 +213,7 @@ function Drafts({
       {query.status === "loading" ? (
         <Loading />
       ) : query.status === "error" ? (
-        <ResourceError label={t`Pending drafts`} retry={query.refetch} />
+        <WorkResourceError label={t`Pending drafts`} retry={query.refetch} />
       ) : groups.length ? (
         <ul className="min-w-0 divide-y divide-border-subtle rounded-lg border">
           {groups.map((group) => (
@@ -270,7 +284,7 @@ function TreeSummary({
   return (
     <ResourceSection title={label}>
       {query.isError ? (
-        <ResourceError label={label} retry={query.refetch} />
+        <WorkResourceError label={label} retry={query.refetch} />
       ) : !query.tree ? (
         <Loading />
       ) : (

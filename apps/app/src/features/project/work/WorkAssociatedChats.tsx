@@ -9,7 +9,7 @@ import { useWorkThreads } from "@/client/query/useWorkThreads";
 import { useAnnouncement } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { ProjectChatRow } from "../chat-list/ProjectChatRow";
-import { ResourceError } from "./WorkScreen";
+import { WorkResourceError } from "./WorkResourceState";
 
 export function WorkAssociatedChats({
   projectId,
@@ -80,7 +80,7 @@ export function WorkAssociatedChats({
     <section className="min-w-0 space-y-3">
       <h2 className="text-base font-semibold">{t`Associated chats`}</h2>
       {query.isError ? (
-        <ResourceError label={t`Associated chats`} retry={query.refetch} />
+        <WorkResourceError label={t`Associated chats`} retry={query.refetch} />
       ) : query.threads === null ? (
         <p role="status" className="text-sm text-muted-foreground">
           <Trans>Loading…</Trans>
