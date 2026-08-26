@@ -213,6 +213,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
     });
 
+    it("targets a restored thread when Work changed only while it was hidden", async () => {
+      const repos = createDrizzleRepositories(db);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, OTHER_THREAD_ID));
+
+      await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
+      await repos.workContextDeliveries.acknowledge(THREAD_ID);
+
+      await restoreThreadFromTrash(
+        {
+          repos,
+          workContextDelivery: delivery(repos),
+        },
+        OTHER_THREAD_ID,
+      );
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(true);
+      await delivery(repos).sweep();
+      await expect(repos.turns.listByThread(OTHER_THREAD_ID)).resolves.toHaveLength(1);
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
+    });
+
     it("revalidates deliverability when deletion wins after pending selection", async () => {
       const repos = createDrizzleRepositories(db);
       await repos.workContextDeliveries.enqueueThread(THREAD_ID);
