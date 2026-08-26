@@ -1,25 +1,26 @@
 /** Focused Work detail composition with independently resilient resources. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
+import type { ProjectChatItem, ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { useBlocker } from "@tanstack/react-router";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive,
   ArchiveRestore,
   ChevronLeft,
   FileText,
   Folder,
-  MessageSquare,
   NotebookPen,
   Upload,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useWorkMutations } from "@/client/query/useWorks";
 import { useWorkThreads } from "@/client/query/useWorkThreads";
+import { useAnnouncement } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ProjectChatRow } from "../chat-list/ProjectChatRow";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import {
   useWorkMetadataController,
@@ -53,6 +55,7 @@ export function WorkDetailScreen({
   );
   const [manage, setManage] = useState(false);
   const manageButton = useRef<HTMLButtonElement>(null);
+  const scrollOwner = useRef<HTMLDivElement>(null);
   const blocker = useBlocker({
     shouldBlockFn: () => controller.dirty || controller.saving,
     enableBeforeUnload: () => controller.dirty,
@@ -67,7 +70,7 @@ export function WorkDetailScreen({
       });
   }, [blocker, controller]);
   return (
-    <div className="app-scroll">
+    <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-10 pb-12">
         <WorkMetadata
           controller={controller}
@@ -150,6 +153,7 @@ export function WorkDetailScreen({
           work={controller.work}
           onOpenThread={onOpenThread}
           controller={controller}
+          scrollOwner={scrollOwner}
         />
         <WorkDialog
           work={manage ? controller.work : null}
@@ -312,13 +316,61 @@ function Chats({
   work,
   onOpenThread,
   controller,
+  scrollOwner,
 }: {
   projectId: string;
   work: Work;
   onOpenThread: (id: string) => void;
   controller: WorkMetadataController;
+  scrollOwner: React.RefObject<HTMLDivElement | null>;
 }) {
   const query = useWorkThreads(projectId, work.id);
+  const { announce, announceError } = useAnnouncement();
+  const [now, setNow] = useState(Date.now());
+  const [list, setList] = useState<HTMLUListElement | null>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  useLayoutEffect(() => {
+    if (!list) return;
+    const measure = () => setScrollMargin(list.offsetTop);
+    measure();
+    const content = scrollOwner.current?.firstElementChild;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [list, scrollOwner]);
+  const virtualizer = useVirtualizer({
+    count: query.threads?.length ?? 0,
+    getScrollElement: () => scrollOwner.current,
+    estimateSize: () => 52,
+    getItemKey: (index) => query.threads?.[index]?.id ?? index,
+    overscan: 8,
+    scrollMargin,
+  });
+  const rowProps = {
+    now,
+    onOpen: (item: ProjectChatItem) =>
+      controller.request({ label: t`Open chat`, run: () => onOpenThread(item.id) }),
+    onFavorite: (item: ProjectChatItem, value: boolean) => {
+      void query.setFavorite(item.id, value).then((saved) => {
+        if (saved)
+          announce(
+            value ? t`${item.title} added to favorites` : t`${item.title} removed from favorites`,
+          );
+        else announceError(t`Favorite wasn’t saved`);
+      });
+    },
+    onUnread: async (item: ProjectChatItem, value: boolean) => {
+      const saved = await query.setUnread(item.id, value);
+      if (!saved) announceError(t`Read status wasn’t saved`);
+      return saved;
+    },
+    getCommandState: query.getCommandState,
+  };
   return (
     <ResourceSection title={t`Associated chats`}>
       {query.isError ? (
@@ -326,42 +378,44 @@ function Chats({
       ) : query.threads === null ? (
         <Loading />
       ) : query.threads.length ? (
-        <ul className="min-w-0 divide-y divide-border-subtle rounded-lg border">
-          {query.threads.map((thread) => (
-            <li key={thread.id}>
-              <button
-                type="button"
-                className="focus-ring flex min-h-11 min-w-0 w-full items-center gap-3 px-4 py-3 text-left"
-                onClick={() =>
-                  controller.request({ label: t`Open chat`, run: () => onOpenThread(thread.id) })
-                }
-              >
-                <MessageSquare className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {thread.title || t`Untitled chat`}
-                  </span>
-                  <span className="flex flex-wrap gap-x-2 text-meta text-muted-foreground">
-                    <span>
-                      {thread.runningTurnId ? (
-                        <Trans>Writing</Trans>
-                      ) : thread.attention === "actionRequired" ? (
-                        <Trans>Needs attention</Trans>
-                      ) : thread.attention === "unread" ? (
-                        <Trans>Unread</Trans>
-                      ) : (
-                        <Trans>Ready</Trans>
-                      )}
-                    </span>
-                    <span>
-                      <Plural value={thread.turnCount} one="# turn" other="# turns" />
-                    </span>
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul
+            ref={setList}
+            className="relative min-w-0"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const item = query.threads?.[virtualRow.index];
+              return item ? (
+                <li
+                  key={item.id}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  aria-posinset={virtualRow.index + 1}
+                  aria-setsize={query.threads?.length}
+                  className="absolute top-0 left-0 w-full"
+                  style={{
+                    transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                  }}
+                >
+                  <ProjectChatRow item={item} {...rowProps} />
+                </li>
+              ) : null;
+            })}
+          </ul>
+          {query.nextPageIdentity ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={query.isFetchingNextPage}
+              onClick={() => {
+                if (query.nextPageIdentity) query.fetchNextPageFor(query.nextPageIdentity);
+              }}
+            >
+              {query.isFetchingNextPage ? <Trans>Loading…</Trans> : <Trans>Load more chats</Trans>}
+            </Button>
+          ) : null}
+        </>
       ) : (
         <Empty>
           <Trans>No chats are associated with this Work.</Trans>

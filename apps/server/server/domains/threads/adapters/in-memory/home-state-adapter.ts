@@ -2,8 +2,8 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   Block,
-  HomeChatAttention,
-  HomeChatItem,
+  ProjectChatAttention,
+  ProjectChatItem,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
@@ -67,7 +67,7 @@ export function createInMemoryHomeStateAdapter(
     thread: Thread,
     head: Turn | null,
     userId: string,
-  ): HomeChatAttention {
+  ): ProjectChatAttention {
     const state = states.get(key(thread.id, userId));
     const activity = head ? (head.completedAt ?? head.createdAt) : thread.createdAt;
     return projectEffectiveThreadAttention({
@@ -80,7 +80,7 @@ export function createInMemoryHomeStateAdapter(
     });
   }
 
-  async function homeItem(thread: Thread, userId: string): Promise<HomeChatItem> {
+  async function projectChatItem(thread: Thread, userId: string): Promise<ProjectChatItem> {
     const head = conversationalHead(thread);
     const workId = source.primaryWorkId(thread.id as ThreadId);
     const work = workId ? await source.work(workId) : null;
@@ -111,7 +111,7 @@ export function createInMemoryHomeStateAdapter(
 
   const homeFeed: HomeChatFeedRepository = {
     async queryPage(input) {
-      const eligible: HomeChatItem[] = [];
+      const eligible: ProjectChatItem[] = [];
       for (const thread of source.threads()) {
         if (
           thread.projectId === input.projectId &&
@@ -119,7 +119,7 @@ export function createInMemoryHomeStateAdapter(
           thread.status !== "archived" &&
           (await source.isProjectVisible(thread))
         )
-          eligible.push(await homeItem(thread, input.userId));
+          eligible.push(await projectChatItem(thread, input.userId));
       }
       eligible.sort(
         (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id),
@@ -171,5 +171,5 @@ export function createInMemoryHomeStateAdapter(
     },
   };
 
-  return { homeFeed, threadUserState, conversationalHead };
+  return { homeFeed, threadUserState, conversationalHead, projectChatItem };
 }

@@ -40,8 +40,9 @@ export function apiProjectThreadsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/threads`;
 }
 
-export function apiWorkThreadsPath(workId: string): string {
-  return `/api/works/${workId}/threads`;
+export function apiWorkThreadsPath(workId: string, cursor?: string | null): string {
+  const path = `/api/works/${workId}/threads`;
+  return cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path;
 }
 
 export function apiProjectHomeFeedPath(projectId: string, cursor?: string | null): string {

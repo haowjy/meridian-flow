@@ -18,7 +18,17 @@ const mocks = vi.hoisted(() => ({
     isError: false,
     refetch: vi.fn(),
   },
-  chats: { threads: [] as unknown[], isError: false, refetch: vi.fn() },
+  chats: {
+    threads: [] as unknown[],
+    isError: false,
+    refetch: vi.fn(),
+    nextPageIdentity: null,
+    isFetchingNextPage: false,
+    fetchNextPageFor: vi.fn(),
+    setFavorite: vi.fn(async () => true),
+    setUnread: vi.fn(async () => true),
+    getCommandState: vi.fn(() => ({ pending: false, error: null })),
+  },
   metadata: {
     mutateAsync: vi.fn(),
     isPending: false,
@@ -50,8 +60,18 @@ vi.mock("@lingui/react/macro", () => ({
   Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
     (value === 1 ? one : other).replace("#", String(value)),
 }));
+vi.mock("@lingui/react", () => ({ useLingui: () => ({ i18n: { locale: "en-US" } }) }));
 vi.mock("@tanstack/react-router", () => ({
   useBlocker: () => ({ status: "idle", proceed: vi.fn(), reset: vi.fn() }),
+}));
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: ({ count, scrollMargin = 0 }: { count: number; scrollMargin?: number }) => ({
+    options: { scrollMargin },
+    getTotalSize: () => count * 52,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({ index, start: index * 52 })),
+    measureElement: () => {},
+  }),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => mocks.drafts,
@@ -134,9 +154,7 @@ describe("WorkDetailScreen resource boundaries", () => {
         drafts: [{ status: "active", updatedAt: "2026-08-15T00:00:00Z" }],
       },
     ];
-    mocks.chats.threads = [
-      { id: "thread-1", title: "Planning", runningTurnId: null, attention: "none", turnCount: 3 },
-    ];
+    mocks.chats.threads = [chat("thread-1", "Planning")];
     const commands = routeCommands();
     const openChat = vi.fn();
     await withReactRoot(
@@ -181,6 +199,28 @@ describe("WorkDetailScreen resource boundaries", () => {
         expect(mocks.metadata.mutateAsync).not.toHaveBeenCalled();
       },
     );
+  });
+
+  it("renders the shared row with read-only Work identity and live state actions", async () => {
+    resetResources();
+    mocks.chats.threads = [chat("thread-1", "Planning")];
+    await withReactRoot(<WorkDetailScreen {...props()} work={fixture()} />, async () => {
+      expect(document.querySelector('[data-home-row="thread-1"]')).not.toBeNull();
+      const workIdentity = [...document.querySelectorAll("span")].find(
+        (node) => node.textContent === "Current Work",
+      );
+      expect(workIdentity?.closest("button, a")).toBeNull();
+
+      await openActions("Actions for Planning");
+      await tick();
+      await act(async () => menuItem("Add to favorites").click());
+      expect(mocks.chats.setFavorite).toHaveBeenCalledWith("thread-1", true);
+
+      await openActions("Actions for Planning");
+      await tick();
+      await act(async () => menuItem("Mark unread").click());
+      expect(mocks.chats.setUnread).toHaveBeenCalledWith("thread-1", true);
+    });
   });
 
   it("holds internal detail navigation until the writer discards the active draft", async () => {
@@ -264,6 +304,17 @@ function resetResources() {
   mocks.chats.threads = [];
   mocks.chats.isError = false;
 }
+function chat(id: string, title: string) {
+  return {
+    id,
+    title,
+    work: { id: "current-work", title: "Current Work" },
+    lastMessagePreview: "Keep climbing.",
+    lastActivityAt: "2026-08-15T00:00:00.000000Z",
+    attention: "none" as const,
+    isFavorite: false,
+  };
+}
 function props(overrides: Record<string, unknown> = {}) {
   const workId = parseRequestId(fixture().id);
   if (!workId) throw new Error("invalid fixture Work ID");
@@ -312,6 +363,27 @@ function button(label: string): HTMLButtonElement {
   );
   if (!(node instanceof window.HTMLButtonElement)) throw new Error(`missing ${label}`);
   return node;
+}
+function menuItem(label: string): HTMLElement {
+  const node = [...document.querySelectorAll('[role="menuitem"]')].find(
+    (item) => item.textContent === label,
+  );
+  if (!(node instanceof window.HTMLElement)) throw new Error(`missing ${label}`);
+  return node;
+}
+async function openActions(label: string) {
+  const trigger = button(label);
+  await act(async () => {
+    const PointerEventConstructor = window.PointerEvent ?? window.MouseEvent;
+    trigger.dispatchEvent(
+      new PointerEventConstructor("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerType: "mouse",
+      } as PointerEventInit),
+    );
+    trigger.click();
+  });
 }
 function click(label: string) {
   act(() => button(label).click());

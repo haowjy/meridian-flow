@@ -67,6 +67,11 @@ type ListProjectWorksOptions = RequestInitOptions & {
   status?: "active" | "archived" | "all";
 };
 
+type ListWorkThreadsOptions = RequestInitOptions & {
+  cursor?: string | null;
+  signal?: AbortSignal;
+};
+
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
@@ -105,15 +110,15 @@ export async function listProjectThreads(
 
 export async function listWorkThreads(
   workId: string,
-  init?: RequestInitOptions,
-): Promise<ThreadListItem[]> {
-  const response = await getJson<ListWorkThreadsResponse>(
-    urlFor(apiWorkThreadsPath(workId), init),
+  options?: ListWorkThreadsOptions,
+): Promise<ListWorkThreadsResponse> {
+  return getJson<ListWorkThreadsResponse>(
+    urlFor(apiWorkThreadsPath(workId, options?.cursor), options),
     {
-      headers: init?.headers,
+      headers: options?.headers,
+      signal: options?.signal,
     },
   );
-  return response.threads;
 }
 
 export async function listProjectWorks(

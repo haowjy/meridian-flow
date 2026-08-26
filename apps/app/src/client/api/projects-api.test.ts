@@ -62,8 +62,8 @@ describe("Work lifecycle requests", () => {
 
 describe("Work-associated chat requests", () => {
   it("requests the canonical endpoint and unwraps its typed collection", async () => {
-    const threads = [{ id: "thread-1", title: "Opening" }];
-    const fetchMock = vi.fn(async () => Response.json({ threads }));
+    const page = { items: [{ id: "thread-1", title: "Opening" }], nextCursor: "next" };
+    const fetchMock = vi.fn(async () => Response.json(page));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
@@ -71,7 +71,7 @@ describe("Work-associated chat requests", () => {
         origin: "https://app.example",
         headers: { "x-request": "typed" },
       }),
-    ).resolves.toEqual(threads);
+    ).resolves.toEqual(page);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://app.example/api/works/work-1/threads",
       expect.objectContaining({ headers: { "x-request": "typed" } }),

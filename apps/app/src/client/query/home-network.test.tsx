@@ -1,7 +1,7 @@
 /** Home network contracts over real TanStack Query observers and controlled HTTP. */
 import type {
   HomeChatFeedPage,
-  HomeChatItem,
+  ProjectChatItem,
   ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -34,7 +34,7 @@ const homePath = `/api/projects/${projectId}/home-feed`;
 const cursorPath = `${homePath}?cursor=cursor-2`;
 const userStatePath = `/api/threads/${threadId}/user-state`;
 
-const item = (attention: HomeChatItem["attention"] = "unread"): HomeChatItem => ({
+const item = (attention: ProjectChatItem["attention"] = "unread"): ProjectChatItem => ({
   id: threadId,
   title: "A chat",
   work: null,
@@ -43,7 +43,7 @@ const item = (attention: HomeChatItem["attention"] = "unread"): HomeChatItem => 
   attention,
   isFavorite: false,
 });
-const page = (items: HomeChatItem[], nextCursor: string | null = null): HomeChatFeedPage => ({
+const page = (items: ProjectChatItem[], nextCursor: string | null = null): HomeChatFeedPage => ({
   featured: { continueChat: items[0] ?? null, favoriteChats: [] },
   recentChats: { items, nextCursor },
 });

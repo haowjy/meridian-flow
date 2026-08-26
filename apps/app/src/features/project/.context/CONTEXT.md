@@ -63,7 +63,10 @@ Incoming authoritative Work revisions update the clean baseline without replacin
 active draft. One-shot focus intents bridge detail close/delete to the collection;
 they are route continuity, not Work selection or persistent state.
 Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
-Uploads, and associated chats. Resource sections fail independently. Archive and
+Uploads, and associated chats. Associated chats use bounded cursor pages and the
+same virtualized, borderless project chat row as Home without adding a nested
+scroll owner. Their membership is historical while the displayed Work is the
+chat's current primary Work. Resource sections fail independently. Archive and
 unarchive preserve the detail route; delete replaces to collection and restores focus
 to an adjacent row. Both shells share this route-owned module. At phone geometry, text
 must wrap without horizontal overflow and product controls retain coarse-pointer touch

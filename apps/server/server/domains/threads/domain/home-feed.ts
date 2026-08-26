@@ -1,7 +1,7 @@
 /** Cursor and page policy for the server-owned Home chat feed. */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { HomeChatFeedPage, HomeChatItem } from "@meridian/contracts/threads";
+import type { HomeChatFeedPage, ProjectChatItem } from "@meridian/contracts/threads";
 import { isUuid } from "../../../shared/uuid.js";
 import type { HomeChatFeedRepository, HomeFeedCursorKey } from "../ports/repositories.js";
 
@@ -74,7 +74,7 @@ export async function getHomeChatFeedPage(input: {
     includeFeatured: !after,
   });
   const recentItems = result.recent.slice(0, PAGE_SIZE);
-  const cursorItem: HomeChatItem | undefined =
+  const cursorItem: ProjectChatItem | undefined =
     result.recent.length > PAGE_SIZE ? recentItems.at(-1) : undefined;
   return {
     featured: after ? null : { continueChat: result.continueChat, favoriteChats: result.favorites },

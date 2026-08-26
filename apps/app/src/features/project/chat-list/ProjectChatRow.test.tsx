@@ -2,17 +2,17 @@
 /** Behavioral contracts for Home's two-line row and overflow-owned commands. */
 import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import type { HomeChatItem } from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { HomeChatRow, type HomeChatRowProps } from "./HomeChatRow";
+import { ProjectChatRow, type ProjectChatRowProps } from "./ProjectChatRow";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
 }));
-const chat = (favorite = false): HomeChatItem => ({
+const chat = (favorite = false): ProjectChatItem => ({
   id: "thread-1",
   title: "River",
   work: { id: "work-1", title: "First Work" },
@@ -22,7 +22,7 @@ const chat = (favorite = false): HomeChatItem => ({
   isFavorite: favorite,
 });
 
-const props = (overrides: Partial<HomeChatRowProps> = {}): HomeChatRowProps => ({
+const props = (overrides: Partial<ProjectChatRowProps> = {}): ProjectChatRowProps => ({
   item: chat(),
   now: Date.parse("2026-08-24T16:00:00.000Z"),
   onOpen: vi.fn(),
@@ -72,9 +72,9 @@ async function waitFor(assertion: () => void) {
   throw lastError;
 }
 
-describe("HomeChatRow", () => {
+describe("ProjectChatRow", () => {
   it("shows the Composer-style Work value while preserving its accessible label", async () => {
-    await withRow(<HomeChatRow {...props()} />, () => {
+    await withRow(<ProjectChatRow {...props()} />, () => {
       const work = document.querySelector("[data-home-row-work]");
       expect(work?.textContent).toBe("First Work");
       expect(work?.getAttribute("aria-label")).toBe("Work: First Work");
@@ -83,7 +83,7 @@ describe("HomeChatRow", () => {
 
   it("describes attention to screen readers without exposing a visual status", async () => {
     await withRow(
-      <HomeChatRow {...props({ item: { ...chat(), attention: "actionRequired" } })} />,
+      <ProjectChatRow {...props({ item: { ...chat(), attention: "actionRequired" } })} />,
       () => {
         const row = document.querySelector("[data-home-row]") as HTMLElement;
         const open = row.querySelector('[aria-label="Open River"]') as HTMLButtonElement;
@@ -100,7 +100,7 @@ describe("HomeChatRow", () => {
 
   it("owns Favorite and Remove favorite in the overflow with pointer and keyboard modality", async () => {
     const pointerFavorite = vi.fn();
-    await withRow(<HomeChatRow {...props({ onFavorite: pointerFavorite })} />, async () => {
+    await withRow(<ProjectChatRow {...props({ onFavorite: pointerFavorite })} />, async () => {
       await openActions();
       const add = menuItem("Add to favorites");
       await act(async () => {
@@ -123,7 +123,7 @@ describe("HomeChatRow", () => {
 
     const keyboardFavorite = vi.fn();
     await withRow(
-      <HomeChatRow {...props({ item: chat(true), onFavorite: keyboardFavorite })} />,
+      <ProjectChatRow {...props({ item: chat(true), onFavorite: keyboardFavorite })} />,
       async () => {
         await openActions();
         const remove = menuItem("Remove from favorites");
@@ -141,7 +141,7 @@ describe("HomeChatRow", () => {
   });
 
   it("keeps menu-open ownership and restores trigger focus on Escape", async () => {
-    await withRow(<HomeChatRow {...props()} />, async () => {
+    await withRow(<ProjectChatRow {...props()} />, async () => {
       const trigger = await openActions();
       expect(trigger.getAttribute("aria-expanded")).toBe("true");
       await act(async () => menuItem("Add to favorites").focus());
@@ -159,7 +159,7 @@ describe("HomeChatRow", () => {
   it("keeps failed read retry in the menu without a third row", async () => {
     const onUnread = vi.fn(async () => true);
     await withRow(
-      <HomeChatRow
+      <ProjectChatRow
         {...props({
           onUnread,
           getCommandState: vi.fn((_id, field) => ({
@@ -181,7 +181,7 @@ describe("HomeChatRow", () => {
 
   it("formats compact and full activity dates with the active locale", async () => {
     await withRow(
-      <HomeChatRow {...props()} />,
+      <ProjectChatRow {...props()} />,
       () => {
         const dates = [...document.querySelectorAll("time")];
         expect(dates[0]?.textContent).toContain("8月");

@@ -1,5 +1,5 @@
 /** Home-specific compact activity dates. */
-export function formatHomeActivity(value: string, now: number, locale?: string): string {
+export function formatProjectChatActivity(value: string, now: number, locale?: string): string {
   const date = new Date(value);
   const elapsed = Math.max(0, now - date.getTime());
   if (elapsed < 60_000) return "now";

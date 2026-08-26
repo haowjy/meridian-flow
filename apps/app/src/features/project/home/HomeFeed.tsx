@@ -1,18 +1,22 @@
 /** Complete Home feed presentation: sections, lists, pagination, and screen states. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { HomeChatItem } from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
 import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { HomeChatRow, type HomeChatRowProps } from "./HomeChatRow";
+import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
 
 type FeedQuery = {
   isPending: boolean;
   isError: boolean;
   data: unknown;
-  grouped: { continueChat: HomeChatItem | null; favorites: HomeChatItem[]; recent: HomeChatItem[] };
+  grouped: {
+    continueChat: ProjectChatItem | null;
+    favorites: ProjectChatItem[];
+    recent: ProjectChatItem[];
+  };
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
@@ -25,7 +29,7 @@ export function HomeFeed({
   rowProps,
 }: {
   feed: FeedQuery;
-  rowProps: Omit<HomeChatRowProps, "item">;
+  rowProps: Omit<ProjectChatRowProps, "item">;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const requestedPage = useRef<HomeFeedNextPageIdentity | null>(null);
@@ -113,7 +117,7 @@ export function HomeFeed({
           >
             {recent.map((item) => (
               <li key={item.id}>
-                <HomeChatRow item={item} {...rowProps} />
+                <ProjectChatRow item={item} {...rowProps} />
               </li>
             ))}
           </ul>
@@ -151,8 +155,8 @@ function Section({
   rowProps,
 }: {
   title: string;
-  items: HomeChatItem[];
-  rowProps: Omit<HomeChatRowProps, "item">;
+  items: ProjectChatItem[];
+  rowProps: Omit<ProjectChatRowProps, "item">;
 }) {
   return (
     <section className="flex flex-col gap-2">
@@ -165,14 +169,14 @@ function ChatList({
   items,
   rowProps,
 }: {
-  items: HomeChatItem[];
-  rowProps: Omit<HomeChatRowProps, "item">;
+  items: ProjectChatItem[];
+  rowProps: Omit<ProjectChatRowProps, "item">;
 }) {
   return (
     <ul className="divide-y divide-border-subtle">
       {items.map((item) => (
         <li key={item.id}>
-          <HomeChatRow item={item} {...rowProps} />
+          <ProjectChatRow item={item} {...rowProps} />
         </li>
       ))}
     </ul>

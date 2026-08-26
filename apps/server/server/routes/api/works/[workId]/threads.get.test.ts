@@ -19,9 +19,22 @@ function event(workId = WORK_ID) {
 }
 
 function fixture(projectUserId = USER_ID) {
-  const listByWork = vi.fn(async () => [{ id: "thread-1", work: { id: "current-work" } }]);
+  const queryPage = vi.fn(async () => [
+    {
+      item: {
+        id: "00000000-0000-4000-8000-000000000805",
+        title: "Thread",
+        work: { id: "current-work", title: "Current Work" },
+        lastMessagePreview: "Preview",
+        lastActivityAt: "2026-08-01T00:00:00.000000Z",
+        attention: "none" as const,
+        isFavorite: false,
+      },
+      updatedAt: "2026-08-01T00:00:00.000000Z",
+    },
+  ]);
   return {
-    listByWork,
+    queryPage,
     app: {
       workRepo: {
         findById: vi.fn(async () => ({ id: WORK_ID, projectId: PROJECT_ID, deletedAt: null })),
@@ -33,7 +46,7 @@ function fixture(projectUserId = USER_ID) {
           deletedAt: null,
         })),
       },
-      repos: { threads: { listByWork } },
+      repos: { workChatFeed: { queryPage } },
     },
   };
 }
@@ -46,9 +59,23 @@ describe("GET /api/works/:workId/threads", () => {
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
 
     await expect(handler(event() as never)).resolves.toMatchObject({
-      value: { threads: [{ id: "thread-1", work: { id: "current-work" } }] },
+      value: {
+        items: [
+          {
+            id: "00000000-0000-4000-8000-000000000805",
+            work: { id: "current-work", title: "Current Work" },
+          },
+        ],
+        nextCursor: null,
+      },
     });
-    expect(f.listByWork).toHaveBeenCalledWith(PROJECT_ID, WORK_ID);
+    expect(f.queryPage).toHaveBeenCalledWith({
+      projectId: PROJECT_ID,
+      workId: WORK_ID,
+      userId: USER_ID,
+      after: null,
+      limit: 51,
+    });
   });
 
   it("conceals a Work in another writer's project before reading associations", async () => {
@@ -56,6 +83,6 @@ describe("GET /api/works/:workId/threads", () => {
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
 
     await expect(handler(event() as never)).rejects.toMatchObject({ statusCode: 404 });
-    expect(f.listByWork).not.toHaveBeenCalled();
+    expect(f.queryPage).not.toHaveBeenCalled();
   });
 });

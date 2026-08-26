@@ -1,7 +1,7 @@
-/** One accessible, borderless Home chat row with independent state controls. */
+/** Shared project chat row with accessible open and independent state controls. */
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
-import type { HomeChatItem } from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { MoreHorizontal } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ThreadUserStateTransportState } from "@/client/query/thread-user-state-commands";
@@ -14,28 +14,28 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import { formatHomeActivity } from "./home-activity-date";
+import { formatProjectChatActivity } from "./project-chat-activity-date";
 
-export type HomeChatRowProps = {
-  item: HomeChatItem;
+export type ProjectChatRowProps = {
+  item: ProjectChatItem;
   now: number;
-  onOpen: (item: HomeChatItem) => void;
-  onFavorite: (item: HomeChatItem, value: boolean, keyboard: boolean) => void;
-  onUnread: (item: HomeChatItem, value: boolean) => Promise<boolean>;
+  onOpen: (item: ProjectChatItem) => void;
+  onFavorite: (item: ProjectChatItem, value: boolean, keyboard: boolean) => void;
+  onUnread: (item: ProjectChatItem, value: boolean) => Promise<boolean>;
   getCommandState: (
     id: string,
     field: "isFavorite" | "isUnread",
   ) => ThreadUserStateTransportState & { error: Error | null };
 };
 
-export function HomeChatRow({
+export function ProjectChatRow({
   item,
   now,
   onOpen,
   onFavorite,
   onUnread,
   getCommandState,
-}: HomeChatRowProps) {
+}: ProjectChatRowProps) {
   const { i18n } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
   const title = item.title || t`New chat`;
@@ -47,7 +47,7 @@ export function HomeChatRow({
   const unreadValue = item.attention === "none";
   const favoriteSuppressed = favorite.pending;
   const unreadSuppressed = unread.pending && unread.desiredValue === unreadValue;
-  const activity = formatHomeActivity(item.lastActivityAt, now, i18n.locale);
+  const activity = formatProjectChatActivity(item.lastActivityAt, now, i18n.locale);
   const fullActivity = new Intl.DateTimeFormat(i18n.locale, {
     dateStyle: "full",
     timeStyle: "short",

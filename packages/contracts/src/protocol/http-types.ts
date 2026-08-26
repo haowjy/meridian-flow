@@ -77,9 +77,7 @@ export type ListProjectThreadsResponse = {
   threads: ThreadListItem[];
 };
 
-export type ListWorkThreadsResponse = {
-  threads: ThreadListItem[];
-};
+export type { WorkChatFeedPage as ListWorkThreadsResponse } from "../threads/home-feed.js";
 
 export type { AiWriteMode, Work };
 

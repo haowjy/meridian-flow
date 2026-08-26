@@ -1,7 +1,7 @@
 /** Composer-led Project Home and its independent, server-owned return feed. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { HomeChatItem } from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { useHomeChatFeed } from "@/client/query/useHomeChatFeed";
 import { useWorks } from "@/client/query/useWorks";
@@ -60,8 +60,8 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
 
   const rowProps = {
     now,
-    onOpen: (item: HomeChatItem) => onOpenThread(item.id),
-    onFavorite: (item: HomeChatItem, value: boolean, keyboard: boolean) => {
+    onOpen: (item: ProjectChatItem) => onOpenThread(item.id),
+    onFavorite: (item: ProjectChatItem, value: boolean, keyboard: boolean) => {
       const optimistic = movement.capture(item.id, keyboard);
       movement.commit(optimistic);
       void feed
@@ -78,7 +78,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
           else announceError(t`Favorite wasn’t saved`);
         });
     },
-    onUnread: async (item: HomeChatItem, value: boolean) => {
+    onUnread: async (item: ProjectChatItem, value: boolean) => {
       const saved = await feed.setUnread(item.id, value);
       if (!saved) announceError(t`Read status wasn’t saved`);
       return saved;

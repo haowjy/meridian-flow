@@ -1,13 +1,13 @@
 /** Browser entry that mounts shipped Home rows and loading rows with deterministic data. */
-import type { HomeChatItem } from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { createRoot } from "react-dom/client";
-import { HomeChatRow } from "../../src/features/project/home/HomeChatRow";
+import { ProjectChatRow } from "../../src/features/project/chat-list/ProjectChatRow";
 import { HomeFeed } from "../../src/features/project/home/HomeFeed";
 import "../../src/styles/globals.css";
 
 const ordinary = Array.from(
   { length: 34 },
-  (_, index): HomeChatItem => ({
+  (_, index): ProjectChatItem => ({
     id: `ordinary-${index + 1}`,
     title: `Recent Chapter ${index + 1}`,
     work: { id: `work-${index + 1}`, title: index % 2 ? "Arc Two" : "Book 1" },
@@ -18,7 +18,7 @@ const ordinary = Array.from(
   }),
 );
 const longValue = "Long value ".repeat(20);
-const long: HomeChatItem = {
+const long: ProjectChatItem = {
   ...ordinary[0],
   id: "long",
   title: longValue,
@@ -51,7 +51,7 @@ createRoot(root).render(
   <main className="project-screen-column">
     <section id="real-rows">
       {[...ordinary, long].map((item) => (
-        <HomeChatRow key={item.id} item={item} {...rowProps} />
+        <ProjectChatRow key={item.id} item={item} {...rowProps} />
       ))}
     </section>
     <section id="loading-rows">

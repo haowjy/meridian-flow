@@ -19,11 +19,13 @@ test.beforeAll(async () => {
       alias: [
         "@lingui/core/macro",
         "@lingui/react/macro",
+        "@lingui/react",
         "@tanstack/react-router",
         "@/client/query/useWorkDrafts",
         "@/client/query/useProjectContextTree",
         "@/client/query/useWorkThreads",
         "@/client/query/useWorks",
+        "@/client/stores",
       ].map((find) => ({ find, replacement: mocks })),
     },
     build: { write: false, rollupOptions: { input: "e2e/support/work-detail-browser-entry.tsx" } },
@@ -90,7 +92,15 @@ test("production Work detail contains long content at 390px", async ({ page }, t
           children: [{ kind: "file", name: unbroken, path: `/${unbroken}` }],
         },
         threads: [
-          { id: "thread", title: unbroken, runningTurnId: null, attention: "none", turnCount: 1 },
+          {
+            id: "thread",
+            title: unbroken,
+            work: { id: "work-current", title: "Current Work" },
+            lastMessagePreview: "Preview",
+            lastActivityAt: "2026-08-16T00:00:00.000000Z",
+            attention: "none",
+            isFavorite: false,
+          },
         ],
       };
     },
@@ -128,3 +138,72 @@ test("production Work detail contains long content at 390px", async ({ page }, t
   await expect(page.locator("textarea")).toBeVisible();
   expect(await scroll.evaluate((node) => node.scrollWidth)).toBe(390);
 });
+
+for (const associationCount of [100, 500, 2_500]) {
+  test(`production Work detail virtualizes ${associationCount} shared chat rows`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "fine-pointer",
+      "desktop main-scroll virtualization contract",
+    );
+    await page.setContent(
+      '<style>html, body, #root { height: 100%; margin: 0; } .app-scroll { height: 100%; }</style><div id="root"></div>',
+    );
+    await page.evaluate((associationCount) => {
+      const work = {
+        id: "11111111-1111-4111-8111-111111111111",
+        projectId: "project-1",
+        createdByUserId: "user-1",
+        name: "Large Work",
+        slug: "large-work",
+        goal: null,
+        description: null,
+        status: "active" as const,
+        archivedAt: null,
+        deletedAt: null,
+        aiWriteMode: "draft" as const,
+        unpushedChangeCount: 0,
+        lastActivityAt: "2026-08-16T00:00:00Z",
+        createdAt: "2026-08-16T00:00:00Z",
+        updatedAt: "2026-08-16T00:00:00Z",
+      };
+      window.__WORK_DETAIL_FIXTURE__ = {
+        work,
+        drafts: [],
+        scratch: { kind: "dir", name: "", path: "", children: [] },
+        uploads: { kind: "dir", name: "", path: "", children: [] },
+        threads: Array.from({ length: associationCount }, (_, index) => ({
+          id: `thread-${index}`,
+          title: `Chat ${index}`,
+          work: { id: work.id, title: work.name },
+          lastMessagePreview: `Preview ${index}`,
+          lastActivityAt: "2026-08-16T00:00:00.000000Z",
+          attention: "none" as const,
+          isFavorite: false,
+        })),
+      };
+    }, associationCount);
+    await page.addStyleTag({ content: compiledCss });
+    await page.addScriptTag({ content: compiledJs, type: "module" });
+    await page.getByRole("heading", { name: "Associated chats" }).scrollIntoViewIfNeeded();
+    await expect(page.locator("[data-home-row]").first()).toBeVisible();
+    const renderedRows = await page.locator("[data-home-row]").count();
+    expect(renderedRows).toBeLessThan(40);
+    const first = page.locator("[data-home-row]").first();
+    const interactionStartedAt = await page.evaluate(() => performance.now());
+    await first.hover();
+    await first.getByRole("button", { name: /^Actions for/ }).click();
+    await expect(page.getByRole("menuitem", { name: "Add to favorites" })).toBeVisible();
+    await page.getByRole("menuitem", { name: "Add to favorites" }).click();
+    const interactionMs = await page.evaluate(
+      (startedAt) => performance.now() - startedAt,
+      interactionStartedAt,
+    );
+    console.info(
+      `work-detail-${associationCount} rendered_rows=${renderedRows} interaction_ms=${interactionMs.toFixed(1)}`,
+    );
+    expect(interactionMs).toBeLessThan(1_000);
+    expect(await page.locator("[data-home-row]").count()).toBeLessThan(40);
+  });
+}

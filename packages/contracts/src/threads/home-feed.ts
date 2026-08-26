@@ -1,25 +1,30 @@
 /** Server-owned projection used by the chat-first project Home. */
 import { z } from "zod";
 
-export type HomeChatAttention = "actionRequired" | "unread" | "none";
+export type ProjectChatAttention = "actionRequired" | "unread" | "none";
 
-export interface HomeChatItem {
+export interface ProjectChatItem {
   id: string;
   title: string;
   work: { id: string; title: string } | null;
   lastMessagePreview: string | null;
   lastActivityAt: string;
-  attention: HomeChatAttention;
+  attention: ProjectChatAttention;
   isFavorite: boolean;
+}
+
+export interface WorkChatFeedPage {
+  items: ProjectChatItem[];
+  nextCursor: string | null;
 }
 
 export interface HomeChatFeedPage {
   featured: {
-    continueChat: HomeChatItem | null;
-    favoriteChats: HomeChatItem[];
+    continueChat: ProjectChatItem | null;
+    favoriteChats: ProjectChatItem[];
   } | null;
   recentChats: {
-    items: HomeChatItem[];
+    items: ProjectChatItem[];
     nextCursor: string | null;
   };
 }
@@ -41,5 +46,5 @@ export interface UpdateThreadUserStateResponse {
   isFavorite: boolean;
   manuallyUnread: boolean;
   lastOpenedAt: string | null;
-  attention: HomeChatAttention;
+  attention: ProjectChatAttention;
 }

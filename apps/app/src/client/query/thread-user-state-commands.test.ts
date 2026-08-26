@@ -1,5 +1,5 @@
 /** Behavioral coverage for the shared user-state command authority. */
-import type { HomeChatItem } from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { groupHomeFeed, type HomeFeedData } from "./home-chat-feed-cache";
@@ -8,7 +8,7 @@ import {
   runThreadUserStateCommand,
 } from "./thread-user-state-commands";
 
-const thread = (attention: HomeChatItem["attention"] = "unread"): HomeChatItem => ({
+const thread = (attention: ProjectChatItem["attention"] = "unread"): ProjectChatItem => ({
   id: "thread-1",
   title: "River",
   work: null,

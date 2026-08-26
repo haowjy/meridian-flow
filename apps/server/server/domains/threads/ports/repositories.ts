@@ -12,11 +12,11 @@ import type {
   BlockType,
   ExecutionSide,
   FinishReason,
-  HomeChatAttention,
-  HomeChatItem,
   JsonValue,
   ModelResponse,
   PriceSource,
+  ProjectChatAttention,
+  ProjectChatItem,
   SpawnStatus,
   Thread,
   ThreadKind,
@@ -163,6 +163,26 @@ export interface HomeFeedCursorKey {
   threadId: ThreadId;
 }
 
+export interface WorkChatFeedRow {
+  item: ProjectChatItem;
+  updatedAt: string;
+}
+
+export interface WorkChatFeedRepository {
+  queryPage(input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    userId: UserId;
+    after: WorkChatFeedCursorKey | null;
+    limit: number;
+  }): Promise<WorkChatFeedRow[]>;
+}
+
+export interface WorkChatFeedCursorKey {
+  updatedAt: string;
+  threadId: ThreadId;
+}
+
 export interface HomeChatFeedRepository {
   queryPage(input: {
     projectId: ProjectId;
@@ -171,9 +191,9 @@ export interface HomeChatFeedRepository {
     recentLimit: number;
     includeFeatured: boolean;
   }): Promise<{
-    continueChat: HomeChatItem | null;
-    favorites: HomeChatItem[];
-    recent: HomeChatItem[];
+    continueChat: ProjectChatItem | null;
+    favorites: ProjectChatItem[];
+    recent: ProjectChatItem[];
   }>;
 }
 
@@ -192,7 +212,7 @@ export interface ThreadUserStateRepository {
     isFavorite?: boolean;
     isUnread?: boolean;
   }): Promise<UpdateThreadUserStateResponse>;
-  effectiveAttention(threadId: ThreadId, userId: UserId): Promise<HomeChatAttention>;
+  effectiveAttention(threadId: ThreadId, userId: UserId): Promise<ProjectChatAttention>;
 }
 
 /**
@@ -324,6 +344,7 @@ export interface WorkContextDeliveryRepository {
 export type ThreadRepositories = {
   threads: ThreadRepository;
   homeFeed: HomeChatFeedRepository;
+  workChatFeed: WorkChatFeedRepository;
   threadUserState: ThreadUserStateRepository;
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;

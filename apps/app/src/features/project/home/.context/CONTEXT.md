@@ -14,10 +14,11 @@ for an open failure; manual read/unread failures remain with their initiating
 Home control.
 The Home feature keeps screen composition in `HomeScreen`, stable-ID creation,
 ambiguity reconciliation, and route-only retry in `useHomeFirstSendAttempt`,
-borderless two-line row semantics in `HomeChatRow`, list and section layout plus
-cursor-observer lifecycle in `HomeFeed`, date policy in `home-activity-date`,
+borderless two-line row semantics in the shared `../chat-list/ProjectChatRow`, list and section layout plus
+cursor-observer lifecycle in `HomeFeed`, date policy in `../chat-list/project-chat-activity-date`,
 and scroll/focus restoration in the favorite-movement hook. Do not duplicate
-any of those concerns in the screen orchestrator.
+any of those concerns in the screen orchestrator. Work detail renders that same
+row component; Work identity inside every list row is display-only.
 
 ## Row layout and feed behavior
 

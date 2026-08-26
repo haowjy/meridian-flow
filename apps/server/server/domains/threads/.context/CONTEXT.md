@@ -70,6 +70,7 @@ instead of the N:1 `threads.workId` column.
 |---|---|
 | `ThreadRepository` | `create / findById / listByUser / listByProject / updateStatus / recomputeCostFromModelResponses / updateCost / softDelete / restore` |
 | `HomeChatFeedRepository` | One server-owned Continue/Favorite/Recent projection with current-visible-lineage preview and keyset pagination. Production resolves a page in one set-oriented SQL statement; in-memory adapters preserve behavior, not query shape. |
+| `WorkChatFeedRepository` | Bounded historical-Work membership pages ordered by `(threads.updated_at DESC, threads.id DESC)`, projecting the chat's current primary Work plus the same preview, attention, and writer state used by project chat rows. |
 | `ThreadUserStateRepository` | Per-writer favorite, manual-unread, and last-opened desired-state authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
@@ -199,6 +200,10 @@ contract shapes.
   uses an opaque exclusive cursor over `(lastActivityAt DESC, threadId DESC)`;
   every page excludes Continue and Favorites, so equal activity times remain
   stable without duplicating a chat.
+- Work-associated chat pages use an opaque exclusive cursor over thread update
+  time plus thread ID. The association filter is M:N history; row Work identity
+  always comes from the current primary membership. Projection and serialization
+  are bounded to 50 rows per page.
 - Opening a thread sends `{ isUnread: false }` to
   `PATCH /api/threads/:threadId/user-state`. Mark-read/open clears the manual
   override and monotonically advances `last_opened_at` using database time;

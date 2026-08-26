@@ -1,4 +1,4 @@
-import type { HomeChatFeedPage, HomeChatItem } from "@meridian/contracts/protocol";
+import type { HomeChatFeedPage, ProjectChatItem } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,7 +7,7 @@ import {
   type HomeFeedData,
 } from "./home-chat-feed-cache";
 
-const item = (id: string, favorite = false): HomeChatItem => ({
+const item = (id: string, favorite = false): ProjectChatItem => ({
   id,
   title: id,
   work: null,
@@ -18,10 +18,10 @@ const item = (id: string, favorite = false): HomeChatItem => ({
 });
 const page = (
   featured: HomeChatFeedPage["featured"],
-  items: HomeChatItem[],
+  items: ProjectChatItem[],
   cursor: string | null = null,
 ): HomeChatFeedPage => ({ featured, recentChats: { items, nextCursor: cursor } });
-const response = (attention: HomeChatItem["attention"], favorite = false) => ({
+const response = (attention: ProjectChatItem["attention"], favorite = false) => ({
   threadId: "a",
   isFavorite: favorite,
   manuallyUnread: attention === "unread",

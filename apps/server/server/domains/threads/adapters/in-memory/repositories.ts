@@ -767,21 +767,49 @@ export function createInMemoryRepositories(
     },
   };
 
-  const { homeFeed, threadUserState, conversationalHead } = createInMemoryHomeStateAdapter(
-    {
-      threads: () => threads.values(),
-      turn: (id) => turns.get(id),
-      blocks: () => blocks.values(),
-      isProjectVisible: threadInActiveProject,
-      primaryWorkId: primaryWorkIdForThread,
-      work: async (id) => options.works?.findById(id) ?? null,
-    },
-    userStateByThreadUser,
-  );
+  const { homeFeed, threadUserState, conversationalHead, projectChatItem } =
+    createInMemoryHomeStateAdapter(
+      {
+        threads: () => threads.values(),
+        turn: (id) => turns.get(id),
+        blocks: () => blocks.values(),
+        isProjectVisible: threadInActiveProject,
+        primaryWorkId: primaryWorkIdForThread,
+        work: async (id) => options.works?.findById(id) ?? null,
+      },
+      userStateByThreadUser,
+    );
 
   return {
     threads: threadRepo,
     homeFeed,
+    workChatFeed: {
+      async queryPage(input) {
+        const associated = [...threads.values()]
+          .filter(
+            (thread) =>
+              thread.projectId === input.projectId &&
+              !thread.deletedAt &&
+              [...threadWorks.values()].some(
+                (row) => row.threadId === thread.id && row.workId === input.workId,
+              ),
+          )
+          .filter(
+            (thread) =>
+              !input.after ||
+              thread.updatedAt < input.after.updatedAt ||
+              (thread.updatedAt === input.after.updatedAt && thread.id < input.after.threadId),
+          )
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+          .slice(0, input.limit);
+        return Promise.all(
+          associated.map(async (thread) => ({
+            item: await projectChatItem(thread, input.userId),
+            updatedAt: thread.updatedAt.replace(/\.(\d{3})Z$/, ".$1000Z"),
+          })),
+        );
+      },
+    },
     threadUserState,
     threadWorks: threadWorksRepo,
     turns: turnRepo,

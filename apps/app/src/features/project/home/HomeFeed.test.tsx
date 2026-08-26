@@ -1,5 +1,5 @@
 /** Rendered contracts for the deep Home feed presentation boundary. */
-import type { HomeChatItem } from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
@@ -12,7 +12,7 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/react", () => ({ useLingui: () => ({ i18n: { locale: "en" } }) }));
 
-const item = (id: string, favorite = false): HomeChatItem => ({
+const item = (id: string, favorite = false): ProjectChatItem => ({
   id,
   title: id,
   work: null,

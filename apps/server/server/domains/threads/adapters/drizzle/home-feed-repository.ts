@@ -1,5 +1,5 @@
 /** One-statement PostgreSQL projection for Continue, Favorite, and Recent Home chats. */
-import type { HomeChatAttention, HomeChatItem } from "@meridian/contracts/threads";
+import type { ProjectChatAttention, ProjectChatItem } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import type { HomeChatFeedRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
@@ -13,11 +13,11 @@ type HomeRow = {
   work_title: string | null;
   last_message_preview: string | null;
   last_activity_at_exact: string;
-  attention: HomeChatAttention;
+  attention: ProjectChatAttention;
   is_favorite: boolean;
 };
 
-function mapRow(row: HomeRow): HomeChatItem {
+function mapRow(row: HomeRow): ProjectChatItem {
   return {
     id: row.thread_id,
     title: row.title,

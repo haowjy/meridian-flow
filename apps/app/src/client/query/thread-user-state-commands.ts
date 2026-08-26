@@ -4,6 +4,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { updateThreadUserState } from "@/client/api/threads-api";
 import { createHomeFeedCacheController, type HomeStateField } from "./home-chat-feed-cache";
+import { createWorkChatFeedCacheCommand } from "./work-chat-feed-cache";
 
 export type ThreadUserStateOutcome =
   | { status: "success"; response: UpdateThreadUserStateResponse }
@@ -105,6 +106,13 @@ async function advanceThreadUserStateQueue(
     field,
     entry.value,
   );
+  const workCacheCommand = createWorkChatFeedCacheCommand(
+    client,
+    projectId,
+    threadId,
+    field,
+    entry.value,
+  );
   let outcome: ThreadUserStateOutcome;
   try {
     const response = await updateThreadUserState(
@@ -114,12 +122,14 @@ async function advanceThreadUserStateQueue(
     // Let stale query observer delivery finish before applying the mutation response.
     await new Promise<void>((resolveTurn) => setTimeout(resolveTurn, 0));
     cacheCommand.succeed(response);
+    workCacheCommand.succeed(response);
     outcome = { status: "success", response };
   } catch (cause) {
     entry.lifecycles.forEach((item) => {
       item.beforeRollback?.();
     });
     cacheCommand.fail();
+    workCacheCommand.fail();
     outcome = {
       status: "error",
       error: cause instanceof Error ? cause : new Error(String(cause)),

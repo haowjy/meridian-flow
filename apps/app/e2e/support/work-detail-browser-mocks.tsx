@@ -9,6 +9,7 @@ export function Trans({ children }: { children: React.ReactNode }) {
 export function Plural({ value, one, other }: { value: number; one: string; other: string }) {
   return (value === 1 ? one : other).replace("#", String(value));
 }
+export const useLingui = () => ({ i18n: { locale: "en-US" } });
 export const useBlocker = () => ({
   status: "idle",
   proceed: () => undefined,
@@ -29,7 +30,17 @@ export const useProjectContextTree = (_projectId: string, scheme: "scratch" | "u
 export const useWorkThreads = () => ({
   threads: state().threads,
   isError: false,
+  isFetchingNextPage: false,
+  nextPageIdentity: null,
+  fetchNextPageFor: () => undefined,
+  setFavorite: async () => true,
+  setUnread: async () => true,
+  getCommandState: () => ({ pending: false as const, error: null }),
   refetch: () => undefined,
+});
+export const useAnnouncement = () => ({
+  announce: () => undefined,
+  announceError: () => undefined,
 });
 export const useWorkMutations = () => ({
   mutateAsync: async () => state().work,
@@ -60,9 +71,11 @@ declare global {
       threads: Array<{
         id: string;
         title: string;
-        runningTurnId: string | null;
+        work: { id: string; title: string } | null;
+        lastMessagePreview: string | null;
+        lastActivityAt: string;
         attention: "none" | "unread" | "actionRequired";
-        turnCount: number;
+        isFavorite: boolean;
       }>;
     };
   }

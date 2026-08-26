@@ -1,7 +1,7 @@
 /** Home-feed projection and the QueryClient-scoped desired-state machine. */
 import type {
   HomeChatFeedPage,
-  HomeChatItem,
+  ProjectChatItem,
   UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
@@ -31,14 +31,14 @@ function state(client: QueryClient, projectId: string): ProjectState {
   return value;
 }
 
-export function compareHomeChats(a: HomeChatItem, b: HomeChatItem): number {
+export function compareHomeChats(a: ProjectChatItem, b: ProjectChatItem): number {
   return b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id);
 }
 
 export function groupHomeFeed(data: HomeFeedData | undefined) {
   const first = data?.pages[0];
   const seen = new Set<string>();
-  const take = (items: HomeChatItem[]) =>
+  const take = (items: ProjectChatItem[]) =>
     items.filter((item) => !seen.has(item.id) && !!seen.add(item.id));
   const continueChat = first?.featured?.continueChat ?? null;
   if (continueChat) seen.add(continueChat.id);
@@ -50,9 +50,9 @@ export function groupHomeFeed(data: HomeFeedData | undefined) {
 }
 
 function patchItem(
-  item: HomeChatItem,
+  item: ProjectChatItem,
   fields: Partial<Record<HomeStateField, Overlay>>,
-): HomeChatItem {
+): ProjectChatItem {
   const desiredUnread = fields.isUnread?.value;
   return {
     ...item,
@@ -67,7 +67,10 @@ function patchItem(
   };
 }
 
-function mapItems(data: HomeFeedData, map: (item: HomeChatItem) => HomeChatItem): HomeFeedData {
+function mapItems(
+  data: HomeFeedData,
+  map: (item: ProjectChatItem) => ProjectChatItem,
+): HomeFeedData {
   return {
     ...data,
     pages: data.pages.map((page) => ({
