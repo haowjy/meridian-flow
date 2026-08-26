@@ -71,7 +71,7 @@ instead of the N:1 `threads.workId` column.
 | `ThreadRepository` | Thread lifecycle plus project lists and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. |
 | `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection. Home retains its set-oriented whole-project ranking. |
 | `WorkChatFeedRepository` | Bounded historical-Work association pages over the same Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
-| `ThreadUserStateRepository` | Per-writer favorite, manual-unread, and last-opened desired-state authority. |
+| `ThreadUserStateRepository` | Per-writer favorite and monotonic open-acknowledgement authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn` |
@@ -213,13 +213,13 @@ contract shapes.
   time plus thread ID. The association filter is M:N history; row Work identity
   always comes from the current primary membership. Projection and serialization
   are bounded to 50 rows per page.
-- Opening a thread sends `{ isUnread: false }` to
-  `PATCH /api/threads/:threadId/user-state`. Mark-read/open clears the manual
-  override and monotonically advances `last_opened_at` using database time;
-  mark-unread sets the durable override without moving that timestamp. The
-  partial desired-state mutation is one statement and preserves omitted fields.
-  Neither clears
-  `actionRequired`, which has precedence.
+- Opening a thread sends the one-way `{ acknowledgeOpen: true }` command to
+  `PATCH /api/threads/:threadId/user-state`. It monotonically advances
+  `last_opened_at`; favorite and acknowledgement updates preserve the omitted
+  sibling field atomically. An idle completed-assistant head newer than
+  `last_opened_at` derives automatic `unread` attention. A waiting interrupt
+  derives `actionRequired`, which takes precedence and is not cleared by an
+  open acknowledgement.
 - Draft-review attention remains an extension point. Establishing it requires
   collab-domain branch/journal queries and review-state semantics, so the
   threads projector currently sources `actionRequired` only from the durable

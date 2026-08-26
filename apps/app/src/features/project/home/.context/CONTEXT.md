@@ -1,9 +1,10 @@
 # Project Home — Boundary and layout contract
 
 `src/client/query/thread-user-state-commands.ts` is the single QueryClient-scoped
-authority for each project/thread's favorite/read base, pending desired fields,
-request admission, per-field command serialization, transport, and field-local
-failure. Rows project immutable feed membership through that normalized record.
+authority for each project/thread's favorite and effective-attention base,
+pending favorite, request admission, per-command serialization, transport, and
+field-local failure. Rows project immutable feed membership through that
+normalized record.
 Work feed pages are never rewritten by a user-state command.
 `src/client/query/home-chat-feed-cache.ts` owns only Home's Continue/Favorite/Recent
 category projection and moves only the affected Home thread.
@@ -13,8 +14,7 @@ Home-to-Chat transfer, creation-owned no-command epochs, retry attribution, and
 lease cleanup above that transport;
 field command state never retains a shared settled error or outcome.
 The visible destination's inline error row is the only accessible alert owner
-for an open failure; manual read/unread failures remain with their initiating
-Home control.
+for an open-acknowledgement failure.
 The Home feature keeps screen composition in `HomeScreen`, stable-ID creation,
 ambiguity reconciliation, and route-only retry in `useHomeFirstSendAttempt`,
 borderless two-line row semantics in the shared, Home-neutral

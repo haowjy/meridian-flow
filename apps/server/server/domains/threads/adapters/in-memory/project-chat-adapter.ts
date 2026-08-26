@@ -188,12 +188,20 @@ export function createInMemoryProjectChatAdapter(
       return thread ? effectiveAttention(thread, conversationalHead(thread), userId) : "none";
     },
     async update(input) {
-      const current = await this.get(input.threadId, input.userId);
+      const stateKey = key(input.threadId, input.userId);
+      const current = states.get(stateKey) ?? {
+        isFavorite: false,
+        lastOpenedAt: null,
+      };
+      const openedAt = input.acknowledgeOpen ? new Date().toISOString() : null;
       const next = {
         isFavorite: input.isFavorite ?? current.isFavorite,
-        lastOpenedAt: input.acknowledgeOpen ? new Date().toISOString() : current.lastOpenedAt,
+        lastOpenedAt:
+          openedAt && (!current.lastOpenedAt || openedAt > current.lastOpenedAt)
+            ? openedAt
+            : current.lastOpenedAt,
       };
-      states.set(key(input.threadId, input.userId), next);
+      states.set(stateKey, next);
       return {
         threadId: input.threadId,
         ...next,

@@ -11,6 +11,35 @@ const HIGHER_THREAD_ID = "00000000-0000-4000-8000-000000000202";
 afterEach(() => vi.useRealTimers());
 
 describe("in-memory Work chat feed adapter", () => {
+  it("preserves concurrent favorite and open-acknowledgement updates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-13T20:01:02.123Z"));
+    const repositories = createInMemoryRepositories();
+
+    const [favorite, acknowledgement] = await Promise.all([
+      repositories.threadUserState.update({
+        threadId: HIGHER_THREAD_ID,
+        userId: USER_ID,
+        isFavorite: true,
+      }),
+      repositories.threadUserState.update({
+        threadId: HIGHER_THREAD_ID,
+        userId: USER_ID,
+        acknowledgeOpen: true,
+      }),
+    ]);
+
+    expect(favorite.isFavorite).toBe(true);
+    expect(acknowledgement).toMatchObject({
+      isFavorite: true,
+      lastOpenedAt: "2026-08-13T20:01:02.123Z",
+    });
+    await expect(repositories.threadUserState.get(HIGHER_THREAD_ID, USER_ID)).resolves.toEqual({
+      isFavorite: true,
+      lastOpenedAt: "2026-08-13T20:01:02.123Z",
+    });
+  });
+
   it("pages equal timestamps by descending thread ID using its emitted exact cursor key", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-13T20:01:02.123Z"));
