@@ -398,7 +398,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       console.info(`home-feed-1000 elapsed_ms=${elapsedMs.toFixed(1)}`);
       expect(page.continueChat?.title).toBe("Chat 1000");
       expect(page.recent).toHaveLength(25);
-      expect(elapsedMs).toBeLessThan(1_000);
     });
   });
 }

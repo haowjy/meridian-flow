@@ -1,4 +1,4 @@
-/** Deterministic browser adapters for mounting the production Work detail boundary. */
+/** Deterministic browser adapters for the Work detail component fixture. */
 import type { ProjectChatItem, ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { useState } from "react";
