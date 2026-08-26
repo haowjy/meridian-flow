@@ -237,6 +237,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
     });
 
+    it("parks an archived obligation, resumes after unarchive, and cascades on hard deletion", async () => {
+      const repos = createDrizzleRepositories(db);
+      await repos.workContextDeliveries.enqueueThread(THREAD_ID);
+      await repos.threads.updateStatus(THREAD_ID, "archived");
+
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([]);
+      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
+      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(0);
+
+      await repos.threads.updateStatus(THREAD_ID, "idle");
+      await delivery(repos).sweep();
+      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
+      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+
+      await repos.workContextDeliveries.enqueueThread(OTHER_THREAD_ID);
+      await db.delete(schema.threads).where(eq(schema.threads.id, OTHER_THREAD_ID));
+      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
+    });
+
     it("revalidates deliverability when deletion wins after pending selection", async () => {
       const repos = createDrizzleRepositories(db);
       await repos.workContextDeliveries.enqueueThread(THREAD_ID);
