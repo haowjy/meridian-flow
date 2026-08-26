@@ -13,7 +13,31 @@ import { resolveCatalogWork } from "../catalog-work-resolution";
 import { HomeFeed } from "./HomeFeed";
 import { NewThreadComposerToolbar } from "./NewThreadComposerToolbar";
 import { useHomeFavoriteMovement } from "./use-home-favorite-movement";
-import { useHomeFirstSendAttempt } from "./use-home-first-send-attempt";
+import {
+  type HomeFirstSendLifecycle,
+  useHomeFirstSendAttempt,
+} from "./use-home-first-send-attempt";
+
+function firstSendFailure(state: HomeFirstSendLifecycle) {
+  switch (state.kind) {
+    case "refused":
+      return {
+        message: t`Your Work or Agent choice is no longer available`,
+        action: "retry" as const,
+      };
+    case "ambiguous":
+      return { message: t`Chat creation is still being reconciled`, action: "retry" as const };
+    case "route_failed":
+      return { message: t`Chat was created but couldn’t open`, action: "retry" as const };
+    case "mismatched":
+      return { message: t`Created chat didn’t match your choices`, action: "start_over" as const };
+    case "idle":
+    case "creating":
+    case "reconciling":
+    case "routing":
+      return null;
+  }
+}
 
 export type HomeScreenProps = {
   projectId: string;
@@ -46,6 +70,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     return () => media.removeEventListener("change", sync);
   }, []);
   const firstSend = useHomeFirstSendAttempt({ projectId, actions, onSelectThread });
+  const firstSendError = firstSendFailure(firstSend.state);
   const catalogWork = resolveCatalogWork(
     worksQuery.status === "error"
       ? { status: "error" }
@@ -94,8 +119,8 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
         ? t`Loading Work`
         : !selectedWork
           ? t`Choose a Work`
-          : firstSend.attempt
-            ? t`Repair your choices, then retry`
+          : firstSend.submitLocked
+            ? t`Finish the current chat attempt`
             : undefined;
   const submit = (text: string, draftRevision: number) => {
     if (!selectedWork || modePending) return false;
@@ -127,9 +152,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                   autoFocus={finePointer}
                   onSubmit={submit}
                   onDraftChange={firstSend.updateDraft}
-                  submitDisabled={
-                    !worksReady || modePending || firstSend.busy || firstSend.attempt !== null
-                  }
+                  submitDisabled={!worksReady || modePending || firstSend.submitLocked}
                   submitDisabledReason={submitDisabledReason}
                   busy={firstSend.busy}
                   toolbarLeft={
@@ -168,25 +191,19 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                   <Trans>No Work yet.</Trans>
                 </p>
               ) : null}
-              {firstSend.failure ? (
+              {firstSendError ? (
                 <InlineErrorRow
-                  message={
-                    firstSend.failure === "route"
-                      ? t`Chat was created but couldn’t open`
-                      : firstSend.failure === "mismatch"
-                        ? t`Created chat didn’t match your choices`
-                        : t`Chat couldn’t start`
+                  message={firstSendError.message}
+                  actionLabel={
+                    firstSendError.action === "start_over" ? <Trans>Start over</Trans> : undefined
                   }
-                  onRetry={
-                    firstSend.retryable && selectedWork
-                      ? () => {
-                          void firstSend.retry({
-                            workId: selectedWork.id,
-                            agentSlug,
-                          });
-                        }
-                      : undefined
-                  }
+                  onRetry={() => {
+                    if (firstSendError.action === "start_over") {
+                      firstSend.startOver();
+                    } else if (selectedWork) {
+                      void firstSend.retry({ workId: selectedWork.id, agentSlug });
+                    }
+                  }}
                 />
               ) : null}
             </div>

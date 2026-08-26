@@ -304,16 +304,45 @@ describe("malformed HTTP request IDs", () => {
     );
   });
 
-  it.each([
-    ["global", () => createThread(event({}, { projectId: VALID_ID }))],
-    ["project-scoped", () => createProjectThread(event({ projectId: VALID_ID }))],
-  ])("maps %s thread creation work-attachment errors to 400", async (_surface, invoke) => {
+  it("maps global thread creation work-attachment errors to 400", async () => {
     const { InvalidWorkAttachmentError } = await import("../thread-creation.js");
     createThreadForProject.mockRejectedValueOnce(
       new InvalidWorkAttachmentError("Work is not available in this project"),
     );
 
-    await expect(invoke()).rejects.toMatchObject({ statusCode: 400 });
+    await expect(createThread(event({}, { projectId: VALID_ID }))).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it("names project-scoped Work refusal for Home lifecycle repair", async () => {
+    const { InvalidWorkAttachmentError } = await import("../thread-creation.js");
+    createThreadForProject.mockRejectedValueOnce(
+      new InvalidWorkAttachmentError("Work is not available in this project"),
+    );
+
+    await expect(createProjectThread(event({ projectId: VALID_ID }))).rejects.toMatchObject({
+      statusCode: 400,
+      data: {
+        __meridianInterruptEnvelope: {
+          error: { code: "work_unavailable", retryable: false },
+        },
+      },
+    });
+  });
+
+  it("names project-scoped Agent refusal for Home lifecycle repair", async () => {
+    const { AgentBindingNotFoundError } = await import("../thread-creation.js");
+    createThreadForProject.mockRejectedValueOnce(new AgentBindingNotFoundError("prose"));
+
+    await expect(createProjectThread(event({ projectId: VALID_ID }))).rejects.toMatchObject({
+      statusCode: 400,
+      data: {
+        __meridianInterruptEnvelope: {
+          error: { code: "agent_not_found", retryable: false },
+        },
+      },
+    });
   });
 
   it("preserves nullable fork origin semantics through the route", async () => {

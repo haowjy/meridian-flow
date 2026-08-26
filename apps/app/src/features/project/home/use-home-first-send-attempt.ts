@@ -2,7 +2,7 @@
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
-import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
+import { isMeridianApiError } from "@/client/api/http-client";
 import { createProjectThread, listProjectThreads } from "@/client/api/projects-api";
 import { invalidateWorkThreads } from "@/client/query/project-invalidation";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -19,11 +19,19 @@ export type HomeFirstSendEnvelope = {
   title: string;
   workId: string;
   agentSlug: string;
-  phase: "creating" | "routing" | "failed_create" | "failed_route";
-  canonicalThread: Thread | null;
 };
 
-type Failure = "create" | "route" | "mismatch";
+export type HomeFirstSendRefusal = "agent_not_found" | "work_unavailable";
+
+export type HomeFirstSendLifecycle =
+  | { kind: "idle" }
+  | { kind: "creating"; envelope: HomeFirstSendEnvelope }
+  | { kind: "reconciling"; envelope: HomeFirstSendEnvelope }
+  | { kind: "refused"; envelope: HomeFirstSendEnvelope; refusal: HomeFirstSendRefusal }
+  | { kind: "ambiguous"; envelope: HomeFirstSendEnvelope }
+  | { kind: "routing"; envelope: HomeFirstSendEnvelope; thread: Thread }
+  | { kind: "route_failed"; envelope: HomeFirstSendEnvelope; thread: Thread }
+  | { kind: "mismatched"; envelope: HomeFirstSendEnvelope };
 
 type Dependencies = {
   projectId: string;
@@ -34,10 +42,9 @@ type Dependencies = {
   makeId?: () => string;
 };
 
-function isAuthoritativeRefusal(error: unknown): boolean {
-  return (
-    error instanceof HttpResponseError || (isMeridianApiError(error) && error.status !== undefined)
-  );
+function deterministicRefusal(error: unknown): HomeFirstSendRefusal | null {
+  if (!isMeridianApiError(error)) return null;
+  return error.code === "agent_not_found" || error.code === "work_unavailable" ? error.code : null;
 }
 
 function matchesEnvelope(thread: Thread, envelope: HomeFirstSendEnvelope): boolean {
@@ -50,13 +57,6 @@ function matchesEnvelope(thread: Thread, envelope: HomeFirstSendEnvelope): boole
   );
 }
 
-function refusedCatalog(error: unknown): "agent" | "work" | "both" {
-  const message = error instanceof Error ? error.message : "";
-  if (message.startsWith("Agent not found:")) return "agent";
-  if (message.includes("Work")) return "work";
-  return "both";
-}
-
 export function useHomeFirstSendAttempt({
   projectId,
   actions,
@@ -66,16 +66,13 @@ export function useHomeFirstSendAttempt({
   makeId = () => crypto.randomUUID(),
 }: Dependencies) {
   const queryClient = useQueryClient();
-  const attemptRef = useRef<HomeFirstSendEnvelope | null>(null);
   const latestDraftRef = useRef({ text: "", revision: 0 });
-  const singleFlightRef = useRef(false);
-  const [attempt, setAttempt] = useState<HomeFirstSendEnvelope | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const [busy, setBusy] = useState(false);
+  const stateRef = useRef<HomeFirstSendLifecycle>({ kind: "idle" });
+  const [state, setState] = useState<HomeFirstSendLifecycle>(stateRef.current);
 
-  const publish = useCallback((next: HomeFirstSendEnvelope) => {
-    attemptRef.current = next;
-    setAttempt(next);
+  const transition = useCallback((next: HomeFirstSendLifecycle) => {
+    stateRef.current = next;
+    setState(next);
   }, []);
 
   const routeDraft = useCallback((envelope: HomeFirstSendEnvelope) => {
@@ -84,36 +81,28 @@ export function useHomeFirstSendAttempt({
   }, []);
 
   const route = useCallback(
-    async (envelope: HomeFirstSendEnvelope) => {
-      const thread = envelope.canonicalThread;
-      if (!thread) return false;
-      const routing = { ...envelope, phase: "routing" as const };
-      publish(routing);
+    async (envelope: HomeFirstSendEnvelope, thread: Thread) => {
+      transition({ kind: "routing", envelope, thread });
       actions.preserveFirstSendRouteDraft(thread.id, routeDraft(envelope));
       try {
         await onSelectThread(thread.id);
         actions.armFirstSend(thread.id);
-        setFailure(null);
-        attemptRef.current = null;
-        setAttempt(null);
+        transition({ kind: "idle" });
         return true;
       } catch {
-        publish({ ...routing, phase: "failed_route" });
-        setFailure("route");
+        transition({ kind: "route_failed", envelope, thread });
         return false;
       }
     },
-    [actions, onSelectThread, publish, routeDraft],
+    [actions, onSelectThread, routeDraft, transition],
   );
 
   const prepareCanonical = useCallback(
     async (envelope: HomeFirstSendEnvelope, thread: Thread) => {
       if (!matchesEnvelope(thread, envelope)) {
-        publish({ ...envelope, phase: "failed_create" });
-        setFailure("mismatch");
+        transition({ kind: "mismatched", envelope });
         return false;
       }
-      const canonical = { ...envelope, canonicalThread: thread, phase: "routing" as const };
       const draftAfterRoute = routeDraft(envelope);
       actions.ensureThread(thread);
       const optimistic = actions.appendUserTurn(thread.id, envelope.text);
@@ -128,50 +117,41 @@ export function useHomeFirstSendAttempt({
         projectId: envelope.projectId,
         threadId: thread.id,
       });
-      publish(canonical);
-      return route(canonical);
+      return route(envelope, thread);
     },
-    [actions, projectId, publish, queryClient, route, routeDraft],
+    [actions, projectId, queryClient, route, routeDraft, transition],
   );
 
   const reconcile = useCallback(
     async (envelope: HomeFirstSendEnvelope): Promise<ThreadListItem | null | undefined> => {
+      transition({ kind: "reconciling", envelope });
       try {
-        const found = (await listThreads(projectId)).find(({ id }) => id === envelope.threadId);
-        return found ?? null;
+        return (await listThreads(projectId)).find(({ id }) => id === envelope.threadId) ?? null;
       } catch {
         return undefined;
       }
     },
-    [listThreads, projectId],
+    [listThreads, projectId, transition],
   );
 
-  const settleAuthoritativeRefusal = useCallback(
-    async (envelope: HomeFirstSendEnvelope, error: unknown) => {
-      publish({ ...envelope, phase: "failed_create" });
-      const catalog = refusedCatalog(error);
-      await Promise.all([
-        catalog !== "agent"
-          ? queryClient.refetchQueries({
-              queryKey: projectQueryKeys.works(projectId),
-              exact: true,
-            })
-          : Promise.resolve(),
-        catalog !== "work"
-          ? queryClient.refetchQueries({
-              queryKey: projectQueryKeys.agents(projectId),
-              exact: true,
-            })
-          : Promise.resolve(),
-      ]);
-      setFailure("create");
+  const settleRefusal = useCallback(
+    async (envelope: HomeFirstSendEnvelope, refusal: HomeFirstSendRefusal) => {
+      await queryClient.refetchQueries({
+        queryKey:
+          refusal === "agent_not_found"
+            ? projectQueryKeys.agents(projectId)
+            : projectQueryKeys.works(projectId),
+        exact: true,
+      });
+      transition({ kind: "refused", envelope, refusal });
       return false;
     },
-    [projectId, publish, queryClient],
+    [projectId, queryClient, transition],
   );
 
   const create = useCallback(
-    async (envelope: HomeFirstSendEnvelope) => {
+    async function createAttempt(envelope: HomeFirstSendEnvelope, retryAfterKnownAbsence = true) {
+      transition({ kind: "creating", envelope });
       const request = {
         id: envelope.threadId,
         title: envelope.title,
@@ -181,98 +161,85 @@ export function useHomeFirstSendAttempt({
       try {
         return await prepareCanonical(envelope, await createThread(projectId, request));
       } catch (error) {
-        if (isAuthoritativeRefusal(error)) {
-          return settleAuthoritativeRefusal(envelope, error);
-        }
-        const reconciled = await reconcile(envelope);
-        if (reconciled) return prepareCanonical(envelope, reconciled);
-        if (reconciled === null) {
-          try {
-            return await prepareCanonical(envelope, await createThread(projectId, request));
-          } catch (retryError) {
-            if (isAuthoritativeRefusal(retryError)) {
-              return settleAuthoritativeRefusal(envelope, retryError);
-            }
-            const afterRetry = await reconcile(envelope);
-            if (afterRetry) return prepareCanonical(envelope, afterRetry);
-          }
-        }
-        publish({ ...envelope, phase: "failed_create" });
-        setFailure("create");
+        const refusal = deterministicRefusal(error);
+        if (refusal) return settleRefusal(envelope, refusal);
+
+        const found = await reconcile(envelope);
+        if (found) return prepareCanonical(envelope, found);
+        if (found === null && retryAfterKnownAbsence) return createAttempt(envelope, false);
+
+        transition({ kind: "ambiguous", envelope });
         return false;
       }
     },
-    [createThread, prepareCanonical, projectId, publish, reconcile, settleAuthoritativeRefusal],
+    [createThread, prepareCanonical, projectId, reconcile, settleRefusal, transition],
   );
 
-  const run = useCallback(async (operation: () => Promise<boolean>) => {
-    if (singleFlightRef.current) return false;
-    singleFlightRef.current = true;
-    setBusy(true);
-    try {
-      return await operation();
-    } finally {
-      singleFlightRef.current = false;
-      setBusy(false);
-    }
-  }, []);
-
   const submit = useCallback(
-    (text: string, context: { workId: string; agentSlug: string }, draftRevision: number) =>
-      run(async () => {
-        if (attemptRef.current) return false;
-        const envelope: HomeFirstSendEnvelope = {
-          threadId: makeId(),
-          projectId,
-          text,
-          draftRevision,
-          title: deriveTitleFromMessage(text),
-          workId: context.workId,
-          agentSlug: context.agentSlug,
-          phase: "creating",
-          canonicalThread: null,
-        };
-        latestDraftRef.current = { text, revision: draftRevision };
-        publish(envelope);
-        setFailure(null);
-        return create(envelope);
-      }),
-    [create, makeId, projectId, publish, run],
+    (text: string, context: { workId: string; agentSlug: string }, draftRevision: number) => {
+      if (stateRef.current.kind !== "idle") return Promise.resolve(false);
+      const envelope: HomeFirstSendEnvelope = {
+        threadId: makeId(),
+        projectId,
+        text,
+        draftRevision,
+        title: deriveTitleFromMessage(text),
+        workId: context.workId,
+        agentSlug: context.agentSlug,
+      };
+      latestDraftRef.current = { text, revision: draftRevision };
+      return create(envelope);
+    },
+    [create, makeId, projectId],
   );
 
   const retry = useCallback(
-    (context: { workId: string; agentSlug: string }) =>
-      run(async () => {
-        const envelope = attemptRef.current;
-        if (!envelope || failure === "mismatch") return false;
-        setFailure(null);
-        return envelope.canonicalThread
-          ? route(envelope)
-          : create({ ...envelope, ...context, phase: "creating" });
-      }),
-    [create, failure, route, run],
+    async (context: { workId: string; agentSlug: string }) => {
+      const current = stateRef.current;
+      if (current.kind === "refused") return create({ ...current.envelope, ...context });
+      if (current.kind === "ambiguous") {
+        const found = await reconcile(current.envelope);
+        if (found) return prepareCanonical(current.envelope, found);
+        if (found === null) return create(current.envelope);
+        transition(current);
+        return false;
+      }
+      if (current.kind === "route_failed") return route(current.envelope, current.thread);
+      return false;
+    },
+    [create, prepareCanonical, reconcile, route, transition],
   );
+
+  const startOver = useCallback(() => {
+    if (stateRef.current.kind !== "mismatched") return false;
+    transition({ kind: "idle" });
+    return true;
+  }, [transition]);
 
   const updateDraft = useCallback(
     (text: string, revision: number) => {
       latestDraftRef.current = { text, revision };
-      const envelope = attemptRef.current;
-      if (envelope?.canonicalThread) {
-        actions.preserveFirstSendRouteDraft(envelope.threadId, routeDraft(envelope));
+      const current = stateRef.current;
+      if (current.kind === "routing" || current.kind === "route_failed") {
+        actions.preserveFirstSendRouteDraft(
+          current.envelope.threadId,
+          routeDraft(current.envelope),
+        );
       }
     },
     [actions, routeDraft],
   );
 
-  const contextRepair = attempt?.phase === "failed_create" && failure === "create";
+  const busy =
+    state.kind === "creating" || state.kind === "reconciling" || state.kind === "routing";
   return {
-    attempt,
+    state,
     busy,
-    failure,
     submit,
     retry,
+    startOver,
     updateDraft,
-    contextLocked: attempt !== null && !contextRepair,
-    retryable: failure !== "mismatch",
+    contextLocked: state.kind !== "idle" && state.kind !== "refused",
+    submitLocked: state.kind !== "idle",
   };
 }

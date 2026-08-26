@@ -2,7 +2,7 @@
 /** Rendered Home first-send contracts across the shared Composer and destination claimant. */
 import { I18nProvider } from "@lingui/react";
 import type { ProjectAgentSummary } from "@meridian/contracts/agents";
-import type { Thread } from "@meridian/contracts/protocol";
+import { meridianErrorFromSystem, type Thread } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useCallback, useRef, useState } from "react";
@@ -343,7 +343,13 @@ describe("Home first send", () => {
           creates.push(body);
           return Promise.resolve(
             creates.length === 1
-              ? json({ message: "Work is not available in this project" }, 400)
+              ? json(
+                  meridianErrorFromSystem(
+                    "work_unavailable",
+                    "Work is not available in this project",
+                  ),
+                  400,
+                )
               : json(canonical(String(body.id), firstWork.id)),
           );
         }
@@ -374,7 +380,12 @@ describe("Home first send", () => {
         await act(async () =>
           textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
         );
-        await waitFor(() => document.body.textContent?.includes("Chat couldn’t start") === true);
+        await waitFor(
+          () =>
+            document.body.textContent?.includes(
+              "Your Work or Agent choice is no longer available",
+            ) === true,
+        );
         const send = document.querySelector<HTMLButtonElement>('[aria-label="Send message"]');
         expect(send?.disabled).toBe(true);
         expect(worksReads).toBeGreaterThanOrEqual(2);

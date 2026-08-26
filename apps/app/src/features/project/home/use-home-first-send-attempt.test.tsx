@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-/** Integration contracts for Home's stable-ID create and route controller. */
-import type { Thread } from "@meridian/contracts/protocol";
+/** Exhaustive Home first-send lifecycle contracts. */
+import { meridianErrorFromSystem, type Thread } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpResponseError } from "@/client/api/http-client";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
 import type { ThreadStoreActions } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useHomeFirstSendAttempt } from "./use-home-first-send-attempt";
@@ -13,7 +12,7 @@ import { useHomeFirstSendAttempt } from "./use-home-first-send-attempt";
 vi.mock("@lingui/core/macro", () => ({ msg: (parts: TemplateStringsArray) => parts.join("") }));
 
 const canonical = (overrides: Partial<Thread> = {}): Thread => ({
-  id: "stable-thread",
+  id: "thread-1",
   projectId: "project-1",
   workId: "work-1",
   userId: "user-1",
@@ -24,7 +23,7 @@ const canonical = (overrides: Partial<Thread> = {}): Thread => ({
   currentAgent: null,
   activeLeafTurnId: null,
   parentThreadId: null,
-  rootThreadId: "stable-thread",
+  rootThreadId: "thread-1",
   spawnDepth: 0,
   spawnStatus: null,
   totalCostUsd: "0",
@@ -35,7 +34,7 @@ const canonical = (overrides: Partial<Thread> = {}): Thread => ({
   ...overrides,
 });
 
-function actions() {
+function threadActions() {
   return {
     ensureThread: vi.fn(),
     appendUserTurn: vi.fn(() => ({ id: "turn-local" })),
@@ -45,244 +44,136 @@ function actions() {
   } as unknown as ThreadStoreActions;
 }
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
+function refusal(code: "agent_not_found" | "work_unavailable") {
+  return new MeridianApiError(meridianErrorFromSystem(code, code), 400);
 }
 
 afterEach(() => vi.restoreAllMocks());
 
-describe("useHomeFirstSendAttempt", () => {
+describe("useHomeFirstSendAttempt lifecycle", () => {
   it.each([
-    {
-      catalog: "Work",
-      refusal: new HttpResponseError("Work is not available in this project", 400, null),
-      initial: {
-        workId: "work-stale",
-        agentSlug: "general",
+    "agent_not_found",
+    "work_unavailable",
+  ] as const)("only %s unlocks immutable context repair", async (code) => {
+    const actions = threadActions();
+    const createThread = vi
+      .fn()
+      .mockRejectedValueOnce(refusal(code))
+      .mockResolvedValueOnce(canonical());
+    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
+    function Harness() {
+      controller = useHomeFirstSendAttempt({
+        projectId: "project-1",
+        actions,
+        onSelectThread: vi.fn(async () => undefined),
+        createThread,
+        listThreads: vi.fn(),
+        makeId: () => "thread-1",
+      });
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => {
+          await expect(
+            controller.submit("Exact opening", { workId: "stale", agentSlug: "general" }, 0),
+          ).resolves.toBe(false);
+        });
+        expect(controller.state).toMatchObject({ kind: "refused", refusal: code });
+        expect(controller.contextLocked).toBe(false);
+
+        await act(async () => {
+          await expect(controller.retry({ workId: "work-1", agentSlug: "general" })).resolves.toBe(
+            true,
+          );
+        });
+        expect(createThread).toHaveBeenNthCalledWith(
+          2,
+          "project-1",
+          expect.objectContaining({ id: "thread-1", title: "Exact opening", workId: "work-1" }),
+        );
+        expect(actions.stageFirstSend).toHaveBeenCalledOnce();
       },
-      repaired: {
-        workId: "work-1",
-        agentSlug: "general",
+    );
+  });
+
+  it("keeps a 5xx ambiguity on the original ID and envelope until reconciliation succeeds", async () => {
+    const actions = threadActions();
+    const createThread = vi
+      .fn()
+      .mockRejectedValue(new HttpResponseError("server error", 500, null));
+    const listThreads = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce([canonical()]);
+    const onSelectThread = vi.fn(async () => undefined);
+    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
+    function Harness() {
+      controller = useHomeFirstSendAttempt({
+        projectId: "project-1",
+        actions,
+        onSelectThread,
+        createThread,
+        listThreads,
+        makeId: () => "thread-1",
+      });
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={new QueryClient()}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => {
+          await expect(
+            controller.submit("Exact opening", { workId: "work-1", agentSlug: "general" }, 0),
+          ).resolves.toBe(false);
+        });
+        expect(controller.state).toMatchObject({
+          kind: "ambiguous",
+          envelope: { threadId: "thread-1", workId: "work-1", agentSlug: "general" },
+        });
+        expect(controller.contextLocked).toBe(true);
+        expect(createThread).toHaveBeenCalledTimes(2);
+        expect(createThread.mock.calls[0]?.[1]).toEqual(createThread.mock.calls[1]?.[1]);
+
+        await act(async () => {
+          await expect(
+            controller.retry({ workId: "different-work", agentSlug: "different-agent" }),
+          ).resolves.toBe(true);
+        });
+        expect(createThread).toHaveBeenCalledTimes(2);
+        expect(onSelectThread).toHaveBeenCalledWith("thread-1");
       },
-      queryKey: projectQueryKeys.works("project-1"),
-      descendantKey: projectQueryKeys.workDrafts("project-1", "work-stale"),
-    },
-    {
-      catalog: "Agent",
-      refusal: new HttpResponseError("Agent not found: prose", 400, null),
-      initial: {
-        workId: "work-1",
-        agentSlug: "prose",
-      },
-      repaired: {
-        workId: "work-1",
-        agentSlug: "general",
-      },
-      queryKey: projectQueryKeys.agents("project-1"),
-      descendantKey: [...projectQueryKeys.agents("project-1"), "prose"],
-    },
-  ])("refetches only the $catalog catalog after an ambiguous create's retry is refused", async ({
-    refusal,
-    initial,
-    repaired,
-    queryKey,
-    descendantKey,
-  }) => {
-    const threadActions = actions();
+    );
+  });
+
+  it("retires a mismatch without staging it and starts the next submission with a fresh ID", async () => {
+    const actions = threadActions();
+    const ids = ["thread-1", "thread-2"];
     const createThread = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("connection closed"))
-      .mockRejectedValueOnce(refusal)
-      .mockResolvedValueOnce(canonical());
-    const listThreads = vi.fn().mockResolvedValue([]);
-    const onSelectThread = vi.fn(async () => undefined);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const catalogRefresh = deferred();
-    const descendantRefresh = deferred();
-    const fetchCatalog = vi.fn(async () => "catalog-seed");
-    const fetchDescendant = vi.fn(async () => "descendant-seed");
-    await client.fetchQuery({ queryKey, queryFn: fetchCatalog });
-    await client.fetchQuery({ queryKey: descendantKey, queryFn: fetchDescendant });
-    fetchCatalog.mockImplementation(async () => {
-      await catalogRefresh.promise;
-      return "catalog-refreshed";
-    });
-    fetchDescendant.mockImplementation(async () => {
-      await descendantRefresh.promise;
-      return "descendant-refreshed";
-    });
-    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
-
-    function Harness() {
-      controller = useHomeFirstSendAttempt({
-        projectId: "project-1",
-        actions: threadActions,
-        onSelectThread,
-        createThread,
-        listThreads,
-        makeId: () => "stable-thread",
-      });
-      return null;
-    }
-
-    await withReactRoot(
-      <QueryClientProvider client={client}>
-        <Harness />
-      </QueryClientProvider>,
-      async () => {
-        let submission!: Promise<boolean>;
-        await act(async () => {
-          submission = controller.submit("Exact opening", initial, 0);
-          while (fetchCatalog.mock.calls.length === 1) await Promise.resolve();
-        });
-
-        expect(listThreads).toHaveBeenCalledOnce();
-        expect(fetchCatalog).toHaveBeenCalledTimes(2);
-        expect(fetchDescendant).toHaveBeenCalledOnce();
-        expect(controller.contextLocked).toBe(true);
-        expect(controller.failure).toBe(null);
-
-        try {
-          await act(async () => {
-            catalogRefresh.resolve();
-            await expect(submission).resolves.toBe(false);
-          });
-        } finally {
-          descendantRefresh.resolve();
-        }
-
-        expect(controller.contextLocked).toBe(false);
-        expect(controller.failure).toBe("create");
-
-        await act(async () => {
-          await expect(controller.retry(repaired)).resolves.toBe(true);
-        });
-
-        expect(createThread).toHaveBeenCalledTimes(3);
-        for (const [, request] of createThread.mock.calls) {
-          expect(request).toMatchObject({ id: "stable-thread", title: "Exact opening" });
-        }
-        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
-        expect(threadActions.stageFirstSend).toHaveBeenCalledWith(
-          expect.objectContaining({ threadId: "stable-thread", text: "Exact opening" }),
-        );
-        expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
-      },
-    );
-  });
-
-  it("retries an authoritative stale Agent refusal with repaired context and the same identity", async () => {
-    const threadActions = actions();
-    const createThread = vi
+      .mockResolvedValueOnce(canonical({ id: "thread-2", rootThreadId: "thread-2" }));
+    const listThreads = vi
       .fn()
-      .mockRejectedValueOnce(new HttpResponseError("Agent not found: prose", 400, null))
-      .mockResolvedValueOnce(canonical());
+      .mockResolvedValue([canonical({ workId: "other-work", currentAgent: "other-agent" })]);
     const onSelectThread = vi.fn(async () => undefined);
     let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
-
     function Harness() {
       controller = useHomeFirstSendAttempt({
         projectId: "project-1",
-        actions: threadActions,
-        onSelectThread,
-        createThread,
-        listThreads: vi.fn(),
-        makeId: () => "stable-thread",
-      });
-      return null;
-    }
-
-    await withReactRoot(
-      <QueryClientProvider client={new QueryClient()}>
-        <Harness />
-      </QueryClientProvider>,
-      async () => {
-        await act(async () => {
-          await expect(
-            controller.submit(
-              "Exact opening",
-              {
-                workId: "work-1",
-                agentSlug: "prose",
-              },
-              0,
-            ),
-          ).resolves.toBe(false);
-        });
-        expect(controller.contextLocked).toBe(false);
-        await act(async () => {
-          await expect(
-            controller.retry({
-              workId: "work-1",
-              agentSlug: "general",
-            }),
-          ).resolves.toBe(true);
-        });
-
-        expect(createThread).toHaveBeenNthCalledWith(1, "project-1", {
-          id: "stable-thread",
-          title: "Exact opening",
-          workId: "work-1",
-          currentAgent: "prose",
-        });
-        expect(createThread).toHaveBeenNthCalledWith(2, "project-1", {
-          id: "stable-thread",
-          title: "Exact opening",
-          workId: "work-1",
-        });
-        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
-        expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
-      },
-    );
-  });
-
-  it.each([
-    {
-      name: "current default Work",
-      context: {
-        workId: "work-1",
-        agentSlug: "general",
-      },
-      reconciled: canonical({ workId: "work-other" }),
-    },
-    {
-      name: "writer-selected Work",
-      context: {
-        workId: "work-explicit",
-        agentSlug: "general",
-      },
-      reconciled: canonical({ workId: "work-other" }),
-    },
-    {
-      name: "non-General Agent",
-      context: {
-        workId: "work-1",
-        agentSlug: "prose",
-      },
-      reconciled: canonical({ currentAgent: "other-agent" }),
-    },
-  ])("quarantines ambiguous reconciliation with mismatched $name", async ({
-    context,
-    reconciled,
-  }) => {
-    const threadActions = actions();
-    const createThread = vi.fn().mockRejectedValue(new TypeError("connection closed"));
-    const listThreads = vi.fn().mockResolvedValue([reconciled]);
-    const onSelectThread = vi.fn(async () => undefined);
-    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
-
-    function Harness() {
-      controller = useHomeFirstSendAttempt({
-        projectId: "project-1",
-        actions: threadActions,
+        actions,
         onSelectThread,
         createThread,
         listThreads,
-        makeId: () => "stable-thread",
+        makeId: () => ids.shift() ?? "unexpected",
       });
       return null;
     }
@@ -293,100 +184,42 @@ describe("useHomeFirstSendAttempt", () => {
       </QueryClientProvider>,
       async () => {
         await act(async () => {
-          await expect(controller.submit("Opening line", context, 0)).resolves.toBe(false);
+          await controller.submit("Opening", { workId: "work-1", agentSlug: "general" }, 0);
         });
-        expect(controller.failure).toBe("mismatch");
-        expect(threadActions.appendUserTurn).not.toHaveBeenCalled();
-        expect(threadActions.stageFirstSend).not.toHaveBeenCalled();
+        expect(controller.state.kind).toBe("mismatched");
+        expect(actions.stageFirstSend).not.toHaveBeenCalled();
         expect(onSelectThread).not.toHaveBeenCalled();
+
+        act(() => expect(controller.startOver()).toBe(true));
+        expect(controller.state.kind).toBe("idle");
         await act(async () => {
-          await expect(controller.retry(context)).resolves.toBe(false);
+          await controller.submit("Opening", { workId: "work-1", agentSlug: "general" }, 0);
         });
-        expect(createThread).toHaveBeenCalledOnce();
-        expect(listThreads).toHaveBeenCalledOnce();
+        expect(createThread).toHaveBeenLastCalledWith(
+          "project-1",
+          expect.objectContaining({ id: "thread-2" }),
+        );
+        expect(onSelectThread).toHaveBeenCalledWith("thread-2");
       },
     );
   });
 
-  it("reconciles an ambiguous selected-Work create by stable ID, then stages and arms once", async () => {
-    const threadActions = actions();
-    const createThread = vi.fn().mockRejectedValueOnce(new TypeError("connection closed"));
-    const listThreads = vi.fn().mockResolvedValue([canonical()]);
-    const onSelectThread = vi.fn(async () => undefined);
-    let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
-
-    function Harness() {
-      controller = useHomeFirstSendAttempt({
-        projectId: "project-1",
-        actions: threadActions,
-        onSelectThread,
-        createThread,
-        listThreads,
-        makeId: () => "stable-thread",
-      });
-      return null;
-    }
-
-    await withReactRoot(
-      <QueryClientProvider client={new QueryClient()}>
-        <Harness />
-      </QueryClientProvider>,
-      async () => {
-        let first!: Promise<boolean>;
-        let duplicate!: Promise<boolean>;
-        await act(async () => {
-          first = controller.submit(
-            "Opening line",
-            {
-              workId: "work-1",
-              agentSlug: "general",
-            },
-            0,
-          );
-          duplicate = controller.submit(
-            "Duplicate",
-            {
-              workId: "work-1",
-              agentSlug: "general",
-            },
-            0,
-          );
-        });
-        await expect(duplicate).resolves.toBe(false);
-        await expect(first).resolves.toBe(true);
-
-        expect(createThread).toHaveBeenCalledOnce();
-        expect(createThread).toHaveBeenCalledWith("project-1", {
-          id: "stable-thread",
-          title: "Opening line",
-          workId: "work-1",
-        });
-        expect(listThreads).toHaveBeenCalledOnce();
-        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
-        expect(threadActions.stageFirstSend).toHaveBeenCalledOnce();
-        expect(onSelectThread).toHaveBeenCalledWith("stable-thread");
-        expect(threadActions.armFirstSend).toHaveBeenCalledOnce();
-      },
-    );
-  });
-
-  it("keeps an explicit Work immutable and retries only routing while transferring a newer draft", async () => {
-    const threadActions = actions();
-    const createThread = vi.fn().mockResolvedValue(canonical({ workId: "work-explicit" }));
+  it("retries only routing and transfers a newer draft after canonical creation", async () => {
+    const actions = threadActions();
+    const createThread = vi.fn().mockResolvedValue(canonical());
     const onSelectThread = vi
       .fn<(_: string) => Promise<void>>()
-      .mockRejectedValueOnce(new Error("route refused"))
+      .mockRejectedValueOnce(new Error("route failed"))
       .mockResolvedValueOnce(undefined);
     let controller!: ReturnType<typeof useHomeFirstSendAttempt>;
-
     function Harness() {
       controller = useHomeFirstSendAttempt({
         projectId: "project-1",
-        actions: threadActions,
+        actions,
         onSelectThread,
         createThread,
         listThreads: vi.fn(),
-        makeId: () => "stable-thread",
+        makeId: () => "thread-1",
       });
       return null;
     }
@@ -397,40 +230,17 @@ describe("useHomeFirstSendAttempt", () => {
       </QueryClientProvider>,
       async () => {
         await act(async () => {
-          await expect(
-            controller.submit(
-              "Opening line",
-              {
-                workId: "work-explicit",
-                agentSlug: "general",
-              },
-              0,
-            ),
-          ).resolves.toBe(false);
+          await controller.submit("Opening", { workId: "work-1", agentSlug: "general" }, 0);
         });
-        expect(createThread).toHaveBeenCalledWith(
-          "project-1",
-          expect.objectContaining({ id: "stable-thread", workId: "work-explicit" }),
-        );
-
+        expect(controller.state.kind).toBe("route_failed");
+        expect(controller.contextLocked).toBe(true);
+        act(() => controller.updateDraft("Follow-up", 1));
         await act(async () => {
-          controller.updateDraft("A newer follow-up", 1);
-          await expect(
-            controller.retry({
-              workId: "work-explicit",
-              agentSlug: "general",
-            }),
-          ).resolves.toBe(true);
+          await controller.retry({ workId: "ignored", agentSlug: "ignored" });
         });
         expect(createThread).toHaveBeenCalledOnce();
-        expect(threadActions.appendUserTurn).toHaveBeenCalledOnce();
-        expect(threadActions.stageFirstSend).toHaveBeenCalledOnce();
-        expect(threadActions.preserveFirstSendRouteDraft).toHaveBeenCalledWith(
-          "stable-thread",
-          "A newer follow-up",
-        );
+        expect(actions.preserveFirstSendRouteDraft).toHaveBeenCalledWith("thread-1", "Follow-up");
         expect(onSelectThread).toHaveBeenCalledTimes(2);
-        expect(threadActions.armFirstSend).toHaveBeenCalledOnce();
       },
     );
   });

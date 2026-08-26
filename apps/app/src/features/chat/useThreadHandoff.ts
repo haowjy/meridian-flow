@@ -82,7 +82,7 @@ export function useThreadHandoff(
   }, [threadId]);
 
   useEffect(() => {
-    if (firstSend?.status !== "failed" || firstSend.claimId === undefined) return;
+    if (firstSend?.status !== "failed") return;
     const restorationId = `${threadId}:${firstSend.claimId}`;
     if (restoredFirstSendIdsRef.current.has(restorationId)) return;
     const restored = restoreFirstSendDraft?.({

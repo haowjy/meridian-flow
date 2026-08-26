@@ -41,11 +41,17 @@ export type FirstSendClaim = {
 
 export type FirstSendRejection = "definite" | "ambiguous";
 
-export type FirstSendHandoffState = Omit<FirstSendClaim, "claimId"> & {
-  status: "staged" | "armed" | "claimed" | "failed" | "ambiguous";
-  claimId?: number;
+type FirstSendHandoffEnvelope = Omit<FirstSendClaim, "claimId"> & {
   draftAfterRouteRestored?: boolean;
 };
+
+/** Destination-only handoff lifecycle. Home owns creation until it stages this envelope. */
+export type FirstSendHandoffState =
+  | (FirstSendHandoffEnvelope & { status: "staged" | "armed" })
+  | (FirstSendHandoffEnvelope & {
+      status: "claimed" | "failed" | "ambiguous";
+      claimId: number;
+    });
 
 export type LiveTurnMeta = {
   /**
