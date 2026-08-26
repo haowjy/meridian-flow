@@ -79,7 +79,7 @@ instead of the N:1 `threads.workId` column.
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind demotes the old membership and promotes/upserts the target, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, and targeted durable obligation have one policy owner and never write the new-chat fallback. Actor adapters own transaction and post-commit delivery. |
-| `restoreThreadFromTrash` | Canonical restore command; clears thread trash and coalesces a targeted Work-context obligation in one transaction so hidden-period Work changes are delivered after visibility returns. |
+| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; authorizes through the including-deleted thread's project, revalidates thread and project ownership under the lifecycle lock, and wakes delivery only after the exact restore transition commits. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -176,6 +176,11 @@ contract shapes.
   carry a raw pre-bake system prompt.
 - Soft-delete (`deletedAt`) is idempotent for both threads and the
   `requireThreadOwner` gate treats soft-deleted threads as 404.
+- **Trash restore is a serialized transition.** The authenticated boundary
+  resolves the including-deleted thread's project for concealment, then locks
+  and rereads the thread inside the mutation transaction. Only a real
+  `deleted -> visible` transition enqueues its targeted Work-context obligation;
+  retry and concurrent no-ops never wake delivery.
 - A thread receives its project-unique slug when created with its first
   non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
   Collisions use `-2`, `-3`, and later mutations never regenerate the handle;

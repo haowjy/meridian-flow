@@ -288,6 +288,10 @@ export function createInMemoryRepositories(
     async findProjectIdByIdIncludingDeleted(id) {
       return threads.get(id)?.projectId ?? null;
     },
+    async lockByIdIncludingDeleted(id) {
+      const thread = threads.get(id);
+      return thread ? projectThread(thread) : null;
+    },
     async listByUser(userId) {
       const visible: Thread[] = [];
       for (const thread of threads.values()) {
@@ -420,7 +424,8 @@ export function createInMemoryRepositories(
     async restore(id) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (!thread.deletedAt) return projectThread(thread);
+      if (!thread.deletedAt)
+        throw new Error(`Thread restore requires a deleted lifecycle row: ${id}`);
       const updated = { ...thread, deletedAt: null, updatedAt: toIsoString(new Date()) };
       threads.set(id, updated);
       return projectThread(updated);

@@ -269,6 +269,16 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return row?.projectId ?? null;
     },
+    async lockByIdIncludingDeleted(id: ThreadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .from(schema.threads)
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
+        .where(eq(schema.threads.id, id))
+        .for("update", { of: schema.threads })
+        .limit(1);
+      return row ? mapThread(row) : null;
+    },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
         .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
@@ -450,25 +460,12 @@ export function createDrizzleThreadRepository(
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
     async restore(id) {
-      const [existingRow] = await currentDrizzleDb(db)
-        .select()
-        .from(schema.threads)
-        .where(eq(schema.threads.id, id));
-      if (!existingRow) throw new Error(`Thread not found: ${id}`);
-      if (!existingRow.deletedAt) {
-        const primary = await currentDrizzleDb(db)
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-          .limit(1);
-        return mapThread({ ...existingRow, workId: primary[0]?.workId ?? null });
-      }
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
         .set({ deletedAt: null, updatedAt: new Date() })
-        .where(eq(schema.threads.id, id))
+        .where(and(eq(schema.threads.id, id), isNotNull(schema.threads.deletedAt)))
         .returning();
-      if (!row) throw new Error(`Thread not found: ${id}`);
+      if (!row) throw new Error(`Thread restore requires a deleted lifecycle row: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
         .from(schema.threadWorks)

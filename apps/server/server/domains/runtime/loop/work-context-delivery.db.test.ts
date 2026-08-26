@@ -1,4 +1,4 @@
-/** PostgreSQL coverage for durable, atomic Work-context delivery obligations. */
+/** PostgreSQL coverage for runtime Work-context claims and model-visible delivery. */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -8,13 +8,11 @@ const USER_ID = "00000000-0000-4000-8000-000000000711";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000712";
 const THREAD_ID = "00000000-0000-4000-8000-000000000713";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000714";
-const HIDDEN_PROJECT_ID = "00000000-0000-4000-8000-000000000715";
-const HIDDEN_THREAD_ID = "00000000-0000-4000-8000-000000000716";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("Work-context delivery (postgres)", () => {});
+  describe.skip("Work-context runtime delivery (postgres)", () => {});
 } else {
-  describe("Work-context delivery (postgres)", async () => {
+  describe("Work-context runtime delivery (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
@@ -23,12 +21,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { count, eq } = await import("drizzle-orm");
     const { createWork } = await import("../../projects/create-work.js");
     const { createDrizzleProjectWorkRepository } = await import("../../projects/index.js");
-    const { restoreWork } = await import("../../projects/delete-work.js");
     const {
       createDrizzleEventJournalReader,
       createDrizzleEventJournalWriter,
       createThreadEventHub,
-      restoreThreadFromTrash,
     } = await import("../../threads/index.js");
     const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
@@ -99,163 +95,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schedulePostCommit() {},
       });
     }
-
-    it("rolls enqueue back with its transaction and coalesces repeated requests", async () => {
-      const repos = createDrizzleRepositories(db);
-      await expect(
-        repos.transaction(async () => {
-          await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-          throw new Error("business mutation rolled back");
-        }),
-      ).rejects.toThrow("business mutation rolled back");
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
-
-      await repos.transaction(async () => {
-        await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-        await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-      });
-      const [row] = await db
-        .select({ value: count() })
-        .from(schema.workContextDeliveryObligations)
-        .where(eq(schema.workContextDeliveryObligations.threadId, THREAD_ID));
-      expect(row?.value).toBe(1);
-    });
-
-    it("uses canonical deliverability for direct enqueue, project enqueue, and pending selection", async () => {
-      await db.insert(schema.projects).values({
-        id: HIDDEN_PROJECT_ID,
-        userId: USER_ID,
-        name: "Deleted project",
-        slug: "deleted-project",
-        deletedAt: new Date(),
-      });
-      await db.insert(schema.threads).values({
-        id: HIDDEN_THREAD_ID,
-        projectId: HIDDEN_PROJECT_ID,
-        createdByUserId: USER_ID,
-        title: "Project-hidden thread",
-        bakedSkillSlugs: null,
-      });
-      await db
-        .update(schema.threads)
-        .set({ deletedAt: new Date() })
-        .where(eq(schema.threads.id, OTHER_THREAD_ID));
-      const repos = createDrizzleRepositories(db);
-
-      await expect(repos.workContextDeliveries.enqueueThread(OTHER_THREAD_ID)).resolves.toEqual([]);
-      await expect(repos.workContextDeliveries.enqueueThread(HIDDEN_THREAD_ID)).resolves.toEqual(
-        [],
-      );
-      await expect(repos.workContextDeliveries.enqueueProject(PROJECT_ID)).resolves.toEqual([
-        THREAD_ID,
-      ]);
-      await expect(repos.workContextDeliveries.enqueueProject(HIDDEN_PROJECT_ID)).resolves.toEqual(
-        [],
-      );
-      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([
-        THREAD_ID,
-      ]);
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
-      await expect(repos.workContextDeliveries.isPending(HIDDEN_THREAD_ID)).resolves.toBe(false);
-    });
-
-    it("parks obligations across thread deletion and resumes one current delivery after restore", async () => {
-      const repos = createDrizzleRepositories(db);
-      await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-      await db
-        .update(schema.threads)
-        .set({ deletedAt: new Date() })
-        .where(eq(schema.threads.id, OTHER_THREAD_ID));
-
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(true);
-      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([
-        THREAD_ID,
-      ]);
-      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
-      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
-      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
-      await expect(repos.turns.listByThread(OTHER_THREAD_ID)).resolves.toHaveLength(0);
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(true);
-
-      await restoreThreadFromTrash(
-        {
-          repos,
-          workContextDelivery: delivery(repos),
-        },
-        OTHER_THREAD_ID,
-      );
-      await delivery(repos).sweep();
-      await expect(repos.turns.listByThread(OTHER_THREAD_ID)).resolves.toHaveLength(1);
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
-    });
-
-    it("parks obligations across project deletion and resumes after restore", async () => {
-      const repos = createDrizzleRepositories(db);
-      await repos.workContextDeliveries.enqueueThread(THREAD_ID);
-      await db
-        .update(schema.projects)
-        .set({ deletedAt: new Date() })
-        .where(eq(schema.projects.id, PROJECT_ID));
-
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
-      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([]);
-      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
-      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
-      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(0);
-
-      await db
-        .update(schema.projects)
-        .set({ deletedAt: null })
-        .where(eq(schema.projects.id, PROJECT_ID));
-      await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-      await delivery(repos).sweep();
-      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
-    });
-
-    it("targets a restored thread when Work changed only while it was hidden", async () => {
-      const repos = createDrizzleRepositories(db);
-      await db
-        .update(schema.threads)
-        .set({ deletedAt: new Date() })
-        .where(eq(schema.threads.id, OTHER_THREAD_ID));
-
-      await repos.workContextDeliveries.enqueueProject(PROJECT_ID);
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
-      await repos.workContextDeliveries.acknowledge(THREAD_ID);
-
-      await restoreThreadFromTrash(
-        {
-          repos,
-          workContextDelivery: delivery(repos),
-        },
-        OTHER_THREAD_ID,
-      );
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(true);
-      await delivery(repos).sweep();
-      await expect(repos.turns.listByThread(OTHER_THREAD_ID)).resolves.toHaveLength(1);
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
-    });
-
-    it("parks an archived obligation, resumes after unarchive, and cascades on hard deletion", async () => {
-      const repos = createDrizzleRepositories(db);
-      await repos.workContextDeliveries.enqueueThread(THREAD_ID);
-      await repos.threads.updateStatus(THREAD_ID, "archived");
-
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
-      await expect(repos.workContextDeliveries.listPendingThreadIds()).resolves.toEqual([]);
-      await expect(delivery(repos).sweep()).resolves.toBeUndefined();
-      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(0);
-
-      await repos.threads.updateStatus(THREAD_ID, "idle");
-      await delivery(repos).sweep();
-      await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
-
-      await repos.workContextDeliveries.enqueueThread(OTHER_THREAD_ID);
-      await db.delete(schema.threads).where(eq(schema.threads.id, OTHER_THREAD_ID));
-      await expect(repos.workContextDeliveries.isPending(OTHER_THREAD_ID)).resolves.toBe(false);
-    });
 
     it("revalidates deliverability when deletion wins after pending selection", async () => {
       const repos = createDrizzleRepositories(db);
@@ -511,68 +350,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(firstResult.block.id).toBe(secondResult.block.id);
       await expect(first.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
       await expect(first.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
-    });
-
-    it("serializes restore and enqueues only the transition that actually restores", async () => {
-      const works = createDrizzleProjectWorkRepository({
-        db,
-        hasUnreviewedDraft: async () => false,
-      });
-      const work = await works.create({
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Restorable",
-      });
-      await works.softDelete(work.id);
-      const repos = createDrizzleRepositories(db);
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let firstEnqueues = 0;
-      let secondEnqueues = 0;
-      let entered!: () => void;
-      const firstEntered = new Promise<void>((resolve) => {
-        entered = resolve;
-      });
-
-      const first = restoreWork(
-        {
-          works,
-          workContextDelivery: {
-            async projectChanged(projectId) {
-              firstEnqueues += 1;
-              await repos.workContextDeliveries.enqueueProject(projectId);
-              entered();
-              await gate;
-            },
-          },
-        },
-        work.id,
-      );
-      await firstEntered;
-      const second = restoreWork(
-        {
-          works,
-          workContextDelivery: {
-            async projectChanged(projectId) {
-              secondEnqueues += 1;
-              await repos.workContextDeliveries.enqueueProject(projectId);
-            },
-          },
-        },
-        work.id,
-      );
-      const secondState = await Promise.race([
-        second.then(() => "completed"),
-        new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 30)),
-      ]);
-      expect(secondState).toBe("blocked");
-      release();
-      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
-      expect(firstEnqueues).toBe(1);
-      expect(secondEnqueues).toBe(0);
-      await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
     });
   });
 }

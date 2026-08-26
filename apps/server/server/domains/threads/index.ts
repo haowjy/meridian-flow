@@ -22,14 +22,22 @@ export {
   type RebindThreadWorkInput,
   rebindThreadWork,
 } from "./domain/rebind-thread-work.js";
-export { restoreThreadFromTrash } from "./domain/thread-trash-lifecycle.js";
+export {
+  type RestoreThreadFromTrashTransition,
+  restoreThreadFromTrashTransition,
+  ThreadTrashUnavailableError,
+} from "./domain/thread-trash-lifecycle.js";
 export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
-export { requireThreadOwner } from "./thread-access.js";
+export {
+  type RestoreOwnedThreadFromTrashDeps,
+  requireThreadOwner,
+  restoreOwnedThreadFromTrash,
+} from "./thread-access.js";
 export {
   createThreadEventHub,
   type SequencedEventInternal,

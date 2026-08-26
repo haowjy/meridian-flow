@@ -46,6 +46,7 @@ const expectedSuites = [
   "apps/server/server/domains/projects/slug-routing.db.test.ts",
   "apps/server/server/domains/projects/work-repository.db.test.ts",
   "apps/server/server/domains/runtime/loop/work-context-delivery.db.test.ts",
+  "apps/server/server/domains/runtime/loop/work-context-delivery-lifecycle.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-work-membership-races.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
   "apps/server/server/lib/thread-creation.db.test.ts",

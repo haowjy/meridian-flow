@@ -129,6 +129,8 @@ export interface ThreadRepository {
   findById(id: ThreadId): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
+  /** Locks and returns the thread lifecycle row, including soft-deleted threads. */
+  lockByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Threads in a project (excludes soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
@@ -158,7 +160,7 @@ export interface ThreadRepository {
   //     add a listing path for the "Archived" view to read them back.
   /** Sets `deletedAt`; idempotent if already soft-deleted. */
   softDelete(id: ThreadId): Promise<Thread>;
-  /** Clears `deletedAt`; idempotent if already active. */
+  /** Clears `deletedAt`; lifecycle commands must first hold `lockByIdIncludingDeleted`. */
   restore(id: ThreadId): Promise<Thread>;
 }
 
