@@ -10,12 +10,12 @@ import {
 } from "@/features/chat/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectContextRoute";
+import type { AiDraftLaunchTarget } from "./editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
   useOpenEditorReview,
 } from "./editor-review-handoff";
-import type { AiDraftLaunchTarget } from "./useAiDraftLauncher";
 
 const openTab = vi.fn();
 vi.mock("@/client/stores", () => ({ useContextTabsActions: () => ({ openTab }) }));

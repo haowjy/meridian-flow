@@ -9,12 +9,12 @@ import {
   type DraftReviewContextValue,
 } from "@/features/chat/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import type { AiDraftLaunchTarget } from "../dock/editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
   useOpenEditorReview,
 } from "../dock/editor-review-handoff";
-import type { AiDraftLaunchTarget } from "../dock/useAiDraftLauncher";
 import type { OpenContextRoute } from "../routing/ProjectContextRoute";
 import { MobileDocumentHost } from "./MobileDocumentHost";
 

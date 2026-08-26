@@ -13,7 +13,15 @@ import { useContextTabsActions } from "@/client/stores";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import type { OpenContextRoute } from "../routing/ProjectContextRoute";
-import type { AiDraftLaunchTarget } from "./useAiDraftLauncher";
+
+export type AiDraftLaunchTarget = {
+  workId: string;
+  documentId: string;
+  draftId: string;
+  contextPath: string;
+  documentName?: string;
+  isNewDocument?: boolean;
+};
 
 type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
 

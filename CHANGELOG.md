@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+- `database`, `apps/server`: project Work catalogs now load pending draft totals
+  through one grouped query backed by a Work-led active-draft index.
+
+- `apps/server`: deleted and archived threads park pending delivery until one
+  serialized delete/restore lifecycle resumes or coalesces it; an
+  ownership-gated restore route exposes that transition.
+
+- `apps/app`: Work mutations expose a narrow command boundary with only typed
+  execution, pending state, and errors.
+
+- `apps/app`: normalized thread user state settles favorite and unread server
+  responses by the field each command owns, so cross-lane response ordering
+  cannot overwrite newer sibling-field truth.
+
 - `database`, `contracts`, `apps/server`, `apps/app`: cut over the former project-wide current Work to a narrowly named new-chat fallback with CAS repair; delete its GET/PUT selection API and all creation/rebind/receipt side effects; preserve fallback-only omitted root creation; canonicalize human/model Work metadata (including blank-field clearing); converge Work catalogs and associated chats from writer, model, reconciliation, and reversal paths; and prove fallback precedence and contention against PostgreSQL.
 
 - `apps/app`: give persistent Chat and Editor separate sibling draft-review

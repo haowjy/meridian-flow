@@ -13,16 +13,7 @@ import { useCallback } from "react";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
 import type { ScreenKey } from "@/features/project/shell/screens";
-import { useOpenEditorReview } from "./editor-review-handoff";
-
-export type AiDraftLaunchTarget = {
-  workId: string;
-  documentId: string;
-  draftId: string;
-  contextPath: string;
-  documentName?: string;
-  isNewDocument?: boolean;
-};
+import { type AiDraftLaunchTarget, useOpenEditorReview } from "./editor-review-handoff";
 
 export function useAiDraftLauncher() {
   const search = useSearch({ strict: false }) as {
