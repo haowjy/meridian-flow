@@ -40,7 +40,6 @@ const mocks = vi.hoisted(() => ({
     mutateAsync: vi.fn(),
     isPending: false,
     error: null,
-    reset: vi.fn(),
     mutate: vi.fn(),
   },
   catalog: {
@@ -99,7 +98,6 @@ vi.mock("@/client/query/useWorks", () => ({
     delete: mocks.lifecycle,
     isPending: mocks.lifecycle.isPending,
     error: mocks.lifecycle.error,
-    reset: mocks.lifecycle.reset,
   }),
 }));
 

@@ -110,7 +110,6 @@ export function WorkDetailScreen({
                     controller.request({
                       label: t`Manage Work`,
                       run: () => {
-                        mutations.reset();
                         setActiveCommand(null);
                         setManage(true);
                       },
@@ -168,7 +167,6 @@ export function WorkDetailScreen({
             error={activeCommand ? mutations[activeCommand].error : null}
             onClose={() => {
               if (!mutations.isPending) {
-                mutations.reset();
                 setActiveCommand(null);
                 setManage(false);
               }

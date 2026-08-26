@@ -118,7 +118,6 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
   };
   const openDialog = (work: "new" | Work) => {
-    mutation.reset();
     setActiveCommand(null);
     setDialog(work);
   };
@@ -255,7 +254,6 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
             pending={mutation.isPending}
             error={activeCommand ? mutation[activeCommand].error : null}
             onClose={() => {
-              mutation.reset();
               setActiveCommand(null);
               setDialog(null);
             }}

@@ -1,12 +1,6 @@
 import type { ListWorksResponse } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import {
-  type QueryClient,
-  type UseMutationResult,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
@@ -87,10 +81,6 @@ export function useWorkMutations(projectId: string) {
     unarchive,
     delete: remove,
     isPending: commands.some((command) => command.isPending),
-    reset: () =>
-      commands.forEach((command) => {
-        command.reset();
-      }),
   };
 }
 
@@ -104,19 +94,13 @@ function useWorkCommand<TResult, TVariables>(
   operation: WorkOperation,
   command: (variables: TVariables) => Promise<TResult>,
   options: { projectResult?: (result: TResult) => Work; scope?: { id: string } } = {},
-): UseMutationResult<TResult, Error, TVariables> {
-  const mutation = useMutation({
+) {
+  return useMutation<TResult, Error, TVariables>({
     mutationFn: command,
     scope: options.scope,
     onSuccess: (result) =>
       convergeWorkCommand(client, projectId, operation, options.projectResult?.(result)),
   });
-  return {
-    ...mutation,
-    reset: () => {
-      if (!mutation.isPending) mutation.reset();
-    },
-  };
 }
 
 function convergeWorkCommand(

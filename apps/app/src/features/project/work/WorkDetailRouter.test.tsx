@@ -48,7 +48,6 @@ vi.mock("@/client/query/useWorks", () => ({
     archive: { mutate: vi.fn() },
     unarchive: { mutate: vi.fn() },
     delete: { mutate: vi.fn() },
-    reset: vi.fn(),
     isPending: false,
     error: null,
   }),

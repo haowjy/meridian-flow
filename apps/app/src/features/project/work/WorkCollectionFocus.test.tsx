@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
     delete: { mutate: vi.fn() },
     isPending: false,
     error: null,
-    reset: vi.fn(),
   },
 }));
 
