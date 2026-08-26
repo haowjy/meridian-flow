@@ -15,10 +15,10 @@ import type {
   JsonValue,
   ModelResponse,
   PriceSource,
-  ProjectChatAttention,
   ProjectChatItem,
   SpawnStatus,
   Thread,
+  ThreadAttention,
   ThreadKind,
   ThreadListItem,
   ThreadStatus,
@@ -132,8 +132,12 @@ export interface ThreadRepository {
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Threads in a project (excludes soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
-  /** Threads in a work, ordered by update time (excludes soft-deleted threads). */
-  listByWork(projectId: ProjectId, workId: WorkId): Promise<ThreadListItem[]>;
+  /** Hard-bounded model-facing summary of chats historically associated with a Work. */
+  listRecentByWork(
+    projectId: ProjectId,
+    workId: WorkId,
+    limit: number,
+  ): Promise<WorkThreadSummary[]>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
   /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
   updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;
@@ -150,7 +154,7 @@ export interface ThreadRepository {
   // reversible intent that needs wiring here:
   //   - archive(id)/unarchive(id) — set/clear status:"archived" (or fold into
   //     updateStatus) so a chat can be filed away and brought back.
-  //   - exclude status:"archived" from listByProject / listByWork by default, and
+  //   - exclude status:"archived" from listByProject / Work feeds by default, and
   //     add a listing path for the "Archived" view to read them back.
   /** Sets `deletedAt`; idempotent if already soft-deleted. */
   softDelete(id: ThreadId): Promise<Thread>;
@@ -158,8 +162,14 @@ export interface ThreadRepository {
   restore(id: ThreadId): Promise<Thread>;
 }
 
-export interface HomeFeedCursorKey {
-  lastActivityAt: string;
+export interface WorkThreadSummary {
+  title: string | null;
+  updatedAt: string;
+  status: ThreadStatus;
+}
+
+export interface ProjectChatCursorKey {
+  sortAt: string;
   threadId: ThreadId;
 }
 
@@ -173,21 +183,16 @@ export interface WorkChatFeedRepository {
     projectId: ProjectId;
     workId: WorkId;
     userId: UserId;
-    after: WorkChatFeedCursorKey | null;
+    after: ProjectChatCursorKey | null;
     limit: number;
   }): Promise<WorkChatFeedRow[]>;
-}
-
-export interface WorkChatFeedCursorKey {
-  updatedAt: string;
-  threadId: ThreadId;
 }
 
 export interface HomeChatFeedRepository {
   queryPage(input: {
     projectId: ProjectId;
     userId: UserId;
-    after: HomeFeedCursorKey | null;
+    after: ProjectChatCursorKey | null;
     recentLimit: number;
     includeFeatured: boolean;
   }): Promise<{
@@ -212,7 +217,7 @@ export interface ThreadUserStateRepository {
     isFavorite?: boolean;
     isUnread?: boolean;
   }): Promise<UpdateThreadUserStateResponse>;
-  effectiveAttention(threadId: ThreadId, userId: UserId): Promise<ProjectChatAttention>;
+  effectiveAttention(threadId: ThreadId, userId: UserId): Promise<ThreadAttention>;
 }
 
 /**

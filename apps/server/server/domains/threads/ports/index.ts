@@ -13,9 +13,9 @@ export type {
   CreateThreadInput,
   CreateTurnInput,
   HomeChatFeedRepository,
-  HomeFeedCursorKey,
   InternalThreadRepositories,
   ModelResponseRepository,
+  ProjectChatCursorKey,
   RecordModelResponseUsageInput,
   RecordModelResponseUsageResult,
   SubagentThreadFactory,
@@ -32,5 +32,6 @@ export type {
   UsageRecorder,
   WorkChatFeedRepository,
   WorkContextDeliveryRepository,
+  WorkThreadSummary,
 } from "./repositories.js";
 export { ThreadWorkProjectMismatchError } from "./repositories.js";

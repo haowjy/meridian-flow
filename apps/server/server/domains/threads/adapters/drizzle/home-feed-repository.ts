@@ -1,38 +1,24 @@
 /** One-statement PostgreSQL projection for Continue, Favorite, and Recent Home chats. */
-import type { ProjectChatAttention, ProjectChatItem } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import type { HomeChatFeedRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
-import { effectiveAttentionSql, visibleConversationalTurnSql } from "./visible-conversation-sql.js";
+import {
+  effectiveAttentionSql,
+  exactUtcTimestampSql,
+  mapProjectChatRow,
+  type ProjectChatSqlRow,
+  projectChatPreviewLateral,
+  visibleConversationalTurnSql,
+} from "./visible-conversation-sql.js";
 
-type HomeRow = {
+type HomeRow = ProjectChatSqlRow & {
   section: "continue" | "favorite" | "recent";
-  thread_id: string;
-  title: string;
-  work_id: string | null;
-  work_title: string | null;
-  last_message_preview: string | null;
-  last_activity_at_exact: string;
-  attention: ProjectChatAttention;
-  is_favorite: boolean;
 };
-
-function mapRow(row: HomeRow): ProjectChatItem {
-  return {
-    id: row.thread_id,
-    title: row.title,
-    work: row.work_id && row.work_title ? { id: row.work_id, title: row.work_title } : null,
-    lastMessagePreview: row.last_message_preview,
-    lastActivityAt: row.last_activity_at_exact,
-    attention: row.attention,
-    isFavorite: row.is_favorite,
-  };
-}
 
 export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeChatFeedRepository {
   return {
     async queryPage(input) {
-      const cursorActivity = input.after?.lastActivityAt ?? null;
+      const cursorActivity = input.after?.sortAt ?? null;
       const cursorThreadId = input.after?.threadId ?? null;
       const rows = await currentDrizzleDb(db).execute(sql`
         WITH RECURSIVE eligible AS (
@@ -63,7 +49,7 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           WHERE NOT parent.id = ANY(l.path)
         ), visible_heads AS (
           SELECT DISTINCT ON (l.thread_id) l.thread_id, l.turn_id, l.role,
-            l.turn_status, COALESCE(l.completed_at, l.created_at) AS conversational_activity_at
+            l.turn_status AS status, COALESCE(l.completed_at, l.created_at) AS activity_at
           FROM lineage l
           WHERE ${visibleConversationalTurnSql({
             role: sql`l.role`,
@@ -73,12 +59,12 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           ORDER BY l.thread_id, l.depth
         ), base AS (
           SELECT e.*, vh.turn_id AS conversational_leaf_turn_id,
-            COALESCE(vh.conversational_activity_at, e.thread_created_at) AS last_activity_at,
+            COALESCE(vh.activity_at, e.thread_created_at) AS last_activity_at,
             ${effectiveAttentionSql({
               threadStatus: sql`e.thread_status`,
               headRole: sql`vh.role`,
-              headStatus: sql`vh.turn_status`,
-              headActivityAt: sql`vh.conversational_activity_at`,
+              headStatus: sql`vh.status`,
+              headActivityAt: sql`vh.activity_at`,
               manuallyUnread: sql`e.manually_unread`,
               lastOpenedAt: sql`e.last_opened_at`,
             })} AS attention
@@ -106,23 +92,16 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
         )
         SELECT selected.section, selected.thread_id, selected.title,
           selected.work_id, selected.work_title, selected.attention, selected.is_favorite,
-          NULLIF(left(btrim(regexp_replace(COALESCE(preview.message_text, ''),
-            '[[:space:]]+', ' ', 'g')), 240), '') AS last_message_preview,
-          to_char(selected.last_activity_at AT TIME ZONE 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS last_activity_at_exact
+          conversation_preview.last_message_preview,
+          ${exactUtcTimestampSql(sql`selected.last_activity_at`)} AS last_activity_at_exact
         FROM selected
-        LEFT JOIN LATERAL (
-          SELECT string_agg(NULLIF(block.model_text, ''), ' ' ORDER BY block.sequence) AS message_text
-          FROM turn_blocks block
-          WHERE block.turn_id = selected.conversational_leaf_turn_id
-            AND block.block_type = 'text' AND block.pruned = false
-        ) preview ON true
+        LEFT JOIN ${projectChatPreviewLateral(sql`selected.conversational_leaf_turn_id`)} ON true
         ORDER BY CASE selected.section WHEN 'continue' THEN 0 WHEN 'favorite' THEN 1 ELSE 2 END,
           selected.last_activity_at DESC, selected.thread_id DESC
       `);
       const mapped = Array.from(rows as unknown as Iterable<HomeRow>).map((row) => ({
         section: row.section,
-        item: mapRow(row),
+        item: mapProjectChatRow(row),
       }));
       return {
         continueChat: mapped.find((row) => row.section === "continue")?.item ?? null,

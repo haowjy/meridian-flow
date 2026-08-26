@@ -3,7 +3,6 @@ import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";
 import {
-  decodeHomeFeedCursor,
   getHomeChatFeedPage,
   InvalidHomeFeedCursorError,
 } from "../../../../domains/threads/domain/home-feed.js";
@@ -21,7 +20,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Invalid Home feed cursor" });
   }
   try {
-    if (cursorValue !== undefined) decodeHomeFeedCursor(cursorValue);
     await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
     return serializeTransport(
       await getHomeChatFeedPage({

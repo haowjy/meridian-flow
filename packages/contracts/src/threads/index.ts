@@ -270,7 +270,6 @@ export interface ModelResponse {
 }
 
 export * from "./golden/index.js";
-export * from "./home-feed.js";
 export type {
   ModelRequestDebugCapture,
   ModelRequestDebugMessage,
@@ -292,6 +291,7 @@ export type {
   OrchestratorEvent,
   WorkContextChangedEvent,
 } from "./orchestrator-events.js";
+export * from "./project-chat-feed.js";
 export type { ThreadAttention, ThreadListItem, ThreadListWork } from "./projections.js";
 export type {
   TurnContextPreview,

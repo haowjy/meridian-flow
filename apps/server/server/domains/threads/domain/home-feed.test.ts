@@ -1,46 +1,13 @@
 /** Behavior coverage for Home feed pagination, lineage, and writer state. */
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryRepositories } from "../adapters/in-memory/repositories.js";
-import {
-  decodeHomeFeedCursor,
-  encodeHomeFeedCursor,
-  getHomeChatFeedPage,
-  InvalidHomeFeedCursorError,
-} from "./home-feed.js";
+import { getHomeChatFeedPage, InvalidHomeFeedCursorError } from "./home-feed.js";
+import { encodeProjectChatCursor } from "./project-chat-cursor.js";
 
 const USER_ID = "00000000-0000-4000-8000-000000000101";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000102";
 
 describe("Home chat feed", () => {
-  it("uses a strict opaque cursor", () => {
-    const key = {
-      lastActivityAt: "2026-08-13T20:01:02.123456Z",
-      threadId: "00000000-0000-4000-8000-000000000103" as const,
-    };
-    expect(decodeHomeFeedCursor(encodeHomeFeedCursor(key))).toEqual(key);
-    expect(() => decodeHomeFeedCursor(Buffer.from('{"v":2}').toString("base64url"))).toThrow(
-      InvalidHomeFeedCursorError,
-    );
-    const encoded = encodeHomeFeedCursor(key);
-    for (const malformed of [
-      `${encoded}=`,
-      `${encoded}!`,
-      ` ${encoded}`,
-      Buffer.from(
-        JSON.stringify({ v: 1, a: "2026-02-30T20:01:02.123456Z", i: key.threadId }),
-      ).toString("base64url"),
-      Buffer.from(
-        JSON.stringify({ v: 1, a: "2026-08-13T20:01:02.12345Z", i: key.threadId }),
-      ).toString("base64url"),
-      encodeHomeFeedCursor({
-        lastActivityAt: "0000-01-01T00:00:00.000000Z",
-        threadId: key.threadId,
-      }),
-    ]) {
-      expect(() => decodeHomeFeedCursor(malformed)).toThrow(InvalidHomeFeedCursorError);
-    }
-  });
-
   it("rejects PostgreSQL-incompatible timestamps before repository access", async () => {
     const queryPage = vi.fn();
     await expect(
@@ -48,8 +15,8 @@ describe("Home chat feed", () => {
         repository: { queryPage },
         projectId: PROJECT_ID,
         userId: USER_ID,
-        cursor: encodeHomeFeedCursor({
-          lastActivityAt: "0000-01-01T00:00:00.000000Z",
+        cursor: encodeProjectChatCursor({
+          sortAt: "0000-01-01T00:00:00.000000Z",
           threadId: "00000000-0000-4000-8000-000000000103",
         }),
       }),

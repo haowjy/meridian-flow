@@ -1,10 +1,10 @@
-/** Focused Home/state fake over supplied in-memory conversation data. */
+/** Focused in-memory adapter for Home/Work Project-chat projections and writer state. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   Block,
-  ProjectChatAttention,
   ProjectChatItem,
   Thread,
+  ThreadAttention,
   Turn,
 } from "@meridian/contracts/threads";
 import {
@@ -14,6 +14,7 @@ import {
 import type {
   HomeChatFeedRepository,
   ThreadUserStateRepository,
+  WorkChatFeedRepository,
 } from "../../ports/repositories.js";
 
 export type InMemoryThreadUserState = {
@@ -22,12 +23,13 @@ export type InMemoryThreadUserState = {
   lastOpenedAt: string | null;
 };
 
-export interface InMemoryHomeStateSource {
+export interface InMemoryProjectChatSource {
   threads(): Iterable<Thread>;
   turn(id: string): Turn | undefined;
   blocks(): Iterable<Block>;
   isProjectVisible(thread: Thread): Promise<boolean>;
   primaryWorkId(threadId: ThreadId): string | null;
+  hasWorkMembership(threadId: ThreadId, workId: string): boolean;
   work(id: string): Promise<{ id: string; name: string; deletedAt: string | null } | null>;
 }
 
@@ -35,8 +37,8 @@ function exactTimestamp(value: string): string {
   return value.replace(/\.(\d{3})Z$/, ".$1000Z");
 }
 
-export function createInMemoryHomeStateAdapter(
-  source: InMemoryHomeStateSource,
+export function createInMemoryProjectChatAdapter(
+  source: InMemoryProjectChatSource,
   states: Map<string, InMemoryThreadUserState>,
 ) {
   const key = (threadId: string, userId: string) => `${threadId}:${userId}`;
@@ -63,11 +65,7 @@ export function createInMemoryHomeStateAdapter(
     return null;
   }
 
-  function effectiveAttention(
-    thread: Thread,
-    head: Turn | null,
-    userId: string,
-  ): ProjectChatAttention {
+  function effectiveAttention(thread: Thread, head: Turn | null, userId: string): ThreadAttention {
     const state = states.get(key(thread.id, userId));
     const activity = head ? (head.completedAt ?? head.createdAt) : thread.createdAt;
     return projectEffectiveThreadAttention({
@@ -133,11 +131,37 @@ export function createInMemoryHomeStateAdapter(
         .filter(
           (item) =>
             !input.after ||
-            item.lastActivityAt < input.after.lastActivityAt ||
-            (item.lastActivityAt === input.after.lastActivityAt && item.id < input.after.threadId),
+            item.lastActivityAt < input.after.sortAt ||
+            (item.lastActivityAt === input.after.sortAt && item.id < input.after.threadId),
         )
         .slice(0, input.recentLimit);
       return { continueChat: input.includeFeatured ? continueChat : null, favorites, recent };
+    },
+  };
+
+  const workChatFeed: WorkChatFeedRepository = {
+    async queryPage(input) {
+      const associated = [...source.threads()]
+        .filter(
+          (thread) =>
+            thread.projectId === input.projectId &&
+            !thread.deletedAt &&
+            source.hasWorkMembership(thread.id as ThreadId, input.workId),
+        )
+        .filter(
+          (thread) =>
+            !input.after ||
+            thread.updatedAt < input.after.sortAt ||
+            (thread.updatedAt === input.after.sortAt && thread.id < input.after.threadId),
+        )
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+        .slice(0, input.limit);
+      return Promise.all(
+        associated.map(async (thread) => ({
+          item: await projectChatItem(thread, input.userId),
+          updatedAt: exactTimestamp(thread.updatedAt),
+        })),
+      );
     },
   };
 
@@ -171,5 +195,5 @@ export function createInMemoryHomeStateAdapter(
     },
   };
 
-  return { homeFeed, threadUserState, conversationalHead, projectChatItem };
+  return { homeFeed, workChatFeed, threadUserState, conversationalHead };
 }

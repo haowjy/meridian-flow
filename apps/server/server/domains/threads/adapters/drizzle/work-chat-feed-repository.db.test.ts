@@ -119,7 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         workId: HISTORICAL_WORK_ID,
         userId: USER_ID,
-        after: { updatedAt: first[0]?.updatedAt ?? "", threadId: THREAD_HIGH },
+        after: { sortAt: first[0]?.updatedAt ?? "", threadId: THREAD_HIGH },
         limit: 2,
       });
       expect(second.map(({ item }) => item.id)).toEqual([THREAD_LOW]);

@@ -33,6 +33,13 @@ describe("wired work tool", () => {
     let primaryWorkId = current.id;
     const invalidateThread = vi.fn(async () => {});
     const threadChanged = vi.fn(async () => {});
+    const listRecentByWork = vi.fn(async () => [
+      {
+        title: "Revision chat",
+        updatedAt: "2026-08-06T12:00:00.000Z",
+        status: "active" as const,
+      },
+    ]);
     const registrations = createWiredCoreToolRegistrations({
       threads: {
         findById: async () =>
@@ -42,15 +49,7 @@ describe("wired work tool", () => {
             userId: "user-1",
             kind,
           }) as never,
-        listByWork: async () => [
-          {
-            id: "recent-thread",
-            title: "Revision chat",
-            updatedAt: "2026-08-06T12:00:00.000Z",
-            status: "active",
-            composedSystemPrompt: "large frozen prompt",
-          },
-        ],
+        listRecentByWork,
       } as never,
       threadWorks: {
         findPrimary: async () => ({ workId: primaryWorkId }),
@@ -88,11 +87,12 @@ describe("wired work tool", () => {
       works: baseWorks,
       invalidateThread,
       threadChanged,
+      listRecentByWork,
     };
   }
 
   it("dispatches all six branches and journals mutation receipts", async () => {
-    const { handler, target } = await setup();
+    const { handler, target, listRecentByWork } = await setup();
     const ctx = toolContext();
     await expect(handler({ command: "list" }, ctx)).resolves.toHaveLength(2);
     await expect(handler({ command: "show", work: target.slug }, ctx)).resolves.toMatchObject({
@@ -106,6 +106,7 @@ describe("wired work tool", () => {
       ],
       drafts: [{ draftId: "draft-1" }],
     });
+    expect(listRecentByWork).toHaveBeenCalledWith("project-1", target.id, 10);
     await expect(handler({ command: "create", name: "New Work" }, ctx)).resolves.toMatchObject({
       metadata: {
         workReceipt: {

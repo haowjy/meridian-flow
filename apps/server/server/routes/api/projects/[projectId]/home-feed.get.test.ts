@@ -1,7 +1,7 @@
 /** Home feed HTTP boundary: auth, ownership, validation, and fixed page policy. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { encodeHomeFeedCursor } from "../../../../domains/threads/domain/home-feed.js";
+import { encodeProjectChatCursor } from "../../../../domains/threads/domain/project-chat-cursor.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import handler from "./home-feed.get.js";
 
@@ -42,8 +42,8 @@ describe("GET /api/projects/:projectId/home-feed", () => {
     Buffer.from(
       '{"v":1,"a":"2026-99-99T99:99:99.999999Z","i":"00000000-0000-4000-8000-000000000703"}',
     ).toString("base64url"),
-    encodeHomeFeedCursor({
-      lastActivityAt: "0000-01-01T00:00:00.000000Z",
+    encodeProjectChatCursor({
+      sortAt: "0000-01-01T00:00:00.000000Z",
       threadId: THREAD_ID,
     }),
   ])("rejects malformed cursor %s without repository access", async (cursor) => {
@@ -55,7 +55,7 @@ describe("GET /api/projects/:projectId/home-feed", () => {
     await expect(
       handler(event(`?cursor=${encodeURIComponent(cursor)}`) as never),
     ).rejects.toMatchObject({ statusCode: 400 });
-    expect(fixture.value.projectRepo.findById).not.toHaveBeenCalled();
+    expect(fixture.value.projectRepo.findById).toHaveBeenCalledOnce();
     expect(fixture.queryPage).not.toHaveBeenCalled();
   });
 
@@ -105,14 +105,14 @@ describe("GET /api/projects/:projectId/home-feed", () => {
       user: { userId: USER_ID },
       app: fixture.value,
     } as never);
-    const cursor = encodeHomeFeedCursor({
-      lastActivityAt: "2026-08-13T20:01:02.123456Z",
+    const cursor = encodeProjectChatCursor({
+      sortAt: "2026-08-13T20:01:02.123456Z",
       threadId: THREAD_ID,
     });
     await handler(event(`?cursor=${cursor}`) as never);
     expect(fixture.queryPage).toHaveBeenCalledWith(
       expect.objectContaining({
-        after: { lastActivityAt: "2026-08-13T20:01:02.123456Z", threadId: THREAD_ID },
+        after: { sortAt: "2026-08-13T20:01:02.123456Z", threadId: THREAD_ID },
         includeFeatured: false,
       }),
     );

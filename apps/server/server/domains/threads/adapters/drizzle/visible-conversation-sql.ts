@@ -1,5 +1,29 @@
-/** PostgreSQL companion for the visible-conversational-head policy. */
+/** Canonical PostgreSQL projection machinery for visible Project-chat rows. */
+import type { ProjectChatItem, ThreadAttention } from "@meridian/contracts/threads";
 import { type SQL, sql } from "drizzle-orm";
+
+export type ProjectChatSqlRow = {
+  thread_id: string;
+  title: string;
+  work_id: string | null;
+  work_title: string | null;
+  last_message_preview: string | null;
+  last_activity_at_exact: string;
+  attention: ThreadAttention;
+  is_favorite: boolean;
+};
+
+export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
+  return {
+    id: row.thread_id,
+    title: row.title,
+    work: row.work_id && row.work_title ? { id: row.work_id, title: row.work_title } : null,
+    lastMessagePreview: row.last_message_preview,
+    lastActivityAt: row.last_activity_at_exact,
+    attention: row.attention,
+    isFavorite: row.is_favorite,
+  };
+}
 
 type VisibleTurnColumns = {
   role: SQL;
@@ -59,7 +83,7 @@ export function visibleConversationalHeadLateral(activeLeafTurnId: SQL): SQL {
       FROM lineage l JOIN turns parent ON parent.id = l.parent_turn_id
       WHERE NOT parent.id = ANY(l.path)
     )
-    SELECT l.role, l.status,
+    SELECT l.id AS turn_id, l.role, l.status,
       COALESCE(l.completed_at, l.created_at) AS activity_at
     FROM lineage l
     WHERE ${visibleConversationalTurnSql({
@@ -69,4 +93,22 @@ export function visibleConversationalHeadLateral(activeLeafTurnId: SQL): SQL {
     })}
     ORDER BY l.depth LIMIT 1
   ) AS conversational_head`;
+}
+
+/** One correlated, whitespace-normalized 240-character visible-head preview. */
+export function projectChatPreviewLateral(headTurnId: SQL): SQL {
+  return sql`LATERAL (
+    SELECT NULLIF(left(btrim(regexp_replace(COALESCE(
+      string_agg(NULLIF(block.model_text, ''), ' ' ORDER BY block.sequence), ''),
+      '[[:space:]]+', ' ', 'g')), 240), '') AS last_message_preview
+    FROM turn_blocks block
+    WHERE block.turn_id = ${headTurnId}
+      AND block.block_type = 'text' AND block.pruned = false
+  ) AS conversation_preview`;
+}
+
+/** Exact PostgreSQL microsecond timestamp encoded for the JSON contract. */
+export function exactUtcTimestampSql(value: SQL): SQL<string> {
+  return sql<string>`to_char(${value} AT TIME ZONE 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 }

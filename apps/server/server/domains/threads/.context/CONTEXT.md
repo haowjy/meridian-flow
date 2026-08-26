@@ -68,16 +68,16 @@ instead of the N:1 `threads.workId` column.
 
 | Port | Surface |
 |---|---|
-| `ThreadRepository` | `create / findById / listByUser / listByProject / updateStatus / recomputeCostFromModelResponses / updateCost / softDelete / restore` |
-| `HomeChatFeedRepository` | One server-owned Continue/Favorite/Recent projection with current-visible-lineage preview and keyset pagination. Production resolves a page in one set-oriented SQL statement; in-memory adapters preserve behavior, not query shape. |
-| `WorkChatFeedRepository` | Bounded historical-Work membership pages ordered by `(threads.updated_at DESC, threads.id DESC)`, projecting the chat's current primary Work plus the same preview, attention, and writer state used by project chat rows. |
+| `ThreadRepository` | Thread lifecycle plus project lists and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. |
+| `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection. Home retains its set-oriented whole-project ranking. |
+| `WorkChatFeedRepository` | Bounded historical-Work association pages over the same Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
 | `ThreadUserStateRepository` | Per-writer favorite, manual-unread, and last-opened desired-state authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
-| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. It exposes the primary-rebind operation through one Work-before-thread critical section; that operation accepts active or archived same-project Works and preserves exactly one primary. |
+| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind demotes the old membership and promotes/upserts the target, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, and targeted durable obligation have one policy owner and never write the new-chat fallback. Actor adapters own transaction and post-commit delivery. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
@@ -88,8 +88,10 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 ## Adapters
 
 - **Drizzle** (production) and **in-memory** (test/dev) adapters for all
-  repositories and journal reader/writer, behind shared `__conformance__`
-  suites.
+  repositories and journal reader/writer. The focused Project-chat adapter owns
+  Home and Work visible-head projection in memory; the Drizzle projection module
+  owns the shared row mapping, preview, attention, timestamp, and bounded Work
+  candidate machinery.
 
 ## Key domain logic
 
@@ -197,10 +199,10 @@ contract shapes.
   `waiting_interrupt` assistant head is `actionRequired`, and an idle completed
   assistant head newer than the writer's acknowledgement is `unread`.
 - Home returns Continue and Favorites only on the first page. Recent pagination
-  uses an opaque exclusive cursor over `(lastActivityAt DESC, threadId DESC)`;
+  uses the strict shared Project-chat keyset codec over `(lastActivityAt DESC, threadId DESC)`;
   every page excludes Continue and Favorites, so equal activity times remain
   stable without duplicating a chat.
-- Work-associated chat pages use an opaque exclusive cursor over thread update
+- Work-associated chat pages use the same codec over thread update
   time plus thread ID. The association filter is M:N history; row Work identity
   always comes from the current primary membership. Projection and serialization
   are bounded to 50 rows per page.
