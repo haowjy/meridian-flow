@@ -1,75 +1,197 @@
-/** QueryClient-scoped authority for optimistic thread user-state commands. */
-import type { UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
+/** QueryClient-scoped normalized authority for project-thread user state and transport. */
+import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
-
 import { updateThreadUserState } from "@/client/api/threads-api";
-import { createProjectChatFeedCacheController, type HomeStateField } from "./home-chat-feed-cache";
+import { groupHomeFeed, type HomeFeedData, projectHomeThread } from "./home-chat-feed-cache";
+import { projectQueryKeys } from "./project-query-keys";
 
+export type ThreadUserStateField = "isFavorite" | "isUnread";
 export type ThreadUserStateOutcome =
   | { status: "success"; response: UpdateThreadUserStateResponse }
   | { status: "error"; error: Error };
-export type ThreadUserStateTransportState =
-  | { pending: false; desiredValue?: never }
-  | { pending: true; desiredValue: boolean };
 export type ThreadUserStateLifecycle = { beforeRollback?: () => void };
+export type ThreadUserStateCommandView = {
+  pending: boolean;
+  desiredValue?: boolean;
+  error?: Error;
+};
 
+type BaseState = Pick<ProjectChatItem, "isFavorite" | "attention">;
+type PendingField = { revision: number; desiredValue: boolean; projectedValue: boolean };
+export type ThreadUserStateRecord = {
+  base: BaseState;
+  admittedAt: Record<ThreadUserStateField, number>;
+  barriers?: Partial<Record<ThreadUserStateField, number>>;
+  revisions?: Partial<Record<ThreadUserStateField, number>>;
+  commands?: Partial<Record<ThreadUserStateField, PendingField>>;
+  errors?: Partial<Record<ThreadUserStateField, Error>>;
+};
 type QueuedCommand = {
+  revision: number;
   value: boolean;
   promise: Promise<ThreadUserStateOutcome>;
   resolve: (outcome: ThreadUserStateOutcome) => void;
   lifecycles: Set<ThreadUserStateLifecycle>;
 };
 type CommandQueue = { running: boolean; entries: QueuedCommand[] };
-type Authority = {
-  version: number;
-  active: Map<string, CommandQueue>;
-  states: Map<string, ThreadUserStateTransportState>;
-  listeners: Set<() => void>;
-};
-const authorities = new WeakMap<QueryClient, Authority>();
-const idleState: ThreadUserStateTransportState = { pending: false };
+type ProjectAuthority = { generation: number; revision: number; queues: Map<string, CommandQueue> };
+const authorities = new WeakMap<QueryClient, Map<string, ProjectAuthority>>();
 
-function authority(client: QueryClient): Authority {
-  let current = authorities.get(client);
+function authority(client: QueryClient, projectId: string): ProjectAuthority {
+  let projects = authorities.get(client);
+  if (!projects) {
+    projects = new Map();
+    authorities.set(client, projects);
+  }
+  let current = projects.get(projectId);
   if (!current) {
-    current = { version: 0, active: new Map(), states: new Map(), listeners: new Set() };
-    authorities.set(client, current);
+    current = { generation: 0, revision: 0, queues: new Map() };
+    projects.set(projectId, current);
   }
   return current;
 }
-const commandId = (projectId: string, threadId: string, field: HomeStateField) =>
-  `${projectId}:${threadId}:${field}`;
-function publish(owner: Authority, id: string, state: ThreadUserStateTransportState) {
-  owner.states.set(id, state);
-  owner.version += 1;
-  owner.listeners.forEach((listener) => {
-    listener();
-  });
+
+const defaultRecord = (item?: ProjectChatItem): ThreadUserStateRecord => ({
+  base: { isFavorite: item?.isFavorite ?? false, attention: item?.attention ?? "none" },
+  admittedAt: { isFavorite: -1, isUnread: -1 },
+});
+const stateKey = (projectId: string, threadId: string) =>
+  projectQueryKeys.threadUserState(projectId, threadId);
+
+function homeItem(client: QueryClient, projectId: string, threadId: string) {
+  const grouped = groupHomeFeed(
+    client.getQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId)),
+  );
+  return [grouped.continueChat, ...grouped.favorites, ...grouped.recent].find(
+    (item) => item?.id === threadId,
+  );
 }
 
-export function subscribeThreadUserStateTransport(client: QueryClient, listener: () => void) {
-  const owner = authority(client);
-  owner.listeners.add(listener);
-  return () => owner.listeners.delete(listener);
+function readRecord(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+  fallback?: ProjectChatItem,
+): ThreadUserStateRecord {
+  return (
+    client.getQueryData<ThreadUserStateRecord>(stateKey(projectId, threadId)) ??
+    defaultRecord(fallback ?? homeItem(client, projectId, threadId) ?? undefined)
+  );
 }
-export function getThreadUserStateTransportVersion(client: QueryClient) {
-  return authority(client).version;
+
+function writeRecord(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+  update: (current: ThreadUserStateRecord) => ThreadUserStateRecord,
+  fallback?: ProjectChatItem,
+) {
+  client.setQueryData<ThreadUserStateRecord>(stateKey(projectId, threadId), (current) =>
+    update(
+      current ?? defaultRecord(fallback ?? homeItem(client, projectId, threadId) ?? undefined),
+    ),
+  );
+}
+
+function fieldValue(record: ThreadUserStateRecord, field: ThreadUserStateField) {
+  const desired = record.commands?.[field]?.projectedValue;
+  if (desired !== undefined) return desired;
+  return field === "isFavorite" ? record.base.isFavorite : record.base.attention === "unread";
+}
+
+export function projectThreadUserState(
+  item: ProjectChatItem,
+  record: ThreadUserStateRecord,
+): ProjectChatItem {
+  const desiredUnread = record.commands?.isUnread?.projectedValue;
+  return {
+    ...item,
+    isFavorite: fieldValue(record, "isFavorite"),
+    attention:
+      desiredUnread === undefined || record.base.attention === "actionRequired"
+        ? record.base.attention
+        : desiredUnread
+          ? "unread"
+          : "none",
+  };
+}
+
+export function getThreadUserStateRecord(
+  client: QueryClient,
+  projectId: string,
+  item: ProjectChatItem,
+) {
+  return readRecord(client, projectId, item.id, item);
+}
+
+export function beginThreadUserStateFeedRequest(client: QueryClient, projectId: string) {
+  return ++authority(client, projectId).generation;
+}
+
+export function admitThreadUserStateItems(
+  client: QueryClient,
+  projectId: string,
+  items: readonly ProjectChatItem[],
+  requestGeneration: number,
+) {
+  for (const item of items) {
+    writeRecord(
+      client,
+      projectId,
+      item.id,
+      (current) => {
+        let base = current.base;
+        let admittedAt = current.admittedAt;
+        if (
+          requestGeneration >= (current.barriers?.isFavorite ?? -1) &&
+          requestGeneration >= current.admittedAt.isFavorite
+        ) {
+          base = { ...base, isFavorite: item.isFavorite };
+          admittedAt = { ...admittedAt, isFavorite: requestGeneration };
+        }
+        if (
+          requestGeneration >= (current.barriers?.isUnread ?? -1) &&
+          requestGeneration >= current.admittedAt.isUnread
+        ) {
+          base = { ...base, attention: item.attention };
+          admittedAt = { ...admittedAt, isUnread: requestGeneration };
+        }
+        return base === current.base ? current : { ...current, base, admittedAt };
+      },
+      item,
+    );
+  }
+}
+
+export function getThreadUserStateCommandView(
+  record: ThreadUserStateRecord,
+  field: ThreadUserStateField,
+): ThreadUserStateCommandView {
+  const command = record.commands?.[field];
+  return command
+    ? { pending: true, desiredValue: command.desiredValue, error: record.errors?.[field] }
+    : { pending: false, error: record.errors?.[field] };
+}
+
+function syncHome(client: QueryClient, projectId: string, threadId: string) {
+  const record = readRecord(client, projectId, threadId);
+  projectHomeThread(client, projectId, threadId, (item) => projectThreadUserState(item, record));
 }
 
 export function runThreadUserStateCommand(
   client: QueryClient,
   projectId: string,
   threadId: string,
-  field: HomeStateField,
+  field: ThreadUserStateField,
   value: boolean,
   lifecycle: ThreadUserStateLifecycle = {},
 ): Promise<ThreadUserStateOutcome> {
-  const owner = authority(client);
-  const id = commandId(projectId, threadId, field);
-  let queue = owner.active.get(id);
+  const owner = authority(client, projectId);
+  const id = `${threadId}:${field}`;
+  let queue = owner.queues.get(id);
   if (!queue) {
     queue = { running: false, entries: [] };
-    owner.active.set(id, queue);
+    owner.queues.set(id, queue);
   }
   const tail = queue.entries.at(-1);
   if (tail?.value === value) {
@@ -81,68 +203,112 @@ export function runThreadUserStateCommand(
   const promise = new Promise<ThreadUserStateOutcome>((done) => {
     resolve = done;
   });
-  queue.entries.push({ value, promise, resolve, lifecycles: new Set([lifecycle]) });
-  publish(owner, id, { pending: true, desiredValue: value });
-  if (!queue.running)
-    void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
+  const revision = ++owner.revision;
+  queue.entries.push({ revision, value, promise, resolve, lifecycles: new Set([lifecycle]) });
+  writeRecord(client, projectId, threadId, (current) => {
+    const pending = current.commands?.[field];
+    const commands = {
+      ...current.commands,
+      [field]: {
+        revision,
+        desiredValue: value,
+        projectedValue: pending?.projectedValue ?? value,
+      },
+    };
+    const errors = { ...current.errors };
+    delete errors[field];
+    return {
+      ...current,
+      commands,
+      revisions: { ...current.revisions, [field]: revision },
+      errors: Object.keys(errors).length ? errors : undefined,
+    };
+  });
+  syncHome(client, projectId, threadId);
+  if (!queue.running) void advance(owner, id, client, projectId, threadId, field);
   return promise;
 }
 
-async function advanceThreadUserStateQueue(
-  owner: Authority,
+async function advance(
+  owner: ProjectAuthority,
   id: string,
   client: QueryClient,
   projectId: string,
   threadId: string,
-  field: HomeStateField,
+  field: ThreadUserStateField,
 ): Promise<void> {
-  const queue = owner.active.get(id);
+  const queue = owner.queues.get(id);
   const entry = queue?.entries[0];
   if (!queue || !entry || queue.running) return;
   queue.running = true;
-  const cacheCommand = createProjectChatFeedCacheController(client, projectId).command(
-    threadId,
-    field,
-    entry.value,
-  );
+  writeRecord(client, projectId, threadId, (current) => {
+    const pending = current.commands?.[field];
+    if (!pending || pending.projectedValue === entry.value) return current;
+    return {
+      ...current,
+      commands: { ...current.commands, [field]: { ...pending, projectedValue: entry.value } },
+    };
+  });
+  syncHome(client, projectId, threadId);
   let outcome: ThreadUserStateOutcome;
   try {
     const response = await updateThreadUserState(
       threadId,
       field === "isFavorite" ? { isFavorite: entry.value } : { isUnread: entry.value },
     );
-    // Let stale query observer delivery finish before applying the mutation response.
-    await new Promise<void>((resolveTurn) => setTimeout(resolveTurn, 0));
-    cacheCommand.succeed(response);
+    const barrier = ++owner.generation;
+    writeRecord(client, projectId, threadId, (current) => {
+      const other: ThreadUserStateField = field === "isFavorite" ? "isUnread" : "isFavorite";
+      const acceptOther = (current.revisions?.[other] ?? 0) <= entry.revision;
+      const base = {
+        isFavorite:
+          field === "isFavorite" || acceptOther ? response.isFavorite : current.base.isFavorite,
+        attention:
+          field === "isUnread" || acceptOther ? response.attention : current.base.attention,
+      };
+      const barriers = {
+        ...current.barriers,
+        [field]: barrier,
+        ...(acceptOther ? { [other]: barrier } : {}),
+      };
+      const commands = { ...current.commands };
+      if (commands[field]?.revision === entry.revision) delete commands[field];
+      const errors = { ...current.errors };
+      delete errors[field];
+      return {
+        ...current,
+        base,
+        barriers,
+        commands: Object.keys(commands).length ? commands : undefined,
+        revisions: Object.keys(commands).length ? current.revisions : undefined,
+        errors: Object.keys(errors).length ? errors : undefined,
+      };
+    });
     outcome = { status: "success", response };
   } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
     entry.lifecycles.forEach((item) => {
       item.beforeRollback?.();
     });
-    cacheCommand.fail();
-    outcome = {
-      status: "error",
-      error: cause instanceof Error ? cause : new Error(String(cause)),
-    };
+    writeRecord(client, projectId, threadId, (current) => {
+      const commands = { ...current.commands };
+      const isLatest = commands[field]?.revision === entry.revision;
+      if (isLatest) delete commands[field];
+      return {
+        ...current,
+        commands: Object.keys(commands).length ? commands : undefined,
+        revisions: Object.keys(commands).length ? current.revisions : undefined,
+        errors: isLatest ? { ...current.errors, [field]: error } : current.errors,
+      };
+    });
+    outcome = { status: "error", error };
   }
 
-  // Remove the settled entry and release the queue before resolving consumers.
-  // A consumer may synchronously enqueue the opposite value without observing
-  // the completed command as active.
+  syncHome(client, projectId, threadId);
   queue.entries.shift();
   queue.running = false;
   const next = queue.entries[0];
-  if (!next) owner.active.delete(id);
-  publish(owner, id, next ? { pending: true, desiredValue: next.value } : { pending: false });
+  if (!next) owner.queues.delete(id);
   entry.resolve(outcome);
-  if (next) void advanceThreadUserStateQueue(owner, id, client, projectId, threadId, field);
-}
-
-export function getThreadUserStateTransportState(
-  client: QueryClient,
-  projectId: string,
-  threadId: string,
-  field: HomeStateField,
-) {
-  return authority(client).states.get(commandId(projectId, threadId, field)) ?? idleState;
+  if (next) void advance(owner, id, client, projectId, threadId, field);
 }

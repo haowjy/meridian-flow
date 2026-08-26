@@ -439,7 +439,7 @@ msgstr "Applying…"
 #~ msgid "Archive"
 #~ msgstr "Archive"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "Archive Work"
 msgstr "Archive Work"
 
@@ -561,8 +561,8 @@ msgstr "Can't undo"
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -941,7 +941,7 @@ msgstr "Couldn't find {name}."
 msgid "Couldn't finish that step"
 msgstr "Couldn't finish that step"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkResourceState.tsx
 msgid "couldn’t load"
 msgstr "couldn’t load"
 
@@ -1054,7 +1054,7 @@ msgstr "Create project"
 msgid "Create the document"
 msgstr "Create the document"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "Create Work"
 msgstr "Create Work"
 
@@ -1139,7 +1139,7 @@ msgstr "Delete row"
 msgid "Delete table"
 msgstr "Delete table"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "Delete Work"
 msgstr "Delete Work"
 
@@ -1474,8 +1474,8 @@ msgstr "Form payload is malformed."
 msgid "Go ahead"
 msgstr "Go ahead"
 
+#: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Goal"
 msgstr "Goal"
 
@@ -1845,7 +1845,7 @@ msgid "Manage billing"
 msgstr "Manage billing"
 
 #: src/features/project/work/WorkDetailScreen.tsx
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "Manage Work"
 msgstr "Manage Work"
 
@@ -1969,7 +1969,7 @@ msgstr "Must be at least {value}"
 msgid "Must be at most {value}"
 msgstr "Must be at most {value}"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "Name"
 msgstr "Name"
 
@@ -2045,6 +2045,7 @@ msgstr "New reply since you last opened"
 msgid "New tab"
 msgstr "New tab"
 
+#: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "New Work"
 msgstr "New Work"
@@ -2595,7 +2596,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeFeed.tsx
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkResourceState.tsx
 msgid "Retry"
 msgstr "Retry"
 
@@ -3303,11 +3304,11 @@ msgstr "This week"
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 msgstr "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "This Work is active."
 msgstr "This Work is active."
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
 
@@ -3366,7 +3367,7 @@ msgstr "Unable to render diagram"
 #~ msgid "Unarchive"
 #~ msgstr "Unarchive"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "Unarchive Work"
 msgstr "Unarchive Work"
 

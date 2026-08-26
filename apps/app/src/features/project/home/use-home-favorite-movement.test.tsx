@@ -22,12 +22,12 @@ describe("useHomeFavoriteMovement", () => {
       movement = useHomeFavoriteMovement();
       return (
         <div ref={movement.scrollRef}>
-          <article data-home-row="moved">
-            <button type="button" data-home-row-actions="moved">
+          <article data-project-chat-row="moved">
+            <button type="button" data-project-chat-row-actions="moved">
               actions
             </button>
           </article>
-          <article data-home-row="anchor">
+          <article data-project-chat-row="anchor">
             <button type="button">open</button>
           </article>
         </div>
@@ -42,9 +42,11 @@ describe("useHomeFavoriteMovement", () => {
         clientHeight: { value: 300 },
       });
       scroll.getBoundingClientRect = () => rect(0, 300) as DOMRect;
-      const moved = container.querySelector('[data-home-row="moved"]') as HTMLElement;
-      const anchor = container.querySelector('[data-home-row="anchor"]') as HTMLElement;
-      const actions = container.querySelector('[data-home-row-actions="moved"]') as HTMLElement;
+      const moved = container.querySelector('[data-project-chat-row="moved"]') as HTMLElement;
+      const anchor = container.querySelector('[data-project-chat-row="anchor"]') as HTMLElement;
+      const actions = container.querySelector(
+        '[data-project-chat-row-actions="moved"]',
+      ) as HTMLElement;
       moved.getBoundingClientRect = () => rect(20) as DOMRect;
       anchor.getBoundingClientRect = () => rect(80) as DOMRect;
       actions.getBoundingClientRect = () => rect(20) as DOMRect;
@@ -62,12 +64,12 @@ describe("useHomeFavoriteMovement", () => {
       return (
         <div ref={movement.scrollRef}>
           <h2>Recent</h2>
-          <article data-home-row="moved">
-            <button type="button" data-home-row-actions="moved">
+          <article data-project-chat-row="moved">
+            <button type="button" data-project-chat-row-actions="moved">
               actions
             </button>
           </article>
-          <article data-home-row="near">
+          <article data-project-chat-row="near">
             <button type="button" data-near>
               near
             </button>
@@ -84,10 +86,12 @@ describe("useHomeFavoriteMovement", () => {
         clientHeight: { value: 200 },
       });
       scroll.getBoundingClientRect = () => rect(0, 200) as DOMRect;
-      const moved = container.querySelector('[data-home-row="moved"]') as HTMLElement;
-      const actions = container.querySelector('[data-home-row-actions="moved"]') as HTMLElement;
+      const moved = container.querySelector('[data-project-chat-row="moved"]') as HTMLElement;
+      const actions = container.querySelector(
+        '[data-project-chat-row-actions="moved"]',
+      ) as HTMLElement;
       const near = container.querySelector("[data-near]") as HTMLElement;
-      const nearRow = container.querySelector('[data-home-row="near"]') as HTMLElement;
+      const nearRow = container.querySelector('[data-project-chat-row="near"]') as HTMLElement;
       const heading = container.querySelector("h2") as HTMLElement;
       moved.getBoundingClientRect = () => rect(20) as DOMRect;
       nearRow.getBoundingClientRect = () => rect(80) as DOMRect;

@@ -4,8 +4,11 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { listWorkThreads } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
-import { createProjectChatFeedCacheController } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
+import {
+  admitThreadUserStateItems,
+  beginThreadUserStateFeedRequest,
+} from "./thread-user-state-commands";
 import { useProjectChatCommands } from "./useProjectChatCommands";
 
 declare const workChatsNextPageIdentity: unique symbol;
@@ -18,23 +21,14 @@ export function useWorkThreads(projectId: string, workId: string, options?: { en
   const enabled = (options?.enabled ?? true) && !isPendingCreation;
   const commands = useProjectChatCommands(projectId);
   const client = useQueryClient();
-  const controller = useMemo(
-    () => createProjectChatFeedCacheController(client, projectId),
-    [client, projectId],
-  );
   const query = useInfiniteQuery({
     queryKey: projectQueryKeys.workThreads(projectId, workId),
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
-      const watermark = controller.beginRequest();
-      try {
-        return controller.mergeWork(
-          await listWorkThreads(workId, { cursor: pageParam, signal }),
-          watermark,
-        );
-      } finally {
-        controller.settleRequest(watermark);
-      }
+      const requestGeneration = beginThreadUserStateFeedRequest(client, projectId);
+      const page = await listWorkThreads(workId, { cursor: pageParam, signal });
+      admitThreadUserStateItems(client, projectId, page.items, requestGeneration);
+      return page;
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 30_000,

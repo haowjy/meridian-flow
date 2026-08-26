@@ -47,21 +47,21 @@ test("right-aligns Work in its stable column and centers it across the full row"
   );
   await page.addStyleTag({ content: compiledCss });
   await page.addScriptTag({ content: compiledJs, type: "module" });
-  await expect(page.locator('[data-home-row="ordinary-1"]')).toBeVisible();
+  await expect(page.locator('[data-project-chat-row="ordinary-1"]')).toBeVisible();
 
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });
     const realGeometry = await page
-      .locator("#real-rows [data-home-row-work]")
+      .locator("#real-rows [data-project-chat-row-work]")
       .evaluateAll((works) =>
         works.map((work) => {
-          const row = work.closest("[data-home-row]");
+          const row = work.closest("[data-project-chat-row]");
           if (!row) throw new Error("Home Work lane lacks its full row");
-          const title = row.querySelector("span[data-home-row-line]");
-          const preview = row.querySelector("[data-home-row-line] p");
-          const inlineDate = row.querySelector("[data-home-row-line] time");
-          const trailingDate = row.querySelector("[data-home-row-trailing] time");
-          const action = row.querySelector("[data-home-row-actions]");
+          const title = row.querySelector("span[data-project-chat-row-line]");
+          const preview = row.querySelector("[data-project-chat-row-line] p");
+          const inlineDate = row.querySelector("[data-project-chat-row-line] time");
+          const trailingDate = row.querySelector("[data-project-chat-row-trailing] time");
+          const action = row.querySelector("[data-project-chat-row-actions]");
           if (!title || !preview || !inlineDate || !trailingDate || !action) {
             throw new Error("Incomplete Home row fixture");
           }
@@ -148,10 +148,10 @@ test("right-aligns Work in its stable column and centers it across the full row"
     ).toBe(true);
 
     const loadingGeometry = await page
-      .locator("#loading-rows [data-home-row-work]")
+      .locator("#loading-rows [data-project-chat-row-work]")
       .evaluateAll((works) =>
         works.map((work) => {
-          const row = work.closest("li[data-home-row-layout]");
+          const row = work.closest("li[data-project-chat-row-layout]");
           if (!row) throw new Error("Loading Work lane lacks its full row");
           const rowBox = row.getBoundingClientRect();
           const workBox = work.getBoundingClientRect();
@@ -205,11 +205,11 @@ test("right-aligns Work in its stable column and centers it across the full row"
       ).toBe(true);
     }
 
-    const longGeometry = await page.locator('[data-home-row="long"]').evaluate((row) => {
+    const longGeometry = await page.locator('[data-project-chat-row="long"]').evaluate((row) => {
       const nodes = [
-        row.querySelector("span[data-home-row-line]"),
-        row.querySelector("[data-home-row-work]"),
-        row.querySelector("[data-home-row-line] p"),
+        row.querySelector("span[data-project-chat-row-line]"),
+        row.querySelector("[data-project-chat-row-work]"),
+        row.querySelector("[data-project-chat-row-line] p"),
       ];
       if (nodes.some((node) => !node)) throw new Error("Incomplete long Home row fixture");
       return nodes.map((node) => {

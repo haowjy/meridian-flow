@@ -3,9 +3,16 @@ import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { groupHomeFeed, type HomeFeedData } from "./home-chat-feed-cache";
+import { projectQueryKeys } from "./project-query-keys";
 import {
-  getThreadUserStateTransportState,
+  admitThreadUserStateItems,
+  beginThreadUserStateFeedRequest,
+  getThreadUserStateCommandView,
+  getThreadUserStateRecord,
+  projectThreadUserState,
   runThreadUserStateCommand,
+  type ThreadUserStateField,
+  type ThreadUserStateRecord,
 } from "./thread-user-state-commands";
 
 const thread = (attention: ProjectChatItem["attention"] = "unread"): ProjectChatItem => ({
@@ -36,9 +43,137 @@ const response = (isFavorite = false) => ({
 });
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const commandView = (client: QueryClient, field: ThreadUserStateField) => {
+  const record = client.getQueryData<ThreadUserStateRecord>(
+    projectQueryKeys.threadUserState("project-1", "thread-1"),
+  );
+  if (!record) throw new Error("missing normalized thread state");
+  return getThreadUserStateCommandView(record, field);
+};
 
 afterEach(() => vi.unstubAllGlobals());
 describe("thread user-state command authority", () => {
+  it("never rewrites cached Work feeds for a row command", async () => {
+    const client = new QueryClient();
+    seed(client);
+    const workFeed = {
+      pages: [{ items: [thread()], nextCursor: null }],
+      pageParams: [null],
+    };
+    client.setQueryData(projectQueryKeys.workThreads("project-1", "work-1"), workFeed);
+    let resolve!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((done) => {
+            resolve = done;
+          }),
+      ),
+    );
+    const command = runThreadUserStateCommand(client, "project-1", "thread-1", "isFavorite", true);
+    expect(client.getQueryData(projectQueryKeys.workThreads("project-1", "work-1"))).toBe(workFeed);
+    resolve(json(response(true)));
+    await command;
+    expect(client.getQueryData(projectQueryKeys.workThreads("project-1", "work-1"))).toBe(workFeed);
+  });
+
+  it("rejects pre-command feed arrivals and admits a request begun after acknowledgement", async () => {
+    const client = new QueryClient();
+    seed(client);
+    const before = beginThreadUserStateFeedRequest(client, "project-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => json(response(true))),
+    );
+    await runThreadUserStateCommand(client, "project-1", "thread-1", "isFavorite", true);
+    admitThreadUserStateItems(client, "project-1", [{ ...thread(), isFavorite: false }], before);
+    let record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(projectThreadUserState(thread(), record).isFavorite).toBe(true);
+    const after = beginThreadUserStateFeedRequest(client, "project-1");
+    admitThreadUserStateItems(client, "project-1", [{ ...thread(), isFavorite: false }], after);
+    record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(projectThreadUserState(thread(), record).isFavorite).toBe(false);
+  });
+
+  it("orders reverse Home and Work arrivals after a successful mutation", async () => {
+    const client = new QueryClient();
+    seed(client);
+    const requestBeforeMutation = beginThreadUserStateFeedRequest(client, "project-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => json(response(true))),
+    );
+    await runThreadUserStateCommand(client, "project-1", "thread-1", "isFavorite", true);
+
+    const olderHomeRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    const newerWorkRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    expect(olderHomeRequest).toBeGreaterThan(requestBeforeMutation);
+    expect(newerWorkRequest).toBeGreaterThan(olderHomeRequest);
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: true }],
+      newerWorkRequest,
+    );
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: false }],
+      olderHomeRequest,
+    );
+    let record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(projectThreadUserState(thread(), record).isFavorite).toBe(true);
+
+    const olderWorkRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    const newerHomeRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    expect(olderWorkRequest).toBeGreaterThan(newerWorkRequest);
+    expect(newerHomeRequest).toBeGreaterThan(olderWorkRequest);
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: false }],
+      newerHomeRequest,
+    );
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: true }],
+      olderWorkRequest,
+    );
+    record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(projectThreadUserState(thread(), record).isFavorite).toBe(false);
+  });
+
+  it("retains the newer field when overlapping mutation responses settle out of order", async () => {
+    const client = new QueryClient();
+    seed(client);
+    const transports: Array<{ body: Record<string, boolean>; resolve: (value: Response) => void }> =
+      [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((resolve) => {
+            transports.push({ body: JSON.parse(String(init?.body)), resolve });
+          }),
+      ),
+    );
+    const favorite = runThreadUserStateCommand(client, "project-1", "thread-1", "isFavorite", true);
+    const read = runThreadUserStateCommand(client, "project-1", "thread-1", "isUnread", false);
+    const favoriteTransport = transports.find(({ body }) => "isFavorite" in body);
+    const readTransport = transports.find(({ body }) => "isUnread" in body);
+    readTransport?.resolve(json({ ...response(false), attention: "none" }));
+    await read;
+    favoriteTransport?.resolve(json({ ...response(true), attention: "unread" }));
+    await favorite;
+    const record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(projectThreadUserState(thread(), record)).toMatchObject({
+      isFavorite: true,
+      attention: "none",
+    });
+  });
+
   it("lets Home open and visible Chat join one transport and one result", async () => {
     const client = new QueryClient();
     seed(client);
@@ -134,9 +269,10 @@ describe.each([
       "isUnread",
       first,
     );
-    expect(getThreadUserStateTransportState(client, "project-1", "thread-1", "isUnread")).toEqual({
+    expect(commandView(client, "isUnread")).toEqual({
       pending: true,
       desiredValue: first,
+      error: undefined,
     });
     const secondCommand = runThreadUserStateCommand(
       client,
@@ -145,9 +281,10 @@ describe.each([
       "isUnread",
       second,
     );
-    expect(getThreadUserStateTransportState(client, "project-1", "thread-1", "isUnread")).toEqual({
+    expect(commandView(client, "isUnread")).toEqual({
       pending: true,
       desiredValue: second,
+      error: undefined,
     });
     const joinedSecond = runThreadUserStateCommand(
       client,
@@ -176,9 +313,7 @@ describe.each([
       { status: "success" },
       { status: "success" },
     ]);
-    expect(getThreadUserStateTransportState(client, "project-1", "thread-1", "isUnread")).toEqual({
-      pending: false,
-    });
+    expect(commandView(client, "isUnread")).toEqual({ pending: false, error: undefined });
     expect(transports).toHaveLength(2);
     expect(
       groupHomeFeed(client.getQueryData(["projects", "project-1", "home-feed"])).continueChat

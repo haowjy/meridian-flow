@@ -2,10 +2,12 @@ import type { HomeChatFeedPage, ProjectChatItem } from "@meridian/contracts/prot
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
-  createProjectChatFeedCacheController,
   groupHomeFeed,
   type HomeFeedData,
+  projectHomePage,
+  projectHomeThread,
 } from "./home-chat-feed-cache";
+import { projectQueryKeys } from "./project-query-keys";
 
 const item = (id: string, favorite = false): ProjectChatItem => ({
   id,
@@ -21,13 +23,6 @@ const page = (
   items: ProjectChatItem[],
   cursor: string | null = null,
 ): HomeChatFeedPage => ({ featured, recentChats: { items, nextCursor: cursor } });
-const response = (attention: ProjectChatItem["attention"], favorite = false) => ({
-  threadId: "a",
-  isFavorite: favorite,
-  manuallyUnread: attention === "unread",
-  lastOpenedAt: null,
-  attention,
-});
 
 describe("Home feed projection", () => {
   it("keeps Continue, Favorite, and paged Recent exclusive", () => {
@@ -41,96 +36,30 @@ describe("Home feed projection", () => {
     expect(groupHomeFeed(data)).toEqual({ continueChat: a, favorites: [b], recent: [c] });
   });
 
-  it("rolls back only the failed field while retaining overlapping state", () => {
+  it("moves only the affected Home thread between categories", () => {
     const client = new QueryClient();
-    const key = ["projects", "p", "home-feed"];
-    client.setQueryData(key, {
+    const key = projectQueryKeys.homeFeed("p");
+    const untouched = item("b");
+    client.setQueryData<HomeFeedData>(key, {
       pageParams: [null],
-      pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
+      pages: [page({ continueChat: null, favoriteChats: [] }, [item("a"), untouched])],
     });
-    const controller = createProjectChatFeedCacheController(client, "p");
-    const favorite = controller.command("a", "isFavorite", true);
-    controller.command("a", "isUnread", false);
-    favorite.fail();
+    projectHomeThread(client, "p", "a", (current) => ({ ...current, isFavorite: true }));
     const projected = groupHomeFeed(client.getQueryData(key));
-    expect(projected.favorites).toEqual([]);
-    expect(projected.recent[0]).toMatchObject({ isFavorite: false, attention: "none" });
+    expect(projected.favorites.map(({ id }) => id)).toEqual(["a"]);
+    expect(projected.recent).toEqual([untouched]);
   });
 
-  it("does not let an older failed command roll back a newer desired state", () => {
-    const client = new QueryClient();
-    const key = ["projects", "p", "home-feed"];
-    client.setQueryData(key, {
-      pageParams: [null],
-      pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
-    });
-    const controller = createProjectChatFeedCacheController(client, "p");
-    const old = controller.command("a", "isFavorite", true);
-    controller.command("a", "isFavorite", false);
-    old.fail();
-    expect(groupHomeFeed(client.getQueryData(key)).recent[0]?.isFavorite).toBe(false);
-  });
-
-  it.each([true, false])("never downgrades action-required for desired unread %s", (value) => {
-    const client = new QueryClient();
-    const action = { ...item("a"), attention: "actionRequired" as const };
-    client.setQueryData(["projects", "p", "home-feed"], {
-      pageParams: [null],
-      pages: [page({ continueChat: action, favoriteChats: [] }, [])],
-    });
-    const command = createProjectChatFeedCacheController(client, "p").command(
-      "a",
-      "isUnread",
-      value,
+  it("projects a stale arriving page before React Query caches it", () => {
+    const projected = projectHomePage(
+      page({ continueChat: null, favoriteChats: [] }, [item("a")]),
+      (current) => ({ ...current, isFavorite: true, attention: "none" }),
     );
-    expect(
-      groupHomeFeed(client.getQueryData(["projects", "p", "home-feed"])).continueChat?.attention,
-    ).toBe("actionRequired");
-    command.fail();
-    expect(
-      groupHomeFeed(client.getQueryData(["projects", "p", "home-feed"])).continueChat?.attention,
-    ).toBe("actionRequired");
-  });
-
-  it("reconciles authoritative mutation fields and trusts the first post-ack request", () => {
-    const client = new QueryClient();
-    const key = ["projects", "p", "home-feed"];
-    client.setQueryData(key, {
-      pageParams: [null],
-      pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
+    expect(projected.featured?.favoriteChats[0]).toMatchObject({
+      id: "a",
+      isFavorite: true,
+      attention: "none",
     });
-    const controller = createProjectChatFeedCacheController(client, "p");
-    const before = controller.beginRequest();
-    const command = controller.command("a", "isFavorite", true);
-    command.succeed(response("actionRequired", true));
-    const after = controller.beginRequest();
-    expect(
-      controller.merge(page(null, [{ ...item("a"), isFavorite: false, attention: "none" }]), after)
-        .recentChats.items[0],
-    ).toMatchObject({ isFavorite: false, attention: "none" });
-    expect(
-      controller.merge(page({ continueChat: null, favoriteChats: [] }, [item("a")]), before)
-        .featured?.favoriteChats[0]?.isFavorite,
-    ).toBe(true);
-    controller.settleRequest(after);
-    controller.settleRequest(before);
-  });
-
-  it("lets later authoritative truth replace a field-scoped failure rollback", () => {
-    const client = new QueryClient();
-    client.setQueryData(["projects", "p", "home-feed"], {
-      pageParams: [null],
-      pages: [page({ continueChat: null, favoriteChats: [] }, [item("a")])],
-    });
-    const controller = createProjectChatFeedCacheController(client, "p");
-    controller.command("a", "isFavorite", true).fail();
-    const request = controller.beginRequest();
-    expect(
-      controller.merge(
-        page({ continueChat: null, favoriteChats: [] }, [{ ...item("a"), isFavorite: true }]),
-        request,
-      ).featured?.favoriteChats[0]?.isFavorite,
-    ).toBe(true);
-    controller.settleRequest(request);
+    expect(projected.recentChats.items).toEqual([]);
   });
 });

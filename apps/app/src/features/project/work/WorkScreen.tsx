@@ -8,19 +8,17 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { WorkCard } from "./WorkCard";
 import { WorkDetailScreen } from "./WorkDetailScreen";
-import { takeWorkCollectionFocus, type WorkCollectionFocusIntent } from "./work-focus-intent";
+import { WorkDialog } from "./WorkDialog";
+import { WorkResourceError } from "./WorkResourceState";
+import {
+  focusAfterDelete,
+  takeWorkCollectionFocus,
+  type WorkCollectionFocusIntent,
+} from "./work-focus-intent";
 
 export type WorkScreenProps = {
   projectId: string;
@@ -40,7 +38,7 @@ export function WorkScreen(props: WorkScreenProps) {
     return (
       <div className="app-scroll">
         <div className="project-screen-column">
-          <ResourceError label={t`Work`} retry={catalog.refetch} />
+          <WorkResourceError label={t`Work`} retry={catalog.refetch} />
         </div>
       </div>
     );
@@ -140,7 +138,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
           </Button>
         </div>
         {isError ? (
-          <ResourceError label={t`Work`} retry={refetch} />
+          <WorkResourceError label={t`Work`} retry={refetch} />
         ) : works === null ? (
           <LoadingCards />
         ) : (
@@ -245,38 +243,40 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
             ) : null}
           </>
         )}
-        <WorkDialog
-          work={dialog}
-          pending={mutation.isPending}
-          error={mutation.error}
-          onClose={() => {
-            mutation.reset();
-            setDialog(null);
-          }}
-          onAction={(action) => {
-            const deletionFocus =
-              action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
-            if (action.type === "archive" || action.type === "unarchive") {
-              lifecycleFocus.current = {
-                workId: action.workId,
-                status: action.type === "archive" ? "archived" : "active",
-              };
-            }
-            mutation.mutate(action, {
-              onSuccess: (result) => {
-                setDialog(null);
-                if (deletionFocus) {
-                  focusHandled.current = false;
-                  setFocusIntent(deletionFocus);
-                }
-                if (action.type === "create" && result) openWork(result);
-              },
-              onError: () => {
-                lifecycleFocus.current = null;
-              },
-            });
-          }}
-        />
+        {dialog ? (
+          <WorkDialog
+            work={dialog}
+            pending={mutation.isPending}
+            error={mutation.error}
+            onClose={() => {
+              mutation.reset();
+              setDialog(null);
+            }}
+            onAction={(action) => {
+              const deletionFocus =
+                action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
+              if (action.type === "archive" || action.type === "unarchive") {
+                lifecycleFocus.current = {
+                  workId: action.workId,
+                  status: action.type === "archive" ? "archived" : "active",
+                };
+              }
+              mutation.mutate(action, {
+                onSuccess: (result) => {
+                  setDialog(null);
+                  if (deletionFocus) {
+                    focusHandled.current = false;
+                    setFocusIntent(deletionFocus);
+                  }
+                  if (action.type === "create" && result) openWork(result);
+                },
+                onError: () => {
+                  lifecycleFocus.current = null;
+                },
+              });
+            }}
+          />
+        ) : null}
       </section>
     </div>
   );
@@ -296,170 +296,5 @@ function LoadingCards() {
         </div>
       ))}
     </div>
-  );
-}
-export function focusAfterDelete(works: Work[], deletedId: string): WorkCollectionFocusIntent {
-  const deleted = works.find((work) => work.id === deletedId);
-  if (!deleted) return { kind: "new-work" };
-  const peers = works.filter((work) => work.status === deleted.status);
-  const index = peers.findIndex((work) => work.id === deletedId);
-  const sibling = peers[index + 1] ?? peers[index - 1];
-  return sibling ? { kind: "work", workId: sibling.id } : { kind: "new-work" };
-}
-export function ResourceError({ label, retry }: { label: string; retry: () => void }) {
-  return (
-    <div role="alert" className="flex items-center gap-3">
-      <p className="text-sm text-destructive">
-        {label} <Trans>couldn’t load</Trans>
-      </p>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={retry}
-        className="[@media(pointer:coarse)]:min-h-11"
-      >
-        <Trans>Retry</Trans> {label}
-      </Button>
-    </div>
-  );
-}
-
-type WorkAction = Parameters<ReturnType<typeof useWorkMutations>["mutate"]>[0];
-export function WorkDialog({
-  work,
-  pending,
-  error,
-  onClose,
-  onAction,
-}: {
-  work: "new" | Work | null;
-  pending: boolean;
-  error: Error | null;
-  onClose: () => void;
-  onAction: (action: WorkAction) => void;
-}) {
-  const [name, setName] = useState("");
-  const [goal, setGoal] = useState("");
-  const admitted = useRef(false);
-  useEffect(() => {
-    if (!pending) admitted.current = false;
-  }, [pending]);
-  if (!work) return null;
-  const existing = work === "new" ? null : work;
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !pending) onClose();
-      }}
-    >
-      <DialogContent
-        onEscapeKeyDown={(event) => {
-          if (pending) event.preventDefault();
-        }}
-        onPointerDownOutside={(event) => {
-          if (pending) event.preventDefault();
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>
-            {existing ? <Trans>Manage Work</Trans> : <Trans>New Work</Trans>}
-          </DialogTitle>
-        </DialogHeader>
-        {existing ? (
-          <p className="text-sm">
-            {existing.status === "archived" ? (
-              <Trans>This Work is archived.</Trans>
-            ) : (
-              <Trans>This Work is active.</Trans>
-            )}
-          </p>
-        ) : (
-          <>
-            <label htmlFor="new-work-name" className="grid gap-1 text-sm">
-              <Trans>Name</Trans>
-              <Input
-                id="new-work-name"
-                autoFocus
-                value={name}
-                disabled={pending}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </label>
-            <label htmlFor="new-work-goal" className="grid gap-1 text-sm">
-              <Trans>Goal</Trans>
-              <Input
-                id="new-work-goal"
-                value={goal}
-                disabled={pending}
-                onChange={(event) => setGoal(event.target.value)}
-              />
-            </label>
-          </>
-        )}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error.message}
-          </p>
-        ) : null}
-        <DialogFooter>
-          {existing ? (
-            <>
-              <Button
-                variant="outline"
-                disabled={pending}
-                className="[@media(pointer:coarse)]:min-h-11"
-                onClick={() => {
-                  if (admitted.current) return;
-                  admitted.current = true;
-                  onAction({
-                    type: existing.status === "archived" ? "unarchive" : "archive",
-                    workId: existing.id,
-                  });
-                }}
-              >
-                {existing.status === "archived" ? (
-                  <Trans>Unarchive Work</Trans>
-                ) : (
-                  <Trans>Archive Work</Trans>
-                )}
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={pending}
-                className="[@media(pointer:coarse)]:min-h-11"
-                onClick={() => {
-                  if (admitted.current) return;
-                  admitted.current = true;
-                  onAction({ type: "delete", workId: existing.id });
-                }}
-              >
-                <Trans>Delete Work</Trans>
-              </Button>
-            </>
-          ) : (
-            <Button
-              disabled={pending || !name.trim()}
-              className="[@media(pointer:coarse)]:min-h-11"
-              onClick={() => {
-                if (admitted.current) return;
-                admitted.current = true;
-                onAction({ type: "create", data: { name, goal } });
-              }}
-            >
-              <Trans>Create Work</Trans>
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            disabled={pending}
-            onClick={onClose}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
-            <Trans>Cancel</Trans>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

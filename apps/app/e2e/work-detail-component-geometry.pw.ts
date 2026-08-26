@@ -24,6 +24,7 @@ test.beforeAll(async () => {
         "@/client/query/useWorkDrafts",
         "@/client/query/useProjectContextTree",
         "@/client/query/useWorkThreads",
+        "@/client/query/useProjectChatUserState",
         "@/client/query/useWorks",
         "@/client/stores",
       ].map((find) => ({ find, replacement: mocks })),
@@ -215,8 +216,8 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
   await expect
     .poll(() => page.getByRole("menu").evaluate((menu) => menu.contains(document.activeElement)))
     .toBe(true);
-  await expect(page.locator('[data-home-row="thread-49"]')).toHaveCount(1);
-  expect(await page.locator("[data-home-row]").count()).toBeLessThan(40);
+  await expect(page.locator('[data-project-chat-row="thread-49"]')).toHaveCount(1);
+  expect(await page.locator("[data-project-chat-row]").count()).toBeLessThan(40);
 });
 
 for (const associationCount of [100, 500, 2_500]) {
@@ -266,23 +267,38 @@ for (const associationCount of [100, 500, 2_500]) {
     }, associationCount);
     await page.addStyleTag({ content: compiledCss });
     await page.addScriptTag({ content: compiledJs, type: "module" });
+    const scroll = page.locator(".app-scroll");
+    expect(await scroll.count()).toBe(1);
+    expect(await scroll.evaluate((node) => node.getBoundingClientRect().top)).toBeGreaterThan(0);
     await page.getByRole("heading", { name: "Associated chats" }).scrollIntoViewIfNeeded();
-    await expect(page.locator("[data-home-row]").first()).toBeVisible();
-    const renderedRows = await page.locator("[data-home-row]").count();
+    await expect(page.locator("[data-project-chat-row]").first()).toBeVisible();
+    const renderedRows = await page.locator("[data-project-chat-row]").count();
     expect(renderedRows).toBeLessThan(40);
-    const first = page.locator("[data-home-row]").first();
-    const interactionStartedAt = await page.evaluate(() => performance.now());
+    const first = page.locator("[data-project-chat-row]").first();
     await first.hover();
     await first.getByRole("button", { name: /^Actions for/ }).click();
     await expect(page.getByRole("menuitem", { name: "Add to favorites" })).toBeVisible();
     await page.getByRole("menuitem", { name: "Add to favorites" }).click();
-    const interactionMs = await page.evaluate(
-      (startedAt) => performance.now() - startedAt,
-      interactionStartedAt,
-    );
-    console.info(
-      `work-detail-${associationCount} rendered_rows=${renderedRows} interaction_ms=${interactionMs.toFixed(1)}`,
-    );
-    expect(await page.locator("[data-home-row]").count()).toBeLessThan(40);
+    expect(await page.locator("[data-project-chat-row]").count()).toBeLessThan(40);
+    if (associationCount === 2_500) {
+      await scroll.evaluate((node) => {
+        node.scrollTop = node.scrollHeight / 2;
+      });
+      await expect
+        .poll(async () =>
+          page.locator("[data-project-chat-row]").evaluateAll((rows) =>
+            rows.some((row) => {
+              const index = Number(row.getAttribute("data-project-chat-row")?.split("-")[1]);
+              return index > 1_000 && index < 1_500;
+            }),
+          ),
+        )
+        .toBe(true);
+      await scroll.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      await expect(page.locator('[data-project-chat-row="thread-2499"]')).toBeVisible();
+      expect(await page.locator("[data-project-chat-row]").count()).toBeLessThan(40);
+    }
   });
 }

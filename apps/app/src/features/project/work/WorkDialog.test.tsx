@@ -3,7 +3,7 @@ import type { Work } from "@meridian/contracts/works";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { WorkDialog } from "./WorkScreen";
+import { WorkDialog } from "./WorkDialog";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -47,6 +47,38 @@ describe("WorkDialog lifecycle admission", () => {
       act(() => button("Cancel").click());
       expect(document.body.textContent).toContain("Manage Work");
       expect(button("Archive Work").className).toContain("pointer:coarse");
+    });
+  });
+
+  it("starts a clean creation form after the open session unmounts", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open
+          </button>
+          {open ? (
+            <WorkDialog
+              work="new"
+              pending={false}
+              error={null}
+              onClose={() => setOpen(false)}
+              onAction={() => undefined}
+            />
+          ) : null}
+        </>
+      );
+    }
+    await withReactRoot(<Harness />, async () => {
+      const name = document.querySelector("#new-work-name") as HTMLInputElement;
+      act(() => {
+        name.value = "Abandoned name";
+        name.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      act(() => button("Cancel").click());
+      act(() => button("Open").click());
+      expect((document.querySelector("#new-work-name") as HTMLInputElement).value).toBe("");
     });
   });
 });

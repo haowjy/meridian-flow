@@ -3,8 +3,14 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { getProjectHomeFeed } from "@/client/api/projects-api";
-import { createProjectChatFeedCacheController, groupHomeFeed } from "./home-chat-feed-cache";
+import { groupHomeFeed, projectHomePage } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
+import {
+  admitThreadUserStateItems,
+  beginThreadUserStateFeedRequest,
+  getThreadUserStateRecord,
+  projectThreadUserState,
+} from "./thread-user-state-commands";
 import { useProjectChatCommands } from "./useProjectChatCommands";
 
 declare const homeFeedNextPageIdentity: unique symbol;
@@ -15,21 +21,21 @@ export type HomeFeedNextPageIdentity = string & {
 export function useHomeChatFeed(projectId: string) {
   const client = useQueryClient();
   const commands = useProjectChatCommands(projectId);
-  const controller = useMemo(
-    () => createProjectChatFeedCacheController(client, projectId),
-    [client, projectId],
-  );
   const query = useInfiniteQuery({
     queryKey: projectQueryKeys.homeFeed(projectId),
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
-      const watermark = controller.beginRequest();
-      try {
-        const page = await getProjectHomeFeed(projectId, pageParam, signal);
-        return controller.merge(page, watermark);
-      } finally {
-        controller.settleRequest(watermark);
-      }
+      const requestGeneration = beginThreadUserStateFeedRequest(client, projectId);
+      const page = await getProjectHomeFeed(projectId, pageParam, signal);
+      const items = [
+        ...(page.featured?.continueChat ? [page.featured.continueChat] : []),
+        ...(page.featured?.favoriteChats ?? []),
+        ...page.recentChats.items,
+      ];
+      admitThreadUserStateItems(client, projectId, items, requestGeneration);
+      return projectHomePage(page, (item) =>
+        projectThreadUserState(item, getThreadUserStateRecord(client, projectId, item)),
+      );
     },
     getNextPageParam: (page) => page.recentChats.nextCursor ?? undefined,
     retry: false,

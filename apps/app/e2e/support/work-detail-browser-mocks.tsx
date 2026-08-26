@@ -42,10 +42,14 @@ export const useWorkThreads = () => {
     },
     setFavorite: async () => true,
     setUnread: async () => true,
-    getCommandState: () => ({ pending: false as const, error: null }),
     refetch: () => undefined,
   };
 };
+export const useProjectChatUserState = (_projectId: string, item: ProjectChatItem) => ({
+  item,
+  favorite: { pending: false as const },
+  unread: { pending: false as const },
+});
 export const useAnnouncement = () => ({
   announce: () => undefined,
   announceError: () => undefined,

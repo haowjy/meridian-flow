@@ -91,8 +91,9 @@ Two interfaces are the only paths between the visual layer and the substrate:
   thread or Work transition that can change Home also invalidates `homeFeed`.
   Terminal turns and Work rebinds enter through
   `invalidateThreadProjectionDependencies`. Snapshot synchronization only applies
-  history. A visible chat acknowledges unread state separately and converges the
-  cached Home item from the authoritative user-state response without invalidation.
+  history. A visible chat acknowledges unread state through the same normalized
+  project/thread user-state authority as Home and Work rows; Home alone projects
+  the affected item between its categories without invalidation.
   `useWorks` exposes only the owned-project Work catalog. Home derives its
   initial prospective choice from the first active (then first available) catalog
   Work and sends that explicit ID; omitted root-chat creation remains the sole
