@@ -25,14 +25,14 @@ export function useHomeChatFeed(projectId: string) {
     queryKey: projectQueryKeys.homeFeed(projectId),
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
-      const requestEpoch = beginThreadUserStateFeedRequest(client, projectId);
+      const requestGeneration = beginThreadUserStateFeedRequest(client, projectId);
       const page = await getProjectHomeFeed(projectId, pageParam, signal);
       const items = [
         ...(page.featured?.continueChat ? [page.featured.continueChat] : []),
         ...(page.featured?.favoriteChats ?? []),
         ...page.recentChats.items,
       ];
-      admitThreadUserStateItems(client, projectId, items, requestEpoch);
+      admitThreadUserStateItems(client, projectId, items, requestGeneration);
       return projectHomePage(page, (item) =>
         projectThreadUserState(item, getThreadUserStateRecord(client, projectId, item)),
       );

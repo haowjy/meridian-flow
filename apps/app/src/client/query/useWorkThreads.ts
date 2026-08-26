@@ -25,9 +25,9 @@ export function useWorkThreads(projectId: string, workId: string, options?: { en
     queryKey: projectQueryKeys.workThreads(projectId, workId),
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
-      const requestEpoch = beginThreadUserStateFeedRequest(client, projectId);
+      const requestGeneration = beginThreadUserStateFeedRequest(client, projectId);
       const page = await listWorkThreads(workId, { cursor: pageParam, signal });
-      admitThreadUserStateItems(client, projectId, page.items, requestEpoch);
+      admitThreadUserStateItems(client, projectId, page.items, requestGeneration);
       return page;
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,

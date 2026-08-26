@@ -96,6 +96,55 @@ describe("thread user-state command authority", () => {
     expect(projectThreadUserState(thread(), record).isFavorite).toBe(false);
   });
 
+  it("orders reverse Home and Work arrivals after a successful mutation", async () => {
+    const client = new QueryClient();
+    seed(client);
+    const requestBeforeMutation = beginThreadUserStateFeedRequest(client, "project-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => json(response(true))),
+    );
+    await runThreadUserStateCommand(client, "project-1", "thread-1", "isFavorite", true);
+
+    const olderHomeRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    const newerWorkRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    expect(olderHomeRequest).toBeGreaterThan(requestBeforeMutation);
+    expect(newerWorkRequest).toBeGreaterThan(olderHomeRequest);
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: true }],
+      newerWorkRequest,
+    );
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: false }],
+      olderHomeRequest,
+    );
+    let record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(projectThreadUserState(thread(), record).isFavorite).toBe(true);
+
+    const olderWorkRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    const newerHomeRequest = beginThreadUserStateFeedRequest(client, "project-1");
+    expect(olderWorkRequest).toBeGreaterThan(newerWorkRequest);
+    expect(newerHomeRequest).toBeGreaterThan(olderWorkRequest);
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: false }],
+      newerHomeRequest,
+    );
+    admitThreadUserStateItems(
+      client,
+      "project-1",
+      [{ ...thread(), isFavorite: true }],
+      olderWorkRequest,
+    );
+    record = getThreadUserStateRecord(client, "project-1", thread());
+    expect(projectThreadUserState(thread(), record).isFavorite).toBe(false);
+  });
+
   it("retains the newer field when overlapping mutation responses settle out of order", async () => {
     const client = new QueryClient();
     seed(client);

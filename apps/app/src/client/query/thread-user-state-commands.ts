@@ -34,7 +34,7 @@ type QueuedCommand = {
   lifecycles: Set<ThreadUserStateLifecycle>;
 };
 type CommandQueue = { running: boolean; entries: QueuedCommand[] };
-type ProjectAuthority = { epoch: number; revision: number; queues: Map<string, CommandQueue> };
+type ProjectAuthority = { generation: number; revision: number; queues: Map<string, CommandQueue> };
 const authorities = new WeakMap<QueryClient, Map<string, ProjectAuthority>>();
 
 function authority(client: QueryClient, projectId: string): ProjectAuthority {
@@ -45,7 +45,7 @@ function authority(client: QueryClient, projectId: string): ProjectAuthority {
   }
   let current = projects.get(projectId);
   if (!current) {
-    current = { epoch: 0, revision: 0, queues: new Map() };
+    current = { generation: 0, revision: 0, queues: new Map() };
     projects.set(projectId, current);
   }
   return current;
@@ -125,14 +125,14 @@ export function getThreadUserStateRecord(
 }
 
 export function beginThreadUserStateFeedRequest(client: QueryClient, projectId: string) {
-  return authority(client, projectId).epoch;
+  return ++authority(client, projectId).generation;
 }
 
 export function admitThreadUserStateItems(
   client: QueryClient,
   projectId: string,
   items: readonly ProjectChatItem[],
-  requestEpoch: number,
+  requestGeneration: number,
 ) {
   for (const item of items) {
     writeRecord(
@@ -143,18 +143,18 @@ export function admitThreadUserStateItems(
         let base = current.base;
         let admittedAt = current.admittedAt;
         if (
-          requestEpoch >= (current.barriers?.isFavorite ?? -1) &&
-          requestEpoch >= current.admittedAt.isFavorite
+          requestGeneration >= (current.barriers?.isFavorite ?? -1) &&
+          requestGeneration >= current.admittedAt.isFavorite
         ) {
           base = { ...base, isFavorite: item.isFavorite };
-          admittedAt = { ...admittedAt, isFavorite: requestEpoch };
+          admittedAt = { ...admittedAt, isFavorite: requestGeneration };
         }
         if (
-          requestEpoch >= (current.barriers?.isUnread ?? -1) &&
-          requestEpoch >= current.admittedAt.isUnread
+          requestGeneration >= (current.barriers?.isUnread ?? -1) &&
+          requestGeneration >= current.admittedAt.isUnread
         ) {
           base = { ...base, attention: item.attention };
-          admittedAt = { ...admittedAt, isUnread: requestEpoch };
+          admittedAt = { ...admittedAt, isUnread: requestGeneration };
         }
         return base === current.base ? current : { ...current, base, admittedAt };
       },
@@ -256,7 +256,7 @@ async function advance(
       threadId,
       field === "isFavorite" ? { isFavorite: entry.value } : { isUnread: entry.value },
     );
-    const barrier = ++owner.epoch;
+    const barrier = ++owner.generation;
     writeRecord(client, projectId, threadId, (current) => {
       const other: ThreadUserStateField = field === "isFavorite" ? "isUnread" : "isFavorite";
       const acceptOther = (current.revisions?.[other] ?? 0) <= entry.revision;
