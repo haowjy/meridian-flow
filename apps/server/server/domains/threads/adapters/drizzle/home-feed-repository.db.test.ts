@@ -365,7 +365,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("keeps a generated 1,000-chat initial read within the interactive budget", async () => {
+    it("keeps a generated 1,000-chat read bounded and reports diagnostic timing", async () => {
       const db = database.current;
       await db.execute(sql`
         INSERT INTO threads (id, project_id, created_by_user_id, title, status, created_at)
