@@ -642,7 +642,11 @@ msgid "Chat context"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Chat couldn’t start"
+#~ msgid "Chat couldn’t start"
+#~ msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat creation is still being reconciled"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -1436,6 +1440,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Finish the current chat attempt"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -2535,8 +2543,8 @@ msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Repair your choices, then retry"
-msgstr ""
+#~ msgid "Repair your choices, then retry"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -2823,6 +2831,10 @@ msgstr ""
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Start over"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -3637,6 +3649,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Your Work or Agent choice is no longer available"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
