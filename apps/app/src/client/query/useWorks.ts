@@ -87,7 +87,6 @@ export function useWorkMutations(projectId: string) {
     unarchive,
     delete: remove,
     isPending: commands.some((command) => command.isPending),
-    error: commands.find((command) => command.error)?.error ?? null,
     reset: () =>
       commands.forEach((command) => {
         command.reset();
@@ -106,12 +105,18 @@ function useWorkCommand<TResult, TVariables>(
   command: (variables: TVariables) => Promise<TResult>,
   options: { projectResult?: (result: TResult) => Work; scope?: { id: string } } = {},
 ): UseMutationResult<TResult, Error, TVariables> {
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: command,
     scope: options.scope,
     onSuccess: (result) =>
       convergeWorkCommand(client, projectId, operation, options.projectResult?.(result)),
   });
+  return {
+    ...mutation,
+    reset: () => {
+      if (!mutation.isPending) mutation.reset();
+    },
+  };
 }
 
 function convergeWorkCommand(

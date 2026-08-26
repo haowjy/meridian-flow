@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkAssociatedChats } from "./WorkAssociatedChats";
-import { WorkDialog } from "./WorkDialog";
+import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
 import {
   useWorkMetadataController,
   WorkMetadata,
@@ -57,6 +57,7 @@ export function WorkDetailScreen({
     mutations.update.mutateAsync({ workId: work.id, data }),
   );
   const [manage, setManage] = useState(false);
+  const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
   const manageButton = useRef<HTMLButtonElement>(null);
   const scrollOwner = useRef<HTMLDivElement>(null);
   const blocker = useBlocker({
@@ -110,6 +111,7 @@ export function WorkDetailScreen({
                       label: t`Manage Work`,
                       run: () => {
                         mutations.reset();
+                        setActiveCommand(null);
                         setManage(true);
                       },
                     })
@@ -163,15 +165,17 @@ export function WorkDetailScreen({
           <WorkDialog
             work={controller.work}
             pending={mutations.isPending}
-            error={mutations.error}
+            error={activeCommand ? mutations[activeCommand].error : null}
             onClose={() => {
               if (!mutations.isPending) {
                 mutations.reset();
+                setActiveCommand(null);
                 setManage(false);
               }
             }}
             onAction={(action) => {
               if (action.type === "create") return;
+              setActiveCommand(action.type);
               const mutation = mutations[action.type];
               mutation.mutate(action.workId, {
                 onSuccess: () => {

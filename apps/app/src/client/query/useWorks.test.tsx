@@ -227,6 +227,76 @@ describe("Work client queries", () => {
     client.clear();
   });
 
+  it("keeps scoped commands observable through reset and gives each settled failure its own error", async () => {
+    let failArchive!: (error: Error) => void;
+    let failDelete!: (error: Error) => void;
+    api.archiveWork.mockImplementation(
+      () => new Promise<Work>((_resolve, reject) => (failArchive = reject)),
+    );
+    api.deleteWork.mockImplementation(
+      () => new Promise<void>((_resolve, reject) => (failDelete = reject)),
+    );
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const state: { value: ReturnType<typeof useWorkMutations> | null } = { value: null };
+    function Harness() {
+      state.value = useWorkMutations("project-1");
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        if (!state.value) throw new Error("mutation commands did not mount");
+        const archiveResult = state.value.archive.mutateAsync("work-1").catch((error) => error);
+        const deleteResult = state.value.delete.mutateAsync("work-1").catch((error) => error);
+        await flush();
+
+        expect(state.value?.archive.isPending).toBe(true);
+        expect(state.value?.delete.isPending).toBe(true);
+        expect(state.value?.isPending).toBe(true);
+        expect(api.deleteWork).not.toHaveBeenCalled();
+
+        act(() => state.value?.reset());
+        await flush();
+        expect(state.value?.archive.isPending).toBe(true);
+        expect(state.value?.delete.isPending).toBe(true);
+        expect(state.value?.isPending).toBe(true);
+
+        const archiveError = new Error("archive failed first");
+        failArchive(archiveError);
+        await expect(archiveResult).resolves.toBe(archiveError);
+        await flush();
+        expect(api.deleteWork).toHaveBeenCalledOnce();
+        expect(state.value?.archive.error).toBe(archiveError);
+        expect(state.value?.delete.isPending).toBe(true);
+        expect(state.value?.isPending).toBe(true);
+
+        act(() => state.value?.reset());
+        await flush();
+        expect(state.value?.archive.error).toBeNull();
+        expect(state.value?.delete.isPending).toBe(true);
+        expect(state.value?.isPending).toBe(true);
+
+        const deleteError = new Error("delete failed later");
+        failDelete(deleteError);
+        await expect(deleteResult).resolves.toBe(deleteError);
+        await flush();
+        expect(state.value?.isPending).toBe(false);
+        expect(state.value?.delete.error).toBe(deleteError);
+
+        act(() => state.value?.reset());
+        await flush();
+        expect(state.value?.archive.error).toBeNull();
+        expect(state.value?.delete.error).toBeNull();
+        expect(state.value?.isPending).toBe(false);
+      },
+      { drainMacrotask: true },
+    );
+    client.clear();
+  });
+
   it.each([
     "confirmation_required",
     "updated",
