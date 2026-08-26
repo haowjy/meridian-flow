@@ -17,7 +17,7 @@ export type ThreadUserStateCommandView = {
 };
 
 type BaseState = Pick<ProjectChatItem, "isFavorite" | "attention">;
-type PendingField = { revision: number; desiredValue: boolean };
+type PendingField = { revision: number; desiredValue: boolean; projectedValue: boolean };
 export type ThreadUserStateRecord = {
   base: BaseState;
   admittedAt: Record<ThreadUserStateField, number>;
@@ -94,7 +94,7 @@ function writeRecord(
 }
 
 function fieldValue(record: ThreadUserStateRecord, field: ThreadUserStateField) {
-  const desired = record.commands?.[field]?.desiredValue;
+  const desired = record.commands?.[field]?.projectedValue;
   if (desired !== undefined) return desired;
   return field === "isFavorite" ? record.base.isFavorite : record.base.attention === "unread";
 }
@@ -103,7 +103,7 @@ export function projectThreadUserState(
   item: ProjectChatItem,
   record: ThreadUserStateRecord,
 ): ProjectChatItem {
-  const desiredUnread = record.commands?.isUnread?.desiredValue;
+  const desiredUnread = record.commands?.isUnread?.projectedValue;
   return {
     ...item,
     isFavorite: fieldValue(record, "isFavorite"),
@@ -206,7 +206,15 @@ export function runThreadUserStateCommand(
   const revision = ++owner.revision;
   queue.entries.push({ revision, value, promise, resolve, lifecycles: new Set([lifecycle]) });
   writeRecord(client, projectId, threadId, (current) => {
-    const commands = { ...current.commands, [field]: { revision, desiredValue: value } };
+    const pending = current.commands?.[field];
+    const commands = {
+      ...current.commands,
+      [field]: {
+        revision,
+        desiredValue: value,
+        projectedValue: pending?.projectedValue ?? value,
+      },
+    };
     const errors = { ...current.errors };
     delete errors[field];
     return {
@@ -233,6 +241,15 @@ async function advance(
   const entry = queue?.entries[0];
   if (!queue || !entry || queue.running) return;
   queue.running = true;
+  writeRecord(client, projectId, threadId, (current) => {
+    const pending = current.commands?.[field];
+    if (!pending || pending.projectedValue === entry.value) return current;
+    return {
+      ...current,
+      commands: { ...current.commands, [field]: { ...pending, projectedValue: entry.value } },
+    };
+  });
+  syncHome(client, projectId, threadId);
   let outcome: ThreadUserStateOutcome;
   try {
     const response = await updateThreadUserState(
