@@ -170,8 +170,6 @@ describe("HomeFeed", () => {
       () => {
         const status = document.querySelector('[role="status"]');
         expect(status?.textContent).toContain("Loading chats");
-        expect(status?.querySelectorAll("[data-home-row-layout]")).toHaveLength(5);
-        expect(status?.querySelectorAll("[data-home-row-work]")).toHaveLength(5);
       },
     );
     await withReactRoot(

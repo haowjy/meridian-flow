@@ -336,7 +336,7 @@
    while title, preview, and actions remain independently truncatable. */
 @utility home-row-layout {
   grid-template-columns:
-    3.5rem minmax(0, 1fr) clamp(6.6875rem, 22cqi, 10rem) minmax(0, 1fr)
+    3.5rem minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) minmax(0, 1fr)
     3.5rem;
   grid-template-rows: minmax(1.3rem, auto) minmax(1.3rem, auto);
 }

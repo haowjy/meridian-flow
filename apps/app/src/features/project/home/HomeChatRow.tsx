@@ -88,7 +88,7 @@ export function HomeChatRow({
         <span
           data-home-row-line
           className={cn(
-            "col-span-2 col-start-1 row-start-1 min-w-0 truncate pr-2",
+            "col-span-2 col-start-1 row-start-1 min-w-0 truncate",
             item.attention !== "none" ? "font-semibold" : "font-medium",
           )}
         >
@@ -96,7 +96,7 @@ export function HomeChatRow({
         </span>
         <span
           data-home-row-work
-          className="col-start-3 row-start-1 min-w-0 truncate px-2 text-center text-xs text-muted-foreground"
+          className="col-start-3 row-start-1 min-w-0 truncate px-1 text-center text-xs text-muted-foreground"
           title={item.work?.title}
         >
           {workLabel}
