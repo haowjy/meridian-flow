@@ -1,7 +1,8 @@
 /** Deterministic browser adapters for the Work detail component fixture. */
 import type { ProjectChatItem, ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
-import type { Work } from "@meridian/contracts/works";
+import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { useState } from "react";
+import type { WorkCommand, WorkMutations } from "../../src/client/query/useWorks";
 export const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
   parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
 export function Trans({ children }: { children: React.ReactNode }) {
@@ -54,12 +55,26 @@ export const useAnnouncement = () => ({
   announce: () => undefined,
   announceError: () => undefined,
 });
-export const useWorkMutations = () => ({
-  mutateAsync: async () => state().work,
-  mutate: () => undefined,
+function browserWorkCommand<TResult, TVariables>(
+  run: (variables: TVariables) => Promise<TResult>,
+): WorkCommand<TResult, TVariables> {
+  return {
+    mutate: () => undefined,
+    mutateAsync: run,
+    isPending: false,
+    error: null,
+  };
+}
+
+export const useWorkMutations = (): WorkMutations => ({
+  create: browserWorkCommand<Work, CreateWorkRequest>(async () => state().work),
+  update: browserWorkCommand<Work, { workId: string; data: UpdateWorkRequest }>(
+    async () => state().work,
+  ),
+  archive: browserWorkCommand<Work, string>(async () => state().work),
+  unarchive: browserWorkCommand<Work, string>(async () => state().work),
+  delete: browserWorkCommand<void, string>(async () => undefined),
   isPending: false,
-  error: null,
-  reset: () => undefined,
 });
 export const useWorks = () => ({
   works: [state().work],

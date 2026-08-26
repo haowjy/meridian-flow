@@ -33,7 +33,6 @@ const mocks = vi.hoisted(() => ({
     mutateAsync: vi.fn(),
     isPending: false,
     error: null,
-    reset: vi.fn(),
     mutate: vi.fn(),
   },
   lifecycle: {

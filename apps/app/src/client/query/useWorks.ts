@@ -1,6 +1,13 @@
 import type { ListWorksResponse } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  type UseMutateAsyncFunction,
+  type UseMutateFunction,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
@@ -45,7 +52,23 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   };
 }
 
-export function useWorkMutations(projectId: string) {
+export interface WorkCommand<TResult, TVariables> {
+  mutate: UseMutateFunction<TResult, Error, TVariables>;
+  mutateAsync: UseMutateAsyncFunction<TResult, Error, TVariables>;
+  isPending: boolean;
+  error: Error | null;
+}
+
+export interface WorkMutations {
+  create: WorkCommand<Work, CreateWorkRequest>;
+  update: WorkCommand<Work, { workId: string; data: UpdateWorkRequest }>;
+  archive: WorkCommand<Work, string>;
+  unarchive: WorkCommand<Work, string>;
+  delete: WorkCommand<void, string>;
+  isPending: boolean;
+}
+
+export function useWorkMutations(projectId: string): WorkMutations {
   const client = useQueryClient();
   const lifecycleScope = { id: `work-lifecycle:${projectId}` };
   const create = useWorkCommand(
@@ -94,13 +117,19 @@ function useWorkCommand<TResult, TVariables>(
   operation: WorkOperation,
   command: (variables: TVariables) => Promise<TResult>,
   options: { projectResult?: (result: TResult) => Work; scope?: { id: string } } = {},
-) {
-  return useMutation<TResult, Error, TVariables>({
+): WorkCommand<TResult, TVariables> {
+  const mutation = useMutation<TResult, Error, TVariables>({
     mutationFn: command,
     scope: options.scope,
     onSuccess: (result) =>
       convergeWorkCommand(client, projectId, operation, options.projectResult?.(result)),
   });
+  return {
+    mutate: mutation.mutate,
+    mutateAsync: mutation.mutateAsync,
+    isPending: mutation.isPending,
+    error: mutation.error,
+  };
 }
 
 function convergeWorkCommand(

@@ -158,6 +158,7 @@ describe("Work client queries", () => {
     expectTypeOf<ReturnType<Commands["archive"]["mutateAsync"]>>().toEqualTypeOf<Promise<Work>>();
     expectTypeOf<ReturnType<Commands["unarchive"]["mutateAsync"]>>().toEqualTypeOf<Promise<Work>>();
     expectTypeOf<ReturnType<Commands["delete"]["mutateAsync"]>>().toEqualTypeOf<Promise<void>>();
+    expectTypeOf<Commands["create"]>().not.toHaveProperty("reset");
 
     const created = { id: "work-created", name: "Created" } as Work;
     const updated = { id: "work-updated", name: "Updated" } as Work;
