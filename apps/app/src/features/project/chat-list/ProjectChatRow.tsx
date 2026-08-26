@@ -21,9 +21,7 @@ export type ProjectChatRowProps = {
   now: number;
   onOpen: (item: ProjectChatItem) => void;
   onFavorite: (item: ProjectChatItem, value: boolean) => void;
-  onUnread: (item: ProjectChatItem, value: boolean) => Promise<boolean>;
   favorite: ThreadUserStateCommandView;
-  unread: ThreadUserStateCommandView;
   onActiveChange?: (id: string, active: boolean) => void;
 };
 
@@ -32,9 +30,7 @@ export function ProjectChatRow({
   now,
   onOpen,
   onFavorite,
-  onUnread,
   favorite,
-  unread,
   onActiveChange,
 }: ProjectChatRowProps) {
   const { i18n } = useLingui();
@@ -43,11 +39,8 @@ export function ProjectChatRow({
   const instanceId = useId();
   const title = item.title || t`New chat`;
   const attentionId = item.attention !== "none" ? `${instanceId}-attention` : undefined;
-  const readErrorId = `${instanceId}-read-error`;
   const favoriteValue = !item.isFavorite;
-  const unreadValue = item.attention === "none";
   const favoriteSuppressed = favorite.pending;
-  const unreadSuppressed = unread.pending && unread.desiredValue === unreadValue;
   const activity = formatProjectChatActivity(item.lastActivityAt, now, i18n.locale);
   const fullActivity = new Intl.DateTimeFormat(i18n.locale, {
     dateStyle: "full",
@@ -85,12 +78,6 @@ export function ProjectChatRow({
             : t`New reply since you last opened`}
         </span>
       ) : null}
-      {unread.error ? (
-        <span id={readErrorId} className="sr-only">
-          {t`Read status wasn’t saved. Open actions to retry.`}
-        </span>
-      ) : null}
-
       <div
         data-project-chat-row-layout
         className="project-chat-row-layout pointer-events-none relative z-10 grid min-w-0 text-sm"
@@ -153,14 +140,9 @@ export function ProjectChatRow({
               <DropdownMenuTrigger asChild>
                 <IconButton
                   data-project-chat-row-actions={item.id}
-                  className={cn(
-                    "[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11",
-                    unread.error && "text-destructive",
-                  )}
+                  className="[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11"
                   aria-label={t`Actions for ${title}`}
-                  aria-describedby={unread.error ? readErrorId : undefined}
-                  aria-invalid={unread.error ? true : undefined}
-                  aria-busy={favorite.pending || unread.pending || undefined}
+                  aria-busy={favorite.pending || undefined}
                 >
                   <MoreHorizontal className="size-4" />
                 </IconButton>
@@ -173,22 +155,6 @@ export function ProjectChatRow({
                   }}
                 >
                   <span>{item.isFavorite ? t`Remove from favorites` : t`Add to favorites`}</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  aria-disabled={unreadSuppressed || undefined}
-                  onSelect={() => {
-                    if (!unreadSuppressed) void onUnread(item, unreadValue);
-                  }}
-                >
-                  <span>
-                    {unread.error
-                      ? item.attention === "none"
-                        ? t`Retry mark unread`
-                        : t`Retry mark read`
-                      : item.attention === "none"
-                        ? t`Mark unread`
-                        : t`Mark read`}
-                  </span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

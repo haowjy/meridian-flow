@@ -1192,13 +1192,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "manually_unread": {
-          "name": "manually_unread",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {},

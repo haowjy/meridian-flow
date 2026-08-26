@@ -159,7 +159,6 @@ describe("HomeScreen", () => {
           response({
             threadId: "thread-1",
             isFavorite: true,
-            manuallyUnread: false,
             lastOpenedAt: null,
             attention: "none",
           }),

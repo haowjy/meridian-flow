@@ -55,7 +55,6 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/thread-head-projection.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/home-feed-repository.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/work-chat-feed-repository.db.test.ts",
-  "apps/server/server/domains/threads/adapters/drizzle/thread-user-state-contention.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
   "apps/server/server/lib/routes/context-create-read.db.test.ts",
   "apps/server/server/lib/routes/context-create-untitled.db.test.ts",

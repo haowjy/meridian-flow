@@ -2,7 +2,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { runThreadUserStateCommand } from "./thread-user-state-commands";
 import {
   cancelOpenAcknowledgementTransfer,
   claimVisibleOpenAcknowledgement,
@@ -20,7 +19,6 @@ const json = (body: unknown, status = 200) =>
 const response = {
   threadId: "thread-1",
   isFavorite: false,
-  manuallyUnread: false,
   lastOpenedAt: "2026-08-13T00:01:00.000Z",
   attention: "none" as const,
 };
@@ -62,7 +60,7 @@ describe("visible thread open acknowledgements", () => {
     await Promise.resolve();
     expect(getOpenAcknowledgementState(client, id)).toBeNull();
     claimVisibleOpenAcknowledgement(client, key, createVisibilityLeaseId());
-    expect(requests.map((request) => request.body)).toEqual([{ isUnread: false }]);
+    expect(requests.map((request) => request.body)).toEqual([{ acknowledgeOpen: true }]);
   });
 
   it("transfers Home's exact in-flight operation to visible Chat without a duplicate PATCH", async () => {
@@ -82,7 +80,7 @@ describe("visible thread open acknowledgements", () => {
       offer.transfer,
     );
     expect(claimed).toBe(offer.transfer.id);
-    expect(requests.map((request) => request.body)).toEqual([{ isUnread: false }]);
+    expect(requests.map((request) => request.body)).toEqual([{ acknowledgeOpen: true }]);
 
     requests[0]?.resolve(json({ message: "offline" }, 503));
     await tick();
@@ -93,35 +91,26 @@ describe("visible thread open acknowledgements", () => {
     });
   });
 
-  it("keeps manual failure separate, retries one epoch, retires it, and reopens with a new id", async () => {
+  it("retries one failed epoch, retires it, and reopens with a new id", async () => {
     const client = new QueryClient();
     const requests = controlledRequests();
-    const manual = runThreadUserStateCommand(client, "project-1", "thread-1", "isUnread", true);
     const lease = createVisibilityLeaseId();
     const firstId = claimVisibleOpenAcknowledgement(
       client,
       { projectId: "project-1", threadId: "thread-1" },
       lease,
     );
-    expect(requests.map((request) => request.body)).toEqual([{ isUnread: true }]);
-    requests[0]?.resolve(json({ message: "manual offline" }, 503));
-    await expect(manual).resolves.toMatchObject({ status: "error" });
-    expect(requests.map((request) => request.body)).toEqual([
-      { isUnread: true },
-      { isUnread: false },
-    ]);
-    expect(getOpenAcknowledgementState(client, firstId)).toMatchObject({ phase: "pending" });
-
-    requests[1]?.resolve(json({ message: "open offline" }, 503));
+    expect(requests.map((request) => request.body)).toEqual([{ acknowledgeOpen: true }]);
+    requests[0]?.resolve(json({ message: "open offline" }, 503));
     await tick();
     expect(getOpenAcknowledgementState(client, firstId)).toMatchObject({ phase: "failed" });
+
     retryOpenAcknowledgement(client, firstId);
     expect(requests.map((request) => request.body)).toEqual([
-      { isUnread: true },
-      { isUnread: false },
-      { isUnread: false },
+      { acknowledgeOpen: true },
+      { acknowledgeOpen: true },
     ]);
-    requests[2]?.resolve(json(response));
+    requests[1]?.resolve(json(response));
     await tick();
     await tick();
     expect(getOpenAcknowledgementState(client, firstId)).toMatchObject({
@@ -138,7 +127,7 @@ describe("visible thread open acknowledgements", () => {
       createVisibilityLeaseId(),
     );
     expect(secondId).not.toBe(firstId);
-    expect(requests.at(-1)?.body).toEqual({ isUnread: false });
+    expect(requests.at(-1)?.body).toEqual({ acknowledgeOpen: true });
   });
 
   it("cancels an unclaimed transfer deterministically without cancelling its transport", async () => {
@@ -189,9 +178,9 @@ describe("visible thread open acknowledgements", () => {
 
     retryOpenAcknowledgement(client, secondId);
     expect(requests.map((request) => request.body)).toEqual([
-      { isUnread: false },
-      { isUnread: false },
-      { isUnread: false },
+      { acknowledgeOpen: true },
+      { acknowledgeOpen: true },
+      { acknowledgeOpen: true },
     ]);
     requests[2]?.resolve(json({ ...response, threadId: "thread-2" }));
     await tick();
@@ -218,7 +207,7 @@ describe("visible thread open acknowledgements", () => {
     await Promise.resolve();
 
     expect(replayedId).toBe(firstId);
-    expect(requests.map((request) => request.body)).toEqual([{ isUnread: false }]);
+    expect(requests.map((request) => request.body)).toEqual([{ acknowledgeOpen: true }]);
     expect(getOpenAcknowledgementState(client, firstId)).toMatchObject({ phase: "pending" });
 
     requests[0]?.resolve(json(response));

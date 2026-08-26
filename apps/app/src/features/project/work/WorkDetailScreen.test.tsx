@@ -26,7 +26,6 @@ const mocks = vi.hoisted(() => ({
     isFetchingNextPage: false,
     fetchNextPageFor: vi.fn(),
     setFavorite: vi.fn(async () => true),
-    setUnread: vi.fn(async () => true),
     getCommandState: vi.fn(() => ({ pending: false, error: null })),
   },
   metadata: {
@@ -85,7 +84,6 @@ vi.mock("@/client/query/useProjectChatUserState", () => ({
   useProjectChatUserState: (_projectId: string, item: unknown) => ({
     item,
     favorite: { pending: false },
-    unread: { pending: false },
   }),
 }));
 vi.mock("@/client/query/useWorks", () => ({
@@ -216,7 +214,7 @@ describe("WorkDetailScreen resource boundaries", () => {
     );
   });
 
-  it("renders the shared row with read-only Work identity and live state actions", async () => {
+  it("renders the shared row with read-only Work identity and favorite action", async () => {
     resetResources();
     mocks.chats.threads = [chat("thread-1", "Planning")];
     await withReactRoot(<WorkDetailScreen {...props()} work={fixture()} />, async () => {
@@ -230,11 +228,6 @@ describe("WorkDetailScreen resource boundaries", () => {
       await tick();
       await act(async () => menuItem("Add to favorites").click());
       expect(mocks.chats.setFavorite).toHaveBeenCalledWith("thread-1", true);
-
-      await openActions("Actions for Planning");
-      await tick();
-      await act(async () => menuItem("Mark unread").click());
-      expect(mocks.chats.setUnread).toHaveBeenCalledWith("thread-1", true);
     });
   });
 

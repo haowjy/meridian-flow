@@ -85,7 +85,8 @@ no cache, handoff, visibility, admission, or route effect may run until the
 canonical thread matches those captured facts.
 
 The QueryClient owns one normalized user-state record per project/thread so
-navigation and stale page arrival cannot discard pending favorite/read intent.
+navigation and stale page arrival cannot discard pending favorite intent or a
+newer automatic-attention acknowledgement.
 Work feeds remain immutable membership/order pages; only Home moves the affected
 thread between its categories. Fresh creation also prepares one
 creation-owned no-command visibility epoch before routing; the matching visible

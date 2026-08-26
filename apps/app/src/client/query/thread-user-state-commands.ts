@@ -1,11 +1,10 @@
-/** QueryClient-scoped normalized authority for project-thread user state and transport. */
+/** QueryClient-scoped normalized authority for Project-chat favorite and attention state. */
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { updateThreadUserState } from "@/client/api/threads-api";
 import { groupHomeFeed, type HomeFeedData, projectHomeThread } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
-export type ThreadUserStateField = "isFavorite" | "isUnread";
 export type ThreadUserStateOutcome =
   | { status: "success"; response: UpdateThreadUserStateResponse }
   | { status: "error"; error: Error };
@@ -16,14 +15,16 @@ export type ThreadUserStateCommandView = {
   error?: Error;
 };
 
-type BaseState = Pick<ProjectChatItem, "isFavorite" | "attention">;
-type PendingField = { revision: number; desiredValue: boolean; projectedValue: boolean };
+type StateField = "isFavorite" | "attention";
+type CommandKind = "favorite" | "openAcknowledgement";
+type BaseState = Pick<ProjectChatItem, StateField>;
+type PendingFavorite = { revision: number; desiredValue: boolean; projectedValue: boolean };
 export type ThreadUserStateRecord = {
   base: BaseState;
-  admittedAt: Record<ThreadUserStateField, number>;
-  barriers?: Partial<Record<ThreadUserStateField, number>>;
-  commands?: Partial<Record<ThreadUserStateField, PendingField>>;
-  errors?: Partial<Record<ThreadUserStateField, Error>>;
+  admittedAt: Record<StateField, number>;
+  barriers?: Partial<Record<StateField, number>>;
+  favorite?: PendingFavorite;
+  favoriteError?: Error;
 };
 type QueuedCommand = {
   revision: number;
@@ -52,7 +53,7 @@ function authority(client: QueryClient, projectId: string): ProjectAuthority {
 
 const defaultRecord = (item?: ProjectChatItem): ThreadUserStateRecord => ({
   base: { isFavorite: item?.isFavorite ?? false, attention: item?.attention ?? "none" },
-  admittedAt: { isFavorite: -1, isUnread: -1 },
+  admittedAt: { isFavorite: -1, attention: -1 },
 });
 const stateKey = (projectId: string, threadId: string) =>
   projectQueryKeys.threadUserState(projectId, threadId);
@@ -92,26 +93,14 @@ function writeRecord(
   );
 }
 
-function fieldValue(record: ThreadUserStateRecord, field: ThreadUserStateField) {
-  const desired = record.commands?.[field]?.projectedValue;
-  if (desired !== undefined) return desired;
-  return field === "isFavorite" ? record.base.isFavorite : record.base.attention === "unread";
-}
-
 export function projectThreadUserState(
   item: ProjectChatItem,
   record: ThreadUserStateRecord,
 ): ProjectChatItem {
-  const desiredUnread = record.commands?.isUnread?.projectedValue;
   return {
     ...item,
-    isFavorite: fieldValue(record, "isFavorite"),
-    attention:
-      desiredUnread === undefined || record.base.attention === "actionRequired"
-        ? record.base.attention
-        : desiredUnread
-          ? "unread"
-          : "none",
+    isFavorite: record.favorite?.projectedValue ?? record.base.isFavorite,
+    attention: record.base.attention,
   };
 }
 
@@ -141,19 +130,14 @@ export function admitThreadUserStateItems(
       (current) => {
         let base = current.base;
         let admittedAt = current.admittedAt;
-        if (
-          requestGeneration >= (current.barriers?.isFavorite ?? -1) &&
-          requestGeneration >= current.admittedAt.isFavorite
-        ) {
-          base = { ...base, isFavorite: item.isFavorite };
-          admittedAt = { ...admittedAt, isFavorite: requestGeneration };
-        }
-        if (
-          requestGeneration >= (current.barriers?.isUnread ?? -1) &&
-          requestGeneration >= current.admittedAt.isUnread
-        ) {
-          base = { ...base, attention: item.attention };
-          admittedAt = { ...admittedAt, isUnread: requestGeneration };
+        for (const field of ["isFavorite", "attention"] as const) {
+          if (
+            requestGeneration >= (current.barriers?.[field] ?? -1) &&
+            requestGeneration >= current.admittedAt[field]
+          ) {
+            base = { ...base, [field]: item[field] };
+            admittedAt = { ...admittedAt, [field]: requestGeneration };
+          }
         }
         return base === current.base ? current : { ...current, base, admittedAt };
       },
@@ -162,14 +146,14 @@ export function admitThreadUserStateItems(
   }
 }
 
-export function getThreadUserStateCommandView(
-  record: ThreadUserStateRecord,
-  field: ThreadUserStateField,
-): ThreadUserStateCommandView {
-  const command = record.commands?.[field];
-  return command
-    ? { pending: true, desiredValue: command.desiredValue, error: record.errors?.[field] }
-    : { pending: false, error: record.errors?.[field] };
+export function getFavoriteCommandView(record: ThreadUserStateRecord): ThreadUserStateCommandView {
+  return record.favorite
+    ? {
+        pending: true,
+        desiredValue: record.favorite.desiredValue,
+        error: record.favoriteError,
+      }
+    : { pending: false, error: record.favoriteError };
 }
 
 function syncHome(client: QueryClient, projectId: string, threadId: string) {
@@ -177,16 +161,34 @@ function syncHome(client: QueryClient, projectId: string, threadId: string) {
   projectHomeThread(client, projectId, threadId, (item) => projectThreadUserState(item, record));
 }
 
-export function runThreadUserStateCommand(
+export function runFavoriteCommand(
   client: QueryClient,
   projectId: string,
   threadId: string,
-  field: ThreadUserStateField,
   value: boolean,
   lifecycle: ThreadUserStateLifecycle = {},
 ): Promise<ThreadUserStateOutcome> {
+  return enqueue(client, projectId, threadId, "favorite", value, lifecycle);
+}
+
+export function acknowledgeThreadOpen(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+): Promise<ThreadUserStateOutcome> {
+  return enqueue(client, projectId, threadId, "openAcknowledgement", true, {});
+}
+
+function enqueue(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+  kind: CommandKind,
+  value: boolean,
+  lifecycle: ThreadUserStateLifecycle,
+): Promise<ThreadUserStateOutcome> {
   const owner = authority(client, projectId);
-  const id = `${threadId}:${field}`;
+  const id = `${threadId}:${kind}`;
   let queue = owner.queues.get(id);
   if (!queue) {
     queue = { running: false, entries: [] };
@@ -204,26 +206,19 @@ export function runThreadUserStateCommand(
   });
   const revision = ++owner.revision;
   queue.entries.push({ revision, value, promise, resolve, lifecycles: new Set([lifecycle]) });
-  writeRecord(client, projectId, threadId, (current) => {
-    const pending = current.commands?.[field];
-    const commands = {
-      ...current.commands,
-      [field]: {
+  if (kind === "favorite") {
+    writeRecord(client, projectId, threadId, (current) => ({
+      ...current,
+      favorite: {
         revision,
         desiredValue: value,
-        projectedValue: pending?.projectedValue ?? value,
+        projectedValue: current.favorite?.projectedValue ?? value,
       },
-    };
-    const errors = { ...current.errors };
-    delete errors[field];
-    return {
-      ...current,
-      commands,
-      errors: Object.keys(errors).length ? errors : undefined,
-    };
-  });
-  syncHome(client, projectId, threadId);
-  if (!queue.running) void advance(owner, id, client, projectId, threadId, field);
+      favoriteError: undefined,
+    }));
+    syncHome(client, projectId, threadId);
+  }
+  if (!queue.running) void advance(owner, id, client, projectId, threadId, kind);
   return promise;
 }
 
@@ -233,61 +228,54 @@ async function advance(
   client: QueryClient,
   projectId: string,
   threadId: string,
-  field: ThreadUserStateField,
+  kind: CommandKind,
 ): Promise<void> {
   const queue = owner.queues.get(id);
   const entry = queue?.entries[0];
   if (!queue || !entry || queue.running) return;
   queue.running = true;
-  writeRecord(client, projectId, threadId, (current) => {
-    const pending = current.commands?.[field];
-    if (!pending || pending.projectedValue === entry.value) return current;
-    return {
-      ...current,
-      commands: { ...current.commands, [field]: { ...pending, projectedValue: entry.value } },
-    };
-  });
-  syncHome(client, projectId, threadId);
+  if (kind === "favorite") {
+    writeRecord(client, projectId, threadId, (current) => {
+      if (!current.favorite || current.favorite.projectedValue === entry.value) return current;
+      return { ...current, favorite: { ...current.favorite, projectedValue: entry.value } };
+    });
+    syncHome(client, projectId, threadId);
+  }
+
   let outcome: ThreadUserStateOutcome;
   try {
     const response = await updateThreadUserState(
       threadId,
-      field === "isFavorite" ? { isFavorite: entry.value } : { isUnread: entry.value },
+      kind === "favorite" ? { isFavorite: entry.value } : { acknowledgeOpen: true },
     );
+    const field: StateField = kind === "favorite" ? "isFavorite" : "attention";
     const barrier = ++owner.generation;
-    writeRecord(client, projectId, threadId, (current) => {
-      const base =
-        field === "isFavorite"
-          ? { ...current.base, isFavorite: response.isFavorite }
-          : { ...current.base, attention: response.attention };
-      const commands = { ...current.commands };
-      if (commands[field]?.revision === entry.revision) delete commands[field];
-      const errors = { ...current.errors };
-      delete errors[field];
-      return {
-        ...current,
-        base,
-        barriers: { ...current.barriers, [field]: barrier },
-        commands: Object.keys(commands).length ? commands : undefined,
-        errors: Object.keys(errors).length ? errors : undefined,
-      };
-    });
+    writeRecord(client, projectId, threadId, (current) => ({
+      ...current,
+      base: { ...current.base, [field]: response[field] },
+      barriers: { ...current.barriers, [field]: barrier },
+      favorite:
+        kind === "favorite" && current.favorite?.revision === entry.revision
+          ? undefined
+          : current.favorite,
+      favoriteError: kind === "favorite" ? undefined : current.favoriteError,
+    }));
     outcome = { status: "success", response };
   } catch (cause) {
     const error = cause instanceof Error ? cause : new Error(String(cause));
-    entry.lifecycles.forEach((item) => {
-      item.beforeRollback?.();
-    });
-    writeRecord(client, projectId, threadId, (current) => {
-      const commands = { ...current.commands };
-      const isLatest = commands[field]?.revision === entry.revision;
-      if (isLatest) delete commands[field];
-      return {
-        ...current,
-        commands: Object.keys(commands).length ? commands : undefined,
-        errors: isLatest ? { ...current.errors, [field]: error } : current.errors,
-      };
-    });
+    if (kind === "favorite") {
+      entry.lifecycles.forEach((item) => {
+        item.beforeRollback?.();
+      });
+      writeRecord(client, projectId, threadId, (current) => {
+        const isLatest = current.favorite?.revision === entry.revision;
+        return {
+          ...current,
+          favorite: isLatest ? undefined : current.favorite,
+          favoriteError: isLatest ? error : current.favoriteError,
+        };
+      });
+    }
     outcome = { status: "error", error };
   }
 
@@ -297,5 +285,5 @@ async function advance(
   const next = queue.entries[0];
   if (!next) owner.queues.delete(id);
   entry.resolve(outcome);
-  if (next) void advance(owner, id, client, projectId, threadId, field);
+  if (next) void advance(owner, id, client, projectId, threadId, kind);
 }

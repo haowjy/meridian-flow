@@ -26,7 +26,6 @@ function fixture(projectUserId = USER_ID) {
   const update = vi.fn(async () => ({
     threadId: THREAD_ID,
     isFavorite: true,
-    manuallyUnread: true,
     lastOpenedAt: null,
     attention: "unread",
   }));
@@ -53,8 +52,8 @@ describe("PATCH /api/threads/:threadId/user-state", () => {
 
   it.each([
     {},
-    { unread: true },
-    { isUnread: "yes" },
+    { legacyReadState: true },
+    { acknowledgeOpen: false },
   ])("rejects invalid body without repository access", async (body) => {
     const f = fixture();
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
@@ -66,7 +65,7 @@ describe("PATCH /api/threads/:threadId/user-state", () => {
   it("rejects malformed thread IDs without repository access", async () => {
     const f = fixture();
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
-    await expect(handler(event({ isUnread: false }, "bad") as never)).rejects.toMatchObject({
+    await expect(handler(event({ acknowledgeOpen: true }, "bad") as never)).rejects.toMatchObject({
       statusCode: 400,
     });
     expect(f.findById).not.toHaveBeenCalled();
@@ -81,15 +80,16 @@ describe("PATCH /api/threads/:threadId/user-state", () => {
     expect(f.update).not.toHaveBeenCalled();
   });
 
-  it("passes combined desired state and returns the durable/effective shape", async () => {
+  it("passes favorite plus open acknowledgement and returns the durable/effective shape", async () => {
     const f = fixture();
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
-    await expect(handler(event({ isFavorite: true, isUnread: true }) as never)).resolves.toEqual({
+    await expect(
+      handler(event({ isFavorite: true, acknowledgeOpen: true }) as never),
+    ).resolves.toEqual({
       __meridianTransport: true,
       value: {
         threadId: THREAD_ID,
         isFavorite: true,
-        manuallyUnread: true,
         lastOpenedAt: null,
         attention: "unread",
       },
@@ -98,7 +98,7 @@ describe("PATCH /api/threads/:threadId/user-state", () => {
       threadId: THREAD_ID,
       userId: USER_ID,
       isFavorite: true,
-      isUnread: true,
+      acknowledgeOpen: true,
     });
     expect(vi.mocked(requireAppUser).mock.invocationCallOrder[0]).toBeLessThan(
       f.findById.mock.invocationCallOrder[0] ?? 0,

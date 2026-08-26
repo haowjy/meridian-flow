@@ -208,14 +208,13 @@ export interface ThreadUserStateRepository {
     userId: UserId,
   ): Promise<{
     isFavorite: boolean;
-    manuallyUnread: boolean;
     lastOpenedAt: string | null;
   }>;
   update(input: {
     threadId: ThreadId;
     userId: UserId;
     isFavorite?: boolean;
-    isUnread?: boolean;
+    acknowledgeOpen?: true;
   }): Promise<UpdateThreadUserStateResponse>;
   effectiveAttention(threadId: ThreadId, userId: UserId): Promise<ThreadAttention>;
 }

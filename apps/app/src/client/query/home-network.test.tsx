@@ -150,7 +150,6 @@ describe("Home network behavior", () => {
             json({
               threadId,
               isFavorite: true,
-              manuallyUnread: false,
               lastOpenedAt: "2026-08-13T00:01:00.000Z",
               attention: "none",
             }),

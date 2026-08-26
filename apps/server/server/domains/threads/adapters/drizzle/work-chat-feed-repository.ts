@@ -36,7 +36,6 @@ export function createDrizzleWorkChatFeedRepository(db: DrizzleDatabase): WorkCh
             headRole: sql`conversational_head.role`,
             headStatus: sql`conversational_head.status`,
             headActivityAt: sql`conversational_head.activity_at`,
-            manuallyUnread: sql`tus.manually_unread`,
             lastOpenedAt: sql`tus.last_opened_at`,
           })} AS attention,
           COALESCE(tus.is_favorite, false) AS is_favorite

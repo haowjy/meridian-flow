@@ -88,11 +88,6 @@ export function WorkAssociatedChats({
                         else announceError(t`Favorite wasn’t saved`);
                       });
                     }}
-                    onUnread={async (chat, value) => {
-                      const saved = await query.setUnread(chat.id, value);
-                      if (!saved) announceError(t`Read status wasn’t saved`);
-                      return saved;
-                    }}
                   />
                 </li>
               ) : null;
@@ -128,7 +123,6 @@ function WorkChatRow({
   onOpen,
   onActiveChange,
   onFavorite,
-  onUnread,
 }: {
   projectId: string;
   item: ProjectChatItem;
@@ -136,7 +130,6 @@ function WorkChatRow({
   onOpen: (item: ProjectChatItem) => void;
   onActiveChange: (id: string, active: boolean) => void;
   onFavorite: (item: ProjectChatItem, value: boolean) => void;
-  onUnread: (item: ProjectChatItem, value: boolean) => Promise<boolean>;
 }) {
   const state = useProjectChatUserState(projectId, item);
   return (
@@ -146,7 +139,6 @@ function WorkChatRow({
       onOpen={onOpen}
       onActiveChange={onActiveChange}
       onFavorite={onFavorite}
-      onUnread={onUnread}
     />
   );
 }

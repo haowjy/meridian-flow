@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+- `database`, `contracts`, `apps/server`, `apps/app`: remove manual Project-chat
+  read state and row actions; visible chat opens now send an explicit one-way
+  acknowledgement while unseen completed assistant replies continue to derive
+  automatic attention.
+
 - `database`, `apps/server`: project Work catalogs now load pending draft totals
   through one grouped query backed by a Work-led active-draft index.
 

@@ -355,7 +355,6 @@ export const threadUserState = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
     isFavorite: boolean("is_favorite").notNull().default(false),
-    manuallyUnread: boolean("manually_unread").notNull().default(false),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.userId] })],
 );

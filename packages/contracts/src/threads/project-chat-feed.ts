@@ -31,10 +31,10 @@ export interface HomeChatFeedPage {
 export const updateThreadUserStateRequestSchema = z
   .object({
     isFavorite: z.boolean().optional(),
-    isUnread: z.boolean().optional(),
+    acknowledgeOpen: z.literal(true).optional(),
   })
   .strict()
-  .refine((value) => value.isFavorite !== undefined || value.isUnread !== undefined, {
+  .refine((value) => value.isFavorite !== undefined || value.acknowledgeOpen !== undefined, {
     message: "At least one user-state field is required",
   });
 
@@ -43,7 +43,6 @@ export type UpdateThreadUserStateRequest = z.infer<typeof updateThreadUserStateR
 export interface UpdateThreadUserStateResponse {
   threadId: string;
   isFavorite: boolean;
-  manuallyUnread: boolean;
   lastOpenedAt: string | null;
   attention: ThreadAttention;
 }

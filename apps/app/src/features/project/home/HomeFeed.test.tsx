@@ -6,8 +6,6 @@ import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { HomeFeed } from "./HomeFeed";
 
-const userState = vi.hoisted(() => ({ readError: undefined as Error | undefined }));
-
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children,
@@ -17,7 +15,6 @@ vi.mock("@/client/query/useProjectChatUserState", () => ({
   useProjectChatUserState: (_projectId: string, chat: ProjectChatItem) => ({
     item: chat,
     favorite: { pending: false },
-    unread: { pending: false, error: userState.readError },
   }),
 }));
 
@@ -34,7 +31,6 @@ const rowProps = {
   now: Date.now(),
   onOpen: vi.fn(),
   onFavorite: vi.fn(),
-  onUnread: vi.fn(async () => true),
 };
 const base = {
   isPending: false,
@@ -235,24 +231,6 @@ describe("HomeFeed", () => {
         await act(async () => button?.click());
         expect(retry).toHaveBeenCalledOnce();
         expect(document.querySelector("[data-home-feed-sentinel]")).toBeNull();
-      },
-    );
-  });
-  it("keeps read failure and retry in the existing overflow owner", async () => {
-    userState.readError = new Error("offline");
-    const errorProps = rowProps;
-    await withReactRoot(
-      <HomeFeed projectId="project-1" feed={base} rowProps={errorProps} />,
-      async () => {
-        const row = document.querySelector('[data-project-chat-row="Continue"]') as HTMLElement;
-        expect(row.textContent).toContain("Read status wasn’t saved. Open actions to retry.");
-        expect(row.querySelector('[role="alert"]')).toBeNull();
-        const actions = row.querySelector('button[aria-invalid="true"]') as HTMLButtonElement;
-        const describedBy = actions.getAttribute("aria-describedby");
-        expect(describedBy).toBeTruthy();
-        expect(document.getElementById(describedBy ?? "")?.textContent).toContain(
-          "Read status wasn’t saved",
-        );
       },
     );
   });

@@ -42,14 +42,12 @@ export const useWorkThreads = () => {
       setHasNextPage(false);
     },
     setFavorite: async () => true,
-    setUnread: async () => true,
     refetch: () => undefined,
   };
 };
 export const useProjectChatUserState = (_projectId: string, item: ProjectChatItem) => ({
   item,
   favorite: { pending: false as const },
-  unread: { pending: false as const },
 });
 export const useAnnouncement = () => ({
   announce: () => undefined,

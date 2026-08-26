@@ -17,7 +17,7 @@ import type { Thread, ThreadAttention, ThreadListItem } from "@meridian/contract
  * - `executing` — a turn is actively running (`runningTurnId` set or
  *   `status === "active"`).
  * - `waiting` — the assistant has finished and the thread is waiting on the
- *   user (`attention === true` on the projection).
+ *   user (`attention === "unread"` on the projection).
  * - `interrupt` — `status === "blocked"` (server-side interrupt).
  * - `errored` — `status === "error"` (the orchestrator failed the run). A
  *   needs-attention terminal state — must NOT collapse into `idle`.

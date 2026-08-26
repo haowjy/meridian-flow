@@ -27,9 +27,7 @@ const props = (overrides: Partial<ProjectChatRowProps> = {}): ProjectChatRowProp
   now: Date.parse("2026-08-24T16:00:00.000Z"),
   onOpen: vi.fn(),
   onFavorite: vi.fn(),
-  onUnread: vi.fn(async () => true),
   favorite: { pending: false },
-  unread: { pending: false },
   ...overrides,
 });
 
@@ -170,26 +168,6 @@ describe("ProjectChatRow", () => {
         expect(document.activeElement).toBe(trigger);
       });
     });
-  });
-
-  it("keeps failed read retry in the menu without a third row", async () => {
-    const onUnread = vi.fn(async () => true);
-    await withRow(
-      <ProjectChatRow
-        {...props({
-          onUnread,
-          unread: { pending: false, error: new Error("offline") },
-        })}
-      />,
-      async () => {
-        const row = document.querySelector("[data-project-chat-row]") as HTMLElement;
-        expect(row.querySelector('[role="alert"]')).toBeNull();
-        expect(row.querySelectorAll("[data-project-chat-row-line]")).toHaveLength(2);
-        await openActions();
-        await act(async () => menuItem("Retry mark unread").click());
-        expect(onUnread).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-1" }), true);
-      },
-    );
   });
 
   it("formats compact and full activity dates with the active locale", async () => {

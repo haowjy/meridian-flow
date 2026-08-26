@@ -25,11 +25,9 @@ export function projectEffectiveThreadAttention(input: {
   headStatus: TurnStatus | null;
   headActivityAt: string | null;
   lastOpenedAt: string | null;
-  manuallyUnread: boolean;
 }): ThreadAttention {
   if (input.headRole === "assistant" && input.headStatus === "waiting_interrupt")
     return "actionRequired";
-  if (input.manuallyUnread) return "unread";
   if (
     input.threadStatus === "idle" &&
     input.headRole === "assistant" &&

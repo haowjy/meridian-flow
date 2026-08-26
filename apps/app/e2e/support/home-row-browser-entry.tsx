@@ -29,7 +29,6 @@ const rowProps = {
   now: Date.parse("2026-08-25T12:00:00.000Z"),
   onOpen: () => undefined,
   onFavorite: () => undefined,
-  onUnread: async () => true,
 };
 const pendingFeed = {
   isPending: true,
@@ -50,13 +49,7 @@ createRoot(root).render(
   <main className="project-screen-column">
     <section id="real-rows">
       {[...ordinary, long].map((item) => (
-        <ProjectChatRow
-          key={item.id}
-          item={item}
-          favorite={{ pending: false }}
-          unread={{ pending: false }}
-          {...rowProps}
-        />
+        <ProjectChatRow key={item.id} item={item} favorite={{ pending: false }} {...rowProps} />
       ))}
     </section>
     <section id="loading-rows">

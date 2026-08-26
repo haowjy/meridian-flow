@@ -19,7 +19,6 @@ import type {
 
 export type InMemoryThreadUserState = {
   isFavorite: boolean;
-  manuallyUnread: boolean;
   lastOpenedAt: string | null;
 };
 
@@ -77,7 +76,6 @@ export function createInMemoryProjectChatAdapter(
       headStatus: head?.status ?? null,
       headActivityAt: activity,
       lastOpenedAt: state?.lastOpenedAt ?? null,
-      manuallyUnread: state?.manuallyUnread ?? false,
     });
   }
 
@@ -181,7 +179,6 @@ export function createInMemoryProjectChatAdapter(
       return (
         states.get(key(threadId, userId)) ?? {
           isFavorite: false,
-          manuallyUnread: false,
           lastOpenedAt: null,
         }
       );
@@ -194,8 +191,7 @@ export function createInMemoryProjectChatAdapter(
       const current = await this.get(input.threadId, input.userId);
       const next = {
         isFavorite: input.isFavorite ?? current.isFavorite,
-        manuallyUnread: input.isUnread ?? current.manuallyUnread,
-        lastOpenedAt: input.isUnread === false ? new Date().toISOString() : current.lastOpenedAt,
+        lastOpenedAt: input.acknowledgeOpen ? new Date().toISOString() : current.lastOpenedAt,
       };
       states.set(key(input.threadId, input.userId), next);
       return {

@@ -43,7 +43,6 @@ type ThreadListRow = typeof schema.threads.$inferSelect & {
   lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
   lastTurnAt: Date | string | null;
   lastOpenedAt: Date | null;
-  manuallyUnread: boolean | null;
   runningTurnId: string | null;
 };
 
@@ -55,7 +54,6 @@ function mapThreadListRow(row: ThreadListRow) {
     lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
     lastTurnAt: row.lastTurnAt ? toIsoString(row.lastTurnAt) : null,
     lastOpenedAt: row.lastOpenedAt ? toIsoString(row.lastOpenedAt) : null,
-    manuallyUnread: row.manuallyUnread ?? false,
     runningTurnId: row.runningTurnId,
   });
 }
@@ -69,7 +67,6 @@ function threadListSelect() {
     lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
     lastTurnAt: sql<Date | null>`conversational_head.activity_at`,
     lastOpenedAt: schema.threadUserState.lastOpenedAt,
-    manuallyUnread: schema.threadUserState.manuallyUnread,
     runningTurnId,
   };
 }

@@ -25,7 +25,6 @@ export interface ThreadListProjectionInput {
   lastTurnStatus: TurnStatus | null;
   lastTurnAt: string | null;
   lastOpenedAt: string | null;
-  manuallyUnread?: boolean;
   runningTurnId: string | null;
 }
 
@@ -35,7 +34,6 @@ export function projectThreadAttention(
   lastTurnStatus: TurnStatus | null,
   lastTurnAt: string | null,
   lastOpenedAt: string | null,
-  manuallyUnread = false,
 ): ThreadAttention {
   return projectEffectiveThreadAttention({
     threadStatus,
@@ -43,7 +41,6 @@ export function projectThreadAttention(
     headStatus: lastTurnStatus,
     headActivityAt: lastTurnAt,
     lastOpenedAt,
-    manuallyUnread,
   });
 }
 
@@ -60,7 +57,6 @@ export function toThreadListItem(input: ThreadListProjectionInput): ThreadListIt
       input.lastTurnStatus,
       input.lastTurnAt,
       input.lastOpenedAt,
-      input.manuallyUnread,
     ),
     runningTurnId: input.runningTurnId,
   };

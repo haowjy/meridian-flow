@@ -1,4 +1,4 @@
-/** One-statement desired-state persistence and effective-attention projection. */
+/** One-statement favorite/open-acknowledgement persistence and attention projection. */
 import type { ThreadAttention } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
@@ -9,7 +9,6 @@ import { effectiveAttentionSql, visibleConversationalTurnSql } from "./visible-c
 type StateRow = {
   thread_id: string;
   is_favorite: boolean;
-  manually_unread: boolean;
   last_opened_at: Date | string | null;
   attention: ThreadAttention;
 };
@@ -49,7 +48,6 @@ async function readEffectiveAttention(
       headRole: sql`h.role`,
       headStatus: sql`h.status`,
       headActivityAt: sql`COALESCE(h.completed_at, h.created_at)`,
-      manuallyUnread: sql`s.manually_unread`,
       lastOpenedAt: sql`s.last_opened_at`,
     })} AS attention
     FROM threads t LEFT JOIN head h ON true
@@ -77,7 +75,6 @@ export function createDrizzleThreadUserStateRepository(
         );
       return {
         isFavorite: row?.isFavorite ?? false,
-        manuallyUnread: row?.manuallyUnread ?? false,
         lastOpenedAt: row?.lastOpenedAt?.toISOString() ?? null,
       };
     },
@@ -87,24 +84,22 @@ export function createDrizzleThreadUserStateRepository(
     async update(input) {
       const rows = await currentDrizzleDb(db).execute(sql`
         WITH RECURSIVE mutation AS (
-          INSERT INTO thread_user_state (
-            thread_id, user_id, is_favorite, manually_unread, last_opened_at
-          ) VALUES (
+          INSERT INTO thread_user_state (thread_id, user_id, is_favorite, last_opened_at)
+          VALUES (
             ${input.threadId}::uuid,
             ${input.userId}::uuid,
             COALESCE(${input.isFavorite ?? null}::boolean, false),
-            COALESCE(${input.isUnread ?? null}::boolean, false),
-            CASE WHEN ${input.isUnread ?? null}::boolean = false THEN clock_timestamp() ELSE NULL END
+            CASE WHEN ${input.acknowledgeOpen ?? null}::boolean = true
+              THEN clock_timestamp() ELSE NULL END
           )
           ON CONFLICT (thread_id, user_id) DO UPDATE SET
             is_favorite = COALESCE(${input.isFavorite ?? null}::boolean, thread_user_state.is_favorite),
-            manually_unread = COALESCE(${input.isUnread ?? null}::boolean, thread_user_state.manually_unread),
             last_opened_at = CASE
-              WHEN ${input.isUnread ?? null}::boolean = false THEN
+              WHEN ${input.acknowledgeOpen ?? null}::boolean = true THEN
                 GREATEST(COALESCE(thread_user_state.last_opened_at, '-infinity'::timestamptz), clock_timestamp())
               ELSE thread_user_state.last_opened_at
             END
-          RETURNING thread_id, is_favorite, manually_unread, last_opened_at
+          RETURNING thread_id, is_favorite, last_opened_at
         ), lineage AS (
           SELECT tr.id, tr.parent_turn_id, tr.role, tr.status, tr.metadata,
             tr.created_at, tr.completed_at, 0 AS depth, ARRAY[tr.id]::uuid[] AS path
@@ -128,7 +123,6 @@ export function createDrizzleThreadUserStateRepository(
           headRole: sql`h.role`,
           headStatus: sql`h.status`,
           headActivityAt: sql`COALESCE(h.completed_at, h.created_at)`,
-          manuallyUnread: sql`m.manually_unread`,
           lastOpenedAt: sql`m.last_opened_at`,
         })} AS attention
         FROM mutation m JOIN threads t ON t.id = m.thread_id LEFT JOIN head h ON true
@@ -138,7 +132,6 @@ export function createDrizzleThreadUserStateRepository(
       return {
         threadId: row.thread_id,
         isFavorite: row.is_favorite,
-        manuallyUnread: row.manually_unread,
         lastOpenedAt: timestamp(row.last_opened_at),
         attention: row.attention,
       };

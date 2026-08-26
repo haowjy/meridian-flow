@@ -32,7 +32,7 @@ export function HomeFeed({
 }: {
   projectId: string;
   feed: FeedQuery;
-  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite">;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const requestedPage = useRef<HomeFeedNextPageIdentity | null>(null);
@@ -163,7 +163,7 @@ function Section({
   projectId: string;
   title: string;
   items: ProjectChatItem[];
-  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite">;
 }) {
   return (
     <section className="flex flex-col gap-2">
@@ -179,7 +179,7 @@ function ChatList({
 }: {
   projectId: string;
   items: ProjectChatItem[];
-  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite">;
 }) {
   return (
     <ul className="divide-y divide-border-subtle">
@@ -199,7 +199,7 @@ function HomeProjectChatRow({
 }: {
   projectId: string;
   item: ProjectChatItem;
-  rowProps: Omit<ProjectChatRowProps, "item" | "favorite" | "unread">;
+  rowProps: Omit<ProjectChatRowProps, "item" | "favorite">;
 }) {
   const state = useProjectChatUserState(projectId, item);
   return <ProjectChatRow {...rowProps} {...state} />;

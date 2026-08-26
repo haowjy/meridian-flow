@@ -103,11 +103,6 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
           else announceError(t`Favorite wasn’t saved`);
         });
     },
-    onUnread: async (item: ProjectChatItem, value: boolean) => {
-      const saved = await feed.setUnread(item.id, value);
-      if (!saved) announceError(t`Read status wasn’t saved`);
-      return saved;
-    },
   };
   const worksReady = worksQuery.status === "ready" && selectedWork !== null;
   const submitDisabledReason = firstSend.busy

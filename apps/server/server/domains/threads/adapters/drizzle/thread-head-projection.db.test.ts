@@ -184,7 +184,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("clears unread after the writer opens the thread", async () => {
-      await repos.threadUserState.update({ threadId: THREAD_ID, userId: USER_ID, isUnread: false });
+      await repos.threadUserState.update({
+        threadId: THREAD_ID,
+        userId: USER_ID,
+        acknowledgeOpen: true,
+      });
       const [row] = await repos.threads.listByProject(PROJECT_ID);
       const snapshot = await buildThreadSnapshot(
         repos,

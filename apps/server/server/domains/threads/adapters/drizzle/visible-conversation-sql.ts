@@ -36,7 +36,6 @@ type EffectiveAttentionColumns = {
   headRole: SQL;
   headStatus: SQL;
   headActivityAt: SQL;
-  manuallyUnread: SQL;
   lastOpenedAt: SQL;
 };
 
@@ -61,7 +60,6 @@ export function effectiveAttentionSql(columns: EffectiveAttentionColumns): SQL {
   return sql`CASE
     WHEN ${columns.headRole} = 'assistant' AND ${columns.headStatus} = 'waiting_interrupt'
       THEN 'actionRequired'
-    WHEN COALESCE(${columns.manuallyUnread}, false) THEN 'unread'
     WHEN ${columns.threadStatus} = 'idle'
       AND ${columns.headRole} = 'assistant' AND ${columns.headStatus} = 'complete'
       AND (${columns.lastOpenedAt} IS NULL OR ${columns.headActivityAt} > ${columns.lastOpenedAt})

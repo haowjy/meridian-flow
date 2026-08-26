@@ -72,20 +72,10 @@ msgstr "(also {0})"
 msgid "{0, plural, one {# more item} other {# more items}}"
 msgstr "{0, plural, one {# more item} other {# more items}}"
 
-#. placeholder {0}: work.unpushedChangeCount
-#: src/features/project/work/WorkCard.tsx
-#~ msgid "{0, plural, one {# pending change} other {# pending changes}}"
-#~ msgstr "{0, plural, one {# pending change} other {# pending changes}}"
-
 #. placeholder {0}: group.drafts.length
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
 msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
-
-#. placeholder {0}: thread.turnCount
-#: src/features/project/work/WorkDetailScreen.tsx
-#~ msgid "{0, plural, one {# turn} other {# turns}}"
-#~ msgstr "{0, plural, one {# turn} other {# turns}}"
 
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -106,11 +96,6 @@ msgstr "{0, plural, one {edited # document} other {edited # documents}}"
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
-
-#. placeholder {0}: existing.status === "archived" ? "This Work is archived." : "This Work is active."
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "{0}"
-#~ msgstr "{0}"
 
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
@@ -319,10 +304,6 @@ msgstr "Active Work"
 msgid "Actually…"
 msgstr "Actually…"
 
-#: src/features/project/home/HomeChatRow.tsx
-#~ msgid "Add {title} to favorites"
-#~ msgstr "Add {title} to favorites"
-
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Add a description"
 msgstr "Add a description"
@@ -434,10 +415,6 @@ msgstr "Apply all"
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
-
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Archive"
-#~ msgstr "Archive"
 
 #: src/features/project/work/WorkDialog.tsx
 msgid "Archive Work"
@@ -640,10 +617,6 @@ msgstr "Chat away"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
 msgstr "Chat context"
-
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Chat couldn’t start"
-#~ msgstr "Chat couldn’t start"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Chat creation is still being reconciled"
@@ -1853,14 +1826,6 @@ msgstr "Manage Work"
 msgid "Manuscript"
 msgstr "Manuscript"
 
-#: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Mark read"
-msgstr "Mark read"
-
-#: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Mark unread"
-msgstr "Mark unread"
-
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
@@ -1994,10 +1959,6 @@ msgstr "Names cannot contain '{0}'"
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot end with '/'"
 msgstr "Names cannot end with '/'"
-
-#: src/features/project/work/WorkDetailScreen.tsx
-#~ msgid "Needs attention"
-#~ msgstr "Needs attention"
 
 #: src/features/project/lifecycle.ts
 msgid "Needs your answer"
@@ -2389,19 +2350,6 @@ msgstr "Read"
 msgid "Read file"
 msgstr "Read file"
 
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/work/WorkAssociatedChats.tsx
-msgid "Read status wasn’t saved"
-msgstr "Read status wasn’t saved"
-
-#: src/features/project/home/HomeChatCard.tsx
-#~ msgid "Read status wasn’t saved."
-#~ msgstr "Read status wasn’t saved."
-
-#: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Read status wasn’t saved. Open actions to retry."
-msgstr "Read status wasn’t saved. Open actions to retry."
-
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
 msgstr "Read-only live document"
@@ -2417,10 +2365,6 @@ msgstr "Reading text size"
 #: src/features/chat/command-descriptor.ts
 msgid "Reading…"
 msgstr "Reading…"
-
-#: src/features/project/work/WorkDetailScreen.tsx
-#~ msgid "Ready"
-#~ msgstr "Ready"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
@@ -2497,10 +2441,6 @@ msgstr "remaining"
 msgid "Remove"
 msgstr "Remove"
 
-#: src/features/project/home/HomeChatRow.tsx
-#~ msgid "Remove {title} from favorites"
-#~ msgstr "Remove {title} from favorites"
-
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Remove from favorites"
 msgstr "Remove from favorites"
@@ -2542,10 +2482,6 @@ msgstr "Rendering diagram…"
 #: src/features/account/SettingsDialog.tsx
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
-
-#: src/features/project/home/HomeScreen.tsx
-#~ msgid "Repair your choices, then retry"
-#~ msgstr "Repair your choices, then retry"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -2599,14 +2535,6 @@ msgstr "Resume where I left off on any device"
 #: src/features/project/work/WorkResourceState.tsx
 msgid "Retry"
 msgstr "Retry"
-
-#: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Retry mark read"
-msgstr "Retry mark read"
-
-#: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Retry mark unread"
-msgstr "Retry mark unread"
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
@@ -2670,10 +2598,6 @@ msgstr "Save metadata changes?"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
-
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Save Work"
-#~ msgstr "Save Work"
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
@@ -3363,10 +3287,6 @@ msgstr "ul"
 msgid "Unable to render diagram"
 msgstr "Unable to render diagram"
 
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Unarchive"
-#~ msgstr "Unarchive"
-
 #: src/features/project/work/WorkDialog.tsx
 msgid "Unarchive Work"
 msgstr "Unarchive Work"
@@ -3411,14 +3331,6 @@ msgstr "Undoing…"
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
-
-#: src/features/project/work/WorkDetailScreen.tsx
-#~ msgid "Unread"
-#~ msgstr "Unread"
-
-#: src/features/project/work/WorkDetailScreen.tsx
-#~ msgid "Untitled chat"
-#~ msgstr "Untitled chat"
 
 #: src/features/chat/document-display-name.ts
 #: src/features/project/dock/DockChangesView.tsx
@@ -3556,10 +3468,6 @@ msgstr "Work {name} was already up to date"
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"
 
-#: src/features/project/work/WorkScreen.tsx
-#~ msgid "Work details"
-#~ msgstr "Work details"
-
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Work identity"
 msgstr "Work identity"
@@ -3605,10 +3513,6 @@ msgstr "Write away"
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Write mode"
 msgstr "Write mode"
-
-#: src/features/project/work/WorkDetailScreen.tsx
-#~ msgid "Writing"
-#~ msgstr "Writing"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Writing…"

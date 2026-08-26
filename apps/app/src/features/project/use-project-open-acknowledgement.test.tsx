@@ -84,7 +84,7 @@ describe("ProjectView Home open composition", () => {
         expect(patches).toEqual([
           expect.objectContaining({
             path: `/api/threads/${threadId}/user-state`,
-            body: { isUnread: false },
+            body: { acknowledgeOpen: true },
           }),
         ]);
       },

@@ -3,7 +3,7 @@ import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { projectQueryKeys } from "./project-query-keys";
 import {
-  getThreadUserStateCommandView,
+  getFavoriteCommandView,
   getThreadUserStateRecord,
   projectThreadUserState,
 } from "./thread-user-state-commands";
@@ -19,7 +19,6 @@ export function useProjectChatUserState(projectId: string, item: ProjectChatItem
   });
   return {
     item: projectThreadUserState(item, record),
-    favorite: getThreadUserStateCommandView(record, "isFavorite"),
-    unread: getThreadUserStateCommandView(record, "isUnread"),
+    favorite: getFavoriteCommandView(record),
   };
 }

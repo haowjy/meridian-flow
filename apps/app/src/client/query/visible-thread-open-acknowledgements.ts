@@ -2,7 +2,7 @@
 import type { UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { runThreadUserStateCommand } from "./thread-user-state-commands";
+import { acknowledgeThreadOpen } from "./thread-user-state-commands";
 
 declare const openId: unique symbol;
 export type OpenAcknowledgementOperationId = string & { readonly [openId]: true };
@@ -115,8 +115,8 @@ function beginOperation(
 
 /**
  * Reserves the first visible epoch of a newly created thread. Creation already
- * establishes unread state, so the matching Chat lease must not issue the
- * existing-chat acknowledgement command.
+ * establishes the initial attention baseline, so the matching Chat lease must
+ * not issue the existing-chat acknowledgement command.
  */
 export function prepareCreatedThreadVisibility(
   client: QueryClient,
@@ -143,27 +143,23 @@ function runAttempt(
   operation: Operation,
   attempt: number,
 ) {
-  void runThreadUserStateCommand(
-    client,
-    operation.key.projectId,
-    operation.key.threadId,
-    "isUnread",
-    false,
-  ).then((outcome) => {
-    const owner = coordinator(client);
-    if (
-      owner.operations.get(id) !== operation ||
-      operation.state.phase !== "pending" ||
-      operation.state.attempt !== attempt
-    )
-      return;
-    operation.state =
-      outcome.status === "success"
-        ? { phase: "succeeded", id, attempt, response: outcome.response }
-        : { phase: "failed", id, attempt, error: outcome.error };
-    publish(operation);
-    retireIfUnowned(owner, id);
-  });
+  void acknowledgeThreadOpen(client, operation.key.projectId, operation.key.threadId).then(
+    (outcome) => {
+      const owner = coordinator(client);
+      if (
+        owner.operations.get(id) !== operation ||
+        operation.state.phase !== "pending" ||
+        operation.state.attempt !== attempt
+      )
+        return;
+      operation.state =
+        outcome.status === "success"
+          ? { phase: "succeeded", id, attempt, response: outcome.response }
+          : { phase: "failed", id, attempt, error: outcome.error };
+      publish(operation);
+      retireIfUnowned(owner, id);
+    },
+  );
 }
 
 export function prepareHomeOpenAcknowledgement(

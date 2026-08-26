@@ -23,7 +23,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositories } = await import("./repositories.js");
     const { getHomeChatFeedPage } = await import("../../domain/home-feed.js");
-    const { buildThreadSnapshot } = await import("../../thread-snapshot.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const database = useRollbackTestDatabase(DATABASE_URL, {
@@ -108,7 +107,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.execute(
         sql`UPDATE turns SET status = 'waiting_interrupt' WHERE id = ${assistantId}::uuid`,
       );
-      await repos.threadUserState.update({ threadId, userId: USER_ID, isUnread: true });
       const actionHome = await repos.homeFeed.queryPage({
         projectId: PROJECT_ID,
         userId: USER_ID,
@@ -122,28 +120,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect((await repos.threads.listByProject(PROJECT_ID))[0]?.attention).toBe("actionRequired");
       await db.execute(sql`UPDATE turns SET status = 'complete' WHERE id = ${assistantId}::uuid`);
-      await repos.threadUserState.update({ threadId, userId: USER_ID, isUnread: false });
+      await repos.threadUserState.update({ threadId, userId: USER_ID, acknowledgeOpen: true });
       expect(await repos.threadUserState.effectiveAttention(threadId, USER_ID)).toBe("none");
       expect((await repos.threads.listByProject(PROJECT_ID))[0]?.attention).toBe("none");
-      await repos.threadUserState.update({ threadId, userId: USER_ID, isUnread: true });
-      const manualHome = await repos.homeFeed.queryPage({
-        projectId: PROJECT_ID,
-        userId: USER_ID,
-        after: null,
-        recentLimit: 25,
-        includeFeatured: true,
-      });
-      expect(manualHome.continueChat?.attention).toBe("unread");
-      expect(await repos.threadUserState.effectiveAttention(threadId, USER_ID)).toBe("unread");
-      expect((await repos.threads.listByProject(PROJECT_ID))[0]?.attention).toBe("unread");
-      const snapshot = await buildThreadSnapshot(
-        repos,
-        { headSeq: async () => 0n, readModelProjectionWatermark: async () => 0n } as never,
-        { getRunningTurnId: () => null },
-        threadId,
-        USER_ID,
-      );
-      expect(snapshot.attention).toBe("unread");
     });
 
     it("paginates equal microsecond activity across four pages with featured exclusivity", async () => {
@@ -289,7 +268,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         work: { title: "Archived" },
       });
       expect([archived.continueChat, ...archived.favorites, ...archived.recent]).toHaveLength(1);
-      await repos.threadUserState.update({ threadId, userId: USER_ID, isUnread: true });
       const workItems = async (workId: string) =>
         (
           await repos.workChatFeed.queryPage({
@@ -304,8 +282,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const secondaryWorkList = await workItems("00000000-0000-4000-8000-000000000532");
       expect(archivedWorkList).toHaveLength(1);
       expect(secondaryWorkList).toHaveLength(1);
-      expect(archivedWorkList[0]?.attention).toBe("unread");
-      expect(secondaryWorkList[0]?.attention).toBe("unread");
 
       await db.execute(
         sql`UPDATE works SET deleted_at = clock_timestamp() WHERE id = '00000000-0000-4000-8000-000000000531'`,
@@ -332,10 +308,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId,
         userId: USER_ID,
         isFavorite: true,
-        isUnread: false,
+        acknowledgeOpen: true,
       });
       const [clockAfter] = await db.execute(sql`SELECT clock_timestamp() AS now`);
-      if (!first.lastOpenedAt) throw new Error("read mutation did not return lastOpenedAt");
+      if (!first.lastOpenedAt) throw new Error("open acknowledgement did not return lastOpenedAt");
       expect(new Date(first.lastOpenedAt).getTime()).toBeGreaterThanOrEqual(
         new Date((clockBefore as { now: string }).now).getTime(),
       );
@@ -343,29 +319,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         new Date((clockAfter as { now: string }).now).getTime(),
       );
 
-      const unread = await repos.threadUserState.update({
-        threadId,
-        userId: USER_ID,
-        isUnread: true,
-      });
       const favorite = await repos.threadUserState.update({
         threadId,
         userId: USER_ID,
         isFavorite: false,
       });
-      const owner = await repos.threadUserState.get(threadId, USER_ID);
-      expect(owner).toMatchObject({ isFavorite: false, manuallyUnread: true });
-      expect(owner.lastOpenedAt).toBe(first.lastOpenedAt);
-      expect([unread.attention, favorite.attention]).toContain("unread");
+      expect(favorite.lastOpenedAt).toBe(first.lastOpenedAt);
+      expect(await repos.threadUserState.get(threadId, USER_ID)).toEqual({
+        isFavorite: false,
+        lastOpenedAt: first.lastOpenedAt,
+      });
 
       await repos.threadUserState.update({ threadId, userId: OTHER_USER_ID, isFavorite: true });
-      expect(await repos.threadUserState.get(threadId, OTHER_USER_ID)).toMatchObject({
+      expect(await repos.threadUserState.get(threadId, OTHER_USER_ID)).toEqual({
         isFavorite: true,
-        manuallyUnread: false,
+        lastOpenedAt: null,
       });
-      expect(await repos.threadUserState.get(threadId, USER_ID)).toMatchObject({
+      expect(await repos.threadUserState.get(threadId, USER_ID)).toEqual({
         isFavorite: false,
-        manuallyUnread: true,
+        lastOpenedAt: first.lastOpenedAt,
       });
     });
 

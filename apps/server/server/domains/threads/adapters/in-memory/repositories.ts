@@ -169,7 +169,7 @@ export function createInMemoryRepositories(
   const workContextDeliveries = new Set<string>();
   const userStateByThreadUser = new Map<
     string,
-    { isFavorite: boolean; manuallyUnread: boolean; lastOpenedAt: string | null }
+    { isFavorite: boolean; lastOpenedAt: string | null }
   >();
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
@@ -238,7 +238,6 @@ export function createInMemoryRepositories(
       lastTurnStatus: latestTurn?.status ?? null,
       lastTurnAt: latestTurn ? (latestTurn.completedAt ?? latestTurn.createdAt) : null,
       lastOpenedAt: userState?.lastOpenedAt ?? null,
-      manuallyUnread: userState?.manuallyUnread ?? false,
       runningTurnId: runningTurn?.id ?? null,
     });
   }

@@ -26,7 +26,6 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
             t.created_at AS thread_created_at, t.active_leaf_turn_id,
             tw.work_id, w.name AS work_title,
             COALESCE(tus.is_favorite, false) AS is_favorite,
-            COALESCE(tus.manually_unread, false) AS manually_unread,
             tus.last_opened_at
           FROM threads t
           JOIN projects p ON p.id = t.project_id AND p.deleted_at IS NULL
@@ -65,7 +64,6 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
               headRole: sql`vh.role`,
               headStatus: sql`vh.status`,
               headActivityAt: sql`vh.activity_at`,
-              manuallyUnread: sql`e.manually_unread`,
               lastOpenedAt: sql`e.last_opened_at`,
             })} AS attention
           FROM eligible e LEFT JOIN visible_heads vh ON vh.thread_id = e.thread_id
