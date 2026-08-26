@@ -1,6 +1,12 @@
 import type { ListWorksResponse } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  type UseMutationResult,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
@@ -47,48 +53,86 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
 
 export function useWorkMutations(projectId: string) {
   const client = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: async (
-      action:
-        | { type: "create"; data: CreateWorkRequest }
-        | { type: "update"; workId: string; data: UpdateWorkRequest }
-        | { type: "archive" | "unarchive" | "delete"; workId: string },
-    ) => {
-      switch (action.type) {
-        case "create":
-          return createProjectWork(projectId, action.data);
-        case "update":
-          return updateWork(action.workId, action.data);
-        case "archive":
-          return archiveWork(action.workId);
-        case "unarchive":
-          return unarchiveWork(action.workId);
-        case "delete":
-          await deleteWork(action.workId);
-          return null;
-      }
-    },
-    onSuccess: (result, action) => {
-      if (result) {
-        client.setQueryData<ListWorksResponse>(projectQueryKeys.works(projectId), (current) => {
-          if (!current) return current;
-          const present = current.works.some((work) => work.id === result.id);
-          return {
-            ...current,
-            works: present
-              ? current.works.map((work) => (work.id === result.id ? result : work))
-              : [...current.works, result],
-          };
-        });
-      }
-      convergeWorkProjection(client, {
-        kind: "entity",
-        projectId,
-        operation: action.type,
-      });
-    },
+  const lifecycleScope = { id: `work-lifecycle:${projectId}` };
+  const create = useWorkCommand(
+    client,
+    projectId,
+    "create",
+    (data: CreateWorkRequest) => createProjectWork(projectId, data),
+    { projectResult: returnsWork },
+  );
+  const update = useWorkCommand(
+    client,
+    projectId,
+    "update",
+    ({ workId, data }: { workId: string; data: UpdateWorkRequest }) => updateWork(workId, data),
+    { projectResult: returnsWork },
+  );
+  const archive = useWorkCommand(client, projectId, "archive", archiveWork, {
+    projectResult: returnsWork,
+    scope: lifecycleScope,
   });
-  return mutation;
+  const unarchive = useWorkCommand(client, projectId, "unarchive", unarchiveWork, {
+    projectResult: returnsWork,
+    scope: lifecycleScope,
+  });
+  const remove = useWorkCommand(client, projectId, "delete", deleteWork, {
+    scope: lifecycleScope,
+  });
+  const commands = [create, update, archive, unarchive, remove] as const;
+  return {
+    create,
+    update,
+    archive,
+    unarchive,
+    delete: remove,
+    isPending: commands.some((command) => command.isPending),
+    error: commands.find((command) => command.error)?.error ?? null,
+    reset: () =>
+      commands.forEach((command) => {
+        command.reset();
+      }),
+  };
+}
+
+type WorkOperation = "create" | "update" | "archive" | "unarchive" | "delete";
+
+const returnsWork = (work: Work) => work;
+
+function useWorkCommand<TResult, TVariables>(
+  client: QueryClient,
+  projectId: string,
+  operation: WorkOperation,
+  command: (variables: TVariables) => Promise<TResult>,
+  options: { projectResult?: (result: TResult) => Work; scope?: { id: string } } = {},
+): UseMutationResult<TResult, Error, TVariables> {
+  return useMutation({
+    mutationFn: command,
+    scope: options.scope,
+    onSuccess: (result) =>
+      convergeWorkCommand(client, projectId, operation, options.projectResult?.(result)),
+  });
+}
+
+function convergeWorkCommand(
+  client: QueryClient,
+  projectId: string,
+  operation: WorkOperation,
+  result: Work | undefined,
+): void {
+  if (result) {
+    client.setQueryData<ListWorksResponse>(projectQueryKeys.works(projectId), (current) => {
+      if (!current) return current;
+      const present = current.works.some((work) => work.id === result.id);
+      return {
+        ...current,
+        works: present
+          ? current.works.map((work) => (work.id === result.id ? result : work))
+          : [...current.works, result],
+      };
+    });
+  }
+  convergeWorkProjection(client, { kind: "entity", projectId, operation });
 }
 
 export type UpdateWorkWriteModeMutationInput =

@@ -92,7 +92,15 @@ vi.mock("@/client/query/useProjectChatUserState", () => ({
 }));
 vi.mock("@/client/query/useWorks", () => ({
   useWorks: () => mocks.catalog,
-  useWorkMutations: () => mocks.metadata,
+  useWorkMutations: () => ({
+    update: mocks.metadata,
+    archive: mocks.lifecycle,
+    unarchive: mocks.lifecycle,
+    delete: mocks.lifecycle,
+    isPending: mocks.lifecycle.isPending,
+    error: mocks.lifecycle.error,
+    reset: mocks.lifecycle.reset,
+  }),
 }));
 
 const { WorkDetailScreen } = await import("./WorkDetailScreen");

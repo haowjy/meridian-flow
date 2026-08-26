@@ -12,8 +12,6 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => children,
 }));
-vi.mock("@/client/query/useWorks", () => ({ useWorks: vi.fn(), useWorkMutations: vi.fn() }));
-
 describe("WorkDialog lifecycle admission", () => {
   it("admits one action synchronously and exposes coarse-pointer targets", async () => {
     const action = vi.fn();

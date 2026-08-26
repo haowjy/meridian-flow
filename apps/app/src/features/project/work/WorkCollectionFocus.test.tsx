@@ -8,7 +8,15 @@ import type { WorkScreenProps } from "./WorkScreen";
 
 const mocks = vi.hoisted(() => ({
   catalog: { works: [] as Work[], isError: false, isFetching: false, refetch: vi.fn() },
-  mutation: { mutate: vi.fn(), isPending: false, error: null, reset: vi.fn() },
+  mutation: {
+    create: { mutate: vi.fn() },
+    archive: { mutate: vi.fn() },
+    unarchive: { mutate: vi.fn() },
+    delete: { mutate: vi.fn() },
+    isPending: false,
+    error: null,
+    reset: vi.fn(),
+  },
 }));
 
 vi.mock("@lingui/core/macro", () => ({
@@ -35,7 +43,7 @@ describe("Work collection lifecycle focus", () => {
       click("Manage Work A");
       click("Archive Work");
       expect(document.activeElement).not.toBe(document.body);
-      const options = mocks.mutation.mutate.mock.calls[0]?.[1];
+      const options = mocks.mutation.archive.mutate.mock.calls[0]?.[1];
       mocks.catalog.works = [{ ...work, status: "archived", archivedAt: "2026-08-15T01:00:00Z" }];
       await act(async () => options.onSuccess());
       expect(document.activeElement?.textContent).toContain("Archived Work");
@@ -50,7 +58,7 @@ describe("Work collection lifecycle focus", () => {
       click("Archived Work");
       click("Manage Work A");
       click("Unarchive Work");
-      const options = mocks.mutation.mutate.mock.calls[0]?.[1];
+      const options = mocks.mutation.unarchive.mutate.mock.calls[0]?.[1];
       expect(document.activeElement).not.toBe(button("Manage Work A"));
       mocks.catalog.works = [{ ...work, status: "active", archivedAt: null }];
       await act(async () => options.onSuccess());

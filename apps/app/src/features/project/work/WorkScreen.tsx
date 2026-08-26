@@ -261,19 +261,45 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                   status: action.type === "archive" ? "archived" : "active",
                 };
               }
-              mutation.mutate(action, {
-                onSuccess: (result) => {
-                  setDialog(null);
-                  if (deletionFocus) {
-                    focusHandled.current = false;
-                    setFocusIntent(deletionFocus);
-                  }
-                  if (action.type === "create" && result) openWork(result);
-                },
-                onError: () => {
-                  lifecycleFocus.current = null;
-                },
-              });
+              const onLifecycleSuccess = () => {
+                setDialog(null);
+                if (deletionFocus) {
+                  focusHandled.current = false;
+                  setFocusIntent(deletionFocus);
+                }
+              };
+              const onError = () => {
+                lifecycleFocus.current = null;
+              };
+              switch (action.type) {
+                case "create":
+                  mutation.create.mutate(action.data, {
+                    onSuccess: (result) => {
+                      setDialog(null);
+                      openWork(result);
+                    },
+                    onError,
+                  });
+                  break;
+                case "archive":
+                  mutation.archive.mutate(action.workId, {
+                    onSuccess: onLifecycleSuccess,
+                    onError,
+                  });
+                  break;
+                case "unarchive":
+                  mutation.unarchive.mutate(action.workId, {
+                    onSuccess: onLifecycleSuccess,
+                    onError,
+                  });
+                  break;
+                case "delete":
+                  mutation.delete.mutate(action.workId, {
+                    onSuccess: onLifecycleSuccess,
+                    onError,
+                  });
+                  break;
+              }
             }}
           />
         ) : null}

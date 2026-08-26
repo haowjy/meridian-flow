@@ -52,12 +52,9 @@ export function WorkDetailScreen({
   onOpenThread,
   catalogWorks = [work],
 }: WorkDetailScreenProps) {
-  const metadataMutation = useWorkMutations(projectId);
-  const lifecycleMutation = useWorkMutations(projectId);
-  const controller = useWorkMetadataController(
-    work,
-    (data) =>
-      metadataMutation.mutateAsync({ type: "update", workId: work.id, data }) as Promise<Work>,
+  const mutations = useWorkMutations(projectId);
+  const controller = useWorkMetadataController(work, (data) =>
+    mutations.update.mutateAsync({ workId: work.id, data }),
   );
   const [manage, setManage] = useState(false);
   const manageButton = useRef<HTMLButtonElement>(null);
@@ -112,7 +109,7 @@ export function WorkDetailScreen({
                     controller.request({
                       label: t`Manage Work`,
                       run: () => {
-                        lifecycleMutation.reset();
+                        mutations.reset();
                         setManage(true);
                       },
                     })
@@ -165,16 +162,18 @@ export function WorkDetailScreen({
         {manage ? (
           <WorkDialog
             work={controller.work}
-            pending={lifecycleMutation.isPending}
-            error={lifecycleMutation.error}
+            pending={mutations.isPending}
+            error={mutations.error}
             onClose={() => {
-              if (!lifecycleMutation.isPending) {
-                lifecycleMutation.reset();
+              if (!mutations.isPending) {
+                mutations.reset();
                 setManage(false);
               }
             }}
-            onAction={(action) =>
-              lifecycleMutation.mutate(action, {
+            onAction={(action) => {
+              if (action.type === "create") return;
+              const mutation = mutations[action.type];
+              mutation.mutate(action.workId, {
                 onSuccess: () => {
                   setManage(false);
                   if (action.type === "delete") {
@@ -185,8 +184,8 @@ export function WorkDetailScreen({
                     void routeCommands.closeWork({ replace: true });
                   } else requestAnimationFrame(() => manageButton.current?.focus());
                 },
-              })
-            }
+              });
+            }}
           />
         ) : null}
         <DirtyDecision controller={controller} />
