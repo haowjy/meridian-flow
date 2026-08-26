@@ -1,23 +1,21 @@
 import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { parseExplicitWork, resolveRouteWork } from "@/features/project/routing/project-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const api = vi.hoisted(() => ({
   listProjectWorks: vi.fn(),
   createProjectWork: vi.fn(),
+  updateWork: vi.fn(),
+  archiveWork: vi.fn(),
+  unarchiveWork: vi.fn(),
+  deleteWork: vi.fn(),
   updateWorkWriteMode: vi.fn(),
 }));
 
-vi.mock("@/client/api/projects-api", () => ({
-  ...api,
-  archiveWork: vi.fn(),
-  deleteWork: vi.fn(),
-  unarchiveWork: vi.fn(),
-  updateWork: vi.fn(),
-}));
+vi.mock("@/client/api/projects-api", () => api);
 vi.mock("@/client/stores", () => ({
   useIsProjectPendingCreation: () => false,
 }));
@@ -85,7 +83,24 @@ describe("Work client queries", () => {
         </QueryClientProvider>,
         async () => {
           await act(async () => {
-            await state.value?.mutateAsync(action);
+            if (!state.value) throw new Error("mutation commands did not mount");
+            switch (action.type) {
+              case "create":
+                await state.value.create.mutateAsync(action.data);
+                break;
+              case "update":
+                await state.value.update.mutateAsync({ workId: action.workId, data: action.data });
+                break;
+              case "archive":
+                await state.value.archive.mutateAsync(action.workId);
+                break;
+              case "unarchive":
+                await state.value.unarchive.mutateAsync(action.workId);
+                break;
+              case "delete":
+                await state.value.delete.mutateAsync(action.workId);
+                break;
+            }
           });
           expect(client.getQueryState(homeKey)?.isInvalidated).toBe(true);
           expect(client.getQueryState(associated)?.isInvalidated).toBe(action.type !== "create");
@@ -117,7 +132,7 @@ describe("Work client queries", () => {
       </QueryClientProvider>,
       async () => {
         await act(async () => {
-          await state.value?.mutateAsync({ type: "create", data: { name: "New Work" } });
+          await state.value?.create.mutateAsync({ name: "New Work" });
         });
         const catalog = client.getQueryData<{
           works: (typeof created)[];
@@ -132,6 +147,106 @@ describe("Work client queries", () => {
           }).status,
         ).toBe("present");
       },
+    );
+    client.clear();
+  });
+
+  it("preserves each command's truthful result type and runtime value", async () => {
+    type Commands = ReturnType<typeof useWorkMutations>;
+    expectTypeOf<ReturnType<Commands["create"]["mutateAsync"]>>().toEqualTypeOf<Promise<Work>>();
+    expectTypeOf<ReturnType<Commands["update"]["mutateAsync"]>>().toEqualTypeOf<Promise<Work>>();
+    expectTypeOf<ReturnType<Commands["archive"]["mutateAsync"]>>().toEqualTypeOf<Promise<Work>>();
+    expectTypeOf<ReturnType<Commands["unarchive"]["mutateAsync"]>>().toEqualTypeOf<Promise<Work>>();
+    expectTypeOf<ReturnType<Commands["delete"]["mutateAsync"]>>().toEqualTypeOf<Promise<void>>();
+    expectTypeOf<Commands["create"]>().not.toHaveProperty("reset");
+
+    const created = { id: "work-created", name: "Created" } as Work;
+    const updated = { id: "work-updated", name: "Updated" } as Work;
+    const archived = { id: "work-archived", status: "archived" } as Work;
+    const unarchived = { id: "work-unarchived", status: "active" } as Work;
+    api.createProjectWork.mockResolvedValue(created);
+    api.updateWork.mockResolvedValue(updated);
+    api.archiveWork.mockResolvedValue(archived);
+    api.unarchiveWork.mockResolvedValue(unarchived);
+    api.deleteWork.mockResolvedValue(undefined);
+    const client = new QueryClient();
+    const state: { value: Commands | null } = { value: null };
+    function Harness() {
+      state.value = useWorkMutations("project-1");
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        if (!state.value) throw new Error("mutation commands did not mount");
+        await expect(state.value.create.mutateAsync({ name: "Created" })).resolves.toBe(created);
+        await expect(
+          state.value.update.mutateAsync({ workId: "work-updated", data: { name: "Updated" } }),
+        ).resolves.toBe(updated);
+        await expect(state.value.archive.mutateAsync("work-archived")).resolves.toBe(archived);
+        await expect(state.value.unarchive.mutateAsync("work-unarchived")).resolves.toBe(
+          unarchived,
+        );
+        await expect(state.value.delete.mutateAsync("work-deleted")).resolves.toBeUndefined();
+      },
+    );
+    client.clear();
+  });
+
+  it("keeps same-turn lifecycle admissions pending while their shared scope serializes them", async () => {
+    let finishArchive!: (work: Work) => void;
+    let finishDelete!: () => void;
+    const archived = { id: "work-1", status: "archived" } as Work;
+    api.archiveWork.mockImplementation(
+      () => new Promise<Work>((resolve) => (finishArchive = resolve)),
+    );
+    api.deleteWork.mockImplementation(
+      () => new Promise<void>((resolve) => (finishDelete = resolve)),
+    );
+    const client = new QueryClient();
+    const state: { value: ReturnType<typeof useWorkMutations> | null } = { value: null };
+    function Harness() {
+      state.value = useWorkMutations("project-1");
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        if (!state.value) throw new Error("mutation commands did not mount");
+        const commands = state.value;
+        let archivePromise!: Promise<Work>;
+        let deletePromise!: Promise<void>;
+        act(() => {
+          archivePromise = commands.archive.mutateAsync("work-1");
+          deletePromise = commands.delete.mutateAsync("work-1");
+        });
+        await flush();
+
+        expect(api.archiveWork).toHaveBeenCalledOnce();
+        expect(api.deleteWork).not.toHaveBeenCalled();
+        expect(state.value?.archive.isPending).toBe(true);
+        expect(state.value?.delete.isPending).toBe(true);
+        expect(state.value?.isPending).toBe(true);
+
+        finishArchive(archived);
+        await expect(archivePromise).resolves.toBe(archived);
+        await flush();
+        expect(api.deleteWork).toHaveBeenCalledOnce();
+        expect(state.value?.archive.isPending).toBe(false);
+        expect(state.value?.delete.isPending).toBe(true);
+        expect(state.value?.isPending).toBe(true);
+
+        finishDelete();
+        await expect(deletePromise).resolves.toBeUndefined();
+        await flush();
+        expect(state.value?.delete.isPending).toBe(false);
+        expect(state.value?.isPending).toBe(false);
+      },
+      { drainMacrotask: true },
     );
     client.clear();
   });

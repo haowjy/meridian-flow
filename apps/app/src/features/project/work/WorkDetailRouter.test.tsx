@@ -44,9 +44,10 @@ vi.mock("@/client/query/useWorkThreads", () => ({
 }));
 vi.mock("@/client/query/useWorks", () => ({
   useWorkMutations: () => ({
-    mutateAsync: save,
-    mutate: vi.fn(),
-    reset: vi.fn(),
+    update: { mutateAsync: save },
+    archive: { mutate: vi.fn() },
+    unarchive: { mutate: vi.fn() },
+    delete: { mutate: vi.fn() },
     isPending: false,
     error: null,
   }),
@@ -119,7 +120,6 @@ describe("Work detail mounted router blocking", () => {
       expect(router.state.location.pathname).toBe("/collection");
       expect(save).toHaveBeenCalledOnce();
       expect(save).toHaveBeenCalledWith({
-        type: "update",
         workId: fixture().id,
         data: { goal: "Saved goal" },
       });

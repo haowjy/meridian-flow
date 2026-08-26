@@ -33,14 +33,12 @@ const mocks = vi.hoisted(() => ({
     mutateAsync: vi.fn(),
     isPending: false,
     error: null,
-    reset: vi.fn(),
     mutate: vi.fn(),
   },
   lifecycle: {
     mutateAsync: vi.fn(),
     isPending: false,
     error: null,
-    reset: vi.fn(),
     mutate: vi.fn(),
   },
   catalog: {
@@ -92,7 +90,14 @@ vi.mock("@/client/query/useProjectChatUserState", () => ({
 }));
 vi.mock("@/client/query/useWorks", () => ({
   useWorks: () => mocks.catalog,
-  useWorkMutations: () => mocks.metadata,
+  useWorkMutations: () => ({
+    update: mocks.metadata,
+    archive: mocks.lifecycle,
+    unarchive: mocks.lifecycle,
+    delete: mocks.lifecycle,
+    isPending: mocks.lifecycle.isPending,
+    error: mocks.lifecycle.error,
+  }),
 }));
 
 const { WorkDetailScreen } = await import("./WorkDetailScreen");

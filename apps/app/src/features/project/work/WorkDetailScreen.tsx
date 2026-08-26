@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkAssociatedChats } from "./WorkAssociatedChats";
-import { WorkDialog } from "./WorkDialog";
+import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
 import {
   useWorkMetadataController,
   WorkMetadata,
@@ -52,14 +52,12 @@ export function WorkDetailScreen({
   onOpenThread,
   catalogWorks = [work],
 }: WorkDetailScreenProps) {
-  const metadataMutation = useWorkMutations(projectId);
-  const lifecycleMutation = useWorkMutations(projectId);
-  const controller = useWorkMetadataController(
-    work,
-    (data) =>
-      metadataMutation.mutateAsync({ type: "update", workId: work.id, data }) as Promise<Work>,
+  const mutations = useWorkMutations(projectId);
+  const controller = useWorkMetadataController(work, (data) =>
+    mutations.update.mutateAsync({ workId: work.id, data }),
   );
   const [manage, setManage] = useState(false);
+  const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
   const manageButton = useRef<HTMLButtonElement>(null);
   const scrollOwner = useRef<HTMLDivElement>(null);
   const blocker = useBlocker({
@@ -112,7 +110,7 @@ export function WorkDetailScreen({
                     controller.request({
                       label: t`Manage Work`,
                       run: () => {
-                        lifecycleMutation.reset();
+                        setActiveCommand(null);
                         setManage(true);
                       },
                     })
@@ -165,16 +163,19 @@ export function WorkDetailScreen({
         {manage ? (
           <WorkDialog
             work={controller.work}
-            pending={lifecycleMutation.isPending}
-            error={lifecycleMutation.error}
+            pending={mutations.isPending}
+            error={activeCommand ? mutations[activeCommand].error : null}
             onClose={() => {
-              if (!lifecycleMutation.isPending) {
-                lifecycleMutation.reset();
+              if (!mutations.isPending) {
+                setActiveCommand(null);
                 setManage(false);
               }
             }}
-            onAction={(action) =>
-              lifecycleMutation.mutate(action, {
+            onAction={(action) => {
+              if (action.type === "create") return;
+              setActiveCommand(action.type);
+              const mutation = mutations[action.type];
+              mutation.mutate(action.workId, {
                 onSuccess: () => {
                   setManage(false);
                   if (action.type === "delete") {
@@ -185,8 +186,8 @@ export function WorkDetailScreen({
                     void routeCommands.closeWork({ replace: true });
                   } else requestAnimationFrame(() => manageButton.current?.focus());
                 },
-              })
-            }
+              });
+            }}
           />
         ) : null}
         <DirtyDecision controller={controller} />

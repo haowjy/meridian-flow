@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { WorkCard } from "./WorkCard";
 import { WorkDetailScreen } from "./WorkDetailScreen";
-import { WorkDialog } from "./WorkDialog";
+import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
 import { WorkResourceError } from "./WorkResourceState";
 import {
   focusAfterDelete,
@@ -61,6 +61,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   const { works, isError, isFetching, refetch } = useWorks(projectId);
   const mutation = useWorkMutations(projectId);
   const [dialog, setDialog] = useState<"new" | Work | null>(null);
+  const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const newWorkButton = useRef<HTMLButtonElement>(null);
@@ -116,6 +117,10 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
     const workId = parseRequestId(work.id);
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
   };
+  const openDialog = (work: "new" | Work) => {
+    setActiveCommand(null);
+    setDialog(work);
+  };
   const hrefFor = (work: Work) => {
     const workId = parseRequestId(work.id);
     return workId ? routeCommands.workHref({ kind: "work-detail", workId }) : "?screen=work";
@@ -131,7 +136,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
             ref={newWorkButton}
             size="sm"
             className="[@media(pointer:coarse)]:min-h-11"
-            onClick={() => setDialog("new")}
+            onClick={() => openDialog("new")}
           >
             <Plus className="size-4" />
             <Trans>New Work</Trans>
@@ -167,7 +172,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                           event.preventDefault();
                           openWork(work);
                         }}
-                        onLifecycle={() => setDialog(work)}
+                        onLifecycle={() => openDialog(work)}
                         registerOpenFocus={(node) => {
                           if (node) openRefs.current.set(work.id, node);
                           else openRefs.current.delete(work.id);
@@ -225,7 +230,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                             event.preventDefault();
                             openWork(work);
                           }}
-                          onLifecycle={() => setDialog(work)}
+                          onLifecycle={() => openDialog(work)}
                           registerOpenFocus={(node) => {
                             if (node) openRefs.current.set(work.id, node);
                             else openRefs.current.delete(work.id);
@@ -247,12 +252,13 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
           <WorkDialog
             work={dialog}
             pending={mutation.isPending}
-            error={mutation.error}
+            error={activeCommand ? mutation[activeCommand].error : null}
             onClose={() => {
-              mutation.reset();
+              setActiveCommand(null);
               setDialog(null);
             }}
             onAction={(action) => {
+              setActiveCommand(action.type);
               const deletionFocus =
                 action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
               if (action.type === "archive" || action.type === "unarchive") {
@@ -261,19 +267,45 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                   status: action.type === "archive" ? "archived" : "active",
                 };
               }
-              mutation.mutate(action, {
-                onSuccess: (result) => {
-                  setDialog(null);
-                  if (deletionFocus) {
-                    focusHandled.current = false;
-                    setFocusIntent(deletionFocus);
-                  }
-                  if (action.type === "create" && result) openWork(result);
-                },
-                onError: () => {
-                  lifecycleFocus.current = null;
-                },
-              });
+              const onLifecycleSuccess = () => {
+                setDialog(null);
+                if (deletionFocus) {
+                  focusHandled.current = false;
+                  setFocusIntent(deletionFocus);
+                }
+              };
+              const onError = () => {
+                lifecycleFocus.current = null;
+              };
+              switch (action.type) {
+                case "create":
+                  mutation.create.mutate(action.data, {
+                    onSuccess: (result) => {
+                      setDialog(null);
+                      openWork(result);
+                    },
+                    onError,
+                  });
+                  break;
+                case "archive":
+                  mutation.archive.mutate(action.workId, {
+                    onSuccess: onLifecycleSuccess,
+                    onError,
+                  });
+                  break;
+                case "unarchive":
+                  mutation.unarchive.mutate(action.workId, {
+                    onSuccess: onLifecycleSuccess,
+                    onError,
+                  });
+                  break;
+                case "delete":
+                  mutation.delete.mutate(action.workId, {
+                    onSuccess: onLifecycleSuccess,
+                    onError,
+                  });
+                  break;
+              }
             }}
           />
         ) : null}

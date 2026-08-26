@@ -1,8 +1,7 @@
 /** Work creation and lifecycle dialog; each mount owns one open form session. */
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/works";
+import type { CreateWorkRequest, Work } from "@meridian/contracts/works";
 import { useEffect, useRef, useState } from "react";
-import type { useWorkMutations } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-type WorkAction = Parameters<ReturnType<typeof useWorkMutations>["mutate"]>[0];
+export type WorkDialogAction =
+  | { type: "create"; data: CreateWorkRequest }
+  | { type: "archive" | "unarchive" | "delete"; workId: string };
 
 export function WorkDialog({
   work,
@@ -26,7 +27,7 @@ export function WorkDialog({
   pending: boolean;
   error: Error | null;
   onClose: () => void;
-  onAction: (action: WorkAction) => void;
+  onAction: (action: WorkDialogAction) => void;
 }) {
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
