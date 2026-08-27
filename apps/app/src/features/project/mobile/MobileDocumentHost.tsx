@@ -24,6 +24,7 @@ import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { contextRemovalCoordinator } from "../context/context-removal-coordinator";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { findContextFile } from "../context/context-tree";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
 
 const EditorView = lazy(() =>
   import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
@@ -45,6 +46,7 @@ export function MobileDocumentHost({
   activeContextPath,
 }: MobileDocumentHostProps) {
   const workId = editorWorkId;
+  const removalState = useContextRemovalProject(projectId);
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
   const { tree, isError, isFetching } = useProjectContextTree(
@@ -63,7 +65,7 @@ export function MobileDocumentHost({
 
   useEffect(() => {
     if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null) return;
-    const selection = contextRemovalCoordinator.getRouteSelection(projectId);
+    const selection = removalState.selection;
     if (selection.status !== "pending") return;
     if (
       selection.locator.scheme !== activeContextScheme ||
@@ -86,6 +88,7 @@ export function MobileDocumentHost({
     hasRouteDocument,
     isFetching,
     projectId,
+    removalState.selection,
     tree,
     workId,
   ]);

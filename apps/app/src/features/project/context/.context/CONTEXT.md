@@ -233,7 +233,7 @@ replaces a pending one; Escape/blur semantics are the shared
 Deleting a file in `manuscript://` only refetches that scheme's tree for
 presentation metadata. Tree absence never proves document removal. The exact
 successful mutation result is the deletion evidence that the removal coordinator
-will consume when live callers converge.
+consumes before the tree invalidation can affect presentation.
 
 ## Downlinks
 

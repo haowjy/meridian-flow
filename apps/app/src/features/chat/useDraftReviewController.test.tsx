@@ -48,9 +48,9 @@ vi.mock("@/client/api/drafts-api", () => ({
 }));
 vi.mock("@/features/project/context/context-removal-coordinator", () => ({
   contextRemovalCoordinator: {
-    resolveDraftApply: (...args: unknown[]) => resolveDraftOnlyTabMock(...args, "committed"),
-    executeContextRemoval: (_projectId: string, intent: { documentIds: string[] }) => {
-      resolveDraftOnlyTabMock(_projectId, "work-1", intent.documentIds[0], "discarded");
+    applyDraftMetadata: (...args: unknown[]) => resolveDraftOnlyTabMock(...args, "committed"),
+    discardDraft: (_projectId: string, reviewWorkId: string, documentId: string) => {
+      resolveDraftOnlyTabMock(_projectId, reviewWorkId, documentId, "discarded");
       return Promise.resolve({ kind: "noop" });
     },
   },

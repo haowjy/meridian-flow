@@ -236,17 +236,14 @@ export function useDraftReviewController(
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
-      contextRemovalCoordinator.resolveDraftApply(projectId, workId, documentId);
+      contextRemovalCoordinator.applyDraftMetadata(projectId, workId, documentId);
     },
     draftFailed: (selection, code) => {
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
       dispatch({ type: "discardSucceeded", draftId });
-      void contextRemovalCoordinator.executeContextRemoval(projectId, {
-        cause: "draft-discard",
-        documentIds: [documentId],
-      });
+      void contextRemovalCoordinator.discardDraft(projectId, workId, documentId);
     },
   };
 

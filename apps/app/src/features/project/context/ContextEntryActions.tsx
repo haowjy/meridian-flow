@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
+import { contextRemovalCoordinator } from "./context-removal-coordinator";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -262,11 +263,12 @@ export function useDeleteConfirmation({
   const confirm = useCallback(async () => {
     if (!target) return;
     try {
-      await mutation.mutateAsync({ path: target.path, workId: target.workId });
+      const result = await mutation.mutateAsync({ path: target.path, workId: target.workId });
+      await contextRemovalCoordinator.acknowledgedDelete(projectId, result.deletedDocumentIds);
     } finally {
       setTarget(null);
     }
-  }, [target, mutation]);
+  }, [projectId, target, mutation]);
 
   return { target, isPending: mutation.isPending, requestDelete, cancel, confirm };
 }

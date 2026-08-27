@@ -13,7 +13,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabsStore } from "@/client/stores";
@@ -35,10 +35,8 @@ import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { resolveCatalogWork } from "./catalog-work-resolution";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { useResolvedChatThread } from "./chat/chat-thread-resolution";
-import {
-  type ContextRemovalRoutePort,
-  contextRemovalCoordinator,
-} from "./context/context-removal-coordinator";
+import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
 import {
@@ -227,7 +225,14 @@ export function ProjectView(props: ProjectViewProps) {
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <ProjectContextRemovalController {...resolvedProps}>
+        <ProjectContextRemovalController
+          projectId={props.projectId}
+          activeScreen={props.activeScreen}
+          activeContextScheme={props.activeContextScheme}
+          activeContextPath={props.activeContextPath}
+          editorWorkId={editorWorkId}
+          route={props.contextRemovalRoute}
+        >
           <HydratedReviewProject
             {...resolvedProps}
             chatWorkId={chatWorkId}
@@ -237,45 +242,6 @@ export function ProjectView(props: ProjectViewProps) {
       ) : null}
     </div>
   );
-}
-
-function ProjectContextRemovalController({
-  projectId,
-  activeScreen,
-  activeContextScheme,
-  activeContextPath,
-  editorWorkId,
-  contextRemovalRoute,
-  children,
-}: ResolvedProjectViewProps & { children: React.ReactNode }) {
-  const [, publishSelectionRevision] = useState(0);
-  useLayoutEffect(
-    () => contextRemovalCoordinator.registerRoutePort(projectId, contextRemovalRoute),
-    [contextRemovalRoute, projectId],
-  );
-  useLayoutEffect(() => {
-    if (activeScreen !== "context" || activeContextScheme === null || activeContextPath === null) {
-      contextRemovalCoordinator.clearRouteSelection(projectId);
-      publishSelectionRevision((revision) => revision + 1);
-      return;
-    }
-    const locator = {
-      scheme: activeContextScheme,
-      path: activeContextPath,
-      workId: editorWorkId,
-    };
-    const current = contextRemovalCoordinator.getRouteSelection(projectId);
-    if (
-      current.status !== "none" &&
-      current.locator.scheme === locator.scheme &&
-      current.locator.path === locator.path &&
-      current.locator.workId === locator.workId
-    )
-      return;
-    contextRemovalCoordinator.beginRouteSelection(projectId, locator);
-    publishSelectionRevision((revision) => revision + 1);
-  }, [activeContextPath, activeContextScheme, activeScreen, editorWorkId, projectId]);
-  return children;
 }
 
 export type ResolvedProjectViewProps = ProjectViewProps & {

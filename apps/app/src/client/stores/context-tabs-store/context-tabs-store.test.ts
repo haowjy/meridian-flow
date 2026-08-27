@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useContextTabsStore } from "./context-tabs-store";
+import {
+  commitDraftApplyMetadata,
+  commitPlannedContextRemoval,
+  useContextTabsStore,
+} from "./context-tabs-store";
 
 describe("context tabs draft-only lifecycle", () => {
   beforeEach(() => {
@@ -20,10 +24,10 @@ describe("context tabs draft-only lifecycle", () => {
     const store = useContextTabsStore.getState();
     store.openTab("project-1", trackedTab(true));
 
-    store.resolveDraftOnlyTabCommitted("project-1", "work-b", "document-1");
+    commitDraftApplyMetadata("project-1", "work-b", "document-1");
     expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([trackedTab(true)]);
 
-    store.resolveDraftOnlyTabCommitted("project-1", "work-a", "document-1");
+    commitDraftApplyMetadata("project-1", "work-a", "document-1");
     expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([
       trackedTab(false),
     ]);
@@ -48,7 +52,7 @@ describe("context tab identity and removal commits", () => {
       activeTabId: "replacement",
     });
     expect(
-      store.commitContextRemoval("project-1", {
+      commitPlannedContextRemoval("project-1", {
         documentIds: ["old"],
         activeTabId: "replacement",
       }),
@@ -67,7 +71,7 @@ describe("context tab identity and removal commits", () => {
     ]);
     store.selectTab("project-1", "b");
 
-    const removed = store.commitContextRemoval("project-1", {
+    const removed = commitPlannedContextRemoval("project-1", {
       documentIds: ["a", "b"],
       activeTabId: "c",
     });

@@ -10,9 +10,6 @@
  * Lifecycle:
  *  - `openTab` adds the tab if missing (idempotent — clicking a tree row that
  *    is already open just refreshes its metadata).
- *  - `closeTab` removes the tab and returns the right-hand neighbour (or the
- *    left-hand neighbour when the right side is empty) so the route owner can
- *    choose where `?path=` should move when the closed tab was active.
  *  - `reorderTabs` moves a tab to a new index.
  *
  * The ordered per-project desk is persisted device-locally. Project entry
@@ -84,21 +81,8 @@ type ContextTabsActions = {
     documentId: string,
     metadata: Partial<Extract<ContextTab, { kind: "tracked" }>>,
   ) => void;
-  /** Commit one already-planned live removal without an intermediate desk state. */
-  commitContextRemoval: (
-    projectId: string,
-    input: { documentIds: readonly string[]; activeTabId: string | null },
-  ) => ContextTab[];
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
   selectTab: (projectId: string, documentId: string | null) => void;
-  /** Draft apply is a metadata transition; discard belongs to the removal coordinator. */
-  resolveDraftOnlyTabCommitted: (
-    projectId: string,
-    reviewWorkId: string,
-    documentId: string,
-  ) => void;
-  /** Clear every tab for a project — used when the project is deleted. */
-  clearProject: (projectId: string) => void;
   /** Replace a project's desk without selecting a tab. */
   replaceTabs: (projectId: string, tabs: ContextTab[]) => void;
   /** Reconcile an async validation snapshot without clobbering tabs opened meanwhile. */
@@ -224,7 +208,7 @@ function resolveCommittedDraftMetadata(
 
 export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>()(
   devtools(
-    (set, get) => ({
+    (set) => ({
       byProject: {},
       _deskHydrated: false,
 
@@ -280,33 +264,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         });
       },
 
-      commitContextRemoval: (projectId, input) => {
-        const documentIds = new Set(input.documentIds);
-        const slice = sliceFor(get(), projectId);
-        const removed = slice.tabs.filter((tab) => documentIds.has(tab.documentId));
-        if (removed.length === 0 && slice.activeTabId === input.activeTabId) return [];
-        set((state) => {
-          const current = sliceFor(state, projectId);
-          const tabs = current.tabs.filter((tab) => !documentIds.has(tab.documentId));
-          const activeTabId = tabs.some((tab) => tab.documentId === input.activeTabId)
-            ? input.activeTabId
-            : null;
-          return patchSlice(state, projectId, { tabs, activeTabId });
-        });
-        return removed;
-      },
-
-      resolveDraftOnlyTabCommitted: (projectId, reviewWorkId, documentId) => {
-        set((state) => {
-          const resolved = resolveCommittedDraftMetadata(
-            sliceFor(state, projectId),
-            reviewWorkId,
-            documentId,
-          );
-          return resolved ? patchSlice(state, projectId, resolved) : state;
-        });
-      },
-
       reorderTabs: (projectId, fromIndex, toIndex) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
@@ -330,14 +287,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         set((state) => {
           const slice = sliceFor(state, projectId);
           return patchSlice(state, projectId, { ...slice, activeTabId: documentId });
-        });
-      },
-
-      clearProject: (projectId) => {
-        set((state) => {
-          if (!state.byProject[projectId]) return state;
-          const { [projectId]: _removed, ...rest } = state.byProject;
-          return { ...state, byProject: rest };
         });
       },
 
@@ -383,6 +332,42 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
   ),
 );
 
+/** Coordinator-only atomic desk commit. Live feature callers use named coordinator commands. */
+export function commitPlannedContextRemoval(
+  projectId: string,
+  input: { documentIds: readonly string[]; activeTabId: string | null },
+): ContextTab[] {
+  const documentIds = new Set(input.documentIds);
+  const slice = sliceFor(useContextTabsStore.getState(), projectId);
+  const removed = slice.tabs.filter((tab) => documentIds.has(tab.documentId));
+  if (removed.length === 0 && slice.activeTabId === input.activeTabId) return [];
+  useContextTabsStore.setState((state) => {
+    const current = sliceFor(state, projectId);
+    const tabs = current.tabs.filter((tab) => !documentIds.has(tab.documentId));
+    const activeTabId = tabs.some((tab) => tab.documentId === input.activeTabId)
+      ? input.activeTabId
+      : null;
+    return patchSlice(state, projectId, { tabs, activeTabId });
+  });
+  return removed;
+}
+
+/** Coordinator-only draft metadata commit; discard is a distinct removal command. */
+export function commitDraftApplyMetadata(
+  projectId: string,
+  reviewWorkId: string,
+  documentId: string,
+): void {
+  useContextTabsStore.setState((state) => {
+    const resolved = resolveCommittedDraftMetadata(
+      sliceFor(state, projectId),
+      reviewWorkId,
+      documentId,
+    );
+    return resolved ? patchSlice(state, projectId, resolved) : state;
+  });
+}
+
 /** Selector helper — returns the tab slice for a project (stable empty default). */
 export function useContextTabs(projectId: string): ProjectTabsSlice {
   return useContextTabsStore(useShallow((s) => s.byProject[projectId] ?? EMPTY_SLICE));
@@ -423,11 +408,8 @@ export function useContextTabsActions(): ContextTabsActions {
       remintNewTab: s.remintNewTab,
       materializeNewTab: s.materializeNewTab,
       updateTrackedTab: s.updateTrackedTab,
-      commitContextRemoval: s.commitContextRemoval,
       reorderTabs: s.reorderTabs,
       selectTab: s.selectTab,
-      resolveDraftOnlyTabCommitted: s.resolveDraftOnlyTabCommitted,
-      clearProject: s.clearProject,
       replaceTabs: s.replaceTabs,
       reconcileTabs: s.reconcileTabs,
     })),

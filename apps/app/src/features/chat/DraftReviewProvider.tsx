@@ -150,16 +150,17 @@ function useDraftReviewScopeOwner(
           ) ?? [];
         if (currentDrafts.some((draft) => draft.documentId === activeSelection.documentId)) return;
         if (findContextFileByDocumentId(tree, activeSelection.documentId)) {
-          contextRemovalCoordinator.resolveDraftApply(
+          contextRemovalCoordinator.applyDraftMetadata(
             projectId,
             workId,
             activeSelection.documentId,
           );
         } else {
-          void contextRemovalCoordinator.executeContextRemoval(projectId, {
-            cause: "draft-discard",
-            documentIds: [activeSelection.documentId],
-          });
+          void contextRemovalCoordinator.discardDraft(
+            projectId,
+            workId,
+            activeSelection.documentId,
+          );
         }
       })
       // A failed membership check must leave the tab intact rather than guess

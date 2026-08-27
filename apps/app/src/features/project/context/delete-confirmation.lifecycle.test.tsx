@@ -4,7 +4,7 @@ import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
-const deleted = vi.fn(async () => ({ status: "deleted" as const }));
+const deleted = vi.fn(async () => ({ status: "deleted" as const, deletedDocumentIds: [] }));
 
 vi.mock("@/client/api/projects-api", () => ({ deleteContextEntry: deleted }));
 

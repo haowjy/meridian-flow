@@ -29,6 +29,10 @@ import {
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
 import {
+  configureContextRemovalAccount,
+  resetContextRemovalForHydration,
+} from "@/features/project/context/context-removal-coordinator";
+import {
   getUntitledReconciler,
   isUntitledPending,
   syncUntitledReceiptOwners,
@@ -134,6 +138,7 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
+  configureContextRemovalAccount(user.userId);
   configureDocumentSessionUser(user.userId);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
@@ -173,6 +178,7 @@ function AuthenticatedProviderTree({
     untitledReconciler.rehydrate();
     untitledReconciler.start();
     rehydrateContextDesks(user.userId, isUntitledPending);
+    resetContextRemovalForHydration();
     syncUntitledReceiptOwners();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();

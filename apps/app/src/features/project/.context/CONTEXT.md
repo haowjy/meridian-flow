@@ -218,10 +218,9 @@ Two rules keep this stable:
   (`useProjectLayout`). Do not add a second whole-prefs subscription — that
   redundant subscription was part of the original cascade.
 
-Related: `ContextPaneController`'s route-tab auto-open guard **re-arms** once the
-route stops needing a tab (`openedKeyRef` cleared when `!needsRouteTab`), so
-close-then-reopen of the same file works and the guard can't re-enter the
-hydration cascade.
+Related: the project removal coordinator publishes a revisioned auto-open block.
+`ContextPaneController` consumes that external-store snapshot, so a removal blocks
+same-render resurrection and a later route revision re-arms ordinary opening.
 
 ## Screen routing & controllers
 
@@ -242,8 +241,10 @@ TanStack Router adapter. Collection/detail leaves receive targets and commands
 rather than parsing or mutating search themselves.
 
 The **Editor** destination retains `ContextPaneController` as its implementation
-name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
-projection, close fallbacks, scroll restoration, and screen-entry defaults:
+name. It owns route-validated opens, temporary-tab projection, scroll restoration,
+and screen-entry defaults. The platform-neutral project adapter owns revision
+startup and Work pruning; the removal coordinator owns close fallback, continuity,
+remembered destination, and route repair:
 entering with no destination replays the remembered last file
 (`client/working-set/`; replay re-arms every entry because the controller is
 persistent). Replay and the default-open ladder also re-arm when Editor Work
