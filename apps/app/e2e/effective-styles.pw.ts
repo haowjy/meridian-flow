@@ -74,6 +74,7 @@ test.beforeEach(async ({ page }) => {
       <div id="context-row-two" class="group flex items-center ${contextTreeRowClassName}">Second context row</div>
     </div>
     <button id="mobile-context-overflow" class="${overflowControlClass} ${mobileContextTreeOverflowTriggerClassName}">Mobile actions</button>
+    <button id="portalled-menu-item">Rename</button>
   `);
   await page.addStyleTag({ content: compiledCss });
   await page.addStyleTag({ content: "* { transition: none !important; }" });
@@ -339,6 +340,13 @@ test("keeps context rows and their shared overflow targets non-overlapping", asy
 
   if (!coarse) {
     await page.locator("#context-tree").first().locator(".group").first().hover();
+    await expect(page.locator("#context-overflow")).toHaveCSS("opacity", "1");
+
+    await page.locator("#context-overflow").evaluate((trigger) => {
+      trigger.setAttribute("data-state", "open");
+    });
+    await page.locator("#portalled-menu-item").focus();
+    await page.locator("#portalled-menu-item").hover();
     await expect(page.locator("#context-overflow")).toHaveCSS("opacity", "1");
   }
 });

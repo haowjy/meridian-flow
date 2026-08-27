@@ -4,13 +4,14 @@
  * flush full-width top-level siblings (never indented). There is no work
  * header row (ruling 2026-08-06, superseding the work-title-as-marking
  * model); the work-scoped panes name their work through a hover tooltip
- * their caller wraps around this header.
+ * their caller wraps around this header. Pane headers retain their own compact
+ * 28px rhythm; context entry rows are 32px on fine pointers and 44px on
+ * coarse/no-hover input.
  * Grammar: `font-medium text-sm uppercase tracking-wide` on the
  * section row. The caps + row rhythm carry the header read (bold was
  * rejected by ruling; caps apply to ALL headers, as VS Code uppercases
- * folder names in explorer headers). Headers take the tree rows' metrics
- * (`DirRow`/`FileRow` in `ContextTreeRows`): 28px row (h-7), `size-3.5`
- * icon in a `w-4` slot, `size-3` twistie in a `w-4` slot.
+ * folder names in explorer headers). Headers use a `size-3.5` icon in a `w-4`
+ * slot and a `size-3` twistie in a `w-4` slot.
  *
  * Separation follows the flatter workbench direction: headers remain
  * transparent at rest. A subtle hover is the only temporary fill, so section
