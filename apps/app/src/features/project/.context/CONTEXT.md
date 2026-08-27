@@ -175,7 +175,7 @@ conventions:
   never raw `emerald-*` / `rose-*`.
 
 The repeating chrome is extracted only where it actually repeats
-(`RailHeader`, `PaneHeader`, `PanelToggleButton`) — not as
+(`PaneHeader`, `RailPaneHeader`, `PanelToggleButton`) — not as
 a god "RailShell" wrapper, because the chat dock is a `motion.div`, not a
 `ResizablePanel`, and cannot be wrapped in a panel-baking shell.
 

@@ -53,7 +53,9 @@ a focused browser page: a top-level `window.blur` closes the Radix menu normally
 so the prior observed close was an automation artifact, not a Home defect. Home
 uses no colored attention dots: `actionRequired` remains semantic and accessible
 without a visual status badge. Continue, Favorite, and Recent are exclusive
-one-column sections. `useHomeChatFeed` brands next-page identity
+one-column sections. Home loading consumes the zero-prop
+`ProjectChatRowSkeleton` owned beside `ProjectChatRow`; Home must not recreate
+the row's three-lane anatomy. `useHomeChatFeed` brands next-page identity
 from both the project query key and opaque cursor. `HomeFeed` retains only the
 last requested identity, and each observer callback must first prove its own
 effect is active: a stale disconnected observer can neither fetch nor overwrite

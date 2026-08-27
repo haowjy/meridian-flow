@@ -50,7 +50,7 @@ There is no shared `AgentChip` abstraction. Keep the surfaces honest and local:
 | Surface | Shell | Use |
 |---|---|---|
 | `ComposerAgentControl` | toolbar-owned current-value trigger or readonly status | Composer agent selection before prompt freeze and truthful frozen-thread identity afterward. |
-| `AgentPicker` row | row-owned button with name + optional source `Badge` | Catalog choice inside the popover. |
+| `AgentPickerPanel` row | row-owned button with name + optional source `Badge` | Catalog choice inside the toolbar-owned popover. |
 | Results rail provenance | truncated `Badge neutral` inside the producing-thread button | Compact attribution, not a standalone control. |
 
 ## Architecture
@@ -59,9 +59,9 @@ There is no shared `AgentChip` abstraction. Keep the surfaces honest and local:
 flowchart TD
   Catalog[useProjectAgents] --> Resolve[resolveAgentFromCatalog]
   Constants[DEFAULT_AGENT_SLUG + wireAgentSlug] --> Composer[ComposerAgentControl]
-  Resolve --> Picker[AgentPicker]
+  Resolve --> Picker[AgentPickerPanel]
   Resolve --> Results[Results rail badge]
-  Composer --> Picker[AgentPicker]
+  Composer --> Picker[AgentPickerPanel]
   Composer --> ThreadCreate[create thread with wireAgentSlug]
 ```
 
@@ -70,7 +70,7 @@ Key files:
 | File | Role |
 |---|---|
 | `constants.ts` | Synthetic General/default-agent wire filter. |
-| `AgentPicker.tsx` | Catalog grouped into installed/user and builtin sources; also supplies the toolbar panel body. |
+| `AgentPicker.tsx` | Defines `AgentPickerPanel`, the live toolbar-owned catalog body grouped into installed/user and builtin sources. There is no standalone picker wrapper. |
 | `ComposerAgentControl.tsx` | Applies capability freeze, adapting Agent identity to an interactive panel or readonly status through the toolbar-owned current-value family. |
 
 ## Patterns
