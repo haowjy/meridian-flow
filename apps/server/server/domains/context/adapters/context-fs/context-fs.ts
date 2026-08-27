@@ -925,7 +925,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const committed = await this.mutationStore.commitDelete(token);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
-      deletedNodeId: committed.value.deletedNodeId,
+      deletedDocumentIds: committed.value.deletedDocumentIds,
     });
   }
 }

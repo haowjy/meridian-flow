@@ -77,8 +77,36 @@ describe("InMemoryContextDocumentStore", () => {
     const folderToken = await tree.inspect(SOURCE_ID, "hidden");
     expect(folderToken).toEqual(expect.objectContaining({ kind: "directory" }));
     if (!folderToken) throw new Error("expected hidden folder token");
-    await expect(tree.commitDelete(folderToken)).resolves.toEqual(
-      expect.objectContaining({ ok: true }),
-    );
+    await expect(tree.commitDelete(folderToken)).resolves.toEqual({
+      ok: true,
+      value: { deletedDocumentIds: [] },
+    });
+  });
+
+  it("returns only a deleted file identity and keeps non-empty folders rejected", async () => {
+    const backing = createInMemoryContextDocumentStoreBacking();
+    const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
+    const folder = await store.createFolder(null, "chapters");
+    await store.upsertDocument({
+      id: DOC_ID,
+      folderId: folder.id,
+      name: "chapter",
+      extension: "md",
+      markdown: "chapter",
+      filetype: "markdown",
+    });
+    const tree = new InMemoryContextTreeMutationStore(backing);
+    const folderToken = await tree.inspect(SOURCE_ID, "chapters");
+    const fileToken = await tree.inspect(SOURCE_ID, "chapters/chapter.md");
+    if (!folderToken || !fileToken) throw new Error("expected tree tokens");
+
+    await expect(tree.commitDelete(folderToken)).resolves.toEqual({
+      ok: false,
+      error: { code: "invalid_operation" },
+    });
+    await expect(tree.commitDelete(fileToken)).resolves.toEqual({
+      ok: true,
+      value: { deletedDocumentIds: [DOC_ID] },
+    });
   });
 });

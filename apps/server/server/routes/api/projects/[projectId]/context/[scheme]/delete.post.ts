@@ -1,7 +1,7 @@
 /**
  * POST /api/projects/:projectId/context/:scheme/delete
  *
- * Deletes a file or folder (and its children) from a context scheme.
+ * Deletes a file or empty folder from a context scheme.
  * Uses the ContextPort.delete primitive which performs CAS deletion via
  * ContextTreeMover.
  */
@@ -27,5 +27,5 @@ export default defineEventHandler(async (event) => {
   const uri = toUri(scheme, body.path, workId);
   const result = await port.delete(uri, { origin: { type: "human", userId } });
   if (!result.ok) contextErrorToHttp(result.error);
-  return { ok: true as const };
+  return result.value;
 });

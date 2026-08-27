@@ -71,7 +71,7 @@ router resolves to a stable Work ID before dispatch.
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration. The tree HTTP response exposes the same object used by router enforcement. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
-| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. |
+| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve exact document IDs; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
 
 ## URI and router invariants
@@ -191,6 +191,10 @@ router resolves to a stable Work ID before dispatch.
   invalidating a location plan. `stale_source` and `stale_target` remain typed
   through store, adapter, port, and HTTP route; only proven occupation is a
   `conflict` with an Open-existing locator.
+- Successful HTTP deletion acknowledges `{ status: "deleted", deletedDocumentIds }`.
+  Files contribute their one committed `documents.id`; empty folders contribute
+  none. Non-empty folders remain invalid operations, and post-commit membership
+  delivery failure prevents a successful acknowledgement.
 
 ## Deleted (cleanse removal)
 

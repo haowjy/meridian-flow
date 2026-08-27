@@ -6,6 +6,7 @@
  * adapter capability.
  */
 
+import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type {
@@ -158,7 +159,7 @@ export class ContextTreeMover {
   async delete(
     target: ContextTreeDispatch,
     _options?: ContextWriteOptions,
-  ): Promise<Result<void, ContextError>> {
+  ): Promise<Result<DeleteContextEntryResult, ContextError>> {
     if (!target.adapter.capabilities.writable || !target.adapter.tree) {
       return Err({ code: "permission_denied", uri: target.canonical });
     }
@@ -174,7 +175,7 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) return result;
-    return Ok(undefined);
+    return Ok({ status: "deleted", deletedDocumentIds: result.value.deletedDocumentIds });
   }
 
   private async prepareMove(

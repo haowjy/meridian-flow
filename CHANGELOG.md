@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- `contracts`, `apps/server`: acknowledge context deletion with the exact
+  committed document IDs while preserving empty-folder and non-recursive folder semantics.
+
 - `apps/app`: normalize Work status, lifecycle, loading, error, and resource-section
   presentation onto the shared Badge, overflow trigger, Card, and inline-error primitives.
 - `apps/app`: delete obsolete and single-owner Project UI surface, narrow Card

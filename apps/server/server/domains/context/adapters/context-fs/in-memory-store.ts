@@ -835,7 +835,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         doc.deletedAt = now;
         doc.updatedAt = now;
         this.markMutatorWrite();
-        return Ok({ deletedNodeId: doc.id });
+        return Ok({ deletedDocumentIds: [doc.id] });
       }
       const folder = this.backing.folders.get(token.nodeId);
       if (!folder || folder.deletedAt !== null) return Err({ code: "stale_source" });
@@ -851,7 +851,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       folderNow.deletedAt = now;
       folderNow.updatedAt = now;
       this.markMutatorWrite();
-      return Ok({ deletedNodeId: folderNow.id });
+      return Ok({ deletedDocumentIds: [] });
     });
   }
 }

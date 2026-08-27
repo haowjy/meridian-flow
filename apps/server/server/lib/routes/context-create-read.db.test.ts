@@ -274,7 +274,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(port.delete("user://user.md")).resolves.toEqual({
         ok: true,
-        value: undefined,
+        value: { status: "deleted", deletedDocumentIds: [userDocumentId] },
       });
       await collab.drainHocuspocusPersistence();
       const deletedMembership = await collab.resolveManifestMembership({
@@ -346,7 +346,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(port.delete(`scratch://@current-work/notes.md`)).resolves.toEqual({
         ok: true,
-        value: undefined,
+        value: { status: "deleted", deletedDocumentIds: [created.documentId] },
       });
       await collab.drainHocuspocusPersistence();
       const membershipAfterDelete = await collab.resolveManifestMembership({

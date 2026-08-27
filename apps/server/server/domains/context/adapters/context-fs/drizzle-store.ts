@@ -867,9 +867,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             ),
           )
           .returning({ id: documents.id });
-        if (deleted.length !== 1) rollback("stale_source");
+        const [deletedDocument] = deleted;
+        if (!deletedDocument || deleted.length !== 1) rollback("stale_source");
         events.push({ method: "documentDeleted", documentId: token.nodeId });
-        return Ok({ deletedNodeId: token.nodeId });
+        return Ok({ deletedDocumentIds: [deletedDocument.id] });
       }
 
       const [childFolder] = await currentDrizzleDb(this.db)
@@ -929,7 +930,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         if (!sameLocation(still, token)) rollback("stale_source");
         rollback("invalid_operation");
       }
-      return Ok({ deletedNodeId: token.nodeId });
+      return Ok({ deletedDocumentIds: [] });
     });
   }
 }

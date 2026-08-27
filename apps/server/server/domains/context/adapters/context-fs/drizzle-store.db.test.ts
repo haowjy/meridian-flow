@@ -36,6 +36,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_ROLLBACK_TARGET_ID = "00000000-0000-4000-8000-000000000709";
     const DOC_AMBIENT_DELETE_ID = "00000000-0000-4000-8000-000000000710";
     const DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
+    const EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000712";
+    const NON_EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000713";
+    const DOC_CALLBACK_FAILURE_ID = "00000000-0000-4000-8000-000000000714";
+    const DOC_STALE_DELETE_ID = "00000000-0000-4000-8000-000000000715";
+    const DOC_ROLLBACK_DELETE_ID = "00000000-0000-4000-8000-000000000716";
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
@@ -390,7 +395,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         tree.commitDelete(deleteToken as NonNullable<typeof deleteToken>),
       ).resolves.toEqual({
         ok: true,
-        value: { deletedNodeId: DOC_DELETE_ID },
+        value: { deletedDocumentIds: [DOC_DELETE_ID] },
       });
       const moveSource = await tree.inspect(SOURCE_ID, "move-source.md");
       const moveTarget = await tree.inspect(SOURCE_ID, "move-target.md");
@@ -420,6 +425,85 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         `deleted:${DOC_DELETE_ID}`,
         `deleted:${DOC_MOVE_TARGET_ID}`,
       ]);
+    });
+
+    it("returns no document identities for an empty folder and rejects a non-empty folder", async () => {
+      await db.insert(folders).values([
+        { id: EMPTY_FOLDER_ID, contextSourceId: SOURCE_ID, name: "empty" },
+        { id: NON_EMPTY_FOLDER_ID, contextSourceId: SOURCE_ID, name: "occupied" },
+      ]);
+      await db.insert(documents).values({
+        id: DOC_DELETE_ID,
+        contextSourceId: SOURCE_ID,
+        folderId: NON_EMPTY_FOLDER_ID,
+        name: "child",
+        extension: "md",
+        fileType: "markdown",
+        markdownProjection: "child",
+      });
+      const tree = new DrizzleContextTreeMutationStore(db);
+      const empty = await tree.inspect(SOURCE_ID, "empty");
+      const occupied = await tree.inspect(SOURCE_ID, "occupied");
+      if (!empty || !occupied) throw new Error("expected folder tokens");
+
+      await expect(tree.commitDelete(empty)).resolves.toEqual({
+        ok: true,
+        value: { deletedDocumentIds: [] },
+      });
+      await expect(tree.commitDelete(occupied)).resolves.toEqual({
+        ok: false,
+        error: { code: "invalid_operation" },
+      });
+      await expect(tree.inspect(SOURCE_ID, "occupied")).resolves.toEqual(occupied);
+    });
+
+    it("returns no receipt when delete CAS becomes stale or the transaction rolls back", async () => {
+      await insertDocument(DOC_STALE_DELETE_ID, "stale-delete");
+      await insertDocument(DOC_ROLLBACK_DELETE_ID, "rollback-delete");
+      const tree = new DrizzleContextTreeMutationStore(db);
+      const stale = await tree.inspect(SOURCE_ID, "stale-delete.md");
+      const rollbackToken = await tree.inspect(SOURCE_ID, "rollback-delete.md");
+      if (!stale || !rollbackToken) throw new Error("expected file tokens");
+
+      await db
+        .update(documents)
+        .set({ name: "moved-before-delete" })
+        .where(eq(documents.id, DOC_STALE_DELETE_ID));
+      await expect(tree.commitDelete(stale)).resolves.toEqual({
+        ok: false,
+        error: { code: "stale_source" },
+      });
+
+      const rollbackFailure = new Error("abort destructive write");
+      tree.setBeforeDestructiveWrite(() => {
+        throw rollbackFailure;
+      });
+      await expect(tree.commitDelete(rollbackToken)).rejects.toBe(rollbackFailure);
+      const [rolledBack] = await db
+        .select({ deletedAt: documents.deletedAt })
+        .from(documents)
+        .where(eq(documents.id, DOC_ROLLBACK_DELETE_ID));
+      expect(rolledBack?.deletedAt).toBeNull();
+    });
+
+    it("does not return a successful result when post-commit membership delivery fails", async () => {
+      await insertDocument(DOC_CALLBACK_FAILURE_ID, "callback-failure");
+      const callbackFailure = new Error("membership delivery failed");
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        documentCreated: () => undefined,
+        documentDeleted: () => {
+          throw callbackFailure;
+        },
+      });
+      const token = await tree.inspect(SOURCE_ID, "callback-failure.md");
+      if (!token) throw new Error("expected file token");
+
+      await expect(tree.commitDelete(token)).rejects.toBe(callbackFailure);
+      const [committed] = await db
+        .select({ deletedAt: documents.deletedAt })
+        .from(documents)
+        .where(eq(documents.id, DOC_CALLBACK_FAILURE_ID));
+      expect(committed?.deletedAt).toBeInstanceOf(Date);
     });
 
     it("defers document-create observers until the ambient transaction commits", async () => {
@@ -469,7 +553,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await runInDrizzleTransaction(db, async () => {
         await expect(tree.commitDelete(token as NonNullable<typeof token>)).resolves.toEqual({
           ok: true,
-          value: { deletedNodeId: DOC_AMBIENT_DELETE_ID },
+          value: { deletedDocumentIds: [DOC_AMBIENT_DELETE_ID] },
         });
       });
 

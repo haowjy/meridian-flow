@@ -407,7 +407,10 @@ function contextPortFor(documentId: string, filePath: string): ContextPort {
       ok: true,
       value: { status: "created", documentId, path: filePath, name: filePath },
     }),
-    delete: async () => ({ ok: true, value: undefined }),
+    delete: async () => ({
+      ok: true,
+      value: { status: "deleted", deletedDocumentIds: [documentId] },
+    }),
     list: async () => ({ ok: true, value: [] }),
     search: async () => ({ ok: true, value: [] }),
     read: async () => ({ ok: false, error: { code: "not_found", uri: filePath } }),

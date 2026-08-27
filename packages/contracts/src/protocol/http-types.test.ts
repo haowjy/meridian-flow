@@ -1,6 +1,16 @@
 /** Working-set route parsing protects the scheme/work authority wire invariant. */
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import type { DeleteContextEntryResult } from "./http-types.js";
 import { parseWorkingSetRoute, parseWorkingSetRouteList } from "./http-types.js";
+
+describe("context deletion result", () => {
+  it("carries an exact batch of committed document identities", () => {
+    expectTypeOf<DeleteContextEntryResult>().toEqualTypeOf<{
+      status: "deleted";
+      deletedDocumentIds: string[];
+    }>();
+  });
+});
 
 describe("working-set route parser", () => {
   it("accepts each valid union arm", () => {

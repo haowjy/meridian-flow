@@ -85,8 +85,8 @@ export interface ContextTreeMutationResult {
 }
 
 export interface ContextTreeDeleteResult {
-  /** Document id for files, or folder id for directories. */
-  deletedNodeId: string;
+  /** Exact deleted document identities. Empty-folder deletion has none. */
+  deletedDocumentIds: string[];
 }
 
 export interface ContextTreeMutationStore {

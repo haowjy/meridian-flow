@@ -1,0 +1,61 @@
+/** Delete route coverage for exact acknowledged document identities. */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Ok } from "../../../../../../shared/result.js";
+import { resolveContextRoute } from "./_helpers.js";
+import handler from "./delete.post.js";
+
+vi.mock("./_helpers.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./_helpers.js")>()),
+  resolveContextRoute: vi.fn(),
+}));
+
+describe("POST context delete", () => {
+  beforeEach(() => {
+    vi.mocked(resolveContextRoute).mockReset();
+  });
+
+  it("returns the exact successful deletion result", async () => {
+    const deleteEntry = vi.fn(async () =>
+      Ok({ status: "deleted" as const, deletedDocumentIds: ["document-1"] }),
+    );
+    vi.mocked(resolveContextRoute).mockResolvedValue({
+      userId: "00000000-0000-4000-8000-000000000001",
+      scheme: "manuscript",
+      workId: null,
+      port: { delete: deleteEntry },
+    } as never);
+    const event = {
+      req: new Request("https://server.local/delete", {
+        method: "POST",
+        body: JSON.stringify({ path: "chapter.md" }),
+        headers: { "content-type": "application/json" },
+      }),
+      res: { status: 200 },
+    };
+
+    await expect(handler(event as never)).resolves.toEqual({
+      status: "deleted",
+      deletedDocumentIds: ["document-1"],
+    });
+  });
+
+  it("does not acknowledge a post-commit callback failure", async () => {
+    const callbackFailure = new Error("membership callback failed");
+    vi.mocked(resolveContextRoute).mockResolvedValue({
+      userId: "00000000-0000-4000-8000-000000000001",
+      scheme: "manuscript",
+      workId: null,
+      port: { delete: vi.fn(async () => Promise.reject(callbackFailure)) },
+    } as never);
+    const event = {
+      req: new Request("https://server.local/delete", {
+        method: "POST",
+        body: JSON.stringify({ path: "chapter.md" }),
+        headers: { "content-type": "application/json" },
+      }),
+      res: { status: 200 },
+    };
+
+    await expect(handler(event as never)).rejects.toBe(callbackFailure);
+  });
+});

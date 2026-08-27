@@ -85,7 +85,7 @@ export type AdapterMoveResult = {
 };
 
 export type AdapterDeleteResult = {
-  deletedNodeId?: string;
+  deletedDocumentIds: string[];
 };
 
 export interface ContextTreeAdapter {

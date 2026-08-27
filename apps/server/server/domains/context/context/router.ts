@@ -5,6 +5,7 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
+import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   AdapterFault,
@@ -435,7 +436,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return treeMover.commitWriterLocation(source.value, destination.value);
     },
 
-    async delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
+    async delete(
+      uri: string,
+      options?: ContextWriteOptions,
+    ): Promise<Result<DeleteContextEntryResult, ContextError>> {
       const r = await resolveMutation(uri);
       if (!r.ok) return r;
       if (!r.value.adapter.capabilities.writable) {

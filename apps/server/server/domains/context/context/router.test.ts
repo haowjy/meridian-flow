@@ -23,6 +23,14 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
             filetype: "markdown",
           });
         }
+        if (path === "empty") {
+          return Ok({
+            kind: "directory" as const,
+            nodeId: "folder-empty",
+            sourceId: `${scheme}-source`,
+            path,
+          });
+        }
         if (path === "") {
           return Ok({
             kind: "directory" as const,
@@ -37,7 +45,9 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
       commitPreparedMove: vi.fn(async (prepared) =>
         Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
       ),
-      commitPreparedDelete: vi.fn(async (token) => Ok({ deletedNodeId: token.nodeId })),
+      commitPreparedDelete: vi.fn(async (token) =>
+        Ok({ deletedDocumentIds: token.kind === "file" ? [token.nodeId] : [] }),
+      ),
     },
   } as unknown as ContextSchemeAdapter;
 }
@@ -67,6 +77,36 @@ describe("context router listings", () => {
     await expect(port.list("manuscript://")).resolves.toMatchObject({
       ok: true,
       value: [{ documentId: "document-1", provisionalName: true }],
+    });
+  });
+});
+
+describe("context router deletion receipts", () => {
+  it("preserves the committed file identity", async () => {
+    const port = createContextPortRouter({
+      adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
+    });
+
+    await expect(port.delete("manuscript://old.md")).resolves.toEqual({
+      ok: true,
+      value: {
+        status: "deleted",
+        deletedDocumentIds: ["document-old"],
+      },
+    });
+  });
+
+  it("acknowledges an empty-folder deletion without document identities", async () => {
+    const port = createContextPortRouter({
+      adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
+    });
+
+    await expect(port.delete("manuscript://empty")).resolves.toEqual({
+      ok: true,
+      value: {
+        status: "deleted",
+        deletedDocumentIds: [],
+      },
     });
   });
 });

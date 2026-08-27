@@ -9,6 +9,7 @@ import type {
   WorkScopedContextUriScheme,
 } from "@meridian/contracts/context-uri";
 import type {
+  DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
   YjsTrackedSchemaType,
@@ -283,7 +284,10 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
-  delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>>;
+  delete(
+    uri: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
   list(uri?: string): Promise<Result<ContextListEntry[], ContextError>>;
 
