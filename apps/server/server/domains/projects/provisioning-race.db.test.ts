@@ -3,6 +3,8 @@
  * local account, while email collisions across principals fail closed.
  */
 
+import { setTimeout as delay } from "node:timers/promises";
+import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -20,28 +22,83 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { eq } = await import("drizzle-orm");
 
     const db = createDb(DATABASE_URL, { max: 8 });
+    const control = postgres(DATABASE_URL, { max: 1 });
+    const observer = postgres(DATABASE_URL, { max: 1 });
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
     });
-    afterAll(async () => db.$client.end());
+    afterAll(async () => {
+      await control.end();
+      await observer.end();
+      await db.close();
+    });
+
+    async function waitForProvisioningLocks(minimum: number): Promise<void> {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const [row] = await observer<{ count: string }[]>`
+          SELECT count(*)::text AS count
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event_type = 'Lock'
+        `;
+        if (Number(row?.count ?? 0) >= minimum) return;
+        await delay(10);
+      }
+      throw new Error(`Timed out waiting for ${minimum} blocked provisioning call(s)`);
+    }
+
+    async function runWhileProvisioningCallsOverlap<T>(
+      start: () => Promise<T>,
+      expectedCalls: number,
+    ): Promise<T> {
+      let releaseLock!: () => void;
+      let lockAcquired!: () => void;
+      const releaseGate = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      const acquired = new Promise<void>((resolve) => {
+        lockAcquired = resolve;
+      });
+      const holder = control.begin(async (sql) => {
+        await sql`LOCK TABLE users IN ACCESS EXCLUSIVE MODE`;
+        lockAcquired();
+        await releaseGate;
+      });
+
+      await acquired;
+      let result: Promise<T> | null = null;
+      try {
+        result = start();
+        await waitForProvisioningLocks(expectedCalls);
+      } finally {
+        releaseLock();
+        await holder;
+      }
+      if (!result) throw new Error("Provisioning calls did not start");
+      return result;
+    }
 
     it("concurrent provisioning for the same external id converges to one account", async () => {
       const users = createDrizzleUserRepository({ db });
-      const results = await Promise.allSettled([
-        users.ensureUser({
-          externalId: "user_workos_a",
-          email: "race@example.com",
-          name: "A",
-          avatarUrl: null,
-        }),
-        users.ensureUser({
-          externalId: "user_workos_a",
-          email: "race@example.com",
-          name: "B",
-          avatarUrl: null,
-        }),
-      ]);
+      const results = await runWhileProvisioningCallsOverlap(
+        () =>
+          Promise.allSettled([
+            users.ensureUser({
+              externalId: "user_workos_a",
+              email: "race@example.com",
+              name: "A",
+              avatarUrl: null,
+            }),
+            users.ensureUser({
+              externalId: "user_workos_a",
+              email: "race@example.com",
+              name: "B",
+              avatarUrl: null,
+            }),
+          ]),
+        2,
+      );
 
       const rejected = results.filter((r) => r.status === "rejected");
       expect(rejected).toHaveLength(0);
@@ -68,7 +125,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           avatarUrl: null,
         },
       ];
-      const results = await Promise.allSettled(inputs.map((input) => users.ensureUser(input)));
+      const results = await runWhileProvisioningCallsOverlap(
+        () => Promise.allSettled(inputs.map((input) => users.ensureUser(input))),
+        2,
+      );
 
       const [fulfilled] = results.filter((result) => result.status === "fulfilled");
       const [rejected] = results.filter((result) => result.status === "rejected");
