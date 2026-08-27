@@ -185,10 +185,16 @@ Both adapters are ~25 lines. The shared core is ~100 lines.
 
 ## Dual-trigger caveat
 
-Desktop context menu and kebab map one ordered action specification through thin
-renderers for Radix `ContextMenu.Item` and `DropdownMenu.Item`. Labels, icons,
-grouping, destructive metadata, order, and dispatch actions therefore cannot drift.
-The kebab stops propagation so it doesn't trigger the row's click handler.
+Desktop right-click context and visible ellipsis overflow map one ordered action
+specification through thin renderers for Radix `ContextMenu.Item` and
+`DropdownMenu.Item`. They remain separate trigger primitives. The visible path
+uses the neutral `OverflowMenu` and canonical trigger shared with Project chat
+rows and Composer; context-specific `EntryAction` types do not cross that UI
+boundary. Its target is 32 px for fine pointers and 44 px for coarse/no-hover
+input, and it remains visible while its portaled menu is open. Mobile uses the
+same context adapter with a 44 px target. Labels, icons, grouping, destructive
+metadata, order, and dispatch actions therefore cannot drift. The ellipsis
+stops propagation so it doesn't trigger the row's click handler.
 `EntryAction` is four actions in fixed order — New file, New folder,
 separator, Rename, Delete (creation first, destructive last) — identical in
 both triggers. Actions dispatch from `onCloseAutoFocus`, after the menu has

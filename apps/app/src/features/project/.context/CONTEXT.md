@@ -6,9 +6,7 @@ its stateful surfaces. This file is the colocated contract for the shell — rea
 it before touching layout, the rails/headers, or the prefs store.
 Settings is an auxiliary routed surface, not a primary destination.
 
-Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md);
-the model/view continuity rationale is the KB decision
-[persistent-surfaces-lift](persistent-surfaces-lift decision).
+Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md).
 This page is the *implementation* contract.
 
 Mobile now lives beside this desktop shell as a sibling implementation. The
@@ -84,15 +82,14 @@ Work ID is an immutable reconciliation fact, along with project and Agent, and
 no cache, handoff, visibility, admission, or route effect may run until the
 canonical thread matches those captured facts.
 
-The QueryClient owns one normalized user-state record per project/thread so
-navigation and stale page arrival cannot discard pending favorite intent or a
-newer automatic-attention acknowledgement.
-Work feeds remain immutable membership/order pages; only Home moves the affected
-thread between its categories. Fresh creation also prepares one
-creation-owned no-command visibility epoch before routing; the matching visible
-Chat lease consumes it without issuing an existing-chat open acknowledgement.
-Chat visibility includes the dock's Chat-versus-Changes selection, so hidden
-persistent chat content holds no visible-open lease.
+The QueryClient owns one normalized Favorite record per project/thread so
+navigation and stale page arrival cannot discard pending writer intent. Work
+feeds remain immutable membership/order pages; only Home moves the affected
+thread between its categories. Project chat lists have no read/unread or
+open-acknowledgement state, and opening a chat performs no state mutation.
+Thread lifecycle projection owns the independent `actionRequired` fact and
+converges live and snapshot changes across Project, Home, and every matching
+Work feed cache without writing Favorite.
 
 Draft review follows the same persistent-shell rule with two sibling owners.
 The hydrated project owns one Chat review value (Chat Work plus thread) and one
