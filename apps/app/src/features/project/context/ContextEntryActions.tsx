@@ -11,7 +11,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Ellipsis, FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 
@@ -26,14 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/ui/icon-button";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -150,31 +144,18 @@ export function EntryKebabButton({
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <IconButton
-          size="xs"
-          aria-label={t`Actions`}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          className={cn(
-            "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
-            className,
-          )}
-        >
-          <Ellipsis aria-hidden className="size-3.5" />
-        </IconButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        sideOffset={2}
-        onClick={(e) => e.stopPropagation()}
-        onCloseAutoFocus={onCloseAutoFocus}
-        className="min-w-[8rem]"
-      >
-        <DropdownActionItems allowCreate={allowCreate} onAction={dispatch} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <OverflowMenu
+      label={t`Actions`}
+      align="start"
+      sideOffset={2}
+      onCloseAutoFocus={onCloseAutoFocus}
+      triggerClassName={cn(
+        "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
+        className,
+      )}
+    >
+      <DropdownActionItems allowCreate={allowCreate} onAction={dispatch} />
+    </OverflowMenu>
   );
 }
 

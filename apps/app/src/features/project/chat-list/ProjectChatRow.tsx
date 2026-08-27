@@ -2,17 +2,11 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import { MoreHorizontal } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/ui/icon-button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
 import { formatProjectChatActivity } from "./project-chat-activity-date";
 
@@ -136,29 +130,25 @@ export function ProjectChatRow({
               menuOpen && "pointer-events-auto opacity-100",
             )}
           >
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <IconButton
-                  size="sm"
-                  data-project-chat-row-actions={item.id}
-                  className="[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11"
-                  aria-label={t`Actions for ${title}`}
-                  aria-busy={favorite.pending || undefined}
-                >
-                  <MoreHorizontal className="size-4" />
-                </IconButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  aria-disabled={favoriteSuppressed || undefined}
-                  onSelect={() => {
-                    if (!favoriteSuppressed) onFavorite(item, favoriteValue);
-                  }}
-                >
-                  <span>{item.isFavorite ? t`Remove from favorites` : t`Add to favorites`}</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <OverflowMenu
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              label={t`Actions for ${title}`}
+              triggerClassName="[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11"
+              triggerProps={{
+                "data-project-chat-row-actions": item.id,
+                "aria-busy": favorite.pending || undefined,
+              }}
+            >
+              <DropdownMenuItem
+                aria-disabled={favoriteSuppressed || undefined}
+                onSelect={() => {
+                  if (!favoriteSuppressed) onFavorite(item, favoriteValue);
+                }}
+              >
+                <span>{item.isFavorite ? t`Remove from favorites` : t`Add to favorites`}</span>
+              </DropdownMenuItem>
+            </OverflowMenu>
           </div>
         </div>
       </div>
