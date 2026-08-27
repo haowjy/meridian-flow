@@ -12,11 +12,17 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
-import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 
 import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogClose,
@@ -89,17 +95,12 @@ export function ContextEntryMenu({
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   return (
-    <ContextMenuPrimitive.Root>
-      <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
-      <ContextMenuPrimitive.Portal>
-        <ContextMenuPrimitive.Content
-          onCloseAutoFocus={onCloseAutoFocus}
-          className="z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
-        >
-          <ContextActionItems allowCreate={allowCreate} onAction={dispatch} />
-        </ContextMenuPrimitive.Content>
-      </ContextMenuPrimitive.Portal>
-    </ContextMenuPrimitive.Root>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent onCloseAutoFocus={onCloseAutoFocus}>
+        <ContextActionItems allowCreate={allowCreate} onAction={dispatch} />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -178,16 +179,9 @@ function ContextActionItems({
         const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;
         return (
           <Fragment key={spec.action}>
-            {startsGroup ? (
-              <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
-            ) : null}
-            <ContextMenuPrimitive.Item
-              className={cn(
-                "relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-50",
-                spec.destructive
-                  ? "text-destructive data-[highlighted]:text-destructive"
-                  : "data-[highlighted]:text-accent-foreground",
-              )}
+            {startsGroup ? <ContextMenuSeparator /> : null}
+            <ContextMenuItem
+              variant={spec.destructive ? "destructive" : "default"}
               onSelect={() => onAction(spec.action)}
             >
               <Icon
@@ -195,7 +189,7 @@ function ContextActionItems({
                 aria-hidden
               />
               {spec.label}
-            </ContextMenuPrimitive.Item>
+            </ContextMenuItem>
           </Fragment>
         );
       })}
@@ -218,10 +212,7 @@ function DropdownActionItems({
       <Fragment key={spec.action}>
         {startsGroup ? <DropdownMenuSeparator /> : null}
         <DropdownMenuItem
-          className={cn(
-            "cursor-pointer gap-2 text-sm",
-            spec.destructive && "text-destructive focus:text-destructive",
-          )}
+          variant={spec.destructive ? "destructive" : "default"}
           onSelect={() => onAction(spec.action)}
         >
           <Icon
