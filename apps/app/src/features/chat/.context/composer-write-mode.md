@@ -2,14 +2,39 @@
 
 This page defines the Work-scoped composer write-mode and sizing contracts.
 
-The Draft / Auto-apply selector lives in the composer footer beside the agent
-pill because write mode is a property of the conversation's Work, not workspace
-navigation. `ProjectView` resolves the displayed thread’s Work once at the project
+The compact current-value write-mode trigger lives in the composer footer beside
+Agent and Work because write mode is a property of the conversation's Work, not
+workspace navigation. It opens the toolbar's write-mode page for the Draft and
+Auto-apply choices instead of spending persistent width on both choices.
+`ProjectView` resolves the displayed thread’s Work once at the project
 composition boundary and passes that same Work identity to `DraftReviewProvider`
 and `ChatView`; the dock and composer control therefore share one binding. If
 either side of `thread → work` is absent, the control is not rendered. The
 independent chat composition root performs the same resolution for its thread.
 There is no first/default-Work fallback.
+
+`useComposerWorkBinding` owns Work interaction, mutation presentation, and
+Undo. `useThreadDurableProjections` owns transport projection, while
+`convergeThreadWorkBinding` owns all cache effects. `ComposerWorkControl`
+renders the measured inline/overflow entry only in the composer; headers remain
+chat identity surfaces.
+
+The row passes Agent, Draft / Auto-apply, and Work descriptors to the shared
+measured `ComposerToolbar`. It observes the actual flex allocation left beside
+Send and every mounted control's intrinsic width. Controls move behind one
+compact ellipsis in Work, write-mode, then Agent order. Feature controllers
+retain their state while the framework migrates their panel between inline and
+overflow hosts. Chat headers display only chat identity. The Work controller
+owns mutation, error, and live-convergence state, never placement. Switching
+back is an ordinary picker selection; the toolbar has no sibling Undo action.
+
+The shared toolbar owns popup topology, trigger policy, placement, and page-aware
+focus; feature controls own domain state and page content. See the
+[composer-toolbar contracts](../../../components/app/composer-toolbar/.context/CONTEXT.md).
+
+`ComposerWorkControl` can rebind an idle existing thread. The controller carries
+that behavior through cache convergence and durable projection. Writer and LLM
+rebinding share the canonical server transition.
 
 `ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
 count only to open confirmation quickly. Every Auto-apply selection sends an
@@ -22,8 +47,10 @@ changes uses the same `useAiDraftLauncher` entry as every other review control;
 Apply all and switch is the only action that sends `confirmedPush`. It asks the
 server to apply the same canonical pending set, including any manifest companion
 needed to publish new-document membership, and only then switch policy. A failed
-push leaves Draft selected. The Auto-apply choice is never disabled, and the
-sidebar has no write-mode control.
+push leaves Draft selected. Loading draft data never disables the Auto-apply
+choice; a nondismissible write-mode request temporarily disables page actions
+while the toolbar retains a focusable dialog fallback. The sidebar has no
+write-mode control.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false. If a client fast path

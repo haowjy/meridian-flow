@@ -80,25 +80,26 @@ import {
   createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
   createHelperResultDelivery,
+  createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
   createInvokeToolRegistration,
   createLateBindRunTurnPort,
   createOrchestrator,
   createPermissionGate,
   createSpawnToolRegistrations,
-  createSystemUpdateDelivery,
   createToolExecutor,
   createToolRegistry,
   createTurnRunner,
+  createWorkContextDelivery,
   createWorkContextReader,
   type Gateway,
   type RunTurnPort,
   resolveProfile,
-  type SystemUpdateDelivery,
   type ThreadRunOwnership,
   type ToolExecutor,
   type ToolRegistry,
   type TurnRunner,
+  type WorkContextDelivery,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
@@ -168,7 +169,7 @@ export type AppServices = {
   users: UserRepository;
   workRepo: ProjectWorkRepository;
   workContext: WorkContextReader;
-  systemUpdates: SystemUpdateDelivery;
+  workContextDelivery: WorkContextDelivery;
   billing: BillingService;
   agents: AgentPackageStore;
   interruptRegistry: InterruptRegistry;
@@ -182,6 +183,7 @@ export type AppServices = {
   workingSet: WorkingSetRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
+  runOwnership: ThreadRunOwnership;
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
@@ -464,7 +466,26 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadWorks: ports.threadRepos.threadWorks,
   });
   const toolRegistry = createToolRegistry();
-  let systemUpdates: SystemUpdateDelivery | undefined;
+  let runner: TurnRunner;
+  const workContextDelivery = createWorkContextDelivery({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    workContext,
+    isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
+    runOwnership: ports.runOwnership,
+    schedulePostCommit(task) {
+      runAfterDrizzleCommit(() => {
+        void task().catch((cause) => {
+          emitEvent(ports.eventSink, {
+            level: "error",
+            source: "runtime.work-context-delivery",
+            name: "wake.failed",
+            payload: unknownToEventPayload(cause),
+          });
+        });
+      });
+    },
+  });
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
@@ -477,14 +498,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     works: ports.workRepo,
     preferences: ports.preferences,
     drafts: ports.documentSync,
-    workContextUpdates: {
-      async projectChanged(projectId) {
-        await systemUpdates?.projectChanged(projectId);
-      },
-      async threadChanged(threadId) {
-        await systemUpdates?.threadChanged(threadId);
-      },
-    },
+    workContextDelivery,
+    obligations: ports.threadRepos.workContextDeliveries,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
@@ -513,7 +528,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
   let helperResultDelivery: ReturnType<typeof createHelperResultDelivery> | undefined;
-  const runner = createTurnRunner({
+  runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,
     repos: { turns: ports.threadRepos.turns },
@@ -524,38 +539,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         await helperResultDelivery?.flush(threadId);
       },
     },
-    systemUpdateDelivery: {
-      async beforeTurn(threadId) {
-        await systemUpdates?.beforeTurn(threadId);
-      },
-      async flushOwned(threadId) {
-        await systemUpdates?.flushOwned(threadId);
-      },
-    },
+    workContextDelivery,
   });
   helperResultDelivery = createHelperResultDelivery({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
-  });
-  systemUpdates = createSystemUpdateDelivery({
-    repos: ports.threadRepos,
-    eventWriter: threadEventHub,
-    workContext,
-    isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
-    runOwnership: ports.runOwnership,
-    schedulePostCommit(task) {
-      runAfterDrizzleCommit(() => {
-        void task().catch((cause) => {
-          emitEvent(ports.eventSink, {
-            level: "error",
-            source: "runtime.system-update-delivery",
-            name: "wake.failed",
-            payload: unknownToEventPayload(cause),
-          });
-        });
-      });
-    },
   });
   const childRunCoordinator = createChildRunCoordinator({
     orchestrator: runTurnProxy,
@@ -582,7 +571,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     packageRepository: ports.packageRepository,
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
-    systemUpdateDelivery: systemUpdates,
+    workContextDelivery: workContextDelivery,
     runOwnership: ports.runOwnership,
     billingSpendReader: ports.billingSpendReader,
     workContext,
@@ -606,7 +595,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     childRunCoordinator,
     helperResultDelivery,
-    systemUpdateDelivery: systemUpdates,
+    workContextDelivery: workContextDelivery,
     interruptRegistry,
     billingUsage: ports.billingUsage,
     interruptArtifacts: createInterruptArtifactFlush({
@@ -640,7 +629,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     users: ports.users,
     workRepo: ports.workRepo,
     workContext,
-    systemUpdates,
+    workContextDelivery,
     billing: ports.billing,
     agents: ports.agents,
     interruptRegistry,
@@ -656,6 +645,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workingSet: ports.workingSet,
     orchestrator,
     runner,
+    runOwnership: ports.runOwnership,
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,
@@ -688,6 +678,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     env: {},
   });
+  const runOwnership = createInMemoryThreadRunOwnership();
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
   const unavailableWorkContext: WorkContextReader = {
@@ -695,10 +686,12 @@ export function createInMemoryAppServices(): AppServices {
       throw new Error("in-memory Work context is not configured");
     },
   };
-  const noopSystemUpdates: SystemUpdateDelivery = {
+  const noopWorkContextDelivery: WorkContextDelivery = {
     async projectChanged() {},
     async threadChanged() {},
-    async flush() {},
+    async deliverAfterCommit() {
+      return "pending";
+    },
     async flushOwned() {},
     async beforeTurn() {},
     async sweep() {},
@@ -931,7 +924,7 @@ export function createInMemoryAppServices(): AppServices {
       async touch() {},
     },
     workContext: unavailableWorkContext,
-    systemUpdates: noopSystemUpdates,
+    workContextDelivery: noopWorkContextDelivery,
     billing: billingDomain.service,
     agents: { phase: "skeleton" },
     interruptRegistry: createInterruptRegistry(),
@@ -980,6 +973,7 @@ export function createInMemoryAppServices(): AppServices {
         return "not_found" as const;
       },
     },
+    runOwnership,
     toolRegistry: {
       getDefinitions() {
         return [];

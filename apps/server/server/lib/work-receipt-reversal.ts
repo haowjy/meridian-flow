@@ -3,17 +3,18 @@ import type { ReversalOutcome, WorkReversalResult } from "@meridian/contracts/pr
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import {
+  isReversibleWorkMutationReceipt,
   parseWorkReceipt,
   type Work,
+  type WorkMutationReceipt,
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import type { WorkContextUpdates, WorkRepository } from "../domains/projects/index.js";
+import type { WorkContextDelivery, WorkRepository } from "../domains/projects/index.js";
 import type {
   BlockRepository,
   ThreadRepository,
-  ThreadWorksRepository,
   TurnRepository,
 } from "../domains/threads/index.js";
 
@@ -21,10 +22,9 @@ type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
   turns: Pick<TurnRepository, "findById">;
   threads: Pick<ThreadRepository, "findById">;
-  threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "lockPrimary" | "rebindPrimary">;
   preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
   works: WorkRepository;
-  contextUpdates: Pick<WorkContextUpdates, "projectChanged">;
+  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -32,7 +32,7 @@ export type WorkReceiptReversal = WorkReversalResult & { workId: WorkId };
 type Direction = "undo" | "redo";
 type ShadowWork = Work & { deleted: boolean };
 type PlannedStep = {
-  receipt: WorkReceipt;
+  receipt: WorkMutationReceipt;
   command: WorkReversalResult["command"];
   executable: boolean;
   message?: string;
@@ -73,8 +73,8 @@ export async function reverseWorkReceipts(
   const changedProjects = new Set<string>();
   try {
     const results = await deps.transaction(async () => {
-      await lockReceiptState(deps, ordered, context.thread);
-      const plan = await planReceipts(deps, ordered, context.thread, input.direction, true);
+      await lockReceiptState(deps, ordered);
+      const plan = await planReceipts(deps, ordered, context.thread, input.direction);
       const applied: WorkReceiptReversal[] = [];
       for (const step of plan) {
         if (!step.executable) {
@@ -88,7 +88,7 @@ export async function reverseWorkReceipts(
         );
       }
       await Promise.all(
-        [...changedProjects].map((projectId) => deps.contextUpdates.projectChanged(projectId)),
+        [...changedProjects].map((projectId) => deps.workContextDelivery.projectChanged(projectId)),
       );
       return applied;
     });
@@ -102,7 +102,7 @@ export async function reverseWorkReceipts(
 }
 
 export async function getWorkReceiptReversalAvailability(
-  deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works" | "threads" | "threadWorks">,
+  deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works" | "threads">,
   input: { threadId: ThreadId; turnId: TurnId },
 ): Promise<{ undo: boolean; redo: boolean }> {
   const context = await reversalContext(deps, input);
@@ -114,7 +114,6 @@ export async function getWorkReceiptReversalAvailability(
         orderReceipts(context.receipts, direction),
         context.thread,
         direction,
-        false,
       );
       return plan.length > 0 && plan.every((step) => step.executable);
     }),
@@ -125,7 +124,7 @@ export async function getWorkReceiptReversalAvailability(
 async function reversalContext(
   deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "threads">,
   input: { threadId: ThreadId; turnId: TurnId },
-): Promise<{ thread: Thread; receipts: WorkReceipt[] } | null> {
+): Promise<{ thread: Thread; receipts: WorkMutationReceipt[] } | null> {
   const [turn, thread] = await Promise.all([
     deps.turns.findById(input.turnId),
     deps.threads.findById(input.threadId),
@@ -134,49 +133,41 @@ async function reversalContext(
   return { thread, receipts: await receiptsForTurn(deps, input.turnId) };
 }
 
-function orderReceipts(receipts: WorkReceipt[], direction: Direction): WorkReceipt[] {
+function orderReceipts(
+  receipts: WorkMutationReceipt[],
+  direction: Direction,
+): WorkMutationReceipt[] {
   return direction === "undo" ? [...receipts].reverse() : receipts;
 }
 
 async function receiptsForTurn(
   deps: Pick<WorkReceiptReversalDeps, "blocks">,
   turnId: TurnId,
-): Promise<WorkReceipt[]> {
+): Promise<WorkMutationReceipt[]> {
   return (await deps.blocks.listByTurn(turnId)).flatMap((block) => {
     const receipt = receiptFromContent(block.content);
-    return receipt?.changed ? [receipt] : [];
+    return receipt && isReversibleWorkMutationReceipt(receipt) ? [receipt] : [];
   });
 }
 
 async function lockReceiptState(
-  deps: Pick<WorkReceiptReversalDeps, "works" | "threadWorks">,
-  receipts: WorkReceipt[],
-  thread: Thread,
+  deps: Pick<WorkReceiptReversalDeps, "works">,
+  receipts: WorkMutationReceipt[],
 ): Promise<void> {
-  const ids = new Set<WorkId>();
-  for (const receipt of receipts) {
-    ids.add(receipt.workId);
-    if (receipt.inverse?.command === "switch") ids.add(receipt.inverse.workId);
-  }
+  const ids = new Set<WorkId>(receipts.map(({ workId }) => workId));
   for (const workId of [...ids].sort()) await deps.works.lockById(workId);
-  await deps.threadWorks.lockPrimary(thread.id);
 }
 
 async function planReceipts(
-  deps: Pick<WorkReceiptReversalDeps, "works" | "threadWorks">,
-  receipts: WorkReceipt[],
+  deps: Pick<WorkReceiptReversalDeps, "works">,
+  receipts: WorkMutationReceipt[],
   thread: Thread,
   direction: Direction,
-  locked: boolean,
 ): Promise<PlannedStep[]> {
-  const [projectWorks, primary] = await Promise.all([
-    deps.works.listByProject(thread.projectId, { includeDeleted: true }),
-    locked ? deps.threadWorks.lockPrimary(thread.id) : deps.threadWorks.findPrimary(thread.id),
-  ]);
+  const projectWorks = await deps.works.listByProject(thread.projectId, { includeDeleted: true });
   const works = new Map<WorkId, ShadowWork>(
     projectWorks.map((work) => [work.id, { ...work, deleted: !!work.deletedAt }]),
   );
-  let primaryWorkId = primary?.workId ?? null;
   const plan: PlannedStep[] = [];
 
   for (const receipt of receipts) {
@@ -233,14 +224,6 @@ async function planReceipts(
         continue;
       }
       work.deleted = direction === "redo";
-    } else {
-      const from = direction === "undo" ? receipt.workId : switchTarget(receipt);
-      const to = direction === "undo" ? switchTarget(receipt) : receipt.workId;
-      if (primaryWorkId !== from || works.get(to)?.deleted !== false) {
-        unavailable("Conversation Work diverged from the receipt");
-        continue;
-      }
-      primaryWorkId = to;
     }
     plan.push({ receipt, command, executable: true });
   }
@@ -248,9 +231,9 @@ async function planReceipts(
 }
 
 async function applyStep(
-  deps: WorkReceiptReversalDeps,
+  deps: Pick<WorkReceiptReversalDeps, "preferences" | "works">,
   thread: Thread,
-  receipt: WorkReceipt,
+  receipt: WorkMutationReceipt,
   direction: Direction,
 ): Promise<void> {
   if (receipt.operation === "create") {
@@ -272,12 +255,6 @@ async function applyStep(
   } else if (receipt.operation === "delete") {
     if (direction === "undo") await deps.works.restore(receipt.workId);
     else await deps.works.softDelete(receipt.workId);
-  } else {
-    const target = direction === "undo" ? switchTarget(receipt) : receipt.workId;
-    await deps.threadWorks.rebindPrimary(thread.id, target);
-    if (thread.kind === "primary") {
-      await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, target);
-    }
   }
 }
 
@@ -290,12 +267,10 @@ async function applyState(works: WorkRepository, workId: WorkId, state: WorkRece
   });
 }
 
-function switchTarget(receipt: WorkReceipt): WorkId {
-  if (receipt.inverse?.command === "switch") return receipt.inverse.workId;
-  throw new Error("Switch receipt is missing its inverse");
-}
-
-function commandFor(receipt: WorkReceipt, direction: Direction): WorkReversalResult["command"] {
+function commandFor(
+  receipt: WorkMutationReceipt,
+  direction: Direction,
+): WorkReversalResult["command"] {
   if (direction === "undo" && receipt.inverse) return receipt.inverse.command;
   switch (receipt.operation) {
     case "create":
@@ -304,13 +279,11 @@ function commandFor(receipt: WorkReceipt, direction: Direction): WorkReversalRes
       return "update";
     case "delete":
       return "delete";
-    case "switch":
-      return "switch";
   }
 }
 
 function result(
-  receipt: WorkReceipt,
+  receipt: WorkMutationReceipt,
   command: WorkReversalResult["command"],
   status: WorkReversalResult["status"],
   message?: string,

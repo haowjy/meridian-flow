@@ -4,6 +4,7 @@ export type WorkStatus = "active" | "archived";
 export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
 
 import type { ProjectId, UserId, WorkId } from "../ids.js";
+import type { WorkReceipt } from "./receipts.js";
 
 export interface Work {
   id: WorkId;
@@ -44,6 +45,36 @@ export interface UpdateWorkRequest {
   goal?: string;
   description?: string;
   status?: WorkStatus;
+}
+
+/** Strict body for changing the Work bound to an existing thread. */
+export interface RebindThreadWorkRequest {
+  workId: WorkId;
+}
+
+export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
+
+/** Authoritative result shared by writer and model Work-rebind adapters. */
+export interface RebindThreadWorkResult {
+  threadId: import("../ids.js").ThreadId;
+  previousWorkId: WorkId;
+  work: Work;
+  changed: boolean;
+  preferenceChanged: boolean;
+  receipt: WorkReceipt;
+}
+
+export interface RebindThreadWorkResponse extends RebindThreadWorkResult {
+  contextUpdate: WorkContextUpdateStatus;
+}
+
+/** Live AG-UI projection emitted after a durable Work-context update commits. */
+export const WORK_CONTEXT_PROJECTION_EVENT = "meridian.work_context.changed" as const;
+
+export interface WorkContextProjectionSignal {
+  threadId: import("../ids.js").ThreadId;
+  projectId: ProjectId;
+  workId: WorkId;
 }
 
 export * from "./receipts.js";

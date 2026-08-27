@@ -93,6 +93,7 @@ describe("WorksManager actions", () => {
       defaultWorkId: "work-a",
       isError: false,
       isFetching: false,
+      status: "ready",
       refetch: vi.fn(),
     });
     vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
@@ -103,6 +104,7 @@ describe("WorksManager actions", () => {
     } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
 
     await withReactRoot(<WorksManager projectId="project-1" />, () => {
+      expect(document.querySelector("h2")?.textContent).toBe("Work");
       expect(buttonContaining("Work A").getAttribute("aria-pressed")).toBe("true");
       expect(buttonContaining("Work B").getAttribute("aria-pressed")).toBe("false");
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
@@ -117,7 +119,193 @@ describe("WorksManager actions", () => {
       );
     });
   });
+
+  it("names active and archived sections and keeps archived controls out of focus order until expanded", async () => {
+    mockManagerWorks([
+      workFixture("active-a", "Active A", "Goal A"),
+      archivedWorkFixture("archived-a", "Archived A"),
+    ]);
+
+    await withReactRoot(<WorksManager projectId="project-1" />, async () => {
+      expect(sectionNamed("Active Work")).not.toBeNull();
+      const archivedSection = sectionNamed("Archived Work");
+      const disclosure = buttonContaining("Archived Work");
+      expect(archivedSection).not.toBeNull();
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+      expect(disclosure.hasAttribute("aria-controls")).toBe(false);
+      expect(document.body.textContent).not.toContain("Archived A");
+      expect(focusableLabels()).toEqual([
+        "NewWork",
+        "ActiveAGoalAActive",
+        "EditActiveA",
+        "ArchivedWork(1)",
+      ]);
+
+      await act(async () => disclosure.click());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+      const panelId = disclosure.getAttribute("aria-controls");
+      expect(panelId).toBeTruthy();
+      expect(document.getElementById(panelId ?? "")).not.toBeNull();
+      expect(document.body.textContent).toContain("Archived A");
+      expect(focusableLabels().slice(-2)).toEqual([
+        "ArchivedAGoalArchivedAArchived",
+        "EditArchivedA",
+      ]);
+
+      await act(async () => disclosure.click());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+      expect(disclosure.hasAttribute("aria-controls")).toBe(false);
+      expect(document.getElementById(panelId ?? "")).toBeNull();
+      expect(document.body.textContent).not.toContain("Archived A");
+    });
+  });
+
+  it("opens Archived Work when the current Work becomes archived", async () => {
+    const active = workFixture("active-a", "Active A", "Goal A");
+    const archived = archivedWorkFixture("archived-a", "Archived A");
+    let currentWorkId = active.id;
+    let rerender: (() => void) | null = null;
+    mockManagerWorks([active, archived], () => currentWorkId);
+
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorksManager projectId="project-1" />;
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
+      currentWorkId = archived.id;
+      await act(async () => rerender?.());
+      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("true");
+      expect(buttonContaining("Archived A").getAttribute("aria-pressed")).toBe("true");
+    });
+  });
+
+  it("preserves a deliberate close across rerenders of the same current Work", async () => {
+    const archived = archivedWorkFixture("archived-a", "Archived A");
+    let rerender: (() => void) | null = null;
+    mockManagerWorks([archived], () => archived.id);
+
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorksManager projectId="project-1" />;
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      const disclosure = buttonContaining("Archived Work");
+      expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+      await act(async () => disclosure.click());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+
+      await act(async () => rerender?.());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+      expect(disclosure.textContent).toContain("Current: Archived A");
+      expect(document.body.textContent?.match(/Archived A/g)).toHaveLength(1);
+    });
+  });
+
+  it("contains a long current Work name in the collapsed trigger without duplicating it expanded", async () => {
+    const longName = "The Immortal Sovereign's Very Long Chronicle Beyond the Ninth Heaven";
+    const archived = archivedWorkFixture("archived-a", longName);
+    mockManagerWorks([archived], () => archived.id);
+
+    await withReactRoot(<WorksManager projectId="project-1" />, async () => {
+      const disclosure = buttonContaining("Archived Work");
+      expect(disclosure.textContent).not.toContain("Current:");
+      expect(summaryIn(disclosure)).toBeUndefined();
+
+      await act(async () => disclosure.click());
+      const summary = summaryIn(disclosure);
+      expect(summary?.textContent).toBe(`Current: ${longName}`);
+      expect(summary?.className).toContain("truncate");
+      expect(summary?.parentElement?.className).toContain("min-w-0");
+      expect(disclosure.className).toContain("w-full");
+      expect(disclosure.className).toContain("min-h-11");
+    });
+  });
+
+  it("reopens Archived Work when the archived current Work changes identity", async () => {
+    const archivedA = archivedWorkFixture("archived-a", "Archived A");
+    const archivedB = archivedWorkFixture("archived-b", "Archived B");
+    let currentWorkId = archivedA.id;
+    let rerender: (() => void) | null = null;
+    mockManagerWorks([archivedA, archivedB], () => currentWorkId);
+
+    function Harness() {
+      const [, setVersion] = useState(0);
+      rerender = () => setVersion((value) => value + 1);
+      return <WorksManager projectId="project-1" />;
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      const disclosure = buttonContaining("Archived Work");
+      await act(async () => disclosure.click());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+
+      currentWorkId = archivedB.id;
+      await act(async () => rerender?.());
+      expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+      expect(buttonContaining("Archived B").getAttribute("aria-pressed")).toBe("true");
+    });
+  });
+
+  it("opens Archived Work on load when it contains the current Work", async () => {
+    const archived = archivedWorkFixture("archived-a", "Archived A");
+    mockManagerWorks([archived], () => archived.id);
+
+    await withReactRoot(<WorksManager projectId="project-1" />, () => {
+      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("true");
+      expect(buttonContaining("Archived A").getAttribute("aria-pressed")).toBe("true");
+    });
+  });
+
+  it("omits Archived Work when there are no archived records", async () => {
+    mockManagerWorks([workFixture("active-a", "Active A", "Goal A")]);
+    await withReactRoot(<WorksManager projectId="project-1" />, () => {
+      expect(sectionNamed("Active Work")).not.toBeNull();
+      expect(sectionNamed("Archived Work")).toBeNull();
+    });
+  });
+
+  it("keeps the Active Work empty state and New Work action beside archived records", async () => {
+    mockManagerWorks([archivedWorkFixture("archived-a", "Archived A")], () => null);
+    await withReactRoot(<WorksManager projectId="project-1" />, () => {
+      expect(sectionNamed("Active Work")?.textContent).toContain("No active Work yet.");
+      expect(buttonContaining("New Work")).not.toBeNull();
+      expect(buttonContaining("Archived Work").getAttribute("aria-expanded")).toBe("false");
+    });
+  });
 });
+
+function summaryIn(disclosure: HTMLButtonElement) {
+  return Array.from(disclosure.querySelectorAll("span")).find((span) =>
+    span.textContent?.startsWith("Current:"),
+  );
+}
+
+function mockManagerWorks(
+  works: Work[],
+  currentId: () => string | null = () => works[0]?.id ?? null,
+) {
+  vi.mocked(queryHooks.useWorks).mockImplementation(() => ({
+    works,
+    currentWork: works.find((work) => work.id === currentId()) ?? null,
+    currentWorkId: currentId(),
+    defaultWorkId: works[0]?.id ?? null,
+    isError: false,
+    isFetching: false,
+    status: "ready",
+    refetch: vi.fn(),
+  }));
+  vi.mocked(queryHooks.useWorkMutations).mockReturnValue({
+    mutate: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    error: null,
+  } as unknown as ReturnType<typeof queryHooks.useWorkMutations>);
+}
 
 function workFixture(id: string, name: string, goal: string): Work {
   return {
@@ -135,6 +323,27 @@ function workFixture(id: string, name: string, goal: string): Work {
     lastActivityAt: "2026-08-01T00:00:00.000Z",
     deletedAt: null,
   } as Work;
+}
+
+function archivedWorkFixture(id: string, name: string): Work {
+  return {
+    ...workFixture(id, name, `Goal ${name}`),
+    status: "archived",
+    archivedAt: "2026-08-10T00:00:00.000Z",
+  };
+}
+
+function sectionNamed(label: string): HTMLElement | null {
+  const heading = [...document.querySelectorAll("h2, h3")].find(
+    (candidate) => candidate.textContent?.replace(/\s*\(\d+\)$/, "").trim() === label,
+  );
+  return heading?.closest("section") ?? null;
+}
+
+function focusableLabels(): string[] {
+  return [...document.querySelectorAll<HTMLButtonElement>("button:not([disabled])")].map((button) =>
+    (button.getAttribute("aria-label") ?? button.textContent ?? "").replace(/\s+/g, "").trim(),
+  );
 }
 
 function input(id: string): HTMLInputElement | HTMLTextAreaElement {

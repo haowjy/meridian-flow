@@ -48,17 +48,11 @@ export function MobileCreateEntryMenu({ onSelect }: MobileCreateEntryMenuProps) 
         onCloseAutoFocus={(event) => event.preventDefault()}
         className="min-w-44 border-border bg-background shadow-md"
       >
-        <DropdownMenuItem
-          className="min-h-11 cursor-pointer gap-3 px-3 text-sm focus:bg-sidebar-accent"
-          onSelect={() => onSelect("file")}
-        >
+        <DropdownMenuItem className="cursor-pointer" onSelect={() => onSelect("file")}>
           <FilePlus className="size-4 text-muted-foreground" aria-hidden />
           <Trans>New file</Trans>
         </DropdownMenuItem>
-        <DropdownMenuItem
-          className="min-h-11 cursor-pointer gap-3 px-3 text-sm focus:bg-sidebar-accent"
-          onSelect={() => onSelect("folder")}
-        >
+        <DropdownMenuItem className="cursor-pointer" onSelect={() => onSelect("folder")}>
           <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
           <Trans>New folder</Trans>
         </DropdownMenuItem>

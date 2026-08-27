@@ -56,7 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 throw new Error("injected preference failure");
               },
             },
-            contextUpdates: { async projectChanged() {} },
+            workContextDelivery: { async projectChanged() {} },
           },
           USER_ID,
           {

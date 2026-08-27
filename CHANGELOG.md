@@ -2,8 +2,59 @@
 
 ## [Unreleased]
 
-- `apps/app`: Home now manages active and archived Works through the live API,
-  and new chats require a Work before creation. The project explorer exposes
+- `apps/app`: composer overflow controls now match the 32px fine-pointer toolbar
+  rhythm and use a measured 44px coarse target; shared menu selection, hover,
+  and keyboard focus paint now reaches the popup's clipped inner edges with an
+  AA-contrast focus indicator in both themes.
+
+- `apps/app`: compact write-mode confirmation copy keeps its local 4px gutter,
+  and real toolbar measurement coverage now protects locked widths, intrinsic
+  label changes, observer updates, and final unlock reconciliation.
+
+- `apps/app`: dropdown rows now share full-width selected, hover, and inset
+  keyboard-focus boundaries while search fields and other non-row content keep
+  their intentional local gutters.
+
+- `apps/app`: blocking composer panel actions now retain their toolbar allocation
+  and popup anchor while Work or write-mode labels change, truncate transient
+  values within that allocation, and reconcile overflow once settlement finishes.
+- `apps/app`: writer-facing collection copy across Home, Work selection,
+  receipts, and command states now uses the collective `Work` label instead of
+  `Works`; the serialized unavailable-Work guidance follows the same wording.
+- `apps/app`: Home now separates Active Work from a default-collapsed Archived
+  Work disclosure. Selecting a different archived current Work reopens the
+  disclosure once, while a deliberate close remains closed across rerenders of
+  that same selection and names it in the collapsed summary.
+
+- `apps/app`: New Chat now creates immediately in the server-resolved
+  current/default Work from Home and the thread switcher, with inline failure
+  alerts and retry at each entry surface; writers can rebind afterward from the
+  composer.
+- `apps/app`: the desktop workspace selection now begins flush with the shared
+  40px pane-header boundary while phone navigation spacing remains unchanged.
+- `apps/app`: composer Agent, write-mode, and Work controls now share one
+  toolbar-owned popup, trigger, and page-aware focus contract across direct,
+  overflow, loading, mutation, error, and readonly states. Write mode keeps its
+  compact current-value trigger with localized naming and coarse-pointer size;
+  competing locks, open-surface host migration, and confirmation resets remain
+  truthful across Work changes.
+- `apps/app`: compact composer, Work, Agent, thread, DropdownMenu, and Select
+  surfaces now share consistent row density, collision gutters, state layout,
+  and accessible Work detail; long composer root labels and values truncate in
+  independent lanes without overflowing the row, and density popovers stay
+  inside the document safe area.
+- `apps/app`: responsive composer controls now keep one reducer-owned Radix
+  surface across navigation and resize, including deterministic focus and
+  readonly status-only overflow.
+- `apps/app`: the composer now lets writers search and change an idle chat's
+  Work from one responsive selector, including archived targets, cache
+  convergence, retry guidance, announcements, and direct Undo.
+- `apps/app`: Work changes now preserve the mounted chat/editor session,
+  decode canonical server refusals, and converge other-tab and LLM changes
+  through the existing live thread projection.
+
+- `apps/app`: Home now manages active and archived Works through the live API.
+  The project explorer exposes
   thread-scoped Scratch and Uploads on one flat left rail; Uploads remains
   intake-only without file or folder creation controls.
 
@@ -17,8 +68,29 @@
 - `apps/server`: projects with multiple active Works now list normally instead
   of failing the Work collection request.
 - `apps/server`: Work create, edit, archive, restore, delete, current selection,
-  thread listing, and conversation move routes are available. Moving a
-  conversation waits until its pending draft is reviewed.
+  and thread listing routes are available.
+- `apps/server`, `packages/contracts`: idle owned conversations can now rebind
+  to another Work through an idempotent writer endpoint and the same canonical
+  command used by the LLM Work tool. Binding, primary-thread preference,
+  receipt, and durable context refresh commit together; busy conversations
+  return a retryable conflict and pending delivery remains a successful,
+  truthful response.
+- `apps/server`, `packages/contracts`: writer Work rebinds now share the
+  cross-process model-turn claim, serialize structured conflicts through the
+  canonical Meridian error envelope, reuse one transaction-composable binding
+  transition for writer and model commands, and publish committed Work identity
+  through the existing journal/AG-UI stream for live client convergence.
+- `apps/app`, `apps/server`, `packages/contracts`: Work-switch receipts are now
+  factual records with no inverse. Switching back uses the normal Work picker;
+  neither the composer nor turn receipts expose switch-specific Undo/Redo, while
+  Work create/update/delete receipts remain reversible.
+- `apps/server`: successful writer Work switches commit a durable one-shot model
+  Notice with the binding transition. The next model request receives the exact
+  ordered before/after event after the writer's text while the independent
+  hidden Work-context update remains authoritative afterward.
+- `apps/server`: Work-rebind preflight concealment, lifecycle conflicts, missing
+  primary integrity failures, and infrastructure failures now remain distinct
+  through the repository, domain, and serialized HTTP boundaries.
 - `apps/server`: new conversations attach by explicit Work, parent Work, writer
   preference, then default. Subagents, forks, and handoffs cannot drift out of
   their parent's Work.

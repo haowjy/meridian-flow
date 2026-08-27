@@ -95,7 +95,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await updateHasLock;
       const commandUpdate = updateWorkTransition(
-        { works, contextUpdates: { async projectChanged() {} } },
+        { works, workContextDelivery: { async projectChanged() {} } },
         work.id,
         { name: "C" },
       );
@@ -124,7 +124,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await deleteHasLock;
       const commandDelete = deleteWorkTransition(
-        { works, contextUpdates: { async projectChanged() {} } },
+        { works, workContextDelivery: { async projectChanged() {} } },
         work.id,
       );
       await waitForLock("transactionid");
@@ -140,7 +140,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         goal: "Finish it",
         description: "Private notes",
       });
-      const deps = { works, contextUpdates: { async projectChanged() {} } };
+      const deps = { works, workContextDelivery: { async projectChanged() {} } };
       await control.unsafe(`
         CREATE SEQUENCE test_work_update_count;
         CREATE FUNCTION test_count_work_update() RETURNS trigger

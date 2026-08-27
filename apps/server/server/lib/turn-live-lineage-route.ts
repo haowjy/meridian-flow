@@ -19,7 +19,6 @@ type TurnLiveLineageRouteServices = {
   blocks: AppServices["threadRepos"]["blocks"];
   turns: AppServices["threadRepos"]["turns"];
   works: AppServices["workRepo"];
-  threadWorks: AppServices["threadRepos"]["threadWorks"];
 };
 
 export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLineageRouteServices {
@@ -31,7 +30,6 @@ export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLi
     blocks: app.threadRepos.blocks,
     turns: app.threadRepos.turns,
     works: app.workRepo,
-    threadWorks: app.threadRepos.threadWorks,
   };
 }
 
@@ -60,7 +58,6 @@ export async function handleTurnLiveLineageRequest(
       turns: deps.turns,
       works: deps.works,
       threads: deps.threads,
-      threadWorks: deps.threadWorks,
     },
     { threadId, turnId },
   );

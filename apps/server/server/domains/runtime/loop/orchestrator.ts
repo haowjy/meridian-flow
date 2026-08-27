@@ -86,6 +86,7 @@ import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { type EventSink, unknownToEventPayload } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
+import type { WorkContextDelivery } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type {
   ActiveDocumentResolver,
@@ -127,7 +128,6 @@ import {
   mapStreamEvent,
   toJsonValue,
 } from "./streaming.js";
-import type { SystemUpdateDelivery } from "./system-update-delivery.js";
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
@@ -168,7 +168,7 @@ export interface OrchestratorDeps {
   interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
   helperResultDelivery?: HelperResultDelivery;
-  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow">;
+  workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
@@ -1217,7 +1217,7 @@ async function* generateEvents(
               childRunCoordinator: deps.childRunCoordinator,
               eventSink,
               persistenceDeps: deps,
-              systemUpdateDelivery: deps.systemUpdateDelivery,
+              workContextDelivery: deps.workContextDelivery,
             },
             call,
             {

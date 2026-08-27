@@ -1,6 +1,6 @@
 # features/agents — future work
 
-- `AgentSelector.tsx` / `ComposerAgentControl.tsx`: when post-start agent
+- `ComposerAgentControl.tsx`: when post-start agent
   swapping and per-thread model choice ship, the composer control must still
   identify what the writer is talking to using the bare name alone — the
   "AI ·" prefix was deliberately removed (2026-07-17, Jimmy: "we know it's

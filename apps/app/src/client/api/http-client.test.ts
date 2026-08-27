@@ -21,6 +21,13 @@ describe("HTTP failure boundary", () => {
       expectedName: "MeridianApiError",
     },
     {
+      kind: "Nitro-wrapped structured envelope",
+      body: JSON.stringify({ status: 409, data: structuredEnvelope }),
+      contentType: "application/json",
+      expectedPayload: structuredEnvelope,
+      expectedName: "MeridianApiError",
+    },
+    {
       kind: "plain JSON",
       body: JSON.stringify({ message: "Rejected" }),
       contentType: "application/json",

@@ -12,6 +12,63 @@ import {
 const DATABASE_URL = process.env.DATABASE_URL;
 
 test.describe("vertical slice", () => {
+  test("keeps the workspace mounted when authenticated routes invalidate", async ({ page }) => {
+    test.skip(!DATABASE_URL, "DATABASE_URL is required");
+    const db = openE2eDb(DATABASE_URL ?? "");
+    let fixture: ProjectFixture | undefined;
+
+    try {
+      fixture = await seedProjectFixture(db, page.request, {
+        userId: await findTestUserId(db),
+        titlePrefix: "Auth invalidation",
+      });
+      const search = new URLSearchParams({
+        screen: "context",
+        thread: fixture.threadId,
+        scheme: "kb",
+        path: "/alpha.md",
+      });
+      await page.goto(`/project/${fixture.projectId}?${search.toString()}`);
+
+      const editor = page.locator(".ProseMirror").first();
+      const dockComposer = page.locator(`[data-debug-composer="${fixture.threadId}"] textarea`);
+      await expect(editor).toBeVisible();
+      await expect(dockComposer).toBeVisible();
+
+      const authMe = await page.evaluate(async () => {
+        const response = await fetch("/api/auth/me");
+        return {
+          status: response.status,
+          contentType: response.headers.get("content-type"),
+          body: await response.json(),
+        };
+      });
+      expect(authMe.status).toBe(200);
+      expect(authMe.contentType).toContain("application/json");
+      expect(authMe.body.user.userId).not.toBe("");
+
+      const unsentText = `Unsent invalidation check ${Date.now()}`;
+      await dockComposer.fill(unsentText);
+      await page.evaluate(async () => {
+        const router = (
+          window as typeof window & {
+            __TSR_ROUTER__?: { invalidate: () => Promise<void> };
+          }
+        ).__TSR_ROUTER__;
+        if (!router) throw new Error("TanStack router debug handle is unavailable");
+        await router.invalidate();
+      });
+
+      await expect(page.getByText("Something went wrong!")).toHaveCount(0);
+      await expect(editor).toBeVisible();
+      await expect(dockComposer).toHaveValue(unsentText);
+    } finally {
+      await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
+        db.end(),
+      );
+    }
+  });
+
   test("opens a real project context editor and streams a thread turn", async ({ page }) => {
     test.skip(!DATABASE_URL, "DATABASE_URL is required");
     const db = openE2eDb(DATABASE_URL ?? "");

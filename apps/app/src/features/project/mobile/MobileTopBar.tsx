@@ -14,7 +14,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/protocol";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -26,7 +25,6 @@ import type { ProjectViewProps } from "../ProjectView";
 export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
   projectId: string;
   activeThreadId: string | null;
-  activeWork: Work | null;
   onSelectThread: (threadId: string) => void;
   onOpenDrawer: () => void;
   /** Left-aligned location trail; replaces the centered title when set. */
@@ -39,7 +37,6 @@ export function MobileTopBar({
   activeScreen,
   projectId,
   activeThreadId,
-  activeWork,
   onSelectThread,
   onOpenDrawer,
   breadcrumb,
@@ -72,29 +69,20 @@ export function MobileTopBar({
         >
           {breadcrumb ??
             (activeScreen === "chat" && activeThreadId && !title ? (
-              <div className="flex min-w-0 flex-col items-center">
-                <ChatThreadTitle
-                  projectId={projectId}
-                  threadId={activeThreadId}
-                  onSelectThread={onSelectThread}
-                />
-                {activeWork ? (
-                  <span className="max-w-full truncate text-meta font-normal text-muted-foreground">
-                    <Trans>Work: {activeWork.name}</Trans>
-                  </span>
-                ) : null}
-              </div>
+              <ChatThreadTitle
+                projectId={projectId}
+                threadId={activeThreadId}
+                onSelectThread={onSelectThread}
+              />
             ) : (
               <div className="truncate text-sm font-semibold text-foreground">
                 {title ?? <Trans>Project</Trans>}
               </div>
             ))}
         </div>
-        <div
-          className={cn("flex size-11 shrink-0 items-center justify-end", !actions && "invisible")}
-        >
-          {actions}
-        </div>
+        {actions ? (
+          <div className="flex size-11 shrink-0 items-center justify-end">{actions}</div>
+        ) : null}
       </div>
     </header>
   );

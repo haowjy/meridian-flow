@@ -2,6 +2,7 @@
 import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { currentDrizzleDb } from "./drizzle-transaction.js";
 
 export type LockedWorkLifecycle = "active" | "deleted" | "missing";
@@ -21,7 +22,6 @@ export async function lockWorkLifecycle(
 }
 
 export async function requireLockedActiveWork(db: Database, workId: string): Promise<void> {
-  if ((await lockWorkLifecycle(db, workId)) !== "active") {
-    throw new Error(`Work not found: ${workId}`);
-  }
+  const state = await lockWorkLifecycle(db, workId);
+  if (state !== "active") throw new WorkLifecycleUnavailableError(workId, state);
 }

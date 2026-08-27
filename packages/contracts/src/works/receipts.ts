@@ -12,19 +12,35 @@ export type WorkReceiptState = {
 export type WorkReceiptInverse =
   | { command: "delete"; workId: WorkId; previousCurrentWorkId: WorkId | null }
   | { command: "update"; workId: WorkId; state: WorkReceiptState }
-  | { command: "restore"; workId: WorkId }
-  | { command: "switch"; workId: WorkId };
+  | { command: "restore"; workId: WorkId };
 
-export type WorkReceipt = {
-  operation: "create" | "update" | "delete" | "switch";
-  category: "mutate" | "binding";
+type WorkReceiptBase = {
   changed: boolean;
   workId: WorkId;
   workName: string;
   before: WorkReceiptState | null;
   after: WorkReceiptState | null;
+};
+
+export type WorkMutationReceipt = WorkReceiptBase & {
+  operation: "create" | "update" | "delete";
+  category: "mutate";
   inverse: WorkReceiptInverse | null;
 };
+
+export type WorkBindingReceipt = WorkReceiptBase & {
+  operation: "switch";
+  category: "binding";
+  inverse: null;
+};
+
+export type WorkReceipt = WorkMutationReceipt | WorkBindingReceipt;
+
+export function isReversibleWorkMutationReceipt(
+  receipt: WorkReceipt,
+): receipt is WorkMutationReceipt & { inverse: WorkReceiptInverse } {
+  return receipt.category === "mutate" && receipt.changed && receipt.inverse !== null;
+}
 
 export function parseWorkReceipt(value: unknown): WorkReceipt | null {
   const receipt = record(value);
@@ -46,12 +62,25 @@ export function parseWorkReceipt(value: unknown): WorkReceipt | null {
   const after = receipt.after === null ? null : parseState(receipt.after);
   if (receipt.before !== null && !before) return null;
   if (receipt.after !== null && !after) return null;
+  if (operation === "switch") {
+    if (receipt.inverse !== null) return null;
+    return {
+      operation,
+      category: "binding",
+      changed: receipt.changed,
+      workId: receipt.workId as WorkId,
+      workName: receipt.workName,
+      before,
+      after,
+      inverse: null,
+    };
+  }
   const inverse = receipt.inverse === null ? null : parseInverse(receipt.inverse);
   if (receipt.inverse !== null && !inverse) return null;
   if (receipt.changed !== (inverse !== null)) return null;
   return {
     operation,
-    category: expectedCategory,
+    category: "mutate",
     changed: receipt.changed,
     workId: receipt.workId as WorkId,
     workName: receipt.workName,
@@ -99,8 +128,6 @@ function parseInverse(value: unknown): WorkReceiptInverse | null {
     }
     case "restore":
       return { command: "restore", workId: inverse.workId as WorkId };
-    case "switch":
-      return { command: "switch", workId: inverse.workId as WorkId };
     default:
       return null;
   }

@@ -79,7 +79,7 @@ function AssistantTurnComponent({
     [liveLineage.documents],
   );
   // Work mutations leave no document lineage; their receipts ride the turn's
-  // own tool results, so a Work-only turn still gets its undo-bearing receipt.
+  // own tool results, so a Work-mutation-only turn still gets its Undo receipt.
   // Gated on settlement like document lineage: a receipt is a record of a
   // finished turn, and mid-stream it would offer Undo on a turn still writing.
   const workReceipts = useMemo(

@@ -71,10 +71,10 @@ export function workReceipt(tool: ToolView): WorkReceipt | null {
 }
 
 /**
- * Every Work receipt a turn's tool results carry, in block order. The turn
- * edits receipt asks this to learn whether undo has a Work half; blocks are
- * paired with the same grouping the timeline renders from, so live and durable
- * block shapes answer identically.
+ * Every factual Work receipt a turn's tool results carry, in block order.
+ * Callers decide whether a receipt is presentation-only (binding) or a
+ * reversible mutation. Blocks are paired with the same grouping the timeline
+ * renders from, so live and durable block shapes answer identically.
  */
 export function turnWorkReceipts(blocks: Block[]): WorkReceipt[] {
   return groupDeliverySegments(blocks).flatMap((segment) => {

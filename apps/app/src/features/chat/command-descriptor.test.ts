@@ -87,12 +87,12 @@ describe("work command phrases", () => {
           workName: "Tournament arc",
           before: null,
           after: null,
-          inverse: { command: "switch", workId: "w0" },
+          inverse: null,
         },
       },
     });
     expect(phrases(tool)).toEqual({
-      active: "Switching Works…",
+      active: "Switching Work…",
       complete: "Switched this conversation to Work Tournament arc",
     });
   });
@@ -109,8 +109,8 @@ describe("work command phrases", () => {
   it("keeps reads to one minimal generic row", () => {
     for (const command of ["list", "show"]) {
       expect(phrases(toolView({ toolName: "work", input: { command } }))).toEqual({
-        active: "Checking Works…",
-        complete: "Checked Works",
+        active: "Checking Work…",
+        complete: "Checked Work",
       });
     }
   });

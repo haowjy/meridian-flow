@@ -276,6 +276,31 @@
   @apply min-h-0 flex-1 overflow-y-auto overscroll-y-contain;
 }
 
+.safe-area-collision-boundary {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: env(safe-area-inset-left, 0px);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Radix supplies the collision-aware bound after positioning. The fallback keeps
+   the selector bounded before that custom property exists and in short mobile
+   viewports, including safe-area insets. */
+@utility dropdown-surface {
+  width: min(
+    var(--dropdown-preferred-width, 14rem),
+    var(--radix-popover-content-available-width, 100vw),
+    calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 1rem)
+  ) !important;
+  max-height: min(
+    var(--radix-popover-content-available-height, 100svh),
+    calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem)
+  );
+}
+
 @utility main-pane {
   @apply min-w-0 max-w-full overflow-x-hidden;
 }
@@ -500,6 +525,19 @@
     box-shadow:
       0 0 0 2px var(--color-border-focus),
       0 0 0 4px color-mix(in oklab, var(--color-ring) 12%, transparent);
+  }
+}
+
+/* Dropdown rows meet the clipped surface edge. Their keyboard indicator uses
+   block-edge rules so it stays visible inside clipping without recreating a
+   four-sided inset card. Composite rows apply this to their wrapper. */
+@utility dropdown-focus-ring {
+  @apply outline-none;
+  &:focus-visible,
+  &:has(> :focus-visible) {
+    box-shadow:
+      inset 0 2px 0 var(--color-dropdown-focus-indicator),
+      inset 0 -2px 0 var(--color-dropdown-focus-indicator) !important;
   }
 }
 

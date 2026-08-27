@@ -57,6 +57,12 @@ Two interfaces are the only paths between the visual layer and the substrate:
 - **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
   thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
   (cache-only today, no PATCH endpoint) rather than on the thread store.
+- **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
+  reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
+  `convergeThreadWorkBinding` is the one cache-effect boundary, while
+  `useThreadDurableProjections` is the one persistent transport owner. See
+  [`features/chat/.context/composer-write-mode.md`](../src/features/chat/.context/composer-write-mode.md)
+  for placement, interaction ownership, and mid-thread rebind behavior.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
   `useWorks` also exposes the server-resolved `defaultWorkId`; `useDefaultWorkId`
@@ -184,6 +190,13 @@ is the single source of screen/thread/context ownership. `ProjectView` and its
 children are controlled — they never set the URL directly, only call the route's
 handlers. Direct `/chat/$threadId` renders the independent chat view inside the
 same provider stack.
+
+Home's Work manager presents Active Work first and keeps Archived Work in a
+default-collapsed disclosure. If the current Work is archived at load or becomes
+archived, the disclosure opens. Changing directly from one archived current Work
+to another also reopens it once; a deliberate close wins across rerenders while
+that same Work remains current, and the collapsed trigger continues to name it.
+Home remains the only scroll owner for both lists.
 
 Ownership rules:
 
@@ -329,6 +342,17 @@ Spacing is contextual and resists full centralization:
   either (a) Tier 1 rhythm that needs promoting, or (b) you should round to
   the nearest scale step.
 
+Dropdown row geometry is shared by `components/ui/dropdown-presentation.ts`.
+Row-bearing regions add vertical breathing only; `dropdownRowVariants` alone
+owns the horizontal text gutter and square, full-bleed state paint. Keyboard
+focus uses block-edge rules and the theme-specific semantic dropdown focus
+indicator, whose contrast is protected against every shared row fill, not a
+four-sided inset halo. It remains visible inside popup clipping without reading
+as another card. Search
+fields, headings, and state copy add their own local gutters. This keeps
+selected, hover, and focus boundaries edge-attached across menus, selects,
+pickers, composer navigation, and the thread switcher.
+
 ### Typography
 
 Three fonts via `@theme`: `--font-heading` → Cormorant Garamond (display),
@@ -397,7 +421,7 @@ geometry) or it's a token that wants promoting.
 ## Dev limitations (pilot)
 
 - Thread event log is in-memory in `apps/server`. Agent events lost on `apps/server` restart. Swap the adapter there without touching this app.
-- Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`) and skips `/api/auth/*` so TanStack Start route handlers can own WorkOS AuthKit cookie auth in-process.
+- Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`). Its explicit route-owner inventory keeps `/api/auth/callback` and `/api/auth/dev-login` in TanStack Start while forwarding the server-owned auth family, including `/api/auth/me`, to `apps/server`.
 
 ## E2E document fixtures
 

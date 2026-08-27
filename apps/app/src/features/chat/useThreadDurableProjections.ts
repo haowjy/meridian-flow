@@ -1,5 +1,9 @@
-/** Thread-mounted trail subscription; unlike the run controller it remains after RUN_FINISHED. */
+/** Persistent owner for durable thread projections, including Work binding and trails. */
 import { EventType } from "@meridian/contracts/protocol";
+import {
+  WORK_CONTEXT_PROJECTION_EVENT,
+  type WorkContextProjectionSignal,
+} from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -9,6 +13,10 @@ import {
   reconcileTrailShells,
 } from "@/client/change-trails";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
+import {
+  convergeThreadWorkBinding,
+  readStableThreadWorkBinding,
+} from "@/client/query/thread-work-binding-cache";
 
 type TrailEventValue = {
   threadId: string;
@@ -24,7 +32,27 @@ type TrailEventValue = {
   };
 };
 
-export function useThreadChangeTrails(threadId: string) {
+function decodeWorkProjection(
+  threadId: string,
+  seq: string,
+  event: { type: string; name?: string; value?: unknown },
+): { seq: string; signal: WorkContextProjectionSignal } | null {
+  if (event.type !== EventType.CUSTOM || event.name !== WORK_CONTEXT_PROJECTION_EVENT) return null;
+  const value = event.value;
+  if (!value || typeof value !== "object") return null;
+  const { threadId: eventThreadId, projectId, workId } = value as Record<string, unknown>;
+  return eventThreadId === threadId && typeof projectId === "string" && typeof workId === "string"
+    ? { seq, signal: { threadId, projectId, workId } }
+    : null;
+}
+
+export function useThreadDurableProjections({
+  threadId,
+  projectId,
+}: {
+  threadId: string;
+  projectId: string | null;
+}) {
   const transport = useThreadTransport();
   const queryClient = useQueryClient();
   const [state, setState] = useState(emptyTrailShellState);
@@ -92,7 +120,12 @@ export function useThreadChangeTrails(threadId: string) {
     void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     void reconcile(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
-      onEvent: ({ event }) => {
+      onEvent: ({ seq, event }) => {
+        const projection = decodeWorkProjection(threadId, seq, event);
+        if (projection) {
+          convergeThreadWorkBinding(queryClient, { source: "projected", ...projection });
+          return;
+        }
         if (
           event.type !== EventType.CUSTOM ||
           (event.name !== "meridian.turn_change_trail.updated" &&
@@ -121,6 +154,13 @@ export function useThreadChangeTrails(threadId: string) {
         // journal outgrows the server's replay window gap continuously — there,
         // an expanded card's change rows could never finish loading at all.
         void reconcile(threadGeneration);
+        if (projectId) {
+          void readStableThreadWorkBinding(queryClient, {
+            projectId,
+            threadId,
+            previousWorkId: null,
+          }).catch(() => undefined);
+        }
       },
     });
     return () => {
@@ -129,6 +169,6 @@ export function useThreadChangeTrails(threadId: string) {
       unsubscribe();
       void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     };
-  }, [queryClient, reconcile, threadId, transport]);
-  return state;
+  }, [projectId, queryClient, reconcile, threadId, transport]);
+  return { changeTrails: state };
 }

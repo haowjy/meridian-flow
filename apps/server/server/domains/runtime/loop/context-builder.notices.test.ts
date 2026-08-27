@@ -1,7 +1,7 @@
 /** Formatting coverage for typed model-context notices. */
 import { describe, expect, it } from "vitest";
-import type { Notice } from "../../notices/index.js";
-import { formatNotices } from "./context-builder.js";
+import { createWriterWorkSwitchedNotice, type Notice } from "../../notices/index.js";
+import { attachNoticesToLatestUserMessage, formatNotices } from "./context-builder.js";
 
 function notice(kind: string, data: Record<string, unknown>, message = "fallback"): Notice {
   return {
@@ -30,5 +30,65 @@ describe("formatNotices", () => {
         }),
       ]),
     ).toContain("chapter-one, chapter-two");
+  });
+
+  it("formats typed writer Work switches instead of trusting fallback text", () => {
+    expect(
+      formatNotices([
+        {
+          ...notice("work_switched", {
+            previousWorkId: "work-a",
+            previousWorkName: 'Book "One"',
+            workId: "work-b",
+            workName: "Book Two",
+            actor: "writer",
+          }),
+          message: "stale fallback",
+        },
+      ]),
+    ).toBe('This conversation\'s Work switched from "Book \\"One\\"" to "Book Two".');
+  });
+
+  it("places ordered Work-switch alerts immediately after the latest writer text", () => {
+    const switches = [
+      createWriterWorkSwitchedNotice({
+        threadId: "thread-1" as never,
+        previousWorkId: "work-a" as never,
+        previousWorkName: "A",
+        workId: "work-b" as never,
+        workName: "B",
+      }),
+      createWriterWorkSwitchedNotice({
+        threadId: "thread-1" as never,
+        previousWorkId: "work-b" as never,
+        previousWorkName: "B",
+        workId: "work-a" as never,
+        workName: "A",
+      }),
+    ].map((input, index): Notice => ({ ...input, id: index + 1, createdAt: new Date(index) }));
+
+    expect(
+      attachNoticesToLatestUserMessage(
+        [
+          { role: "system", content: [{ type: "text", text: "system" }] },
+          { role: "user", content: [{ type: "text", text: "what did i just do?" }] },
+        ],
+        switches,
+      ),
+    ).toEqual([
+      { role: "system", content: [{ type: "text", text: "system" }] },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what did i just do?" },
+          {
+            type: "text",
+            text: expect.stringMatching(
+              /A" to "B"\.\n\nThis conversation's Work switched.*B" to "A"/,
+            ),
+          },
+        ],
+      },
+    ]);
   });
 });

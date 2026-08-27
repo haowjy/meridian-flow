@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkOwner({ works: app.workRepo, projects: app.projectRepo }, workId, user.userId);
   const work = await updateWork(
-    { works: app.workRepo, contextUpdates: app.systemUpdates },
+    { works: app.workRepo, workContextDelivery: app.workContextDelivery },
     workId,
     {
       name: body.name?.trim(),

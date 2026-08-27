@@ -18,6 +18,11 @@ export {
 } from "./domain/orchestrator-event-projector.js";
 export { projectReadModelEvent } from "./domain/read-model-projector.js";
 export {
+  RebindThreadWorkError,
+  type RebindThreadWorkInput,
+  rebindThreadWork,
+} from "./domain/rebind-thread-work.js";
+export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";

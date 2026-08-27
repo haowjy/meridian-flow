@@ -52,7 +52,7 @@ import {
   createWork,
   deleteWorkTransition,
   updateWorkTransition,
-  type WorkContextUpdates,
+  type WorkContextDelivery,
   WorkDeleteBlockedError,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -67,7 +67,9 @@ import type {
   ThreadRepository,
   ThreadWorksRepository,
   TurnDocumentTouchRepository,
+  WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
+import { rebindThreadWork } from "../domains/threads/index.js";
 
 export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 
@@ -79,11 +81,12 @@ export interface ToolWiringDeps {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   preferences: ProjectPreferencesRepository;
-  workContextUpdates: WorkContextUpdates;
+  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
+  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
-  transaction?<T>(operation: () => Promise<T>): Promise<T>;
+  transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
@@ -590,7 +593,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             {
               works: deps.works,
               preferences: deps.preferences,
-              contextUpdates: deps.workContextUpdates,
+              workContextDelivery: deps.workContextDelivery,
             },
             thread.userId,
             {
@@ -641,7 +644,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "update") {
           const transition = await updateWorkTransition(
-            { works: deps.works, contextUpdates: deps.workContextUpdates },
+            { works: deps.works, workContextDelivery: deps.workContextDelivery },
             selected.id,
             {
               name: command.name,
@@ -677,7 +680,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "delete") {
           const transition = await deleteWorkTransition(
-            { works: deps.works, contextUpdates: deps.workContextUpdates },
+            { works: deps.works, workContextDelivery: deps.workContextDelivery },
             selected.id,
           );
           const before = transition.before ?? selected;
@@ -700,39 +703,26 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           };
         }
 
-        // The membership and primary-thread preference are one committed
-        // decision. Both adapters join the ambient repository transaction.
-        const transaction = deps.transaction ?? deps.works.transaction.bind(deps.works);
-        const rebound = await transaction(async () => {
-          const result = await deps.threadWorks.rebindPrimary(thread.id, selected.id);
-          if (!result.previousWorkId) throw new Error("Conversation has no current Work");
-          const [previousWork, targetWork] = await Promise.all([
-            deps.works.findById(result.previousWorkId),
-            deps.works.findById(selected.id),
-          ]);
-          if (!previousWork) throw new Error("Conversation's current Work was not found");
-          if (!targetWork || targetWork.deletedAt) throw new Error("Target Work is not available");
-          if (result.changed && thread.kind === "primary") {
-            await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, selected.id);
-          }
-          if (result.changed) await deps.workContextUpdates.threadChanged(thread.id);
-          return { ...result, previousWork, targetWork };
-        });
+        const rebound = await deps.transaction(() =>
+          rebindThreadWork(
+            {
+              threads: deps.threads,
+              threadWorks: deps.threadWorks,
+              works: deps.works,
+              preferences: deps.preferences,
+              obligations: deps.obligations,
+            },
+            {
+              threadId: thread.id,
+              targetWorkId: selected.id,
+              preferenceUserId: thread.userId,
+            },
+          ),
+        );
         return {
-          output: modelWork(rebound.targetWork),
+          output: modelWork(rebound.work),
           metadata: {
-            workReceipt: {
-              operation: "switch",
-              category: "binding",
-              changed: rebound.changed,
-              workId: rebound.targetWork.id,
-              workName: rebound.targetWork.name,
-              before: receiptState(rebound.previousWork),
-              after: receiptState(rebound.targetWork),
-              inverse: rebound.changed
-                ? { command: "switch", workId: rebound.previousWork.id }
-                : null,
-            } satisfies WorkReceipt,
+            workReceipt: rebound.receipt,
             ...(rebound.changed ? { workContextChanged: true } : {}),
           },
         };

@@ -1,11 +1,15 @@
 /** Convergence proofs for the thread-mounted trail subscription. */
 // @vitest-environment jsdom
+import { EventType } from "@meridian/contracts/protocol";
+import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChangeTrailShell } from "@/client/change-trails";
-import { useThreadChangeTrails } from "./useThreadChangeTrails";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { useThreadDurableProjections } from "./useThreadDurableProjections";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -54,9 +58,9 @@ const shell = (trailId: string): ChangeTrailShell => ({
 let cleanup: (() => void) | undefined;
 
 function mount() {
-  const seen: ReturnType<typeof useThreadChangeTrails>[] = [];
+  const seen: ReturnType<typeof useThreadDurableProjections>[] = [];
   function Probe() {
-    seen.push(useThreadChangeTrails("thread-1"));
+    seen.push(useThreadDurableProjections({ threadId: "thread-1", projectId: "project-1" }));
     return null;
   }
   const container = document.createElement("div");
@@ -84,7 +88,7 @@ afterEach(() => {
   mocks.listChangeTrailShells.mockReset();
 });
 
-describe("useThreadChangeTrails", () => {
+describe("useThreadDurableProjections", () => {
   it("converges under a gap burst instead of starving on superseded requests", async () => {
     // Each list request is held open so the burst lands while one is in flight —
     // the exact shape that used to leave the map permanently empty.
@@ -113,8 +117,8 @@ describe("useThreadChangeTrails", () => {
     });
 
     expect(mocks.listChangeTrailShells).toHaveBeenCalledTimes(2);
-    expect(Object.keys(view.latest()?.byId ?? {})).toEqual(["trail-1", "trail-2"]);
-    expect(view.latest()?.gapPending).toBe(false);
+    expect(Object.keys(view.latest()?.changeTrails.byId ?? {})).toEqual(["trail-1", "trail-2"]);
+    expect(view.latest()?.changeTrails.gapPending).toBe(false);
   });
 
   it("leaves in-flight change-trail detail alone across a gap", async () => {
@@ -133,5 +137,44 @@ describe("useThreadChangeTrails", () => {
     });
 
     expect(client.getQueryData(detailKey)).toEqual([{ changeId: "change-1" }]);
+  });
+
+  it("applies one typed Work projection once and ignores duplicate journal delivery", async () => {
+    mocks.listChangeTrailShells.mockResolvedValue([]);
+    const view = mount();
+    await act(async () => {});
+    const client = view.queryClient();
+    client.setQueryData(projectQueryKeys.works("project-1"), {
+      defaultWorkId: "work-a",
+      works: [{ id: "work-c", name: "C" }],
+    });
+    client.setQueryData(projectQueryKeys.threads("project-1"), [
+      { id: "thread-1", projectId: "project-1", workId: "work-a" },
+    ]);
+    const setQueryData = vi.spyOn(client, "setQueryData");
+    const delivery = {
+      seq: "9",
+      event: {
+        type: EventType.CUSTOM,
+        name: WORK_CONTEXT_PROJECTION_EVENT,
+        value: { threadId: "thread-1", projectId: "project-1", workId: "work-c" },
+      },
+    };
+
+    await act(async () => {
+      mocks.handlers?.onEvent(delivery);
+      mocks.handlers?.onEvent(delivery);
+    });
+
+    expect(client.getQueryData(threadQueryKeys.workProjectionCursor("thread-1"))).toEqual({
+      seq: "9",
+      workId: "work-c",
+    });
+    expect(
+      setQueryData.mock.calls.filter(
+        ([key]) =>
+          JSON.stringify(key) === JSON.stringify(threadQueryKeys.workProjectionCursor("thread-1")),
+      ),
+    ).toHaveLength(1);
   });
 });

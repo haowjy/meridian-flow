@@ -31,6 +31,11 @@ import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.j
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
+export {
+  type WorkLifecycleState,
+  WorkLifecycleUnavailableError,
+} from "./domain/work-lifecycle.js";
+
 class BootstrapDocumentSeedError extends Error {
   constructor(cause: unknown) {
     super(
@@ -471,7 +476,8 @@ export {
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
-export {
-  noopWorkContextUpdates,
-  type WorkContextUpdates,
-} from "./work-context-updates.js";
+export type {
+  DeliveredWorkContextUpdate,
+  WorkContextDelivery,
+  WorkContextPostCommitResult,
+} from "./work-context-delivery.js";

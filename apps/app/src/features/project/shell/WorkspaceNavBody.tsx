@@ -40,7 +40,7 @@ export function WorkspaceNavBody({
       <div
         className={cn(
           "flex shrink-0 flex-col",
-          phone ? "gap-1 px-3 py-3" : "gap-0.5 border-b border-border-subtle pt-1 pb-2",
+          phone ? "gap-1 px-3 py-3" : "gap-0.5 border-b border-border-subtle pb-2",
         )}
       >
         {SCREENS.map((screen) => (

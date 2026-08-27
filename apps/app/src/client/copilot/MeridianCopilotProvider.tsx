@@ -6,6 +6,7 @@
  * The historical provider/context names stay as the app seam while the value is
  * now the direct transport controller.
  */
+
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
 
 import { useThreadTransport } from "@/client/providers/TransportProvider";

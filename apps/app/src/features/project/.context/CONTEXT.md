@@ -51,9 +51,9 @@ are desktop shell grammar.
 
 Home is also the live Work-management surface. It reads the Work collection
 and the writer's explicit current Work through TanStack Query, and owns create,
-switch, metadata, archive, restore, and guarded delete actions. Chat creation
-chooses and submits a Work; after creation a chat's Work is displayed as fact
-and cannot be changed by the client.
+switch, metadata, archive, restore, and guarded delete actions. New Chat creates
+immediately in the server-resolved current/default Work without loading the Work
+catalog. After creation, the composer Work control can rebind the chat.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings

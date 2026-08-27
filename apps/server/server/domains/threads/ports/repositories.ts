@@ -250,6 +250,14 @@ export interface ThreadWorksRepository {
   listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
 }
 
+/** A membership target belongs to a different project than its thread. */
+export class ThreadWorkProjectMismatchError extends Error {
+  constructor(readonly workId: WorkId) {
+    super("Work is not available in this project");
+    this.name = "ThreadWorkProjectMismatchError";
+  }
+}
+
 export interface TurnDocumentTouch {
   id: string;
   turnId: TurnId;

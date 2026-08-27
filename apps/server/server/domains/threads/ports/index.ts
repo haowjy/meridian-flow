@@ -29,3 +29,4 @@ export type {
   UsageRecorder,
   WorkContextDeliveryRepository,
 } from "./repositories.js";
+export { ThreadWorkProjectMismatchError } from "./repositories.js";

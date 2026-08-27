@@ -56,6 +56,7 @@ describe("orchestrator model-request debug capture", () => {
       defaultModel: "mock-llm-v1",
     });
 
+    let workSwitchPending = true;
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
         gateway,
@@ -66,13 +67,21 @@ describe("orchestrator model-request debug capture", () => {
         notices: {
           async record() {},
           async drainForModelContext() {
+            if (!workSwitchPending) return [];
+            workSwitchPending = false;
             return [
               {
                 id: 1,
-                kind: "awareness_degraded",
+                kind: "work_switched",
                 scope: { kind: "thread" as const, threadId: thread.id },
-                message: "",
-                data: { documentNames: ["chapter-debug"] },
+                message: "stale fallback",
+                data: {
+                  previousWorkId: "work-a",
+                  previousWorkName: "Book One",
+                  workId: "work-b",
+                  workName: "Book Two",
+                  actor: "writer",
+                },
                 createdAt: new Date("2026-07-10T00:00:00.000Z"),
               },
             ];
@@ -88,7 +97,7 @@ describe("orchestrator model-request debug capture", () => {
 
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
-      userText: "hello",
+      userText: "what did i just do?",
       treeBudget: createDefaultTreeBudget(),
     });
 
@@ -111,8 +120,39 @@ describe("orchestrator model-request debug capture", () => {
     expect(first?.requestDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(first?.requestBytes).toBeGreaterThan(0);
     expect(JSON.stringify(first?.request?.messages[0])).toContain("You are a helpful assistant.");
-    expect(JSON.stringify(first?.request?.messages[0])).not.toContain("chapter-debug");
-    expect(JSON.stringify(first?.request)).toContain("hello");
-    expect(JSON.stringify(first?.request)).toContain("chapter-debug");
+    expect(JSON.stringify(first?.request?.messages[0])).not.toContain("writer switched");
+    expect(first?.request?.messages).toEqual(
+      expect.arrayContaining([
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "what did i just do?" },
+            {
+              type: "text",
+              text: '\n\nMeridian context for this message:\nThis conversation\'s Work switched from "Book One" to "Book Two".',
+            },
+          ],
+        },
+      ]),
+    );
+
+    const nextHandle = await orchestrator.runTurn({
+      threadId: thread.id,
+      userText: "and now?",
+      treeBudget: createDefaultTreeBudget(),
+    });
+    for await (const _event of nextHandle.events) {
+      // Consume the stream so the debug record finalizes.
+    }
+    const nextRecords = modelRequestDebug.listByTurn(thread.id, nextHandle.assistantTurnId);
+    expect(nextRecords[0]?.iteration).toBe(0);
+    expect(JSON.stringify(nextRecords[0]?.request)).toContain("and now?");
+    const nextWriterMessage = [...(nextRecords[0]?.request?.messages ?? [])]
+      .reverse()
+      .find((message) => message.role === "user");
+    expect(nextWriterMessage).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "and now?" }],
+    });
   });
 });

@@ -5,10 +5,16 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectAgentSummary } from "@meridian/contracts/agents";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
+import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
+import {
+  dropdownResultsVariants,
+  dropdownRowVariants,
+  dropdownSurfaceVariants,
+} from "@/components/ui/dropdown-presentation";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { sourceBadgeLabel } from "@/lib/source-badge";
@@ -24,48 +30,75 @@ export type AgentPickerProps = {
 };
 
 export function AgentPicker({ status, selectedSlug, onSelect, trigger }: AgentPickerProps) {
-  const agents = status.agents ?? [];
-  const installed = agents.filter((agent) => agent.source === "package" || agent.source === "user");
-  const builtins = agents.filter((agent) => agent.source === "builtin");
-
+  const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
-        <div className="flex max-h-[min(60vh,24rem)] flex-col overflow-y-auto p-1">
-          {status.status === "loading" || status.status === "disabled" ? (
-            <PickerHint>
-              <Trans>Loading agents…</Trans>
-            </PickerHint>
-          ) : status.status === "error" ? (
-            <ErrorHint onRetry={status.refetch} />
-          ) : status.status === "empty" ? (
-            <PickerHint>
-              <Trans>No agents available.</Trans>
-            </PickerHint>
-          ) : (
-            <>
-              {installed.length > 0 ? (
-                <AgentGroup
-                  title={t`Installed`}
-                  agents={installed}
-                  selectedSlug={selectedSlug}
-                  onSelect={onSelect}
-                />
-              ) : null}
-              {builtins.length > 0 ? (
-                <AgentGroup
-                  title={t`Built-in`}
-                  agents={builtins}
-                  selectedSlug={selectedSlug}
-                  onSelect={onSelect}
-                />
-              ) : null}
-            </>
-          )}
-        </div>
+      <PopoverContent
+        {...densityPopoverCollisionProps}
+        align="start"
+        className={dropdownSurfaceVariants({ measure: "identity", page: "picker" })}
+      >
+        <AgentPickerPanel status={status} selectedSlug={selectedSlug} onSelect={onSelect} />
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function AgentPickerPanel({
+  status,
+  selectedSlug,
+  onSelect,
+  focusRefs,
+}: Omit<AgentPickerProps, "trigger"> & {
+  focusRefs?: {
+    selected: RefObject<HTMLButtonElement | null>;
+    first: RefObject<HTMLButtonElement | null>;
+    retry: RefObject<HTMLButtonElement | null>;
+  };
+}) {
+  const agents = status.agents ?? [];
+  const installed = agents.filter((agent) => agent.source === "package" || agent.source === "user");
+  const builtins = agents.filter((agent) => agent.source === "builtin");
+  const firstSlug = agents[0]?.slug;
+
+  return (
+    <div className={cn(dropdownResultsVariants({ kind: "picker" }), "flex flex-col")}>
+      {status.status === "loading" || status.status === "disabled" ? (
+        <PickerHint>
+          <Trans>Loading agents…</Trans>
+        </PickerHint>
+      ) : status.status === "error" ? (
+        <ErrorHint onRetry={status.refetch} retryRef={focusRefs?.retry} />
+      ) : status.status === "empty" ? (
+        <PickerHint>
+          <Trans>No agents available.</Trans>
+        </PickerHint>
+      ) : (
+        <>
+          {installed.length > 0 ? (
+            <AgentGroup
+              title={t`Installed`}
+              agents={installed}
+              selectedSlug={selectedSlug}
+              onSelect={onSelect}
+              focusRefs={focusRefs}
+              firstSlug={firstSlug}
+            />
+          ) : null}
+          {builtins.length > 0 ? (
+            <AgentGroup
+              title={t`Built-in`}
+              agents={builtins}
+              selectedSlug={selectedSlug}
+              onSelect={onSelect}
+              focusRefs={focusRefs}
+              firstSlug={firstSlug}
+            />
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -74,15 +107,22 @@ function AgentGroup({
   agents,
   selectedSlug,
   onSelect,
+  focusRefs,
+  firstSlug,
 }: {
   title: string;
   agents: ProjectAgentSummary[];
   selectedSlug: string;
   onSelect: (slug: string) => void;
+  focusRefs?: {
+    selected: RefObject<HTMLButtonElement | null>;
+    first: RefObject<HTMLButtonElement | null>;
+  };
+  firstSlug?: string;
 }) {
   return (
-    <section className="py-1">
-      <p className={cn(sectionLabelVariants({ variant: "section" }), "px-2 py-1")}>{title}</p>
+    <section>
+      <p className={cn(sectionLabelVariants({ variant: "group" }), "mb-1 px-2")}>{title}</p>
       <ul className="flex flex-col gap-0.5">
         {agents.map((agent) => {
           const active = agent.slug === selectedSlug;
@@ -91,13 +131,20 @@ function AgentGroup({
           return (
             <li key={agent.slug}>
               <button
+                ref={
+                  agent.slug === selectedSlug
+                    ? focusRefs?.selected
+                    : agent.slug === firstSlug
+                      ? focusRefs?.first
+                      : undefined
+                }
                 type="button"
                 onClick={() => onSelect(agent.slug)}
                 className={cn(
-                  "focus-ring flex w-full flex-col gap-0.5 rounded-md px-2 py-2 text-left transition-colors",
+                  dropdownRowVariants({ kind: "identity", selected: active }),
                   // Pressed neutral, not an accent wash — routine selection
                   // never spends jade (same grammar as sidebar rows).
-                  active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50",
+                  active && "font-medium",
                 )}
               >
                 <span className="inline-flex min-w-0 max-w-full items-center gap-2">
@@ -111,7 +158,7 @@ function AgentGroup({
                   ) : null}
                 </span>
                 {agent.description ? (
-                  <span className="line-clamp-2 text-meta text-muted-foreground">
+                  <span className="line-clamp-1 text-meta text-muted-foreground">
                     {agent.description}
                   </span>
                 ) : null}
@@ -129,6 +176,14 @@ function PickerHint({ children }: { children: ReactNode }) {
   return <p className="px-3 py-4 text-sm text-muted-foreground">{children}</p>;
 }
 
-function ErrorHint({ onRetry }: { onRetry: () => void }) {
-  return <InlineErrorRow message={t`Couldn't load agents.`} onRetry={onRetry} />;
+function ErrorHint({
+  onRetry,
+  retryRef,
+}: {
+  onRetry: () => void;
+  retryRef?: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <InlineErrorRow message={t`Couldn't load agents.`} onRetry={onRetry} retryRef={retryRef} />
+  );
 }

@@ -1,38 +1,34 @@
-/** Postgres regression for Work deletion racing a new thread membership. */
+/** PostgreSQL coverage for thread Work membership and lifecycle serialization. */
 
 import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  resetThreadWorkRaceFixture,
+  THREAD_WORK_RACE,
+} from "../../test-support/thread-work-postgres-harness.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-const USER_ID = "00000000-0000-4000-8000-000000000471";
-const PROJECT_ID = "00000000-0000-4000-8000-000000000472";
-const THREAD_ID = "00000000-0000-4000-8000-000000000473";
-const WORK_ID = "00000000-0000-4000-8000-000000000474";
-const TARGET_WORK_ID = "00000000-0000-4000-8000-000000000475";
+const {
+  threadId: THREAD_ID,
+  workId: WORK_ID,
+  targetWorkId: TARGET_WORK_ID,
+  branchId: BRANCH_ID,
+} = THREAD_WORK_RACE;
 const ADVISORY_KEY = 748_210_471;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("thread Work lifecycle serialization (postgres)", () => {});
+  describe.skip("thread Work membership races (postgres)", () => {});
 } else {
-  describe("thread Work lifecycle serialization (postgres)", async () => {
+  describe("thread Work membership races (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const schema = await import("@meridian/database/schema");
-    const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
+    const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { WorkDeleteBlockedError } = await import("../../../projects/index.js");
-    const { createDrizzleProjectRepository, createDrizzleProjectWorkRepository } = await import(
-      "../../../projects/index.js"
-    );
-    const { createDrizzleProjectPreferencesRepository } = await import(
-      "../../../preferences/index.js"
-    );
-    const { createInMemoryEventSink } = await import("../../../observability/index.js");
-    const { createThreadForProject } = await import("../../../../lib/thread-creation.js");
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { createDrizzleProjectWorkRepository } = await import("../../../projects/index.js");
     const { createDrizzleBranchStore } = await import(
       "../../../collab/adapters/drizzle-branches.js"
     );
@@ -41,7 +37,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createWorkDraftPending } = await import("../../../collab/domain/work-draft-pending.js");
     const { createDrizzleRepositories } = await import("./repositories.js");
-    const { eq } = await import("drizzle-orm");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -53,63 +48,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       hasUnreviewedDraft: async (workId) => (await draftPending.count(workId)) > 0,
     });
     const branches = createDrizzleBranchStore(db, undefined);
-    const CONTEXT_ID = "00000000-0000-4000-8000-000000000476";
-    const DOCUMENT_ID = "00000000-0000-4000-8000-000000000477";
-    const BRANCH_ID = "branch_work_lifecycle_race";
 
-    beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
-      await db.insert(schema.users).values(conformanceUserValues(USER_ID, "work-lifecycle-race"));
-      await db.insert(schema.projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Work Lifecycle Race",
-        slug: "work-lifecycle-race",
-      });
-      await db.insert(schema.works).values({
-        id: WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Race target",
-        slug: "race-target",
-      });
-      await db.insert(schema.works).values({
-        id: TARGET_WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Rebound target",
-        slug: "rebound-target",
-        status: "archived",
-        archivedAt: new Date(),
-      });
-      await db.insert(schema.threads).values({
-        id: THREAD_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        title: "Race thread",
-        kind: "primary",
-        status: "idle",
-      });
-      await db.insert(schema.contextSources).values({
-        id: CONTEXT_ID,
-        projectId: PROJECT_ID,
-        name: "Project context",
-        slug: "project-context",
-      });
-      await db.insert(schema.documents).values({
-        id: DOCUMENT_ID,
-        contextSourceId: CONTEXT_ID,
-        name: "Draft target",
-      });
-      await db.insert(schema.documentBranches).values({
-        id: BRANCH_ID,
-        documentId: DOCUMENT_ID,
-        kind: "work_draft",
-        workId: WORK_ID,
-        state: Buffer.alloc(0),
-        stateVector: Buffer.alloc(0),
-      });
-    });
+    beforeEach(() => resetThreadWorkRaceFixture(db));
 
     afterAll(async () => {
       await control.end();
@@ -176,23 +116,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           DROP FUNCTION IF EXISTS test_block_thread_work_insert();
         `);
       }
-    });
-
-    it("replaces the primary membership, preserves one primary, and accepts archived targets", async () => {
-      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      await threads.threadWorks.addMembership(THREAD_ID, TARGET_WORK_ID, false);
-
-      await expect(threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID)).resolves.toEqual({
-        previousWorkId: WORK_ID,
-        changed: true,
-      });
-      await expect(threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID)).resolves.toEqual({
-        previousWorkId: TARGET_WORK_ID,
-        changed: false,
-      });
-      await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual([
-        { workId: TARGET_WORK_ID, isPrimary: true },
-      ]);
     });
 
     it("serializes competing primary add and rebind without reversing Work/thread locks", async () => {
@@ -366,37 +289,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           DROP FUNCTION IF EXISTS test_block_thread_work_rebind();
         `);
       }
-    });
-
-    it("creates a root conversation without self-blocking when the project has no Work", async () => {
-      await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
-      await db.delete(schema.documentBranches).where(eq(schema.documentBranches.id, BRANCH_ID));
-      await db.delete(schema.works).where(eq(schema.works.id, WORK_ID));
-      await db.delete(schema.works).where(eq(schema.works.id, TARGET_WORK_ID));
-      const preferences = createDrizzleProjectPreferencesRepository({ db });
-
-      const thread = await createThreadForProject(
-        {
-          projects: createDrizzleProjectRepository({ db }),
-          workRepo: works,
-          preferences,
-          threads: threads.threads,
-          threadWorks: threads.threadWorks,
-          transaction: threads.transaction,
-          eventSink: createInMemoryEventSink(),
-        },
-        {
-          projectId: PROJECT_ID,
-          userId: USER_ID,
-          title: "First conversation",
-        },
-      );
-
-      expect(thread.workId).toBeTruthy();
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBe(thread.workId);
-      await expect(threads.threadWorks.findPrimary(thread.id)).resolves.toEqual({
-        workId: thread.workId,
-      });
     });
   });
 }

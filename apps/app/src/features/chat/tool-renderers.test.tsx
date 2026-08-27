@@ -133,7 +133,7 @@ describe("work tool renderer", () => {
 
   it("keeps reads to the minimal generic row", () => {
     const tool = writeToolView({ toolName: "work", input: { command: "list" } });
-    expect(titleText(renderer.title(tool))).toBe("Checked Works");
+    expect(titleText(renderer.title(tool))).toBe("Checked Work");
     expect(renderer.expand?.(tool)).toBeNull();
   });
 

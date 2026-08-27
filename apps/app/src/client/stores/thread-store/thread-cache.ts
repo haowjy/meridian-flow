@@ -13,13 +13,13 @@
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { isProjectContextTreeKey, projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   patchThreadInProjectCaches,
   type ThreadListLifecycle,
   upsertThreadInProject,
 } from "@/client/query/project-thread-cache";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { invalidateThreadProjectionDependencies } from "@/client/query/thread-work-binding-cache";
 
 export interface ThreadCachePort {
   /** Optimistically insert/merge a thread into its project's cached list. */
@@ -49,32 +49,16 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
       // The store writes its turn state synchronously first; the cache catches
       // projector-only fields (final usage/cost metadata) on the next tick.
       queueMicrotask(() => {
-        void client.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
         if (projectId) {
-          void client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
-          // Work lifecycle tools and thread rebinding both settle through this
-          // boundary. Refresh the one complete (active + archived) catalog so
-          // every Work-derived projection observes the same server state.
-          void client.invalidateQueries({
-            queryKey: projectQueryKeys.works(projectId),
-            exact: true,
+          invalidateThreadProjectionDependencies(client, {
+            threadId,
+            projectId,
+            refreshLists: true,
+            workIds: "all",
+            contextTrees: "all",
           });
-          void client.invalidateQueries({
-            predicate: (query) =>
-              query.queryKey[0] === "projects" &&
-              query.queryKey[1] === projectId &&
-              query.queryKey[2] === "works" &&
-              query.queryKey[4] === "drafts",
-          });
-          // Context trees go stale the same way draft lists do: the agent's
-          // write tool creates/renames documents mid-turn, and nothing else
-          // refreshes the tree (no push channel; sections stay mounted across
-          // screen switches, so remount never re-fetches either). All schemes
-          // are covered because the terminal-turn event carries no per-scheme
-          // metadata; the fan-out is bounded since tree sections load lazily.
-          void client.invalidateQueries({
-            predicate: (query) => isProjectContextTreeKey(query.queryKey, projectId),
-          });
+        } else {
+          void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
         }
       });
     },

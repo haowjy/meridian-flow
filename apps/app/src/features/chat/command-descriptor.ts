@@ -229,8 +229,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   // whether the agent touched the book.
   "work-read": {
     Icon: Layers,
-    phrases: () => tenses(t`Checking Works…`, t`Checked Works`),
-    failureVerb: () => t`Couldn't check Works`,
+    phrases: () => tenses(t`Checking Work…`, t`Checked Work`),
+    failureVerb: () => t`Couldn't check Work`,
     pathlessTitle: null,
     expand: "renderer",
   },
@@ -257,8 +257,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
   "work-switch": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Switching Works…`, t`Switched Works`),
-    failureVerb: () => t`Couldn't switch Works`,
+    phrases: (tool) => workTenses(tool, t`Switching Work…`, t`Switched Work`),
+    failureVerb: () => t`Couldn't switch Work`,
     pathlessTitle: null,
     expand: "renderer",
   },

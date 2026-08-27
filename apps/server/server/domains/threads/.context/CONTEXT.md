@@ -14,6 +14,17 @@ instead of the N:1 `threads.workId` column.
 - **Thread↔Work membership** — `thread_works` join table (one primary per
   thread). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
+- **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
+  changing an existing thread's primary Work. It owns lifecycle validation,
+  the transaction-composable binding transition, primary-thread sticky
+  preference, the exact binding receipt, idempotent no-op behavior, and the
+  targeted durable context refresh obligation. Writer and model commands share
+  that transition; switch receipts are factual and are not reversible through
+  turn Undo/Redo. The authenticated writer adapter additionally holds
+  cross-process thread-run ownership across its transaction. Preflight
+  absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
+  typed refreshable conflict, missing primary membership is a separate
+  integrity conflict, and database failures propagate unchanged.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
@@ -65,6 +76,7 @@ instead of the N:1 `threads.workId` column.
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships, reads the primary, and rebinds the primary membership through one Work-before-thread critical section. Rebind accepts active or archived same-project Works and preserves exactly one primary. |
+| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, preference, receipt, and targeted durable obligation have one policy owner. Actor adapters own transaction and post-commit delivery. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 

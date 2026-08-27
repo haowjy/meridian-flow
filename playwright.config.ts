@@ -33,6 +33,7 @@ export default defineConfig({
   testDir: "apps/app/e2e",
   testMatch: [
     "auth.spec.ts",
+    "composer-density.spec.ts",
     "image-frame.spec.ts",
     "image-in-cell.spec.ts",
     "phase5.spec.ts",

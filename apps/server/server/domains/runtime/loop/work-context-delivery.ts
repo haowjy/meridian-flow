@@ -1,7 +1,7 @@
 /** Queues refreshed Work context and appends it as a user-role transcript turn. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
-import type { WorkContextUpdates } from "../../projects/index.js";
+import type { WorkContextDelivery } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import {
   type EventJournalWriter,
@@ -15,20 +15,6 @@ import {
   type ThreadRunOwnership,
 } from "./thread-run-ownership.js";
 import type { WorkContextReader } from "./work-context.js";
-
-export interface SystemUpdateDelivery extends WorkContextUpdates {
-  flush(threadId: ThreadId): Promise<void>;
-  /** Flush while the caller retains the durable run claim through completion. */
-  flushOwned(threadId: ThreadId): Promise<void>;
-  /** Drain every durable obligation visible to this process. */
-  sweep(): Promise<void>;
-  /** Claim durable pending delivery before a new writer turn starts. */
-  beforeTurn(threadId: ThreadId): Promise<void>;
-  /** Persist an update at the current head and return its local context rows. */
-  deliverNow(
-    threadId: ThreadId,
-  ): Promise<{ turn: Turn; block: Block; events: OrchestratorEvent[] }>;
-}
 
 function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
   const now = toIsoString(new Date());
@@ -73,7 +59,7 @@ function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
   };
 }
 
-export function createSystemUpdateDelivery(deps: {
+export function createWorkContextDelivery(deps: {
   repos: Pick<
     ThreadRepositories,
     | "blocks"
@@ -90,7 +76,7 @@ export function createSystemUpdateDelivery(deps: {
   runOwnership?: ThreadRunOwnership;
   /** Schedule a non-blocking wake after the caller's business transaction commits. */
   schedulePostCommit(task: () => Promise<void>): void;
-}): SystemUpdateDelivery {
+}): WorkContextDelivery {
   const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
   const flushChains = new Map<string, Promise<void>>();
 
@@ -157,18 +143,25 @@ export function createSystemUpdateDelivery(deps: {
             const pendingBlocks = pendingPresentationBlocks(
               await deps.repos.blocks.listByThread(threadId),
             );
-            const context = await deps.workContext.renderForThread(threadId);
+            const rendered = await deps.workContext.renderForThread(threadId);
             const turn = localUserTurn(threadId, expected);
             const block = contentForBlockInput({
               turnId: turn.id,
               blockType: "text",
               sequence: 0,
-              textContent: `<system_update>\n${context}\n</system_update>`,
+              textContent: `<system_update>\n${rendered.text}\n</system_update>`,
               status: "complete",
             });
             const events: OrchestratorEvent[] = [
               { type: "turn.created", turn },
               { type: "block.upserted", block },
+              {
+                type: "work_context.changed",
+                turnId: turn.id,
+                threadId,
+                projectId: rendered.current.projectId,
+                workId: rendered.current.workId,
+              },
               ...pendingBlocks.flatMap(acknowledgedPresentationEvents),
             ];
             // The surrounding turn-start transaction makes this deletion atomic
@@ -212,19 +205,28 @@ export function createSystemUpdateDelivery(deps: {
     }
   }
 
-  const delivery: SystemUpdateDelivery = {
+  async function flush(threadId: ThreadId): Promise<void> {
+    const key = threadId as string;
+    const previous = flushChains.get(key) ?? Promise.resolve();
+    const next = previous.then(() => flushUnlocked(threadId));
+    const settled = next.catch(() => undefined);
+    flushChains.set(key, settled);
+    try {
+      await next;
+    } finally {
+      if (flushChains.get(key) === settled) flushChains.delete(key);
+    }
+  }
+
+  const delivery: WorkContextDelivery = {
     async threadChanged(threadId) {
       const threadIds = await deps.repos.workContextDeliveries.enqueueThread(threadId);
-      deps.schedulePostCommit(() =>
-        Promise.all(threadIds.map((id) => delivery.flush(id))).then(() => undefined),
-      );
+      deps.schedulePostCommit(() => Promise.all(threadIds.map(flush)).then(() => undefined));
     },
 
     async projectChanged(projectId) {
       const threadIds = await deps.repos.workContextDeliveries.enqueueProject(projectId);
-      deps.schedulePostCommit(() =>
-        Promise.all(threadIds.map((id) => delivery.flush(id))).then(() => undefined),
-      );
+      deps.schedulePostCommit(() => Promise.all(threadIds.map(flush)).then(() => undefined));
     },
 
     async deliverNow(threadId) {
@@ -239,16 +241,14 @@ export function createSystemUpdateDelivery(deps: {
       await append(threadId);
     },
 
-    async flush(threadId) {
-      const key = threadId as string;
-      const previous = flushChains.get(key) ?? Promise.resolve();
-      const next = previous.then(() => flushUnlocked(threadId));
-      const settled = next.catch(() => undefined);
-      flushChains.set(key, settled);
+    async deliverAfterCommit(threadId) {
       try {
-        await next;
-      } finally {
-        if (flushChains.get(key) === settled) flushChains.delete(key);
+        await flush(threadId);
+        return (await deps.repos.workContextDeliveries.isPending(threadId))
+          ? "pending"
+          : "delivered";
+      } catch {
+        return "pending";
       }
     },
 
@@ -258,7 +258,7 @@ export function createSystemUpdateDelivery(deps: {
 
     async sweep() {
       const threadIds = await deps.repos.workContextDeliveries.listPendingThreadIds();
-      await Promise.all(threadIds.map((threadId) => delivery.flush(threadId)));
+      await Promise.all(threadIds.map(flush));
     },
   };
   return delivery;

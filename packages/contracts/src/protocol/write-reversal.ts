@@ -27,7 +27,7 @@ export interface DocumentReversalResult {
 }
 
 export interface WorkReversalResult {
-  command: "delete" | "update" | "restore" | "switch";
+  command: "delete" | "update" | "restore";
   workId: string;
   name: string;
   status: "reversed" | "redone" | "unavailable" | "already_applied" | "failed";

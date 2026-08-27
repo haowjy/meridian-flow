@@ -8,6 +8,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
+import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
@@ -35,6 +36,7 @@ import type {
   UpdateSpawnLifecycleInput,
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
+import { ThreadWorkProjectMismatchError } from "../../ports/repositories.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
 // ledger are the money truth. Keep this local float helper out of billing
@@ -428,10 +430,10 @@ export function createInMemoryRepositories(
       if (options.works) {
         const work = await options.works.findById(workId);
         if (!work || work.deletedAt || work.id !== workId) {
-          throw new Error("Work is not available in this project");
+          throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
         }
         if (work.projectId !== thread.projectId) {
-          throw new Error("Work is not available in this project");
+          throw new ThreadWorkProjectMismatchError(workId);
         }
       }
       const snapshot = new Map(threadWorks);
@@ -463,9 +465,10 @@ export function createInMemoryRepositories(
       if (!thread) throw new Error("Thread membership requires an existing thread");
       if (options.works) {
         const work = await options.works.findById(workId);
-        if (!work || work.deletedAt || work.projectId !== thread.projectId) {
-          throw new Error("Work is not available in this project");
+        if (!work || work.deletedAt) {
+          throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
         }
+        if (work.projectId !== thread.projectId) throw new ThreadWorkProjectMismatchError(workId);
       }
       const previousWorkId = primaryWorkIdForThread(threadId);
       if (previousWorkId === workId) return { previousWorkId, changed: false };

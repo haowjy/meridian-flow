@@ -23,19 +23,17 @@ import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
-import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { displayThreadTitle } from "@/lib/thread-title";
-
+import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
-import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
-import { useThreadChangeTrails } from "./useThreadChangeTrails";
+import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
 
@@ -66,7 +64,7 @@ export function ChatView({
   historySettled,
 }: ChatViewProps) {
   const actions = useThreadActions();
-  const changeTrails = useThreadChangeTrails(threadId);
+  const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -145,7 +143,7 @@ export function ChatView({
       title={pageTitle}
       surfaceRef={chatSurfaceRef}
       footer={
-        <div data-debug-composer={threadId} className="@container">
+        <div data-debug-composer={threadId}>
           {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
@@ -157,25 +155,28 @@ export function ChatView({
             onSubmit={handleSubmit}
             onStop={handleStop}
             toolbarLeft={
-              <>
-                {threadStarted ? (
-                  <ComposerAgentControl
-                    projectId={projectId ?? null}
-                    mode="readonly"
-                    selectedSlug={composerAgentSlug}
-                  />
-                ) : (
-                  <ComposerAgentControl
-                    projectId={projectId ?? null}
-                    mode="interactive"
-                    selectedSlug={composerAgentSlug}
-                    onSelectedSlugChange={setDraftAgentSlug}
-                  />
-                )}
-                {projectId && activeWork ? (
-                  <ComposerWriteModeControl projectId={projectId} work={activeWork} />
-                ) : null}
-              </>
+              projectId && activeWork ? (
+                <ChatComposerToolbar
+                  projectId={projectId}
+                  threadId={threadId}
+                  work={activeWork}
+                  agentSlug={composerAgentSlug}
+                  readonlyAgent={threadStarted}
+                  onAgentChange={setDraftAgentSlug}
+                />
+              ) : threadStarted ? (
+                <AgentOnlyComposerToolbar
+                  projectId={projectId ?? null}
+                  readonlyAgent
+                  agentSlug={composerAgentSlug}
+                />
+              ) : (
+                <AgentOnlyComposerToolbar
+                  projectId={projectId ?? null}
+                  agentSlug={composerAgentSlug}
+                  onAgentChange={setDraftAgentSlug}
+                />
+              )
             }
           />
         </div>

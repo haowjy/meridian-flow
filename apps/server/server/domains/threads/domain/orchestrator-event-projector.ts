@@ -11,6 +11,10 @@
 import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
 import { type AGUIEvent, EventSchemas, EventType } from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
+import {
+  WORK_CONTEXT_PROJECTION_EVENT,
+  type WorkContextProjectionSignal,
+} from "@meridian/contracts/works";
 
 const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
@@ -126,6 +130,19 @@ export function createOrchestratorEventProjector() {
           }),
         ];
       }
+
+      case "work_context.changed":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: WORK_CONTEXT_PROJECTION_EVENT,
+            value: {
+              threadId: event.threadId,
+              projectId: event.projectId,
+              workId: event.workId,
+            } satisfies WorkContextProjectionSignal,
+          }),
+        ];
 
       case "stream.delta": {
         if (event.kind === "text" && event.text) {
