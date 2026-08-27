@@ -2,11 +2,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
-import { MoreHorizontal } from "lucide-react";
 import type { MouseEvent } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
+import { OverflowMenuTrigger } from "@/components/ui/overflow-menu";
 
 export function WorkCard({
   work,
@@ -43,17 +42,13 @@ export function WorkCard({
           {work.goal || <Trans>No goal yet</Trans>}
         </p>
         <CardAction className="relative z-10">
-          <Button
+          <OverflowMenuTrigger
             ref={registerLifecycleFocus}
-            variant="ghost"
-            size="icon-sm"
             disabled={pending}
             aria-label={t`Manage ${work.name}`}
             onClick={onLifecycle}
             className="[@media(pointer:coarse)]:size-11"
-          >
-            <MoreHorizontal className="size-4" />
-          </Button>
+          />
         </CardAction>
       </CardHeader>
       {work.description ? (
