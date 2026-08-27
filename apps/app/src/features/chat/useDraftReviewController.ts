@@ -21,7 +21,7 @@ import {
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
-import { useContextTabsStore } from "@/client/stores";
+import { contextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -236,18 +236,17 @@ export function useDraftReviewController(
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
-      useContextTabsStore
-        .getState()
-        .resolveDraftOnlyTab(projectId, workId, documentId, "committed");
+      contextRemovalCoordinator.resolveDraftApply(projectId, workId, documentId);
     },
     draftFailed: (selection, code) => {
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
       dispatch({ type: "discardSucceeded", draftId });
-      useContextTabsStore
-        .getState()
-        .resolveDraftOnlyTab(projectId, workId, documentId, "discarded");
+      void contextRemovalCoordinator.executeContextRemoval(projectId, {
+        cause: "draft-discard",
+        documentIds: [documentId],
+      });
     },
   };
 

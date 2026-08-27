@@ -25,7 +25,6 @@ import type {
   ProjectContextTreeScheme,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -85,11 +84,6 @@ type ContextTabsActions = {
     documentId: string,
     metadata: Partial<Extract<ContextTab, { kind: "tracked" }>>,
   ) => void;
-  /**
-   * Close a tab. Returns the adjacent tab that should become active if the
-   * caller closed the currently route-active tab, or `null` if no tabs remain.
-   */
-  closeTab: (projectId: string, documentId: string) => ContextTab | null;
   /** Commit one already-planned live removal without an intermediate desk state. */
   commitContextRemoval: (
     projectId: string,
@@ -97,28 +91,12 @@ type ContextTabsActions = {
   ) => ContextTab[];
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
   selectTab: (projectId: string, documentId: string | null) => void;
-  /**
-   * Resolve a draft-only tab when its backing draft reaches a terminal state:
-   * `committed` (applied — the document now exists in the tree, so keep the
-   * tab and drop the marker) or `discarded` (the document never existed
-   * outside the draft — close the tab so it can't linger as an editable
-   * ghost over a document that no longer loads). No-op for tabs without the
-   * marker: discarding a draft on an existing document must not close it.
-   */
-  resolveDraftOnlyTab: (
-    projectId: string,
-    reviewWorkId: string,
-    documentId: string,
-    outcome: "committed" | "discarded",
-  ) => void;
   /** Draft apply is a metadata transition; discard belongs to the removal coordinator. */
   resolveDraftOnlyTabCommitted: (
     projectId: string,
     reviewWorkId: string,
     documentId: string,
   ) => void;
-  /** Drop work-scoped tabs that belong to a different active work. */
-  pruneWorkScopedTabs: (projectId: string, activeWorkId: string | null) => void;
   /** Clear every tab for a project — used when the project is deleted. */
   clearProject: (projectId: string) => void;
   /** Replace a project's desk without selecting a tab. */
@@ -227,37 +205,6 @@ function contextTabEquals(left: ContextTab, right: ContextTab): boolean {
   );
 }
 
-function removeTabs(
-  slice: ProjectTabsSlice,
-  shouldRemove: (tab: ContextTab) => boolean,
-): { slice: ProjectTabsSlice; fallback: ContextTab | null; changed: boolean } {
-  const nextTabs = slice.tabs.filter((tab) => !shouldRemove(tab));
-  if (nextTabs.length === slice.tabs.length) return { slice, fallback: null, changed: false };
-
-  const activeIndex = slice.tabs.findIndex((tab) => tab.documentId === slice.activeTabId);
-  const activeRemoved = activeIndex >= 0 && shouldRemove(slice.tabs[activeIndex]);
-  const activeMissing = slice.activeTabId !== null && activeIndex < 0;
-  const fallback = activeRemoved
-    ? (slice.tabs.slice(activeIndex + 1).find((tab) => !shouldRemove(tab)) ??
-      slice.tabs
-        .slice(0, activeIndex)
-        .reverse()
-        .find((tab) => !shouldRemove(tab)) ??
-      null)
-    : activeMissing
-      ? (nextTabs[0] ?? null)
-      : null;
-  return {
-    changed: true,
-    fallback,
-    slice: {
-      tabs: nextTabs,
-      activeTabId:
-        activeRemoved || activeMissing ? (fallback?.documentId ?? null) : slice.activeTabId,
-    },
-  };
-}
-
 function resolveCommittedDraftMetadata(
   slice: ProjectTabsSlice,
   reviewWorkId: string,
@@ -333,14 +280,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         });
       },
 
-      closeTab: (projectId, documentId) => {
-        const slice = sliceFor(get(), projectId);
-        const removed = removeTabs(slice, (tab) => tab.documentId === documentId);
-        if (!removed.changed) return null;
-        set((state) => patchSlice(state, projectId, removed.slice));
-        return removed.fallback;
-      },
-
       commitContextRemoval: (projectId, input) => {
         const documentIds = new Set(input.documentIds);
         const slice = sliceFor(get(), projectId);
@@ -355,24 +294,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           return patchSlice(state, projectId, { tabs, activeTabId });
         });
         return removed;
-      },
-
-      resolveDraftOnlyTab: (projectId, reviewWorkId, documentId, outcome) => {
-        set((state) => {
-          const slice = sliceFor(state, projectId);
-          const tab = slice.tabs.find((t) => t.documentId === documentId);
-          if (tab?.kind !== "tracked" || !tab.draftOnly || tab.reviewWorkId !== reviewWorkId)
-            return state;
-          if (outcome === "discarded") {
-            return patchSlice(
-              state,
-              projectId,
-              removeTabs(slice, (candidate) => candidate.documentId === documentId).slice,
-            );
-          }
-          const resolved = resolveCommittedDraftMetadata(slice, reviewWorkId, documentId);
-          return resolved ? patchSlice(state, projectId, resolved) : state;
-        });
       },
 
       resolveDraftOnlyTabCommitted: (projectId, reviewWorkId, documentId) => {
@@ -409,19 +330,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         set((state) => {
           const slice = sliceFor(state, projectId);
           return patchSlice(state, projectId, { ...slice, activeTabId: documentId });
-        });
-      },
-
-      pruneWorkScopedTabs: (projectId, activeWorkId) => {
-        set((state) => {
-          const slice = sliceFor(state, projectId);
-          const removed = removeTabs(slice, (tab) => {
-            if (tab.kind === "new") return false;
-            if (!isWorkScopedProjectContextScheme(tab.scheme)) return false;
-            return tab.workId !== activeWorkId;
-          });
-          if (!removed.changed) return state;
-          return patchSlice(state, projectId, removed.slice);
         });
       },
 
@@ -515,13 +423,10 @@ export function useContextTabsActions(): ContextTabsActions {
       remintNewTab: s.remintNewTab,
       materializeNewTab: s.materializeNewTab,
       updateTrackedTab: s.updateTrackedTab,
-      closeTab: s.closeTab,
       commitContextRemoval: s.commitContextRemoval,
       reorderTabs: s.reorderTabs,
       selectTab: s.selectTab,
-      resolveDraftOnlyTab: s.resolveDraftOnlyTab,
       resolveDraftOnlyTabCommitted: s.resolveDraftOnlyTabCommitted,
-      pruneWorkScopedTabs: s.pruneWorkScopedTabs,
       clearProject: s.clearProject,
       replaceTabs: s.replaceTabs,
       reconcileTabs: s.reconcileTabs,

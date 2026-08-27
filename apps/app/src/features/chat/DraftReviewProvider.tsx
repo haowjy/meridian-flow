@@ -21,6 +21,7 @@ import {
 } from "@/client/query/useWorkDrafts";
 import { useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { contextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { findContextFileByDocumentId } from "@/features/project/context/context-tree";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
@@ -148,12 +149,18 @@ function useDraftReviewScopeOwner(
             projectQueryKeys.workDrafts(projectId, workId),
           ) ?? [];
         if (currentDrafts.some((draft) => draft.documentId === activeSelection.documentId)) return;
-        currentTabs.resolveDraftOnlyTab(
-          projectId,
-          workId,
-          activeSelection.documentId,
-          findContextFileByDocumentId(tree, activeSelection.documentId) ? "committed" : "discarded",
-        );
+        if (findContextFileByDocumentId(tree, activeSelection.documentId)) {
+          contextRemovalCoordinator.resolveDraftApply(
+            projectId,
+            workId,
+            activeSelection.documentId,
+          );
+        } else {
+          void contextRemovalCoordinator.executeContextRemoval(projectId, {
+            cause: "draft-discard",
+            documentIds: [activeSelection.documentId],
+          });
+        }
       })
       // A failed membership check must leave the tab intact rather than guess
       // that a remotely applied document was discarded.

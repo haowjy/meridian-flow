@@ -16,16 +16,15 @@ import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabs, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import {
   buildWorkingSetRoute,
-  clearRoutes,
   promoteRoute,
   readRecentRoutes,
   recentRouteForEditorWork,
-  removeRoute,
 } from "@/client/working-set";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState, findActiveUntitledTab } from "./context/context-pane-state";
+import { contextRemovalCoordinator } from "./context/context-removal-coordinator";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import {
@@ -51,12 +50,6 @@ export type ContextViewerSurfaceControllerProps = {
     options?: { replace?: boolean },
   ) => void;
   onOpenContextTarget: (target: ContextRouteTarget, options?: { replace?: boolean }) => void;
-  /**
-   * Clears the routed destination entirely (no scheme/path in the URL) —
-   * closing the LAST tab must leave a fresh-entry URL so a reload runs
-   * restore/default-open instead of resurrecting an explicit empty path.
-   */
-  onClearContextDestination: () => void;
   active: boolean;
   /** Project left-sidebar expand toggle, surfaced via the tab strip. */
   sidebarToggle: PaneHeaderRailToggle;
@@ -74,13 +67,11 @@ export function ContextViewerSurfaceController({
   dockToggle,
   onSelectContextPath,
   onOpenContextTarget,
-  onClearContextDestination,
 }: ContextViewerSurfaceControllerProps) {
   const routeWorkId = editorWorkId;
 
   const { tabs, activeTabId } = useContextTabs(projectId);
-  const { openTab, closeTab, updateTrackedTab, pruneWorkScopedTabs, selectTab } =
-    useContextTabsActions();
+  const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const serverTabs = tabs.filter((tab) => tab.kind !== "new");
   const hasEditorWorkTab = tabs.some(
     (tab) =>
@@ -120,6 +111,42 @@ export function ContextViewerSurfaceController({
     workId: routeWorkId,
   });
 
+  useLayoutEffect(() => {
+    if (!active || activeContextScheme === null || activeContextPath === null) return;
+    const selection = contextRemovalCoordinator.getRouteSelection(projectId);
+    if (selection.status !== "pending") return;
+    if (
+      selection.locator.scheme !== activeContextScheme ||
+      selection.locator.path !== activeContextPath ||
+      selection.locator.workId !== routeWorkId
+    )
+      return;
+    const routedTab =
+      activeTab ??
+      (activeContextScheme === "scratch" && activeContextPath === ""
+        ? tabs.find((tab) => tab.kind === "new" && tab.documentId === activeTabId)
+        : null);
+    if (routedTab) {
+      contextRemovalCoordinator.bindRouteSelection(projectId, selection.revision, {
+        kind: routedTab.kind === "new" ? "local" : "server",
+        documentId: routedTab.documentId,
+      });
+    } else if (routeTree && !routeTreeIsFetching) {
+      contextRemovalCoordinator.confirmRouteUnbound(projectId, selection.revision);
+    }
+  }, [
+    active,
+    activeContextPath,
+    activeContextScheme,
+    activeTab,
+    activeTabId,
+    projectId,
+    routeTree,
+    routeTreeIsFetching,
+    routeWorkId,
+    tabs,
+  ]);
+
   // Guard: openTab fires at most once per (projectId, scheme, path)
   // tuple within one need-window. The ref is cleared as soon as the route
   // no longer needs an auto-open, so closing a tab and revisiting the same
@@ -136,8 +163,21 @@ export function ContextViewerSurfaceController({
   }, [projectId, routeWorkId]);
 
   useEffect(() => {
-    pruneWorkScopedTabs(projectId, routeWorkId);
-  }, [projectId, pruneWorkScopedTabs, routeWorkId]);
+    const documentIds = tabs
+      .filter(
+        (tab) =>
+          tab.kind !== "new" &&
+          isWorkScopedProjectContextScheme(tab.scheme) &&
+          tab.workId !== routeWorkId,
+      )
+      .map((tab) => tab.documentId);
+    if (documentIds.length > 0) {
+      void contextRemovalCoordinator.executeContextRemoval(projectId, {
+        cause: "work-prune",
+        documentIds,
+      });
+    }
+  }, [projectId, routeWorkId, tabs]);
 
   useEffect(() => {
     if (activeTab) selectTab(projectId, activeTab.documentId);
@@ -263,36 +303,6 @@ export function ContextViewerSurfaceController({
     wantsDefaultOpen,
   ]);
 
-  useEffect(() => {
-    const previous = previousRouteStateRef.current;
-    previousRouteStateRef.current = { tabs: serverTabs, activeTab };
-    const removed = previous.activeTab;
-    if (!removed || serverTabs.some((tab) => tab.documentId === removed.documentId)) return;
-    if (activeContextScheme !== removed.scheme || activeContextPath !== removed.path) return;
-
-    // A lifecycle disposition can remove a draft-only tab without going
-    // through handleCloseTab. Repair the still-active route with the same
-    // neighbour policy and resurrection guard as an explicit close.
-    openedKeyRef.current = openTabKey;
-    const removedIndex = previous.tabs.findIndex((tab) => tab.documentId === removed.documentId);
-    const fallback = serverTabs[removedIndex] ?? serverTabs[serverTabs.length - 1] ?? null;
-    if (fallback) {
-      onSelectContextPath(fallback.path, fallback.scheme);
-      return;
-    }
-    onSelectContextPath("", activeContextScheme ?? undefined);
-    clearRoutes(projectId);
-    setRememberedRoute(null);
-  }, [
-    activeContextPath,
-    activeContextScheme,
-    activeTab,
-    onSelectContextPath,
-    openTabKey,
-    projectId,
-    serverTabs,
-  ]);
-
   // A cached tree refetch refreshes metadata on an already-open route too.
   // This is how cross-device renames clear provisional chrome without a new
   // metadata channel.
@@ -351,8 +361,10 @@ export function ContextViewerSurfaceController({
 
   function handleCloseTab(documentId: string) {
     const tab = tabs.find((candidate) => candidate.documentId === documentId);
-    const closedWasActive = documentId === activeTabId;
-    const fallback = closeTab(projectId, documentId);
+    void contextRemovalCoordinator.executeContextRemoval(projectId, {
+      cause: "writer-close",
+      documentIds: [documentId],
+    });
     if (tab?.kind === "new" && !isUntitledPending(documentId)) {
       const registry = getDocumentSessionRegistry();
       const session = registry.getDetached(documentId);
@@ -360,38 +372,6 @@ export function ContextViewerSurfaceController({
         void registry.destroyRoom(documentId, { clearPersistence: true });
       }
     }
-    // Closing the LAST tab is a deliberate "empty desk" — forget the
-    // remembered routes so they don't resurrect on the next visit. The
-    // signal is the desk being empty, NOT a null fallback: closeTab only
-    // returns a fallback when the closed tab was active, so `!fallback`
-    // fired on every non-active close and wiped (then synced!) an empty
-    // route set across devices.
-    const deskNowEmpty = !tabs.some((candidate) => candidate.documentId !== documentId);
-    if (deskNowEmpty) {
-      clearRoutes(projectId);
-      setRememberedRoute(null);
-    } else if (tab && tab.kind !== "new") {
-      const route = buildWorkingSetRoute(tab.scheme, tab.path, tab.workId ?? routeWorkId);
-      if (route) removeRoute(projectId, route);
-    }
-    if (!closedWasActive) return;
-    // The route keeps pointing at the closed file until the navigation
-    // below lands. Stamp the auto-open guard for that route so the
-    // transient (path set, tab missing) window can't re-open — and
-    // re-persist — the tab we just closed.
-    openedKeyRef.current = openTabKey;
-    if (fallback?.kind === "new") {
-      onSelectContextPath("", "scratch");
-      return;
-    }
-    if (fallback) {
-      onSelectContextPath(fallback.path, fallback.scheme);
-      return;
-    }
-    // Desk emptied: clear the destination entirely (path="" would survive
-    // a reload as an explicit New-document deep link and block the
-    // cleared-desk contract's default-open on next entry).
-    onClearContextDestination();
   }
 
   function handleResumeDocument() {

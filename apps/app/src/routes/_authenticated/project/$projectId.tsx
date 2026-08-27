@@ -190,6 +190,17 @@ function RouteComponent() {
         activeThreadId={activeThreadId}
         routeWork={routeWork}
         routeCommands={routeCommands}
+        contextRemovalRoute={{
+          readSearch: () => search,
+          updateSearch: (_projectId, update) => {
+            void navigate({
+              to: "/project/$projectId",
+              params: { projectId },
+              search: (previous) => update(parseProjectSearch(previous)),
+              replace: true,
+            });
+          },
+        }}
         activeContextScheme={scheme ?? null}
         activeContextFolder={folder ?? null}
         activeContextPath={path ?? null}

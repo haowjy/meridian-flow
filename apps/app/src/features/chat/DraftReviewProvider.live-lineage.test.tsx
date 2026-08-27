@@ -54,6 +54,15 @@ vi.mock("@/client/stores", () => ({
     }),
   },
 }));
+vi.mock("@/features/project/context/context-removal-coordinator", () => ({
+  contextRemovalCoordinator: {
+    resolveDraftApply: (...args: unknown[]) => resolveDraftOnlyTabMock(...args, "committed"),
+    executeContextRemoval: (_projectId: string, intent: { documentIds: string[] }) => {
+      resolveDraftOnlyTabMock(_projectId, "work-1", intent.documentIds[0], "discarded");
+      return Promise.resolve({ kind: "noop" });
+    },
+  },
+}));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: (_projectId: string | null, workId: string | null) => {
     queriedWorkIds.push(workId);

@@ -45,13 +45,15 @@ level at a time via route params.
 
 ## Editor tabs and untitled documents
 
-The writer-facing destination is **Editor**. `ContextPaneController` currently
-owns the mounted route/tab effects and scroll restoration. The framework-independent
-`ContextRemovalCoordinator` is the next ownership boundary: its exact-ID transition,
-revisioned route selection, guarded route repair, and working-set reconciliation
-are implemented, but live React callers have not yet been switched to it. Until
-that convergence change lands, do not add another removal effect or infer removal
-from context-tree cache state. `ContextTab` has three variants: `tracked`,
+The writer-facing destination is **Editor**. One framework-independent
+`ContextRemovalCoordinator` owns every live removal transition: explicit close,
+locally acknowledged delete, Work pruning, and draft discard. `ProjectView` mounts
+its platform-neutral route adapter above the phone/desktop split; both document hosts
+settle revisioned route identity. The transition commits desk selection, working-set
+routes, remembered destination, auto-open blocking, and guarded route repair before
+navigation. `ContextPaneController` remains a view/activation controller and owns no
+passive lifecycle-removal policy. Draft apply only resolves tab metadata. Context-tree
+cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
 `viewer`, and the in-memory `{ kind: "new", documentId }` placeholder. A new tab
 uses an ordinary `DocumentSession` from its first render, created detached so
 Y.Doc + IndexedDB exist without opening an unauthorized server room.

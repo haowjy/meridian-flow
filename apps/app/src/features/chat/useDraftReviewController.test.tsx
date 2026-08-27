@@ -46,6 +46,15 @@ vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: (_projectId: string, _workId: string, _documentId: string, draftId: string) =>
     Promise.resolve(draftPreviews.get(draftId) ?? draftPreview),
 }));
+vi.mock("@/features/project/context/context-removal-coordinator", () => ({
+  contextRemovalCoordinator: {
+    resolveDraftApply: (...args: unknown[]) => resolveDraftOnlyTabMock(...args, "committed"),
+    executeContextRemoval: (_projectId: string, intent: { documentIds: string[] }) => {
+      resolveDraftOnlyTabMock(_projectId, "work-1", intent.documentIds[0], "discarded");
+      return Promise.resolve({ kind: "noop" });
+    },
+  },
+}));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
   useApplyDraft: () => ({ mutateAsync: applyMutateMock }),
   useDiscardDraft: () => ({ mutateAsync: discardMutateMock }),

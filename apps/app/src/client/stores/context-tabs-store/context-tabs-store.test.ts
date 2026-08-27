@@ -16,15 +16,17 @@ describe("context tabs draft-only lifecycle", () => {
     ]);
   });
 
-  it("resolves a draft-only tab only from its owning review Work", () => {
+  it("resolves applied draft metadata only from its owning review Work", () => {
     const store = useContextTabsStore.getState();
     store.openTab("project-1", trackedTab(true));
 
-    store.resolveDraftOnlyTab("project-1", "work-b", "document-1", "discarded");
+    store.resolveDraftOnlyTabCommitted("project-1", "work-b", "document-1");
     expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([trackedTab(true)]);
 
-    store.resolveDraftOnlyTab("project-1", "work-a", "document-1", "discarded");
-    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([]);
+    store.resolveDraftOnlyTabCommitted("project-1", "work-a", "document-1");
+    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([
+      trackedTab(false),
+    ]);
   });
 });
 

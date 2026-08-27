@@ -3,6 +3,7 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { deleteContextEntry } from "@/client/api/projects-api";
+import { contextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextRequestOptionsForScheme } from "./context-request-options";
 import { projectQueryKeys } from "./project-query-keys";
 
@@ -22,7 +23,11 @@ export function useDeleteContextEntry(projectId: string, scheme: ProjectContextT
         args,
         contextRequestOptionsForScheme(scheme, args.workId),
       ),
-    onSuccess: (_result, args) => {
+    onSuccess: (result, args) => {
+      void contextRemovalCoordinator.executeContextRemoval(projectId, {
+        cause: "acknowledged-delete",
+        documentIds: result.deletedDocumentIds,
+      });
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.contextTree(
           projectId,

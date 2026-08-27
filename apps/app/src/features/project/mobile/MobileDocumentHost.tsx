@@ -21,6 +21,7 @@ import { getDocumentSessionRegistry } from "@/core/editor/document-session-regis
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
+import { contextRemovalCoordinator } from "../context/context-removal-coordinator";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { findContextFile } from "../context/context-tree";
 
@@ -59,6 +60,35 @@ export function MobileDocumentHost({
     const file = findContextFile(tree, activeContextPath);
     return file ? contextTabFromFile(activeContextScheme, file, workId) : null;
   }, [activeContextPath, activeContextScheme, hasRouteDocument, tree, workId]);
+
+  useEffect(() => {
+    if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null) return;
+    const selection = contextRemovalCoordinator.getRouteSelection(projectId);
+    if (selection.status !== "pending") return;
+    if (
+      selection.locator.scheme !== activeContextScheme ||
+      selection.locator.path !== activeContextPath ||
+      selection.locator.workId !== workId
+    )
+      return;
+    if (activeTab) {
+      contextRemovalCoordinator.bindRouteSelection(projectId, selection.revision, {
+        kind: "server",
+        documentId: activeTab.documentId,
+      });
+    } else if (tree && !isFetching) {
+      contextRemovalCoordinator.confirmRouteUnbound(projectId, selection.revision);
+    }
+  }, [
+    activeContextPath,
+    activeContextScheme,
+    activeTab,
+    hasRouteDocument,
+    isFetching,
+    projectId,
+    tree,
+    workId,
+  ]);
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
   useEffect(() => {

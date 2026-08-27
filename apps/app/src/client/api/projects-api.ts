@@ -35,6 +35,7 @@ import {
   type CreateUntitledContextDocumentRequest,
   type CreateUntitledContextDocumentResponse,
   type CreateUntitledContextDocumentResult,
+  type DeleteContextEntryResult,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
@@ -320,10 +321,14 @@ export async function deleteContextEntry(
   body: { path: string },
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<void> {
-  await postJson(urlFor(apiProjectContextDeletePath(projectId, scheme, opts), init), body, {
-    headers: init?.headers,
-  });
+): Promise<DeleteContextEntryResult> {
+  return postJson<DeleteContextEntryResult>(
+    urlFor(apiProjectContextDeletePath(projectId, scheme, opts), init),
+    body,
+    {
+      headers: init?.headers,
+    },
+  );
 }
 
 export async function getProjectContextRead(
