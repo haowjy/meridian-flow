@@ -29,6 +29,7 @@ import {
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
+import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
@@ -136,23 +137,24 @@ export function EntryKebabButton({
   allowCreate,
   onAction,
   className,
+  align = "start",
+  sideOffset = 2,
 }: {
   /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
   allowCreate: boolean;
   onAction: (action: EntryAction) => void;
   className?: string;
+  align?: "start" | "center" | "end";
+  sideOffset?: number;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   return (
     <OverflowMenu
       label={t`Actions`}
-      align="start"
-      sideOffset={2}
+      align={align}
+      sideOffset={sideOffset}
       onCloseAutoFocus={onCloseAutoFocus}
-      triggerClassName={cn(
-        "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
-        className,
-      )}
+      triggerClassName={cn(contextTreeOverflowTriggerClassName, className)}
     >
       <DropdownActionItems allowCreate={allowCreate} onAction={dispatch} />
     </OverflowMenu>
