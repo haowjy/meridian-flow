@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { build, type Rollup } from "vite";
 import { buttonVariants } from "../src/components/ui/button";
 import {
+  dropdownMenuItemClass,
   dropdownRowContainerClass,
   dropdownRowVariants,
 } from "../src/components/ui/dropdown-presentation";
@@ -51,6 +52,9 @@ test.beforeEach(async ({ page }) => {
   await page.setContent(`
     <main id="surface" class="bg-popover" style="width:240px">
       <button id="direct" class="${dropdownRowVariants()}">Direct row</button>
+      <button id="dropdown-action" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Dropdown rename</button>
+      <button id="context-action" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Context rename</button>
+      <button id="context-delete" data-variant="destructive" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Context delete</button>
       <div id="composite" class="${dropdownRowContainerClass}">
         <button id="composite-control" class="${dropdownRowVariants({ interactive: false })}">
           Composite row
@@ -302,6 +306,39 @@ test("measures the visible overflow control and inert allocation probe", async (
   }
   await expect(page.locator("#overflow")).toBeVisible();
   await expect(page.locator("#probe")).toBeHidden();
+});
+
+test("keeps context and dropdown action rows on the same effective presentation", async ({
+  page,
+}, testInfo) => {
+  const expectedHeight = testInfo.project.name === "coarse-pointer" ? 44 : 32;
+  const read = (id: string) =>
+    page.locator(`#${id}`).evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        height: node.getBoundingClientRect().height,
+        paddingInline: `${style.paddingLeft} ${style.paddingRight}`,
+        fontSize: style.fontSize,
+        color: style.color,
+        background: style.backgroundColor,
+        shadow: style.boxShadow,
+      };
+    });
+
+  await page.locator("#dropdown-action").focus();
+  const dropdown = await read("dropdown-action");
+  await page.locator("#context-action").focus();
+  const context = await read("context-action");
+
+  expect(context).toEqual(dropdown);
+  expect(context.height).toBe(expectedHeight);
+
+  const normalColor = context.color;
+  await page.locator("#context-delete").focus();
+  const destructive = await read("context-delete");
+  expect(destructive.height).toBe(expectedHeight);
+  expect(destructive.color).not.toBe(normalColor);
+  expect(destructive.background).not.toBe(context.background);
 });
 
 test("keeps context rows and their shared overflow targets non-overlapping", async ({
