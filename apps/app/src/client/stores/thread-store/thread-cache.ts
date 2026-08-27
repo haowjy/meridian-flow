@@ -10,11 +10,11 @@
  * fragility.
  */
 
-import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
+import type { Thread } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
 import {
-  patchThreadInProjectCaches,
+  projectThreadLifecycleInProjectCaches,
   type ThreadListLifecycle,
   upsertThreadInProject,
 } from "@/client/query/project-thread-cache";
@@ -24,8 +24,8 @@ import { invalidateThreadProjectionDependencies } from "@/client/query/thread-wo
 export interface ThreadCachePort {
   /** Optimistically insert/merge a thread into its project's cached list. */
   upsertThread(thread: Thread, lifecycle?: ThreadListLifecycle): void;
-  /** Patch a thread row in place across every cached project thread list. */
-  patchThread(threadId: string, patch: Partial<ThreadListItem>): void;
+  /** Project live lifecycle state across project lists, Home, and Work feeds. */
+  patchThread(threadId: string, lifecycle: ThreadListLifecycle): void;
   /**
    * Invalidate the persisted projections for a terminal turn: the thread
    * snapshot and, when the owning project is known, Work draft-review lists,
@@ -38,9 +38,12 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
   return {
     upsertThread(thread, lifecycle) {
       upsertThreadInProject(client, thread, lifecycle);
+      if (lifecycle) {
+        projectThreadLifecycleInProjectCaches(client, thread.id, lifecycle);
+      }
     },
-    patchThread(threadId, patch) {
-      patchThreadInProjectCaches(client, threadId, patch);
+    patchThread(threadId, lifecycle) {
+      projectThreadLifecycleInProjectCaches(client, threadId, lifecycle);
     },
     invalidateThread(threadId, projectId) {
       // Deferred to a microtask: terminal-turn invalidation runs inside the

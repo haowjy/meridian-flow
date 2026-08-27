@@ -1,7 +1,7 @@
 /**
- * project-thread-cache — direct read/write helpers for a project's cached thread
- * list in the React Query client (read, optimistic upsert/replace). Keeps thread
- * cache mutation in one place; consumed by optimistic create/reconcile flows.
+ * project-thread-cache — canonical read/write helpers for cached thread
+ * projections, including optimistic project-list writes and live lifecycle
+ * convergence across project lists, Home, and Work feeds.
  *
  * The cache stores `ThreadListItem[]` so consumers see the denormalized work +
  * lifecycle (`actionRequired`, `runningTurnId`) and draft-review count projection from the server.
@@ -10,9 +10,15 @@
  * server fetch reconciles them.
  */
 
-import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import type {
+  ProjectChatItem,
+  Thread,
+  ThreadListItem,
+  WorkChatFeedPage,
+} from "@meridian/contracts/protocol";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
+import { projectHomeThread } from "./home-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
 export function readProjectThreadList(
@@ -68,5 +74,61 @@ export function patchThreadInProjectCaches(
       if (!prev) return prev;
       return prev.map((t) => (t.id === id ? { ...t, ...patch } : t));
     });
+  }
+}
+
+type WorkFeedData = InfiniteData<WorkChatFeedPage, string | null>;
+
+/**
+ * Project one live lifecycle change into every cached representation of a
+ * thread. Feed rows deliberately receive only `actionRequired`: Favorite
+ * remains owned by the normalized user-state authority, while the project
+ * thread list also carries the active turn identity.
+ */
+export function projectThreadLifecycleInProjectCaches(
+  client: QueryClient,
+  threadId: string,
+  lifecycle: ThreadListLifecycle,
+): void {
+  const projectIdsWithHomeFeeds = new Set<string>();
+
+  for (const query of client.getQueryCache().findAll({ queryKey: projectQueryKeys.all })) {
+    const [, projectId, scope] = query.queryKey;
+    if (typeof projectId !== "string") continue;
+
+    if (scope === "threads") {
+      client.setQueryData<ThreadListItem[] | null>(query.queryKey, (current) =>
+        current?.map((thread) => (thread.id === threadId ? { ...thread, ...lifecycle } : thread)),
+      );
+      continue;
+    }
+
+    if (scope === "home-feed") {
+      projectIdsWithHomeFeeds.add(projectId);
+      continue;
+    }
+
+    if (scope === "work-threads") {
+      client.setQueryData<WorkFeedData>(query.queryKey, (current) => {
+        if (!current) return current;
+        let changed = false;
+        const pages = current.pages.map((page) => ({
+          ...page,
+          items: page.items.map((item): ProjectChatItem => {
+            if (item.id !== threadId) return item;
+            changed = true;
+            return { ...item, actionRequired: lifecycle.actionRequired };
+          }),
+        }));
+        return changed ? { ...current, pages } : current;
+      });
+    }
+  }
+
+  for (const projectId of projectIdsWithHomeFeeds) {
+    projectHomeThread(client, projectId, threadId, (item) => ({
+      ...item,
+      actionRequired: lifecycle.actionRequired,
+    }));
   }
 }

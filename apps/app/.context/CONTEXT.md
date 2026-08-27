@@ -73,7 +73,9 @@ Two interfaces are the only paths between the visual layer and the substrate:
 - **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
   thin seam between thread-store lifecycle transitions and the React Query cache.
   The store depends on this port, not `QueryClient` directly — list/snapshot
-  projections stay in Query; per-thread turn state stays in the store.
+  projections stay in Query; per-thread turn state stays in the store. Its
+  lifecycle projector converges `actionRequired` across project thread lists,
+  Home, and every matching Work feed while Favorite remains normalized separately.
 - **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
   thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
   (cache-only today, no PATCH endpoint) rather than on the thread store.

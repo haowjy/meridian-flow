@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: converge live and snapshot `actionRequired` lifecycle changes
+  across project thread lists, Home, and every cached Work chat feed.
+
 - `database`, `contracts`, `apps/server`, `apps/app`: remove Project-chat
   read state end to end, including unseen-reply projection, open mutations, and
   client coordination; Favorite and action-required remain independent facts.

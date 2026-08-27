@@ -283,7 +283,6 @@ msgid "Account settings."
 msgstr "Account settings."
 
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Actions"
 msgstr "Actions"
 
@@ -1088,7 +1087,6 @@ msgstr "Default alignment"
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
 msgstr "Delete"
 
@@ -2453,7 +2451,6 @@ msgstr "Removed"
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
-#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Rename"
 msgstr "Rename"
 
