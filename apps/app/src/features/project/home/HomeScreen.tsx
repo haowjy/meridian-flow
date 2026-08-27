@@ -136,9 +136,9 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
       {...movement.interactionProps}
     >
       <div className="project-screen-column">
-        <div className="home-composer-page">
+        <div className="flex flex-col gap-6">
           <section>
-            <div className="home-composer-inner">
+            <div className="mx-auto w-full max-w-3xl">
               <h1 className="home-composer-heading text-headline-section">
                 <Trans>What will you write next?</Trans>
               </h1>

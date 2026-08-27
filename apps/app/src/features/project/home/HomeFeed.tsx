@@ -7,7 +7,11 @@ import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
+import {
+  ProjectChatRow,
+  type ProjectChatRowProps,
+  ProjectChatRowSkeleton,
+} from "../chat-list/ProjectChatRow";
 
 type FeedQuery = {
   isPending: boolean;
@@ -73,11 +77,12 @@ export function HomeFeed({
   if (feed.isPending) return <HomeLoading />;
   if (feed.isError && !feed.data)
     return (
-      <HomeState
-        role="alert"
-        title={t`Chats couldn’t load`}
-        caption={t`Check your connection and try again.`}
-        action={
+      <div className="py-8 text-center" role="alert">
+        <h2 className="text-headline-section">{t`Chats couldn’t load`}</h2>
+        <p className="mt-2 text-compact text-muted-foreground">
+          {t`Check your connection and try again.`}
+        </p>
+        <div className="mt-5">
           <Button
             variant="outline"
             className="[@media(pointer:coarse)]:min-h-11"
@@ -85,8 +90,8 @@ export function HomeFeed({
           >
             <Trans>Retry</Trans>
           </Button>
-        }
-      />
+        </div>
+      </div>
     );
   const { continueChat, favorites, recent } = feed.grouped;
   if (!continueChat && !favorites.length && !recent.length)
@@ -204,25 +209,6 @@ function HomeProjectChatRow({
   const state = useProjectChatUserState(projectId, item);
   return <ProjectChatRow {...rowProps} {...state} />;
 }
-function HomeState({
-  title,
-  caption,
-  action,
-  role,
-}: {
-  title: string;
-  caption: string;
-  action?: React.ReactNode;
-  role?: "alert";
-}) {
-  return (
-    <div className="py-8 text-center" role={role}>
-      <h2 className="text-headline-section">{title}</h2>
-      <p className="mt-2 text-compact text-muted-foreground">{caption}</p>
-      {action ? <div className="mt-5">{action}</div> : null}
-    </div>
-  );
-}
 function HomeLoading() {
   return (
     <div className="flex flex-col gap-6" role="status" aria-busy="true">
@@ -232,35 +218,19 @@ function HomeLoading() {
       <div aria-hidden className="contents">
         <section className="flex flex-col gap-2">
           <Skeleton className="h-7 w-28 motion-reduce:animate-none" />
-          <SkeletonRows count={1} />
+          <ul className="divide-y divide-border-subtle">
+            <ProjectChatRowSkeleton />
+          </ul>
         </section>
         <section className="flex flex-col gap-2">
           <Skeleton className="h-7 w-36 motion-reduce:animate-none" />
-          <SkeletonRows count={4} />
+          <ul className="divide-y divide-border-subtle">
+            {Array.from({ length: 4 }, (_, index) => (
+              <ProjectChatRowSkeleton key={index} />
+            ))}
+          </ul>
         </section>
       </div>
     </div>
-  );
-}
-function SkeletonRows({ count }: { count: number }) {
-  return (
-    <ul className="divide-y divide-border-subtle">
-      {Array.from({ length: count }, (_, x) => (
-        <li
-          key={x}
-          data-project-chat-row-layout
-          className="project-chat-row-layout grid px-2 py-1.5"
-        >
-          <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
-          <div data-project-chat-row-work className="px-1">
-            <Skeleton className="h-4 w-full motion-reduce:animate-none" />
-          </div>
-          <Skeleton className="col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />
-          <div className="col-start-3 row-span-2 row-start-1 grid place-items-center [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11">
-            <Skeleton className="h-3 w-12 motion-reduce:animate-none" />
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }
