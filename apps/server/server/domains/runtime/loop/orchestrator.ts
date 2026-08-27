@@ -127,9 +127,11 @@ import {
   mapStreamEvent,
   toJsonValue,
 } from "./streaming.js";
+import type { SystemUpdateDelivery } from "./system-update-delivery.js";
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
+import type { WorkContextReader } from "./work-context.js";
 
 const MAX_TURN_ITERATIONS = 32;
 
@@ -159,12 +161,14 @@ export interface OrchestratorDeps {
   workWriteMode: {
     read(workId: string): Promise<AiWriteMode>;
   };
+  workContext: WorkContextReader;
   permissionGate: PermissionGate;
   billingUsage: BillingUsagePolicy;
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
   interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
   helperResultDelivery?: HelperResultDelivery;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "deliverNow">;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
@@ -809,6 +813,7 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
+    workContext: input.deps.workContext,
   });
 
   return {
@@ -1086,6 +1091,54 @@ async function* generateEvents(
           string,
           Array<{ block: Block; writeId: string; settlementId: string }>
         >();
+        let editResponseId = responseId;
+
+        async function settleWriteScope() {
+          const finalizedWrites: Array<{
+            documentId: string;
+            index: number;
+            block: Block;
+            events: OrchestratorEvent[];
+          }> = [];
+          const outcome = await deps.responseWrites.commitResponse(
+            editResponseId,
+            { threadId: input.threadId, turnId: currentAssistantTurn.id },
+            async (settled) => {
+              for (const [documentId, blocks] of writeBlocksByDocument) {
+                for (const [index, write] of blocks.entries()) {
+                  const finalized =
+                    settled.status === "committed"
+                      ? await persistCommittedWriteResult({
+                          deps,
+                          threadId: input.threadId,
+                          block: write.block,
+                          output: settledReceipt(settled.receipts, documentId, write.settlementId)
+                            .result,
+                        })
+                      : await persistUncommittedWriteResult({
+                          deps,
+                          threadId: input.threadId,
+                          block: write.block,
+                          text: "The response closed before its staged write could commit. Re-read and retry.",
+                        });
+                  finalizedWrites.push({ documentId, index, ...finalized });
+                }
+              }
+            },
+          );
+          const events: OrchestratorEvent[] = [];
+          for (const finalized of finalizedWrites) {
+            const writes = writeBlocksByDocument.get(finalized.documentId);
+            const write = writes?.[finalized.index];
+            if (writes && write) writes[finalized.index] = { ...write, block: finalized.block };
+            const blockIndex = allBlocks.findIndex(
+              (existing) => existing.id === finalized.block.id,
+            );
+            if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
+            events.push(...finalized.events);
+          }
+          return { outcome, events };
+        }
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
@@ -1094,6 +1147,29 @@ async function* generateEvents(
             await rollbackActiveResponse();
             yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
+          }
+
+          if (
+            call.name === "work" &&
+            call.arguments &&
+            typeof call.arguments === "object" &&
+            "command" in call.arguments &&
+            call.arguments.command === "switch" &&
+            writeBlocksByDocument.size > 0
+          ) {
+            const boundary = await settleWriteScope();
+            activeResponseId = undefined;
+            yield* boundary.events;
+            if (boundary.outcome.status === "draft_closed") {
+              yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+              return;
+            }
+            writeBlocksByDocument.clear();
+            // A closed response fingerprint cannot accept post-switch writes.
+            // Rotate only the agent-edit lifecycle identity; durable tool blocks
+            // remain attached to the provider's model response.
+            editResponseId = crypto.randomUUID();
+            activeResponseId = editResponseId;
           }
 
           // If denied, we still persist a tool_result block (with isError: true)
@@ -1141,17 +1217,20 @@ async function* generateEvents(
               childRunCoordinator: deps.childRunCoordinator,
               eventSink,
               persistenceDeps: deps,
+              systemUpdateDelivery: deps.systemUpdateDelivery,
             },
             call,
             {
               thread,
               responseId,
+              editResponseId,
               state: interruptState,
               interruptSession,
               interruptAutoResume,
               treeBudget,
               blockSeqRef: interruptState.blockSeqRef,
               returnResultCompleter: input.returnResultCompleter,
+              allTurns,
             },
           );
           currentAssistantTurn = interruptState.currentTurn;
@@ -1191,50 +1270,10 @@ async function* generateEvents(
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
-        const finalizedWrites: Array<{
-          documentId: string;
-          index: number;
-          block: Block;
-          events: OrchestratorEvent[];
-        }> = [];
-        const concurrentEdits = await deps.responseWrites.commitResponse(
-          responseId,
-          {
-            threadId: input.threadId,
-            turnId: currentAssistantTurn.id,
-          },
-          async (result) => {
-            for (const [documentId, blocks] of writeBlocksByDocument) {
-              for (const [index, write] of blocks.entries()) {
-                const finalized =
-                  result.status === "committed"
-                    ? await persistCommittedWriteResult({
-                        deps,
-                        threadId: input.threadId,
-                        block: write.block,
-                        output: settledReceipt(result.receipts, documentId, write.settlementId)
-                          .result,
-                      })
-                    : await persistUncommittedWriteResult({
-                        deps,
-                        threadId: input.threadId,
-                        block: write.block,
-                        text: "The response closed before its staged write could commit. Re-read and retry.",
-                      });
-                finalizedWrites.push({ documentId, index, ...finalized });
-              }
-            }
-          },
-        );
+        const settledScope = await settleWriteScope();
+        const concurrentEdits = settledScope.outcome;
         activeResponseId = undefined;
-        for (const finalized of finalizedWrites) {
-          const writes = writeBlocksByDocument.get(finalized.documentId);
-          const write = writes?.[finalized.index];
-          if (writes && write) writes[finalized.index] = { ...write, block: finalized.block };
-          const blockIndex = allBlocks.findIndex((existing) => existing.id === finalized.block.id);
-          if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
-          yield* finalized.events;
-        }
+        yield* settledScope.events;
         if (concurrentEdits.status === "draft_closed") {
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;

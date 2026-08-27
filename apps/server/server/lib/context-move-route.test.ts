@@ -41,6 +41,11 @@ function depsFor(
         const work = options.works?.[id];
         return work ? { id, ...work } : null;
       }),
+      listByProject: vi.fn(async (projectId: string) =>
+        Object.entries(options.works ?? {})
+          .filter(([, work]) => work.projectId === projectId && !work.deletedAt)
+          .map(([id], index) => ({ id, slug: `work-${index + 1}` })),
+      ),
     },
     contextPorts: {
       forProject: vi.fn(() => port),
@@ -151,16 +156,19 @@ describe("handleContextMoveRequest", () => {
       path: "Drafts/Source.md",
       name: "Source.md",
     });
-    expect(deps.workRepo.findById).toHaveBeenCalledTimes(2);
+    expect(deps.workRepo.listByProject).toHaveBeenCalledOnce();
     expect(deps.contextPorts.forWork).toHaveBeenCalledWith(
       WORK_ID,
       "project-1",
       "user-1",
-      new Set([WORK_ID, OTHER_WORK_ID]),
+      new Map([
+        ["work-1", WORK_ID],
+        ["work-2", OTHER_WORK_ID],
+      ]),
     );
     expect(deps.port.commitWriterLocation).toHaveBeenCalledWith(
-      `scratch://${WORK_ID}/Source.md`,
-      `scratch://${OTHER_WORK_ID}/Drafts/Source.md`,
+      "scratch://@work-1/Source.md",
+      "scratch://@work-2/Drafts/Source.md",
       { origin: { type: "human", userId: "user-1" } },
     );
   });

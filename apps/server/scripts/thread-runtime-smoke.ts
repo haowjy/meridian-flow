@@ -116,9 +116,13 @@ await db.insert(projects).values({
   slug: `phase-3-smoke-${projectId}`,
   lastActivityAt: beforeActivity,
 });
-await db
-  .insert(works)
-  .values({ id: workId, projectId, createdByUserId: userId, name: "Smoke work" });
+await db.insert(works).values({
+  id: workId,
+  projectId,
+  createdByUserId: userId,
+  name: "Smoke work",
+  slug: "smoke-work",
+});
 await db.insert(threads).values({
   id: threadId,
   projectId,

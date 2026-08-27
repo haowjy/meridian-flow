@@ -18,6 +18,7 @@ type AppGlobal = typeof globalThis & {
 };
 
 const CHANGE_TRAIL_POLL_MS = 1_000;
+const SYSTEM_UPDATE_SWEEP_MS = 1_000;
 
 let initPromise: Promise<AppServices> | undefined;
 
@@ -41,6 +42,15 @@ async function createAppServices(): Promise<AppServices> {
         payload: unknownToEventPayload(cause),
       });
     });
+  const sweepSystemUpdates = () =>
+    void app.systemUpdates.sweep().catch((cause) => {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "runtime.system-update-delivery",
+        name: "sweep.failed",
+        payload: unknownToEventPayload(cause),
+      });
+    });
   await listenForThreadEvents({
     db,
     journalReader: app.journalReader,
@@ -48,9 +58,11 @@ async function createAppServices(): Promise<AppServices> {
     eventSink,
   });
   drain();
+  sweepSystemUpdates();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need
   // no in-process callback to survive a crash or a different server process.
   setInterval(drain, CHANGE_TRAIL_POLL_MS).unref();
+  setInterval(sweepSystemUpdates, SYSTEM_UPDATE_SWEEP_MS).unref();
   return app;
 }
 

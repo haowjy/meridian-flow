@@ -162,6 +162,15 @@ export const threadWorks = pgTable(
   ],
 );
 
+/** Coalesced durable requests to refresh a frozen thread's model-visible Work context. */
+export const workContextDeliveryObligations = pgTable("work_context_delivery_obligations", {
+  threadId: uuid("thread_id")
+    .$type<ThreadId>()
+    .primaryKey()
+    .references(() => threads.id, { onDelete: "cascade" }),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const turns = pgTable(
   "turns",
   {

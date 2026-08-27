@@ -9,12 +9,17 @@ import { parseContextUri } from "../domains/context/context/uri.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 import { requireRequestId } from "./request-id.js";
+import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
   projects: AppServices["projectRepo"];
   documentAccess: AppServices["documentAccess"];
   documentSync: AppServices["documentSync"];
+  blocks: AppServices["threadRepos"]["blocks"];
+  turns: AppServices["threadRepos"]["turns"];
+  works: AppServices["workRepo"];
+  threadWorks: AppServices["threadRepos"]["threadWorks"];
 };
 
 export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLineageRouteServices {
@@ -23,6 +28,10 @@ export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLi
     projects: app.projectRepo,
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
+    blocks: app.threadRepos.blocks,
+    turns: app.threadRepos.turns,
+    works: app.workRepo,
+    threadWorks: app.threadRepos.threadWorks,
   };
 }
 
@@ -44,9 +53,25 @@ export async function handleTurnLiveLineageRequest(
     threadId,
     userId: input.userId,
   });
+  const receipt = await deps.documentSync.getTurnReceiptChip(threadId, turnId);
+  const workAvailability = await getWorkReceiptReversalAvailability(
+    {
+      blocks: deps.blocks,
+      turns: deps.turns,
+      works: deps.works,
+      threads: deps.threads,
+      threadWorks: deps.threadWorks,
+    },
+    { threadId, turnId },
+  );
+  const workReceipt = workAvailability.undo
+    ? ({ state: "work-active", control: "undo" } as const)
+    : workAvailability.redo
+      ? ({ state: "work-reversed", control: "redo" } as const)
+      : null;
   return {
     documents: visibleDocuments.map(serializeLiveLineageDocument),
-    receipt: await deps.documentSync.getTurnReceiptChip(threadId, turnId),
+    receipt: receipt ?? workReceipt,
   };
 }
 

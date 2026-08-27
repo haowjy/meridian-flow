@@ -40,6 +40,12 @@ import {
 } from "../../threads/index.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { RunTurnPort } from "./run-turn-port.js";
+import type { SystemUpdateDelivery } from "./system-update-delivery.js";
+import {
+  createInMemoryThreadRunOwnership,
+  type ThreadRunClaim,
+  type ThreadRunOwnership,
+} from "./thread-run-ownership.js";
 
 export type TurnRunner = ReturnType<typeof createTurnRunner>;
 
@@ -55,6 +61,7 @@ export interface ChildRunRegistry {
     controller: AbortController,
   ): void;
   unregisterChild(childThreadId: ThreadId): void;
+  markChildTurn(childThreadId: ThreadId, assistantTurnId: TurnId): void;
   abortChild(childThreadId: ThreadId): void;
   abortChildrenOf(parentThreadId: ThreadId, options?: { includeBackground?: boolean }): void;
 }
@@ -62,6 +69,7 @@ export interface ChildRunRegistry {
 type RunningTurn = {
   controller: AbortController;
   assistantTurnId?: TurnId;
+  claim?: ThreadRunClaim;
 };
 
 type ChildRun = {
@@ -83,8 +91,12 @@ export function createTurnRunner(deps: {
   repos: { turns: TurnRepository };
   eventSink: EventSink;
   helperResultDelivery?: Pick<HelperResultDelivery, "flush">;
+  systemUpdateDelivery?: Pick<SystemUpdateDelivery, "beforeTurn"> &
+    Partial<Pick<SystemUpdateDelivery, "flush" | "flushOwned">>;
+  runOwnership?: ThreadRunOwnership;
 }) {
   const eventSink = deps.eventSink;
+  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
   const running = new Map<ThreadId, RunningTurn>();
   /** WS peers currently connected; a token not in this set cannot authorize a new turn start. */
   const liveConnectionTokens = new Set<string>();
@@ -100,12 +112,24 @@ export function createTurnRunner(deps: {
   const childRunRegistry: ChildRunRegistry = {
     registerChild(parentThreadId, childThreadId, controller) {
       childRuns.set(childThreadId, { parentThreadId, controller, background: false });
+      running.set(childThreadId, { controller });
     },
     registerBackgroundChild(parentThreadId, childThreadId, controller) {
       childRuns.set(childThreadId, { parentThreadId, controller, background: true });
+      running.set(childThreadId, { controller });
     },
     unregisterChild(childThreadId) {
       childRuns.delete(childThreadId);
+      running.delete(childThreadId);
+    },
+    markChildTurn(childThreadId, assistantTurnId) {
+      const child = childRuns.get(childThreadId);
+      if (child) {
+        running.set(childThreadId, {
+          controller: child.controller,
+          assistantTurnId,
+        });
+      }
     },
     abortChild(childThreadId) {
       this.abortChildrenOf(childThreadId, { includeBackground: true });
@@ -136,6 +160,10 @@ export function createTurnRunner(deps: {
       return running.get(threadId)?.assistantTurnId ?? null;
     },
 
+    isThreadRunning(threadId: ThreadId): boolean {
+      return running.has(threadId);
+    },
+
     async startTurn(input: {
       threadId: ThreadId;
       userText: string;
@@ -156,10 +184,16 @@ export function createTurnRunner(deps: {
       running.set(input.threadId, {
         controller,
       });
+      let claim: ThreadRunClaim | null = null;
       try {
+        claim = await runOwnership.tryAcquire(input.threadId);
+        if (!claim) throw new TurnStartConflictError(input.threadId, "already_running");
+        running.set(input.threadId, { controller, claim });
+
         assertConnectionTokenLive(input.connectionToken);
 
         const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
+        await deps.systemUpdateDelivery?.beforeTurn(input.threadId);
 
         const handle = await deps.orchestrator.runTurn({
           threadId: input.threadId,
@@ -175,6 +209,7 @@ export function createTurnRunner(deps: {
         running.set(input.threadId, {
           controller,
           assistantTurnId: handle.assistantTurnId,
+          claim,
         });
 
         void (async () => {
@@ -207,8 +242,20 @@ export function createTurnRunner(deps: {
             });
           } finally {
             running.delete(input.threadId);
-            await deps.helperResultDelivery?.flush(input.threadId);
-            childRunRegistry.abortChildrenOf(input.threadId);
+            try {
+              await deps.helperResultDelivery?.flush(input.threadId);
+            } finally {
+              try {
+                if (deps.systemUpdateDelivery?.flushOwned) {
+                  await deps.systemUpdateDelivery.flushOwned(input.threadId);
+                } else {
+                  await deps.systemUpdateDelivery?.flush?.(input.threadId);
+                }
+              } finally {
+                await claim.release();
+                childRunRegistry.abortChildrenOf(input.threadId);
+              }
+            }
           }
         })();
 
@@ -220,6 +267,7 @@ export function createTurnRunner(deps: {
         };
       } catch (error) {
         running.delete(input.threadId);
+        await claim?.release();
         throw error;
       }
     },

@@ -12,8 +12,9 @@
  * `command-descriptor.ts`. Classification stays here so it has no opinion about
  * presentation and no React in its imports.
  */
-import type { JsonValue } from "@meridian/contracts/protocol";
-import type { ToolView } from "./group-delivery-segments";
+import type { Block, JsonValue } from "@meridian/contracts/protocol";
+import { parseWorkReceipt, type WorkReceipt } from "@meridian/contracts/works";
+import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 
 export type WriteMode = "direct" | "draft";
 
@@ -33,6 +34,11 @@ export type ToolCommand =
   | "search"
   | "list"
   | "invoke"
+  | "work-read"
+  | "work-create"
+  | "work-update"
+  | "work-delete"
+  | "work-switch"
   | "unknown";
 
 export function toolCommand(tool: ToolView): ToolCommand {
@@ -45,8 +51,75 @@ export function toolCommand(tool: ToolView): ToolCommand {
       return "list";
     case "invoke":
       return "invoke";
+    case "work":
+      return workToolCommand(tool);
     default:
       return "unknown";
+  }
+}
+
+/**
+ * The server's receipt for one `work` command: its category, one factual line
+ * already written in Work names (never slugs), and — for mutations — the
+ * inverse that would put things back. Produced by the server tool handler and
+ * carried on the tool result's metadata; absent for reads and failures.
+ */
+export type { WorkReceipt } from "@meridian/contracts/works";
+
+export function workReceipt(tool: ToolView): WorkReceipt | null {
+  return parseWorkReceipt(tool.metadata?.workReceipt);
+}
+
+/**
+ * Every Work receipt a turn's tool results carry, in block order. The turn
+ * edits receipt asks this to learn whether undo has a Work half; blocks are
+ * paired with the same grouping the timeline renders from, so live and durable
+ * block shapes answer identically.
+ */
+export function turnWorkReceipts(blocks: Block[]): WorkReceipt[] {
+  return groupDeliverySegments(blocks).flatMap((segment) => {
+    if (segment.kind === "tool") return workReceiptOrNone(segment.tool);
+    if (segment.kind === "tool-run") return segment.tools.flatMap(workReceiptOrNone);
+    return [];
+  });
+}
+
+function workReceiptOrNone(tool: ToolView): WorkReceipt[] {
+  const receipt = workReceipt(tool);
+  return receipt ? [receipt] : [];
+}
+
+function workToolCommand(tool: ToolView): ToolCommand {
+  const command = stringInput(toolInputObject(tool), "command");
+  // The receipt's category is the server's own classification of what
+  // happened, so it wins when present — a result-only view has no input to
+  // classify from. The input command then refines a mutation to its exact
+  // claim; without it a mutation stays at the update verb, which the receipt
+  // line corrects on screen anyway.
+  const category = workReceipt(tool)?.category ?? workCategoryFromInput(command);
+  if (category === "read") return "work-read";
+  if (category === "binding") return "work-switch";
+  if (category !== "mutate") return "unknown";
+  if (command === "create") return "work-create";
+  if (command === "delete") return "work-delete";
+  return "work-update";
+}
+
+function workCategoryFromInput(
+  command: string | undefined,
+): WorkReceipt["category"] | "read" | null {
+  switch (command) {
+    case "list":
+    case "show":
+      return "read";
+    case "switch":
+      return "binding";
+    case "create":
+    case "update":
+    case "delete":
+      return "mutate";
+    default:
+      return null;
   }
 }
 

@@ -3,9 +3,10 @@
  * resume same root turn → re-spawn → completed; depth/budget/cancel guards.
  */
 
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import type {
@@ -38,6 +39,7 @@ import {
 import { createSpawnToolRegistrations } from "../../tools/spawn-tools.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
+import type { ThreadRunOwnership } from "../thread-run-ownership.js";
 import { createTurnRunner } from "../turn-runner.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
@@ -120,7 +122,17 @@ describe("nested spawn runtime (P2b gate)", () => {
     });
   }
 
-  async function setupNestedRuntime(gateway: Gateway, budget = createDefaultTreeBudget()) {
+  async function setupNestedRuntime(
+    gateway: Gateway,
+    budget = createDefaultTreeBudget(),
+    options: {
+      systemUpdateDelivery?: {
+        flush?(threadId: ThreadId): Promise<void>;
+        flushOwned?(threadId: ThreadId): Promise<void>;
+      };
+      runOwnership?: ThreadRunOwnership;
+    } = {},
+  ) {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "WB" });
@@ -154,6 +166,7 @@ describe("nested spawn runtime (P2b gate)", () => {
       eventSink: createInMemoryEventSink(),
     });
 
+    const flushSystemUpdates = vi.fn(async (_threadId: ThreadId) => {});
     const coordinator = createChildRunCoordinator({
       orchestrator: {
         runTurn: (input) => orchestrator.runTurn(input),
@@ -179,7 +192,14 @@ describe("nested spawn runtime (P2b gate)", () => {
         eventWriter,
         getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
       }),
+      systemUpdateDelivery: options.systemUpdateDelivery ?? { flush: flushSystemUpdates },
+      runOwnership: options.runOwnership,
       billingSpendReader: creditLedger,
+      workContext: {
+        async renderForThread() {
+          return "<work_context>\ntest\n</work_context>";
+        },
+      },
     });
 
     for (const registration of createSpawnToolRegistrations()) {
@@ -217,6 +237,8 @@ describe("nested spawn runtime (P2b gate)", () => {
       runner,
       creditLedger,
       interruptRegistry,
+      flushSystemUpdates,
+      coordinator,
     };
   }
 
@@ -321,7 +343,7 @@ describe("nested spawn runtime (P2b gate)", () => {
 
   it("parent spawns child, interrupt resumes same root turn, re-spawns to completion", async () => {
     const gateway = nestedRunGateway();
-    const { repos, eventWriter, orchestrator, thread, interruptRegistry } =
+    const { repos, eventWriter, orchestrator, thread, interruptRegistry, flushSystemUpdates } =
       await setupNestedRuntime(gateway);
 
     const handle = await orchestrator.runTurn({
@@ -359,6 +381,69 @@ describe("nested spawn runtime (P2b gate)", () => {
     );
     expect(childThreads).toHaveLength(2);
     expect(childThreads.every((row) => row.spawnStatus === "succeeded")).toBe(true);
+    expect(
+      flushSystemUpdates.mock.calls.map(([flushedThreadId]) => flushedThreadId).sort(),
+    ).toEqual(childThreads.map((row) => row.id).sort());
+  });
+
+  it("unregisters a completed child and releases ownership when its update flush fails", async () => {
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(): AsyncGenerator<StreamEvent> {
+        yield {
+          type: "end",
+          result: toolUseResult("call-return", "return_result", { summary: "done" }),
+        };
+      },
+      async generate() {
+        throw new Error("not used");
+      },
+    };
+    const owned = new Set<ThreadId>();
+    let releaseCalls = 0;
+    const runOwnership: ThreadRunOwnership = {
+      async tryAcquire(threadId) {
+        if (owned.has(threadId)) return null;
+        owned.add(threadId);
+        return {
+          async release() {
+            releaseCalls += 1;
+            owned.delete(threadId);
+          },
+        };
+      },
+    };
+    const flushError = new Error("system update flush failed");
+    const { coordinator, repos, runner, thread } = await setupNestedRuntime(
+      gateway,
+      createDefaultTreeBudget(),
+      {
+        runOwnership,
+        systemUpdateDelivery: {
+          async flushOwned() {
+            throw flushError;
+          },
+        },
+      },
+    );
+
+    await expect(
+      coordinator.spawnChild({
+        parentThread: thread,
+        parentTurnId: "parent-turn" as TurnId,
+        agentSlug: "worker",
+        prompt: "finish",
+        budget: createDefaultTreeBudget(),
+      }),
+    ).rejects.toBe(flushError);
+
+    const [child] = (await repos.threads.listByUser("user-1")).filter(
+      (candidate) => candidate.kind === "subagent",
+    );
+    expect(child).toBeDefined();
+    expect(runner.isThreadRunning(child?.id as ThreadId)).toBe(false);
+    expect(owned).toHaveLength(0);
+    expect(releaseCalls).toBe(1);
   });
 
   it("debits nested model calls and rolls up by root thread and agent", async () => {

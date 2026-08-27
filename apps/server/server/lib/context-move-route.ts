@@ -136,7 +136,15 @@ function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
 
-function locatorUri(locator: ContextMoveLocator, path = locator.path): string {
+function locatorUri(
+  locator: ContextMoveLocator,
+  path = locator.path,
+  qualifiedWorkSlugs?: ReadonlyMap<string, string>,
+): string {
+  if (locator.scope === "work") {
+    const slug = qualifiedWorkSlugs?.get(locator.workId);
+    if (slug) return `${locator.scheme}://@${slug}/${path}`;
+  }
   return projectBrowseContextUri(
     locator.scheme,
     path,
@@ -148,12 +156,13 @@ export async function commitContextMove(input: {
   port: ContextPort;
   userId: string;
   move: ParsedContextMove;
+  qualifiedWorkSlugs?: ReadonlyMap<string, string>;
 }): Promise<MoveContextEntryResult> {
   const name = input.move.name ?? basename(input.move.source.path);
   const destinationPath = joinPath(input.move.destination.path, name);
   const result = await input.port.commitWriterLocation(
-    locatorUri(input.move.source),
-    locatorUri(input.move.destination, destinationPath),
+    locatorUri(input.move.source, input.move.source.path, input.qualifiedWorkSlugs),
+    locatorUri(input.move.destination, destinationPath, input.qualifiedWorkSlugs),
     { origin: { type: "human", userId: input.userId } },
   );
   if (!result.ok) {
@@ -197,13 +206,19 @@ export async function handleContextMoveRequest(
       .map((locator) => locator.workId),
   );
   const primaryWorkId = move.source.scope === "work" ? move.source.workId : [...workIds][0];
+  const works = await deps.workRepo.listByProject(input.projectId);
   const port = await contextPortForProjectAuthorities({
     deps: { contextPorts: deps.contextPorts, works: deps.workRepo },
     projectId: input.projectId,
     userId: input.userId,
     workIds,
     primaryWorkId,
+    projectWorks: works,
   });
   if (!port) throw createError({ statusCode: 404, message: "Work not found" });
-  return commitContextMove({ port, userId: input.userId, move });
+  const qualifiedWorkSlugs =
+    workIds.size > 1
+      ? new Map(works.filter((work) => workIds.has(work.id)).map((work) => [work.id, work.slug]))
+      : undefined;
+  return commitContextMove({ port, userId: input.userId, move, qualifiedWorkSlugs });
 }

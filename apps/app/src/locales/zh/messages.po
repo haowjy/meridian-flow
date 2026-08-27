@@ -355,6 +355,11 @@ msgstr ""
 msgid "Archived current Work"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.archived"
+msgstr ""
+
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 msgstr "用日常语言描述你的数据、方法或下一步即可。"
@@ -475,8 +480,16 @@ msgstr ""
 msgid "Centered"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed {count} Works"
+msgstr ""
+
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed 1 Work"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
@@ -508,12 +521,20 @@ msgstr ""
 msgid "Checked recent changes"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Checked Works"
+msgstr ""
+
 #: src/features/chat/ComposerWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking recent changes…"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Checking Works…"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -696,6 +717,18 @@ msgstr ""
 msgid "Couldn't check recent changes"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't check Works"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't create a Work"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't delete that Work"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -800,7 +833,15 @@ msgid "Couldn't search"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+msgid "Couldn't switch Works"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't update that Work"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -828,12 +869,29 @@ msgstr ""
 msgid "Create the document"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Created a Work"
+msgstr ""
+
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.created"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Creating a Work…"
+msgstr ""
+
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
 msgstr ""
 
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 msgid "Current block type"
+msgstr ""
+
+#: src/features/project/chat/NewChatDialog.tsx
+msgid "Current Work"
 msgstr ""
 
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -883,6 +941,19 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete table"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleted a Work"
+msgstr ""
+
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.deleted"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleting a Work…"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
@@ -1641,6 +1712,14 @@ msgstr ""
 msgid "Names cannot be empty"
 msgstr ""
 
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "Names cannot begin with '@'. That prefix identifies a Work"
+#~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot begin with '@'. That prefix is reserved for authority qualifiers"
+msgstr ""
+
 #. placeholder {0}: error.character ?? ""
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain '{0}'"
@@ -2069,6 +2148,11 @@ msgstr ""
 msgid "Redid"
 msgstr ""
 
+#. placeholder {0}: work.name
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Redid change to Work {0}."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Redo"
@@ -2163,6 +2247,15 @@ msgstr ""
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Response complete"
 msgstr "回复完成"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Restored the Work."
+#~ msgstr ""
+
+#. placeholder {0}: work.name
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Restored Work {0}."
+#~ msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
@@ -2464,6 +2557,19 @@ msgstr ""
 #~ msgid "Switch work"
 #~ msgstr ""
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.switched"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Switched Works"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Switching Works…"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
@@ -2704,6 +2810,11 @@ msgstr ""
 msgid "This column is already at the edge."
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.alreadyCurrent"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
 msgstr ""
@@ -2863,8 +2974,18 @@ msgstr ""
 msgid "Unarchive"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.unarchived"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
+msgstr ""
+
+#. placeholder {0}: work.name
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undid change to Work {0}."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2903,6 +3024,19 @@ msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Updated a Work"
+msgstr ""
+
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.updated"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Updating a Work…"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2986,6 +3120,11 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/features/chat/work-receipt-copy.ts
+msgid "workReceipt.upToDate"
+msgstr ""
+
 #: src/features/project/home/WorksManager.tsx
 msgid "Work details"
 msgstr ""
@@ -2996,6 +3135,7 @@ msgstr ""
 
 #. placeholder {0}: activeWork.name
 #: src/features/project/ChatPaneController.tsx
+#: src/features/project/mobile/MobileTopBar.tsx
 msgid "Work: {0}"
 msgstr ""
 

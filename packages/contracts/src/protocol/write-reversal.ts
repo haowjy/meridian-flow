@@ -26,7 +26,17 @@ export interface DocumentReversalResult {
   text?: string;
 }
 
+export interface WorkReversalResult {
+  command: "delete" | "update" | "restore" | "switch";
+  workId: string;
+  name: string;
+  status: "reversed" | "redone" | "unavailable" | "already_applied" | "failed";
+  message?: string;
+}
+
 export interface ReversalOutcome {
   status: WriteStatus;
   documents: DocumentReversalResult[];
+  workReceipts?: WorkReversalResult[];
+  workError?: "execution_failed";
 }

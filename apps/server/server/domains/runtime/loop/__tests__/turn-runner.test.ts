@@ -80,6 +80,69 @@ describe("createTurnRunner", () => {
     expect(runTurnCalls).toBe(1);
   });
 
+  it("admits one concurrent start even when ownership acquisition is reentrant", async () => {
+    let runTurnCalls = 0;
+    const runner = createTurnRunner({
+      orchestrator: {
+        async runTurn() {
+          runTurnCalls += 1;
+          return {
+            userTurnId: "turn-user",
+            assistantTurnId: "turn-assistant",
+            events: emptyEvents(),
+          };
+        },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
+      },
+      eventSink: createInMemoryEventSink(),
+      hub: { headSeq: async () => 0n } as never,
+      repos: { turns: { findById: async () => null } as never },
+      runOwnership: {
+        async tryAcquire() {
+          return { async release() {} };
+        },
+      },
+    });
+
+    const starts = await Promise.allSettled([
+      runner.startTurn({ threadId: "thread-1", userText: "first" }),
+      runner.startTurn({ threadId: "thread-1", userText: "second" }),
+    ]);
+
+    expect(starts.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(runTurnCalls).toBe(1);
+  });
+
+  it("recovers pending system updates before assembling the next turn", async () => {
+    const order: string[] = [];
+    const runner = createTurnRunner({
+      orchestrator: {
+        async runTurn() {
+          order.push("run-turn");
+          return {
+            userTurnId: "turn-user",
+            assistantTurnId: "turn-assistant",
+            events: emptyEvents(),
+          };
+        },
+        finalizeGeneratorFailure: noopFinalizeGeneratorFailure,
+      },
+      eventSink: createInMemoryEventSink(),
+      hub: { headSeq: async () => 0n } as never,
+      repos: { turns: { findById: async () => null } as never },
+      systemUpdateDelivery: {
+        async beforeTurn() {
+          order.push("recover-update");
+        },
+        async flush() {},
+      },
+    });
+
+    await runner.startTurn({ threadId: "thread-1", userText: "continue" });
+
+    expect(order).toEqual(["recover-update", "run-turn"]);
+  });
+
   it("does not abort background children during parent turn cleanup", async () => {
     const runner = createTurnRunner({
       orchestrator: {

@@ -18,8 +18,42 @@ import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
+const WorkStatusSchema = z.enum(["active", "archived"]);
+const WorkSelectorSchema = z.object({ work: z.string().min(1) });
+
+export const WorkCommandSchema = z.discriminatedUnion("command", [
+  z.object({ command: z.literal("list"), status: WorkStatusSchema.optional() }).strict(),
+  WorkSelectorSchema.extend({ command: z.literal("show") }).strict(),
+  z
+    .object({
+      command: z.literal("create"),
+      name: z.string().min(1),
+      goal: z.string().optional(),
+      description: z.string().optional(),
+    })
+    .strict(),
+  WorkSelectorSchema.extend({
+    command: z.literal("update"),
+    name: z.string().min(1).optional(),
+    goal: z.string().optional(),
+    description: z.string().optional(),
+    status: WorkStatusSchema.optional(),
+  }).strict(),
+  WorkSelectorSchema.extend({ command: z.literal("delete") }).strict(),
+  WorkSelectorSchema.extend({ command: z.literal("switch") }).strict(),
+]);
+
+export type WorkCommand = z.infer<typeof WorkCommandSchema>;
+export type WorkCommandCategory = "read" | "mutate" | "binding";
+
+export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
+  if (command.command === "list" || command.command === "show") return "read";
+  if (command.command === "switch") return "binding";
+  return "mutate";
+}
+
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["write", "ls", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["write", "work", "ls", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -32,6 +66,10 @@ export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
 function writeToolInputSchema(): Record<string, unknown> {
   return packageSchemaToModelSchema(z.toJSONSchema(WriteCommandSchema));
+}
+
+function workToolInputSchema(): Record<string, unknown> {
+  return packageSchemaToModelSchema(z.toJSONSchema(WorkCommandSchema));
 }
 
 function formatWriteExecutionError(error: ToolExecutionError) {
@@ -108,6 +146,18 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: formatWriteExecutionError,
+    },
+    {
+      source: "core",
+      definition: {
+        type: "function",
+        name: "work",
+        description: "Inspect or change the project Work and this conversation's Work binding.",
+        inputSchema: workToolInputSchema(),
+      },
+      execution: { type: "server", handler: handlers.work },
+      sequential: true,
+      timeoutMs: 30_000,
     },
     {
       source: "core",

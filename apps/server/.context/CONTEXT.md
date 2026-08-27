@@ -33,6 +33,12 @@ instead of mechanically rewriting copied code one reference at a time.
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.
 
+Startup also owns recovery polling for durable delivery outboxes. Work-context
+obligations receive a non-blocking post-commit wake for low-latency idle-thread
+delivery and a one-second startup/poll sweep for crash and cross-process
+recovery; delivery failure is logged and never changes the committed Work
+mutation result.
+
 ## Project route surface
 
 upstream-parity routes under `server/routes/api/projects/` keep the upstream

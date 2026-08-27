@@ -67,6 +67,11 @@ describe("assembleNextTurnContext", () => {
       packageRepository: packageRepository() as never,
       toolRegistry: { getRegistration: () => undefined } as never,
       persistBake: false,
+      workContext: {
+        async renderForThread() {
+          return "<work_context>\ntest\n</work_context>";
+        },
+      },
     });
     const systemMessage = assembled.generateRequest.messages[0];
     const systemText = Array.isArray(systemMessage?.content)
@@ -95,6 +100,11 @@ describe("assembleNextTurnContext", () => {
       packageRepository: packageRepository() as never,
       toolRegistry: { getRegistration: () => undefined } as never,
       persistBake: true,
+      workContext: {
+        async renderForThread() {
+          return "<work_context>\ntest\n</work_context>";
+        },
+      },
       async bakeComposedSystemPrompt(_threadId, input) {
         bakeAttempts.push(input.expectedCurrentAgent ?? "none");
         if (input.expectedCurrentAgent === "agent-a") {
@@ -126,6 +136,11 @@ describe("assembleNextTurnContext", () => {
       packageRepository: packageRepository() as never,
       toolRegistry: { getRegistration: () => undefined } as never,
       persistBake: true,
+      workContext: {
+        async renderForThread() {
+          return "<work_context>\ntest\n</work_context>";
+        },
+      },
       async bakeComposedSystemPrompt(_threadId, input) {
         bakeAttempts.push(input.expectedCurrentAgent ?? "none");
         if (input.expectedCurrentAgent === "agent-a") {

@@ -28,6 +28,7 @@ describe("POST /api/projects/:projectId/works", () => {
       deletedAt: null,
     } as Work;
     const setCurrentWorkId = vi.fn();
+    const projectChanged = vi.fn();
     vi.mocked(requireAppUser).mockResolvedValue({
       user: { userId: USER_ID },
       app: {
@@ -37,6 +38,7 @@ describe("POST /api/projects/:projectId/works", () => {
           create: async () => created,
         },
         preferences: { setCurrentWorkId },
+        systemUpdates: { projectChanged },
       },
     } as never);
     const event = {
@@ -53,6 +55,7 @@ describe("POST /api/projects/:projectId/works", () => {
       value: { id: WORK_ID, name: "Act 2" },
     });
     expect(setCurrentWorkId).toHaveBeenCalledWith(USER_ID, PROJECT_ID, WORK_ID);
+    expect(projectChanged).toHaveBeenCalledWith(PROJECT_ID);
     expect(event.res.status).toBe(201);
   });
 });

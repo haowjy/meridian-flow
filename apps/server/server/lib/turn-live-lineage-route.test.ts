@@ -7,6 +7,7 @@ const projectId = "00000000-0000-4000-8000-000000000701" as ProjectId;
 const threadId = "00000000-0000-4000-8000-000000000702" as ThreadId;
 const turnId = "00000000-0000-4000-8000-000000000703" as TurnId;
 const userId = "00000000-0000-4000-8000-000000000704" as UserId;
+const workId = "00000000-0000-4000-8000-000000000709";
 const draftDocumentId = "00000000-0000-4000-8000-000000000705";
 const liveDocumentId = "00000000-0000-4000-8000-000000000706";
 const inaccessibleDocumentId = "00000000-0000-4000-8000-000000000707";
@@ -34,10 +35,12 @@ function deps({
   documents = [manuscriptDraftDocument],
   canAccessDocument = async () => true,
   canAccessProjectDocument = async () => true,
+  receipt = { state: "branch-active", control: "undo" } as const,
 }: {
   documents?: EditedDocument[];
   canAccessDocument?: (documentId: string) => Promise<boolean>;
   canAccessProjectDocument?: (documentId: string) => Promise<boolean>;
+  receipt?: { state: "branch-active"; control: "undo" } | null;
 } = {}) {
   return {
     threads: {
@@ -62,12 +65,65 @@ function deps({
     },
     documentSync: {
       listEditedDocumentsForTurn: vi.fn(async () => documents),
-      getTurnReceiptChip: vi.fn(async () => ({ state: "branch-active", control: "undo" })),
+      getTurnReceiptChip: vi.fn(async () => receipt),
     },
+    turns: {
+      findById: vi.fn(async () => ({ id: turnId, threadId })),
+    },
+    blocks: { listByTurn: vi.fn(async () => []) },
+    works: { findById: vi.fn(async () => null), listByProject: vi.fn(async () => []) },
+    threadWorks: { findPrimary: vi.fn(async () => null) },
   };
 }
 
 describe("turn live-lineage route", () => {
+  it("reports an active Work restore receipt as undoable without edited documents", async () => {
+    const services = deps({ documents: [], receipt: null });
+    services.blocks.listByTurn.mockResolvedValueOnce([
+      {
+        content: {
+          metadata: {
+            workReceipt: {
+              operation: "delete",
+              category: "mutate",
+              changed: true,
+              workId,
+              workName: "Revision",
+              before: { name: "Revision", goal: null, description: null, status: "active" },
+              after: null,
+              inverse: { command: "restore", workId },
+            },
+          },
+        },
+      } as never,
+    ]);
+    services.works.listByProject.mockResolvedValueOnce([
+      {
+        id: workId,
+        projectId,
+        createdByUserId: userId,
+        name: "Revision",
+        slug: "revision",
+        goal: null,
+        description: null,
+        status: "active",
+        archivedAt: null,
+        aiWriteMode: "direct",
+        createdAt: "2026-08-06T11:00:00.000Z",
+        updatedAt: "2026-08-06T12:00:00.000Z",
+        lastActivityAt: "2026-08-06T12:00:00.000Z",
+        deletedAt: "2026-08-06T12:00:00.000Z",
+      },
+    ] as never);
+
+    await expect(
+      handleTurnLiveLineageRequest(services as never, { threadId, turnId, userId }),
+    ).resolves.toEqual({
+      documents: [],
+      receipt: { state: "work-active", control: "undo" },
+    });
+  });
+
   it("serializes draft-scope manuscript edits without requiring an upload row", async () => {
     await expect(
       handleTurnLiveLineageRequest(deps() as never, { threadId, turnId, userId }),

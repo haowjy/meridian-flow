@@ -131,6 +131,7 @@ function draftWork(): Work {
     projectId: "project-1",
     createdByUserId: "user-1",
     name: "Novel",
+    slug: "novel",
     goal: null,
     description: null,
     status: "active",

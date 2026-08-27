@@ -5,6 +5,7 @@ import {
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
+import type { WorkRepository } from "../domains/projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../domains/threads/index.js";
 import { contextErrorToHttp } from "./context-error-http.js";
 import { requireRequestId } from "./request-id.js";
@@ -12,7 +13,8 @@ import { requireRequestId } from "./request-id.js";
 export interface ThreadContextRouteDeps {
   contextPorts: UnifiedContextPortFactory;
   threads: Pick<ThreadRepository, "findById">;
-  threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
+  threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
+  works: Pick<WorkRepository, "listByProject">;
 }
 
 export async function resolveThreadContextPort(
@@ -21,7 +23,7 @@ export async function resolveThreadContextPort(
   userId: UserId,
 ) {
   const resolution = await resolveThreadContext(
-    { threads: deps.threads, threadWorks: deps.threadWorks },
+    { threads: deps.threads, threadWorks: deps.threadWorks, works: deps.works },
     threadId,
   );
   if (!resolution || resolution.thread.userId !== userId) {

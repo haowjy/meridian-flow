@@ -237,13 +237,15 @@ export interface ThreadDocumentRepository {
 }
 
 export interface ThreadWorksRepository {
-  /** Holds the thread row lock through primary-dependent validation and mutation. */
-  withPrimaryWorkLock<T>(
-    threadId: ThreadId,
-    operation: (primary: { workId: WorkId } | null) => Promise<T>,
-  ): Promise<T>;
   /** When primary, demotes the old primary and upserts this membership atomically. */
   addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void>;
+  /** Replaces the primary membership in place under the thread row lock. */
+  rebindPrimary(
+    threadId: ThreadId,
+    workId: WorkId,
+  ): Promise<{ previousWorkId: WorkId | null; changed: boolean }>;
+  /** Locks the thread after callers have acquired any Work lifecycle locks. */
+  lockPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
 }
@@ -262,6 +264,17 @@ export interface TurnDocumentTouchRepository {
   listThreadIdsByDocument(documentId: string): Promise<ThreadId[]>;
 }
 
+/** Durable, coalesced delivery state for model-visible Work context refreshes. */
+export interface WorkContextDeliveryRepository {
+  enqueueThread(threadId: ThreadId): Promise<ThreadId[]>;
+  enqueueProject(projectId: ProjectId): Promise<ThreadId[]>;
+  listPendingThreadIds(): Promise<ThreadId[]>;
+  isPending(threadId: ThreadId): Promise<boolean>;
+  /** Locks the obligation for the ambient delivery transaction. */
+  lockPending(threadId: ThreadId): Promise<boolean>;
+  acknowledge(threadId: ThreadId): Promise<void>;
+}
+
 export type ThreadRepositories = {
   threads: ThreadRepository;
   threadWorks: ThreadWorksRepository;
@@ -270,6 +283,7 @@ export type ThreadRepositories = {
   modelResponses: ModelResponseRepository;
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
+  workContextDeliveries: WorkContextDeliveryRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Serializes a complete turn-start transition on the thread and rejects

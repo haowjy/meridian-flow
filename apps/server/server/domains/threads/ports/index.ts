@@ -27,4 +27,5 @@ export type {
   TurnRepository,
   UpdateTurnStatusInput,
   UsageRecorder,
+  WorkContextDeliveryRepository,
 } from "./repositories.js";

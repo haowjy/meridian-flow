@@ -174,6 +174,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Branch Work",
+        slug: "branch-work",
       });
       await db.insert(contextSources).values({
         id: SOURCE_ID,
@@ -239,6 +240,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Next Work",
+        slug: "next-work",
       });
       await db.transaction(async (tx) => {
         await tx
@@ -548,6 +550,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         access.canAccessProjectDocument(USER_ID as never, manifest.documentId, PROJECT_ID as never),
       ).resolves.toBe(false);
+    });
+
+    it("keeps a Work-scoped document URI bound to its owning Work across a thread rebind", async () => {
+      const scratchSourceId = "00000000-0000-4000-8000-000000000611";
+      const scratchDocumentId = "00000000-0000-4000-8000-000000000612";
+      await db.insert(works).values({
+        id: NEXT_WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Next Work",
+        slug: "next-work",
+      });
+      await db.insert(contextSources).values({
+        id: scratchSourceId,
+        workId: WORK_ID,
+        name: "Scratch",
+        slug: "scratch",
+        scope: "work",
+      });
+      await db.insert(documents).values({
+        id: scratchDocumentId,
+        contextSourceId: scratchSourceId,
+        name: "lineage",
+        extension: "md",
+        fileType: "markdown",
+      });
+
+      await expect(resolveDocumentUri(db, scratchDocumentId)).resolves.toBe(
+        `scratch://${WORK_ID}/lineage.md`,
+      );
+      await db
+        .update(threadWorks)
+        .set({ workId: NEXT_WORK_ID })
+        .where(eq(threadWorks.threadId, THREAD_ID));
+      await expect(resolveDocumentUri(db, scratchDocumentId)).resolves.toBe(
+        `scratch://${WORK_ID}/lineage.md`,
+      );
     });
 
     it("persists manifest membership as a live Yjs peer across store reload", async () => {

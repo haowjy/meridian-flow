@@ -64,6 +64,8 @@ export interface BuildContextInput {
    * `thread.composedSystemPrompt` is already frozen.
    */
   skillsSystemPromptSection?: string;
+  /** Frozen Work section for a would-be first bake. */
+  workContext?: string;
 }
 
 export function buildContext(input: BuildContextInput): {
@@ -83,6 +85,7 @@ export function buildContext(input: BuildContextInput): {
         assembleComposedSystemPrompt({
           basePrompt: systemPrompt,
           skillsSystemPromptSection: input.skillsSystemPromptSection,
+          workContext: input.workContext,
         }),
       ),
     );
