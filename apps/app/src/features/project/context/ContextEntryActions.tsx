@@ -12,17 +12,11 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 
 import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogClose,
@@ -33,6 +27,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import {
+  dropdownMenuContentClass,
+  dropdownMenuItemClass,
+  dropdownMenuSeparatorClass,
+  dropdownNavigationPageClass,
+  dropdownRowVariants,
+} from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
@@ -95,12 +96,21 @@ export function ContextEntryMenu({
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent onCloseAutoFocus={onCloseAutoFocus}>
-        <ContextActionItems allowCreate={allowCreate} onAction={dispatch} />
-      </ContextMenuContent>
-    </ContextMenu>
+    <ContextMenuPrimitive.Root>
+      <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
+      <ContextMenuPrimitive.Portal>
+        <ContextMenuPrimitive.Content
+          className={cn(
+            dropdownNavigationPageClass,
+            dropdownMenuContentClass,
+            "origin-(--radix-context-menu-content-transform-origin) [--radix-menu-content-available-height:var(--radix-context-menu-content-available-height)]",
+          )}
+          onCloseAutoFocus={onCloseAutoFocus}
+        >
+          <ContextActionItems allowCreate={allowCreate} onAction={dispatch} />
+        </ContextMenuPrimitive.Content>
+      </ContextMenuPrimitive.Portal>
+    </ContextMenuPrimitive.Root>
   );
 }
 
@@ -179,9 +189,12 @@ function ContextActionItems({
         const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;
         return (
           <Fragment key={spec.action}>
-            {startsGroup ? <ContextMenuSeparator /> : null}
-            <ContextMenuItem
-              variant={spec.destructive ? "destructive" : "default"}
+            {startsGroup ? (
+              <ContextMenuPrimitive.Separator className={dropdownMenuSeparatorClass} />
+            ) : null}
+            <ContextMenuPrimitive.Item
+              data-variant={spec.destructive ? "destructive" : "default"}
+              className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
               onSelect={() => onAction(spec.action)}
             >
               <Icon
@@ -189,7 +202,7 @@ function ContextActionItems({
                 aria-hidden
               />
               {spec.label}
-            </ContextMenuItem>
+            </ContextMenuPrimitive.Item>
           </Fragment>
         );
       })}

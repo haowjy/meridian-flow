@@ -200,6 +200,10 @@ msgstr "{filename} did not import. It stayed a link."
 msgid "{hours}h"
 msgstr "{hours}h"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{label} couldn’t load"
+msgstr "{label} couldn’t load"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr "{matches} results in {inDocuments}"
@@ -441,9 +445,13 @@ msgstr "Ask about your data, methods, or the next step in your work—plain lang
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
 
-#: src/features/project/work/WorkAssociatedChats.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Associated chats"
 msgstr "Associated chats"
+
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Associated chats couldn’t load"
+msgstr "Associated chats couldn’t load"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Auto-apply"
@@ -914,8 +922,8 @@ msgid "Couldn't finish that step"
 msgstr "Couldn't finish that step"
 
 #: src/features/project/work/WorkResourceState.tsx
-msgid "couldn’t load"
-msgstr "couldn’t load"
+#~ msgid "couldn’t load"
+#~ msgstr "couldn’t load"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
@@ -2281,6 +2289,10 @@ msgstr "Paste a link or type [[a document name]]"
 msgid "Pending drafts"
 msgstr "Pending drafts"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Pending drafts couldn’t load"
+msgstr "Pending drafts couldn’t load"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr "photo"
@@ -2524,9 +2536,20 @@ msgstr "Resume where I left off on any device"
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeFeed.tsx
-#: src/features/project/work/WorkResourceState.tsx
 msgid "Retry"
 msgstr "Retry"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Retry {label}"
+msgstr "Retry {label}"
+
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Retry Associated chats"
+msgstr "Retry Associated chats"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Retry Pending drafts"
+msgstr "Retry Pending drafts"
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
@@ -2535,6 +2558,10 @@ msgstr "Retry save"
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr "Retry sign-in"
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Retry Work"
+msgstr "Retry Work"
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
@@ -3449,6 +3476,7 @@ msgstr "Work {name} was already up to date"
 
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeScreen.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"
 

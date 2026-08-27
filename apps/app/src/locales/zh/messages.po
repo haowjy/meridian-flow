@@ -200,6 +200,10 @@ msgstr ""
 msgid "{hours}h"
 msgstr "{hours}小时"
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{label} couldn’t load"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr ""
@@ -441,8 +445,12 @@ msgstr "用日常语言描述你的数据、方法或下一步即可。"
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
-#: src/features/project/work/WorkAssociatedChats.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Associated chats"
+msgstr ""
+
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Associated chats couldn’t load"
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -914,8 +922,8 @@ msgid "Couldn't finish that step"
 msgstr ""
 
 #: src/features/project/work/WorkResourceState.tsx
-msgid "couldn’t load"
-msgstr ""
+#~ msgid "couldn’t load"
+#~ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
@@ -2281,6 +2289,10 @@ msgstr ""
 msgid "Pending drafts"
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Pending drafts couldn’t load"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr ""
@@ -2524,8 +2536,19 @@ msgstr ""
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeFeed.tsx
-#: src/features/project/work/WorkResourceState.tsx
 msgid "Retry"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Retry {label}"
+msgstr ""
+
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Retry Associated chats"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Retry Pending drafts"
 msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
@@ -2534,6 +2557,10 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
+msgstr ""
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Retry Work"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -3449,6 +3476,7 @@ msgstr ""
 
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeScreen.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr ""
 

@@ -53,8 +53,7 @@ test.beforeEach(async ({ page }) => {
     <main id="surface" class="bg-popover" style="width:240px">
       <button id="direct" class="${dropdownRowVariants()}">Direct row</button>
       <button id="dropdown-action" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Dropdown rename</button>
-      <button id="context-action" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Context rename</button>
-      <button id="context-delete" data-variant="destructive" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Context delete</button>
+      <button id="destructive-action" data-variant="destructive" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Delete</button>
       <div id="composite" class="${dropdownRowContainerClass}">
         <button id="composite-control" class="${dropdownRowVariants({ interactive: false })}">
           Composite row
@@ -308,7 +307,7 @@ test("measures the visible overflow control and inert allocation probe", async (
   await expect(page.locator("#probe")).toBeHidden();
 });
 
-test("keeps context and dropdown action rows on the same effective presentation", async ({
+test("resolves the canonical menu row density and destructive state", async ({
   page,
 }, testInfo) => {
   const expectedHeight = testInfo.project.name === "coarse-pointer" ? 44 : 32;
@@ -326,19 +325,14 @@ test("keeps context and dropdown action rows on the same effective presentation"
     });
 
   await page.locator("#dropdown-action").focus();
-  const dropdown = await read("dropdown-action");
-  await page.locator("#context-action").focus();
-  const context = await read("context-action");
+  const normal = await read("dropdown-action");
+  expect(normal.height).toBe(expectedHeight);
 
-  expect(context).toEqual(dropdown);
-  expect(context.height).toBe(expectedHeight);
-
-  const normalColor = context.color;
-  await page.locator("#context-delete").focus();
-  const destructive = await read("context-delete");
+  await page.locator("#destructive-action").focus();
+  const destructive = await read("destructive-action");
   expect(destructive.height).toBe(expectedHeight);
-  expect(destructive.color).not.toBe(normalColor);
-  expect(destructive.background).not.toBe(context.background);
+  expect(destructive.color).not.toBe(normal.color);
+  expect(destructive.background).not.toBe(normal.background);
 });
 
 test("keeps context rows and their shared overflow targets non-overlapping", async ({

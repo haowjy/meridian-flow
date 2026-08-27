@@ -128,7 +128,8 @@
 
 - `apps/app`: dropdown rows now share full-width selected, hover, and inset
   keyboard-focus boundaries while search fields and other non-row content keep
-  their intentional local gutters.
+  their intentional local gutters; context entry actions consume that
+  presentation directly without a parallel UI wrapper family.
 
 - `apps/app`: blocking composer panel actions now retain their toolbar allocation
   and popup anchor while Work or write-mode labels change, truncate transient

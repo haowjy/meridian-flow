@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: [
+    "context-entry-actions.pw.ts",
     "effective-styles.pw.ts",
     "home-row-component-geometry.pw.ts",
     "work-detail-component-geometry.pw.ts",
