@@ -138,7 +138,7 @@ const [
   import("../../routes/api/threads/[threadId]/messages.post.js").then(
     (module) => module.default as unknown as TestHandler,
   ),
-  import("../../routes/api/projects/[projectId]/works/[workId]/threads.get.js").then(
+  import("../../routes/api/works/[workId]/threads.get.js").then(
     (module) => module.default as unknown as TestHandler,
   ),
   import("../../routes/api/threads/[threadId]/turns/[turnId]/cancel.post.js").then(

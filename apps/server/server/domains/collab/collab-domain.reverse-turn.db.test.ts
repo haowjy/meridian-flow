@@ -128,7 +128,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Work",
+        name: "Work",
         aiWriteMode: "draft",
       });
       await db.insert(contextSources).values({

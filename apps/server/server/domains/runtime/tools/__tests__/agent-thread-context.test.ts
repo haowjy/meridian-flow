@@ -58,6 +58,7 @@ function threadFixture(overrides: Record<string, unknown> = {}) {
     kind: "primary" as const,
     status: "idle" as const,
     title: null,
+    slug: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
     systemPrompt: null,

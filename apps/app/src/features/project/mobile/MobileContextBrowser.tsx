@@ -89,7 +89,7 @@ export function MobileContextBrowser({
   }
 
   const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
-  const workLabel = works?.find((work) => work.id === workId)?.title ?? t`Work`;
+  const workLabel = works?.find((work) => work.id === workId)?.name ?? t`Work`;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">

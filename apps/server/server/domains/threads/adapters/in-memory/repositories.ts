@@ -13,6 +13,7 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
+import { uniqueThreadSlug } from "../../domain/thread-slug.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
@@ -82,6 +83,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     kind: normalized.kind,
     status: "idle",
     title: normalized.title === "" ? null : normalized.title,
+    slug: null,
     systemPrompt: normalized.systemPrompt,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
@@ -143,7 +145,7 @@ interface ProjectVisibilityRepository {
 interface WorkProjectionRepository {
   findById(
     id: string,
-  ): Promise<{ id: string; title: string; projectId: string; deletedAt: string | null } | null>;
+  ): Promise<{ id: string; name: string; projectId: string; deletedAt: string | null } | null>;
 }
 
 export interface InMemoryRepositoriesOptions {
@@ -162,8 +164,18 @@ export function createInMemoryRepositories(
   const documentTouches = new Map<string, TurnDocumentTouch>();
   const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
   const lastOpenedByThreadUser = new Map<string, string>();
+  const primaryWorkLockTails = new Map<string, Promise<void>>();
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
+
+  function nextSlug(projectId: string, title: string | null | undefined): string | null {
+    return uniqueThreadSlug(
+      title,
+      [...threads.values()]
+        .filter((thread) => thread.projectId === projectId && !thread.deletedAt)
+        .flatMap((thread) => (thread.slug ? [thread.slug] : [])),
+    );
+  }
 
   function openedKey(threadId: ThreadId, userId: string): string {
     return `${threadId}:${userId}`;
@@ -207,7 +219,7 @@ export function createInMemoryRepositories(
 
     return toThreadListItem({
       thread: projected,
-      workTitle: work && !work.deletedAt ? work.title : null,
+      workTitle: work && !work.deletedAt ? work.name : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
       lastTurnAt: latestTurn ? (latestTurn.completedAt ?? latestTurn.createdAt) : null,
@@ -218,21 +230,26 @@ export function createInMemoryRepositories(
 
   const threadRepo: ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory = {
     async create(input) {
-      const thread = defaultThread(input);
+      const thread = {
+        ...defaultThread(input),
+        slug: nextSlug(input.projectId, input.title),
+      };
       threads.set(thread.id, thread);
       return projectThread(thread);
     },
     async createSubagent(input) {
-      const thread = buildSubagentThreadRow({
-        ...input,
-      });
+      const thread = {
+        ...buildSubagentThreadRow(input),
+        slug: nextSlug(input.projectId, input.title),
+      };
       threads.set(thread.id, { ...thread, workId: null });
       return projectThread(thread);
     },
     async createDerivedPrimary(input) {
-      const thread = buildDerivedPrimaryThreadRow({
-        ...input,
-      });
+      const thread = {
+        ...buildDerivedPrimaryThreadRow(input),
+        slug: nextSlug(input.projectId, input.title),
+      };
       threads.set(thread.id, { ...thread, workId: null });
       return projectThread(thread);
     },
@@ -401,6 +418,22 @@ export function createInMemoryRepositories(
   };
 
   const threadWorksRepo: ThreadWorksRepository = {
+    async withPrimaryWorkLock(threadId, operation) {
+      const previous = primaryWorkLockTails.get(threadId) ?? Promise.resolve();
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const tail = previous.then(() => hold);
+      primaryWorkLockTails.set(threadId, tail);
+      await previous;
+      try {
+        return await operation(await threadWorksRepo.findPrimary(threadId));
+      } finally {
+        release();
+        if (primaryWorkLockTails.get(threadId) === tail) primaryWorkLockTails.delete(threadId);
+      }
+    },
     async addMembership(threadId, workId, isPrimary) {
       const thread = threads.get(threadId);
       if (!thread) throw new Error("Thread membership requires an existing thread");

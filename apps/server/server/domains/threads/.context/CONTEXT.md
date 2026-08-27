@@ -64,6 +64,7 @@ instead of the N:1 `threads.workId` column.
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
+| `reassignThreadPrimaryWork` | Validates the target Work, then under the thread’s primary-Work lock checks D18 (no unreviewed draft in the old primary Work) and atomically flips primary membership. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -158,6 +159,13 @@ contract shapes.
   carry a raw pre-bake system prompt.
 - Soft-delete (`deletedAt`) is idempotent for both threads and the
   `requireThreadOwner` gate treats soft-deleted threads as 404.
+- A thread receives its project-unique slug when created with its first
+  non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
+  Collisions use `-2`, `-3`, and later mutations never regenerate the handle;
+  untitled threads keep `slug = null`.
+- **Primary Work reassignment is serialized.** The thread-row lock covers reading
+  the old primary Work, D18’s unreviewed-draft guard, and the membership flip, so
+  concurrent moves cannot each validate a stale primary Work.
 - Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
 - Hot cache is bounded at 500 events; older events fall through to journal

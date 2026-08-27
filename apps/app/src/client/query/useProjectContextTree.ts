@@ -1,3 +1,4 @@
+import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
   ProjectContextTreeDirectory,
   ProjectContextTreeScheme,
@@ -23,13 +24,14 @@ export function projectContextTreeQueryOptions(
 }
 
 /**
- * Project context tree for the given scheme (`manuscript`, `kb`, `work`, or `user`).
+ * Project context tree for the given scheme (`manuscript`, `kb`, `user`,
+ * `scratch`, or `uploads`).
  * include the persisted `documents.id`; the editor must use that id, not the
  * display path.
  *
  * The scheme is required and threaded into both the query key and the API
  * call — distinct schemes back distinct trees and must cache independently.
- * Work-scoped schemes (`work`, `uploads`) also key and query by `workId`.
+ * Work-scoped schemes (`scratch`, `uploads`) also key and query by `workId`.
  */
 export function useProjectContextTree(
   projectId: string,
@@ -37,6 +39,7 @@ export function useProjectContextTree(
   options?: { enabled?: boolean; activeThreadId?: string | null; workId?: string | null },
 ): {
   tree: ProjectContextTreeDirectory | null;
+  capabilities: ContextSchemeCapabilities | null;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
@@ -52,6 +55,7 @@ export function useProjectContextTree(
 
   return {
     tree: data?.tree ?? null,
+    capabilities: data?.capabilities ?? null,
     isError,
     isFetching,
     refetch: () => {

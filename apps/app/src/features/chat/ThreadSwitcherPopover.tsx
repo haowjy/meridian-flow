@@ -16,7 +16,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
-import { useCreateChat } from "@/features/project/chat/use-create-chat";
+import { NewChatDialog } from "@/features/project/chat/NewChatDialog";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
@@ -54,9 +54,9 @@ export function ThreadSwitcherPopover({
 }) {
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
-  const { createChat, creating } = useCreateChat(projectId, onSelectThread);
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
+  const [newChatOpen, setNewChatOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filteredThreads = filterThreadsByTitle(primaryThreads, query);
   const filteredIds = new Set(filteredThreads.map((thread) => thread.id));
@@ -88,7 +88,7 @@ export function ThreadSwitcherPopover({
 
   const startNewChat = () => {
     changeOpen(false);
-    createChat();
+    setNewChatOpen(true);
   };
 
   const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -113,122 +113,131 @@ export function ThreadSwitcherPopover({
   };
 
   return (
-    <Popover open={open} onOpenChange={changeOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-expanded={open}
-          className={cn(
-            "focus-ring flex min-w-0 max-w-full items-center gap-1.5 text-left",
-            variant === "tab"
-              ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
-                // chip's base (and its flares) sit on the band's bottom edge
-                // where the page begins.
-                "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
-              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
-          )}
-        >
-          <PaneTitle className="min-w-0">{title}</PaneTitle>
-          {triggerHasAttention ? (
-            <span
-              role="img"
-              aria-label={t`Another chat needs attention`}
-              className="size-1.5 shrink-0 rounded-full bg-jade-text"
-            />
-          ) : null}
-          <ChevronDown
-            className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-            aria-hidden
-          />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="flex max-h-[60vh] w-80 flex-col overflow-hidden p-0"
-        onKeyDown={handleNavigationKeyDown}
-      >
-        {showSearch ? (
-          <div className="border-b border-border-subtle p-2">
-            <Input
-              data-switcher-focus
-              type="search"
-              value={query}
-              aria-label={t`Search chats`}
-              placeholder={t`Search chats`}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-8 shadow-none"
-            />
-          </div>
-        ) : null}
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-          {filteredThreads.length === 0 ? (
-            <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
-              <Trans>No matching chats</Trans>
-            </p>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {visibleWorkItems.map((group) => (
-                <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
-                  {showGroupHeaders ? (
-                    <h3 className={cn(sectionLabelVariants({ variant: "group" }), "px-2.5 py-1.5")}>
-                      {group.name}
-                    </h3>
-                  ) : null}
-                  <ul className="flex flex-col gap-0.5">
-                    {group.threadIds.map((id) => {
-                      const thread = threadById.get(id);
-                      if (!thread) return null;
-                      return (
-                        <ThreadSwitchItem
-                          key={id}
-                          thread={thread}
-                          active={id === activeThreadId}
-                          now={now}
-                          onSelect={selectThread}
-                          onRename={startRename}
-                        />
-                      );
-                    })}
-                  </ul>
-                </section>
-              ))}
-              {visibleUngrouped.length > 0 ? (
-                <ul className="flex flex-col gap-0.5">
-                  {visibleUngrouped.map((thread) => (
-                    <ThreadSwitchItem
-                      key={thread.id}
-                      thread={thread}
-                      active={thread.id === activeThreadId}
-                      now={now}
-                      onSelect={selectThread}
-                      onRename={startRename}
-                    />
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-border-subtle p-1.5">
-          <Button
-            data-switcher-focus
+    <>
+      <Popover open={open} onOpenChange={changeOpen}>
+        <PopoverTrigger asChild>
+          <button
             type="button"
-            variant="quiet"
-            className="w-full justify-start"
-            disabled={creating}
-            onClick={startNewChat}
+            aria-expanded={open}
+            className={cn(
+              "focus-ring flex min-w-0 max-w-full items-center gap-1.5 text-left",
+              variant === "tab"
+                ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
+                  // chip's base (and its flares) sit on the band's bottom edge
+                  // where the page begins.
+                  "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
+                : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
+            )}
           >
-            <Plus aria-hidden />
-            <Trans>New chat</Trans>
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
+            <PaneTitle className="min-w-0">{title}</PaneTitle>
+            {triggerHasAttention ? (
+              <span
+                role="img"
+                aria-label={t`Another chat needs attention`}
+                className="size-1.5 shrink-0 rounded-full bg-jade-text"
+              />
+            ) : null}
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 text-muted-foreground transition-transform",
+                open && "rotate-180",
+              )}
+              aria-hidden
+            />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="flex max-h-[60vh] w-80 flex-col overflow-hidden p-0"
+          onKeyDown={handleNavigationKeyDown}
+        >
+          {showSearch ? (
+            <div className="border-b border-border-subtle p-2">
+              <Input
+                data-switcher-focus
+                type="search"
+                value={query}
+                aria-label={t`Search chats`}
+                placeholder={t`Search chats`}
+                onChange={(event) => setQuery(event.target.value)}
+                className="h-8 shadow-none"
+              />
+            </div>
+          ) : null}
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+            {filteredThreads.length === 0 ? (
+              <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
+                <Trans>No matching chats</Trans>
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {visibleWorkItems.map((group) => (
+                  <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
+                    {showGroupHeaders ? (
+                      <h3
+                        className={cn(sectionLabelVariants({ variant: "group" }), "px-2.5 py-1.5")}
+                      >
+                        {group.name}
+                      </h3>
+                    ) : null}
+                    <ul className="flex flex-col gap-0.5">
+                      {group.threadIds.map((id) => {
+                        const thread = threadById.get(id);
+                        if (!thread) return null;
+                        return (
+                          <ThreadSwitchItem
+                            key={id}
+                            thread={thread}
+                            active={id === activeThreadId}
+                            now={now}
+                            onSelect={selectThread}
+                            onRename={startRename}
+                          />
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))}
+                {visibleUngrouped.length > 0 ? (
+                  <ul className="flex flex-col gap-0.5">
+                    {visibleUngrouped.map((thread) => (
+                      <ThreadSwitchItem
+                        key={thread.id}
+                        thread={thread}
+                        active={thread.id === activeThreadId}
+                        now={now}
+                        onSelect={selectThread}
+                        onRename={startRename}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border-subtle p-1.5">
+            <Button
+              data-switcher-focus
+              type="button"
+              variant="quiet"
+              className="w-full justify-start"
+              onClick={startNewChat}
+            >
+              <Plus aria-hidden />
+              <Trans>New chat</Trans>
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <NewChatDialog
+        projectId={projectId}
+        open={newChatOpen}
+        onOpenChange={setNewChatOpen}
+        onSelectThread={onSelectThread}
+      />
+    </>
   );
 }
 

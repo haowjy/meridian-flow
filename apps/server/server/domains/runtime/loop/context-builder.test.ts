@@ -13,6 +13,7 @@ const thread: Thread = {
   kind: "primary",
   status: "idle",
   title: null,
+  slug: null,
   composedSystemPrompt: "System prompt",
   bakedSkillSlugs: [],
   systemPrompt: null,

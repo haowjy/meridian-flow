@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+- `apps/app`: Home now manages active and archived Works through the live API,
+  and new chats require a Work before creation. The project explorer exposes
+  thread-scoped Scratch and Uploads on one flat left rail; Uploads remains
+  intake-only without file or folder creation controls.
+
+- `apps/server`: works now have required names, goals, descriptions, and
+  archive state. Projects remember each writer's current work, newly created
+  works become current, and titled conversations gain stable human-readable
+  slugs.
+- `apps/server`: current Work selection now prefers the writer's saved choice,
+  falls back deterministically, and refuses to delete Works that still hold a
+  conversation or an unreviewed draft.
+- `apps/server`: projects with multiple active Works now list normally instead
+  of failing the Work collection request.
+- `apps/server`: Work create, edit, archive, restore, delete, current selection,
+  thread listing, and conversation move routes are available. Moving a
+  conversation waits until its pending draft is reviewed.
+- `apps/server`: new conversations attach by explicit Work, parent Work, writer
+  preference, then default. Subagents, forks, and handoffs cannot drift out of
+  their parent's Work.
+
 - `apps/app`, `apps/server`, `packages/contracts`, `tools`: one dev-only model
   context seam now serves the LLM Calls dashboard and `debug:model-context`
   CLI. It retains the complete provider-neutral request with a digest and hard

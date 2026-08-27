@@ -5,7 +5,8 @@
  */
 import type { Project } from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
-import { resolveDefaultWork, type WorkRepository } from "../domains/projects/index.js";
+import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
+import { resolveCurrentWork, type WorkRepository } from "../domains/projects/index.js";
 import type { ThreadWorksRepository } from "../domains/threads/index.js";
 
 export class InvalidWorkAttachmentError extends Error {
@@ -26,15 +27,16 @@ export class MissingPrimaryWorkMembershipError extends Error {
 
 export interface ResolveWorkMembershipDeps {
   workRepo: WorkRepository;
+  preferences: ProjectPreferencesRepository;
   threadWorks: ThreadWorksRepository;
 }
 
 export interface ResolveWorkMembershipArgs {
   threadId: string;
   projectId: string;
-  /** Required only when selecting the default Work for a primary thread. */
+  /** Required only when selecting the current Work for a primary thread. */
   project?: Project;
-  /** Required only when selecting the default Work for a primary thread. */
+  /** Required only when selecting the current Work for a primary thread. */
   userId?: UserId;
   /** Explicit work assignment from the request, if any. */
   workId?: string | null;
@@ -47,7 +49,7 @@ export interface ResolveWorkMembershipArgs {
  *
  * - An explicit `workId` wins: creates one membership (isPrimary = true).
  * - A subagent inherits its parent's primary Work as its own primary.
- * - A primary thread with no explicit work: attaches to the project's default work.
+ * - A primary thread with no explicit work: attaches to the writer's current Work.
  *
  * Returns the primary Work ID.
  */
@@ -71,13 +73,15 @@ export async function resolveWorkMembership(
     primaryWorkId = parentPrimary.workId;
   } else {
     if (!args.project || !args.userId) {
-      throw new Error("Project and user are required to resolve a primary thread's default Work");
+      throw new Error("Project and user are required to resolve a primary thread's current Work");
     }
-    primaryWorkId = await resolveDefaultWork(
-      { works: deps.workRepo },
-      { userId: args.userId },
-      args.project,
-    );
+    primaryWorkId = (
+      await resolveCurrentWork(
+        { works: deps.workRepo, preferences: deps.preferences },
+        { userId: args.userId },
+        args.project,
+      )
+    ).id;
   }
 
   await deps.threadWorks.addMembership(args.threadId, primaryWorkId, true);

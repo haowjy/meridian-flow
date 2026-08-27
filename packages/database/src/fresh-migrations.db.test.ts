@@ -32,6 +32,7 @@ if (!enabled || !databaseUrl) {
         "0066_tired_proudstar",
         "0067_blue_eddie_brock",
         "0068_search_tool_rename",
+        "0069_multi_work_v1",
       ]);
       for (let index = 1; index < tail.length; index += 1) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);

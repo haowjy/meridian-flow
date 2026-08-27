@@ -27,6 +27,7 @@ import type {
   MarkdownDocumentStore,
 } from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
@@ -87,6 +88,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
+  threads: Pick<ThreadRepository, "create">;
+  threadWorks: Pick<ThreadWorksRepository, "addMembership">;
 }): ProjectBootstrapRepository {
   const { db } = deps;
   const repairedReadyUsers = new Set<UserId>();
@@ -189,7 +192,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .values({
         projectId,
         createdByUserId: userId,
-        title: "Book 1",
+        name: "Book 1",
       })
       .returning({ id: works.id });
     if (!work) throw new Error("Failed to create default work");
@@ -328,24 +331,15 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .limit(1);
     if (linked) return linked.id;
 
-    const [thread] = await tx
-      .insert(threads)
-      .values({
-        projectId: input.projectId,
-        createdByUserId: input.userId,
-        title: "Chapter 1",
-        kind: "primary",
-        currentAgentId: input.agentSlug ?? "writer",
-      })
-      .returning({ id: threads.id });
-    if (!thread) throw new Error("Failed to create primary thread");
-
-    await tx.insert(threadWorks).values({
-      threadId: thread.id,
-      workId: input.workId,
+    const thread = await deps.threads.create({
       projectId: input.projectId,
-      isPrimary: true,
+      userId: input.userId,
+      title: "Chapter 1",
+      kind: "primary",
+      currentAgent: input.agentSlug ?? "writer",
     });
+
+    await deps.threadWorks.addMembership(thread.id, input.workId, true);
 
     await tx.insert(threadDocuments).values({
       threadId: thread.id,
@@ -445,7 +439,8 @@ export { createInMemoryUserRepository } from "./adapters/user-repository/in-memo
 // ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-export { resolveDefaultWork } from "./default-work.js";
+export { createWork } from "./create-work.js";
+export { resolveCurrentWork } from "./current-work.js";
 export type {
   CreateProjectInput,
   ListProjectsOptions,
@@ -457,5 +452,14 @@ export {
   type EnsureUserInput,
   type UserRepository,
 } from "./ports/user-repository.js";
-export type { CreateWorkInput, ListWorksOptions, WorkRepository } from "./ports/work-repository.js";
+export {
+  type CreateWorkInput,
+  type ListWorksOptions,
+  type UpdateWorkInput,
+  WorkDeleteBlockedError,
+  WorkNameConflictError,
+  type WorkRepository,
+} from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
+export { type UpdateWorkCommandInput, updateWork } from "./update-work.js";
+export { requireWorkOwner } from "./work-access.js";

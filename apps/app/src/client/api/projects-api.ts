@@ -50,6 +50,7 @@ import {
   type Work,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
+import type { CreateWorkRequest, UpdateWorkRequest } from "@meridian/contracts/works";
 
 import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
@@ -57,6 +58,10 @@ type RequestInitOptions = {
   origin?: string;
   headers?: HeadersInit;
   keepalive?: boolean;
+};
+
+type ListProjectWorksOptions = RequestInitOptions & {
+  status?: "active" | "archived" | "all";
 };
 
 function urlFor(path: string, init?: RequestInitOptions): string {
@@ -89,11 +94,69 @@ export async function listProjectThreads(
 
 export async function listProjectWorks(
   projectId: string,
-  init?: RequestInitOptions,
+  options?: ListProjectWorksOptions,
 ): Promise<ListWorksResponse> {
-  return getJson<ListWorksResponse>(urlFor(apiProjectWorksPath(projectId), init), {
+  const path = apiProjectWorksPath(projectId);
+  const pathWithStatus = options?.status ? `${path}?status=${options.status}` : path;
+  return getJson<ListWorksResponse>(urlFor(pathWithStatus, options), {
+    headers: options?.headers,
+  });
+}
+
+export function createProjectWork(
+  projectId: string,
+  data: CreateWorkRequest,
+  init?: RequestInitOptions,
+): Promise<Work> {
+  return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
     headers: init?.headers,
   });
+}
+
+export function setCurrentWork(
+  projectId: string,
+  workId: string,
+  init?: RequestInitOptions,
+): Promise<Work> {
+  return putJson<Work>(
+    urlFor(`${apiProjectPath(projectId)}/current-work`, init),
+    { workId },
+    {
+      headers: init?.headers,
+    },
+  );
+}
+
+export function updateWork(
+  workId: string,
+  data: UpdateWorkRequest,
+  init?: RequestInitOptions,
+): Promise<Work> {
+  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, { headers: init?.headers });
+}
+
+export function archiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
+  return postJson<Work>(
+    urlFor(`/api/works/${workId}/archive`, init),
+    {},
+    {
+      headers: init?.headers,
+    },
+  );
+}
+
+export function unarchiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
+  return postJson<Work>(
+    urlFor(`/api/works/${workId}/unarchive`, init),
+    {},
+    {
+      headers: init?.headers,
+    },
+  );
+}
+
+export function deleteWork(workId: string): Promise<void> {
+  return deleteRequest(`/api/works/${workId}`);
 }
 
 export async function getProjectWorkingSet(

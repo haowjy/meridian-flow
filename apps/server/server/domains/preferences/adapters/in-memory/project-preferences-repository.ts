@@ -15,6 +15,7 @@ function preferenceKey(userId: UserId, projectId: ProjectId): string {
 
 export function createInMemoryProjectPreferencesRepository(): ProjectPreferencesRepository {
   const rows = new Map<string, ReturnType<typeof defaultProjectPreferences>>();
+  const currentWorkIds = new Map<string, string>();
 
   return {
     async read(userId, projectId) {
@@ -27,6 +28,21 @@ export function createInMemoryProjectPreferencesRepository(): ProjectPreferences
       const merged = mergeProjectPreferences(rows.get(key), input);
       rows.set(key, copyProjectPreferences(merged));
       return merged;
+    },
+
+    async getCurrentWorkId(userId, projectId) {
+      return currentWorkIds.get(preferenceKey(userId, projectId)) ?? null;
+    },
+
+    async setCurrentWorkId(userId, projectId, workId) {
+      currentWorkIds.set(preferenceKey(userId, projectId), workId);
+    },
+
+    async setCurrentWorkIdIfUnchanged(userId, projectId, expectedWorkId, workId) {
+      const key = preferenceKey(userId, projectId);
+      if ((currentWorkIds.get(key) ?? null) !== expectedWorkId) return false;
+      currentWorkIds.set(key, workId);
+      return true;
     },
   };
 }

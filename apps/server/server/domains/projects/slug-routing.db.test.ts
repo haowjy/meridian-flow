@@ -19,6 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "./adapters/project-repository/drizzle.js"
     );
     const { createDrizzleWorkRepository } = await import("./adapters/work-repository/drizzle.js");
+    const { WorkNameConflictError } = await import("./ports/work-repository.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -34,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("work findById on a non-UUID slug resolves to null", async () => {
-      const repo = createDrizzleWorkRepository({ db });
+      const repo = createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false });
       await expect(repo.findById("also-a-slug" as never)).resolves.toBeNull();
     });
 
@@ -49,14 +50,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const projects = createDrizzleProjectRepository({ db });
-      const works = createDrizzleWorkRepository({ db });
+      const works = createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false });
       await projects.create({ id: projectId, userId, title: "UUID grammar" });
-      await works.create({ id: workId, projectId, createdByUserId: userId, title: "Work" });
+      await works.create({ id: workId, projectId, createdByUserId: userId, name: "Work" });
 
       await expect(projects.findById(projectId.toUpperCase() as never)).resolves.toMatchObject({
         id: projectId,
       });
       await expect(works.findById(workId as never)).resolves.toMatchObject({ id: workId });
+    });
+
+    it("maps case-insensitive active Work name conflicts to the domain error", async () => {
+      const userId = "93b1f764-1234-f678-0712-123456789ac0";
+      const projectId = "93b1f764-1234-f678-0712-123456789ac1";
+      await db.insert(schema.users).values({
+        id: userId,
+        externalId: "work-name-conflict",
+        email: "work-name-conflict@example.com",
+      });
+
+      const projects = createDrizzleProjectRepository({ db });
+      const works = createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false });
+      await projects.create({ id: projectId, userId, title: "Name conflict" });
+      await works.create({ projectId, createdByUserId: userId, name: "Book Two" });
+
+      await expect(
+        works.create({ projectId, createdByUserId: userId, name: "book two" }),
+      ).rejects.toBeInstanceOf(WorkNameConflictError);
     });
   });
 }

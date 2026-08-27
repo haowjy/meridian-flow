@@ -14,8 +14,9 @@ import { ScrollQuill } from "./scroll-quill-icon";
 
 /**
  * Ordered list of context schemes the UI surfaces, top to bottom. Project-scoped
- * schemes come first, then the work-scoped ones (`scratch`, `uploads`) below the
- * work boundary divider the tree draws before the first work-scoped section.
+ * schemes come first, then the work-scoped ones (`scratch`, `uploads`); all are
+ * flush top-level panes (no work header row above the work-scoped pair —
+ * ruling 2026-08-06; their headers carry the work name in a hover tooltip).
  */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
 
@@ -24,6 +25,16 @@ export function visibleContextSchemes(workId: string | null): readonly ProjectCo
   return CONTEXT_SCHEMES.filter(
     (scheme) => !isWorkScopedProjectContextScheme(scheme) || workId !== null,
   );
+}
+
+/**
+ * Whether the writer can create files/folders inside a scheme from a browse
+ * surface. Uploads is intake only (Jimmy's ruling, 2026-08-06): its files
+ * arrive by uploading, never by in-tree creation, so no surface offers
+ * New file / New folder there. Scratch is the work's authoring space.
+ */
+export function schemeAllowsCreation(scheme: ProjectContextTreeScheme): boolean {
+  return scheme !== "uploads";
 }
 
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {

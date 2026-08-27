@@ -364,8 +364,16 @@ export async function createProductionAppPorts(input: {
     config: defaultPackageSeedConfigFromEnv(environment),
   });
   const users = createDrizzleUserRepository({ db });
-  const projects = createDrizzleProjectBootstrapRepository({ db, documents: documentSync });
-  const workRepo = createDrizzleProjectWorkRepository({ db });
+  const projects = createDrizzleProjectBootstrapRepository({
+    db,
+    documents: documentSync,
+    threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
+  });
+  const workRepo = createDrizzleProjectWorkRepository({
+    db,
+    hasUnreviewedDraft: async (workId) => (await documentSync.countUnpushedRowsForWork(workId)) > 0,
+  });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
     ? createStripeBillingGateway({
@@ -504,6 +512,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       return resolveWorkMembership(
         {
           workRepo: ports.workRepo,
+          preferences: ports.preferences,
           threadWorks: ports.threadRepos.threadWorks,
         },
         input,
@@ -722,6 +731,9 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     works: {
+      async transaction(operation) {
+        return operation();
+      },
       async create() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -730,6 +742,21 @@ export function createInMemoryAppServices(): AppServices {
       },
       async listByProject() {
         return [];
+      },
+      async update() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async archive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async unarchive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async hasUnreviewedDraft() {
+        return false;
+      },
+      async softDelete() {
+        throw new Error("in-memory work repository is not implemented");
       },
       async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
@@ -776,6 +803,9 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     workRepo: {
+      async transaction(operation) {
+        return operation();
+      },
       async create() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -783,6 +813,21 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async listByProject() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async update() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async archive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async unarchive() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async hasUnreviewedDraft() {
+        return false;
+      },
+      async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
       async ensureDefaultForProject() {
