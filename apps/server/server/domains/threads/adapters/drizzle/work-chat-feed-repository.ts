@@ -3,11 +3,11 @@ import { sql } from "drizzle-orm";
 import type { WorkChatFeedRepository, WorkChatFeedRow } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 import {
-  effectiveAttentionSql,
   exactUtcTimestampSql,
   mapProjectChatRow,
   type ProjectChatSqlRow,
   projectChatPreviewLateral,
+  threadActionRequiredSql,
   visibleConversationalHeadLateral,
 } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
@@ -31,13 +31,10 @@ export function createDrizzleWorkChatFeedRepository(db: DrizzleDatabase): WorkCh
           ${exactUtcTimestampSql(sql`COALESCE(conversational_head.activity_at, t.created_at)`)}
             AS last_activity_at_exact,
           ${exactUtcTimestampSql(sql`candidates.updated_at`)} AS updated_at_exact,
-          ${effectiveAttentionSql({
-            threadStatus: sql`t.status`,
+          ${threadActionRequiredSql({
             headRole: sql`conversational_head.role`,
             headStatus: sql`conversational_head.status`,
-            headActivityAt: sql`conversational_head.activity_at`,
-            lastOpenedAt: sql`tus.last_opened_at`,
-          })} AS attention,
+          })} AS action_required,
           COALESCE(tus.is_favorite, false) AS is_favorite
         FROM candidates
         JOIN threads t ON t.id = candidates.thread_id

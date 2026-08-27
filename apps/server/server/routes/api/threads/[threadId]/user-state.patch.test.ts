@@ -26,8 +26,6 @@ function fixture(projectUserId = USER_ID) {
   const update = vi.fn(async () => ({
     threadId: THREAD_ID,
     isFavorite: true,
-    lastOpenedAt: null,
-    attention: "unread",
   }));
   const findById = vi.fn(async () => ({
     id: THREAD_ID,
@@ -65,7 +63,7 @@ describe("PATCH /api/threads/:threadId/user-state", () => {
   it("rejects malformed thread IDs without repository access", async () => {
     const f = fixture();
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
-    await expect(handler(event({ acknowledgeOpen: true }, "bad") as never)).rejects.toMatchObject({
+    await expect(handler(event({ isFavorite: true }, "bad") as never)).rejects.toMatchObject({
       statusCode: 400,
     });
     expect(f.findById).not.toHaveBeenCalled();
@@ -80,25 +78,20 @@ describe("PATCH /api/threads/:threadId/user-state", () => {
     expect(f.update).not.toHaveBeenCalled();
   });
 
-  it("passes favorite plus open acknowledgement and returns the durable/effective shape", async () => {
+  it("passes favorite state and returns its durable shape", async () => {
     const f = fixture();
     vi.mocked(requireAppUser).mockResolvedValue({ user: { userId: USER_ID }, app: f.app } as never);
-    await expect(
-      handler(event({ isFavorite: true, acknowledgeOpen: true }) as never),
-    ).resolves.toEqual({
+    await expect(handler(event({ isFavorite: true }) as never)).resolves.toEqual({
       __meridianTransport: true,
       value: {
         threadId: THREAD_ID,
         isFavorite: true,
-        lastOpenedAt: null,
-        attention: "unread",
       },
     });
     expect(f.update).toHaveBeenCalledWith({
       threadId: THREAD_ID,
       userId: USER_ID,
       isFavorite: true,
-      acknowledgeOpen: true,
     });
     expect(vi.mocked(requireAppUser).mock.invocationCallOrder[0]).toBeLessThan(
       f.findById.mock.invocationCallOrder[0] ?? 0,

@@ -133,7 +133,7 @@ export function deserializeThreadSnapshot(
 export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
   return {
     lifecycle: {
-      attention: snapshot.attention,
+      actionRequired: snapshot.actionRequired,
       runningTurnId: snapshot.liveState.runningTurnId,
     },
     nextSeq: snapshot.nextSeq,

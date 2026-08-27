@@ -71,7 +71,7 @@ instead of the N:1 `threads.workId` column.
 | `ThreadRepository` | Thread lifecycle plus project lists and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. |
 | `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection. Home retains its set-oriented whole-project ranking. |
 | `WorkChatFeedRepository` | Bounded historical-Work association pages over the same Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
-| `ThreadUserStateRepository` | Per-writer favorite and monotonic open-acknowledgement authority. |
+| `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn` |
@@ -91,7 +91,7 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 - **Drizzle** (production) and **in-memory** (test/dev) adapters for all
   repositories and journal reader/writer. The focused Project-chat adapter owns
   Home and Work visible-head projection in memory; the Drizzle projection module
-  owns the shared row mapping, preview, attention, timestamp, and bounded Work
+  owns the shared row mapping, preview, action-required fact, timestamp, and bounded Work
   candidate machinery.
 
 ## Key domain logic
@@ -199,12 +199,9 @@ contract shapes.
   (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
 - `threads.active_leaf_turn_id` anchors one visible-conversational-head policy:
   projections walk its active lineage past hidden Work-context, compaction, and
-  non-custom system turns. Home, project/Work lists, state mutation responses,
-  and snapshots all derive effective attention from that head and the complete
-  writer state. Set-oriented SQL companions are parity-tested against the named
-  domain policy. The closed `attention` enum uses `thread_user_state`: a
-  `waiting_interrupt` assistant head is `actionRequired`, and an idle completed
-  assistant head newer than the writer's acknowledgement is `unread`.
+  non-custom system turns. Home, project/Work lists, and snapshots derive the
+  independent `actionRequired` fact from a `waiting_interrupt` assistant head.
+  Set-oriented SQL companions are parity-tested against the named domain policy.
 - Home returns Continue and Favorites only on the first page. Recent pagination
   uses the strict shared Project-chat keyset codec over `(lastActivityAt DESC, threadId DESC)`;
   every page excludes Continue and Favorites, so equal activity times remain
@@ -213,14 +210,9 @@ contract shapes.
   time plus thread ID. The association filter is M:N history; row Work identity
   always comes from the current primary membership. Projection and serialization
   are bounded to 50 rows per page.
-- Opening a thread sends the one-way `{ acknowledgeOpen: true }` command to
-  `PATCH /api/threads/:threadId/user-state`. It monotonically advances
-  `last_opened_at`; favorite and acknowledgement updates preserve the omitted
-  sibling field atomically. An idle completed-assistant head newer than
-  `last_opened_at` derives automatic `unread` attention. A waiting interrupt
-  derives `actionRequired`, which takes precedence and is not cleared by an
-  open acknowledgement.
-- Draft-review attention remains an extension point. Establishing it requires
+- Project chat lists have no read/unread state. The user-state route and
+  repository persist Favorite only; opening a chat performs no state mutation.
+- Draft-review action-required state remains an extension point. Establishing it requires
   collab-domain branch/journal queries and review-state semantics, so the
   threads projector currently sources `actionRequired` only from the durable
   `ask_user` interrupt status already on the logical-head turn.

@@ -3,11 +3,11 @@ import { sql } from "drizzle-orm";
 import type { HomeChatFeedRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 import {
-  effectiveAttentionSql,
   exactUtcTimestampSql,
   mapProjectChatRow,
   type ProjectChatSqlRow,
   projectChatPreviewLateral,
+  threadActionRequiredSql,
   visibleConversationalTurnSql,
 } from "./visible-conversation-sql.js";
 
@@ -22,11 +22,10 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
       const cursorThreadId = input.after?.threadId ?? null;
       const rows = await currentDrizzleDb(db).execute(sql`
         WITH RECURSIVE eligible AS (
-          SELECT t.id AS thread_id, t.title, t.status AS thread_status,
+          SELECT t.id AS thread_id, t.title,
             t.created_at AS thread_created_at, t.active_leaf_turn_id,
             tw.work_id, w.name AS work_title,
-            COALESCE(tus.is_favorite, false) AS is_favorite,
-            tus.last_opened_at
+            COALESCE(tus.is_favorite, false) AS is_favorite
           FROM threads t
           JOIN projects p ON p.id = t.project_id AND p.deleted_at IS NULL
           LEFT JOIN thread_works tw ON tw.thread_id = t.id AND tw.is_primary = true
@@ -59,13 +58,10 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
         ), base AS (
           SELECT e.*, vh.turn_id AS conversational_leaf_turn_id,
             COALESCE(vh.activity_at, e.thread_created_at) AS last_activity_at,
-            ${effectiveAttentionSql({
-              threadStatus: sql`e.thread_status`,
+            ${threadActionRequiredSql({
               headRole: sql`vh.role`,
               headStatus: sql`vh.status`,
-              headActivityAt: sql`vh.activity_at`,
-              lastOpenedAt: sql`e.last_opened_at`,
-            })} AS attention
+            })} AS action_required
           FROM eligible e LEFT JOIN visible_heads vh ON vh.thread_id = e.thread_id
         ), continue_row AS (
           SELECT thread_id FROM base ORDER BY last_activity_at DESC, thread_id DESC LIMIT 1
@@ -89,7 +85,7 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           ) recent
         )
         SELECT selected.section, selected.thread_id, selected.title,
-          selected.work_id, selected.work_title, selected.attention, selected.is_favorite,
+          selected.work_id, selected.work_title, selected.action_required, selected.is_favorite,
           conversation_preview.last_message_preview,
           ${exactUtcTimestampSql(sql`selected.last_activity_at`)} AS last_activity_at_exact
         FROM selected

@@ -6,21 +6,23 @@
  * read-model projection cursor used to replay newer journaled deltas.
  */
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
-import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
+import {
+  isThreadActionRequired,
+  isVisibleConversationalTurn,
+} from "./domain/visible-conversation-policy.js";
 import { orderTurnsCausally } from "./order-turns.js";
 import type {
   BlockRepository,
   ModelResponseRepository,
   ThreadRepository,
-  ThreadUserStateRepository,
   TurnRepository,
 } from "./ports/index.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
 
 export interface ThreadSnapshotRepositories {
   threads: ThreadRepository;
-  threadUserState: ThreadUserStateRepository;
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
@@ -59,7 +61,6 @@ export async function buildThreadSnapshot(
   hub: ThreadEventHub,
   runner: RunningTurnQuery,
   threadId: ThreadId,
-  userId: UserId,
 ): Promise<ThreadSnapshotResponse> {
   const thread = await repos.threads.findById(threadId);
   if (!thread) {
@@ -124,7 +125,26 @@ export async function buildThreadSnapshot(
       // unmaterialized delta window the snapshot could not include.
       resumeAfterSeq,
     },
-    attention: await repos.threadUserState.effectiveAttention(threadId, userId),
+    actionRequired: snapshotActionRequired(thread.activeLeafTurnId, threadTurns),
     nextSeq,
   };
+}
+
+function snapshotActionRequired(activeLeafTurnId: TurnId | null, turns: Turn[]): boolean {
+  let turn = turns.find((candidate) => candidate.id === activeLeafTurnId);
+  const visited = new Set<string>();
+  while (turn && !visited.has(turn.id)) {
+    visited.add(turn.id);
+    if (
+      isVisibleConversationalTurn({
+        role: turn.role,
+        metadata: turn.metadata ?? null,
+        hasCustomBlock: turn.blocks.some((block) => block.blockType === "custom"),
+      })
+    ) {
+      return isThreadActionRequired({ headRole: turn.role, headStatus: turn.status });
+    }
+    turn = turns.find((candidate) => candidate.id === turn?.prevTurnId);
+  }
+  return false;
 }

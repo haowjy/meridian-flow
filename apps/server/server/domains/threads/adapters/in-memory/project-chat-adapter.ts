@@ -1,15 +1,9 @@
 /** Focused in-memory adapter for Home/Work Project-chat projections and writer state. */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type {
-  Block,
-  ProjectChatItem,
-  Thread,
-  ThreadAttention,
-  Turn,
-} from "@meridian/contracts/threads";
+import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/threads";
 import {
+  isThreadActionRequired,
   isVisibleConversationalTurn,
-  projectEffectiveThreadAttention,
 } from "../../domain/visible-conversation-policy.js";
 import type {
   HomeChatFeedRepository,
@@ -19,7 +13,6 @@ import type {
 
 export type InMemoryThreadUserState = {
   isFavorite: boolean;
-  lastOpenedAt: string | null;
 };
 
 export interface InMemoryProjectChatSource {
@@ -67,15 +60,10 @@ export function createInMemoryProjectChatAdapter(
     return null;
   }
 
-  function effectiveAttention(thread: Thread, head: Turn | null, userId: string): ThreadAttention {
-    const state = states.get(key(thread.id, userId));
-    const activity = head ? (head.completedAt ?? head.createdAt) : thread.createdAt;
-    return projectEffectiveThreadAttention({
-      threadStatus: thread.status,
+  function actionRequired(head: Turn | null): boolean {
+    return isThreadActionRequired({
       headRole: head?.role ?? null,
       headStatus: head?.status ?? null,
-      headActivityAt: activity,
-      lastOpenedAt: state?.lastOpenedAt ?? null,
     });
   }
 
@@ -103,7 +91,7 @@ export function createInMemoryProjectChatAdapter(
       lastActivityAt: exactTimestamp(
         head ? (head.completedAt ?? head.createdAt) : thread.createdAt,
       ),
-      attention: effectiveAttention(thread, head, userId),
+      actionRequired: actionRequired(head),
       isFavorite: state?.isFavorite ?? false,
     };
   }
@@ -175,38 +163,11 @@ export function createInMemoryProjectChatAdapter(
   };
 
   const threadUserState: ThreadUserStateRepository = {
-    async get(threadId, userId) {
-      return (
-        states.get(key(threadId, userId)) ?? {
-          isFavorite: false,
-          lastOpenedAt: null,
-        }
-      );
-    },
-    async effectiveAttention(threadId, userId) {
-      const thread = [...source.threads()].find((candidate) => candidate.id === threadId);
-      return thread ? effectiveAttention(thread, conversationalHead(thread), userId) : "none";
-    },
     async update(input) {
       const stateKey = key(input.threadId, input.userId);
-      const current = states.get(stateKey) ?? {
-        isFavorite: false,
-        lastOpenedAt: null,
-      };
-      const openedAt = input.acknowledgeOpen ? new Date().toISOString() : null;
-      const next = {
-        isFavorite: input.isFavorite ?? current.isFavorite,
-        lastOpenedAt:
-          openedAt && (!current.lastOpenedAt || openedAt > current.lastOpenedAt)
-            ? openedAt
-            : current.lastOpenedAt,
-      };
+      const next = { isFavorite: input.isFavorite };
       states.set(stateKey, next);
-      return {
-        threadId: input.threadId,
-        ...next,
-        attention: await this.effectiveAttention(input.threadId, input.userId),
-      };
+      return { threadId: input.threadId, ...next };
     },
   };
 

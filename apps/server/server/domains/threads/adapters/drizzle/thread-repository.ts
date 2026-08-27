@@ -8,7 +8,6 @@ import type { ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/thr
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
-import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -41,8 +40,6 @@ type ThreadListRow = typeof schema.threads.$inferSelect & {
   workTitle: string | null;
   lastTurnRole: (typeof schema.turns.$inferSelect)["role"] | null;
   lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
-  lastTurnAt: Date | string | null;
-  lastOpenedAt: Date | null;
   runningTurnId: string | null;
 };
 
@@ -52,8 +49,6 @@ function mapThreadListRow(row: ThreadListRow) {
     workTitle: row.workTitle,
     lastTurnRole: row.lastTurnRole as TurnRole | null,
     lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
-    lastTurnAt: row.lastTurnAt ? toIsoString(row.lastTurnAt) : null,
-    lastOpenedAt: row.lastOpenedAt ? toIsoString(row.lastOpenedAt) : null,
     runningTurnId: row.runningTurnId,
   });
 }
@@ -65,8 +60,6 @@ function threadListSelect() {
     workTitle: schema.works.name,
     lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
     lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
-    lastTurnAt: sql<Date | null>`conversational_head.activity_at`,
-    lastOpenedAt: schema.threadUserState.lastOpenedAt,
     runningTurnId,
   };
 }
@@ -302,13 +295,6 @@ export function createDrizzleThreadRepository(
         .leftJoin(
           visibleConversationalHeadLateral(sql`${schema.threads.activeLeafTurnId}`),
           sql`true`,
-        )
-        .leftJoin(
-          schema.threadUserState,
-          and(
-            eq(schema.threadUserState.threadId, schema.threads.id),
-            eq(schema.threadUserState.userId, schema.threads.createdByUserId),
-          ),
         )
         .where(
           and(

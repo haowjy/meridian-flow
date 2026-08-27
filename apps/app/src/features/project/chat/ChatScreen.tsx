@@ -6,12 +6,9 @@
 import { Trans } from "@lingui/react/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useThreadOpenAcknowledgement } from "@/client/query/useThreadOpenAcknowledgement";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
-import type { OpenAcknowledgementTransfer } from "@/client/query/visible-thread-open-acknowledgements";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
-import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
@@ -25,10 +22,6 @@ export type ChatScreenProps = {
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
-  /** False for a mounted but hidden persistent surface. */
-  visible?: boolean;
-  openTransfer?: OpenAcknowledgementTransfer;
-  onOpenTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
 };
 
 /** Renders the resolved thread, with parent context when it is a subagent. */
@@ -38,9 +31,6 @@ export function ChatScreen({
   activeWork,
   onSelectThread,
   onOpenContextTarget,
-  visible = true,
-  openTransfer,
-  onOpenTransferClaimed,
 }: ChatScreenProps) {
   const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
 
@@ -70,9 +60,6 @@ export function ChatScreen({
       projectThreads={projectThreads ?? []}
       onSelectThread={onSelectThread}
       onOpenContextTarget={onOpenContextTarget}
-      visible={visible}
-      openTransfer={openTransfer}
-      onOpenTransferClaimed={onOpenTransferClaimed}
     />
   );
 }
@@ -84,9 +71,6 @@ function ChatScreenLoaded({
   projectThreads,
   onSelectThread,
   onOpenContextTarget,
-  visible,
-  openTransfer,
-  onOpenTransferClaimed,
 }: {
   projectId: string;
   threadId: string;
@@ -94,9 +78,6 @@ function ChatScreenLoaded({
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
-  visible: boolean;
-  openTransfer?: OpenAcknowledgementTransfer;
-  onOpenTransferClaimed?: (transfer: OpenAcknowledgementTransfer) => void;
 }) {
   const {
     thread: snapshotThread,
@@ -106,13 +87,6 @@ function ChatScreenLoaded({
     settled: historySettled,
     refetch,
   } = useThreadSnapshotSync(threadId);
-  const openAcknowledgement = useThreadOpenAcknowledgement({
-    threadId,
-    projectId: snapshotThread?.projectId ?? projectId,
-    visible,
-    transfer: openTransfer,
-    onTransferClaimed: onOpenTransferClaimed,
-  });
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
   const parent = thread?.parentThreadId
     ? (projectThreads.find((t) => t.id === thread.parentThreadId) ?? null)
@@ -122,10 +96,6 @@ function ChatScreenLoaded({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <OpenAcknowledgementError
-        error={openAcknowledgement.error}
-        onRetry={openAcknowledgement.retry}
-      />
       {isSubagent && thread ? (
         <>
           <SubagentBanner subagent={thread} parent={parent} onOpenParent={onSelectThread} />

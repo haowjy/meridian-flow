@@ -167,10 +167,7 @@ export function createInMemoryRepositories(
   const documentTouches = new Map<string, TurnDocumentTouch>();
   const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
   const workContextDeliveries = new Set<string>();
-  const userStateByThreadUser = new Map<
-    string,
-    { isFavorite: boolean; lastOpenedAt: string | null }
-  >();
+  const userStateByThreadUser = new Map<string, { isFavorite: boolean }>();
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
 
@@ -190,10 +187,6 @@ export function createInMemoryRepositories(
         .filter((thread) => thread.projectId === projectId && !thread.deletedAt)
         .flatMap((thread) => (thread.slug ? [thread.slug] : [])),
     );
-  }
-
-  function openedKey(threadId: ThreadId, userId: string): string {
-    return `${threadId}:${userId}`;
   }
 
   function membershipKey(threadId: ThreadId, workId: WorkId): string {
@@ -223,7 +216,6 @@ export function createInMemoryRepositories(
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
     const threadTurns = [...turns.values()].filter((turn) => turn.threadId === thread.id);
     const latestTurn = conversationalHead(projected);
-    const userState = userStateByThreadUser.get(openedKey(thread.id, thread.userId));
     const runningTurn = [...threadTurns]
       .reverse()
       .find(
@@ -236,8 +228,6 @@ export function createInMemoryRepositories(
       workTitle: work && !work.deletedAt ? work.name : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
-      lastTurnAt: latestTurn ? (latestTurn.completedAt ?? latestTurn.createdAt) : null,
-      lastOpenedAt: userState?.lastOpenedAt ?? null,
       runningTurnId: runningTurn?.id ?? null,
     });
   }

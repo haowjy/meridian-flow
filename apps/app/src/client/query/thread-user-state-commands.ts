@@ -1,4 +1,4 @@
-/** QueryClient-scoped normalized authority for Project-chat favorite and attention state. */
+/** QueryClient-scoped normalized authority for Project-chat favorite state. */
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { updateThreadUserState } from "@/client/api/threads-api";
@@ -15,14 +15,12 @@ export type ThreadUserStateCommandView = {
   error?: Error;
 };
 
-type StateField = "isFavorite" | "attention";
-type CommandKind = "favorite" | "openAcknowledgement";
-type BaseState = Pick<ProjectChatItem, StateField>;
+type BaseState = Pick<ProjectChatItem, "isFavorite">;
 type PendingFavorite = { revision: number; desiredValue: boolean; projectedValue: boolean };
 export type ThreadUserStateRecord = {
   base: BaseState;
-  admittedAt: Record<StateField, number>;
-  barriers?: Partial<Record<StateField, number>>;
+  admittedAt: number;
+  barrier?: number;
   favorite?: PendingFavorite;
   favoriteError?: Error;
 };
@@ -52,8 +50,8 @@ function authority(client: QueryClient, projectId: string): ProjectAuthority {
 }
 
 const defaultRecord = (item?: ProjectChatItem): ThreadUserStateRecord => ({
-  base: { isFavorite: item?.isFavorite ?? false, attention: item?.attention ?? "none" },
-  admittedAt: { isFavorite: -1, attention: -1 },
+  base: { isFavorite: item?.isFavorite ?? false },
+  admittedAt: -1,
 });
 const stateKey = (projectId: string, threadId: string) =>
   projectQueryKeys.threadUserState(projectId, threadId);
@@ -100,7 +98,6 @@ export function projectThreadUserState(
   return {
     ...item,
     isFavorite: record.favorite?.projectedValue ?? record.base.isFavorite,
-    attention: record.base.attention,
   };
 }
 
@@ -128,18 +125,13 @@ export function admitThreadUserStateItems(
       projectId,
       item.id,
       (current) => {
-        let base = current.base;
-        let admittedAt = current.admittedAt;
-        for (const field of ["isFavorite", "attention"] as const) {
-          if (
-            requestGeneration >= (current.barriers?.[field] ?? -1) &&
-            requestGeneration >= current.admittedAt[field]
-          ) {
-            base = { ...base, [field]: item[field] };
-            admittedAt = { ...admittedAt, [field]: requestGeneration };
-          }
-        }
-        return base === current.base ? current : { ...current, base, admittedAt };
+        if (requestGeneration < (current.barrier ?? -1) || requestGeneration < current.admittedAt)
+          return current;
+        return {
+          ...current,
+          base: { isFavorite: item.isFavorite },
+          admittedAt: requestGeneration,
+        };
       },
       item,
     );
@@ -168,27 +160,18 @@ export function runFavoriteCommand(
   value: boolean,
   lifecycle: ThreadUserStateLifecycle = {},
 ): Promise<ThreadUserStateOutcome> {
-  return enqueue(client, projectId, threadId, "favorite", value, lifecycle);
-}
-
-export function acknowledgeThreadOpen(
-  client: QueryClient,
-  projectId: string,
-  threadId: string,
-): Promise<ThreadUserStateOutcome> {
-  return enqueue(client, projectId, threadId, "openAcknowledgement", true, {});
+  return enqueue(client, projectId, threadId, value, lifecycle);
 }
 
 function enqueue(
   client: QueryClient,
   projectId: string,
   threadId: string,
-  kind: CommandKind,
   value: boolean,
   lifecycle: ThreadUserStateLifecycle,
 ): Promise<ThreadUserStateOutcome> {
   const owner = authority(client, projectId);
-  const id = `${threadId}:${kind}`;
+  const id = threadId;
   let queue = owner.queues.get(id);
   if (!queue) {
     queue = { running: false, entries: [] };
@@ -206,19 +189,17 @@ function enqueue(
   });
   const revision = ++owner.revision;
   queue.entries.push({ revision, value, promise, resolve, lifecycles: new Set([lifecycle]) });
-  if (kind === "favorite") {
-    writeRecord(client, projectId, threadId, (current) => ({
-      ...current,
-      favorite: {
-        revision,
-        desiredValue: value,
-        projectedValue: current.favorite?.projectedValue ?? value,
-      },
-      favoriteError: undefined,
-    }));
-    syncHome(client, projectId, threadId);
-  }
-  if (!queue.running) void advance(owner, id, client, projectId, threadId, kind);
+  writeRecord(client, projectId, threadId, (current) => ({
+    ...current,
+    favorite: {
+      revision,
+      desiredValue: value,
+      projectedValue: current.favorite?.projectedValue ?? value,
+    },
+    favoriteError: undefined,
+  }));
+  syncHome(client, projectId, threadId);
+  if (!queue.running) void advance(owner, id, client, projectId, threadId);
   return promise;
 }
 
@@ -228,54 +209,42 @@ async function advance(
   client: QueryClient,
   projectId: string,
   threadId: string,
-  kind: CommandKind,
 ): Promise<void> {
   const queue = owner.queues.get(id);
   const entry = queue?.entries[0];
   if (!queue || !entry || queue.running) return;
   queue.running = true;
-  if (kind === "favorite") {
-    writeRecord(client, projectId, threadId, (current) => {
-      if (!current.favorite || current.favorite.projectedValue === entry.value) return current;
-      return { ...current, favorite: { ...current.favorite, projectedValue: entry.value } };
-    });
-    syncHome(client, projectId, threadId);
-  }
+  writeRecord(client, projectId, threadId, (current) => {
+    if (!current.favorite || current.favorite.projectedValue === entry.value) return current;
+    return { ...current, favorite: { ...current.favorite, projectedValue: entry.value } };
+  });
+  syncHome(client, projectId, threadId);
 
   let outcome: ThreadUserStateOutcome;
   try {
-    const response = await updateThreadUserState(
-      threadId,
-      kind === "favorite" ? { isFavorite: entry.value } : { acknowledgeOpen: true },
-    );
-    const field: StateField = kind === "favorite" ? "isFavorite" : "attention";
+    const response = await updateThreadUserState(threadId, { isFavorite: entry.value });
     const barrier = ++owner.generation;
     writeRecord(client, projectId, threadId, (current) => ({
       ...current,
-      base: { ...current.base, [field]: response[field] },
-      barriers: { ...current.barriers, [field]: barrier },
-      favorite:
-        kind === "favorite" && current.favorite?.revision === entry.revision
-          ? undefined
-          : current.favorite,
-      favoriteError: kind === "favorite" ? undefined : current.favoriteError,
+      base: { isFavorite: response.isFavorite },
+      barrier,
+      favorite: current.favorite?.revision === entry.revision ? undefined : current.favorite,
+      favoriteError: undefined,
     }));
     outcome = { status: "success", response };
   } catch (cause) {
     const error = cause instanceof Error ? cause : new Error(String(cause));
-    if (kind === "favorite") {
-      entry.lifecycles.forEach((item) => {
-        item.beforeRollback?.();
-      });
-      writeRecord(client, projectId, threadId, (current) => {
-        const isLatest = current.favorite?.revision === entry.revision;
-        return {
-          ...current,
-          favorite: isLatest ? undefined : current.favorite,
-          favoriteError: isLatest ? error : current.favoriteError,
-        };
-      });
-    }
+    entry.lifecycles.forEach((item) => {
+      item.beforeRollback?.();
+    });
+    writeRecord(client, projectId, threadId, (current) => {
+      const isLatest = current.favorite?.revision === entry.revision;
+      return {
+        ...current,
+        favorite: isLatest ? undefined : current.favorite,
+        favoriteError: isLatest ? error : current.favoriteError,
+      };
+    });
     outcome = { status: "error", error };
   }
 
@@ -285,5 +254,5 @@ async function advance(
   const next = queue.entries[0];
   if (!next) owner.queues.delete(id);
   entry.resolve(outcome);
-  if (next) void advance(owner, id, client, projectId, threadId, kind);
+  if (next) void advance(owner, id, client, projectId, threadId);
 }

@@ -22,7 +22,7 @@ export type ThreadSnapshotSyncStatus = {
   snapshot: DeserializedThreadSnapshot | null;
   thread: DeserializedThreadSnapshot["thread"] | null;
   liveState: DeserializedThreadSnapshot["liveState"] | null;
-  attention: DeserializedThreadSnapshot["attention"] | null;
+  actionRequired: DeserializedThreadSnapshot["actionRequired"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
   /**
    * The request resolved at least once — applied or failed. Surfaces that must
@@ -63,7 +63,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     snapshot: data ?? null,
     thread: data?.thread ?? null,
     liveState: data?.liveState ?? null,
-    attention: data?.attention ?? null,
+    actionRequired: data?.actionRequired ?? null,
     nextSeq: data?.nextSeq ?? null,
     settled: data !== undefined || isError,
     isError,

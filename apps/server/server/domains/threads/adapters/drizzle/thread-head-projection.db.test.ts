@@ -134,14 +134,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const [projectThreads, workThreads, snapshot] = await Promise.all([
         repos.threads.listByProject(PROJECT_ID),
         queryWorkItems(WORK_ID),
-        buildThreadSnapshot(repos, emptyHub, { getRunningTurnId: () => null }, THREAD_ID, USER_ID),
+        buildThreadSnapshot(repos, emptyHub, { getRunningTurnId: () => null }, THREAD_ID),
       ]);
 
       expect(projectThreads).toHaveLength(1);
       expect(workThreads).toHaveLength(1);
-      expect(projectThreads[0]?.attention).toBe(snapshot.attention);
-      expect(workThreads[0]?.attention).toBe(snapshot.attention);
-      expect(snapshot.attention).toBe("unread");
+      expect(projectThreads[0]?.actionRequired).toBe(snapshot.actionRequired);
+      expect(workThreads[0]?.actionRequired).toBe(snapshot.actionRequired);
+      expect(snapshot.actionRequired).toBe(false);
     });
 
     it("lists historical associations while projecting the current primary Work", async () => {
@@ -183,24 +183,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(queryWorkItems(CURRENT_WORK_ID)).resolves.toEqual([]);
     });
 
-    it("clears unread after the writer opens the thread", async () => {
-      await repos.threadUserState.update({
-        threadId: THREAD_ID,
-        userId: USER_ID,
-        acknowledgeOpen: true,
-      });
-      const [row] = await repos.threads.listByProject(PROJECT_ID);
-      const snapshot = await buildThreadSnapshot(
-        repos,
-        emptyHub,
-        { getRunningTurnId: () => null },
-        THREAD_ID,
-        USER_ID,
-      );
-      expect(row?.attention).toBe("none");
-      expect(snapshot.attention).toBe("none");
-    });
-
     it("never advertises a sequence newer than its durable turn payload", async () => {
       let committed = false;
       const interleavingHub = {
@@ -224,7 +206,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         interleavingHub,
         { getRunningTurnId: () => null },
         THREAD_ID,
-        USER_ID,
       );
 
       expect(committed).toBe(true);

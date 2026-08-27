@@ -1,5 +1,5 @@
 /** Canonical PostgreSQL projection machinery for visible Project-chat rows. */
-import type { ProjectChatItem, ThreadAttention } from "@meridian/contracts/threads";
+import type { ProjectChatItem } from "@meridian/contracts/threads";
 import { type SQL, sql } from "drizzle-orm";
 
 export type ProjectChatSqlRow = {
@@ -9,7 +9,7 @@ export type ProjectChatSqlRow = {
   work_title: string | null;
   last_message_preview: string | null;
   last_activity_at_exact: string;
-  attention: ThreadAttention;
+  action_required: boolean;
   is_favorite: boolean;
 };
 
@@ -20,7 +20,7 @@ export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
     work: row.work_id && row.work_title ? { id: row.work_id, title: row.work_title } : null,
     lastMessagePreview: row.last_message_preview,
     lastActivityAt: row.last_activity_at_exact,
-    attention: row.attention,
+    actionRequired: row.action_required,
     isFavorite: row.is_favorite,
   };
 }
@@ -31,12 +31,9 @@ type VisibleTurnColumns = {
   turnId: SQL;
 };
 
-type EffectiveAttentionColumns = {
-  threadStatus: SQL;
+type ActionRequiredColumns = {
   headRole: SQL;
   headStatus: SQL;
-  headActivityAt: SQL;
-  lastOpenedAt: SQL;
 };
 
 /** Canonical SQL predicate for turns that can be the conversational head. */
@@ -55,17 +52,11 @@ export function visibleConversationalTurnSql(columns: VisibleTurnColumns): SQL {
   )`;
 }
 
-/** Canonical SQL expression for effective writer attention. */
-export function effectiveAttentionSql(columns: EffectiveAttentionColumns): SQL {
-  return sql`CASE
-    WHEN ${columns.headRole} = 'assistant' AND ${columns.headStatus} = 'waiting_interrupt'
-      THEN 'actionRequired'
-    WHEN ${columns.threadStatus} = 'idle'
-      AND ${columns.headRole} = 'assistant' AND ${columns.headStatus} = 'complete'
-      AND (${columns.lastOpenedAt} IS NULL OR ${columns.headActivityAt} > ${columns.lastOpenedAt})
-      THEN 'unread'
-    ELSE 'none'
-  END`;
+/** Canonical SQL expression for a chat paused for the writer's answer. */
+export function threadActionRequiredSql(columns: ActionRequiredColumns): SQL<boolean> {
+  return sql<boolean>`COALESCE(
+    ${columns.headRole} = 'assistant' AND ${columns.headStatus} = 'waiting_interrupt', false
+  )`;
 }
 
 /** One correlated row named `conversational_head`, or no row for an empty chat. */

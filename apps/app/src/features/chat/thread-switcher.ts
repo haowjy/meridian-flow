@@ -1,12 +1,10 @@
 /**
- * Pure thread-switcher decisions: title filtering and attention/search visibility.
+ * Pure thread-switcher decisions: title filtering and action-required visibility.
  */
-import type { ThreadAttention } from "@meridian/contracts/protocol";
-
 type SwitcherThread = {
   id: string;
   title: string | null;
-  attention: ThreadAttention;
+  actionRequired: boolean;
 };
 
 export const THREAD_SWITCHER_SEARCH_THRESHOLD = 8;
@@ -27,9 +25,9 @@ export function shouldShowThreadSearch(threadCount: number): boolean {
   return threadCount >= THREAD_SWITCHER_SEARCH_THRESHOLD;
 }
 
-export function hasOtherThreadAttention(
-  threads: readonly Pick<SwitcherThread, "id" | "attention">[],
+export function hasOtherThreadActionRequired(
+  threads: readonly Pick<SwitcherThread, "id" | "actionRequired">[],
   activeThreadId: string,
 ): boolean {
-  return threads.some((thread) => thread.id !== activeThreadId && thread.attention !== "none");
+  return threads.some((thread) => thread.id !== activeThreadId && thread.actionRequired);
 }

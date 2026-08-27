@@ -32,7 +32,7 @@ export function ProjectChatRow({
   const [focusWithin, setFocusWithin] = useState(false);
   const instanceId = useId();
   const title = item.title || t`New chat`;
-  const attentionId = item.attention !== "none" ? `${instanceId}-attention` : undefined;
+  const actionRequiredId = item.actionRequired ? `${instanceId}-action-required` : undefined;
   const favoriteValue = !item.isFavorite;
   const favoriteSuppressed = favorite.pending;
   const activity = formatProjectChatActivity(item.lastActivityAt, now, i18n.locale);
@@ -59,17 +59,15 @@ export function ProjectChatRow({
       <button
         type="button"
         aria-label={t`Open ${title}`}
-        aria-describedby={attentionId}
+        aria-describedby={actionRequiredId}
         onClick={() => onOpen(item)}
         className="focus-ring absolute inset-0 z-0 text-left"
       >
         <span className="sr-only">{title}</span>
       </button>
-      {attentionId ? (
-        <span id={attentionId} className="sr-only">
-          {item.attention === "actionRequired"
-            ? t`The AI asked you a question`
-            : t`New reply since you last opened`}
+      {actionRequiredId ? (
+        <span id={actionRequiredId} className="sr-only">
+          {t`The AI asked you a question`}
         </span>
       ) : null}
       <div
@@ -80,7 +78,7 @@ export function ProjectChatRow({
           data-project-chat-row-line
           className={cn(
             "col-start-1 row-start-1 min-w-0 truncate",
-            item.attention !== "none" ? "font-semibold" : "font-medium",
+            item.actionRequired ? "font-semibold" : "font-medium",
           )}
         >
           {title}

@@ -5,10 +5,9 @@
 
 ## [Unreleased]
 
-- `database`, `contracts`, `apps/server`, `apps/app`: remove manual Project-chat
-  read state and row actions; visible chat opens now send an explicit one-way
-  acknowledgement while unseen completed assistant replies continue to derive
-  automatic attention.
+- `database`, `contracts`, `apps/server`, `apps/app`: remove Project-chat
+  read state end to end, including unseen-reply projection, open mutations, and
+  client coordination; Favorite and action-required remain independent facts.
 
 - `database`, `apps/server`: project Work catalogs now load pending draft totals
   through one grouped query backed by a Work-led active-draft index.
@@ -20,9 +19,8 @@
 - `apps/app`: Work mutations expose a narrow command boundary with only typed
   execution, pending state, and errors.
 
-- `apps/app`: normalized thread user state settles favorite and unread server
-  responses by the field each command owns, so cross-lane response ordering
-  cannot overwrite newer sibling-field truth.
+- `apps/app`: normalized thread user state serializes optimistic Favorite
+  commands and prevents stale feed responses from overwriting newer truth.
 
 - `database`, `contracts`, `apps/server`, `apps/app`: cut over the former project-wide current Work to a narrowly named new-chat fallback with CAS repair; delete its GET/PUT selection API and all creation/rebind/receipt side effects; preserve fallback-only omitted root creation; canonicalize human/model Work metadata (including blank-field clearing); converge Work catalogs and associated chats from writer, model, reconciliation, and reversal paths; and prove fallback precedence and contention against PostgreSQL.
 
@@ -67,9 +65,8 @@
   prospective Agent, write-mode, and Work controls, and route-armed first-send
   creation while preserving the secondary Continue, Favorite, and Recent feed;
   stable-ID reconciliation, route-only retry, accessible pending states, and a
-  real phone scroll owner close the first-send runtime boundary. Fresh chats
-  suppress the existing-chat open acknowledgement for their first visibility
-  epoch, stale Work or Agent refusals before or after ambiguity reconciliation
+  real phone scroll owner close the first-send runtime boundary. Stale Work or
+  Agent refusals before or after ambiguity reconciliation
   refresh only the exact context catalog while retaining the same first send for
   repair, and every later authored draft revision transfers intact even when its
   text is equal.
@@ -82,36 +79,33 @@
   authoritative HTTP-refusal rollback plus provider-owned failure restoration
   that preserves newer drafts.
 
-- `apps/app`: serialize opposite read/favorite commands, show failed open acknowledgement with retry on Chat, and delete the superseded dashboard activity model.
+- `apps/app`: serialize opposite Favorite commands and delete the superseded
+  dashboard activity model.
 
-- `apps/app`: Home feed reads no longer retry automatically, and visible-chat
-  acknowledgement now converges the cached card without refetching Home or
-  treating a hidden persistent dock as opened.
-- `apps/app`: make Home favorite/read commands ordered and field-scoped,
-  preserve action-required attention, reconcile authoritative responses, abort
+- `apps/app`: Home feed reads no longer retry automatically.
+- `apps/app`: make Home Favorite commands ordered and field-scoped, preserve
+  action-required state, reconcile authoritative responses, abort
   cancelled feed reads, and preserve scroll and keyboard focus across moves.
-- `apps/app`, `apps/server`, `contracts`: converge Home from canonical thread,
-  Work, and open-read transitions; complete Work coarse-pointer and heading
+- `apps/app`, `apps/server`, `contracts`: converge Home from canonical thread
+  and Work transitions; complete Work coarse-pointer and heading
   semantics; delete the superseded project statistics API and contract.
 
 - `apps/app`: replace the project Home dashboard and separate phone list with
   one responsive Continue, Favorites, and paginated Recent chat feed, including
   server previews, accessible shared cards, direct New Chat, and field-scoped
-  optimistic favorite/read state.
+  optimistic Favorite state.
 
 - `apps/app`: the Work screen now shares the named project-screen container,
   responds to its 42rem column threshold, presents the reviewed row semantics,
   and restores focus according to each completed lifecycle action.
 
 - `server`, `database`, `contracts`: add the server-owned chat-first Home feed
-  with visible-lineage previews, stable Recent pagination, and per-writer
-  favorite/read state; opening a chat now uses the unified desired-state
-  mutation. Home, thread lists, state responses, and snapshots share effective
-  attention semantics; strict cursors reject malformed calendar instants, and
-  desired-state writes are atomic, partial-preserving, monotonic, and DB-timed.
+  with visible-lineage previews, stable Recent pagination, per-writer Favorite,
+  and independent action-required projection; strict cursors reject malformed
+  calendar instants.
 - `apps/server`: Home cursors now reject PostgreSQL-incompatible year-zero
   timestamps, and every production chat projection consumes the canonical SQL
-  visible-head and effective-attention expressions.
+  visible-head and action-required expressions.
 - `apps/app`: Work management now has a dedicated Home-like project screen, with canonical Home, Work, Chat, Editor navigation across desktop and phone while preserving the existing lifecycle, disclosure, and direct New Chat behavior.
 
 - `apps/app`: composer overflow controls now match the 32px fine-pointer toolbar
@@ -1070,7 +1064,7 @@
   a new document — a temporary document whose location is chosen at save time
   from any context, replacing the manuscript-hardwired "New chapter".
 - `apps/app`: the chat header switcher is now a searchable popover navigation
-  surface with thread recency, attention, active-row rename, and new-chat access.
+  surface with thread recency, action-required state, active-row rename, and new-chat access.
 - `apps/app`: the persistent project sidebar now combines destination links
   with the file tree, removes the redundant chats list and embedded files
   panel, and presents the Context destination as Editor.
@@ -1107,11 +1101,8 @@
 - `apps/server`: project/work thread lists and snapshots now derive soft
   `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
   tied turn timestamps cannot make sidebar lifecycle state flip on refetch.
-- `apps/server`, `apps/app`: thread rows now expose closed attention states:
-  pending `ask_user` interrupts require action, completed assistant replies are
-  unread until the writer opens the thread, and all other rows carry no badge.
-  Sidebar badges use gold-warning/action and jade/unread tokens with concrete
-  hover explanations.
+- `apps/server`, `apps/app`: thread rows expose pending `ask_user` interrupts as
+  an independent action-required fact with a gold warning indicator.
 - `apps/server`: project/work thread lists and snapshots now use the same
   `active_leaf_turn_id` logical head, so tied turn timestamps cannot make
   sidebar lifecycle state flip on refetch.

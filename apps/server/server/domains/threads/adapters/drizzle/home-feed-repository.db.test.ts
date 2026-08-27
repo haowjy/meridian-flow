@@ -94,7 +94,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         lastActivityAt: "2026-08-13T10:01:00.123456Z",
         lastMessagePreview: "latest prose continued",
         isFavorite: true,
-        attention: "unread",
+        actionRequired: false,
       });
       const other = await repos.homeFeed.queryPage({
         projectId: PROJECT_ID,
@@ -114,15 +114,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         recentLimit: 25,
         includeFeatured: true,
       });
-      expect(actionHome.continueChat?.attention).toBe("actionRequired");
-      expect(await repos.threadUserState.effectiveAttention(threadId, USER_ID)).toBe(
-        "actionRequired",
-      );
-      expect((await repos.threads.listByProject(PROJECT_ID))[0]?.attention).toBe("actionRequired");
+      expect(actionHome.continueChat?.actionRequired).toBe(true);
+      expect((await repos.threads.listByProject(PROJECT_ID))[0]?.actionRequired).toBe(true);
       await db.execute(sql`UPDATE turns SET status = 'complete' WHERE id = ${assistantId}::uuid`);
-      await repos.threadUserState.update({ threadId, userId: USER_ID, acknowledgeOpen: true });
-      expect(await repos.threadUserState.effectiveAttention(threadId, USER_ID)).toBe("none");
-      expect((await repos.threads.listByProject(PROJECT_ID))[0]?.attention).toBe("none");
+      expect((await repos.threads.listByProject(PROJECT_ID))[0]?.actionRequired).toBe(false);
     });
 
     it("paginates equal microsecond activity across four pages with featured exclusivity", async () => {
@@ -294,51 +289,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         includeFeatured: true,
       });
       expect(deleted.continueChat?.work).toBeNull();
-    });
-
-    it("uses DB time for monotonic partial combined and isolated per-writer state", async () => {
-      const db = database.current;
-      const repos = createDrizzleRepositories(db);
-      const threadId = "00000000-0000-4000-8000-000000000540";
-      await db.execute(
-        sql`INSERT INTO threads (id, project_id, created_by_user_id, title, status) VALUES (${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'State', 'idle')`,
-      );
-      const [clockBefore] = await db.execute(sql`SELECT clock_timestamp() AS now`);
-      const first = await repos.threadUserState.update({
-        threadId,
-        userId: USER_ID,
-        isFavorite: true,
-        acknowledgeOpen: true,
-      });
-      const [clockAfter] = await db.execute(sql`SELECT clock_timestamp() AS now`);
-      if (!first.lastOpenedAt) throw new Error("open acknowledgement did not return lastOpenedAt");
-      expect(new Date(first.lastOpenedAt).getTime()).toBeGreaterThanOrEqual(
-        new Date((clockBefore as { now: string }).now).getTime(),
-      );
-      expect(new Date(first.lastOpenedAt).getTime()).toBeLessThanOrEqual(
-        new Date((clockAfter as { now: string }).now).getTime(),
-      );
-
-      const favorite = await repos.threadUserState.update({
-        threadId,
-        userId: USER_ID,
-        isFavorite: false,
-      });
-      expect(favorite.lastOpenedAt).toBe(first.lastOpenedAt);
-      expect(await repos.threadUserState.get(threadId, USER_ID)).toEqual({
-        isFavorite: false,
-        lastOpenedAt: first.lastOpenedAt,
-      });
-
-      await repos.threadUserState.update({ threadId, userId: OTHER_USER_ID, isFavorite: true });
-      expect(await repos.threadUserState.get(threadId, OTHER_USER_ID)).toEqual({
-        isFavorite: true,
-        lastOpenedAt: null,
-      });
-      expect(await repos.threadUserState.get(threadId, USER_ID)).toEqual({
-        isFavorite: false,
-        lastOpenedAt: first.lastOpenedAt,
-      });
     });
 
     it("keeps a generated 1,000-chat read bounded and reports diagnostic timing", async () => {

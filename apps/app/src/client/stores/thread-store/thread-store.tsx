@@ -91,25 +91,22 @@ function liveMetaFor(liveMeta: Record<string, LiveTurnMeta>, threadId: string): 
   return liveMeta[threadId] ?? emptyLiveTurnMeta();
 }
 
-type ThreadListLifecyclePatch = Pick<ThreadListItem, "attention" | "runningTurnId">;
+type ThreadListLifecyclePatch = Pick<ThreadListItem, "actionRequired" | "runningTurnId">;
 
 function liveThreadListPatchForTurnStatus(
   turnId: string,
   status: TurnStatus,
 ): ThreadListLifecyclePatch {
   if (status === "waiting_interrupt") {
-    // A pending interrupt is an in-run pause for human input. The project
-    // thread-list row uses `attention` for that visible affordance, while
-    // `runningTurnId` must clear so the row does not keep showing Working….
-    return { attention: "actionRequired", runningTurnId: null };
+    return { actionRequired: true, runningTurnId: null };
   }
 
   if (status === "pending" || status === "streaming") {
-    return { attention: "none", runningTurnId: turnId };
+    return { actionRequired: false, runningTurnId: turnId };
   }
 
   return {
-    attention: status === "complete" ? "unread" : "none",
+    actionRequired: false,
     runningTurnId: null,
   };
 }
@@ -160,7 +157,6 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     turns: state.turns,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
-    setThreadAttention: state.setThreadAttention,
     markHandoffPending: state.markHandoffPending,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
@@ -219,10 +215,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               ? state
               : { turnsByThread: { ...state.turnsByThread, [thread.id]: [] } },
           );
-        },
-
-        setThreadAttention(threadId, attention) {
-          threadCache.patchThread(threadId, { attention });
         },
 
         markHandoffPending(threadId) {

@@ -90,10 +90,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `work-projection-cache` is the one Work-entity/binding convergence policy. Any
   thread or Work transition that can change Home also invalidates `homeFeed`.
   Terminal turns and Work rebinds enter through
-  `invalidateThreadProjectionDependencies`. Snapshot synchronization only applies
-  history. A visible chat sends a one-way open acknowledgement through the same
-  normalized project/thread user-state authority as Home and Work rows; Home
-  alone projects the affected item between its categories without invalidation.
+  `invalidateThreadProjectionDependencies`. Snapshot synchronization applies
+  history and action-required lifecycle state. Favorite commands share one
+  normalized project/thread authority across Home and Work rows; Home alone
+  projects the affected item between its categories without invalidation.
   `useWorks` exposes only the owned-project Work catalog. Home derives its
   initial prospective choice from the first active (then first available) catalog
   Work and sends that explicit ID; omitted root-chat creation remains the sole
@@ -146,9 +146,7 @@ an unresolved create.
 
 Home first send deliberately orders the boundary differently: stable client ID
 → canonical create or same-ID ambiguity reconciliation → optimistic turn and
-staged handoff → route → arm. The matching Chat visibility lease claims a
-creation-owned no-command epoch rather than acknowledging the new thread as if
-it were an existing chat. A definite stale Work or Agent refusal, whether
+staged handoff → route → arm. A definite stale Work or Agent refusal, whether
 returned by the initial create or its guarded same-ID retry after absence
 reconciliation, is identified only by the named `work_unavailable` or
 `agent_not_found` code, refreshes the relevant catalog, and unlocks prospective
@@ -192,23 +190,6 @@ any snapshot whose `nextSeq` is strictly less than the stored value
 Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
 (no `nextSeq`) is treated as authoritative and always applies -- omitting
 `nextSeq` is intentional only for the handoff/pending-creation path.
-
-**Anti-pattern: reapplying captured snapshots for side effects.**
-`useThreadSnapshotSync`'s attention-downgrade effect previously reapplied
-the entire captured snapshot after `markThreadOpened` resolved, solely to
-set `attention: "none"`. A delayed continuation could reapply an older
-snapshot after a newer one had advanced the sequence watermark, dropping the
-user turn again. The fix: use the narrow
-`setThreadAttention(threadId, attention)` action instead. Never replay a
-whole snapshot to achieve a single field mutation.
-
-**Rejected alternative: extending acknowledged-ID retention windows.** The
-alternative of retaining acknowledged IDs "until all in-flight snapshots
-settle" was rejected. There is no clean signal for when older in-flight
-snapshots cannot apply -- React Query deduplicates concurrent fetches of the
-same key, but nothing in the cache contract guarantees ordering of
-independent fetches. The monotonic sequence guard solves the ordering
-problem structurally.
 
 ## Authenticated layout shell
 

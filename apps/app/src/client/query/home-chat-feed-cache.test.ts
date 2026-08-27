@@ -15,7 +15,7 @@ const item = (id: string, favorite = false): ProjectChatItem => ({
   work: null,
   lastMessagePreview: null,
   lastActivityAt: `2026-08-1${id === "a" ? "3" : "2"}T00:00:00.000Z`,
-  attention: "unread",
+  actionRequired: false,
   isFavorite: favorite,
 });
 const page = (
@@ -53,12 +53,12 @@ describe("Home feed projection", () => {
   it("projects a stale arriving page before React Query caches it", () => {
     const projected = projectHomePage(
       page({ continueChat: null, favoriteChats: [] }, [item("a")]),
-      (current) => ({ ...current, isFavorite: true, attention: "none" }),
+      (current) => ({ ...current, isFavorite: true, actionRequired: false }),
     );
     expect(projected.featured?.favoriteChats[0]).toMatchObject({
       id: "a",
       isFavorite: true,
-      attention: "none",
+      actionRequired: false,
     });
     expect(projected.recentChats.items).toEqual([]);
   });

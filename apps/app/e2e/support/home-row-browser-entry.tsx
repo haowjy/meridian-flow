@@ -13,7 +13,7 @@ const ordinary = Array.from(
     work: { id: `work-${index + 1}`, title: index % 2 ? "Arc Two" : "Book 1" },
     lastMessagePreview: "A normal preview remains readable beside its activity date.",
     lastActivityAt: "2026-08-24T12:00:00.000Z",
-    attention: "none",
+    actionRequired: false,
     isFavorite: false,
   }),
 );

@@ -170,8 +170,6 @@ function renderActiveView(
             activeWork={props.chatWork}
             onSelectThread={props.onSelectThread}
             onOpenContextTarget={props.onOpenContextTarget}
-            openTransfer={props.openTransfer}
-            onOpenTransferClaimed={props.onOpenTransferClaimed}
           />
         </DraftReviewBoundary>
       );

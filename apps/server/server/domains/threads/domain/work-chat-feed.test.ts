@@ -18,7 +18,7 @@ const row = (index: number): WorkChatFeedRow => ({
     work: { id: "work-current", title: "Current Work" },
     lastMessagePreview: `Preview ${index}`,
     lastActivityAt: stamp,
-    attention: index === 55 ? "actionRequired" : index === 54 ? "unread" : "none",
+    actionRequired: index === 55,
     isFavorite: index === 53,
   } satisfies ProjectChatItem,
 });
@@ -48,7 +48,7 @@ describe("Work chat feed page policy", () => {
       id: id(55),
       work: { id: "work-current", title: "Current Work" },
       lastMessagePreview: "Preview 55",
-      attention: "actionRequired",
+      actionRequired: true,
     });
     expect(first.items[2]?.isFavorite).toBe(true);
     const cursor = first.nextCursor;

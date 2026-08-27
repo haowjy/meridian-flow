@@ -18,7 +18,7 @@ const chat = (favorite = false): ProjectChatItem => ({
   work: { id: "work-1", title: "First Work" },
   lastMessagePreview: "Keep climbing.",
   lastActivityAt: "2025-08-13T15:30:00.000Z",
-  attention: "none",
+  actionRequired: false,
   isFavorite: favorite,
 });
 
@@ -80,9 +80,9 @@ describe("ProjectChatRow", () => {
     });
   });
 
-  it("describes attention to screen readers without exposing a visual status", async () => {
+  it("describes action-required state to screen readers without exposing a visual status", async () => {
     await withRow(
-      <ProjectChatRow {...props({ item: { ...chat(), attention: "actionRequired" } })} />,
+      <ProjectChatRow {...props({ item: { ...chat(), actionRequired: true } })} />,
       () => {
         const row = document.querySelector("[data-project-chat-row]") as HTMLElement;
         const open = row.querySelector('[aria-label="Open River"]') as HTMLButtonElement;
@@ -101,8 +101,8 @@ describe("ProjectChatRow", () => {
   it("uses distinct IDREF targets for repeated instances of one thread", async () => {
     await withRow(
       <>
-        <ProjectChatRow {...props({ item: { ...chat(), attention: "unread" } })} />
-        <ProjectChatRow {...props({ item: { ...chat(), attention: "unread" } })} />
+        <ProjectChatRow {...props({ item: { ...chat(), actionRequired: true } })} />
+        <ProjectChatRow {...props({ item: { ...chat(), actionRequired: true } })} />
       </>,
       () => {
         const ids = [...document.querySelectorAll<HTMLElement>("[aria-describedby]")]

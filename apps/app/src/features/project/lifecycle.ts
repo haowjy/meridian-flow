@@ -1,5 +1,5 @@
 /**
- * lifecycle — maps a thread's row projection (status + attention +
+ * lifecycle — maps a thread's row projection (status + action-required +
  * runningTurnId) to the presentation-layer lifecycle state used across the
  * project workspace, plus its display label/styling.
  *
@@ -9,25 +9,22 @@
  * surfaces them. Pure mapping; consumed by thread/work UI.
  */
 import { t } from "@lingui/core/macro";
-import type { Thread, ThreadAttention, ThreadListItem } from "@meridian/contracts/protocol";
+import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 
 /**
  * Visual lifecycle states used throughout the project workspace.
  *
  * - `executing` — a turn is actively running (`runningTurnId` set or
  *   `status === "active"`).
- * - `waiting` — the assistant has finished and the thread is waiting on the
- *   user (`attention === "unread"` on the projection).
  * - `interrupt` — `status === "blocked"` (server-side interrupt).
- * - `errored` — `status === "error"` (the orchestrator failed the run). A
- *   needs-attention terminal state — must NOT collapse into `idle`.
+ * - `errored` — `status === "error"` (the orchestrator failed the run). This
+ *   terminal failure must NOT collapse into `idle`.
  * - `grilling` / `completed` — reserved overlay states.
  * - `idle` — default rest state.
  */
 export type LifecycleState =
   | "grilling"
   | "executing"
-  | "waiting"
   | "interrupt"
   | "errored"
   | "completed"
@@ -40,7 +37,7 @@ export type LifecycleState =
  */
 type LifecycleHints = {
   status: Thread["status"];
-  attention?: ThreadAttention;
+  actionRequired?: boolean;
   runningTurnId?: string | null;
 };
 
@@ -48,7 +45,7 @@ type LifecycleHints = {
 export function lifecycleFor(thread: Thread | ThreadListItem): LifecycleState {
   const hints: LifecycleHints = {
     status: thread.status,
-    attention: "attention" in thread ? thread.attention : undefined,
+    actionRequired: "actionRequired" in thread ? thread.actionRequired : undefined,
     runningTurnId: "runningTurnId" in thread ? thread.runningTurnId : undefined,
   };
   return lifecycleFromHints(hints);
@@ -57,12 +54,11 @@ export function lifecycleFor(thread: Thread | ThreadListItem): LifecycleState {
 /**
  * Lifecycle for a thread row from full hints. A live `runningTurnId`
  * dominates — the row is executing even if `status` lags. Then
- * `attention` (needs-attention affordance), then the raw status.
+ * an action-required interrupt, then the raw status.
  */
 function lifecycleFromHints(hints: LifecycleHints): LifecycleState {
   if (hints.runningTurnId) return "executing";
-  if (hints.attention === "actionRequired") return "interrupt";
-  if (hints.attention === "unread") return "waiting";
+  if (hints.actionRequired) return "interrupt";
   return lifecycleFromStatus(hints.status);
 }
 
@@ -117,12 +113,6 @@ export function lifecycleDisplay(state: LifecycleState): LifecycleDisplay {
         label: t`Grilling`,
         badgeClass: "bg-chip-primary-bg text-primary",
         dotClass: "text-primary",
-      };
-    case "waiting":
-      return {
-        label: t`Waiting for you`,
-        badgeClass: "bg-status-live-bg text-status-live-foreground",
-        dotClass: "text-status-live-foreground",
       };
     case "interrupt":
       return {

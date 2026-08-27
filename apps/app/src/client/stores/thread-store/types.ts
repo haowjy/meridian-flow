@@ -122,7 +122,6 @@ export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
-  setThreadAttention(threadId: string, attention: ThreadListItem["attention"]): void;
   markHandoffPending(threadId: string): void;
   appendUserTurn(threadId: string, text: string): Turn;
   acknowledgeUserTurn(
@@ -146,7 +145,7 @@ export type ThreadStoreActions = {
     thread: Thread,
     turns: Turn[],
     options: {
-      lifecycle: Pick<ThreadListItem, "attention" | "runningTurnId">;
+      lifecycle: Pick<ThreadListItem, "actionRequired" | "runningTurnId">;
       nextSeq: string;
     },
   ): void;

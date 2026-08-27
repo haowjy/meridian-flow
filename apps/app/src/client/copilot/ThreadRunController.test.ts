@@ -86,7 +86,7 @@ function snapshot(nextSeq = "10", turns: Turn[] = [assistantTurn]): ThreadSnapsh
       currentAgent: null,
       resumeAfterSeq: "9",
     },
-    attention: "none",
+    actionRequired: false,
     nextSeq,
   };
 }
@@ -144,7 +144,7 @@ describe("ThreadRunController", () => {
     await scenario.submit("Hello", { optimisticUserTurnId: optimistic.id });
     scenario.store.getState().applyThreadSnapshot(thread, [], {
       nextSeq: "42",
-      lifecycle: { attention: "none", runningTurnId: null },
+      lifecycle: { actionRequired: false, runningTurnId: null },
     });
     expect(scenario.turns().map((turn) => turn.id)).toEqual(["turn_user_server"]);
 
@@ -152,11 +152,11 @@ describe("ThreadRunController", () => {
       .getState()
       .applyThreadSnapshot(thread, [serverUserTurnFrom(optimistic, "turn_user_server")], {
         nextSeq: "43",
-        lifecycle: { attention: "none", runningTurnId: null },
+        lifecycle: { actionRequired: false, runningTurnId: null },
       });
     scenario.store.getState().applyThreadSnapshot(thread, [], {
       nextSeq: "42",
-      lifecycle: { attention: "none", runningTurnId: null },
+      lifecycle: { actionRequired: false, runningTurnId: null },
     });
     expect(scenario.turns().map((turn) => turn.id)).toEqual(["turn_user_server"]);
   });
@@ -356,7 +356,7 @@ describe("ThreadRunController", () => {
     const scenario = new ThreadRunScenario({ snapshot: () => recovery.promise });
     scenario.store.getState().applyThreadSnapshot(thread, [assistantTurn], {
       nextSeq: "9007199254740993",
-      lifecycle: { attention: "none", runningTurnId: null },
+      lifecycle: { actionRequired: false, runningTurnId: null },
     });
     scenario.resume({ after: "42", expectedTurnId: "turn_1" });
 

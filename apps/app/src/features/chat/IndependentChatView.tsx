@@ -7,7 +7,6 @@ import { Trans } from "@lingui/react/macro";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, FolderPlus } from "lucide-react";
 import { useCallback } from "react";
-import { useThreadOpenAcknowledgement } from "@/client/query/useThreadOpenAcknowledgement";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { useWorks } from "@/client/query/useWorks";
 import { promoteIndependentProject } from "@/client/stores";
@@ -15,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { ChatView } from "@/features/chat/ChatView";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
-import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
 
 /**
  * Independent chat surface (`/chat/:threadId`) — a thread the user experiences
@@ -36,11 +34,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     settled: historySettled,
   } = useThreadSnapshotSync(threadId);
   const projectId = thread?.projectId ?? null;
-  const openAcknowledgement = useThreadOpenAcknowledgement({
-    threadId,
-    projectId,
-    visible: true,
-  });
+
   const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const activeWork = works?.find((work) => work.id === thread?.workId) ?? null;
 
@@ -74,10 +68,6 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
           <Trans>Create project</Trans>
         </Button>
       </header>
-      <OpenAcknowledgementError
-        error={openAcknowledgement.error}
-        onRetry={openAcknowledgement.retry}
-      />
 
       <main className="min-h-0 flex-1">
         <DraftReviewProvider

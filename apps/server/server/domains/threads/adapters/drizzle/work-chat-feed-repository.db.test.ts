@@ -109,7 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             work: { id: CURRENT_WORK_ID, title: "Current Work" },
             lastMessagePreview: "truthful preview",
             lastActivityAt: "2026-08-22T11:00:00.123456Z",
-            attention: "actionRequired",
+            actionRequired: true,
             isFavorite: true,
           },
           updatedAt: UPDATED_AT,

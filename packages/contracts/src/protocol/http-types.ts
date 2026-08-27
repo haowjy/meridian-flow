@@ -20,7 +20,6 @@ import type {
   ModelRequestDebugRetention,
   ModelResponse,
   Thread,
-  ThreadAttention,
   ThreadListItem,
   Turn,
   TurnContextPreview,
@@ -37,7 +36,6 @@ export type {
   BlockType,
   ModelResponse,
   Thread,
-  ThreadAttention,
   ThreadListItem,
   Turn,
   TurnContextPreview,
@@ -430,7 +428,7 @@ export type ThreadSnapshotResponse = {
   thread: Thread;
   turns: Turn[];
   liveState: ThreadLiveState;
-  attention: ThreadAttention;
+  actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;
 };

@@ -99,7 +99,7 @@ test("Work detail component fixture contains long content at 390px", async ({ pa
             work: { id: "work-current", title: "Current Work" },
             lastMessagePreview: "Preview",
             lastActivityAt: "2026-08-16T00:00:00.000000Z",
-            attention: "none",
+            actionRequired: false,
             isFavorite: false,
           },
         ],
@@ -110,7 +110,7 @@ test("Work detail component fixture contains long content at 390px", async ({ pa
             work: { id: "work-current", title: "Current Work" },
             lastMessagePreview: "Preview",
             lastActivityAt: "2026-08-16T00:00:00.000000Z",
-            attention: "none",
+            actionRequired: false,
             isFavorite: false,
           },
         ],
@@ -183,7 +183,7 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
         work: { id: work.id, title: work.name },
         lastMessagePreview: `Preview ${start + offset}`,
         lastActivityAt: "2026-08-16T00:00:00.000000Z",
-        attention: "none" as const,
+        actionRequired: false,
         isFavorite: false,
       }));
     window.__WORK_DETAIL_FIXTURE__ = {
@@ -260,7 +260,7 @@ for (const associationCount of [100, 500, 2_500]) {
           work: { id: work.id, title: work.name },
           lastMessagePreview: `Preview ${index}`,
           lastActivityAt: "2026-08-16T00:00:00.000000Z",
-          attention: "none" as const,
+          actionRequired: false,
           isFavorite: false,
         })),
       };

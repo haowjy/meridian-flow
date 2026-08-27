@@ -40,7 +40,7 @@ const thread = {
   work: { id: "work-1", title: "First Work" },
   lastMessagePreview: "Keep climbing.",
   lastActivityAt: "2026-08-13T00:00:00.000Z",
-  attention: "none" as const,
+  actionRequired: false,
   isFavorite: false,
 };
 const page = {
@@ -159,8 +159,6 @@ describe("HomeScreen", () => {
           response({
             threadId: "thread-1",
             isFavorite: true,
-            lastOpenedAt: null,
-            attention: "none",
           }),
         );
         await waitFor(() => movedActions.getAttribute("aria-busy") === null);

@@ -8,11 +8,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useCallback, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
-import { useThreadOpenAcknowledgement } from "@/client/query/useThreadOpenAcknowledgement";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
 import { Composer, type ComposerHandle } from "@/components/app/composer";
 import { setTestToolbarInlineIds } from "@/components/app/composer-toolbar/composer-toolbar-test-harness";
-import { OpenAcknowledgementError } from "@/features/chat/OpenAcknowledgementError";
 import { useThreadHandoff } from "@/features/chat/useThreadHandoff";
 import { i18n } from "@/lib/i18n";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -148,13 +146,7 @@ function Destination({
   );
   const controller = useRef({ submit, resume: vi.fn() } as unknown as ThreadRunController).current;
   useThreadHandoff(threadId, controller, actions, undefined, restore);
-  const acknowledgement = useThreadOpenAcknowledgement({ threadId, projectId, visible: true });
-  return (
-    <>
-      <OpenAcknowledgementError error={acknowledgement.error} onRetry={acknowledgement.retry} />
-      <Composer ref={composerRef} variant="pinned" onSubmit={() => true} />
-    </>
-  );
+  return <Composer ref={composerRef} variant="pinned" onSubmit={() => true} />;
 }
 
 function Providers({ client, children }: { client: QueryClient; children: ReactNode }) {
@@ -245,7 +237,7 @@ describe("Home first send", () => {
     );
   });
 
-  it("transfers a newer in-flight draft and admits once without an open acknowledgement", async () => {
+  it("transfers a newer in-flight draft and admits once", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const creation = deferred<Response>();
     const navigation = deferred<void>();

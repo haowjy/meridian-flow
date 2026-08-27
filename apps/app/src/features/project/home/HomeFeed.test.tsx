@@ -24,7 +24,7 @@ const item = (id: string, favorite = false): ProjectChatItem => ({
   work: null,
   lastMessagePreview: "Preview",
   lastActivityAt: "2026-08-13T00:00:00.000Z",
-  attention: "none",
+  actionRequired: false,
   isFavorite: favorite,
 });
 const rowProps = {

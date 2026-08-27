@@ -1,4 +1,4 @@
-/** PATCH favorite state or acknowledge a visible open for the authenticated writer. */
+/** PATCH favorite state for the authenticated writer. */
 import {
   serializeTransport,
   updateThreadUserStateRequestSchema,

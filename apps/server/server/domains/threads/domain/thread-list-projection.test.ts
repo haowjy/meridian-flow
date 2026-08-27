@@ -35,14 +35,12 @@ describe("toThreadListItem", () => {
       workTitle: null,
       lastTurnRole: "assistant",
       lastTurnStatus: "waiting_interrupt",
-      lastTurnAt: "2026-01-01T00:01:00.000Z",
-      lastOpenedAt: null,
       runningTurnId: null,
     });
 
     expect(row).toMatchObject({
       id: "thread-1",
-      attention: "actionRequired",
+      actionRequired: true,
       runningTurnId: null,
     });
   });

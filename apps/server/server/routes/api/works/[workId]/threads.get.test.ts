@@ -27,7 +27,7 @@ function fixture(projectUserId = USER_ID) {
         work: { id: "current-work", title: "Current Work" },
         lastMessagePreview: "Preview",
         lastActivityAt: "2026-08-01T00:00:00.000000Z",
-        attention: "none" as const,
+        actionRequired: false,
         isFavorite: false,
       },
       updatedAt: "2026-08-01T00:00:00.000000Z",

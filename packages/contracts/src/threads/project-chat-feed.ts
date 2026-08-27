@@ -1,6 +1,5 @@
 /** Neutral Project-chat projection shared by Home and Work feeds. */
 import { z } from "zod";
-import type { ThreadAttention } from "./projections.js";
 
 export interface ProjectChatItem {
   id: string;
@@ -8,7 +7,7 @@ export interface ProjectChatItem {
   work: { id: string; title: string } | null;
   lastMessagePreview: string | null;
   lastActivityAt: string;
-  attention: ThreadAttention;
+  actionRequired: boolean;
   isFavorite: boolean;
 }
 
@@ -30,19 +29,13 @@ export interface HomeChatFeedPage {
 
 export const updateThreadUserStateRequestSchema = z
   .object({
-    isFavorite: z.boolean().optional(),
-    acknowledgeOpen: z.literal(true).optional(),
+    isFavorite: z.boolean(),
   })
-  .strict()
-  .refine((value) => value.isFavorite !== undefined || value.acknowledgeOpen !== undefined, {
-    message: "At least one user-state field is required",
-  });
+  .strict();
 
 export type UpdateThreadUserStateRequest = z.infer<typeof updateThreadUserStateRequestSchema>;
 
 export interface UpdateThreadUserStateResponse {
   threadId: string;
   isFavorite: boolean;
-  lastOpenedAt: string | null;
-  attention: ThreadAttention;
 }

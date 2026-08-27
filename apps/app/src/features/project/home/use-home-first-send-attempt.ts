@@ -6,7 +6,6 @@ import { isMeridianApiError } from "@/client/api/http-client";
 import { createProjectThread, listProjectThreads } from "@/client/api/projects-api";
 import { invalidateWorkThreads } from "@/client/query/project-invalidation";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { prepareCreatedThreadVisibility } from "@/client/query/visible-thread-open-acknowledgements";
 import type { ThreadStoreActions } from "@/client/stores";
 import { threadCreateAgentField, wireAgentSlug } from "@/features/agents";
 import { deriveTitleFromMessage } from "@/lib/thread-title";
@@ -113,10 +112,6 @@ export function useHomeFirstSendAttempt({
         draftAfterRoute,
       });
       if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
-      prepareCreatedThreadVisibility(queryClient, {
-        projectId: envelope.projectId,
-        threadId: thread.id,
-      });
       return route(envelope, thread);
     },
     [actions, projectId, queryClient, route, routeDraft, transition],

@@ -19,7 +19,7 @@ const item = (id: string): ProjectChatItem => ({
   work: { id: "current-work", title: "Current Work" },
   lastMessagePreview: "preview",
   lastActivityAt: "2026-08-01T00:00:00.000000Z",
-  attention: "none",
+  actionRequired: false,
   isFavorite: false,
 });
 const page = (ids: string[], nextCursor: string | null = null): WorkChatFeedPage => ({

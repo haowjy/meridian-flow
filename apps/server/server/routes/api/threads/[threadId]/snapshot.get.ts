@@ -15,5 +15,5 @@ export default defineEventHandler(async (event) => {
     threadId,
     userId,
   );
-  return serializeTransport(await buildThreadSnapshot(repos, hub, runner, thread.id, userId));
+  return serializeTransport(await buildThreadSnapshot(repos, hub, runner, thread.id));
 });

@@ -16,7 +16,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useWorks } from "@/client/query/useWorks";
-import type { OpenAcknowledgementTransfer } from "@/client/query/visible-thread-open-acknowledgements";
 import { useContextTabsStore } from "@/client/stores";
 import {
   hydrateWorkingSet,
@@ -64,7 +63,6 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
-import { useProjectOpenAcknowledgement } from "./use-project-open-acknowledgement";
 import { WorkPaneController } from "./WorkPaneController";
 import {
   type ContextDeskReconciliationScope,
@@ -125,12 +123,6 @@ export function ProjectView(props: ProjectViewProps) {
   const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
   const workingSetHydration = retriedHydration ?? entryHydration;
   const queryClient = useQueryClient();
-  const { onOpenThread, openTransfer, onOpenTransferClaimed } = useProjectOpenAcknowledgement({
-    projectId: props.projectId,
-    activeScreen: props.activeScreen,
-    activeThreadId: props.activeThreadId,
-    onSelectThread: props.onSelectThread,
-  });
   const { resolvedThreadId, projectThreads } = useResolvedChatThread(
     props.projectId,
     props.activeThreadId,
@@ -224,9 +216,7 @@ export function ProjectView(props: ProjectViewProps) {
     editorScope,
     editorWorkId,
     retryEditorWork: worksQuery.refetch,
-    onOpenThread,
-    openTransfer,
-    onOpenTransferClaimed,
+    onOpenThread: (threadId: string) => void props.onSelectThread(threadId),
   };
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
@@ -252,8 +242,6 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   editorWorkId: string | null;
   retryEditorWork: () => void;
   onOpenThread: (threadId: string) => void;
-  openTransfer?: OpenAcknowledgementTransfer;
-  onOpenTransferClaimed: (transfer: OpenAcknowledgementTransfer) => void;
 };
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps & {
@@ -458,8 +446,6 @@ function DesktopProject(props: ReviewScopedProjectProps) {
               // Mounted-but-hidden when the dock is collapsed, so the live
               // conversation survives a close/reopen.
               visible={chatPlacement === "center" || isOpen("chat")}
-              openTransfer={props.openTransfer}
-              onOpenTransferClaimed={props.onOpenTransferClaimed}
               onCloseDock={close("chat")}
               onOpenContextTarget={props.onOpenContextTarget}
             />

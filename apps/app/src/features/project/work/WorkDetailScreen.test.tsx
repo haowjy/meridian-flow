@@ -319,7 +319,7 @@ function chat(id: string, title: string) {
     work: { id: "current-work", title: "Current Work" },
     lastMessagePreview: "Keep climbing.",
     lastActivityAt: "2026-08-15T00:00:00.000000Z",
-    attention: "none" as const,
+    actionRequired: false,
     isFavorite: false,
   };
 }

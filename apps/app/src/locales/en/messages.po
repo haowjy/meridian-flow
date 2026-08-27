@@ -392,8 +392,8 @@ msgid "Alt text"
 msgstr "Alt text"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-msgid "Another chat needs attention"
-msgstr "Another chat needs attention"
+msgid "Another chat needs your answer"
+msgstr "Another chat needs your answer"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Answer the question"
@@ -1997,11 +1997,6 @@ msgstr "New folder"
 msgid "New project started"
 msgstr "New project started"
 
-#: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "New reply since you last opened"
-msgstr "New reply since you last opened"
-
 #: src/features/project/context/ContextTabBar.tsx
 msgid "New tab"
 msgstr "New tab"
@@ -3411,14 +3406,6 @@ msgstr "User"
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
-
-#: src/features/project/lifecycle.ts
-msgid "Waiting for you"
-msgstr "Waiting for you"
-
-#: src/features/chat/OpenAcknowledgementError.tsx
-msgid "We couldn’t save that you opened this chat."
-msgstr "We couldn’t save that you opened this chat."
 
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"

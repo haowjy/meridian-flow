@@ -117,7 +117,6 @@ describe("Home chat feed", () => {
       createdAt: "2026-08-13T11:00:00.000Z",
       metadata: { kind: "system_update", section: "work_context" },
     });
-    await repos.threadUserState.update({ threadId, userId: USER_ID, acknowledgeOpen: true });
     const page = await getHomeChatFeedPage({
       repository: repos.homeFeed,
       projectId: PROJECT_ID,
@@ -126,7 +125,7 @@ describe("Home chat feed", () => {
     expect(page.featured?.continueChat).toMatchObject({
       lastActivityAt: "2026-08-13T10:01:00.000000Z",
       lastMessagePreview: "Answer with normalized text",
-      attention: "actionRequired",
+      actionRequired: true,
     });
   });
 });

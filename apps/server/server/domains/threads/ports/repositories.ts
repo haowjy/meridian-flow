@@ -18,7 +18,6 @@ import type {
   ProjectChatItem,
   SpawnStatus,
   Thread,
-  ThreadAttention,
   ThreadKind,
   ThreadListItem,
   ThreadStatus,
@@ -203,20 +202,11 @@ export interface HomeChatFeedRepository {
 }
 
 export interface ThreadUserStateRepository {
-  get(
-    threadId: ThreadId,
-    userId: UserId,
-  ): Promise<{
-    isFavorite: boolean;
-    lastOpenedAt: string | null;
-  }>;
   update(input: {
     threadId: ThreadId;
     userId: UserId;
-    isFavorite?: boolean;
-    acknowledgeOpen?: true;
+    isFavorite: boolean;
   }): Promise<UpdateThreadUserStateResponse>;
-  effectiveAttention(threadId: ThreadId, userId: UserId): Promise<ThreadAttention>;
 }
 
 /**

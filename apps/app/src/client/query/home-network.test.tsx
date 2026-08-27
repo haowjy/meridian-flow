@@ -1,17 +1,10 @@
 /** Home network contracts over real TanStack Query observers and controlled HTTP. */
-import type {
-  HomeChatFeedPage,
-  ProjectChatItem,
-  ThreadSnapshotResponse,
-} from "@meridian/contracts/protocol";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { act, type ReactNode, StrictMode, useState } from "react";
+import type { HomeChatFeedPage, ProjectChatItem } from "@meridian/contracts/protocol";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, type ReactNode, StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { groupHomeFeed, type HomeFeedData } from "./home-chat-feed-cache";
-import { projectQueryKeys } from "./project-query-keys";
-import { threadQueryKeys } from "./thread-query-keys";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -20,27 +13,20 @@ vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
 }));
 
-const threadActions = { setThreadAttention: vi.fn() };
-vi.mock("@/client/stores", () => ({
-  useThreadActions: () => threadActions,
-}));
-
 const { useHomeChatFeed } = await import("./useHomeChatFeed");
-const { useThreadOpenAcknowledgement } = await import("./useThreadOpenAcknowledgement");
 
 const projectId = "project-1";
 const threadId = "thread-1";
 const homePath = `/api/projects/${projectId}/home-feed`;
 const cursorPath = `${homePath}?cursor=cursor-2`;
-const userStatePath = `/api/threads/${threadId}/user-state`;
 
-const item = (attention: ProjectChatItem["attention"] = "unread"): ProjectChatItem => ({
+const item = (): ProjectChatItem => ({
   id: threadId,
   title: "A chat",
   work: null,
   lastMessagePreview: null,
   lastActivityAt: "2026-08-13T00:00:00.000Z",
-  attention,
+  actionRequired: false,
   isFavorite: false,
 });
 const page = (items: ProjectChatItem[], nextCursor: string | null = null): HomeChatFeedPage => ({
@@ -77,9 +63,8 @@ describe("Home network behavior", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("completes one initial feed request through observer abort/replay and converges dock acknowledgement", async () => {
+  it("completes one initial feed request through observer abort and replay", async () => {
     const queryClient = client();
-    const acknowledgement = deferredResponse();
     const requests: Array<{ path: string; completed: boolean; aborted: boolean }> = [];
     vi.stubGlobal(
       "fetch",
@@ -87,47 +72,23 @@ describe("Home network behavior", () => {
         const path = String(input);
         const record = { path, completed: false, aborted: false };
         requests.push(record);
-        if (path === homePath) {
-          if (requests.filter((entry) => entry.path === homePath).length === 1) {
-            return new Promise<Response>((_resolve, reject) => {
-              init?.signal?.addEventListener("abort", () => {
-                record.aborted = true;
-                reject(new DOMException("Aborted", "AbortError"));
-              });
+        if (path !== homePath) throw new Error(`unexpected request: ${path}`);
+        if (requests.length === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              record.aborted = true;
+              reject(new DOMException("Aborted", "AbortError"));
             });
-          }
-          record.completed = true;
-          return Promise.resolve(json(page([item()])));
-        }
-        if (path === userStatePath) {
-          return acknowledgement.promise.then((response) => {
-            record.completed = true;
-            return response;
           });
         }
-        throw new Error(`unexpected request: ${path}`);
+        record.completed = true;
+        return Promise.resolve(json(page([item()])));
       }),
     );
 
-    queryClient.setQueryData(threadQueryKeys.snapshot(threadId), {
-      attention: "unread",
-    } as ThreadSnapshotResponse);
     let feed: ReturnType<typeof useHomeChatFeed> | null = null;
-    let showDock: (() => void) | null = null;
     function Harness() {
-      const [visible, setVisible] = useState(false);
-      showDock = () => setVisible(true);
       feed = useHomeChatFeed(projectId);
-      useQuery<ThreadSnapshotResponse>({
-        queryKey: threadQueryKeys.snapshot(threadId),
-        queryFn: () => Promise.reject(new Error("seeded snapshot must not refetch")),
-        staleTime: Infinity,
-      });
-      useThreadOpenAcknowledgement({
-        threadId,
-        projectId,
-        visible: feed.isSuccess && visible,
-      });
       return null;
     }
 
@@ -139,37 +100,10 @@ describe("Home network behavior", () => {
           </QueryClientProvider>
         </StrictMode>,
         async () => {
-          await waitFor(() => requests.filter((entry) => entry.path === homePath).length >= 2);
+          await waitFor(() => requests.length >= 2);
           await waitFor(() => feed?.isSuccess === true);
-          expect(requests.filter((entry) => entry.path === userStatePath)).toHaveLength(0);
-          await act(async () => showDock?.());
-          await waitFor(
-            () => requests.filter((entry) => entry.path === userStatePath).length === 1,
-          );
-          acknowledgement.resolve(
-            json({
-              threadId,
-              isFavorite: true,
-              lastOpenedAt: "2026-08-13T00:01:00.000Z",
-              attention: "none",
-            }),
-          );
-          await waitFor(
-            () =>
-              groupHomeFeed(
-                queryClient.getQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId)),
-              ).continueChat?.attention === "none",
-          );
-
-          const homeRequests = requests.filter((entry) => entry.path === homePath);
-          expect(homeRequests.filter((entry) => entry.completed)).toHaveLength(1);
-          expect(homeRequests.filter((entry) => entry.aborted)).toHaveLength(1);
-          expect(requests.filter((entry) => entry.path === userStatePath)).toHaveLength(1);
-          expect(
-            groupHomeFeed(
-              queryClient.getQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId)),
-            ).continueChat,
-          ).toMatchObject({ attention: "none" });
+          expect(requests.filter((entry) => entry.completed)).toHaveLength(1);
+          expect(requests.filter((entry) => entry.aborted)).toHaveLength(1);
         },
         { drainMacrotask: true },
       );
