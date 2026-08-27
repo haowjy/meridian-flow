@@ -47,13 +47,13 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   createWork,
   deleteWorkTransition,
   updateWorkTransition,
   type WorkContextDelivery,
   WorkDeleteBlockedError,
+  WorkNameRequiredError,
   type WorkRepository,
 } from "../domains/projects/index.js";
 import {
@@ -80,7 +80,6 @@ export interface ToolWiringDeps {
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
-  preferences: ProjectPreferencesRepository;
   workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   drafts: Pick<CollabDrafts, "draftReview">;
@@ -362,10 +361,6 @@ async function workBySlug(
   });
 }
 
-function cleared(value: string | undefined): string | null | undefined {
-  return value === "" ? null : value;
-}
-
 function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorOutput {
   return (
     typeof value === "object" &&
@@ -585,17 +580,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "create") {
-          const previousCurrentWorkId = await deps.preferences.getCurrentWorkId(
-            thread.userId,
-            thread.projectId,
-          );
           const work = await createWork(
             {
               works: deps.works,
-              preferences: deps.preferences,
               workContextDelivery: deps.workContextDelivery,
             },
-            thread.userId,
             {
               projectId: thread.projectId,
               createdByUserId: thread.userId,
@@ -615,7 +604,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 workName: work.name,
                 before: null,
                 after: receiptState(work),
-                inverse: { command: "delete", workId: work.id, previousCurrentWorkId },
+                inverse: { command: "delete", workId: work.id },
               } satisfies WorkReceipt,
               workContextChanged: true,
             },
@@ -628,12 +617,12 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "show") {
           const [threads, drafts] = await Promise.all([
-            deps.threads.listByWork(thread.projectId, selected.id),
+            deps.threads.listRecentByWork(thread.projectId, selected.id, 10),
             deps.drafts.draftReview.list({ projectId: thread.projectId, workId: selected.id }),
           ]);
           return {
             work: modelWork(selected),
-            recentThreads: threads.slice(0, 10).map(({ title, updatedAt, status }) => ({
+            recentThreads: threads.map(({ title, updatedAt, status }) => ({
               title,
               updatedAt,
               status,
@@ -648,8 +637,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             selected.id,
             {
               name: command.name,
-              goal: cleared(command.goal),
-              description: cleared(command.description),
+              goal: command.goal,
+              description: command.description,
               status: command.status,
             },
           );
@@ -709,13 +698,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               threads: deps.threads,
               threadWorks: deps.threadWorks,
               works: deps.works,
-              preferences: deps.preferences,
               obligations: deps.obligations,
             },
             {
               threadId: thread.id,
               targetWorkId: selected.id,
-              preferenceUserId: thread.userId,
             },
           ),
         );
@@ -727,6 +714,9 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           },
         };
       } catch (error) {
+        if (error instanceof WorkNameRequiredError) {
+          return toolError({ code: "invalid_work_name", message: error.message });
+        }
         if (error instanceof WorkDeleteBlockedError) {
           return toolError({
             code: "work_delete_blocked",

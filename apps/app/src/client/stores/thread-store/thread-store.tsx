@@ -51,6 +51,7 @@ type ThreadStoreSliceState = ThreadStoreState & {
   snapshotNextSeqFloorByThread: Record<string, string>;
   handoffPendingThreadIds: Record<string, true>;
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
+  firstSendClaimCounter: number;
   pendingCreation: PendingCreationState;
   turnCounter: number;
 };
@@ -90,25 +91,22 @@ function liveMetaFor(liveMeta: Record<string, LiveTurnMeta>, threadId: string): 
   return liveMeta[threadId] ?? emptyLiveTurnMeta();
 }
 
-type ThreadListLifecyclePatch = Pick<ThreadListItem, "attention" | "runningTurnId">;
+type ThreadListLifecyclePatch = Pick<ThreadListItem, "actionRequired" | "runningTurnId">;
 
 function liveThreadListPatchForTurnStatus(
   turnId: string,
   status: TurnStatus,
 ): ThreadListLifecyclePatch {
   if (status === "waiting_interrupt") {
-    // A pending interrupt is an in-run pause for human input. The project
-    // thread-list row uses `attention` for that visible affordance, while
-    // `runningTurnId` must clear so the row does not keep showing Working….
-    return { attention: "actionRequired", runningTurnId: null };
+    return { actionRequired: true, runningTurnId: null };
   }
 
   if (status === "pending" || status === "streaming") {
-    return { attention: "none", runningTurnId: turnId };
+    return { actionRequired: false, runningTurnId: turnId };
   }
 
   return {
-    attention: status === "complete" ? "unread" : "none",
+    actionRequired: false,
     runningTurnId: null,
   };
 }
@@ -159,7 +157,6 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     turns: state.turns,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
-    setThreadAttention: state.setThreadAttention,
     markHandoffPending: state.markHandoffPending,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
@@ -172,6 +169,14 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     applyThreadSnapshot: state.applyThreadSnapshot,
     markPendingStream: state.markPendingStream,
     consumePendingStream: state.consumePendingStream,
+    stageFirstSend: state.stageFirstSend,
+    preserveFirstSendRouteDraft: state.preserveFirstSendRouteDraft,
+    armFirstSend: state.armFirstSend,
+    claimFirstSend: state.claimFirstSend,
+    ackFirstSend: state.ackFirstSend,
+    rejectFirstSend: state.rejectFirstSend,
+    ackFirstSendDraftRestored: state.ackFirstSendDraftRestored,
+    ackFirstSendRouteDraftRestored: state.ackFirstSendRouteDraftRestored,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
   };
@@ -188,6 +193,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         liveMeta: {},
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
+        firstSendByThreadId: {},
+        firstSendClaimCounter: 0,
         pendingCreation: { projectIds: {}, threadIds: {} },
         streamingThreadId: null,
         streamingProjectId: null,
@@ -208,10 +215,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               ? state
               : { turnsByThread: { ...state.turnsByThread, [thread.id]: [] } },
           );
-        },
-
-        setThreadAttention(threadId, attention) {
-          threadCache.patchThread(threadId, { attention });
         },
 
         markHandoffPending(threadId) {
@@ -564,6 +567,116 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             return { pendingStreamByThreadId };
           });
           return pending;
+        },
+
+        stageFirstSend(args) {
+          set((state) =>
+            state.firstSendByThreadId[args.threadId]
+              ? state
+              : {
+                  firstSendByThreadId: {
+                    ...state.firstSendByThreadId,
+                    [args.threadId]: { ...args, status: "staged" },
+                  },
+                },
+          );
+        },
+
+        preserveFirstSendRouteDraft(threadId, text) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (!pending) return state;
+            if (pending.draftAfterRoute === text) return state;
+            return {
+              firstSendByThreadId: {
+                ...state.firstSendByThreadId,
+                [threadId]: { ...pending, draftAfterRoute: text, draftAfterRouteRestored: false },
+              },
+            };
+          });
+        },
+
+        armFirstSend(threadId) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (pending?.status !== "staged") return state;
+            return {
+              firstSendByThreadId: {
+                ...state.firstSendByThreadId,
+                [threadId]: { ...pending, status: "armed" },
+              },
+            };
+          });
+        },
+
+        claimFirstSend(threadId) {
+          const pending = get().firstSendByThreadId[threadId];
+          if (pending?.status !== "armed") return null;
+
+          const claimId = get().firstSendClaimCounter + 1;
+          set((state) => ({
+            firstSendClaimCounter: claimId,
+            firstSendByThreadId: {
+              ...state.firstSendByThreadId,
+              [threadId]: { ...pending, status: "claimed", claimId },
+            },
+          }));
+          return {
+            claimId,
+            threadId,
+            text: pending.text,
+            optimisticUserTurnId: pending.optimisticUserTurnId,
+            draftAfterRoute: pending.draftAfterRoute,
+          };
+        },
+
+        ackFirstSend(threadId, claimId) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (pending?.status !== "claimed" || pending.claimId !== claimId) return state;
+            const firstSendByThreadId = { ...state.firstSendByThreadId };
+            delete firstSendByThreadId[threadId];
+            return { firstSendByThreadId };
+          });
+        },
+
+        rejectFirstSend(threadId, claimId, rejection) {
+          const pending = get().firstSendByThreadId[threadId];
+          if (pending?.status !== "claimed" || pending.claimId !== claimId) return;
+
+          set((state) => ({
+            firstSendByThreadId: {
+              ...state.firstSendByThreadId,
+              [threadId]: {
+                ...pending,
+                status: rejection === "definite" ? "failed" : "ambiguous",
+              },
+            },
+          }));
+        },
+
+        ackFirstSendDraftRestored(threadId, claimId) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (pending?.status !== "failed" || pending.claimId !== claimId) return state;
+            const firstSendByThreadId = { ...state.firstSendByThreadId };
+            delete firstSendByThreadId[threadId];
+            return { firstSendByThreadId };
+          });
+        },
+
+        ackFirstSendRouteDraftRestored(threadId) {
+          set((state) => {
+            const pending = state.firstSendByThreadId[threadId];
+            if (pending?.draftAfterRoute === undefined || pending.draftAfterRouteRestored)
+              return state;
+            return {
+              firstSendByThreadId: {
+                ...state.firstSendByThreadId,
+                [threadId]: { ...pending, draftAfterRouteRestored: true },
+              },
+            };
+          });
         },
 
         markPendingCreation({ projectId, threadId }) {

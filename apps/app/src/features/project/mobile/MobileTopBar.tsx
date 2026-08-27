@@ -13,7 +13,6 @@
  * Desktop pane headers stay separate.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -21,6 +20,7 @@ import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 import type { ProjectViewProps } from "../ProjectView";
+import { screenLabel } from "../shell/screens";
 
 export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
   projectId: string;
@@ -76,13 +76,11 @@ export function MobileTopBar({
               />
             ) : (
               <div className="truncate text-sm font-semibold text-foreground">
-                {title ?? <Trans>Project</Trans>}
+                {title ?? screenLabel(activeScreen)}
               </div>
             ))}
         </div>
-        {actions ? (
-          <div className="flex size-11 shrink-0 items-center justify-end">{actions}</div>
-        ) : null}
+        <div className="flex size-11 shrink-0 items-center justify-end">{actions}</div>
       </div>
     </header>
   );

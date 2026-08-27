@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { archiveWork, deleteWork, unarchiveWork, updateWork } from "./projects-api";
+import {
+  archiveWork,
+  deleteWork,
+  listWorkThreads,
+  unarchiveWork,
+  updateWork,
+} from "./projects-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -39,6 +45,37 @@ describe("Work lifecycle requests", () => {
       message: "Work still has conversations",
       status: 409,
     });
+  });
+
+  it("sends optional metadata clears as accepted empty strings", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      Response.json(workResponse()),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await updateWork("work-1", { goal: "", description: "" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      goal: "",
+      description: "",
+    });
+  });
+});
+
+describe("Work-associated chat requests", () => {
+  it("requests the canonical endpoint and unwraps its typed collection", async () => {
+    const page = { items: [{ id: "thread-1", title: "Opening" }], nextCursor: "next" };
+    const fetchMock = vi.fn(async () => Response.json(page));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listWorkThreads("work-1", {
+        origin: "https://app.example",
+        headers: { "x-request": "typed" },
+      }),
+    ).resolves.toEqual(page);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://app.example/api/works/work-1/threads",
+      expect.objectContaining({ headers: { "x-request": "typed" } }),
+    );
   });
 });
 

@@ -4,7 +4,6 @@
  * The editor is updated by server-side Yjs sync; the mutation refreshes the
  * turn lineage cache so transcript undo affordances reflect server state.
  */
-import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -14,9 +13,9 @@ import {
   reverseTurn,
   successfulWorkReversals,
 } from "@/client/api/reverse-api";
-import { invalidateProjectThreadData } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
+import { convergeWorkProjection } from "./work-projection-cache";
 
 export function useReverseDocumentMutation(threadId: string) {
   return useMutation({
@@ -31,17 +30,15 @@ export function useReverseTurnMutation(threadId: string) {
     onSuccess: (outcome) => {
       // A restored Work must reappear in the sidebar and rail without a
       // reload, so its project's works and thread bindings refetch together.
-      if (successfulWorkReversals(outcome).length === 0) return;
-      const projectId = queryClient.getQueryData<ThreadSnapshotResponse>(
-        threadQueryKeys.snapshot(threadId),
-      )?.thread.projectId;
-      if (projectId) {
-        void invalidateProjectThreadData(queryClient, projectId);
-        return;
+      const reversals = successfulWorkReversals(outcome);
+      if (reversals.length === 0) return;
+      for (const { command, projectId } of reversals) {
+        convergeWorkProjection(queryClient, {
+          kind: "entity",
+          projectId,
+          operation: command,
+        });
       }
-      // Without a cached snapshot the owning project is unknown here; refresh
-      // every project's caches rather than miss the restored Work.
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.all });
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });

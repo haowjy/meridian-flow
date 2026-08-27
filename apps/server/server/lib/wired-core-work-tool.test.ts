@@ -1,7 +1,6 @@
 /** Work command wiring protocol coverage. */
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
-import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/index.js";
 import { createInMemoryWorkRepository, WorkDeleteBlockedError } from "../domains/projects/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
@@ -34,7 +33,13 @@ describe("wired work tool", () => {
     let primaryWorkId = current.id;
     const invalidateThread = vi.fn(async () => {});
     const threadChanged = vi.fn(async () => {});
-    const preferences = createInMemoryProjectPreferencesRepository();
+    const listRecentByWork = vi.fn(async () => [
+      {
+        title: "Revision chat",
+        updatedAt: "2026-08-06T12:00:00.000Z",
+        status: "active" as const,
+      },
+    ]);
     const registrations = createWiredCoreToolRegistrations({
       threads: {
         findById: async () =>
@@ -44,15 +49,7 @@ describe("wired work tool", () => {
             userId: "user-1",
             kind,
           }) as never,
-        listByWork: async () => [
-          {
-            id: "recent-thread",
-            title: "Revision chat",
-            updatedAt: "2026-08-06T12:00:00.000Z",
-            status: "active",
-            composedSystemPrompt: "large frozen prompt",
-          },
-        ],
+        listRecentByWork,
       } as never,
       threadWorks: {
         findPrimary: async () => ({ workId: primaryWorkId }),
@@ -63,7 +60,6 @@ describe("wired work tool", () => {
         },
       },
       works: works as never,
-      preferences,
       workContextDelivery: {
         projectChanged: async () => {},
       },
@@ -89,14 +85,14 @@ describe("wired work tool", () => {
       current,
       target,
       works: baseWorks,
-      preferences,
       invalidateThread,
       threadChanged,
+      listRecentByWork,
     };
   }
 
   it("dispatches all six branches and journals mutation receipts", async () => {
-    const { handler, target } = await setup();
+    const { handler, target, listRecentByWork } = await setup();
     const ctx = toolContext();
     await expect(handler({ command: "list" }, ctx)).resolves.toHaveLength(2);
     await expect(handler({ command: "show", work: target.slug }, ctx)).resolves.toMatchObject({
@@ -110,6 +106,7 @@ describe("wired work tool", () => {
       ],
       drafts: [{ draftId: "draft-1" }],
     });
+    expect(listRecentByWork).toHaveBeenCalledWith("project-1", target.id, 10);
     await expect(handler({ command: "create", name: "New Work" }, ctx)).resolves.toMatchObject({
       metadata: {
         workReceipt: {
@@ -186,21 +183,17 @@ describe("wired work tool", () => {
     });
   });
 
-  it("marks changed switches for post-result delivery and only sticks primary switches", async () => {
+  it("marks changed switches for post-result delivery", async () => {
     const primary = await setup("primary", true);
     await expect(
       primary.handler({ command: "switch", work: primary.target.slug }, toolContext()),
     ).resolves.toMatchObject({ metadata: { workContextChanged: true } });
     expect(primary.invalidateThread).not.toHaveBeenCalled();
     expect(primary.threadChanged).toHaveBeenCalledOnce();
-    await expect(primary.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBe(
-      primary.target.id,
-    );
 
     const subagent = await setup("subagent", false);
     await subagent.handler({ command: "switch", work: subagent.target.slug }, toolContext());
     expect(subagent.invalidateThread).not.toHaveBeenCalled();
-    await expect(subagent.preferences.getCurrentWorkId("user-1", "project-1")).resolves.toBeNull();
   });
 
   it("keeps an already-current switch side-effect free beyond its receipt", async () => {
@@ -234,6 +227,52 @@ describe("wired work tool", () => {
     expect(second).toMatchObject({
       metadata: { workReceipt: { before: { name: "Target B" }, after: { name: "Target C" } } },
     });
+  });
+
+  it("uses the shared metadata normalizer for model updates", async () => {
+    const fixture = await setup();
+
+    await expect(
+      fixture.handler(
+        {
+          command: "update",
+          work: fixture.target.slug,
+          goal: "   ",
+          description: "  Private notes  ",
+        },
+        toolContext(),
+      ),
+    ).resolves.toMatchObject({
+      output: { goal: null, description: "Private notes" },
+    });
+  });
+
+  it.each([
+    { kind: "valid", raw: "Revised", expected: "Revised" },
+    { kind: "trimmed", raw: "  Revised  ", expected: "Revised" },
+    { kind: "blank", raw: " \n\t ", expected: null },
+  ])("handles $kind model Name input before persistence", async ({ raw, expected }) => {
+    const fixture = await setup();
+    const update = vi.spyOn(fixture.works, "update");
+    const outcome = await fixture.handler(
+      { command: "update", work: fixture.target.slug, name: raw },
+      toolContext(),
+    );
+
+    if (expected === null) {
+      expect(outcome).toMatchObject({
+        isError: true,
+        output: { code: "invalid_work_name", message: "Work name must be a non-empty string" },
+      });
+      expect(update).not.toHaveBeenCalled();
+      return;
+    }
+
+    expect(outcome).toMatchObject({ output: { name: expected } });
+    expect(update).toHaveBeenCalledWith(
+      fixture.target.id,
+      expect.objectContaining({ name: expected }),
+    );
   });
 
   it("emits no inverse or projection invalidation for a content-identical update", async () => {

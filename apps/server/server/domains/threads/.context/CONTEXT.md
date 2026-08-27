@@ -15,9 +15,8 @@ instead of the N:1 `threads.workId` column.
   thread). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
-  changing an existing thread's primary Work. It owns lifecycle validation,
-  the transaction-composable binding transition, primary-thread sticky
-  preference, the exact binding receipt, idempotent no-op behavior, and the
+  explicitly changing an existing thread's primary Work. It owns lifecycle validation,
+  the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
   targeted durable context refresh obligation. Writer and model commands share
   that transition; switch receipts are factual and are not reversible through
   turn Undo/Redo. The authenticated writer adapter additionally holds
@@ -69,14 +68,18 @@ instead of the N:1 `threads.workId` column.
 
 | Port | Surface |
 |---|---|
-| `ThreadRepository` | `create / findById / listByUser / listByProject / updateStatus / recomputeCostFromModelResponses / updateCost / softDelete / restore` |
+| `ThreadRepository` | Thread lifecycle plus project lists and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. |
+| `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection. Home retains its set-oriented whole-project ranking. |
+| `WorkChatFeedRepository` | Bounded historical-Work association pages over the same Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
+| `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
-| `ThreadWorksRepository` | Adds organizational memberships, reads the primary, and rebinds the primary membership through one Work-before-thread critical section. Rebind accepts active or archived same-project Works and preserves exactly one primary. |
-| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, preference, receipt, and targeted durable obligation have one policy owner. Actor adapters own transaction and post-commit delivery. |
+| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind demotes the old membership and promotes/upserts the target, retaining association history while preserving exactly one primary. |
+| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, and targeted durable obligation have one policy owner and never write the new-chat fallback. Actor adapters own transaction and post-commit delivery. |
+| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; authorizes through the including-deleted thread's project, revalidates thread and project ownership under the lifecycle lock, and wakes delivery only after the exact restore transition commits. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -86,8 +89,10 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 ## Adapters
 
 - **Drizzle** (production) and **in-memory** (test/dev) adapters for all
-  repositories and journal reader/writer, behind shared `__conformance__`
-  suites.
+  repositories and journal reader/writer. The focused Project-chat adapter owns
+  Home and Work visible-head projection in memory; the Drizzle projection module
+  owns the shared row mapping, preview, action-required fact, timestamp, and bounded Work
+  candidate machinery.
 
 ## Key domain logic
 
@@ -169,8 +174,14 @@ contract shapes.
 - **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen)
   when `bakedSkillSlugs` is non-null. Before bake, `composedSystemPrompt` may
   carry a raw pre-bake system prompt.
-- Soft-delete (`deletedAt`) is idempotent for both threads and the
-  `requireThreadOwner` gate treats soft-deleted threads as 404.
+- The owner-aware trash command is the sole thread soft-delete/restore boundary.
+  It locks the including-deleted thread row, then revalidates thread and live
+  project ownership before deciding either desired state. Missing and concealed
+  threads have the same thread-scoped not-found result.
+- **The complete trash command set is serialized.** Delete and restore decide
+  changed/no-op from the locked row. Only a real `deleted -> visible` transition
+  enqueues its targeted Work-context obligation; retries, concurrent no-ops, and
+  deletion never wake delivery.
 - A thread receives its project-unique slug when created with its first
   non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
   Collisions use `-2`, `-3`, and later mutations never regenerate the handle;
@@ -186,15 +197,22 @@ contract shapes.
   replay (capped at 10,000 entries).
 - Thread status is stored in DB using the domain vocabulary
   (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
-- `threads.active_leaf_turn_id` is the single logical head for lifecycle read
-  projections. Project/work lists and snapshots derive the closed `attention`
-  enum from that turn plus `thread_user_state.last_opened_at`: a
-  `waiting_interrupt` assistant head is `actionRequired`, and an idle completed
-  assistant head newer than the writer's acknowledgement is `unread`.
-- Opening a thread calls `POST /api/threads/:threadId/opened`, which upserts the
-  current writer's `last_opened_at`; this is the acknowledgement authority for
-  clearing `unread`. Opening does not clear `actionRequired`.
-- Draft-review attention remains an extension point. Establishing it requires
+- `threads.active_leaf_turn_id` anchors one visible-conversational-head policy:
+  projections walk its active lineage past hidden Work-context, compaction, and
+  non-custom system turns. Home, project/Work lists, and snapshots derive the
+  independent `actionRequired` fact from a `waiting_interrupt` assistant head.
+  Set-oriented SQL companions are parity-tested against the named domain policy.
+- Home returns Continue and Favorites only on the first page. Recent pagination
+  uses the strict shared Project-chat keyset codec over `(lastActivityAt DESC, threadId DESC)`;
+  every page excludes Continue and Favorites, so equal activity times remain
+  stable without duplicating a chat.
+- Work-associated chat pages use the same codec over thread update
+  time plus thread ID. The association filter is M:N history; row Work identity
+  always comes from the current primary membership. Projection and serialization
+  are bounded to 50 rows per page.
+- Project chat lists have no read/unread state. The user-state route and
+  repository persist Favorite only; opening a chat performs no state mutation.
+- Draft-review action-required state remains an extension point. Establishing it requires
   collab-domain branch/journal queries and review-state semantics, so the
   threads projector currently sources `actionRequired` only from the durable
   `ask_user` interrupt status already on the logical-head turn.

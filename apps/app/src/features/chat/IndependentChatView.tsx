@@ -34,6 +34,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     settled: historySettled,
   } = useThreadSnapshotSync(threadId);
   const projectId = thread?.projectId ?? null;
+
   const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const activeWork = works?.find((work) => work.id === thread?.workId) ?? null;
 

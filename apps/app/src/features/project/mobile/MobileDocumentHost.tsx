@@ -16,9 +16,9 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo } from "react";
-import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { contextTabFromFile } from "../context/context-tab-from-file";
@@ -32,23 +32,24 @@ const MOBILE_DOCUMENT_OWNER = "mobile-project-document-host";
 
 export type MobileDocumentHostProps = {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
 };
 
 export function MobileDocumentHost({
   projectId,
-  activeThreadId,
+  editorWorkId,
   activeContextScheme,
   activeContextPath,
 }: MobileDocumentHostProps) {
-  const workId = useContextWorkId(projectId, activeThreadId);
+  const workId = editorWorkId;
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
   const { tree, isError, isFetching } = useProjectContextTree(
     projectId,
     activeContextScheme ?? "kb",
-    { enabled: hasRouteDocument, activeThreadId },
+    { enabled: hasRouteDocument, workId: editorWorkId },
   );
 
   const activeTab = useMemo(() => {
@@ -58,6 +59,28 @@ export function MobileDocumentHost({
     const file = findContextFile(tree, activeContextPath);
     return file ? contextTabFromFile(activeContextScheme, file, workId) : null;
   }, [activeContextPath, activeContextScheme, hasRouteDocument, tree, workId]);
+
+  const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
+  useEffect(() => {
+    setActiveEditorDocumentId(activeEditorDocumentId);
+    return () => setActiveEditorDocumentId(null);
+  }, [activeEditorDocumentId, setActiveEditorDocumentId]);
+  const selectedReviewDraftId =
+    activeEditorDocumentId && controller.inlineReview?.documentId === activeEditorDocumentId
+      ? controller.inlineReview.draftId
+      : null;
+  const reviewRoomName =
+    activeEditorDocumentId && selectedReviewDraftId
+      ? reviewRoomNameForDraft(activeEditorDocumentId, selectedReviewDraftId)
+      : null;
+  const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
+
+  useEffect(() => {
+    if (!activeEditorDocumentId || !selectedReviewDraftId) return;
+    const session = getDocumentSessionRegistry().get(activeEditorDocumentId);
+    session.suspendPresence();
+    return () => session.resumePresence();
+  }, [activeEditorDocumentId, selectedReviewDraftId]);
 
   useEffect(() => {
     if (activeTab?.editable) {
@@ -102,11 +125,7 @@ export function MobileDocumentHost({
 
   if (!activeTab.editable) {
     return (
-      <ContextViewerBareHost
-        projectId={projectId}
-        activeThreadId={activeThreadId}
-        tab={activeTab}
-      />
+      <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
     );
   }
 
@@ -130,6 +149,10 @@ export function MobileDocumentHost({
           showToolbar={false}
           ariaLabel={t`Read-only live document`}
           showCollaborationDecorations={false}
+          reviewDraftId={reviewDraftId}
+          reviewRoomName={reviewRoomName}
+          reviewWorkId={reviewDraftId ? controller.workId : null}
+          onReviewSessionUnavailable={controller.exitInlineReview}
         />
       </Suspense>
     </div>

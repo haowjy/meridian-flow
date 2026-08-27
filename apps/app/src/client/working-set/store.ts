@@ -61,6 +61,18 @@ export function workingSetRouteEquals(
   );
 }
 
+/** First recent route that can be opened in the current Editor Work. */
+export function recentRouteForEditorWork(
+  routes: readonly WorkingSetRoute[],
+  editorWorkId: string | null,
+): WorkingSetRoute | null {
+  return (
+    routes.find(
+      (route) => !isWorkScopedProjectContextScheme(route.scheme) || route.workId === editorWorkId,
+    ) ?? null
+  );
+}
+
 function snapshotEquals(left: WorkingSetSnapshot, right: WorkingSetSnapshot): boolean {
   return (
     left.lastThreadId === right.lastThreadId &&

@@ -1,12 +1,13 @@
 /** POST /api/projects/[projectId]/threads: creates a thread in a project (with ownership + work attachment). Depends on the auth gate and the thread-creation helper. */
-import { type CreateThreadRequest, serializeTransport } from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import {
-  parseNullableRequestId,
-  parseOptionalRequestId,
-  requireRequestId,
-} from "../../../../../lib/request-id.js";
+  type CreateThreadRequest,
+  meridianErrorFromSystem,
+  serializeTransport,
+} from "@meridian/contracts/protocol";
+import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
+import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { throwHttpInterrupt } from "../../../../../lib/interrupt-boundary.js";
+import { parseOptionalRequestId, requireRequestId } from "../../../../../lib/request-id.js";
 import {
   AgentBindingNotFoundError,
   createThreadForProject,
@@ -39,16 +40,18 @@ export default defineEventHandler(async (event) => {
         title: body.title ?? null,
         systemPrompt: body.systemPrompt ?? null,
         currentAgent: body.currentAgent ?? null,
-        workId: parseNullableRequestId(body.workId, "workId") ?? null,
+        workId: parseOptionalRequestId(body.workId, "workId"),
       },
     );
 
     event.res.status = 201;
     return serializeTransport(thread);
   } catch (error) {
-    // An unresolvable agent slug is a client error, not a server fault.
-    if (error instanceof AgentBindingNotFoundError || error instanceof InvalidWorkAttachmentError) {
-      throw createError({ statusCode: 400, message: error.message });
+    if (error instanceof AgentBindingNotFoundError) {
+      throwHttpInterrupt(meridianErrorFromSystem("agent_not_found", error.message), 400);
+    }
+    if (error instanceof InvalidWorkAttachmentError) {
+      throwHttpInterrupt(meridianErrorFromSystem("work_unavailable", error.message), 400);
     }
     throw error;
   }

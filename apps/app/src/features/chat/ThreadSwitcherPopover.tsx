@@ -1,12 +1,12 @@
 /**
  * ThreadSwitcherPopover — project thread navigation from the chat pane header.
  *
- * Keeps switching primary, with recency and attention visible at a glance;
+ * Keeps switching primary, with recency and action-required state visible at a glance;
  * rename stays attached only to the active row and creation stays in the footer.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ThreadAttention, ThreadListItem } from "@meridian/contracts/protocol";
+import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { useCreateChat } from "@/features/project/chat/use-create-chat";
-import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
+import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 
 import {
   filterThreadsByTitle,
-  hasOtherThreadAttention,
+  hasOtherThreadActionRequired,
   shouldShowThreadSearch,
 } from "./thread-switcher";
 
@@ -80,7 +80,7 @@ export function ThreadSwitcherPopover({
   const visibleUngrouped = ungroupedThreads.filter((thread) => filteredIds.has(thread.id));
   const showGroupHeaders = workItems.length > 1;
   const showSearch = shouldShowThreadSearch(primaryThreads.length);
-  const triggerHasAttention = hasOtherThreadAttention(primaryThreads, activeThreadId);
+  const triggerHasActionRequired = hasOtherThreadActionRequired(primaryThreads, activeThreadId);
 
   const changeOpen = (nextOpen: boolean) => {
     setOpen(nextOpen);
@@ -142,11 +142,11 @@ export function ThreadSwitcherPopover({
           )}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
-          {triggerHasAttention ? (
+          {triggerHasActionRequired ? (
             <span
               role="img"
-              aria-label={t`Another chat needs attention`}
-              className="size-1.5 shrink-0 rounded-full bg-jade-text"
+              aria-label={t`Another chat needs your answer`}
+              className="size-1.5 shrink-0 rounded-full bg-status-warning"
             />
           ) : null}
           <ChevronDown
@@ -310,7 +310,7 @@ function ThreadSwitchItem({
         {rel ? (
           <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
         ) : null}
-        <AttentionDot attention={thread.attention} />
+        <ActionRequiredDot actionRequired={thread.actionRequired} />
       </button>
       {active ? (
         <IconButton
@@ -328,21 +328,15 @@ function ThreadSwitchItem({
   );
 }
 
-function AttentionDot({ attention }: { attention: ThreadAttention }) {
-  if (attention === "none") return null;
-  const label =
-    attention === "actionRequired"
-      ? t`The AI asked you a question`
-      : t`New reply since you last opened`;
+function ActionRequiredDot({ actionRequired }: { actionRequired: boolean }) {
+  if (!actionRequired) return null;
+  const label = t`The AI asked you a question`;
   return (
     <span
       role="img"
       aria-label={label}
       title={label}
-      className={cn(
-        "size-1.5 shrink-0 rounded-full",
-        attention === "actionRequired" ? "bg-status-warning" : "bg-jade-text",
-      )}
+      className="size-1.5 shrink-0 rounded-full bg-status-warning"
     />
   );
 }

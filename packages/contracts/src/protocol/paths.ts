@@ -40,6 +40,20 @@ export function apiProjectThreadsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/threads`;
 }
 
+export function apiWorkThreadsPath(workId: string, cursor?: string | null): string {
+  const path = `/api/works/${workId}/threads`;
+  return cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path;
+}
+
+export function apiProjectHomeFeedPath(projectId: string, cursor?: string | null): string {
+  const path = `${apiProjectPath(projectId)}/home-feed`;
+  return cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path;
+}
+
+export function apiThreadUserStatePath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/user-state`;
+}
+
 export function apiProjectWorksPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/works`;
 }
@@ -238,10 +252,6 @@ export function apiThreadSnapshotPath(
   }
   const query = search.toString();
   return `${API_THREADS_PATH}/${threadId}/snapshot${query ? `?${query}` : ""}`;
-}
-
-export function apiThreadOpenedPath(threadId: string): string {
-  return `${apiThreadPath(threadId)}/opened`;
 }
 
 export function apiThreadsWsPath(): string {

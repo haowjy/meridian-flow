@@ -4,11 +4,12 @@
  * owning thread routing itself.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme, Thread, Work } from "@meridian/contracts/protocol";
+import type { Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
+import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
 import { SubagentTaskCard } from "./SubagentTaskCard";
@@ -20,7 +21,7 @@ export type ChatScreenProps = {
   activeWork: Work | null;
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
-  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
 };
 
 /** Renders the resolved thread, with parent context when it is a subagent. */
@@ -29,7 +30,7 @@ export function ChatScreen({
   threadId,
   activeWork,
   onSelectThread,
-  onSelectContextPath,
+  onOpenContextTarget,
 }: ChatScreenProps) {
   const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
 
@@ -58,7 +59,7 @@ export function ChatScreen({
       activeWork={activeWork}
       projectThreads={projectThreads ?? []}
       onSelectThread={onSelectThread}
-      onSelectContextPath={onSelectContextPath}
+      onOpenContextTarget={onOpenContextTarget}
     />
   );
 }
@@ -69,14 +70,14 @@ function ChatScreenLoaded({
   activeWork,
   projectThreads,
   onSelectThread,
-  onSelectContextPath,
+  onOpenContextTarget,
 }: {
   projectId: string;
   threadId: string;
   activeWork: Work | null;
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
-  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
 }) {
   const {
     thread: snapshotThread,
@@ -114,7 +115,7 @@ function ChatScreenLoaded({
         <ProjectChatContextNavigationProvider
           projectId={projectId}
           activeWork={activeWork}
-          onSelectContextPath={onSelectContextPath}
+          onOpenContextTarget={onOpenContextTarget}
         >
           <ChatView
             threadId={threadId}

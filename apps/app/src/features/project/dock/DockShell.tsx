@@ -28,7 +28,7 @@ export type DockShellProps = {
   screen: ScreenKey;
   onClose?: () => void;
   threadSelect?: ReactNode;
-  children: ReactNode;
+  children: ReactNode | ((showPrimary: boolean) => ReactNode);
 };
 
 export function DockShell({ placement, screen, onClose, threadSelect, children }: DockShellProps) {
@@ -67,7 +67,7 @@ export function DockShell({ placement, screen, onClose, threadSelect, children }
           inert={!showPrimary}
           aria-hidden={!showPrimary}
         >
-          {children}
+          {typeof children === "function" ? children(showPrimary) : children}
         </div>
         {showChanges ? <DockChangesView className="absolute inset-0" /> : null}
       </div>

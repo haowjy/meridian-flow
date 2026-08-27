@@ -1,6 +1,6 @@
 /**
- * AgentPicker — Radix popover listing installed then built-in agents from the
- * project catalog with quiet loading, empty, and error states.
+ * AgentPickerPanel — installed then built-in agents from the project catalog
+ * with quiet loading, empty, and error states.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -9,54 +9,33 @@ import type { ReactNode, RefObject } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
-import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
   dropdownResultsVariants,
   dropdownRowVariants,
-  dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { sourceBadgeLabel } from "@/lib/source-badge";
 import { cn } from "@/lib/utils";
 
 import { resolveAgentFromCatalog } from "./resolve-agent";
 
-export type AgentPickerProps = {
+type AgentPickerPanelProps = {
   status: ProjectAgentsStatus;
   selectedSlug: string;
   onSelect: (slug: string) => void;
-  trigger: ReactNode;
+  focusRefs?: {
+    selected: RefObject<HTMLButtonElement | null>;
+    first: RefObject<HTMLButtonElement | null>;
+    retry: RefObject<HTMLButtonElement | null>;
+  };
 };
-
-export function AgentPicker({ status, selectedSlug, onSelect, trigger }: AgentPickerProps) {
-  const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
-  return (
-    <Popover>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        {...densityPopoverCollisionProps}
-        align="start"
-        className={dropdownSurfaceVariants({ measure: "identity", page: "picker" })}
-      >
-        <AgentPickerPanel status={status} selectedSlug={selectedSlug} onSelect={onSelect} />
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 export function AgentPickerPanel({
   status,
   selectedSlug,
   onSelect,
   focusRefs,
-}: Omit<AgentPickerProps, "trigger"> & {
-  focusRefs?: {
-    selected: RefObject<HTMLButtonElement | null>;
-    first: RefObject<HTMLButtonElement | null>;
-    retry: RefObject<HTMLButtonElement | null>;
-  };
-}) {
+}: AgentPickerPanelProps) {
   const agents = status.agents ?? [];
   const installed = agents.filter((agent) => agent.source === "package" || agent.source === "user");
   const builtins = agents.filter((agent) => agent.source === "builtin");
@@ -69,7 +48,11 @@ export function AgentPickerPanel({
           <Trans>Loading agents…</Trans>
         </PickerHint>
       ) : status.status === "error" ? (
-        <ErrorHint onRetry={status.refetch} retryRef={focusRefs?.retry} />
+        <InlineErrorRow
+          message={t`Couldn't load agents.`}
+          onRetry={status.refetch}
+          retryRef={focusRefs?.retry}
+        />
       ) : status.status === "empty" ? (
         <PickerHint>
           <Trans>No agents available.</Trans>
@@ -174,16 +157,4 @@ function AgentGroup({
 
 function PickerHint({ children }: { children: ReactNode }) {
   return <p className="px-3 py-4 text-sm text-muted-foreground">{children}</p>;
-}
-
-function ErrorHint({
-  onRetry,
-  retryRef,
-}: {
-  onRetry: () => void;
-  retryRef?: RefObject<HTMLButtonElement | null>;
-}) {
-  return (
-    <InlineErrorRow message={t`Couldn't load agents.`} onRetry={onRetry} retryRef={retryRef} />
-  );
 }

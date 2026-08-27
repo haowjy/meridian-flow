@@ -145,7 +145,6 @@ describe("useThreadDurableProjections", () => {
     await act(async () => {});
     const client = view.queryClient();
     client.setQueryData(projectQueryKeys.works("project-1"), {
-      defaultWorkId: "work-a",
       works: [{ id: "work-c", name: "C" }],
     });
     client.setQueryData(projectQueryKeys.threads("project-1"), [
@@ -176,5 +175,53 @@ describe("useThreadDurableProjections", () => {
           JSON.stringify(key) === JSON.stringify(threadQueryKeys.workProjectionCursor("thread-1")),
       ),
     ).toHaveLength(1);
+  });
+
+  it("converges description-only model metadata from its durable receipt", async () => {
+    mocks.listChangeTrailShells.mockResolvedValue([]);
+    const view = mount();
+    await act(async () => {});
+    const client = view.queryClient();
+    const catalog = projectQueryKeys.works("project-1");
+    const workA = projectQueryKeys.workThreads("project-1", "work-a");
+    const workB = projectQueryKeys.workThreads("project-1", "work-b");
+    const unrelated = projectQueryKeys.workThreads("project-2", "work-z");
+    client.setQueryData(catalog, { works: [] });
+    client.setQueryData(workA, []);
+    client.setQueryData(workB, []);
+    client.setQueryData(unrelated, []);
+
+    await act(async () => {
+      mocks.handlers?.onEvent({
+        seq: "10",
+        event: {
+          type: EventType.TOOL_CALL_RESULT,
+          messageId: "turn-1",
+          toolCallId: "call-1",
+          content: "{}",
+          metadata: {
+            workReceipt: {
+              operation: "update",
+              category: "mutate",
+              changed: true,
+              workId: "work-a",
+              workName: "A",
+              before: { name: "A", goal: null, description: null, status: "active" },
+              after: { name: "A", goal: null, description: "Notes", status: "active" },
+              inverse: {
+                command: "update",
+                workId: "work-a",
+                state: { name: "A", goal: null, description: null, status: "active" },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    expect(client.getQueryState(catalog)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(workA)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(workB)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(unrelated)?.isInvalidated).toBe(false);
   });
 });

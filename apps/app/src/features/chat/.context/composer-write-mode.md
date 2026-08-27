@@ -17,7 +17,8 @@ There is no first/default-Work fallback.
 Undo. `useThreadDurableProjections` owns transport projection, while
 `convergeThreadWorkBinding` owns all cache effects. `ComposerWorkControl`
 renders the measured inline/overflow entry only in the composer; headers remain
-chat identity surfaces.
+chat identity surfaces. Work management and navigation never call this explicit
+rebind path.
 
 The row passes Agent, Draft / Auto-apply, and Work descriptors to the shared
 measured `ComposerToolbar`. It observes the actual flex allocation left beside
@@ -36,14 +37,16 @@ focus; feature controls own domain state and page content. See the
 that behavior through cache convergence and durable projection. Writer and LLM
 rebinding share the canonical server transition.
 
-`ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
-count only to open confirmation quickly. Every Auto-apply selection sends an
+The neutral `useSelectedWorkWriteModeToolbarControl` owns the selected-Work
+mutation and uses the active-draft count only to open confirmation quickly.
+Every Auto-apply selection sends an
 unconfirmed request; the server-vended count of reviewable content branches is
 the number shown in the confirmation. It is not a raw journal-row or active
 branch count: manifest-membership bookkeeping does not represent prose waiting
 for review. Moving Draft → Auto-apply with pending changes keeps Draft selected
 and opens the **Drafts are waiting** popover. Cancel preserves the mode; Review
-changes uses the same `useAiDraftLauncher` entry as every other review control;
+changes receives the project dock's `useAiDraftLauncher` entry from each
+composer adapter, the same entry used by every other review control;
 Apply all and switch is the only action that sends `confirmedPush`. It asks the
 server to apply the same canonical pending set, including any manifest companion
 needed to publish new-document membership, and only then switch policy. A failed
@@ -60,11 +63,14 @@ need the unresolved projection. Auto-apply remains selectable so its
 unconfirmed request can ask the server; loading client state must never imply
 that nothing is pending.
 
-Home bootstrap is a distinct path: its optimistic thread has no Work while the
-first message is handed off, and project plus default-Work creation occur
-mid-handoff. That first turn therefore uses the new Work's `direct` default
-before the composer can expose the mode control. In-project new threads already
-have a Work and do not have this gap.
+The shared Work picker and selected-Work write-mode presentation live in the
+neutral `components/app/work-composer-controls` boundary. Home and Chat adapt
+that presentation to different commands: Home edits prospective creation state,
+while Chat can durably rebind an idle existing thread. Home's selected Work is
+already durable, so its write-mode control reads and mutates that Work's real
+policy before thread creation; it does not invent a provisional mode. Draft
+review launch behavior is injected by each project-shell adapter rather than
+imported into the neutral controls.
 
 Each assistant turn durably records the Work write mode read when that turn is
 created. Tool vocabulary and receipt interpretation use the turn's recorded
@@ -80,6 +86,12 @@ another entry. `useSyncExternalStore` supplies a stable first descriptor during
 SSR and the rotated descriptor on the client, while locale resolution happens
 inside the hook. Composer owns rotation; its `placeholder` prop remains the
 explicit override used by the Home hero.
+
+Home and ordinary Chat share a neutral, shadowless Composer surface. Their
+different placements intentionally retain different radius and input-height
+geometry: Home's entry placement is not the Chat footer. Do not add a
+Home-only shadow or flatten those placement-specific geometry differences in
+the name of shared implementation.
 
 The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript
 resize loop requires `field-sizing: fixed`. Keep that override inline:

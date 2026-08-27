@@ -53,7 +53,14 @@ export const projectQueryKeys = {
   list: ["projects", "list"] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
+  workThreads: (projectId: string, workId?: string) =>
+    workId
+      ? (["projects", projectId, "work-threads", workId] as const)
+      : (["projects", projectId, "work-threads"] as const),
   works: (projectId: string) => ["projects", projectId, "works"] as const,
+  homeFeed: (projectId: string) => ["projects", projectId, "home-feed"] as const,
+  threadUserState: (projectId: string, threadId: string) =>
+    ["projects", projectId, "thread-user-state", threadId] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,
   workDraftPreview: (projectId: string, workId: string, documentId: string, draftId?: string) =>

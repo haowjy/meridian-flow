@@ -13,7 +13,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabsStore } from "@/client/stores";
@@ -23,15 +23,26 @@ import {
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
-import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
+import {
+  DraftReviewBoundary,
+  type DraftReviewContextValue,
+  useDraftReviewScopeValue,
+} from "@/features/chat/DraftReviewProvider";
 import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
+import { resolveCatalogWork } from "./catalog-work-resolution";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
+import {
+  EditorReviewHandoffProvider,
+  EditorReviewIntentClaimant,
+} from "./dock/editor-review-handoff";
+import { EditorWorkRecovery } from "./EditorWorkRecovery";
+import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -42,12 +53,19 @@ import {
   useProjectSurfacePrefsStore,
 } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
+import type {
+  ContextRouteTarget,
+  ProjectRouteCommands,
+  RouteWorkResolution,
+} from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
+import { WorkPaneController } from "./WorkPaneController";
 import {
+  type ContextDeskReconciliationScope,
   contextDeskReconciliation,
   seedWorkingSetTabs,
   validateContextDeskTabs,
@@ -66,6 +84,10 @@ export type ProjectViewProps = {
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
   activeThreadId: string | null;
+  /** Explicit route Work state; loading/error never collapses into absence. */
+  routeWork: RouteWorkResolution;
+  /** Awaitable route-owner commands used by future collection/detail leaves. */
+  routeCommands: ProjectRouteCommands;
   /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
   activeContextScheme: ProjectContextTreeScheme | null;
   /** Active context folder, when `screen=context`. */
@@ -75,7 +97,7 @@ export type ProjectViewProps = {
   /** Phone-only routed Results auxiliary surface (`?results=`). Desktop ignores it. */
   resultsOpen: boolean;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectThread: (threadId: string) => void;
+  onSelectThread: (threadId: string) => Promise<void>;
   onSelectDockThread: (threadId: string) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
@@ -83,11 +105,10 @@ export type ProjectViewProps = {
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
-  onSelectContextPath: (
-    path: string,
-    scheme?: ProjectContextTreeScheme,
+  onOpenContextTarget: (
+    target: ContextRouteTarget,
     options?: { replace?: boolean },
-  ) => void;
+  ) => Promise<void>;
   onOpenResults: () => void;
   onCloseResults: () => void;
 };
@@ -106,11 +127,30 @@ export function ProjectView(props: ProjectViewProps) {
     props.projectId,
     props.activeThreadId,
   );
-  const { works } = useWorks(props.projectId);
-  const workId = projectThreads?.find((thread) => thread.id === resolvedThreadId)?.workId ?? null;
-  const activeWork = works?.find((work) => work.id === workId) ?? null;
+  const worksQuery = useWorks(props.projectId);
+  const { works } = worksQuery;
+  const chatWorkId =
+    projectThreads?.find((thread) => thread.id === resolvedThreadId)?.workId ?? null;
+  const chatWork = works?.find((work) => work.id === chatWorkId) ?? null;
+  const catalogWork = resolveCatalogWork(
+    worksQuery.status === "error"
+      ? { status: "error" }
+      : worksQuery.status === "loading" || worksQuery.status === "disabled"
+        ? { status: "loading" }
+        : { status: "ready", works: works ?? [] },
+  );
+  const editorScope = resolveEditorWorkScope(props.routeWork, chatWorkId, catalogWork);
+  const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
   const reconciledDeskRef = useRef<string | null>(null);
+  const deskReconciliationGenerationRef = useRef(0);
+  const liveDeskReconciliationRef = useRef<ContextDeskReconciliationScope | null>(null);
+  useEffect(
+    () => () => {
+      liveDeskReconciliationRef.current = null;
+    },
+    [],
+  );
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -123,24 +163,34 @@ export function ProjectView(props: ProjectViewProps) {
   useEffect(() => {
     if (!deskHydrated || works === null) return;
     const reconciliation = contextDeskReconciliation(workingSetHydration);
-    const reconciliationKey = `${props.projectId}:${reconciliation}:${activeWork?.id ?? "no-work"}`;
+    const reconciliationKey = `${props.projectId}:${reconciliation}:${editorWorkId ?? "no-work"}`;
     if (reconciledDeskRef.current === reconciliationKey) return;
     reconciledDeskRef.current = reconciliationKey;
+    const scope = {
+      projectId: props.projectId,
+      editorWorkId,
+      generation: ++deskReconciliationGenerationRef.current,
+    };
+    liveDeskReconciliationRef.current = scope;
+    const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
+      liveDeskReconciliationRef.current?.projectId === candidate.projectId &&
+      liveDeskReconciliationRef.current.editorWorkId === candidate.editorWorkId &&
+      liveDeskReconciliationRef.current.generation === candidate.generation;
     if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
       void seedWorkingSetTabs({
         queryClient,
-        projectId: props.projectId,
         routes: workingSetHydration.row.recentRoutes,
-        routeWorkId: activeWork?.id ?? null,
+        scope,
+        isLiveScope,
       });
       return;
     }
     void validateContextDeskTabs({
       queryClient,
-      projectId: props.projectId,
-      routeWorkId: activeWork?.id ?? null,
+      scope,
+      isLiveScope,
     });
-  }, [activeWork?.id, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
+  }, [editorWorkId, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
     props.onSelectThread(resolvedThreadId);
@@ -151,25 +201,81 @@ export function ProjectView(props: ProjectViewProps) {
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
   const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
   const hydrated = prefsHydrated && deskHydrated;
-  const resolvedProps = { ...props, activeThreadId: resolvedThreadId, activeWork };
+  const onSelectEditorContextPath = useCallback(
+    (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {
+      if (!editorWorkId || !scheme) return;
+      void props.onOpenContextTarget({ path, scheme, workId: editorWorkId }, options);
+    },
+    [editorWorkId, props.onOpenContextTarget],
+  );
+  const resolvedProps = {
+    ...props,
+    onSelectContextPath: onSelectEditorContextPath,
+    activeThreadId: resolvedThreadId,
+    chatWork,
+    editorScope,
+    editorWorkId,
+    retryEditorWork: worksQuery.refetch,
+    onOpenThread: (threadId: string) => void props.onSelectThread(threadId),
+  };
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <DraftReviewProvider
-          projectId={props.projectId}
-          workId={activeWork?.id ?? null}
-          threadId={resolvedThreadId}
-        >
-          <HydratedProject {...resolvedProps} />
-        </DraftReviewProvider>
+        <HydratedReviewProject
+          {...resolvedProps}
+          chatWorkId={chatWorkId}
+          chatThreadId={resolvedThreadId}
+        />
       ) : null}
     </div>
   );
 }
 
-type ResolvedProjectViewProps = ProjectViewProps & { activeWork: Work | null };
+export type ResolvedProjectViewProps = ProjectViewProps & {
+  onSelectContextPath: (
+    path: string,
+    scheme?: ProjectContextTreeScheme,
+    options?: { replace?: boolean },
+  ) => void;
+  chatWork: Work | null;
+  editorScope: EditorWorkScope;
+  editorWorkId: string | null;
+  retryEditorWork: () => void;
+  onOpenThread: (threadId: string) => void;
+};
 
-function HydratedProject(props: ResolvedProjectViewProps) {
+export type ReviewScopedProjectProps = ResolvedProjectViewProps & {
+  chatReview: DraftReviewContextValue;
+  editorReview: DraftReviewContextValue;
+};
+
+function HydratedReviewProject({
+  chatWorkId,
+  chatThreadId,
+  ...props
+}: ResolvedProjectViewProps & { chatWorkId: string | null; chatThreadId: string | null }) {
+  const chatReview = useDraftReviewScopeValue({
+    projectId: props.projectId,
+    workId: chatWorkId,
+    threadId: chatThreadId,
+  });
+  const editorReview = useDraftReviewScopeValue({
+    projectId: props.projectId,
+    workId: props.editorWorkId,
+    threadId: null,
+  });
+
+  return (
+    <EditorReviewHandoffProvider
+      projectId={props.projectId}
+      openContextRoute={props.onOpenContextTarget}
+    >
+      <HydratedProject {...props} chatReview={chatReview} editorReview={editorReview} />
+    </EditorReviewHandoffProvider>
+  );
+}
+
+function HydratedProject(props: ReviewScopedProjectProps) {
   const usePhone = usePhoneShell();
   if (usePhone === null) return null;
   return usePhone ? <MobileProject {...props} /> : <DesktopProject {...props} />;
@@ -190,11 +296,11 @@ function expandToggle(
  * surfaces; per-screen rendering is delegated to pane controllers that receive
  * only the props they need.
  */
-function DesktopProject(props: ResolvedProjectViewProps) {
+function DesktopProject(props: ReviewScopedProjectProps) {
   // Inline review on the Editor screen holds the left rail collapsed to give
   // the manuscript prose width. The hold is derived from review being open and
   // never written to prefs, so the writer's saved rail state returns by itself.
-  const proseFocus = useReviewProseFocus(props.activeScreen);
+  const proseFocus = useReviewProseFocus(props.activeScreen, props.editorReview);
   // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
   // merged SurfaceLayoutMap; that single subscription drives all layout-driven
   // re-renders — no separate whole-prefs subscription is needed.
@@ -250,7 +356,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
         <LeftSidebar
           projectId={props.projectId}
           activeScreen={props.activeScreen}
-          activeThreadId={props.activeThreadId}
+          editorWorkId={props.editorWorkId}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           onSelectScreen={props.onSelectScreen}
@@ -262,28 +368,45 @@ function DesktopProject(props: ResolvedProjectViewProps) {
     {
       id: "context-rail",
       children: (
-        <ContextSidebar
-          threadId={props.activeThreadId}
-          projectId={props.projectId}
-          onClose={close("context-rail")}
-        />
+        <DraftReviewBoundary value={props.chatReview}>
+          <ContextSidebar
+            threadId={props.activeThreadId}
+            projectId={props.projectId}
+            onClose={close("context-rail")}
+          />
+        </DraftReviewBoundary>
       ),
     },
     {
       id: "context-viewer",
-      children: (
-        <ContextViewerSurfaceController
-          projectId={props.projectId}
-          activeThreadId={props.activeThreadId}
-          activeContextScheme={props.activeContextScheme}
-          activeContextPath={props.activeContextPath}
-          active={props.activeScreen === "context"}
-          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-          dockToggle={surfaceToggle("chat", t`Expand chat`)}
-          onSelectContextPath={props.onSelectContextPath}
-          onClearContextDestination={props.onExitContextScheme}
-        />
-      ),
+      children:
+        props.editorScope.status === "ready" ? (
+          <DraftReviewBoundary value={props.editorReview}>
+            <EditorReviewIntentClaimant
+              editorWorkId={props.editorWorkId}
+              activeScheme={props.activeContextScheme}
+              activePath={props.activeContextPath}
+            />
+            <ContextViewerSurfaceController
+              projectId={props.projectId}
+              editorWorkId={props.editorWorkId}
+              activeContextScheme={props.activeContextScheme}
+              activeContextPath={props.activeContextPath}
+              active={props.activeScreen === "context"}
+              sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+              dockToggle={surfaceToggle("chat", t`Expand chat`)}
+              onSelectContextPath={props.onSelectContextPath}
+              onOpenContextTarget={props.onOpenContextTarget}
+              onClearContextDestination={props.onExitContextScheme}
+            />
+          </DraftReviewBoundary>
+        ) : (
+          <EditorWorkRecovery
+            scope={props.editorScope}
+            onRetry={props.retryEditorWork}
+            onOpenWork={() => props.onSelectScreen("work")}
+          />
+        ),
     },
     {
       id: "chat",
@@ -306,25 +429,27 @@ function DesktopProject(props: ResolvedProjectViewProps) {
           ) : null}
           {/* This keyed surface remains the same mounted element when its slot
               moves between center and dock; placement changes only its chrome. */}
-          <ChatSurface
-            key="chat-surface"
-            projectId={props.projectId}
-            threadId={props.activeThreadId}
-            activeWork={props.activeWork}
-            activeScreen={screen}
-            // Centered chat owns the route (`?screen` follows it); the dock must
-            // only change which conversation it shows, never the screen — so it
-            // uses onSelectDockThread (sets `?thread`, keeps `?screen`).
-            onSelectThread={
-              chatPlacement === "center" ? props.onSelectThread : props.onSelectDockThread
-            }
-            placement={chatPlacement}
-            // Mounted-but-hidden when the dock is collapsed, so the live
-            // conversation survives a close/reopen.
-            visible={chatPlacement === "center" || isOpen("chat")}
-            onCloseDock={close("chat")}
-            onSelectContextPath={props.onSelectContextPath}
-          />
+          <DraftReviewBoundary value={props.chatReview}>
+            <ChatSurface
+              key="chat-surface"
+              projectId={props.projectId}
+              threadId={props.activeThreadId}
+              activeWork={props.chatWork}
+              activeScreen={screen}
+              // Centered chat owns the route (`?screen` follows it); the dock must
+              // only change which conversation it shows, never the screen — so it
+              // uses onSelectDockThread (sets `?thread`, keeps `?screen`).
+              onSelectThread={
+                chatPlacement === "center" ? props.onSelectThread : props.onSelectDockThread
+              }
+              placement={chatPlacement}
+              // Mounted-but-hidden when the dock is collapsed, so the live
+              // conversation survives a close/reopen.
+              visible={chatPlacement === "center" || isOpen("chat")}
+              onCloseDock={close("chat")}
+              onOpenContextTarget={props.onOpenContextTarget}
+            />
+          </DraftReviewBoundary>
         </div>
       ),
     },
@@ -350,7 +475,7 @@ function DesktopProject(props: ResolvedProjectViewProps) {
 
 type SurfaceToggleFactory = (surfaceId: SurfaceId, label: string) => PaneHeaderRailToggle;
 
-function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
+function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
   switch (props.activeScreen) {
     case "home":
       return (
@@ -359,6 +484,18 @@ function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggle
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
           onSelectThread={props.onSelectThread}
+          onOpenThread={props.onOpenThread}
+        />
+      );
+    case "work":
+      return (
+        <WorkPaneController
+          projectId={props.projectId}
+          routeWork={props.routeWork}
+          routeCommands={props.routeCommands}
+          onOpenThread={props.onOpenThread}
+          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+          chatToggle={surfaceToggle("chat", t`Expand chat`)}
         />
       );
     case "chat":

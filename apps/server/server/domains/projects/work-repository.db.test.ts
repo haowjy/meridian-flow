@@ -9,6 +9,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 
 const USER_ID = "00000000-0000-4000-8000-000000000841";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000842";
+const THREAD_ID = "00000000-0000-4000-8000-000000000843";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("Work repository lifecycle (postgres)", () => {});
@@ -23,6 +24,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       createDrizzleProjectWorkRepository,
       deleteWorkTransition,
+      restoreWork,
       updateWorkTransition,
       WorkDeleteBlockedError,
       WorkRestoreConflictError,
@@ -131,6 +133,67 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       releaseDelete();
       await concurrentDelete;
       await expect(commandDelete).resolves.toMatchObject({ changed: false });
+    });
+
+    it("serializes Work restore and enqueues only the transition that restores", async () => {
+      const { createDrizzleRepositories } = await import("../threads/adapters/drizzle/index.js");
+      await db.insert(schema.threads).values({
+        id: THREAD_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Work restore observer",
+      });
+      const work = await works.create({ projectId: PROJECT_ID, name: "Restorable" });
+      await works.softDelete(work.id);
+      const threads = createDrizzleRepositories(db);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let firstEnqueues = 0;
+      let secondEnqueues = 0;
+      let entered!: () => void;
+      const firstEntered = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+
+      const first = restoreWork(
+        {
+          works,
+          workContextDelivery: {
+            async projectChanged(projectId) {
+              firstEnqueues += 1;
+              await threads.workContextDeliveries.enqueueProject(projectId);
+              entered();
+              await gate;
+            },
+          },
+        },
+        work.id,
+      );
+      await firstEntered;
+      const second = restoreWork(
+        {
+          works,
+          workContextDelivery: {
+            async projectChanged(projectId) {
+              secondEnqueues += 1;
+              await threads.workContextDeliveries.enqueueProject(projectId);
+            },
+          },
+        },
+        work.id,
+      );
+      const secondState = await Promise.race([
+        second.then(() => "completed"),
+        delay(30, "blocked"),
+      ]);
+      expect(secondState).toBe("blocked");
+      release();
+      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+      expect(firstEnqueues).toBe(1);
+      expect(secondEnqueues).toBe(0);
+      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
     });
 
     it("makes identical locked updates storage no-ops and applies real changes once", async () => {

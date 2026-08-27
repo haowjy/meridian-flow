@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { ArrowLeft, ChevronRight, Ellipsis } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useId, useLayoutEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
@@ -8,6 +8,7 @@ import {
   dropdownRowVariants,
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
+import { OverflowMenuTrigger } from "@/components/ui/overflow-menu";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { deriveToolbarView } from "./composer-toolbar-navigation";
@@ -52,10 +53,7 @@ function focusVerified(node: HTMLElement | null | undefined, allowAriaDisabled =
   return document.activeElement === target || Boolean(target.contains(document.activeElement));
 }
 
-const overflowControlSize = {
-  size: "icon-sm" as const,
-  className: "[@media(pointer:coarse)]:size-11",
-};
+const overflowControlClassName = "[@media(pointer:coarse)]:size-11";
 
 export function ComposerToolbar({
   model,
@@ -272,11 +270,10 @@ export function ComposerToolbar({
           );
         })}
         {overflow.length ? (
-          <Button
+          <OverflowMenuTrigger
             ref={overflowTrigger}
-            variant="quiet"
-            {...overflowControlSize}
             type="button"
+            className={overflowControlClassName}
             aria-label={t`More composer controls`}
             aria-haspopup="dialog"
             aria-controls={view.kind === "overflow" ? contentId : undefined}
@@ -286,25 +283,19 @@ export function ComposerToolbar({
             onClick={() => {
               if (!locked) dispatch({ type: "root.triggered" });
             }}
-          >
-            <Ellipsis className="size-4" aria-hidden />
-          </Button>
+          />
         ) : null}
-        <Button
+        <OverflowMenuTrigger
           ref={probe}
-          variant="quiet"
-          {...overflowControlSize}
           type="button"
           tabIndex={-1}
           inert
           aria-hidden
           className={cn(
-            overflowControlSize.className,
+            overflowControlClassName,
             "pointer-events-none invisible absolute left-0 top-0",
           )}
-        >
-          <Ellipsis className="size-4" />
-        </Button>
+        />
       </fieldset>
       <PopoverAnchor virtualRef={virtualRef} />
       {view.kind !== "closed" ? (

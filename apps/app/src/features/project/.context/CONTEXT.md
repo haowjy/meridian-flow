@@ -1,14 +1,12 @@
 # features/project — Desktop project shell
 
 The authenticated project project: one persistent multi-panel desktop surface
-that swaps primary *destinations* (Home / Chat / Editor) without tearing down
+that swaps primary *destinations* (Home / Work / Chat / Editor) without tearing down
 its stateful surfaces. This file is the colocated contract for the shell — read
 it before touching layout, the rails/headers, or the prefs store.
 Settings is an auxiliary routed surface, not a primary destination.
 
-Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md);
-the model/view continuity rationale is the KB decision
-[persistent-surfaces-lift](persistent-surfaces-lift decision).
+Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md).
 This page is the *implementation* contract.
 
 Mobile now lives beside this desktop shell as a sibling implementation. The
@@ -34,9 +32,9 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 ```
 
 - **`rail-l`** — the left sidebar (destinations + project file tree).
-- **`center`** — the destination's main pane (Home/Settings route pane, or the
+- **`center`** — the destination's main pane (Home/Work route pane, or the
   Chat/Editor center surface).
-- **`dock`** — the shared right dock. Chat occupies it on Home/Editor; the
+- **`dock`** — the shared right dock. Chat occupies it on Home/Work/Editor; the
   context-rail occupies it on the Chat screen. It reads as **one persistent
   sidebar** whose inner content swaps — a single shared width/collapse pref
   (`slotPrefs.dock`), not a per-surface one.
@@ -44,22 +42,74 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 There is **no `files` grid track**. The file explorer is the persistent body of
 the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
 
-`LeftSidebar` is one column with a linked wordmark, Home/Chat/Editor navigation,
+`LeftSidebar` is one column with a linked wordmark, Home/Work/Chat/Editor navigation,
 the persistent project tree, and account controls. The navigation rows are
 shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
 are desktop shell grammar.
 
-Home is also the live Work-management surface. It reads the Work collection
-and the writer's explicit current Work through TanStack Query, and owns create,
-switch, metadata, archive, restore, and guarded delete actions. New Chat creates
-immediately in the server-resolved current/default Work without loading the Work
-catalog. After creation, the composer Work control can rebind the chat.
+Work is the dedicated collection/detail management destination. The collection reads
+active and archived Work and owns creation and lifecycle entry points; it never selects
+a project-wide Work or rebinds a chat. Its response contains only catalog Works and
+never resolves, repairs, or exposes the internal new-chat fallback. Route-owned detail and inline metadata consume
+the typed catalog, PATCH mutation, and associated-chat query seams.
+Work detail owns one page-scoped metadata controller. It coordinates the active field,
+authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep
+editing decision with the TanStack route blocker; leaves only submit intents through it.
+Hard unload uses the router's native before-unload integration rather than a second
+draft owner.
+Incoming authoritative Work revisions update the clean baseline without replacing the
+active draft. One-shot focus intents bridge detail close/delete to the collection;
+they are route continuity, not Work selection or persistent state.
+Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
+Uploads, and associated chats. Associated chats use bounded cursor pages and the
+same virtualized, borderless project chat row as Home without adding a nested
+scroll owner. The external-scroll hook measures the list in that owner's
+coordinates and owns stable keys plus focused/menu row pinning. Their membership
+is historical while the displayed Work is the
+chat's current primary Work. Resource sections fail independently. Archive and
+unarchive preserve the detail route; delete replaces to collection and restores focus
+to an adjacent row. Both shells share this route-owned module. At phone geometry, text
+must wrap without horizontal overflow and product controls retain coarse-pointer touch
+targets.
+
+Home is the shared, container-responsive Composer-led entry surface on desktop
+and phone, followed by the server-owned Continue, Favorites, and
+cursor-paginated Recent feed. First send creates and reconciles the canonical
+thread under one stable client-chosen ID before routing. Home derives the first
+active, then first available, catalog Work and submits its `workId` explicitly;
+loading, error, and authoritative empty catalogs remain distinct. The submitted
+Work ID is an immutable reconciliation fact, along with project and Agent, and
+no cache, handoff, visibility, admission, or route effect may run until the
+canonical thread matches those captured facts.
+
+The QueryClient owns one normalized Favorite record per project/thread so
+navigation and stale page arrival cannot discard pending writer intent. Work
+feeds remain immutable membership/order pages; only Home moves the affected
+thread between its categories. Project chat lists have no read/unread or
+open-acknowledgement state, and opening a chat performs no state mutation.
+Thread lifecycle projection owns the independent `actionRequired` fact and
+converges live and snapshot changes across Project, Home, and every matching
+Work feed cache without writing Favorite.
+
+Draft review follows the same persistent-shell rule with two sibling owners.
+The hydrated project owns one Chat review value (Chat Work plus thread) and one
+Editor review value (Editor Work, no thread authority) above desktop/phone
+selection. Boundaries only re-provide those values: ChatSurface and the Chat
+context dock share the Chat value, while viewer/editor surfaces receive the
+Editor value. An explicit latest-wins route handoff carries review commands into
+the matching Editor, advertises them only after route success, and claims them
+only after Work, manuscript path, mounted document, and draft membership agree;
+it survives phone view unmounts because the owner does not.
+
+A chat has one current Work binding. Home's Work choice is prospective creation
+state only; it never invokes the rebind command. The Chat composer may explicitly
+rebind an idle existing chat through the canonical durable transition, and the
+model's explicit `work.switch` command uses that same separate authority. Work
+management and navigation never rebind a chat implicitly.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
-with transparent headers. Scratch and Uploads resolve from the active thread's
-Work, whose real name appears in their header tooltip and accessible control
-name. Uploads is intake-only and exposes no file or folder creation affordances.
+with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; malformed, loading, catalog-error, and confirmed-missing explicit values never fall back to Chat or mount Work-scoped leaves. With no explicit Work, the selected thread's durable Work ID remains authoritative even when catalog display data fails. With neither an explicit Work nor a selected thread, Editor and untitled recovery derive first active, then first available, from the all-Work catalog, including archived-only catalogs; loading, error, and empty remain distinct. Uploads is intake-only and exposes no file or folder creation affordances.
 
 ### Slot paints the material; surfaces must not
 
@@ -125,7 +175,7 @@ conventions:
   never raw `emerald-*` / `rose-*`.
 
 The repeating chrome is extracted only where it actually repeats
-(`RailHeader`, `PaneHeader`, `PanelToggleButton`) — not as
+(`PaneHeader`, `RailPaneHeader`, `PanelToggleButton`) — not as
 a god "RailShell" wrapper, because the chat dock is a `motion.div`, not a
 `ResizablePanel`, and cannot be wrapped in a panel-baking shell.
 
@@ -176,19 +226,29 @@ hydration cascade.
 ## Screen routing & controllers
 
 `routes/_authenticated/project/$projectId.tsx` owns **all** workspace URL params
-(`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?ext=`) and is the
+(`?screen=`, `?thread=`, `?work=`, `?scheme=`, `?folder=`, `?path=`, `?results=`) and is the
 single source of screen/thread ownership. The per-screen controllers
-(`HomePaneController`, `ChatPaneController`, `ContextPaneController`,
-`SettingsPaneController`) are **controlled** — they render into surfaces and call
+(`HomePaneController`, `WorkPaneController`, `ChatPaneController`,
+`ContextPaneController`, `SettingsPaneController`) are **controlled** — they
+render into surfaces and call
 the route's handlers; they never set the URL directly. (Full ownership rules:
 [`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
+
+`routing/project-route.ts` is the pure route grammar: it preserves absent,
+malformed, noncanonical, and canonical explicit Work inputs; resolves valid IDs
+only against a successful all-status catalog; owns the search transition matrix;
+and publishes awaitable typed commands. The route component remains the only
+TanStack Router adapter. Collection/detail leaves receive targets and commands
+rather than parsing or mutating search themselves.
 
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
 projection, close fallbacks, scroll restoration, and screen-entry defaults:
 entering with no destination replays the remembered last file
 (`client/working-set/`; replay re-arms every entry because the controller is
-persistent). A known active route is projected as a loading tab and document
+persistent). Replay and the default-open ladder also re-arm when Editor Work
+changes; remembered Scratch and Uploads routes are eligible only for their
+owning Work, while project-scoped routes remain eligible everywhere. A known active route is projected as a loading tab and document
 surface until the context tree validates and materializes its durable tab; a
 resolved missing route drops that projection and returns to the empty state.
 A desk with nothing to restore and no tabs runs the

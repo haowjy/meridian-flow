@@ -11,10 +11,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { createProject } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
-import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
-import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
+import {
+  isThreadAdmissionError,
+  type ThreadRunController,
+} from "@/client/copilot/ThreadRunController";
+import {
+  invalidateProjectThreadData,
+  invalidateWorkThreads,
+} from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
-import { announceError } from "@/client/stores";
+import { announceError, useThreadStore } from "@/client/stores";
+import type { ComposerDraftRestoration } from "@/components/app/composer";
 import { threadCreateAgentField } from "@/features/agents/constants";
 
 type Controller = ThreadRunController;
@@ -49,11 +56,24 @@ export function useThreadHandoff(
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
+  restoreFirstSendDraft?: (restoration: ComposerDraftRestoration) => boolean,
 ): void {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
+  const restoredFirstSendIdsRef = useRef(new Set<string>());
   const queryClient = useQueryClient();
+  const firstSend = useThreadStore((state) => state.firstSendByThreadId[threadId] ?? null);
+
+  useEffect(() => {
+    if (firstSend?.draftAfterRoute === undefined || firstSend.draftAfterRouteRestored) return;
+    if (firstSend.status !== "armed" && firstSend.status !== "claimed") return;
+    const restored = restoreFirstSendDraft?.({
+      id: `${threadId}:route-draft`,
+      text: firstSend.draftAfterRoute,
+    });
+    if (restored) actions.ackFirstSendRouteDraftRestored(threadId);
+  }, [actions, firstSend, restoreFirstSendDraft, threadId]);
 
   useEffect(() => {
     pendingResumeRef.current = false;
@@ -62,6 +82,40 @@ export function useThreadHandoff(
   }, [threadId]);
 
   useEffect(() => {
+    if (firstSend?.status !== "failed") return;
+    const restorationId = `${threadId}:${firstSend.claimId}`;
+    if (restoredFirstSendIdsRef.current.has(restorationId)) return;
+    const restored = restoreFirstSendDraft?.({
+      id: restorationId,
+      text: firstSend.text,
+    });
+    if (restored) {
+      restoredFirstSendIdsRef.current.add(restorationId);
+      actions.ackFirstSendDraftRestored(threadId, firstSend.claimId);
+    }
+  }, [actions, firstSend, restoreFirstSendDraft, threadId]);
+
+  useEffect(() => {
+    if (firstSend) {
+      const claim = actions.claimFirstSend(threadId);
+      if (!claim) return;
+      handoffStartedRef.current = true;
+      void controller
+        .submit(threadId, claim.text, {
+          optimisticUserTurnId: claim.optimisticUserTurnId,
+        })
+        .then(() => {
+          actions.ackFirstSend(threadId, claim.claimId);
+        })
+        .catch((error) => {
+          const rejection = isThreadAdmissionError(error) ? error.kind : "ambiguous";
+          actions.rejectFirstSend(threadId, claim.claimId, rejection);
+          const message = error instanceof Error ? error.message : "Failed to start stream";
+          announceError(message);
+        });
+      return;
+    }
+
     const startResume = (after?: string, expectedTurnId?: string) => {
       try {
         controller.resume(threadId, { after, expectedTurnId });
@@ -108,7 +162,12 @@ export function useThreadHandoff(
             actions.ensureThread(thread);
             // Server confirmation arrived: gated queries can now fire safely.
             actions.clearPendingCreation({ projectId, threadId });
-            await invalidateProjectThreadData(queryClient, projectId);
+            await Promise.all([
+              invalidateProjectThreadData(queryClient, projectId),
+              ...(thread.workId
+                ? [invalidateWorkThreads(queryClient, projectId, thread.workId)]
+                : []),
+            ]);
             if (text) {
               startSubmit(text, optimisticUserTurnId);
             } else {
@@ -146,5 +205,13 @@ export function useThreadHandoff(
 
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
-  }, [actions, controller, queryClient, snapshotResume?.liveState, threadId]);
+  }, [
+    actions,
+    controller,
+    queryClient,
+    restoreFirstSendDraft,
+    firstSend,
+    snapshotResume?.liveState,
+    threadId,
+  ]);
 }

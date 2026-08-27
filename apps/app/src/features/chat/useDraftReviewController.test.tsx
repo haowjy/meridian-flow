@@ -62,6 +62,7 @@ describe("useDraftReviewController", () => {
   it("applies by product draft identity without rendered operation cards", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     applyMutateMock.mockClear();
+    resolveDraftOnlyTabMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -83,6 +84,12 @@ describe("useDraftReviewController", () => {
       );
       expect(applyMutateMock).not.toHaveBeenCalledWith(
         expect.objectContaining({ operationIds: expect.anything() }),
+      );
+      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
+        "project-1",
+        "work-1",
+        "document-1",
+        "committed",
       );
     });
   });
@@ -240,6 +247,12 @@ describe("useDraftReviewController", () => {
         await controller?.discard("document-2", "draft-2");
       });
       expect(discardMutateMock).toHaveBeenCalledTimes(2);
+      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
+        "project-1",
+        "work-1",
+        "document-2",
+        "discarded",
+      );
     });
   });
 

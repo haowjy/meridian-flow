@@ -11,7 +11,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Ellipsis, FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 
@@ -26,15 +26,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/ui/icon-button";
+  dropdownMenuContentClass,
+  dropdownMenuItemClass,
+  dropdownMenuSeparatorClass,
+  dropdownNavigationPageClass,
+  dropdownRowVariants,
+} from "@/components/ui/dropdown-presentation";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
+import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
@@ -78,6 +80,8 @@ export type EntryActionTarget = {
   kind: "file" | "dir";
 };
 
+type DeleteTarget = EntryActionTarget & { workId: string | null };
+
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
 export function ContextEntryMenu({
@@ -96,8 +100,12 @@ export function ContextEntryMenu({
       <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content
+          className={cn(
+            dropdownNavigationPageClass,
+            dropdownMenuContentClass,
+            "origin-(--radix-context-menu-content-transform-origin) [--radix-menu-content-available-height:var(--radix-context-menu-content-available-height)]",
+          )}
           onCloseAutoFocus={onCloseAutoFocus}
-          className="z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
           <ContextActionItems allowCreate={allowCreate} onAction={dispatch} />
         </ContextMenuPrimitive.Content>
@@ -140,39 +148,27 @@ export function EntryKebabButton({
   allowCreate,
   onAction,
   className,
+  align = "start",
+  sideOffset = 2,
 }: {
   /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
   allowCreate: boolean;
   onAction: (action: EntryAction) => void;
   className?: string;
+  align?: "start" | "center" | "end";
+  sideOffset?: number;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <IconButton
-          size="xs"
-          aria-label={t`Actions`}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          className={cn(
-            "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
-            className,
-          )}
-        >
-          <Ellipsis aria-hidden className="size-3.5" />
-        </IconButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        sideOffset={2}
-        onClick={(e) => e.stopPropagation()}
-        onCloseAutoFocus={onCloseAutoFocus}
-        className="min-w-[8rem]"
-      >
-        <DropdownActionItems allowCreate={allowCreate} onAction={dispatch} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <OverflowMenu
+      label={t`Actions`}
+      align={align}
+      sideOffset={sideOffset}
+      onCloseAutoFocus={onCloseAutoFocus}
+      triggerClassName={cn(contextTreeOverflowTriggerClassName, className)}
+    >
+      <DropdownActionItems allowCreate={allowCreate} onAction={dispatch} />
+    </OverflowMenu>
   );
 }
 
@@ -194,15 +190,11 @@ function ContextActionItems({
         return (
           <Fragment key={spec.action}>
             {startsGroup ? (
-              <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
+              <ContextMenuPrimitive.Separator className={dropdownMenuSeparatorClass} />
             ) : null}
             <ContextMenuPrimitive.Item
-              className={cn(
-                "relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-50",
-                spec.destructive
-                  ? "text-destructive data-[highlighted]:text-destructive"
-                  : "data-[highlighted]:text-accent-foreground",
-              )}
+              data-variant={spec.destructive ? "destructive" : "default"}
+              className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
               onSelect={() => onAction(spec.action)}
             >
               <Icon
@@ -233,10 +225,7 @@ function DropdownActionItems({
       <Fragment key={spec.action}>
         {startsGroup ? <DropdownMenuSeparator /> : null}
         <DropdownMenuItem
-          className={cn(
-            "cursor-pointer gap-2 text-sm",
-            spec.destructive && "text-destructive focus:text-destructive",
-          )}
+          variant={spec.destructive ? "destructive" : "default"}
           onSelect={() => onAction(spec.action)}
         >
           <Icon
@@ -254,23 +243,26 @@ function DropdownActionItems({
 
 export function useDeleteConfirmation({
   projectId,
-  activeThreadId,
+  workId,
   scheme,
 }: {
   projectId: string;
-  activeThreadId: string | null;
+  workId: string | null;
   scheme: ProjectContextTreeScheme;
 }) {
-  const [target, setTarget] = useState<EntryActionTarget | null>(null);
-  const mutation = useDeleteContextEntry(projectId, scheme, { activeThreadId });
+  const [target, setTarget] = useState<DeleteTarget | null>(null);
+  const mutation = useDeleteContextEntry(projectId, scheme);
 
-  const requestDelete = useCallback((t: EntryActionTarget) => setTarget(t), []);
+  const requestDelete = useCallback(
+    (t: EntryActionTarget) => setTarget({ ...t, workId }),
+    [workId],
+  );
   const cancel = useCallback(() => setTarget(null), []);
 
   const confirm = useCallback(async () => {
     if (!target) return;
     try {
-      await mutation.mutateAsync({ path: target.path });
+      await mutation.mutateAsync({ path: target.path, workId: target.workId });
     } finally {
       setTarget(null);
     }

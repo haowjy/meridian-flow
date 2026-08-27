@@ -19,6 +19,52 @@ export type ThreadDraftGroup = {
   drafts: ThreadDraftListItem[];
 };
 
+/** The newest active draft with reviewable content for one document. */
+export function pendingReviewDraft(
+  group: ThreadDraftGroup | null | undefined,
+): ThreadDraftListItem | null {
+  return pendingReviewDrafts(group)[0] ?? null;
+}
+
+/** Active drafts with reviewable content, newest first. */
+export function pendingReviewDrafts(
+  group: ThreadDraftGroup | null | undefined,
+): ThreadDraftListItem[] {
+  if (!group) return [];
+  return group.drafts
+    .filter((draft) => draft.status === "active" && draftHasReviewContent(draft))
+    .sort((left, right) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0));
+}
+
+/** Document groups that still carry an active, reviewable draft. */
+export function activeWorkDraftGroups(
+  groups: ThreadDraftGroup[] | null | undefined,
+): ThreadDraftGroup[] {
+  if (!groups?.length) return [];
+  return groups
+    .flatMap((group) => {
+      const drafts = pendingReviewDrafts(group);
+      return drafts.length > 0 ? [{ ...group, drafts }] : [];
+    })
+    .sort((left, right) => newestUpdatedAt(right) - newestUpdatedAt(left));
+}
+
+function newestUpdatedAt(group: ThreadDraftGroup): number {
+  return Math.max(...group.drafts.map((draft) => Date.parse(draft.updatedAt) || 0));
+}
+
+function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
+  const hasKnownOperationCount = typeof draft.proposedOperationCount === "number";
+  const hasKnownWordDelta =
+    typeof draft.wordsAdded === "number" || typeof draft.wordsRemoved === "number";
+  if (!hasKnownOperationCount && !hasKnownWordDelta) return true;
+  return (
+    (draft.proposedOperationCount ?? 0) > 0 ||
+    (draft.wordsAdded ?? 0) > 0 ||
+    (draft.wordsRemoved ?? 0) > 0
+  );
+}
+
 export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {
   const groups = new Map<string, ThreadDraftListItem[]>();
   const seenDraftIds = new Set<string>();

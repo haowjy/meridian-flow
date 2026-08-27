@@ -278,7 +278,12 @@ describe("collision recovery and durable receipts", () => {
       expect.objectContaining({ documentId: "doc-1", scheme: "manuscript", name: "Opening.md" }),
     ]);
     expect(rig.identities).toEqual([
-      expect.objectContaining({ status: "moved", scheme: "manuscript", name: "Opening.md" }),
+      expect.objectContaining({
+        status: "moved",
+        scheme: "manuscript",
+        name: "Opening.md",
+        routeWorkId: "work-1",
+      }),
     ]);
   });
 

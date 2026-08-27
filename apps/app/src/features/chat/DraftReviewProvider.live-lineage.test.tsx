@@ -24,6 +24,8 @@ let currentTabIsDraftOnly = false;
 let rerenderProvider: (() => void) | null = null;
 let controllerMounts = 0;
 let controllerUnmounts = 0;
+let queriedWorkIds: Array<string | null> = [];
+let controllerWorkIds: string[] = [];
 
 const docUpdateHandlers = new Map<string, Set<() => void>>();
 
@@ -42,6 +44,7 @@ vi.mock("@/client/stores", () => ({
                   kind: "tracked",
                   documentId: "doc-terminal",
                   draftOnly: true,
+                  reviewWorkId: "work-1",
                 },
               ]
             : [],
@@ -52,13 +55,17 @@ vi.mock("@/client/stores", () => ({
   },
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
-  useWorkDrafts: () => ({
-    groups: currentGroups,
-    status: currentGroups.length === 0 ? "empty" : "ready",
-  }),
+  useWorkDrafts: (_projectId: string | null, workId: string | null) => {
+    queriedWorkIds.push(workId);
+    return {
+      groups: currentGroups,
+      status: currentGroups.length === 0 ? "empty" : "ready",
+    };
+  },
 }));
 vi.mock("./useDraftReviewController", () => ({
-  useDraftReviewController: () => {
+  useDraftReviewController: (_projectId: string, workId: string) => {
+    controllerWorkIds.push(workId);
     useEffect(() => {
       controllerMounts += 1;
       return () => {
@@ -66,6 +73,7 @@ vi.mock("./useDraftReviewController", () => ({
       };
     }, []);
     return {
+      workId,
       exitReview: exitReviewMock,
       inlineReview: currentInlineReview,
       reviewRoomName: currentReviewRoomName,
@@ -107,7 +115,8 @@ vi.mock("@/core/editor/document-session-registry", () => ({
   }),
 }));
 
-const { DraftReviewProvider, useDraftReview } = await import("./DraftReviewProvider");
+const { DraftReviewBoundary, DraftReviewProvider, useDraftReview, useDraftReviewScopeValue } =
+  await import("./DraftReviewProvider");
 
 function SetActiveEditorDocument({ documentId }: { documentId: string }) {
   const { setActiveEditorDocumentId } = useDraftReview();
@@ -129,6 +138,25 @@ function ProviderHarness({ children }: { children?: ReactNode }) {
     <DraftReviewProvider projectId="project-1" workId="work-1" threadId="thread-1">
       {children}
     </DraftReviewProvider>
+  );
+}
+
+function SiblingScopeHarness() {
+  const chat = useDraftReviewScopeValue({
+    projectId: "project-1",
+    workId: "work-chat-b",
+    threadId: "thread-b",
+  });
+  const editor = useDraftReviewScopeValue({
+    projectId: "project-1",
+    workId: "work-editor-a",
+    threadId: null,
+  });
+  return (
+    <>
+      <DraftReviewBoundary value={chat}>{null}</DraftReviewBoundary>
+      <DraftReviewBoundary value={editor}>{null}</DraftReviewBoundary>
+    </>
   );
 }
 
@@ -163,6 +191,8 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     currentTabIsDraftOnly = false;
     controllerMounts = 0;
     controllerUnmounts = 0;
+    queriedWorkIds = [];
+    controllerWorkIds = [];
     vi.useFakeTimers();
   });
 
@@ -183,6 +213,16 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       expect(invalidateQueriesMock).toHaveBeenCalledWith({
         queryKey: threadQueryKeys.liveLineageRoot("thread-1"),
       });
+    });
+  });
+
+  it("owns isolated Chat B and Editor A queries and controllers", async () => {
+    await withReactRoot(<SiblingScopeHarness />, async () => {
+      expect(queriedWorkIds).toContain("work-chat-b");
+      expect(queriedWorkIds).toContain("work-editor-a");
+      expect(controllerWorkIds).toContain("work-chat-b");
+      expect(controllerWorkIds).toContain("work-editor-a");
+      expect(controllerMounts).toBe(2);
     });
   });
 
@@ -226,6 +266,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
 
       expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
         "project-1",
+        "work-1",
         "doc-terminal",
         "committed",
       );
@@ -245,6 +286,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
 
       expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
         "project-1",
+        "work-1",
         "doc-terminal",
         "discarded",
       );

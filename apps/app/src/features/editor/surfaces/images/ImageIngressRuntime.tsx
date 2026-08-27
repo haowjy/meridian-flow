@@ -36,6 +36,7 @@ export function ImageIngressRuntime({
 }) {
   const { tree: manuscriptTree } = useProjectContextTree(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
+    workId: null,
   });
 
   const upload = useMemo<ImageUploadPort | null>(

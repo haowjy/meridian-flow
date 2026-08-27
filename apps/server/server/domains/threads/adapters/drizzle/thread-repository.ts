@@ -3,13 +3,11 @@
  * list/get, soft-delete, and cost recomputation). Thread.workId is projected from
  * the primary thread_works row, not stored on threads.
  */
-import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
-import type { TurnRole, TurnStatus } from "@meridian/contracts/threads";
+import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
-import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -24,8 +22,8 @@ import type {
 } from "../../ports/repositories.js";
 import { mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
-
-const activeLeafTurn = alias(schema.turns, "active_leaf_turn");
+import { visibleConversationalHeadLateral } from "./visible-conversation-sql.js";
+import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
 const runningTurnId = sql<string | null>`(
   SELECT ${schema.turns.id}
@@ -42,8 +40,6 @@ type ThreadListRow = typeof schema.threads.$inferSelect & {
   workTitle: string | null;
   lastTurnRole: (typeof schema.turns.$inferSelect)["role"] | null;
   lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
-  lastTurnAt: Date | string | null;
-  lastOpenedAt: Date | null;
   runningTurnId: string | null;
 };
 
@@ -53,8 +49,6 @@ function mapThreadListRow(row: ThreadListRow) {
     workTitle: row.workTitle,
     lastTurnRole: row.lastTurnRole as TurnRole | null,
     lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
-    lastTurnAt: row.lastTurnAt ? toIsoString(row.lastTurnAt) : null,
-    lastOpenedAt: row.lastOpenedAt ? toIsoString(row.lastOpenedAt) : null,
     runningTurnId: row.runningTurnId,
   });
 }
@@ -64,10 +58,8 @@ function threadListSelect() {
     ...getTableColumns(schema.threads),
     workId: schema.threadWorks.workId,
     workTitle: schema.works.name,
-    lastTurnRole: activeLeafTurn.role,
-    lastTurnStatus: activeLeafTurn.status,
-    lastTurnAt: sql<Date | null>`COALESCE(${activeLeafTurn.completedAt}, ${activeLeafTurn.createdAt})`,
-    lastOpenedAt: schema.threadUserState.lastOpenedAt,
+    lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
+    lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
     runningTurnId,
   };
 }
@@ -267,6 +259,16 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return row?.projectId ?? null;
     },
+    async lockByIdIncludingDeleted(id: ThreadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .from(schema.threads)
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
+        .where(eq(schema.threads.id, id))
+        .for("update", { of: schema.threads })
+        .limit(1);
+      return row ? mapThread(row) : null;
+    },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
         .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
@@ -290,13 +292,9 @@ export function createDrizzleThreadRepository(
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
-        .leftJoin(activeLeafTurn, eq(activeLeafTurn.id, schema.threads.activeLeafTurnId))
         .leftJoin(
-          schema.threadUserState,
-          and(
-            eq(schema.threadUserState.threadId, schema.threads.id),
-            eq(schema.threadUserState.userId, schema.threads.createdByUserId),
-          ),
+          visibleConversationalHeadLateral(sql`${schema.threads.activeLeafTurnId}`),
+          sql`true`,
         )
         .where(
           and(
@@ -308,77 +306,34 @@ export function createDrizzleThreadRepository(
         .orderBy(desc(schema.threads.updatedAt));
       return rows.map(mapThreadListRow);
     },
-    async listByWork(projectId: ProjectId, workId: string) {
-      const matchedThreadWorks = alias(schema.threadWorks, "matched_thread_works");
-      const primaryThreadWorks = alias(schema.threadWorks, "primary_thread_works");
-      const primaryWorks = alias(schema.works, "primary_works");
-      const rows = await currentDrizzleDb(db)
-        .select({
-          ...getTableColumns(schema.threads),
-          workId: primaryThreadWorks.workId,
-          workTitle: primaryWorks.name,
-          lastTurnRole: activeLeafTurn.role,
-          lastTurnStatus: activeLeafTurn.status,
-          lastTurnAt: sql<Date | null>`COALESCE(${activeLeafTurn.completedAt}, ${activeLeafTurn.createdAt})`,
-          lastOpenedAt: schema.threadUserState.lastOpenedAt,
-          runningTurnId,
-        })
-        .from(schema.threads)
-        .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
-        .innerJoin(
-          matchedThreadWorks,
-          and(
-            eq(matchedThreadWorks.threadId, schema.threads.id),
-            eq(matchedThreadWorks.workId, workId),
-          ),
-        )
-        .leftJoin(
-          primaryThreadWorks,
-          and(
-            eq(primaryThreadWorks.threadId, schema.threads.id),
-            eq(primaryThreadWorks.isPrimary, true),
-          ),
-        )
-        .leftJoin(primaryWorks, eq(primaryThreadWorks.workId, primaryWorks.id))
-        .leftJoin(activeLeafTurn, eq(activeLeafTurn.id, schema.threads.activeLeafTurnId))
-        .leftJoin(
-          schema.threadUserState,
-          and(
-            eq(schema.threadUserState.threadId, schema.threads.id),
-            eq(schema.threadUserState.userId, schema.threads.createdByUserId),
-          ),
-        )
-        .where(
-          and(
-            eq(schema.threads.projectId, projectId),
-            isNull(schema.threads.deletedAt),
-            isNull(schema.projects.deletedAt),
-          ),
-        )
-        .orderBy(desc(schema.threads.updatedAt));
-      return rows.map(mapThreadListRow);
-    },
-    async getLastOpenedAt(id, userId) {
-      const [row] = await currentDrizzleDb(db)
-        .select({ lastOpenedAt: schema.threadUserState.lastOpenedAt })
-        .from(schema.threadUserState)
-        .where(
-          and(eq(schema.threadUserState.threadId, id), eq(schema.threadUserState.userId, userId)),
-        );
-      return row?.lastOpenedAt?.toISOString() ?? null;
-    },
-    async markOpened(id, userId) {
-      const now = new Date();
-      const [row] = await currentDrizzleDb(db)
-        .insert(schema.threadUserState)
-        .values({ threadId: id, userId, lastOpenedAt: now })
-        .onConflictDoUpdate({
-          target: [schema.threadUserState.threadId, schema.threadUserState.userId],
-          set: { lastOpenedAt: now },
-        })
-        .returning({ lastOpenedAt: schema.threadUserState.lastOpenedAt });
-      if (!row?.lastOpenedAt) throw new Error(`Failed to mark thread opened: ${id}`);
-      return row.lastOpenedAt.toISOString();
+    async listRecentByWork(projectId: ProjectId, workId: WorkId, limit: number) {
+      const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
+      if (boundedLimit === 0) return [];
+      const rows = await currentDrizzleDb(db).execute(sql`
+        WITH candidates AS (${workAssociationCandidatesSql({
+          projectId,
+          workId,
+          afterSortAt: null,
+          afterThreadId: null,
+          limit: boundedLimit,
+        })})
+        SELECT t.title, t.status,
+          to_char(candidates.updated_at AT TIME ZONE 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_exact
+        FROM candidates JOIN threads t ON t.id = candidates.thread_id
+        ORDER BY candidates.updated_at DESC, candidates.thread_id DESC
+      `);
+      return Array.from(
+        rows as unknown as Iterable<{
+          title: string | null;
+          status: ThreadStatus;
+          updated_at_exact: string;
+        }>,
+      ).map((row) => ({
+        title: row.title,
+        status: row.status,
+        updatedAt: row.updated_at_exact,
+      }));
     },
     async updateStatus(id, status) {
       const [row] = await currentDrizzleDb(db)
@@ -459,54 +414,21 @@ export function createDrizzleThreadRepository(
     async updateCost(id, deltaCostUsd, turnCountIncrement = 0) {
       await writeThreadCostUpdate(db, id, deltaCostUsd, turnCountIncrement);
     },
-    async softDelete(id) {
-      const [existingRow] = await currentDrizzleDb(db)
-        .select()
-        .from(schema.threads)
-        .where(eq(schema.threads.id, id));
-      if (!existingRow) throw new Error(`Thread not found: ${id}`);
-      if (existingRow.deletedAt) {
-        const primary = await currentDrizzleDb(db)
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-          .limit(1);
-        return mapThread({ ...existingRow, workId: primary[0]?.workId ?? null });
-      }
-      const now = new Date();
+    async setTrashState(id, target) {
+      const deletedAt = target === "deleted" ? new Date() : null;
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
-        .set({ deletedAt: now, updatedAt: now })
-        .where(eq(schema.threads.id, id))
+        .set({ deletedAt, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.threads.id, id),
+            target === "deleted"
+              ? isNull(schema.threads.deletedAt)
+              : isNotNull(schema.threads.deletedAt),
+          ),
+        )
         .returning();
-      if (!row) throw new Error(`Thread not found: ${id}`);
-      const primary = await currentDrizzleDb(db)
-        .select({ workId: schema.threadWorks.workId })
-        .from(schema.threadWorks)
-        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-        .limit(1);
-      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-    },
-    async restore(id) {
-      const [existingRow] = await currentDrizzleDb(db)
-        .select()
-        .from(schema.threads)
-        .where(eq(schema.threads.id, id));
-      if (!existingRow) throw new Error(`Thread not found: ${id}`);
-      if (!existingRow.deletedAt) {
-        const primary = await currentDrizzleDb(db)
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-          .limit(1);
-        return mapThread({ ...existingRow, workId: primary[0]?.workId ?? null });
-      }
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({ deletedAt: null, updatedAt: new Date() })
-        .where(eq(schema.threads.id, id))
-        .returning();
-      if (!row) throw new Error(`Thread not found: ${id}`);
+      if (!row) throw new Error(`Thread trash transition requires a changed locked row: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
         .from(schema.threadWorks)

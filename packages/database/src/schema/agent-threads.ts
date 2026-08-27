@@ -353,7 +353,7 @@ export const threadUserState = pgTable(
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
+    isFavorite: boolean("is_favorite").notNull().default(false),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.userId] })],
 );

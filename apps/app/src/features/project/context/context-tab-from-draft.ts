@@ -20,6 +20,7 @@ import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol"
 import type { ServerContextTab } from "@/client/stores";
 
 export function contextTabFromDraftGroup(group: {
+  workId: string;
   documentId: string;
   contextPath?: string | null;
   documentName?: string | null;
@@ -52,6 +53,7 @@ export function contextTabFromDraftGroup(group: {
     editable: true,
     filetype,
     schemaType: classification.schemaType,
+    reviewWorkId: group.workId,
     ...(group.isNewDocument ? { draftOnly: true } : {}),
   };
 }

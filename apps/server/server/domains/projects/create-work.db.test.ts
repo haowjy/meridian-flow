@@ -1,4 +1,4 @@
-/** Postgres coverage for atomic Work creation and current selection. */
+/** PostgreSQL coverage that Work creation never mutates the new-chat fallback. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -43,32 +43,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    it("rolls creation back when current selection fails", async () => {
+    it("creates the entity without changing the new-chat fallback", async () => {
       const preferences = createDrizzleProjectPreferencesRepository({ db });
+      const created = await createWork(
+        { works, workContextDelivery: { async projectChanged() {} } },
+        {
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Act 2",
+        },
+      );
 
-      await expect(
-        createWork(
-          {
-            works,
-            preferences: {
-              ...preferences,
-              async setCurrentWorkId() {
-                throw new Error("injected preference failure");
-              },
-            },
-            workContextDelivery: { async projectChanged() {} },
-          },
-          USER_ID,
-          {
-            projectId: PROJECT_ID,
-            createdByUserId: USER_ID,
-            name: "Act 2",
-          },
-        ),
-      ).rejects.toThrow("injected preference failure");
-
-      await expect(works.listByProject(PROJECT_ID)).resolves.toEqual([]);
-      await expect(preferences.getCurrentWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
+      await expect(works.findById(created.id)).resolves.toMatchObject({ name: "Act 2" });
+      await expect(preferences.getNewChatFallbackWorkId(USER_ID, PROJECT_ID)).resolves.toBeNull();
     });
   });
 }

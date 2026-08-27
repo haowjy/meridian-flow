@@ -9,7 +9,17 @@ import type { UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
 import { parseRequestId } from "../../shared/uuid.js";
-import type { ThreadRepository } from "./index.js";
+import type { ProjectRepository, WorkContextDelivery } from "../projects/index.js";
+import {
+  type ThreadTrashState,
+  ThreadTrashUnavailableError,
+  transitionThreadTrash,
+} from "./domain/thread-trash-lifecycle.js";
+import type {
+  ThreadRepositories,
+  ThreadRepository,
+  WorkContextDeliveryRepository,
+} from "./ports/repositories.js";
 
 interface ProjectOwnerRepository {
   findById(id: string): Promise<Project | null>;
@@ -37,4 +47,57 @@ export async function requireThreadOwner(
     throwHttpInterruptForStatus(404, "Thread not found");
   }
   return thread;
+}
+
+export interface SetOwnedThreadTrashStateDeps {
+  repos: Pick<ThreadRepositories, "threads" | "transaction">;
+  projects: Pick<ProjectRepository, "findById">;
+  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
+  workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
+}
+
+/** Authenticated adapter for the serialized trash command and restore wake. */
+export async function setOwnedThreadTrashState(
+  deps: SetOwnedThreadTrashStateDeps,
+  threadId: string,
+  userId: UserId,
+  target: ThreadTrashState,
+): Promise<Thread> {
+  const parsedThreadId = parseRequestId(threadId);
+  if (!parsedThreadId) {
+    throwHttpInterruptForStatus(400, "`threadId` must be a canonical UUID");
+  }
+  let transition: Awaited<ReturnType<typeof transitionThreadTrash>>;
+  try {
+    transition = await transitionThreadTrash(deps, {
+      threadId: parsedThreadId,
+      userId,
+      target,
+    });
+  } catch (cause) {
+    if (cause instanceof ThreadTrashUnavailableError) {
+      throwHttpInterruptForStatus(404, "Thread not found");
+    }
+    throw cause;
+  }
+  if (transition.changed && target === "visible") {
+    await deps.workContextDelivery.deliverAfterCommit(parsedThreadId);
+  }
+  return transition.thread;
+}
+
+export function restoreOwnedThreadFromTrash(
+  deps: SetOwnedThreadTrashStateDeps,
+  threadId: string,
+  userId: UserId,
+): Promise<Thread> {
+  return setOwnedThreadTrashState(deps, threadId, userId, "visible");
+}
+
+export function deleteOwnedThreadToTrash(
+  deps: SetOwnedThreadTrashStateDeps,
+  threadId: string,
+  userId: UserId,
+): Promise<Thread> {
+  return setOwnedThreadTrashState(deps, threadId, userId, "deleted");
 }

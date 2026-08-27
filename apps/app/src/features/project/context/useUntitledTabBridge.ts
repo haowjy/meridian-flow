@@ -1,7 +1,7 @@
 /** Bridges background untitled reconciliation receipts into the open-tab store. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { type ContextTab, useContextTabsActions, useContextTabsStore } from "@/client/stores";
+import type { ContextRouteTarget } from "../routing/project-route";
 import {
   isUntitledPending,
   registerUntitledCandidate,
@@ -11,13 +11,11 @@ import {
 export function useUntitledTabBridge({
   projectId,
   tabs,
-  defaultWorkId,
-  onSelectContextPath,
+  onOpenContextTarget,
 }: {
   projectId: string;
   tabs: ContextTab[];
-  defaultWorkId: string | null;
-  onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget: (target: ContextRouteTarget) => void;
 }): void {
   const { remintNewTab, materializeNewTab, updateTrackedTab } = useContextTabsActions();
 
@@ -32,7 +30,7 @@ export function useUntitledTabBridge({
       .map((tab) =>
         registerUntitledCandidate(tab.documentId, {
           onReminted: (documentId) => remintNewTab(projectId, tab.documentId, documentId),
-          onMaterialized: (result) => {
+          onMaterialized: ({ result, identity }) => {
             const slice = useContextTabsStore.getState().byProject[projectId];
             if (!slice?.tabs.some((candidate) => candidate.documentId === tab.documentId)) return;
             materializeNewTab(projectId, tab.documentId, {
@@ -47,22 +45,22 @@ export function useUntitledTabBridge({
               schemaType: "document",
               provisionalName: true,
             });
-            if (slice.activeTabId === tab.documentId) {
-              onSelectContextPath(result.path, result.scheme);
+            if (identity) {
+              updateTrackedTab(projectId, tab.documentId, {
+                scheme: identity.scheme,
+                path: identity.path,
+                name: identity.name,
+                workId: identity.workId,
+                provisionalName: false,
+              });
             }
-          },
-          onIdentityCommitted: (result) => {
-            updateTrackedTab(projectId, tab.documentId, {
-              scheme: result.scheme,
-              path: result.path,
-              name: result.name,
-              workId: result.scheme === "scratch" ? (defaultWorkId ?? undefined) : undefined,
-              provisionalName: false,
-            });
-            if (
-              useContextTabsStore.getState().byProject[projectId]?.activeTabId === tab.documentId
-            ) {
-              onSelectContextPath(result.path, result.scheme);
+            if (slice.activeTabId === tab.documentId) {
+              const settled = identity ?? result;
+              onOpenContextTarget({
+                path: settled.path,
+                scheme: settled.scheme,
+                workId: identity?.routeWorkId ?? result.workId ?? null,
+              });
             }
           },
         }),
@@ -70,13 +68,5 @@ export function useUntitledTabBridge({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [
-    defaultWorkId,
-    materializeNewTab,
-    onSelectContextPath,
-    projectId,
-    remintNewTab,
-    tabs,
-    updateTrackedTab,
-  ]);
+  }, [materializeNewTab, onOpenContextTarget, projectId, remintNewTab, tabs, updateTrackedTab]);
 }

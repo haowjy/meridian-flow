@@ -42,8 +42,7 @@ import {
 
 export type DocumentIdentityBarProps = {
   projectId: string;
-  activeThreadId: string | null;
-  defaultWorkId: string | null;
+  editorWorkId: string | null;
   tab: ContextTab;
   onCommitted: (
     documentId: string,
@@ -55,15 +54,19 @@ export type DocumentIdentityBarProps = {
 
 export function DocumentIdentityBar({
   projectId,
-  activeThreadId,
-  defaultWorkId,
+  editorWorkId,
   tab,
   onCommitted,
   onOpenExisting,
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
-  const commit = useIdentityCommit({ projectId, tab, defaultWorkId, onCommitted });
+  const commit = useIdentityCommit({
+    projectId,
+    tab,
+    editorWorkId: editorWorkId,
+    onCommitted,
+  });
 
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
@@ -95,8 +98,7 @@ export function DocumentIdentityBar({
         {fieldOpen ? (
           <IdentityPlacementField
             projectId={projectId}
-            activeThreadId={activeThreadId}
-            defaultWorkId={defaultWorkId}
+            editorWorkId={editorWorkId}
             tab={tab}
             location={location}
             failure={identityFailure}

@@ -6,9 +6,15 @@ import tailwindcss from "@tailwindcss/vite";
 import { build, type Rollup } from "vite";
 import { buttonVariants } from "../src/components/ui/button";
 import {
+  dropdownMenuItemClass,
   dropdownRowContainerClass,
   dropdownRowVariants,
 } from "../src/components/ui/dropdown-presentation";
+import {
+  contextTreeOverflowTriggerClassName,
+  contextTreeRowClassName,
+  mobileContextTreeOverflowTriggerClassName,
+} from "../src/features/project/context/context-row-geometry";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const overflowControlClass = buttonVariants({
@@ -46,6 +52,8 @@ test.beforeEach(async ({ page }) => {
   await page.setContent(`
     <main id="surface" class="bg-popover" style="width:240px">
       <button id="direct" class="${dropdownRowVariants()}">Direct row</button>
+      <button id="dropdown-action" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Dropdown rename</button>
+      <button id="destructive-action" data-variant="destructive" class="${dropdownRowVariants()} ${dropdownMenuItemClass}">Delete</button>
       <div id="composite" class="${dropdownRowContainerClass}">
         <button id="composite-control" class="${dropdownRowVariants({ interactive: false })}">
           Composite row
@@ -61,6 +69,15 @@ test.beforeEach(async ({ page }) => {
     <button id="probe" class="${overflowControlClass} pointer-events-none invisible absolute left-0 top-0" inert>
       Measurement probe
     </button>
+    <div id="context-tree">
+      <div class="group flex items-center ${contextTreeRowClassName}">
+        <span>First context row</span>
+        <button id="context-overflow" class="${overflowControlClass} ${contextTreeOverflowTriggerClassName}">Actions</button>
+      </div>
+      <div id="context-row-two" class="group flex items-center ${contextTreeRowClassName}">Second context row</div>
+    </div>
+    <button id="mobile-context-overflow" class="${overflowControlClass} ${mobileContextTreeOverflowTriggerClassName}">Mobile actions</button>
+    <button id="portalled-menu-item">Rename</button>
   `);
   await page.addStyleTag({ content: compiledCss });
   await page.addStyleTag({ content: "* { transition: none !important; }" });
@@ -288,4 +305,79 @@ test("measures the visible overflow control and inert allocation probe", async (
   }
   await expect(page.locator("#overflow")).toBeVisible();
   await expect(page.locator("#probe")).toBeHidden();
+});
+
+test("resolves the canonical menu row density and destructive state", async ({
+  page,
+}, testInfo) => {
+  const expectedHeight = testInfo.project.name === "coarse-pointer" ? 44 : 32;
+  const read = (id: string) =>
+    page.locator(`#${id}`).evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        height: node.getBoundingClientRect().height,
+        paddingInline: `${style.paddingLeft} ${style.paddingRight}`,
+        fontSize: style.fontSize,
+        color: style.color,
+        background: style.backgroundColor,
+        shadow: style.boxShadow,
+      };
+    });
+
+  await page.locator("#dropdown-action").focus();
+  const normal = await read("dropdown-action");
+  expect(normal.height).toBe(expectedHeight);
+
+  await page.locator("#destructive-action").focus();
+  const destructive = await read("destructive-action");
+  expect(destructive.height).toBe(expectedHeight);
+  expect(destructive.color).not.toBe(normal.color);
+  expect(destructive.background).not.toBe(normal.background);
+});
+
+test("keeps context rows and their shared overflow targets non-overlapping", async ({
+  page,
+}, testInfo) => {
+  const coarse = testInfo.project.name === "coarse-pointer";
+  const expected = coarse ? 44 : 32;
+  const geometry = await page.evaluate(() => {
+    const tree = document.querySelector("#context-tree");
+    const first = tree?.firstElementChild;
+    const second = document.querySelector("#context-row-two");
+    const trigger = document.querySelector("#context-overflow");
+    const mobileTrigger = document.querySelector("#mobile-context-overflow");
+    if (!first || !second || !trigger || !mobileTrigger) throw new Error("Missing fixture");
+    const firstBox = first.getBoundingClientRect();
+    const secondBox = second.getBoundingClientRect();
+    const triggerBox = trigger.getBoundingClientRect();
+    const mobileBox = mobileTrigger.getBoundingClientRect();
+    return {
+      rowHeight: firstBox.height,
+      triggerWidth: triggerBox.width,
+      triggerHeight: triggerBox.height,
+      triggerOpacity: getComputedStyle(trigger).opacity,
+      rowsTouchWithoutOverlap: firstBox.bottom === secondBox.top,
+      mobileWidth: mobileBox.width,
+      mobileHeight: mobileBox.height,
+    };
+  });
+  expect(geometry.rowHeight).toBe(expected);
+  expect(geometry.triggerWidth).toBe(expected);
+  expect(geometry.triggerHeight).toBe(expected);
+  expect(geometry.rowsTouchWithoutOverlap).toBe(true);
+  expect(geometry.mobileWidth).toBe(44);
+  expect(geometry.mobileHeight).toBe(44);
+  expect(geometry.triggerOpacity).toBe(coarse ? "1" : "0");
+
+  if (!coarse) {
+    await page.locator("#context-tree").first().locator(".group").first().hover();
+    await expect(page.locator("#context-overflow")).toHaveCSS("opacity", "1");
+
+    await page.locator("#context-overflow").evaluate((trigger) => {
+      trigger.setAttribute("data-state", "open");
+    });
+    await page.locator("#portalled-menu-item").focus();
+    await page.locator("#portalled-menu-item").hover();
+    await expect(page.locator("#context-overflow")).toHaveCSS("opacity", "1");
+  }
 });

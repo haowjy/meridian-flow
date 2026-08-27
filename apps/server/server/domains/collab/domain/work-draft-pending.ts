@@ -18,7 +18,7 @@ export type PendingWorkDraft = {
 
 export type WorkDraftPending = {
   list(workId: WorkId): Promise<PendingWorkDraft[]>;
-  count(workId: WorkId): Promise<number>;
+  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };
 
 export function createWorkDraftPending(store: WorkDraftPendingStore): WorkDraftPending {
@@ -41,8 +41,9 @@ export function createWorkDraftPending(store: WorkDraftPendingStore): WorkDraftP
 
   return {
     list,
-    async count(workId) {
-      return (await list(workId)).length;
+    async countPendingByWorkIds(workIds) {
+      if (workIds.length === 0) return new Map();
+      return store.countPendingByWorkIds(workIds);
     },
   };
 }

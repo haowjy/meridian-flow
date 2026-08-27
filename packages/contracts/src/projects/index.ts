@@ -18,5 +18,3 @@ export interface Project {
   updatedAt: string;
   deletedAt: string | null;
 }
-
-export type { ProjectStatsResponse } from "./stats.js";

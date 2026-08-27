@@ -12,4 +12,8 @@ export {
   setThread,
 } from "./driver";
 export type { WorkingSetHydrationPlan } from "./hydration";
-export { buildWorkingSetRoute, workingSetRouteEquals } from "./store";
+export {
+  buildWorkingSetRoute,
+  recentRouteForEditorWork,
+  workingSetRouteEquals,
+} from "./store";

@@ -7,8 +7,12 @@ import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
+import {
+  deriveWorkPickerViewModel,
+  WorkPickerPanel,
+} from "@/components/app/work-composer-controls";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
-import { deriveWorkPickerViewModel, WorkPickerPanel } from "./WorkPickerPanel";
 
 export function useComposerWorkToolbarControl({
   projectId,
@@ -42,7 +46,7 @@ export function useComposerWorkToolbarControl({
         binding={trigger}
         ariaLabel={t`Change work for this chat, currently ${work.name}`}
       >
-        {work.name}
+        <WorkIdentity name={work.name} unavailableLabel={t`Unavailable`} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {

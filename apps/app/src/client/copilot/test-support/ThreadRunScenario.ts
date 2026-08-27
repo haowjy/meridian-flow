@@ -62,7 +62,10 @@ class ScenarioThreadTransport implements ThreadTransport {
   cancelRequests: Array<{ threadId: string; turnId: string }> = [];
   interruptResponses: InterruptRespondInput[] = [];
 
-  private readonly connectionWaiters = new Set<(token: string) => void>();
+  private readonly connectionWaiters = new Set<{
+    resolve(token: string): void;
+    reject(reason?: unknown): void;
+  }>();
 
   getConnectionToken(): string | undefined {
     return this.connectionToken;
@@ -70,12 +73,17 @@ class ScenarioThreadTransport implements ThreadTransport {
 
   awaitConnectionToken(): Promise<string> {
     if (this.connectionToken) return Promise.resolve(this.connectionToken);
-    return new Promise((resolve) => this.connectionWaiters.add(resolve));
+    return new Promise((resolve, reject) => this.connectionWaiters.add({ resolve, reject }));
   }
 
   connectWith(token: string): void {
     this.connectionToken = token;
-    for (const resolve of this.connectionWaiters) resolve(token);
+    for (const waiter of this.connectionWaiters) waiter.resolve(token);
+    this.connectionWaiters.clear();
+  }
+
+  rejectConnection(reason: unknown): void {
+    for (const waiter of this.connectionWaiters) waiter.reject(reason);
     this.connectionWaiters.clear();
   }
 
@@ -197,6 +205,10 @@ export class ThreadRunScenario {
 
   connect(token = "conn-test"): void {
     this.transport.connectWith(token);
+  }
+
+  rejectConnection(reason: unknown): void {
+    this.transport.rejectConnection(reason);
   }
 
   submit(text: string, options: SubmitOptions = {}, threadId = "thread_1"): Promise<void> {

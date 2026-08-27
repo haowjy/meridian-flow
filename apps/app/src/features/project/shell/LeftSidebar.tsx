@@ -31,7 +31,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
 export type LeftSidebarProps = {
   projectId: string;
   activeScreen: ScreenKey;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -43,7 +43,7 @@ export type LeftSidebarProps = {
 export function LeftSidebar({
   projectId,
   activeScreen,
-  activeThreadId,
+  editorWorkId,
   activeContextScheme,
   activeContextPath,
   onSelectScreen,
@@ -82,7 +82,7 @@ export function LeftSidebar({
       >
         <ContextTreePanel
           projectId={projectId}
-          activeThreadId={activeThreadId}
+          editorWorkId={editorWorkId}
           activeScheme={activeContextScheme}
           activePath={activeContextPath}
           onSelectFile={handleSelectFile}

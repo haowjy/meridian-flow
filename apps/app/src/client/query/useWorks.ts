@@ -1,6 +1,13 @@
 import type { ListWorksResponse } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  type UseMutateAsyncFunction,
+  type UseMutateFunction,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
@@ -8,7 +15,6 @@ import {
   createProjectWork,
   deleteWork,
   listProjectWorks,
-  setCurrentWork,
   unarchiveWork,
   updateWork,
   updateWorkWriteMode,
@@ -16,6 +22,7 @@ import {
 import { useIsProjectPendingCreation } from "@/client/stores";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
+import { convergeWorkProjection } from "./work-projection-cache";
 
 export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   const enabled = (options?.enabled ?? true) && !useIsProjectPendingCreation(projectId);
@@ -26,7 +33,6 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     enabled,
   });
   const works = list.data?.works ?? (list.isError ? [] : null);
-  const currentWorkId = list.data?.defaultWorkId ?? null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
     ? "disabled"
@@ -39,10 +45,6 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
           : "ready";
   return {
     works,
-    currentWork: works?.find((work) => work.id === currentWorkId) ?? null,
-    currentWorkId,
-    // Context document placement historically calls this the default Work.
-    defaultWorkId: currentWorkId,
     isError: list.isError,
     isFetching: list.isFetching,
     status: status as "disabled" | "error" | "loading" | "empty" | "ready",
@@ -50,46 +52,105 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   };
 }
 
-export function useDefaultWorkId(projectId: string): string | null {
-  return useWorks(projectId).currentWorkId;
+export interface WorkCommand<TResult, TVariables> {
+  mutate: UseMutateFunction<TResult, Error, TVariables>;
+  mutateAsync: UseMutateAsyncFunction<TResult, Error, TVariables>;
+  isPending: boolean;
+  error: Error | null;
 }
 
-async function refreshWorks(client: QueryClient, projectId: string) {
-  await Promise.all([
-    client.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) }),
-    client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) }),
-  ]);
+export interface WorkMutations {
+  create: WorkCommand<Work, CreateWorkRequest>;
+  update: WorkCommand<Work, { workId: string; data: UpdateWorkRequest }>;
+  archive: WorkCommand<Work, string>;
+  unarchive: WorkCommand<Work, string>;
+  delete: WorkCommand<void, string>;
+  isPending: boolean;
 }
 
-export function useWorkMutations(projectId: string) {
+export function useWorkMutations(projectId: string): WorkMutations {
   const client = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: async (
-      action:
-        | { type: "create"; data: CreateWorkRequest }
-        | { type: "switch"; workId: string }
-        | { type: "update"; workId: string; data: UpdateWorkRequest }
-        | { type: "archive" | "unarchive" | "delete"; workId: string },
-    ) => {
-      switch (action.type) {
-        case "create":
-          return createProjectWork(projectId, action.data);
-        case "switch":
-          return setCurrentWork(projectId, action.workId);
-        case "update":
-          return updateWork(action.workId, action.data);
-        case "archive":
-          return archiveWork(action.workId);
-        case "unarchive":
-          return unarchiveWork(action.workId);
-        case "delete":
-          await deleteWork(action.workId);
-          return null;
-      }
-    },
-    onSuccess: () => refreshWorks(client, projectId),
+  const lifecycleScope = { id: `work-lifecycle:${projectId}` };
+  const create = useWorkCommand(
+    client,
+    projectId,
+    "create",
+    (data: CreateWorkRequest) => createProjectWork(projectId, data),
+    { projectResult: returnsWork },
+  );
+  const update = useWorkCommand(
+    client,
+    projectId,
+    "update",
+    ({ workId, data }: { workId: string; data: UpdateWorkRequest }) => updateWork(workId, data),
+    { projectResult: returnsWork },
+  );
+  const archive = useWorkCommand(client, projectId, "archive", archiveWork, {
+    projectResult: returnsWork,
+    scope: lifecycleScope,
   });
-  return mutation;
+  const unarchive = useWorkCommand(client, projectId, "unarchive", unarchiveWork, {
+    projectResult: returnsWork,
+    scope: lifecycleScope,
+  });
+  const remove = useWorkCommand(client, projectId, "delete", deleteWork, {
+    scope: lifecycleScope,
+  });
+  const commands = [create, update, archive, unarchive, remove] as const;
+  return {
+    create,
+    update,
+    archive,
+    unarchive,
+    delete: remove,
+    isPending: commands.some((command) => command.isPending),
+  };
+}
+
+type WorkOperation = "create" | "update" | "archive" | "unarchive" | "delete";
+
+const returnsWork = (work: Work) => work;
+
+function useWorkCommand<TResult, TVariables>(
+  client: QueryClient,
+  projectId: string,
+  operation: WorkOperation,
+  command: (variables: TVariables) => Promise<TResult>,
+  options: { projectResult?: (result: TResult) => Work; scope?: { id: string } } = {},
+): WorkCommand<TResult, TVariables> {
+  const mutation = useMutation<TResult, Error, TVariables>({
+    mutationFn: command,
+    scope: options.scope,
+    onSuccess: (result) =>
+      convergeWorkCommand(client, projectId, operation, options.projectResult?.(result)),
+  });
+  return {
+    mutate: mutation.mutate,
+    mutateAsync: mutation.mutateAsync,
+    isPending: mutation.isPending,
+    error: mutation.error,
+  };
+}
+
+function convergeWorkCommand(
+  client: QueryClient,
+  projectId: string,
+  operation: WorkOperation,
+  result: Work | undefined,
+): void {
+  if (result) {
+    client.setQueryData<ListWorksResponse>(projectQueryKeys.works(projectId), (current) => {
+      if (!current) return current;
+      const present = current.works.some((work) => work.id === result.id);
+      return {
+        ...current,
+        works: present
+          ? current.works.map((work) => (work.id === result.id ? result : work))
+          : [...current.works, result],
+      };
+    });
+  }
+  convergeWorkProjection(client, { kind: "entity", projectId, operation });
 }
 
 export type UpdateWorkWriteModeMutationInput =

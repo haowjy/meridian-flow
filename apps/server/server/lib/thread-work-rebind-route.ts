@@ -5,7 +5,6 @@ import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { NoticePort } from "../domains/notices/index.js";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   type ProjectRepository,
   type WorkContextDelivery,
@@ -31,7 +30,6 @@ export interface ThreadWorkRebindRouteDeps {
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findById">;
-  preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
   notices: Pick<NoticePort, "record">;
@@ -86,7 +84,6 @@ export async function handleRebindThreadWorkRequest(
       const rebound = await rebindThreadWork(deps, {
         threadId: thread.id,
         targetWorkId: input.body.workId,
-        preferenceUserId: input.userId,
       });
       await recordWriterWorkSwitchNotice(deps.notices, rebound);
       return rebound;

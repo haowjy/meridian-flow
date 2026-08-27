@@ -126,8 +126,15 @@ export function createWorkContextDelivery(deps: {
     // win between this read and transition; retry from its new head rather
     // than creating a sibling and replacing active history.
     for (let attempt = 0; ; attempt += 1) {
+      // Pending selection and run ownership are intentionally outside the
+      // thread-head transaction. Revalidate visibility before canonical load;
+      // lockPending repeats this check under the transition lock below.
+      if (!(await deps.repos.workContextDeliveries.lockPending(threadId))) return null;
       const thread = await deps.repos.threads.findById(threadId);
-      if (!thread) throw new Error(`Thread not found: ${threadId}`);
+      if (!thread) {
+        if (attempt < 2) continue;
+        throw new Error(`Thread not found: ${threadId}`);
+      }
       const expected = (thread.activeLeafTurnId as TurnId | null) ?? null;
       try {
         const persisted = await persistAndAppendTurnStartEvents(

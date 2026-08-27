@@ -1,7 +1,9 @@
 /** Operation ownership coverage through the stateful untitled lifecycle rig. */
 
 import { QueryClientProvider } from "@tanstack/react-query";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import type { ContextTab } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { DesiredIdentity } from "./identity-location";
 import {
@@ -38,7 +40,7 @@ describe("identity commit operation ownership", () => {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
-        defaultWorkId: "work-1",
+        editorWorkId: "work-1",
         identityMutations: rig.identityMutations,
         onCommitted: (...receipt) => committed.push(receipt),
       });
@@ -68,7 +70,7 @@ describe("identity commit operation ownership", () => {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
-        defaultWorkId: "work-1",
+        editorWorkId: "work-1",
         identityMutations: rig.identityMutations,
         onCommitted: () => {},
       });
@@ -112,7 +114,7 @@ describe("identity commit operation ownership", () => {
       commit = useIdentityCommit({
         projectId: "project-1",
         tab,
-        defaultWorkId: "work-1",
+        editorWorkId: "work-1",
         identityMutations: rig.identityMutations,
         onCommitted: (_documentId, receipt, ownership) =>
           committed.push({ name: receipt.name, isLatest: ownership.isLatest }),
@@ -149,6 +151,65 @@ describe("identity commit operation ownership", () => {
     expect(committed).toEqual([
       { name: "First.md", isLatest: false },
       { name: "Latest.md", isLatest: true },
+    ]);
+  });
+
+  it("captures Work A for a pending identity move across an A to B route change", async () => {
+    const rig = new UntitledLifecycleRig();
+    const manuscriptTab = {
+      ...UNTITLED_TAB,
+      scheme: "manuscript",
+      path: "/Untitled.md",
+      workId: undefined,
+    } as Extract<ContextTab, { kind: "tracked" }>;
+    const tab = rig.seedTab(manuscriptTab);
+    const move = lifecycleGate<{
+      status: "moved";
+      scheme: "scratch";
+      path: string;
+      name: string;
+    }>();
+    rig.identityMove.enqueueHandler(() => move.promise);
+    const committed: Array<{ workId?: string }> = [];
+    let commit!: (target: DesiredIdentity) => Promise<unknown>;
+    let changeWork!: (workId: string) => void;
+
+    function Harness() {
+      const [workId, setWorkId] = useState("work-a");
+      changeWork = setWorkId;
+      commit = useIdentityCommit({
+        projectId: "project-1",
+        tab,
+        editorWorkId: workId,
+        identityMutations: rig.identityMutations,
+        onCommitted: (_documentId, receipt) => committed.push(receipt),
+      });
+      return null;
+    }
+
+    await withReactRoot(
+      <QueryClientProvider client={rig.queryClient}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        const pending = commit({
+          name: "Opening.md",
+          destination: { scheme: "scratch", folderPath: "/" },
+        });
+        await act(async () => changeWork("work-b"));
+        move.resolve({
+          status: "moved",
+          scheme: "scratch",
+          path: "Opening.md",
+          name: "Opening.md",
+        });
+        await pending;
+      },
+    );
+
+    expect(rig.identityMove.calls[0]?.[2].destinationWorkId).toBe("work-a");
+    expect(committed).toEqual([
+      expect.objectContaining({ workId: "work-a", routeWorkId: "work-a" }),
     ]);
   });
 

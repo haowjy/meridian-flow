@@ -2,11 +2,46 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-import { updateWork, updateWorkTransition } from "./update-work.js";
+import {
+  normalizeWorkUpdateInput,
+  updateWork,
+  updateWorkTransition,
+  WorkNameRequiredError,
+} from "./update-work.js";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000801";
 
 describe("updateWork", () => {
+  it.each([
+    {
+      raw: { name: "  Revised  ", goal: "  Finish it  ", description: "  Private notes  " },
+      normalized: { name: "Revised", goal: "Finish it", description: "Private notes" },
+    },
+    {
+      raw: { goal: " \n\t ", description: "" },
+      normalized: { goal: null, description: null },
+    },
+    {
+      raw: { goal: null, description: null },
+      normalized: { goal: null, description: null },
+    },
+    { raw: {}, normalized: {} },
+  ])("normalizes shared metadata intent: $raw", ({ raw, normalized }) => {
+    expect(normalizeWorkUpdateInput(raw)).toEqual(normalized);
+  });
+
+  it.each([
+    { kind: "valid", name: "Revised", normalized: "Revised" },
+    { kind: "trimmed", name: "  Revised  ", normalized: "Revised" },
+    { kind: "blank", name: " \n\t ", normalized: null },
+  ])("validates $kind Name intent at the metadata boundary", ({ name, normalized }) => {
+    if (normalized === null) {
+      expect(() => normalizeWorkUpdateInput({ name })).toThrow(WorkNameRequiredError);
+      return;
+    }
+    expect(normalizeWorkUpdateInput({ name })).toEqual({ name: normalized });
+  });
+
   it("emits one project refresh for a compound metadata and lifecycle command", async () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });

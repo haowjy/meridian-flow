@@ -16,16 +16,13 @@ function harness(receipts: WorkReceipt[]) {
   const works = createInMemoryWorkRepository({
     hasLiveThreads: (workId) => workId === liveThreadWorkId,
   });
-  const setCurrentWorkId = vi.fn(async () => {});
   return {
     works,
-    setCurrentWorkId,
     setLiveThreadWork(workId: WorkReceipt["workId"] | null) {
       liveThreadWorkId = workId;
     },
     deps: {
       works,
-      preferences: { setCurrentWorkId },
       turns: { findById: async () => ({ id: TURN_ID, threadId: THREAD_ID }) as never },
       threads: {
         findById: async () =>
@@ -57,14 +54,30 @@ describe("Work receipt reversal", () => {
     expect(
       combineWorkReversalOutcome(
         { status: "nothing_to_undo", documents: [] },
-        [{ command: "restore", workId: "w1" as never, name: "Arc", status: "reversed" }],
+        [
+          {
+            command: "restore",
+            projectId: "project-1",
+            workId: "w1" as never,
+            name: "Arc",
+            status: "reversed",
+          },
+        ],
         "undo",
       ).status,
     ).toBe("reversed");
     expect(
       combineWorkReversalOutcome(
         { status: "reconciled", documents: [{ uri: "manuscript://a", status: "reconciled" }] },
-        [{ command: "restore", workId: "w1" as never, name: "Arc", status: "failed" }],
+        [
+          {
+            command: "restore",
+            projectId: "project-1",
+            workId: "w1" as never,
+            name: "Arc",
+            status: "failed",
+          },
+        ],
         "undo",
       ).status,
     ).toBe("partial_failure");
@@ -132,7 +145,9 @@ describe("Work receipt reversal", () => {
       turnId: TURN_ID,
       direction: "undo",
     });
-    expect(result).toEqual([expect.objectContaining({ status: "reversed" })]);
+    expect(result).toEqual([
+      expect.objectContaining({ projectId: "project-1", status: "reversed" }),
+    ]);
     await expect(h.works.findById(work.id)).resolves.toMatchObject(state("Arc"));
 
     expect(result[0]?.status).toBe("reversed");
@@ -190,7 +205,6 @@ describe("Work receipt reversal", () => {
       name: "Original",
       deletedAt: null,
     });
-    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
     expect(h.deps.workContextDelivery.projectChanged).toHaveBeenCalledOnce();
   });
 
@@ -208,7 +222,7 @@ describe("Work receipt reversal", () => {
         workName: created.name,
         before: null,
         after: state("New"),
-        inverse: { command: "delete", workId: created.id, previousCurrentWorkId: original.id },
+        inverse: { command: "delete", workId: created.id },
       },
       switchReceipt(original, created),
     ];
@@ -221,7 +235,6 @@ describe("Work receipt reversal", () => {
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
     ).resolves.toEqual([expect.objectContaining({ command: "delete", status: "failed" })]);
     await expect(h.works.findById(created.id)).resolves.toMatchObject({ deletedAt: null });
-    expect(h.setCurrentWorkId).not.toHaveBeenCalled();
     expect(h.deps.workContextDelivery.projectChanged).not.toHaveBeenCalled();
   });
 
@@ -253,7 +266,7 @@ describe("Work receipt reversal", () => {
       workName: work.name,
       before: null,
       after: state("Arc"),
-      inverse: { command: "delete", workId: work.id, previousCurrentWorkId: null },
+      inverse: { command: "delete", workId: work.id },
     };
     Object.assign(h.deps.blocks, {
       listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,

@@ -37,6 +37,7 @@ import type {
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
 import { ThreadWorkProjectMismatchError } from "../../ports/repositories.js";
+import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
 // ledger are the money truth. Keep this local float helper out of billing
@@ -166,12 +167,17 @@ export function createInMemoryRepositories(
   const documentTouches = new Map<string, TurnDocumentTouch>();
   const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
   const workContextDeliveries = new Set<string>();
-  const lastOpenedByThreadUser = new Map<string, string>();
+  const userStateByThreadUser = new Map<string, { isFavorite: boolean }>();
   const transactionContext = new AsyncLocalStorage<boolean>();
   let transactionTail: Promise<void> = Promise.resolve();
 
-  function receivesWorkContextUpdate(thread: Thread | undefined): thread is Thread {
-    return !!thread && thread.status !== "archived";
+  async function receivesWorkContextUpdate(thread: Thread | undefined): Promise<boolean> {
+    return (
+      !!thread &&
+      !thread.deletedAt &&
+      thread.status !== "archived" &&
+      (await threadInActiveProject(thread))
+    );
   }
 
   function nextSlug(projectId: string, title: string | null | undefined): string | null {
@@ -181,10 +187,6 @@ export function createInMemoryRepositories(
         .filter((thread) => thread.projectId === projectId && !thread.deletedAt)
         .flatMap((thread) => (thread.slug ? [thread.slug] : [])),
     );
-  }
-
-  function openedKey(threadId: ThreadId, userId: string): string {
-    return `${threadId}:${userId}`;
   }
 
   function membershipKey(threadId: ThreadId, workId: WorkId): string {
@@ -213,9 +215,7 @@ export function createInMemoryRepositories(
     const work =
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
     const threadTurns = [...turns.values()].filter((turn) => turn.threadId === thread.id);
-    const latestTurn = projected.activeLeafTurnId
-      ? (turns.get(projected.activeLeafTurnId) ?? null)
-      : null;
+    const latestTurn = conversationalHead(projected);
     const runningTurn = [...threadTurns]
       .reverse()
       .find(
@@ -228,8 +228,6 @@ export function createInMemoryRepositories(
       workTitle: work && !work.deletedAt ? work.name : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
-      lastTurnAt: latestTurn ? (latestTurn.completedAt ?? latestTurn.createdAt) : null,
-      lastOpenedAt: lastOpenedByThreadUser.get(openedKey(thread.id, thread.userId)) ?? null,
       runningTurnId: runningTurn?.id ?? null,
     });
   }
@@ -279,6 +277,10 @@ export function createInMemoryRepositories(
     async findProjectIdByIdIncludingDeleted(id) {
       return threads.get(id)?.projectId ?? null;
     },
+    async lockByIdIncludingDeleted(id) {
+      const thread = threads.get(id);
+      return thread ? projectThread(thread) : null;
+    },
     async listByUser(userId) {
       const visible: Thread[] = [];
       for (const thread of threads.values()) {
@@ -306,7 +308,8 @@ export function createInMemoryRepositories(
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
     },
-    async listByWork(projectId, workId) {
+    async listRecentByWork(projectId, workId, limit) {
+      const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
       const visible: Thread[] = [];
       for (const thread of threads.values()) {
         if (
@@ -317,19 +320,13 @@ export function createInMemoryRepositories(
           !thread.deletedAt &&
           (await threadInActiveProject(thread))
         ) {
-          visible.push(projectThread(thread));
+          visible.push(thread);
         }
       }
-      const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      return Promise.all(ordered.map(toListItem));
-    },
-    async getLastOpenedAt(id, userId) {
-      return lastOpenedByThreadUser.get(openedKey(id, userId)) ?? null;
-    },
-    async markOpened(id, userId) {
-      const openedAt = new Date().toISOString();
-      lastOpenedByThreadUser.set(openedKey(id, userId), openedAt);
-      return openedAt;
+      return visible
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+        .slice(0, boundedLimit)
+        .map(({ title, updatedAt, status }) => ({ title, updatedAt, status }));
     },
     async updateStatus(id, status) {
       const thread = threads.get(id);
@@ -400,24 +397,18 @@ export function createInMemoryRepositories(
         updatedAt: toIsoString(new Date()),
       });
     },
-    async softDelete(id) {
+    async setTrashState(id, target) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (thread.deletedAt) return projectThread(thread);
+      if ((target === "deleted") === Boolean(thread.deletedAt)) {
+        throw new Error(`Thread trash transition requires a changed locked row: ${id}`);
+      }
       const now = toIsoString(new Date());
       const updated = {
         ...thread,
-        deletedAt: now,
+        deletedAt: target === "deleted" ? now : null,
         updatedAt: now,
       };
-      threads.set(id, updated);
-      return projectThread(updated);
-    },
-    async restore(id) {
-      const thread = threads.get(id);
-      if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (!thread.deletedAt) return projectThread(thread);
-      const updated = { ...thread, deletedAt: null, updatedAt: toIsoString(new Date()) };
       threads.set(id, updated);
       return projectThread(updated);
     },
@@ -472,8 +463,11 @@ export function createInMemoryRepositories(
       }
       const previousWorkId = primaryWorkIdForThread(threadId);
       if (previousWorkId === workId) return { previousWorkId, changed: false };
-      if (previousWorkId) threadWorks.delete(membershipKey(threadId, previousWorkId));
-      threadWorks.delete(membershipKey(threadId, workId));
+      if (previousWorkId) {
+        const previousKey = membershipKey(threadId, previousWorkId);
+        const previous = threadWorks.get(previousKey);
+        if (previous) threadWorks.set(previousKey, { ...previous, isPrimary: false });
+      }
       threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
       return { previousWorkId, changed: true };
     },
@@ -771,8 +765,26 @@ export function createInMemoryRepositories(
     },
   };
 
+  const { homeFeed, workChatFeed, threadUserState, conversationalHead } =
+    createInMemoryProjectChatAdapter(
+      {
+        threads: () => threads.values(),
+        turn: (id) => turns.get(id),
+        blocks: () => blocks.values(),
+        isProjectVisible: threadInActiveProject,
+        primaryWorkId: primaryWorkIdForThread,
+        hasWorkMembership: (threadId, workId) =>
+          threadWorks.has(membershipKey(threadId, workId as WorkId)),
+        work: async (id) => options.works?.findById(id) ?? null,
+      },
+      userStateByThreadUser,
+    );
+
   return {
     threads: threadRepo,
+    homeFeed,
+    workChatFeed,
+    threadUserState,
     threadWorks: threadWorksRepo,
     turns: turnRepo,
     blocks: blockRepo,
@@ -781,29 +793,37 @@ export function createInMemoryRepositories(
     documentTouches: documentTouchRepo,
     workContextDeliveries: {
       async enqueueThread(threadId) {
-        if (receivesWorkContextUpdate(threads.get(threadId))) workContextDeliveries.add(threadId);
-        return workContextDeliveries.has(threadId) ? [threadId] : [];
+        if (!(await receivesWorkContextUpdate(threads.get(threadId)))) return [];
+        workContextDeliveries.add(threadId);
+        return [threadId];
       },
       async enqueueProject(projectId: ProjectId) {
+        const selected: ThreadId[] = [];
         for (const thread of threads.values()) {
-          if (thread.projectId === projectId && receivesWorkContextUpdate(thread)) {
+          if (thread.projectId === projectId && (await receivesWorkContextUpdate(thread))) {
             workContextDeliveries.add(thread.id);
+            selected.push(thread.id as ThreadId);
           }
         }
-        return [...workContextDeliveries].filter(
-          (threadId) => threads.get(threadId)?.projectId === projectId,
-        ) as ThreadId[];
+        return selected;
       },
       async listPendingThreadIds() {
-        return [...workContextDeliveries].filter((threadId) =>
-          receivesWorkContextUpdate(threads.get(threadId)),
-        ) as ThreadId[];
+        const selected: ThreadId[] = [];
+        for (const threadId of workContextDeliveries) {
+          if (await receivesWorkContextUpdate(threads.get(threadId))) {
+            selected.push(threadId as ThreadId);
+          }
+        }
+        return selected;
       },
       async isPending(threadId) {
         return workContextDeliveries.has(threadId);
       },
       async lockPending(threadId) {
-        return workContextDeliveries.has(threadId);
+        return (
+          workContextDeliveries.has(threadId) &&
+          (await receivesWorkContextUpdate(threads.get(threadId)))
+        );
       },
       async acknowledge(threadId) {
         workContextDeliveries.delete(threadId);
@@ -831,6 +851,7 @@ export function createInMemoryRepositories(
           const threadDocumentsSnapshot = new Map(threadDocuments);
           const documentTouchesSnapshot = new Map(documentTouches);
           const threadWorksSnapshot = new Map(threadWorks);
+          const userStateSnapshot = new Map(userStateByThreadUser);
           const workContextDeliveriesSnapshot = new Set(workContextDeliveries);
           try {
             return await operation();
@@ -849,6 +870,8 @@ export function createInMemoryRepositories(
             for (const entry of documentTouchesSnapshot) documentTouches.set(...entry);
             threadWorks.clear();
             for (const entry of threadWorksSnapshot) threadWorks.set(...entry);
+            userStateByThreadUser.clear();
+            for (const entry of userStateSnapshot) userStateByThreadUser.set(...entry);
             workContextDeliveries.clear();
             for (const threadId of workContextDeliveriesSnapshot) {
               workContextDeliveries.add(threadId);

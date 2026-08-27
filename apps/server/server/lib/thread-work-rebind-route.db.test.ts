@@ -59,7 +59,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("excludes a writer rebind while another server instance owns the run", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const preferences = createDrizzleProjectPreferencesRepository({ db });
       const projects = createDrizzleProjectRepository({ db });
       const modelInstance = createDrizzleThreadRunOwnership(db);
       const writerInstance = createDrizzleThreadRunOwnership(db);
@@ -75,7 +74,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadWorks: threads.threadWorks,
               projects,
               works,
-              preferences,
               obligations: threads.workContextDeliveries,
               workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
               notices,
@@ -104,7 +102,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadWorks: threads.threadWorks,
           projects,
           works,
-          preferences,
           obligations: threads.workContextDeliveries,
           workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
           notices,
@@ -121,7 +118,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("serializes a target deleted after preflight as a refreshable lifecycle conflict", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const preferences = createDrizzleProjectPreferencesRepository({ db });
       const projects = createDrizzleProjectRepository({ db });
       const staleTarget = await works.findById(TARGET_WORK_ID);
       if (!staleTarget) throw new Error("Expected target fixture");
@@ -143,7 +139,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadWorks: threads.threadWorks,
             projects,
             works: stalePreflightWorks,
-            preferences,
             obligations: threads.workContextDeliveries,
             workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
             notices,
@@ -177,7 +172,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("returns 5xx when the real lifecycle lock query is cancelled", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const preferences = createDrizzleProjectPreferencesRepository({ db });
       const projects = createDrizzleProjectRepository({ db });
       const failingDb = createDb(DATABASE_URL, {
         max: 1,
@@ -209,7 +203,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadWorks: failingThreads.threadWorks,
               projects,
               works,
-              preferences,
               obligations: threads.workContextDeliveries,
               workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
               notices,
@@ -235,7 +228,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("commits the writer binding state and one durable Notice in the same transaction", async () => {
+    it("commits the writer binding and one durable Notice without changing the fallback in the same transaction", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const preferences = createDrizzleProjectPreferencesRepository({ db });
       const projects = createDrizzleProjectRepository({ db });
@@ -246,7 +239,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadWorks: threads.threadWorks,
           projects,
           works,
-          preferences,
           obligations: threads.workContextDeliveries,
           workContextDelivery: { deliverAfterCommit: async () => "pending" as const },
           notices,
@@ -261,9 +253,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: TARGET_WORK_ID,
       });
-      await expect(preferences.getCurrentWorkId(USER_ID, THREAD_WORK_RACE.projectId)).resolves.toBe(
-        TARGET_WORK_ID,
-      );
+      await expect(
+        preferences.getNewChatFallbackWorkId(USER_ID, THREAD_WORK_RACE.projectId),
+      ).resolves.toBeNull();
       await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
 
       const recreatedPort = createDrizzleNoticePort(db);
@@ -283,7 +275,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
     });
 
-    it("rolls back binding, preference, context obligation, and Notice on Notice failure", async () => {
+    it("rolls back binding, context obligation, and Notice on Notice failure", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const preferences = createDrizzleProjectPreferencesRepository({ db });
       const projects = createDrizzleProjectRepository({ db });
@@ -295,7 +287,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadWorks: threads.threadWorks,
             projects,
             works,
-            preferences,
             obligations: threads.workContextDeliveries,
             workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
             notices: {
@@ -316,7 +307,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID,
       });
       await expect(
-        preferences.getCurrentWorkId(USER_ID, THREAD_WORK_RACE.projectId),
+        preferences.getNewChatFallbackWorkId(USER_ID, THREAD_WORK_RACE.projectId),
       ).resolves.toBeNull();
       await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
       await expect(notices.drainForModelContext(THREAD_ID)).resolves.toEqual([]);

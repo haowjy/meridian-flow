@@ -7,6 +7,7 @@
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
 import { EventType } from "@meridian/contracts/protocol";
+import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
   appendUserMessage,
@@ -35,6 +36,36 @@ export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
 };
+
+export type AdmissionFailureKind = "definite" | "ambiguous";
+
+/**
+ * Typed boundary for message admission failures.
+ *
+ * `definite` means the controller knows the append was not accepted: local
+ * arbitration, connection preflight, or an authoritative API rejection.
+ * `ambiguous` means a dispatched append did not produce an authoritative
+ * response, so callers must not retry it blindly.
+ */
+export class ThreadAdmissionError extends Error {
+  readonly kind: AdmissionFailureKind;
+
+  constructor(kind: AdmissionFailureKind, cause: unknown) {
+    super(errorMessage(cause, "Failed to submit message"), { cause });
+    this.name = "ThreadAdmissionError";
+    this.kind = kind;
+  }
+}
+
+export function isThreadAdmissionError(value: unknown): value is ThreadAdmissionError {
+  return value instanceof ThreadAdmissionError;
+}
+
+function classifyAdmissionFailure(error: unknown): AdmissionFailureKind {
+  if (isThreadAdmissionError(error)) return error.kind;
+  if (isMeridianApiError(error) || error instanceof HttpResponseError) return "definite";
+  return "ambiguous";
+}
 
 export type ThreadRunControllerOptions = {
   transport: ThreadTransport;
@@ -92,15 +123,25 @@ export class ThreadRunController {
       if (options.optimisticUserTurnId) {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
-      throw new Error("submit already in flight");
+      throw new ThreadAdmissionError("definite", new Error("submit already in flight"));
     }
 
     this.admissionInFlight = true;
     const admissionEpoch = this.admissionEpoch;
     let result: Awaited<ReturnType<AppendUserMessageFn>>;
 
+    let connectionToken: string;
     try {
-      const connectionToken = await this.transport.awaitConnectionToken();
+      connectionToken = await this.transport.awaitConnectionToken();
+    } catch (error) {
+      if (options.optimisticUserTurnId) {
+        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+      }
+      this.admissionInFlight = false;
+      throw new ThreadAdmissionError("definite", error);
+    }
+
+    try {
       result = await this.appendUserMessageFn({
         data: {
           threadId,
@@ -109,10 +150,11 @@ export class ThreadRunController {
         },
       });
     } catch (error) {
-      if (options.optimisticUserTurnId && isMeridianApiError(error)) {
+      const kind = classifyAdmissionFailure(error);
+      if (options.optimisticUserTurnId && kind === "definite") {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
-      throw error;
+      throw isThreadAdmissionError(error) ? error : new ThreadAdmissionError(kind, error);
     } finally {
       this.admissionInFlight = false;
     }

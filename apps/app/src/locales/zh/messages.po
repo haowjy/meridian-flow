@@ -67,13 +67,18 @@ msgstr ""
 msgid "(also {0})"
 msgstr ""
 
-#. placeholder {0}: work.unpushedChangeCount
-#: src/features/project/home/WorksManager.tsx
-msgid "{0, plural, one {# pending change} other {# pending changes}}"
+#. placeholder {0}: tree.children.length - visible.length
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{0, plural, one {# more item} other {# more items}}"
+msgstr ""
+
+#. placeholder {0}: group.drafts.length
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
 msgstr ""
 
 #. placeholder {0}: count ?? 0
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 msgstr ""
 
@@ -92,6 +97,11 @@ msgstr ""
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
 
+#. placeholder {0}: chat.title
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "{0} added to favorites"
+msgstr ""
+
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
 msgid "{0} additional balance"
@@ -100,6 +110,11 @@ msgstr ""
 #. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
+msgstr ""
+
+#. placeholder {0}: fieldLabel(target)
+#: src/features/project/work/WorkMetadata.tsx
+msgid "{0} edit canceled"
 msgstr ""
 
 #. placeholder {0}: entry.filename
@@ -122,6 +137,26 @@ msgstr ""
 msgid "{0} isn't in {section}."
 msgstr ""
 
+#. placeholder {0}: item.title
+#: src/features/project/home/HomeScreen.tsx
+msgid "{0} moved to Favorite chats"
+msgstr ""
+
+#. placeholder {0}: item.title
+#: src/features/project/home/HomeScreen.tsx
+msgid "{0} moved to Recent chats"
+msgstr ""
+
+#. placeholder {0}: chat.title
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "{0} removed from favorites"
+msgstr ""
+
+#. placeholder {0}: fieldLabel(target)
+#: src/features/project/work/WorkMetadata.tsx
+msgid "{0} saved"
+msgstr ""
+
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -129,8 +164,12 @@ msgid "{0} source copied"
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "{0}, Archived"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{count, plural, one {# item} other {# items}}"
 msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -160,6 +199,10 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "{label} couldn’t load"
+msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -244,22 +287,33 @@ msgid "Account settings."
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Actions"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Actions for {title}"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Active"
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Active Work"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "其实…"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Add a description"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Add a goal"
+msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add column"
@@ -272,6 +326,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add row"
+msgstr ""
+
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Add to favorites"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -304,11 +362,11 @@ msgstr ""
 msgid "AI edits wait here for your review."
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "AI write mode"
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "AI write mode: {localizedValue}"
 msgstr ""
 
@@ -328,12 +386,16 @@ msgstr ""
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "All Work"
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-msgid "Another chat needs attention"
+msgid "Another chat needs your answer"
 msgstr ""
 
 #: src/features/chat/TextBlock.tsx
@@ -353,20 +415,20 @@ msgstr ""
 msgid "Apply all"
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
-msgid "Archive"
+#: src/features/project/work/WorkDialog.tsx
+msgid "Archive Work"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Archived"
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Archived Work"
 msgstr ""
 
@@ -383,7 +445,15 @@ msgstr "用日常语言描述你的数据、方法或下一步即可。"
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Associated chats"
+msgstr ""
+
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Associated chats couldn’t load"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Auto-apply"
 msgstr ""
 
@@ -442,7 +512,7 @@ msgstr ""
 msgid "Bold"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Brainstorm away"
 msgstr "一起头脑风暴吧"
 
@@ -471,11 +541,12 @@ msgstr ""
 msgid "Can't undo"
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkDialog.tsx
+#: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
 msgstr ""
 
@@ -499,8 +570,8 @@ msgstr ""
 msgid "Centered"
 msgstr ""
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "Change work for this chat"
 msgstr ""
 
@@ -525,7 +596,7 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Changing work"
 msgstr ""
 
@@ -542,17 +613,32 @@ msgstr ""
 #: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatPaneController.tsx
 #: src/features/project/dock/DockHeader.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Chat away"
 msgstr "随便聊聊"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat creation is still being reconciled"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Chat was created but couldn’t open"
+msgstr ""
+
+#: src/features/project/home/HomeFeed.tsx
+msgid "Chats couldn’t load"
+msgstr ""
+
+#: src/features/project/home/HomeFeed.tsx
+msgid "Check your connection and try again."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -563,7 +649,7 @@ msgstr ""
 msgid "Checked Work"
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr ""
 
@@ -579,7 +665,7 @@ msgstr ""
 msgid "Checkout unavailable."
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Chime in"
 msgstr "我来说两句"
 
@@ -589,6 +675,10 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Choose a Work"
 msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
@@ -604,8 +694,21 @@ msgstr ""
 msgid "Choose an option"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
-msgid "Choose the context for new writing and chats."
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Choose what to do before continuing."
+msgstr ""
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat"
+msgstr ""
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat, current choice unavailable"
+msgstr ""
+
+#. placeholder {0}: work.name
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat, currently {0}"
 msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
@@ -698,6 +801,10 @@ msgstr ""
 msgid "Completed"
 msgstr ""
 
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Composer controls"
+msgstr ""
+
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
 msgstr ""
@@ -707,8 +814,20 @@ msgstr ""
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Contents preview"
+msgstr ""
+
 #: src/features/project/dock/DockHeader.tsx
 msgid "Context"
+msgstr ""
+
+#: src/features/project/home/HomeFeed.tsx
+msgid "Continue"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Continue navigation"
 msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
@@ -746,7 +865,7 @@ msgstr ""
 msgid "Could not load files."
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr ""
 
@@ -802,6 +921,10 @@ msgstr ""
 msgid "Couldn't finish that step"
 msgstr ""
 
+#: src/features/project/work/WorkResourceState.tsx
+#~ msgid "couldn’t load"
+#~ msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
 msgstr ""
@@ -834,8 +957,7 @@ msgstr ""
 msgid "Couldn't load uploads."
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
 msgstr ""
 
@@ -912,8 +1034,16 @@ msgstr ""
 msgid "Create the document"
 msgstr ""
 
+#: src/features/project/work/WorkDialog.tsx
+msgid "Create Work"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Created a Work"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Created chat didn’t match your choices"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -925,6 +1055,10 @@ msgstr ""
 msgid "Creating a Work…"
 msgstr ""
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Creating chat"
+msgstr ""
+
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
 msgstr ""
@@ -933,14 +1067,9 @@ msgstr ""
 msgid "Current block type"
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Current Work for this chat."
 msgstr ""
-
-#. placeholder {0}: archivedCurrentWork.name
-#: src/features/project/home/WorksManager.tsx
-msgid "Current: {0}"
-msgstr "当前：{0}"
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Custom amount (USD)"
@@ -966,8 +1095,6 @@ msgstr ""
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/home/WorksManager.tsx
-#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Delete"
 msgstr ""
 
@@ -989,6 +1116,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete table"
+msgstr ""
+
+#: src/features/project/work/WorkDialog.tsx
+msgid "Delete Work"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1016,7 +1147,7 @@ msgstr "演示图片"
 msgid "Describe the picture for a reader who cannot see it"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkMetadata.tsx
 msgid "Description"
 msgstr ""
 
@@ -1045,6 +1176,10 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Discard all changes?"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Discard changes"
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
@@ -1080,7 +1215,7 @@ msgstr ""
 msgid "Download image"
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Draft"
 msgstr ""
 
@@ -1105,7 +1240,7 @@ msgstr ""
 msgid "Drafting…"
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Drafts are waiting"
 msgstr ""
 
@@ -1119,8 +1254,8 @@ msgstr ""
 msgid "Duplicate"
 msgstr ""
 
-#. placeholder {0}: work.name
-#: src/features/project/home/WorksManager.tsx
+#. placeholder {0}: fieldLabel(next)
+#: src/features/project/work/WorkMetadata.tsx
 msgid "Edit {0}"
 msgstr ""
 
@@ -1132,6 +1267,10 @@ msgstr ""
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Edit source"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Edit Work name"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1200,13 +1339,8 @@ msgid "epigraph"
 msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
 msgid "Errored"
-msgstr ""
-
-#: src/features/project/home/HomeScreen.tsx
-msgid "Every chat across your work"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -1254,6 +1388,15 @@ msgstr ""
 msgid "Failed to load image"
 msgstr "图片加载失败"
 
+#: src/features/project/home/HomeFeed.tsx
+msgid "Favorite"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Favorite wasn’t saved"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
 msgstr ""
@@ -1278,6 +1421,14 @@ msgstr ""
 msgid "Files"
 msgstr ""
 
+#: src/features/project/home/HomeScreen.tsx
+msgid "Finish the current chat attempt"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Finishing write mode change"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
 msgstr "名"
@@ -1298,16 +1449,17 @@ msgstr ""
 msgid "Form payload is malformed."
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
 msgstr "说吧"
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkDialog.tsx
+#: src/features/project/work/WorkMetadata.tsx
 msgid "Goal"
 msgstr ""
 
 #. placeholder {0}: work.goal
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Goal: {0}. "
 msgstr ""
 
@@ -1358,11 +1510,10 @@ msgstr ""
 msgid "Hide source"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Hold on…"
 msgstr "等一下…"
 
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/HomePaneController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
@@ -1386,7 +1537,6 @@ msgstr "ID"
 msgid "Identity"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
 msgid "Idle"
 msgstr ""
@@ -1465,7 +1615,7 @@ msgstr ""
 msgid "Interface language"
 msgstr "界面语言"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Interject"
 msgstr "插一句"
 
@@ -1492,6 +1642,10 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Keep editing"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -1531,7 +1685,7 @@ msgstr ""
 msgid "Left"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
 msgstr "我们开始吧"
 
@@ -1576,6 +1730,10 @@ msgstr ""
 msgid "Live view"
 msgstr ""
 
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Load more chats"
+msgstr ""
+
 #. placeholder {0}: tab.name
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Loading {0}"
@@ -1589,9 +1747,8 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
-msgid "Loading chats…"
+#: src/features/project/home/HomeFeed.tsx
+msgid "Loading chats"
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -1606,6 +1763,10 @@ msgstr ""
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "正在加载图片"
+
+#: src/features/project/home/HomeFeed.tsx
+msgid "Loading more chats"
+msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Loading recent documents…"
@@ -1628,15 +1789,20 @@ msgid "Loading uploads…"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work"
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work…"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Loading…"
 msgstr ""
 
@@ -1648,8 +1814,18 @@ msgstr ""
 msgid "Looking for the document this link names."
 msgstr ""
 
+#. placeholder {0}: work.name
+#: src/features/project/work/WorkCard.tsx
+msgid "Manage {0}"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkDialog.tsx
+msgid "Manage Work"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -1685,6 +1861,10 @@ msgstr ""
 msgid "Meridian removed a small part of this chapter that this version can't display. The removed text is saved below so you can keep the words."
 msgstr ""
 
+#: src/components/app/composer/Composer.tsx
+msgid "Message"
+msgstr ""
+
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Minimum is {0}."
@@ -1706,6 +1886,10 @@ msgstr ""
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "More"
+msgstr ""
+
+#: src/features/project/home/HomeFeed.tsx
+msgid "More chats couldn’t load."
 msgstr ""
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
@@ -1756,7 +1940,7 @@ msgstr ""
 msgid "Must be at most {value}"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkDialog.tsx
 msgid "Name"
 msgstr ""
 
@@ -1793,8 +1977,7 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -1820,19 +2003,16 @@ msgstr ""
 msgid "New project started"
 msgstr ""
 
-#: src/features/chat/ThreadSwitcherPopover.tsx
-msgid "New reply since you last opened"
-msgstr ""
-
 #: src/features/project/context/ContextTabBar.tsx
 msgid "New tab"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkDialog.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "New Work"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "No active Work yet."
 msgstr ""
 
@@ -1850,9 +2030,8 @@ msgstr ""
 msgid "No billing activity yet."
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
-msgid "No chats yet — start one to get going."
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "No chats are associated with this Work."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -1880,7 +2059,7 @@ msgstr ""
 msgid "No files uploaded yet."
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/work/WorkCard.tsx
 msgid "No goal yet"
 msgstr ""
 
@@ -1892,8 +2071,16 @@ msgstr ""
 msgid "No matching files"
 msgstr ""
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "No messages yet."
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "No pending drafts."
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -1908,11 +2095,13 @@ msgstr ""
 msgid "No results yet."
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work matches your search."
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/home/HomeScreen.tsx
 msgid "No Work yet."
 msgstr ""
 
@@ -1925,12 +2114,8 @@ msgid "Nothing carries that name yet"
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Nothing here yet"
-msgstr ""
-
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileHomeScreen.tsx
-msgid "Nothing matches this filter."
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -1941,6 +2126,7 @@ msgstr ""
 msgid "Nothing to undo yet."
 msgstr ""
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "刚刚"
@@ -1962,10 +2148,6 @@ msgstr ""
 msgid "Older"
 msgstr "更早"
 
-#: src/features/project/home/HomeScreen.tsx
-msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
-msgstr ""
-
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Only on this device"
 msgstr ""
@@ -1974,13 +2156,23 @@ msgstr ""
 msgid "Only part of this change could be reversed."
 msgstr ""
 
+#. placeholder {0}: work.name
+#: src/features/project/work/WorkCard.tsx
+msgid "Open {0}"
+msgstr ""
+
 #. placeholder {0}: documentDisplayName(path)
 #. placeholder {1}: excerptText(excerpt)
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Open {label}"
+msgstr ""
+
 #: src/features/chat/DocumentName.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Open {title}"
 msgstr ""
 
@@ -1994,6 +2186,10 @@ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open a project to see its results."
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Open chat"
 msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
@@ -2014,6 +2210,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Open link"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Open manuscript draft"
 msgstr ""
 
 #: src/features/project/mobile/MobileTopBar.tsx
@@ -2085,6 +2285,14 @@ msgstr ""
 msgid "Paste a link or type [[a document name]]"
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Pending drafts"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Pending drafts couldn’t load"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr ""
@@ -2122,10 +2330,6 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
-#: src/features/project/mobile/MobileTopBar.tsx
-msgid "Project"
-msgstr ""
-
 #: src/features/home/first-party-packages.ts
 msgid "Protocol Designer"
 msgstr ""
@@ -2134,7 +2338,7 @@ msgstr ""
 msgid "Put the caret in a table first."
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "突然想到"
 
@@ -2173,6 +2377,10 @@ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Recent activity"
+msgstr ""
+
+#: src/features/project/home/HomeFeed.tsx
+msgid "Recent chats"
 msgstr ""
 
 #: src/features/home/RecentProjects.tsx
@@ -2238,6 +2446,10 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Remove from favorites"
+msgstr ""
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
@@ -2251,7 +2463,6 @@ msgstr ""
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
-#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Rename"
 msgstr ""
 
@@ -2323,18 +2534,40 @@ msgstr ""
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/home/HomeFeed.tsx
 msgid "Retry"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Retry {label}"
+msgstr ""
+
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Retry Associated chats"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Retry Pending drafts"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Retry save"
 msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr ""
 
+#: src/features/project/work/WorkScreen.tsx
+msgid "Retry Work"
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
 msgstr ""
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Review changes"
 msgstr ""
 
@@ -2364,20 +2597,34 @@ msgstr ""
 msgid "rule"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
-msgid "Running"
-msgstr "运行中"
+#. placeholder {0}: fieldLabel(field).toLowerCase()
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Save {0}"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Save changes"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Save failed"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Save metadata changes?"
+msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
-msgid "Save Work"
-msgstr ""
-
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Saving…"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2385,6 +2632,7 @@ msgid "scene break"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Scratch"
 msgstr ""
 
@@ -2400,7 +2648,7 @@ msgstr ""
 msgid "Search papers, extract findings, and synthesize a summary across sources."
 msgstr ""
 
-#: src/features/chat/WorkPickerPanel.tsx
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Search Work"
 msgstr ""
 
@@ -2452,7 +2700,7 @@ msgstr ""
 msgid "Select…"
 msgstr ""
 
-#: src/features/chat/Composer.tsx
+#: src/components/app/composer/Composer.tsx
 msgid "Send message"
 msgstr "发送消息"
 
@@ -2521,17 +2769,20 @@ msgstr ""
 msgid "Something went wrong while making that change."
 msgstr ""
 
-#. placeholder {0}: direction === "asc" ? "ascending" : "descending"
-#: src/features/project/home/HomeScreen.tsx
-msgid "Sorted {0}"
-msgstr ""
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
 msgstr ""
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Start over"
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Start with a scene, a question, or a problem to solve."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
@@ -2547,11 +2798,7 @@ msgstr ""
 msgid "status"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
-msgid "Status"
-msgstr ""
-
-#: src/features/chat/Composer.tsx
+#: src/components/app/composer/Composer.tsx
 msgid "Stop"
 msgstr "停止"
 
@@ -2638,7 +2885,7 @@ msgstr ""
 msgid "Table placement"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "说出来理一理"
 
@@ -2715,8 +2962,8 @@ msgstr ""
 msgid "That skill isn't available in this chat."
 msgstr ""
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "That Work is no longer available. Choose another Work."
 msgstr ""
 
@@ -2729,6 +2976,7 @@ msgid "The {skillName} skill isn't available in this chat."
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "The AI asked you a question"
 msgstr ""
 
@@ -2740,8 +2988,8 @@ msgstr ""
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "The change could not be confirmed. Try again."
 msgstr ""
 
@@ -2777,8 +3025,8 @@ msgstr ""
 msgid "The requested passage wasn't specific enough."
 msgstr ""
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "The Work did not change. Try again."
 msgstr ""
 
@@ -2794,7 +3042,7 @@ msgstr ""
 msgid "Thinking"
 msgstr "思考"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "边想边说？"
 
@@ -2872,18 +3120,13 @@ msgstr ""
 msgid "This chat now uses {0}."
 msgstr ""
 
-#. placeholder {0}: commit.work.name
-#: src/features/chat/useComposerWorkBinding.ts
-msgid "This chat now uses {0}. New chats will use it too."
-msgstr ""
-
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr ""
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "This chat's current Work could not be found. Refresh the page and try again."
 msgstr ""
 
@@ -3000,8 +3243,16 @@ msgstr ""
 msgid "This week"
 msgstr "本周"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
+msgstr ""
+
+#: src/features/project/work/WorkDialog.tsx
+msgid "This Work is active."
+msgstr ""
+
+#: src/features/project/work/WorkDialog.tsx
+msgid "This Work is archived."
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -3027,7 +3278,6 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#: src/features/project/home/WorksManager.tsx
 msgid "Try again"
 msgstr ""
 
@@ -3056,13 +3306,19 @@ msgstr ""
 msgid "Unable to render diagram"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
-msgid "Unarchive"
+#: src/features/project/work/WorkDialog.tsx
+msgid "Unarchive Work"
 msgstr ""
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.unarchived"
+msgstr ""
+
+#: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Unavailable"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3100,16 +3356,16 @@ msgstr ""
 msgid "Untitled document"
 msgstr ""
 
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Untitled manuscript"
+msgstr ""
+
 #: src/lib/project-title.ts
 msgid "Untitled project"
 msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Update link"
-msgstr ""
-
-#: src/features/project/home/HomeScreen.tsx
-msgid "Updated"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3153,6 +3409,7 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/shell/ContextSidebar.tsx
+#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Uploads"
 msgstr ""
 
@@ -3169,17 +3426,9 @@ msgstr ""
 msgid "User"
 msgstr ""
 
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
-#: src/features/chat/WorkPickerPanel.tsx
 msgid "Wait for this response to finish, then try again."
-msgstr ""
-
-#: src/features/project/lifecycle.ts
-msgid "Waiting for you"
-msgstr ""
-
-#: src/features/project/home/HomeScreen.tsx
-msgid "Waiting on you"
 msgstr ""
 
 #: src/features/home/HomeHero.tsx
@@ -3190,15 +3439,19 @@ msgstr "你正在研究什么？"
 msgid "What this figure shows"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/features/project/home/HomeScreen.tsx
+msgid "What will you write next?"
+msgstr ""
+
+#: src/components/app/composer/placeholders.ts
 msgid "What's next?"
 msgstr "接下来呢？"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "What's on your mind?"
 msgstr "你在想什么？"
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
 
@@ -3207,9 +3460,12 @@ msgid "Why this is marked merged"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/home/WorksManager.tsx
+#: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/home/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/shell/screens.ts
+#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/WorkPaneController.tsx
 msgid "Work"
 msgstr ""
 
@@ -3218,12 +3474,35 @@ msgstr ""
 msgid "workReceipt.upToDate"
 msgstr ""
 
-#: src/features/project/home/WorksManager.tsx
-msgid "Work details"
+#: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/work/WorkScreen.tsx
+msgid "Work couldn’t load"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Work identity"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Work name"
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Work name is required"
+msgstr ""
+
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Work unavailable"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Work: \"{workName}\""
+msgstr ""
+
+#. placeholder {0}: item.work.title
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Work: {0}"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
@@ -3239,11 +3518,11 @@ msgstr ""
 msgid "Wrap lines"
 msgstr ""
 
-#: src/features/chat/placeholders.ts
+#: src/components/app/composer/placeholders.ts
 msgid "Write away"
 msgstr "开始写吧"
 
-#: src/features/chat/ComposerWriteModeControl.tsx
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Write mode"
 msgstr ""
 
@@ -3269,6 +3548,10 @@ msgstr "昨天"
 msgid "you answered"
 msgstr ""
 
+#: src/features/project/home/HomeFeed.tsx
+msgid "Your chats will appear here after you send a message."
+msgstr ""
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 msgstr ""
@@ -3283,6 +3566,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
+msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+msgid "Your Work or Agent choice is no longer available"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx

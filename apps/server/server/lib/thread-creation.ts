@@ -49,7 +49,7 @@ export interface CreateThreadForProjectArgs {
   /** Mars agent slug — when set, agent body becomes the thread system prompt. */
   currentAgent?: string | null;
   /** Explicit work assignment from the request, if any. */
-  workId?: string | null;
+  workId?: string;
   /** When set, this is a subagent thread — inherit the parent's work. */
   parentThreadId?: string | null;
 }

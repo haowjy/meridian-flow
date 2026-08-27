@@ -14,7 +14,8 @@ export type ContextUri = Omit<ParsedContextUri, "path" | "canonical"> & {
   path: string;
 };
 
-export type ContextRouteTarget = {
+/** Parsed URI destination before the route owner supplies command ownership. */
+export type ParsedContextUriTarget = {
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string | null;
@@ -38,7 +39,7 @@ export function contextUriFromWritePath(path: string): string {
 export function contextRouteTargetFromUri(
   uri: string,
   activeWork: ActiveWorkHandle | null,
-): ContextRouteTarget | null {
+): ParsedContextUriTarget | null {
   const persisted = persistedWorkRouteTarget(uri, activeWork);
   if (persisted !== undefined) return persisted;
 
@@ -59,7 +60,7 @@ export function contextRouteTargetFromUri(
 function persistedWorkRouteTarget(
   uri: string,
   activeWork: ActiveWorkHandle | null,
-): ContextRouteTarget | null | undefined {
+): ParsedContextUriTarget | null | undefined {
   const match = uri.trim().match(/^(scratch|uploads):\/\/([^/]+)(?:\/(.*))?$/);
   if (!match) return undefined;
   const workId = parseRequestId(match[2]);

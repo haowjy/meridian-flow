@@ -1,12 +1,11 @@
 /** Canonical thread Work-rebind command shared by model and writer adapters. */
-import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type {
   RebindThreadWorkResult,
   Work,
   WorkReceipt,
   WorkReceiptState,
 } from "@meridian/contracts/works";
-import type { ProjectPreferencesRepository } from "../../preferences/index.js";
 import { WorkLifecycleUnavailableError, type WorkRepository } from "../../projects/index.js";
 import type {
   ThreadRepository,
@@ -32,14 +31,12 @@ interface RebindThreadWorkDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   works: Pick<WorkRepository, "findById">;
-  preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
 }
 
 export interface RebindThreadWorkInput {
   threadId: ThreadId;
   targetWorkId: WorkId;
-  preferenceUserId: UserId;
 }
 
 function receiptState(work: Work): WorkReceiptState {
@@ -99,14 +96,6 @@ export async function rebindThreadWork(
     throw new WorkLifecycleUnavailableError(requestedTarget.id, targetWork ? "deleted" : "missing");
   }
 
-  const preferenceChanged = rebound.changed && thread.kind === "primary";
-  if (preferenceChanged) {
-    await deps.preferences.setCurrentWorkId(
-      input.preferenceUserId,
-      thread.projectId as ProjectId,
-      targetWork.id,
-    );
-  }
   if (rebound.changed) await deps.obligations.enqueueThread(thread.id);
 
   return {
@@ -114,7 +103,6 @@ export async function rebindThreadWork(
     previousWorkId: previousWork.id,
     work: targetWork,
     changed: rebound.changed,
-    preferenceChanged,
     receipt: receipt(previousWork, targetWork, rebound.changed),
   };
 }

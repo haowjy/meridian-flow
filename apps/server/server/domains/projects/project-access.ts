@@ -15,7 +15,7 @@ export type RequireProjectOwnerOptions = {
 };
 
 export async function requireProjectOwner(
-  repos: { projects: ProjectRepository },
+  repos: { projects: Pick<ProjectRepository, "findById"> },
   projectId: string,
   userId: UserId,
   options?: RequireProjectOwnerOptions,

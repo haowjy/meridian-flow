@@ -236,14 +236,18 @@ export function useDraftReviewController(
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
-      useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "committed");
+      useContextTabsStore
+        .getState()
+        .resolveDraftOnlyTab(projectId, workId, documentId, "committed");
     },
     draftFailed: (selection, code) => {
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
       dispatch({ type: "discardSucceeded", draftId });
-      useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
+      useContextTabsStore
+        .getState()
+        .resolveDraftOnlyTab(projectId, workId, documentId, "discarded");
     },
   };
 

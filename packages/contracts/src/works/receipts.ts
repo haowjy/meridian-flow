@@ -10,7 +10,7 @@ export type WorkReceiptState = {
 };
 
 export type WorkReceiptInverse =
-  | { command: "delete"; workId: WorkId; previousCurrentWorkId: WorkId | null }
+  | { command: "delete"; workId: WorkId }
   | { command: "update"; workId: WorkId; state: WorkReceiptState }
   | { command: "restore"; workId: WorkId };
 
@@ -114,14 +114,7 @@ function parseInverse(value: unknown): WorkReceiptInverse | null {
   if (!inverse || typeof inverse.workId !== "string") return null;
   switch (inverse.command) {
     case "delete":
-      return inverse.previousCurrentWorkId === null ||
-        typeof inverse.previousCurrentWorkId === "string"
-        ? {
-            command: "delete",
-            workId: inverse.workId as WorkId,
-            previousCurrentWorkId: inverse.previousCurrentWorkId as WorkId | null,
-          }
-        : null;
+      return { command: "delete", workId: inverse.workId as WorkId };
     case "update": {
       const state = parseState(inverse.state);
       return state ? { command: "update", workId: inverse.workId as WorkId, state } : null;

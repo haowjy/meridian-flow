@@ -22,13 +22,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
 import { type DockRow, dockRows } from "./docked-drafts";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
-import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
@@ -49,17 +49,17 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const reviewRow = useCallback(
     (row: DockRow) => {
-      openAiDraft(
-        {
-          documentId: row.documentId,
-          contextPath: row.contextPath ?? undefined,
-          documentName: row.documentName ?? undefined,
-          isNewDocument: row.isNewDocument,
-        },
-        row.draft.draftId,
-      );
+      if (!row.contextPath) return;
+      openAiDraft({
+        workId: controller.workId,
+        documentId: row.documentId,
+        draftId: row.draft.draftId,
+        contextPath: row.contextPath,
+        documentName: row.documentName ?? undefined,
+        isNewDocument: row.isNewDocument,
+      });
     },
-    [openAiDraft],
+    [controller.workId, openAiDraft],
   );
 
   // Row click opens the LIVE document (Review — the pill — opens the review

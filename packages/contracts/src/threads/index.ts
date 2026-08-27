@@ -291,7 +291,8 @@ export type {
   OrchestratorEvent,
   WorkContextChangedEvent,
 } from "./orchestrator-events.js";
-export type { ThreadAttention, ThreadListItem, ThreadListWork } from "./projections.js";
+export * from "./project-chat-feed.js";
+export type { ThreadListItem, ThreadListWork } from "./projections.js";
 export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,

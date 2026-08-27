@@ -1,6 +1,121 @@
 # Changelog
 
+- Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
+- Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
+
 ## [Unreleased]
+
+- `apps/app`: normalize Work status, lifecycle, loading, error, and resource-section
+  presentation onto the shared Badge, overflow trigger, Card, and inline-error primitives.
+- `apps/app`: delete obsolete and single-owner Project UI surface, narrow Card
+  and overflow-menu APIs, and make the shared project chat row own its loading
+  geometry.
+
+- `apps/app`: converge live and snapshot `actionRequired` lifecycle changes
+  across project thread lists, Home, and every cached Work chat feed.
+
+- `database`, `contracts`, `apps/server`, `apps/app`: remove Project-chat
+  read state end to end, including unseen-reply projection, open mutations, and
+  client coordination; Favorite and action-required remain independent facts.
+
+- `database`, `apps/server`: project Work catalogs now load pending draft totals
+  through one grouped query backed by a Work-led active-draft index.
+
+- `apps/server`: deleted and archived threads park pending delivery until one
+  serialized delete/restore lifecycle resumes or coalesces it; an
+  ownership-gated restore route exposes that transition.
+
+- `apps/app`: Work mutations expose a narrow command boundary with only typed
+  execution, pending state, and errors.
+
+- `apps/app`: normalized thread user state serializes optimistic Favorite
+  commands and prevents stale feed responses from overwriting newer truth.
+
+- `database`, `contracts`, `apps/server`, `apps/app`: cut over the former project-wide current Work to a narrowly named new-chat fallback with CAS repair; delete its GET/PUT selection API and all creation/rebind/receipt side effects; preserve fallback-only omitted root creation; canonicalize human/model Work metadata (including blank-field clearing); converge Work catalogs and associated chats from writer, model, reconciliation, and reversal paths; and prove fallback precedence and contention against PostgreSQL.
+
+- `apps/app`: give persistent Chat and Editor separate sibling draft-review
+  controllers on desktop and phone, with a route-owned latest-wins handoff that
+  carries Chat or prospective Work review commands into the matching Editor
+  only after navigation succeeds and binds phone documents to their actual
+  Editor review room.
+
+- `apps/app`: qualify Editor desk restore and asynchronous reconciliation by
+  live Work generation, and qualify transient draft-only review tabs by their
+  owning Work without changing manuscript document identity or persistence.
+
+- `apps/app`: make Editor Work ownership immutable from route resolution through
+  desktop and phone create, identity, untitled, delete, document, and draft
+  settlement; one route-owned context-open command now updates Work, scheme,
+  folder, path, and Results atomically without borrowing Chat ownership, and
+  queued identities settle their final tab and captured route in one receipt.
+
+- `apps/app`: establish the project route's canonical Work UUID grammar,
+  authoritative catalog resolution, stale-safe normalization, pure search
+  transition matrix, and awaitable typed navigation commands without changing
+  the existing Work collection UI.
+
+- `contracts`, `apps/app`, `apps/server`: add the typed Work-associated chat
+  read seam while preserving historical membership and current-primary Work
+  projection semantics.
+
+- `apps/server`: protect multi-Work project listing with a real-Postgres route
+  regression covering two active Works, truthful fallback persistence, and
+  cross-owner concealment.
+
+- `apps/app`: compact active and archived Work cards onto the shared shadcn card
+  composition with aligned 20 px insets, the rounded New York v4 card shape, and
+  a visible, accessible pending state while Work selection is in flight.
+
+- `apps/app`: give Home and Chat one neutral public boundary for shared Work
+  picker and selected-Work write-mode presentation while keeping prospective
+  creation selection separate from durable existing-chat rebinding.
+
+- `apps/app`: make Project Home composer-led with the actual shared Composer,
+  prospective Agent, write-mode, and Work controls, and route-armed first-send
+  creation while preserving the secondary Continue, Favorite, and Recent feed;
+  stable-ID reconciliation, route-only retry, accessible pending states, and a
+  real phone scroll owner close the first-send runtime boundary. Stale Work or
+  Agent refusals before or after ambiguity reconciliation
+  refresh only the exact context catalog while retaining the same first send for
+  repair, and every later authored draft revision transfers intact even when its
+  text is equal.
+  Shared Composer acceptance also clears by authoring revision rather than text
+  equality, including revisions created by failed-handoff restoration.
+
+- `apps/app`: promote the real Composer to a neutral presentation boundary,
+  make draft clearing caller-accepted, and add route-armed first-message
+  handoff with exclusive claim, typed definite/ambiguous admission, and
+  authoritative HTTP-refusal rollback plus provider-owned failure restoration
+  that preserves newer drafts.
+
+- `apps/app`: serialize opposite Favorite commands and delete the superseded
+  dashboard activity model.
+
+- `apps/app`: Home feed reads no longer retry automatically.
+- `apps/app`: make Home Favorite commands ordered and field-scoped, preserve
+  action-required state, reconcile authoritative responses, abort
+  cancelled feed reads, and preserve scroll and keyboard focus across moves.
+- `apps/app`, `apps/server`, `contracts`: converge Home from canonical thread
+  and Work transitions; complete Work coarse-pointer and heading
+  semantics; delete the superseded project statistics API and contract.
+
+- `apps/app`: replace the project Home dashboard and separate phone list with
+  one responsive Continue, Favorites, and paginated Recent chat feed, including
+  server previews, accessible shared cards, direct New Chat, and field-scoped
+  optimistic Favorite state.
+
+- `apps/app`: the Work screen now shares the named project-screen container,
+  responds to its 42rem column threshold, presents the reviewed row semantics,
+  and restores focus according to each completed lifecycle action.
+
+- `server`, `database`, `contracts`: add the server-owned chat-first Home feed
+  with visible-lineage previews, stable Recent pagination, per-writer Favorite,
+  and independent action-required projection; strict cursors reject malformed
+  calendar instants.
+- `apps/server`: Home cursors now reject PostgreSQL-incompatible year-zero
+  timestamps, and every production chat projection consumes the canonical SQL
+  visible-head and action-required expressions.
+- `apps/app`: Work management now has a dedicated Home-like project screen, with canonical Home, Work, Chat, Editor navigation across desktop and phone while preserving the existing lifecycle, disclosure, and direct New Chat behavior.
 
 - `apps/app`: composer overflow controls now match the 32px fine-pointer toolbar
   rhythm and use a measured 44px coarse target; shared menu selection, hover,
@@ -13,7 +128,8 @@
 
 - `apps/app`: dropdown rows now share full-width selected, hover, and inset
   keyboard-focus boundaries while search fields and other non-row content keep
-  their intentional local gutters.
+  their intentional local gutters; context entry actions consume that
+  presentation directly without a parallel UI wrapper family.
 
 - `apps/app`: blocking composer panel actions now retain their toolbar allocation
   and popup anchor while Work or write-mode labels change, truncate transient
@@ -958,7 +1074,7 @@
   a new document — a temporary document whose location is chosen at save time
   from any context, replacing the manuscript-hardwired "New chapter".
 - `apps/app`: the chat header switcher is now a searchable popover navigation
-  surface with thread recency, attention, active-row rename, and new-chat access.
+  surface with thread recency, action-required state, active-row rename, and new-chat access.
 - `apps/app`: the persistent project sidebar now combines destination links
   with the file tree, removes the redundant chats list and embedded files
   panel, and presents the Context destination as Editor.
@@ -995,11 +1111,8 @@
 - `apps/server`: project/work thread lists and snapshots now derive soft
   `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
   tied turn timestamps cannot make sidebar lifecycle state flip on refetch.
-- `apps/server`, `apps/app`: thread rows now expose closed attention states:
-  pending `ask_user` interrupts require action, completed assistant replies are
-  unread until the writer opens the thread, and all other rows carry no badge.
-  Sidebar badges use gold-warning/action and jade/unread tokens with concrete
-  hover explanations.
+- `apps/server`, `apps/app`: thread rows expose pending `ask_user` interrupts as
+  an independent action-required fact with a gold warning indicator.
 - `apps/server`: project/work thread lists and snapshots now use the same
   `active_leaf_turn_id` logical head, so tied turn timestamps cannot make
   sidebar lifecycle state flip on refetch.

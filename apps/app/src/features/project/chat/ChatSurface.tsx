@@ -14,11 +14,12 @@
  * tree position across center↔dock moves — the chat is never reconciled away.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import type { Work } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 import { DockShell } from "../dock/DockShell";
 import { PaneTitle } from "../PaneTitle";
+import type { ContextRouteTarget } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
 
@@ -44,7 +45,7 @@ export type ChatSurfaceProps = {
    * owns no close (its rail toggles live in the PaneHeader).
    */
   onCloseDock?: () => void;
-  onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
 };
 
 export function ChatSurface({
@@ -56,7 +57,7 @@ export function ChatSurface({
   placement,
   visible,
   onCloseDock,
-  onSelectContextPath,
+  onOpenContextTarget,
 }: ChatSurfaceProps) {
   return (
     <div
@@ -89,13 +90,15 @@ export function ChatSurface({
           )
         }
       >
-        <ChatScreen
-          projectId={projectId}
-          threadId={threadId}
-          activeWork={activeWork}
-          onSelectThread={onSelectThread}
-          onSelectContextPath={onSelectContextPath}
-        />
+        {() => (
+          <ChatScreen
+            projectId={projectId}
+            threadId={threadId}
+            activeWork={activeWork}
+            onSelectThread={onSelectThread}
+            onOpenContextTarget={onOpenContextTarget}
+          />
+        )}
       </DockShell>
     </div>
   );

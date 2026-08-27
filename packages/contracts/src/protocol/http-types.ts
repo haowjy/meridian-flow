@@ -12,7 +12,7 @@ import {
   type WorkScopedContextUriScheme,
 } from "../context-uri.js";
 import type { UserId, WorkId } from "../ids.js";
-import type { Project, ProjectStatsResponse } from "../projects/index.js";
+import type { Project } from "../projects/index.js";
 import type {
   Block,
   BlockType,
@@ -20,7 +20,6 @@ import type {
   ModelRequestDebugRetention,
   ModelResponse,
   Thread,
-  ThreadAttention,
   ThreadListItem,
   Turn,
   TurnContextPreview,
@@ -36,9 +35,7 @@ export type {
   Block,
   BlockType,
   ModelResponse,
-  ProjectStatsResponse,
   Thread,
-  ThreadAttention,
   ThreadListItem,
   Turn,
   TurnContextPreview,
@@ -78,11 +75,12 @@ export type ListProjectThreadsResponse = {
   threads: ThreadListItem[];
 };
 
+export type { WorkChatFeedPage as ListWorkThreadsResponse } from "../threads/project-chat-feed.js";
+
 export type { AiWriteMode, Work };
 
 export type ListWorksResponse = {
   works: Work[];
-  defaultWorkId: Work["id"];
 };
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
@@ -371,7 +369,7 @@ export type CreateThreadRequest = {
   systemPrompt?: string;
   /** Mars agent slug — when set, agent body becomes the thread system prompt. */
   currentAgent?: string;
-  workId?: string | null;
+  workId?: string;
 };
 
 export type CreateThreadResponse = Thread;
@@ -430,7 +428,7 @@ export type ThreadSnapshotResponse = {
   thread: Thread;
   turns: Turn[];
   liveState: ThreadLiveState;
-  attention: ThreadAttention;
+  actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;
 };

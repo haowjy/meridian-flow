@@ -34,7 +34,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
     .strict(),
   WorkSelectorSchema.extend({
     command: z.literal("update"),
-    name: z.string().min(1).optional(),
+    name: z.string().optional(),
     goal: z.string().optional(),
     description: z.string().optional(),
     status: WorkStatusSchema.optional(),

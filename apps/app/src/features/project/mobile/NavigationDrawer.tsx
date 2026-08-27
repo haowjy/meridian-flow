@@ -19,7 +19,7 @@ export type NavigationDrawerProps = {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   activeScreen: ScreenKey;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -31,7 +31,7 @@ export function NavigationDrawer({
   onOpenChange,
   projectId,
   activeScreen,
-  activeThreadId,
+  editorWorkId,
   activeContextScheme,
   activeContextPath,
   onSelectScreen,
@@ -121,7 +121,7 @@ export function NavigationDrawer({
             >
               <ContextTreePanel
                 projectId={projectId}
-                activeThreadId={activeThreadId}
+                editorWorkId={editorWorkId}
                 activeScheme={activeContextScheme}
                 activePath={activeContextPath}
                 onSelectFile={handleSelectFile}

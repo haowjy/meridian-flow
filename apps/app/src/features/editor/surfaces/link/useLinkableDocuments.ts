@@ -63,6 +63,7 @@ export type LinkableDocumentIndex = {
 export function useLinkableDocuments({ projectId, workId }: EditorScope): LinkableDocumentIndex {
   const { tree: manuscript } = useProjectContextTree(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
+    workId: null,
   });
   const { tree: scratch } = useProjectContextTree(projectId ?? "", "scratch", {
     enabled: Boolean(projectId) && Boolean(workId),

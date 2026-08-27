@@ -90,9 +90,9 @@ export function createDrizzleProjectPreferencesRepository(
       return mapPreferences(row);
     },
 
-    async getCurrentWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null> {
+    async getNewChatFallbackWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null> {
       const [row] = await currentDrizzleDb(db)
-        .select({ currentWorkId: projectUserPreferences.currentWorkId })
+        .select({ newChatFallbackWorkId: projectUserPreferences.newChatFallbackWorkId })
         .from(projectUserPreferences)
         .where(
           and(
@@ -101,20 +101,10 @@ export function createDrizzleProjectPreferencesRepository(
           ),
         )
         .limit(1);
-      return row?.currentWorkId ?? null;
+      return row?.newChatFallbackWorkId ?? null;
     },
 
-    async setCurrentWorkId(userId: UserId, projectId: ProjectId, workId: WorkId): Promise<void> {
-      await currentDrizzleDb(db)
-        .insert(projectUserPreferences)
-        .values({ userId, projectId, currentWorkId: workId })
-        .onConflictDoUpdate({
-          target: [projectUserPreferences.userId, projectUserPreferences.projectId],
-          set: { currentWorkId: workId, updatedAt: new Date() },
-        });
-    },
-
-    async setCurrentWorkIdIfUnchanged(
+    async repairNewChatFallbackWorkId(
       userId: UserId,
       projectId: ProjectId,
       expectedWorkId: WorkId | null,
@@ -123,14 +113,14 @@ export function createDrizzleProjectPreferencesRepository(
       const activeDb = currentDrizzleDb(db);
       const [updated] = await activeDb
         .update(projectUserPreferences)
-        .set({ currentWorkId: workId, updatedAt: new Date() })
+        .set({ newChatFallbackWorkId: workId, updatedAt: new Date() })
         .where(
           and(
             eq(projectUserPreferences.userId, userId),
             eq(projectUserPreferences.projectId, projectId),
             expectedWorkId === null
-              ? isNull(projectUserPreferences.currentWorkId)
-              : eq(projectUserPreferences.currentWorkId, expectedWorkId),
+              ? isNull(projectUserPreferences.newChatFallbackWorkId)
+              : eq(projectUserPreferences.newChatFallbackWorkId, expectedWorkId),
           ),
         )
         .returning({ userId: projectUserPreferences.userId });
@@ -139,7 +129,7 @@ export function createDrizzleProjectPreferencesRepository(
 
       const [inserted] = await activeDb
         .insert(projectUserPreferences)
-        .values({ userId, projectId, currentWorkId: workId })
+        .values({ userId, projectId, newChatFallbackWorkId: workId })
         .onConflictDoNothing()
         .returning({ userId: projectUserPreferences.userId });
       return Boolean(inserted);

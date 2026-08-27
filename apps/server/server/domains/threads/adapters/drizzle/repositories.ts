@@ -15,13 +15,16 @@ import {
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories } from "../../ports/repositories.js";
 import { createDrizzleBlockRepository } from "./block-repository.js";
+import { createDrizzleHomeChatFeedRepository } from "./home-feed-repository.js";
 import { createDrizzleModelResponseRepository } from "./model-response-repository.js";
 import { createDrizzleThreadDocumentRepository } from "./thread-document-repository.js";
 import { createDrizzleThreadRepository } from "./thread-repository.js";
+import { createDrizzleThreadUserStateRepository } from "./thread-user-state-repository.js";
 import { createDrizzleThreadWorksRepository } from "./thread-works-repository.js";
 import { createDrizzleTurnDocumentTouchRepository } from "./turn-document-touch-repository.js";
 import { createDrizzleTurnRepository, lockThreadForTurnTransition } from "./turn-repository.js";
 import { createDrizzleUsageRecorder } from "./usage-recorder.js";
+import { createDrizzleWorkChatFeedRepository } from "./work-chat-feed-repository.js";
 import { createDrizzleWorkContextDeliveryRepository } from "./work-context-delivery-repository.js";
 
 export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTransaction };
@@ -30,6 +33,9 @@ export function createDrizzleRepositories(db: DrizzleDatabase): InternalThreadRe
   const usageRecorder = createDrizzleUsageRecorder(db);
   return {
     threads: createDrizzleThreadRepository(db),
+    homeFeed: createDrizzleHomeChatFeedRepository(db),
+    workChatFeed: createDrizzleWorkChatFeedRepository(db),
+    threadUserState: createDrizzleThreadUserStateRepository(db),
     threadWorks: createDrizzleThreadWorksRepository(db),
     turns: createDrizzleTurnRepository(db),
     blocks: createDrizzleBlockRepository(db),

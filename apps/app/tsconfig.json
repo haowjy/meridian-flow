@@ -9,5 +9,5 @@
       "@meridian/contracts/protocol/*": ["../../packages/contracts/src/protocol/*"]
     }
   },
-  "include": ["src/**/*", "vite.config.ts"]
+  "include": ["src/**/*", "e2e/support/work-detail-browser-mocks.tsx", "vite.config.ts"]
 }

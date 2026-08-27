@@ -14,6 +14,7 @@ const USER_TURN_ID = "00000000-0000-4000-8000-000000000405";
 const ASSISTANT_TURN_ID = "00000000-0000-4000-8000-000000000406";
 const INACTIVE_USER_TURN_ID = "00000000-0000-4000-8000-000000000407";
 const INTERLEAVED_USER_TURN_ID = "00000000-0000-4000-8000-000000000408";
+const CURRENT_WORK_ID = "00000000-0000-4000-8000-000000000409";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("thread head projection (postgres)", () => {});
@@ -55,6 +56,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       readModelProjectionWatermark: async () => 0n,
       journalSeqForEventSeq: (seq) => seq,
     };
+
+    async function queryWorkItems(workId: string) {
+      const rows = await repos.workChatFeed.queryPage({
+        projectId: PROJECT_ID,
+        workId,
+        userId: USER_ID,
+        after: null,
+        limit: 50,
+      });
+      return rows.map(({ item }) => item);
+    }
 
     beforeEach(async () => {
       db = database.current;
@@ -121,29 +133,54 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("converges project/work lists and snapshot when user and assistant timestamps tie", async () => {
       const [projectThreads, workThreads, snapshot] = await Promise.all([
         repos.threads.listByProject(PROJECT_ID),
-        repos.threads.listByWork(PROJECT_ID, WORK_ID),
-        buildThreadSnapshot(repos, emptyHub, { getRunningTurnId: () => null }, THREAD_ID, USER_ID),
+        queryWorkItems(WORK_ID),
+        buildThreadSnapshot(repos, emptyHub, { getRunningTurnId: () => null }, THREAD_ID),
       ]);
 
       expect(projectThreads).toHaveLength(1);
       expect(workThreads).toHaveLength(1);
-      expect(projectThreads[0]?.attention).toBe(snapshot.attention);
-      expect(workThreads[0]?.attention).toBe(snapshot.attention);
-      expect(snapshot.attention).toBe("unread");
+      expect(projectThreads[0]?.actionRequired).toBe(snapshot.actionRequired);
+      expect(workThreads[0]?.actionRequired).toBe(snapshot.actionRequired);
+      expect(snapshot.actionRequired).toBe(false);
     });
 
-    it("clears unread after the writer opens the thread", async () => {
-      await repos.threads.markOpened(THREAD_ID, USER_ID);
-      const [row] = await repos.threads.listByProject(PROJECT_ID);
-      const snapshot = await buildThreadSnapshot(
-        repos,
-        emptyHub,
-        { getRunningTurnId: () => null },
-        THREAD_ID,
-        USER_ID,
-      );
-      expect(row?.attention).toBe("none");
-      expect(snapshot.attention).toBe("none");
+    it("lists historical associations while projecting the current primary Work", async () => {
+      await db.insert(schema.works).values({
+        id: CURRENT_WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Current Work",
+        slug: "current-work",
+      });
+      await db
+        .update(schema.threadWorks)
+        .set({ isPrimary: false })
+        .where(eq(schema.threadWorks.threadId, THREAD_ID));
+      await db.insert(schema.threadWorks).values({
+        threadId: THREAD_ID,
+        workId: CURRENT_WORK_ID,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
+
+      const [historicalRows, currentRows] = await Promise.all([
+        queryWorkItems(WORK_ID),
+        queryWorkItems(CURRENT_WORK_ID),
+      ]);
+
+      expect(historicalRows).toMatchObject([
+        { id: THREAD_ID, work: { id: CURRENT_WORK_ID, title: "Current Work" } },
+      ]);
+      expect(currentRows).toMatchObject([
+        { id: THREAD_ID, work: { id: CURRENT_WORK_ID, title: "Current Work" } },
+      ]);
+
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, THREAD_ID));
+      await expect(queryWorkItems(WORK_ID)).resolves.toEqual([]);
+      await expect(queryWorkItems(CURRENT_WORK_ID)).resolves.toEqual([]);
     });
 
     it("never advertises a sequence newer than its durable turn payload", async () => {
@@ -169,7 +206,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         interleavingHub,
         { getRunningTurnId: () => null },
         THREAD_ID,
-        USER_ID,
       );
 
       expect(committed).toBe(true);

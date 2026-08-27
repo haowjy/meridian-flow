@@ -16,6 +16,7 @@
 @theme {
   --container-chat-column: 48rem;
   --container-home: 45rem;
+  --container-project-home: 60rem;
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -317,6 +318,34 @@
   }
 }
 
+/* Shared content measure for project-owned Home and Work screens. The screen,
+   rather than the viewport, is the responsive authority for its collections. */
+@utility project-screen-column {
+  container-name: project-home;
+  container-type: inline-size;
+  @apply mx-auto box-border flex w-full max-w-project-home flex-col px-4 py-6 sm:px-8 sm:py-8;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+
+  @media (min-width: 40rem) {
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Project chat rows and their loading states share three stable lanes: flexible
+   copy, Work, and the trailing date/action slot. */
+@utility project-chat-row-layout {
+  grid-template-columns: minmax(0, 1fr) clamp(6rem, 22cqi, 10rem) 3.5rem;
+  grid-template-rows: minmax(1.3rem, auto) minmax(1.3rem, auto);
+
+  & > [data-project-chat-row-work] {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    min-width: 0;
+    text-align: right;
+  }
+}
+
 @utility chat-scroll-fade-bottom {
   /* Reserve gutter so dual-mask scrollbar width matches layout (see PQINA pattern). */
   scrollbar-gutter: stable;
@@ -348,6 +377,16 @@
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {
   @apply text-base leading-relaxed md:text-[15px];
+}
+
+@container project-home (min-width: 42rem) {
+  .home-composer-heading {
+    font-size: var(--text-headline-hero);
+    line-height: var(--text-headline-hero--line-height);
+    letter-spacing: var(--text-headline-hero--letter-spacing);
+    font-weight: var(--text-headline-hero--font-weight);
+  }
+
 }
 
 @utility user-turn {

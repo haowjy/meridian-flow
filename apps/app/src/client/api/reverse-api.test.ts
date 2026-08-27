@@ -9,8 +9,20 @@ describe("successfulWorkReversals", () => {
       status: "partial_failure",
       documents: [],
       workReceipts: [
-        { command: "restore", workId: "w1", name: "Arc", status: "reversed" },
-        { command: "update", workId: "w2", name: "Notes", status: "failed" },
+        {
+          command: "restore",
+          projectId: "project-1",
+          workId: "w1",
+          name: "Arc",
+          status: "reversed",
+        },
+        {
+          command: "update",
+          projectId: "project-1",
+          workId: "w2",
+          name: "Notes",
+          status: "failed",
+        },
       ],
     };
     expect(successfulWorkReversals(outcome)).toEqual([outcome.workReceipts?.[0]]);

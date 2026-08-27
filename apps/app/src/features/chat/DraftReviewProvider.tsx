@@ -1,4 +1,4 @@
-/** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
+/** Draft-review scope ownership and the boundary that exposes one scope to consumers. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -50,19 +50,33 @@ export function DraftReviewProvider({
   threadId = null,
   children,
 }: DraftReviewProviderProps) {
-  return (
-    <DraftReviewScope projectId={projectId} workId={workId} threadId={threadId}>
-      {children}
-    </DraftReviewScope>
-  );
+  const value = useDraftReviewScopeValue({ projectId, workId, threadId });
+  return <DraftReviewBoundary value={value}>{children}</DraftReviewBoundary>;
 }
 
-function DraftReviewScope({
+export function DraftReviewBoundary({
+  value,
+  children,
+}: {
+  value: DraftReviewContextValue;
+  children: ReactNode;
+}) {
+  return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
+}
+
+export function useDraftReviewScopeValue({
   projectId,
   workId,
   threadId = null,
-  children,
-}: DraftReviewProviderProps) {
+}: Omit<DraftReviewProviderProps, "children">): DraftReviewContextValue {
+  return useDraftReviewScopeOwner(projectId, workId, threadId);
+}
+
+function useDraftReviewScopeOwner(
+  projectId: string | null,
+  workId: string | null,
+  threadId: string | null,
+): DraftReviewContextValue {
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
   const effectiveWorkId = workId ?? "";
@@ -109,7 +123,7 @@ function DraftReviewScope({
     const tab = tabs.byProject[projectId]?.tabs.find(
       (candidate) => candidate.documentId === activeSelection.documentId,
     );
-    if (tab?.kind !== "tracked" || !tab.draftOnly) return;
+    if (tab?.kind !== "tracked" || !tab.draftOnly || tab.reviewWorkId !== workId) return;
 
     // The active-only list cannot say why a remote disposition removed the
     // draft. For draft-created documents, manifest membership is authoritative:
@@ -123,7 +137,12 @@ function DraftReviewScope({
         const currentTab = currentTabs.byProject[projectId]?.tabs.find(
           (candidate) => candidate.documentId === activeSelection.documentId,
         );
-        if (currentTab?.kind !== "tracked" || !currentTab.draftOnly) return;
+        if (
+          currentTab?.kind !== "tracked" ||
+          !currentTab.draftOnly ||
+          currentTab.reviewWorkId !== workId
+        )
+          return;
         const currentDrafts =
           queryClient.getQueryData<ThreadDraftListItem[]>(
             projectQueryKeys.workDrafts(projectId, workId),
@@ -131,6 +150,7 @@ function DraftReviewScope({
         if (currentDrafts.some((draft) => draft.documentId === activeSelection.documentId)) return;
         currentTabs.resolveDraftOnlyTab(
           projectId,
+          workId,
           activeSelection.documentId,
           findContextFileByDocumentId(tree, activeSelection.documentId) ? "committed" : "discarded",
         );
@@ -222,7 +242,7 @@ function DraftReviewScope({
     [controller, groups, drafts, groupForDocument, reviewRoomNameForDraft, activeEditorDocumentId],
   );
 
-  return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
+  return value;
 }
 
 export function useDraftReview(): DraftReviewContextValue {

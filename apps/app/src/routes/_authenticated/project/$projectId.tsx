@@ -3,10 +3,7 @@
  * normalized route state into the controlled ProjectView shell.
  */
 
-import {
-  isProjectContextTreeScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -16,67 +13,57 @@ import {
   type ProjectRouteData,
   seedProjectRouteData,
 } from "@/client/query/project-route-data";
+import { useWorks } from "@/client/query/useWorks";
 import { useThreadStore } from "@/client/stores";
 import { setThread } from "@/client/working-set";
-import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
+import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { ProjectView } from "@/features/project/ProjectView";
-import { SCREENS, type ScreenKey } from "@/features/project/shell/screens";
+import { ProjectContextRouteProvider } from "@/features/project/routing/ProjectContextRoute";
+import {
+  applyNormalizationIfCurrent,
+  type ContextRouteTarget,
+  type NavigationOptions,
+  openContextRouteSearch,
+  type ProjectRouteCommand,
+  type ProjectRouteCommands,
+  type ProjectSearch,
+  parseExplicitWork,
+  parseProjectSearch,
+  planWorkNormalization,
+  projectSearchHref,
+  resolveRouteWork,
+  stripEmptySearch,
+  transitionProjectSearch,
+} from "@/features/project/routing/project-route";
+import type { ScreenKey } from "@/features/project/shell/screens";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
-
-type ProjectSearch = {
-  screen?: ScreenKey;
-  thread?: string;
-  scheme?: ProjectContextTreeScheme;
-  folder?: string;
-  path?: string;
-  results?: "";
-};
-
-function isScreenKey(value: unknown): value is ScreenKey {
-  return typeof value === "string" && SCREENS.some((screen) => screen.key === value);
-}
-
-function stripEmptySearch(search: ProjectSearch): ProjectSearch {
-  return Object.fromEntries(
-    Object.entries(search).filter(
-      ([key, value]) =>
-        value !== undefined && (key === "results" || key === "path" || value !== ""),
-    ),
-  ) as ProjectSearch;
-}
 
 export const Route = createFileRoute("/_authenticated/project/$projectId")({
   loader: async ({ params }) => loadProjectRouteData(params.projectId),
   component: RouteComponent,
-  validateSearch: (search: Record<string, unknown>): ProjectSearch => {
-    const scheme = isProjectContextTreeScheme(search.scheme) ? search.scheme : undefined;
-    const folder =
-      scheme && typeof search.folder === "string" && search.folder ? search.folder : undefined;
-    const path = scheme && typeof search.path === "string" ? search.path : undefined;
-    return {
-      screen: isScreenKey(search.screen) ? search.screen : undefined,
-      thread: typeof search.thread === "string" && search.thread ? search.thread : undefined,
-      scheme,
-      folder,
-      path,
-      results: search.results === undefined ? undefined : "",
-    };
-  },
+  validateSearch: parseProjectSearch,
 });
-
-function dirname(path: string): string | undefined {
-  const segments = path.split("/").filter(Boolean);
-  segments.pop();
-  return segments.length ? `/${segments.join("/")}` : undefined;
-}
 
 function RouteComponent() {
   const { projectId } = Route.useParams();
   const routeData = Route.useLoaderData();
   const { user } = AuthenticatedRoute.useLoaderData();
   useProjectRouteCacheSeed(projectId, routeData);
-  const { screen, thread, scheme, folder, path, results } = Route.useSearch();
+  const search = Route.useSearch();
+  const { screen, thread, scheme, folder, path, results } = search;
   const navigate = useNavigate();
+  const workCatalog = useWorks(projectId);
+  const explicitWork = parseExplicitWork(search.work);
+  const routeWork = resolveRouteWork(
+    explicitWork,
+    workCatalog.status === "error"
+      ? { status: "error" }
+      : workCatalog.works !== null &&
+          (workCatalog.status === "ready" || workCatalog.status === "empty")
+        ? { status: "success", works: workCatalog.works }
+        : { status: "loading" },
+  );
+  const workNormalization = planWorkNormalization(search, explicitWork, routeWork);
   const { threadById, threadsLoaded } = useProjectThreadGroups(projectId);
   const handoffPendingThreadIds = useThreadStore((state) => state.handoffPendingThreadIds);
   const activeThreadId = thread && threadsLoaded && threadById.has(thread) ? thread : null;
@@ -97,10 +84,21 @@ function RouteComponent() {
     });
   }, [handoffPendingThreadIds, navigate, projectId, thread, threadById, threadsLoaded]);
 
+  useEffect(() => {
+    if (!workNormalization) return;
+    const plan = workNormalization;
+    void navigate({
+      to: "/project/$projectId",
+      params: { projectId },
+      search: (latest) => applyNormalizationIfCurrent(plan, parseProjectSearch(latest)),
+      replace: plan.replace,
+    });
+  }, [navigate, projectId, workNormalization]);
+
   const resolvedScreen: ScreenKey = screen ?? (thread ? "chat" : "home");
 
   function patchSearch(next: Partial<ProjectSearch>, options?: { replace?: boolean }) {
-    void navigate({
+    return navigate({
       to: "/project/$projectId",
       params: { projectId },
       search: (prev) => stripEmptySearch({ ...(prev as ProjectSearch), ...next }),
@@ -108,28 +106,39 @@ function RouteComponent() {
     });
   }
 
+  function runCommand(command: ProjectRouteCommand, options: NavigationOptions) {
+    return navigate({
+      to: "/project/$projectId",
+      params: { projectId },
+      search: (prev) => transitionProjectSearch(parseProjectSearch(prev), command),
+      replace: options.replace,
+    });
+  }
+
+  const routeCommands: ProjectRouteCommands = {
+    openHome: (options) => runCommand({ kind: "home" }, options),
+    openChat: (threadId, options) => runCommand({ kind: "chat", threadId }, options),
+    openDockThread: (threadId, options) =>
+      runCommand({ kind: "dock-thread", threadId: threadId || undefined, resolvedScreen }, options),
+    openWork: (target, options) => runCommand(target, options),
+    workHref: (target) => projectSearchHref(transitionProjectSearch(search, target)),
+    closeWork: (options) => runCommand({ kind: "work-collection" }, options),
+    openWorkContext: (target, options) => runCommand(target, options),
+  };
+
   function handleSelectScreen(next: ScreenKey) {
-    const reset: Partial<ProjectSearch> = { screen: next, results: undefined };
-    // An explicit empty path pins a fresh untitled tab. Keep that pin while
-    // another screen is in front so returning to Editor cannot replay the
-    // previously remembered server document over it.
-    if (next !== "context" && path !== "") {
-      reset.scheme = undefined;
-      reset.folder = undefined;
-      reset.path = undefined;
-    }
-    patchSearch(reset);
+    return runCommand({ kind: "screen", screen: next }, { replace: false });
   }
 
   function handleSelectThread(threadId: string) {
-    patchSearch({ screen: undefined, thread: threadId, results: undefined });
+    return routeCommands.openChat(threadId, { replace: false });
   }
 
   function handleSelectDockThread(threadId: string) {
     // The dock only changes which conversation it shows, never the screen — so
     // pin the RESOLVED screen. `?screen` is absent on a default Home landing,
     // and a bare `?thread` there would resolve the writer onto Chat.
-    patchSearch({ screen: resolvedScreen, thread: threadId || undefined });
+    return routeCommands.openDockThread(threadId, { replace: false });
   }
 
   function handleSelectContextScheme(nextScheme: ProjectContextTreeScheme) {
@@ -161,43 +170,41 @@ function RouteComponent() {
     });
   }
 
-  function handleSelectContextPath(
-    nextPath: string,
-    nextScheme?: ProjectContextTreeScheme,
-    options?: { replace?: boolean },
-  ) {
-    const patch: Partial<ProjectSearch> = {
-      screen: "context",
-      path: nextPath,
-      results: undefined,
-    };
-    if (nextScheme) patch.scheme = nextScheme;
-    if (nextPath) patch.folder = dirname(nextPath);
-    patchSearch(patch, options);
+  function handleOpenContextTarget(target: ContextRouteTarget, options?: { replace?: boolean }) {
+    return navigate({
+      to: "/project/$projectId",
+      params: { projectId },
+      search: (previous) => openContextRouteSearch(parseProjectSearch(previous), target),
+      replace: options?.replace ?? false,
+    });
   }
 
   return (
-    <ProjectView
-      key={projectId}
-      projectId={projectId}
-      workingSet={routeData.workingSet}
-      workingSetSyncEnabled={user.workingSetSyncEnabled === true}
-      activeScreen={resolvedScreen}
-      activeThreadId={activeThreadId}
-      activeContextScheme={scheme ?? null}
-      activeContextFolder={folder ?? null}
-      activeContextPath={path ?? null}
-      resultsOpen={results === ""}
-      onSelectScreen={handleSelectScreen}
-      onSelectThread={handleSelectThread}
-      onSelectDockThread={handleSelectDockThread}
-      onSelectContextScheme={handleSelectContextScheme}
-      onExitContextScheme={handleExitContextScheme}
-      onSelectContextFolder={handleSelectContextFolder}
-      onSelectContextPath={handleSelectContextPath}
-      onOpenResults={() => patchSearch({ results: "" })}
-      onCloseResults={() => patchSearch({ results: undefined })}
-    />
+    <ProjectContextRouteProvider openContextRoute={handleOpenContextTarget}>
+      <ProjectView
+        key={projectId}
+        projectId={projectId}
+        workingSet={routeData.workingSet}
+        workingSetSyncEnabled={user.workingSetSyncEnabled === true}
+        activeScreen={resolvedScreen}
+        activeThreadId={activeThreadId}
+        routeWork={routeWork}
+        routeCommands={routeCommands}
+        activeContextScheme={scheme ?? null}
+        activeContextFolder={folder ?? null}
+        activeContextPath={path ?? null}
+        resultsOpen={results === ""}
+        onSelectScreen={handleSelectScreen}
+        onSelectThread={handleSelectThread}
+        onSelectDockThread={handleSelectDockThread}
+        onSelectContextScheme={handleSelectContextScheme}
+        onExitContextScheme={handleExitContextScheme}
+        onSelectContextFolder={handleSelectContextFolder}
+        onOpenContextTarget={handleOpenContextTarget}
+        onOpenResults={() => patchSearch({ results: "" })}
+        onCloseResults={() => patchSearch({ results: undefined })}
+      />
+    </ProjectContextRouteProvider>
   );
 }
 

@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getProjectContextRead } from "@/client/api/projects-api";
 
-import { contextRequestOptionsForScheme, useContextWorkId } from "./useContextWorkId";
+import { contextRequestOptionsForScheme } from "./context-request-options";
 
 export type ContextReadStatus = {
   data: ContextReadResponse | null;
@@ -44,11 +44,10 @@ export function useProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
-  options?: { enabled?: boolean; activeThreadId?: string | null; workId?: string | null },
+  options: { enabled?: boolean; workId: string | null },
 ): ContextReadStatus {
-  const threadWorkId = useContextWorkId(projectId, options?.activeThreadId ?? null);
-  const workId = options?.workId ?? threadWorkId;
-  const callerEnabled = options?.enabled ?? true;
+  const workId = options.workId;
+  const callerEnabled = options.enabled ?? true;
   const resolvedScheme = scheme ?? "kb";
   const workScoped = scheme !== null && isWorkScopedProjectContextScheme(scheme);
   const enabled =

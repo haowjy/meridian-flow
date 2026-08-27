@@ -23,7 +23,6 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -48,8 +47,8 @@ function rowPaddingLeft(depth: number): number {
 
 export type ContextTreePanelProps = {
   projectId: string;
-  /** Active chat thread — used to resolve work-scoped context browse `workId`. */
-  activeThreadId: string | null;
+  /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
+  editorWorkId: string | null;
   /** Scheme of the currently active file (drives section auto-expand). */
   activeScheme: ProjectContextTreeScheme | null;
   /** Path of the currently active file inside `activeScheme`'s tree. */
@@ -72,7 +71,7 @@ export type ContextTreePanelProps = {
  */
 export function ContextTreePanel({
   projectId,
-  activeThreadId,
+  editorWorkId,
   activeScheme,
   activePath,
   onSelectFile,
@@ -87,7 +86,7 @@ export function ContextTreePanel({
   if (!onRequestCreate || !onCreateDone) {
     throw new Error("ContextTreePanel requires creation controls");
   }
-  const workId = useContextWorkId(projectId, activeThreadId);
+  const workId = editorWorkId;
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);
   const currentWork = works?.find((work) => work.id === workId) ?? null;
@@ -99,7 +98,7 @@ export function ContextTreePanel({
     <SchemeSection
       key={scheme}
       projectId={projectId}
-      activeThreadId={activeThreadId}
+      editorWorkId={editorWorkId}
       scheme={scheme}
       activeScheme={activeScheme}
       activePath={activePath}
@@ -109,11 +108,13 @@ export function ContextTreePanel({
       }
       onSelectFile={onSelectFile}
       creating={
-        creating?.scheme === scheme
+        creating?.scheme === scheme && creating.workId === editorWorkId
           ? { kind: creating.kind, parentPath: creating.parentPath }
           : null
       }
-      onRequestCreate={(kind, parentPath) => onRequestCreate({ scheme, kind, parentPath })}
+      onRequestCreate={(kind, parentPath) =>
+        onRequestCreate({ scheme, kind, parentPath, workId: editorWorkId })
+      }
       onCreateDone={onCreateDone}
     />
   );
@@ -131,7 +132,7 @@ export function ContextTreePanel({
 
 function SchemeSection({
   projectId,
-  activeThreadId,
+  editorWorkId,
   scheme,
   activeScheme,
   activePath,
@@ -143,7 +144,7 @@ function SchemeSection({
   onCreateDone,
 }: {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
@@ -215,7 +216,7 @@ function SchemeSection({
   // query so a just-created file can resolve and open; its onSelectFile then
   // lands a new selection here, which re-expands via the effect above.
   const { tree, isError, refetch } = useProjectContextTree(projectId, scheme, {
-    activeThreadId,
+    workId: editorWorkId,
   });
   useEffect(() => {
     if (!pendingOpenPath || !tree) return;
@@ -225,11 +226,11 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, tree, onSelectFile, scheme]);
 
-  const deleteConfirm = useDeleteConfirmation({ projectId, activeThreadId, scheme });
+  const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
   const env = useMemo<TreeEnv>(
     () => ({
       projectId,
-      activeThreadId,
+      workId: editorWorkId,
       scheme,
       activeScheme,
       activePath,
@@ -244,7 +245,7 @@ function SchemeSection({
     }),
     [
       projectId,
-      activeThreadId,
+      editorWorkId,
       scheme,
       activeScheme,
       activePath,

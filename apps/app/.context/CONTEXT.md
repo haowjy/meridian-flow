@@ -3,6 +3,12 @@
 How the frontend is structured, why the seams exist, and what conventions
 govern visual and interaction work.
 
+## Project Home
+
+The Home client boundary, feed/row layout contract, interaction ownership, and
+test-specific browser constraint live with the feature in
+[`src/features/project/home/.context/CONTEXT.md`](../src/features/project/home/.context/CONTEXT.md).
+
 ## Server config and auth surface
 
 `src/server/config.ts` is the app server's config seam. It parses the
@@ -45,28 +51,55 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Composer handoff uses `markHandoffPending` +
-  `useThreadHandoff` (not inline in `ChatView`). Deferred first-send flows use
-  `markPendingCreation`, `clearPendingCreation`, and
-  `removeOptimisticUserTurn`; the last one is only rollback for a locally
-  appended user turn that failed before server acknowledgement.
+  `useThreadActions()` only. First-message transfer uses the thread-keyed
+  `stageFirstSend` → route-owned `armFirstSend` → Chat-owned claim/settlement
+  lifecycle in `useThreadHandoff`; an unarmed send cannot be claimed by a
+  persistent dock. `ThreadRunController` classifies admission through a typed
+  definite/ambiguous boundary. Definite rejection remains provider-owned until
+  the matching shared Composer acknowledges an idempotent restoration; when a
+  newer draft exists, the failed first send is prepended with a blank-line
+  separator so both writer-authored texts survive. Ambiguous admission stays
+  quarantined without blind retry. If a writer changes the Home draft while
+  creation or routing is pending, the immutable first message remains the
+  admitted turn and the latest authored revision transfers separately into the
+  destination Composer, even when that revision's text is byte-equal to the
+  submitted message. The shared Composer reports a monotonic authoring revision;
+  content equality is never a draft-version test.
+  This handoff lasts only for the authenticated provider lifetime and is not a
+  durable outbox. Deferred project-creation flows separately use
+  `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
+  the last one is only rollback for a locally appended user turn that failed
+  before server acknowledgement.
 - **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
   thin seam between thread-store lifecycle transitions and the React Query cache.
   The store depends on this port, not `QueryClient` directly — list/snapshot
-  projections stay in Query; per-thread turn state stays in the store.
+  projections stay in Query; per-thread turn state stays in the store. Its
+  lifecycle projector converges `actionRequired` across project thread lists,
+  Home, and every matching Work feed while Favorite remains normalized separately.
 - **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
   thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
   (cache-only today, no PATCH endpoint) rather than on the thread store.
 - **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
   reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
   `convergeThreadWorkBinding` is the one cache-effect boundary, while
-  `useThreadDurableProjections` is the one persistent transport owner. See
+  `useThreadDurableProjections` is the one persistent transport owner. Work
+  management and navigation must not call this explicit rebind path. See
   [`features/chat/.context/composer-write-mode.md`](../src/features/chat/.context/composer-write-mode.md)
   for placement, interaction ownership, and mid-thread rebind behavior.
 - **Server project/thread lists + HTTP snapshots:** React Query (`client/query/` —
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
-  `useWorks` also exposes the server-resolved `defaultWorkId`; `useDefaultWorkId`
-  is the chat-independent seam for work-scoped surfaces.
+  `project-invalidation` supplies project-level invalidators;
+  `work-projection-cache` is the one Work-entity/binding convergence policy. Any
+  thread or Work transition that can change Home also invalidates `homeFeed`.
+  Terminal turns and Work rebinds enter through
+  `invalidateThreadProjectionDependencies`. Snapshot synchronization applies
+  history and action-required lifecycle state. Favorite commands share one
+  normalized project/thread authority across Home and Work rows; Home alone
+  projects the affected item between its categories without invalidation.
+  `useWorks` exposes only the owned-project Work catalog. Home derives its
+  initial prospective choice from the first active (then first available) catalog
+  Work and sends that explicit ID; omitted root-chat creation remains the sole
+  server boundary that resolves or repairs the internal new-chat fallback.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
@@ -106,11 +139,23 @@ are JSON-natural string IDs and ISO timestamps from `@meridian/contracts/threads
 
 Both transports emit this shape; the reducer consumes this shape.
 
-## Optimistic flow pattern
+## Client-led creation patterns
 
 `src/lib/optimistic-project.ts` is the template for client-led writes:
 client-generated UUID → navigate immediately → call `threads-api.ts` → reconcile
-on response. The Composer's submit-from-Home flow follows it.
+on response. It remains the pattern for flows whose destination can safely own
+an unresolved create.
+
+Home first send deliberately orders the boundary differently: stable client ID
+→ canonical create or same-ID ambiguity reconciliation → optimistic turn and
+staged handoff → route → arm. A definite stale Work or Agent refusal, whether
+returned by the initial create or its guarded same-ID retry after absence
+reconciliation, is identified only by the named `work_unavailable` or
+`agent_not_found` code, refreshes the relevant catalog, and unlocks prospective
+context repair while retaining the stable ID and immutable first text. Every
+other uncertain create remains locked to that original envelope while same-ID
+reconciliation continues. A canonical mismatch is never handed off; Start over
+retires it before a later submission allocates a fresh ID.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),
@@ -148,23 +193,6 @@ Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
 (no `nextSeq`) is treated as authoritative and always applies -- omitting
 `nextSeq` is intentional only for the handoff/pending-creation path.
 
-**Anti-pattern: reapplying captured snapshots for side effects.**
-`useThreadSnapshotSync`'s attention-downgrade effect previously reapplied
-the entire captured snapshot after `markThreadOpened` resolved, solely to
-set `attention: "none"`. A delayed continuation could reapply an older
-snapshot after a newer one had advanced the sequence watermark, dropping the
-user turn again. The fix: use the narrow
-`setThreadAttention(threadId, attention)` action instead. Never replay a
-whole snapshot to achieve a single field mutation.
-
-**Rejected alternative: extending acknowledged-ID retention windows.** The
-alternative of retaining acknowledged IDs "until all in-flight snapshots
-settle" was rejected. There is no clean signal for when older in-flight
-snapshots cannot apply -- React Query deduplicates concurrent fetches of the
-same key, but nothing in the cache contract guarantees ordering of
-independent fetches. The monotonic sequence guard solves the ordering
-problem structurally.
-
 ## Authenticated layout shell
 
 `src/routes/_authenticated.tsx` mounts one unconditional provider tree for every
@@ -180,23 +208,27 @@ route without changing path. See `features/account/SettingsDialog.tsx`.
 ## Project screen routing
 
 `SCREENS` (`features/project/shell/screens.ts`) is the single source of
-route-valid primary destinations: **home, chat, context** (Import removed).
+route-valid primary destinations: **home, work, chat, context** (Import removed).
 Settings and phone Results are auxiliary routed surfaces (`?settings=`,
 `?results=`), not drawer/sidebar destinations.
 
 `src/routes/_authenticated/project/$projectId.tsx` owns the workspace search
-params (`?screen=`, `?thread=`, `?scheme=`, `?folder=`, `?path=`, `?results`) and
+params (`?screen=`, `?thread=`, `?work=`, `?scheme=`, `?folder=`, `?path=`, `?results`) and
 is the single source of screen/thread/context ownership. `ProjectView` and its
 children are controlled — they never set the URL directly, only call the route's
 handlers. Direct `/chat/$threadId` renders the independent chat view inside the
 same provider stack.
 
-Home's Work manager presents Active Work first and keeps Archived Work in a
-default-collapsed disclosure. If the current Work is archived at load or becomes
-archived, the disclosure opens. Changing directly from one archived current Work
-to another also reopens it once; a deliberate close wins across rerenders while
-that same Work remains current, and the collapsed trigger continues to name it.
-Home remains the only scroll owner for both lists.
+The dedicated Work screen presents Active Work first and keeps Archived Work in a
+default-collapsed disclosure. Work management has no project-wide selection state;
+collection reads and actions never read, resolve, repair, or change the internal
+new-chat fallback, and never implicitly change a thread binding. The Work-list
+payload is catalog-only; fallback resolution belongs solely to omitted root-chat
+creation.
+Home and Work each own exactly one screen-level `app-scroll`; neither screen
+adds a nested scroll owner. Their bodies share `project-screen-column`, whose
+named inline-size container controls collection columns independently of the
+viewport.
 
 Ownership rules:
 
@@ -215,8 +247,13 @@ Ownership rules:
 - **Stale/invalid params are normalized at the route.** A `?thread=` that isn't in
   the loaded thread set is stripped via a `replace` navigation once threads load;
   `validateSearch` rejects `folder`/`path` supplied without a `scheme` (no
-  contradictory KB state from hand-typed/stale URLs). Switching screens drops the
-  subordinate params of the screen left behind.
+  contradictory KB state from hand-typed/stale URLs). Explicit Work IDs use the
+  contracts-owned UUID grammar: malformed values return immediately to the Work
+  collection, uppercase values canonicalize, and a valid missing ID returns only
+  after the all-status Work catalog succeeds. Loading/error preserves the URL,
+  and every Work normalization compares its original `screen/work` pair before
+  replacing so stale validation cannot overwrite newer navigation. Switching
+  screens drops the subordinate params of the screen left behind.
 
 ## Visual conventions — tonal manuscript shell
 
@@ -417,6 +454,11 @@ Before merging a change that touches visuals: grep the touched files for
 `#`-hex colors, `rgba(...)`, `rounded-[N]`, `text-[N]px`, `gap-[N]px`,
 `mt-[N]px`. Each one is either justified (genuinely surface-specific
 geometry) or it's a token that wants promoting.
+
+UI tests assert a behavior or semantic seam—roles, names, state, callback
+outcomes, accessible errors, or a public component boundary—not Tailwind
+styling vocabulary. Browser-measure real layout and hit boxes; JSDOM cannot
+establish geometry.
 
 ## Dev limitations (pilot)
 

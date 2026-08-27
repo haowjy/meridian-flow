@@ -89,7 +89,7 @@ free of Meridian URI schemes and database concerns.
 | Tool | Backend |
 |---|---|
 | `write` | Command grammar (`read` / `diff` / `create` / `insert` / `replace` / `delete` / `undo` / `redo`). Handler resolves context paths to tracked document IDs and returns the package's versioned JSON result for successes and failures. With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
-| `work` | Six-branch strict union (list/show/create/update/delete/switch). Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Context-changing mutations return `workContextChanged: true`; the dispatcher calls `deliverNow` after result persistence to inject the refreshed `<system_update>` before the next provider call. Mutation receipts use the exact before/after facts returned by the committing transition. One reversal planner simulates reversible create/update/delete receipts in undo-reverse or redo-forward order, then POST re-runs it under sorted Work lifecycle locks before applying executable steps. Divergence is reported as unavailable rather than overwritten. Switch receipts are factual and have no inverse; switch settles pre-switch staged writes and rotates the response scope before rebinding. |
+| `work` | Six-branch strict union (list/show/create/update/delete/switch). Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Human PATCH and model `update` converge on `updateWorkTransition`; receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; switch receipts are factual and have no inverse. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
 | `list` | Lists the resolved unified `ContextPort` path/URI. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `search` | Searches the resolved unified `ContextPort` scope. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `ask_user` | Creates a interrupt component block and keeps the assistant turn interruptible/resumable. |
@@ -139,9 +139,8 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | File | One-liner |
 |---|---|
 | `thread-creation.ts` | Ownership-gated primary thread creation shared by global and project workspace-scoped routes; resolves work attachment and touches the work. |
-| `work-attachment.ts` | Determines a new thread's work: explicit `workId`, subagent parent inheritance, or default work for primary threads. |
+| `work-attachment.ts` | Determines a new thread's Work: explicit `workId`, subagent parent inheritance, or the omitted-root new-chat fallback. |
 | `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
-| `project-stats.ts` | Pure projection folding thread list + works into `ProjectStatsResponse`. |
 | `project-results-route.ts` | Ownership-gated project result listing and signed artifact URL refresh. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
 | `document-access.ts` | `DocumentAccessPort` interface plus allow-all and Drizzle adapters for Yjs document authorization. |

@@ -1,13 +1,19 @@
 /** Drizzle persistence for coalesced Work-context delivery obligations. */
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import type { WorkContextDeliveryRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 export function createDrizzleWorkContextDeliveryRepository(
   db: DrizzleDatabase,
 ): WorkContextDeliveryRepository {
+  const deliverableThread = and(
+    isNull(schema.threads.deletedAt),
+    isNull(schema.projects.deletedAt),
+    ne(schema.threads.status, "archived"),
+  );
+
   async function enqueue(threadIds: ThreadId[]): Promise<void> {
     if (threadIds.length === 0) return;
     const requestedAt = new Date();
@@ -25,7 +31,8 @@ export function createDrizzleWorkContextDeliveryRepository(
       const [thread] = await currentDrizzleDb(db)
         .select({ id: schema.threads.id })
         .from(schema.threads)
-        .where(and(eq(schema.threads.id, threadId), ne(schema.threads.status, "archived")))
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.threads.projectId))
+        .where(and(eq(schema.threads.id, threadId), deliverableThread))
         .limit(1);
       const threadIds = thread ? [thread.id as ThreadId] : [];
       await enqueue(threadIds);
@@ -36,7 +43,8 @@ export function createDrizzleWorkContextDeliveryRepository(
       const rows = await currentDrizzleDb(db)
         .select({ id: schema.threads.id })
         .from(schema.threads)
-        .where(and(eq(schema.threads.projectId, projectId), ne(schema.threads.status, "archived")));
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.threads.projectId))
+        .where(and(eq(schema.threads.projectId, projectId), deliverableThread));
       const threadIds = rows.map(({ id }) => id as ThreadId);
       await enqueue(threadIds);
       return threadIds;
@@ -50,7 +58,8 @@ export function createDrizzleWorkContextDeliveryRepository(
           schema.threads,
           eq(schema.threads.id, schema.workContextDeliveryObligations.threadId),
         )
-        .where(ne(schema.threads.status, "archived"));
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.threads.projectId))
+        .where(deliverableThread);
       return rows.map(({ threadId }) => threadId as ThreadId);
     },
 
@@ -67,7 +76,12 @@ export function createDrizzleWorkContextDeliveryRepository(
       const [row] = await currentDrizzleDb(db)
         .select({ threadId: schema.workContextDeliveryObligations.threadId })
         .from(schema.workContextDeliveryObligations)
-        .where(eq(schema.workContextDeliveryObligations.threadId, threadId))
+        .innerJoin(
+          schema.threads,
+          eq(schema.threads.id, schema.workContextDeliveryObligations.threadId),
+        )
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.threads.projectId))
+        .where(and(eq(schema.workContextDeliveryObligations.threadId, threadId), deliverableThread))
         .for("update")
         .limit(1);
       return !!row;

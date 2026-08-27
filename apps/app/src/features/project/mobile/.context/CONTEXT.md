@@ -25,7 +25,7 @@ The project route owns all phone navigation state:
 
 | Param | Meaning |
 |---|---|
-| `?screen=` | Active primary project destination: `home`, `chat`, or `context`. |
+| `?screen=` | Active primary project destination: `home`, `work`, `chat`, or `context`. |
 | `?results=` | Phone Results auxiliary surface. Presence means open; desktop ignores it. |
 | `?thread=` | Active chat thread. It rides along when switching screens. |
 | `?scheme=` | Active context source (`kb`, `user`, `work`, `fs1`). |
@@ -74,6 +74,11 @@ and releases the owner on unmount. This is separate from the desktop tab strip's
 open-tab set; phone navigation derives the active tab from the context tree and
 does not write to desktop tabs.
 
+The same resolved editable document is published into the persistent Editor
+review value. When that value selects a draft, the host resolves its review room
+and supplies the Work-qualified review identity to the existing `EditorView`;
+phone review does not own a parallel controller or state machine.
+
 This ownership is mandatory. Mounting `EditorView` directly without `retain()`
 creates Yjs sessions that the registry cannot know are closed.
 
@@ -91,7 +96,7 @@ MobileProject
   │   ├─ breadcrumb for context screens
   │   └─ trailing slot: chat ⇄ results toggle, or `+` create menu in Files
   ├─ one active main view
-  │   ├─ MobileHomeScreen → HomeOverviewBody + phone list chrome
+  │   ├─ HomeScreen or WorkScreen → shared project-screen body and one screen scroll owner
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
   │   ├─ MobileContextBrowser or MobileDocumentHost
   │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay
@@ -112,7 +117,7 @@ the document session registry.
   happens through OS/browser back because drill-in pushes route states.
 - Context screens supply a left-aligned breadcrumb immediately after the
   hamburger. The breadcrumb is Files-rooted: `Files › scheme › folders › file`.
-- Home/chat/results use centered titles. The leading hamburger and trailing
+- Home/Work/chat/results use centered titles. The leading hamburger and trailing
   action reserve are both `44px`, so non-breadcrumb titles remain centered.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way

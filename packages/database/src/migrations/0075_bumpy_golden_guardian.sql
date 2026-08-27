@@ -1,0 +1,1 @@
+ALTER TABLE "thread_user_state" DROP COLUMN "last_opened_at";

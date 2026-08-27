@@ -45,7 +45,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async (workId) => (await draftPending.count(workId)) > 0,
+      hasUnreviewedDraft: async (workId) =>
+        ((await draftPending.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
     });
     const branches = createDrizzleBranchStore(db, undefined);
 
@@ -144,9 +145,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;
         await Promise.all([add, rebind]);
-        await expect(threads.threadWorks.listByThread(THREAD_ID)).resolves.toEqual([
-          { workId: WORK_ID, isPrimary: true },
-        ]);
+        const memberships = await threads.threadWorks.listByThread(THREAD_ID);
+        expect(memberships).toHaveLength(2);
+        expect(memberships).toEqual(
+          expect.arrayContaining([
+            { workId: WORK_ID, isPrimary: true },
+            { workId: TARGET_WORK_ID, isPrimary: false },
+          ]),
+        );
       } finally {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`
@@ -233,7 +239,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         advisoryLockHeld = false;
         await deletion;
         await expect(draft).rejects.toThrow(`Work not found: ${WORK_ID}`);
-        await expect(draftPending.count(WORK_ID)).resolves.toBe(0);
+        await expect(
+          draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
+        ).resolves.toBe(0);
       } finally {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`
@@ -246,7 +254,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("serializes rebind before target deletion and then blocks the delete", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       await control.unsafe(`
-        CREATE FUNCTION test_block_thread_work_rebind() RETURNS trigger
+        CREATE FUNCTION test_block_thread_work_rebind_demote() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
           PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
@@ -255,8 +263,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         $$;
         CREATE TRIGGER test_block_thread_work_rebind
         BEFORE UPDATE ON thread_works
-        FOR EACH ROW WHEN (OLD.work_id IS DISTINCT FROM NEW.work_id)
-        EXECUTE FUNCTION test_block_thread_work_rebind();
+        FOR EACH ROW WHEN (OLD.is_primary AND NOT NEW.is_primary)
+        EXECUTE FUNCTION test_block_thread_work_rebind_demote();
       `);
       await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
       let advisoryLockHeld = true;
@@ -286,7 +294,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`
           DROP TRIGGER IF EXISTS test_block_thread_work_rebind ON thread_works;
-          DROP FUNCTION IF EXISTS test_block_thread_work_rebind();
+          DROP FUNCTION IF EXISTS test_block_thread_work_rebind_demote();
         `);
       }
     });

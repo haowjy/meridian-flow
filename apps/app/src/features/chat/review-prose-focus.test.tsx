@@ -6,7 +6,7 @@
  */
 import { act, useEffect, useState, useSyncExternalStore } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import { ProjectContextRouteProvider } from "@/features/project/routing/ProjectContextRoute";
 import type { ScreenKey } from "@/features/project/shell/screens";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
@@ -37,6 +37,15 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/client/stores", () => ({
   useContextTabsActions: () => ({ openTab }),
 }));
+vi.mock("@/features/project/dock/editor-review-handoff", () => ({
+  useOpenEditorReview:
+    () =>
+    (target: { workId: string; documentId: string; draftId: string; contextPath: string }) => {
+      setInlineReview({ documentId: target.documentId, draftId: target.draftId });
+      navigate({ scheme: "manuscript", path: target.contextPath, workId: target.workId });
+      return Promise.resolve();
+    },
+}));
 vi.mock("./DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {
@@ -49,7 +58,8 @@ vi.mock("./DraftReviewProvider", () => ({
 
 const { DEFAULT_DOCK_PREFS, DEFAULT_SURFACE_PREFS, useProjectLayout, useProjectSurfacePrefsStore } =
   await import("@/features/project/layout");
-const { useAiDraftLauncher } = await import("./useAiDraftLauncher");
+const { useAiDraftLauncher } = await import("@/features/project/dock/useAiDraftLauncher");
+const { useDraftReview } = await import("./DraftReviewProvider");
 const { useReviewProseFocus } = await import("./review-prose-focus");
 
 type DraftGroup = { documentId: string; contextPath: string };
@@ -68,12 +78,12 @@ let changeProject: (() => void) | null = null;
 /** The slice of `DesktopProject` that decides the rail's width during review. */
 function ReviewShell({ screen }: { screen: ScreenKey }) {
   const { openAiDraft } = useAiDraftLauncher();
-  const proseFocus = useReviewProseFocus(screen);
+  const proseFocus = useReviewProseFocus(screen, useDraftReview());
   const layout = useProjectLayout(screen, proseFocus.collapsedSlots);
   const setSurfaceCollapsed = useProjectSurfacePrefsStore((state) => state.setSurfaceCollapsed);
   useEffect(() => {
     shell = {
-      openAiDraft,
+      openAiDraft: (group, draftId) => openAiDraft({ ...group, workId: "work-a", draftId }),
       railCollapsed: layout.threads.collapsed,
       expandRail: () => {
         proseFocus.release();
@@ -96,7 +106,11 @@ function Harness() {
       setProject((current) => current + 1);
     };
   });
-  return <ReviewShell key={project} screen="context" />;
+  return (
+    <ProjectContextRouteProvider openContextRoute={async (target) => navigate(target)}>
+      <ReviewShell key={project} screen="context" />
+    </ProjectContextRouteProvider>
+  );
 }
 
 function savedRailCollapsed(): boolean {
@@ -114,6 +128,7 @@ const documentTwo: DraftGroup = {
 
 describe("review prose focus", () => {
   beforeEach(() => {
+    navigate.mockClear();
     setInlineReview(null);
     useProjectSurfacePrefsStore.setState({
       prefs: DEFAULT_SURFACE_PREFS,
@@ -129,6 +144,11 @@ describe("review prose focus", () => {
 
       await act(async () => shell?.openAiDraft(documentOne, "draft-one"));
       expect(shell?.railCollapsed).toBe(true);
+      expect(navigate).toHaveBeenLastCalledWith({
+        scheme: "manuscript",
+        path: documentOne.contextPath,
+        workId: "work-a",
+      });
 
       // The defect: this second entry used to snapshot the already-collapsed
       // rail and restore THAT on exit.

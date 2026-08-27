@@ -14,6 +14,7 @@ import {
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
+import { contextTreeRowClassName } from "./context-row-geometry";
 import { schemeAllowsCreation } from "./context-schemes";
 import type { ContextFile, ContextNode } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
@@ -22,7 +23,7 @@ import { useRenameEntryForm } from "./use-rename-entry-form";
 
 export type TreeEnv = {
   projectId: string;
-  activeThreadId: string | null;
+  workId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
@@ -164,7 +165,10 @@ function DirRow({
           aria-label={t`Toggle folder ${dir.name}`}
           onClick={toggle}
           onKeyDown={activateOnKey(toggle)}
-          className="group focus-ring flex h-7 items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent"
+          className={cn(
+            "group focus-ring flex items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent",
+            contextTreeRowClassName,
+          )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
           <Twistie expanded={isOpen} />
@@ -227,7 +231,8 @@ function FileRow({
         onClick={select}
         onKeyDown={activateOnKey(select)}
         className={cn(
-          "group focus-ring flex h-7 items-center pr-1 text-sm",
+          "group focus-ring flex items-center pr-1 text-sm",
+          contextTreeRowClassName,
           /* Hover is inactive-only: the active row holds its paper tone
              (white-is-active). */
           active
@@ -265,7 +270,7 @@ function RenameRow({
   const env = useTreeEnv();
   const form = useRenameEntryForm({
     projectId: env.projectId,
-    activeThreadId: env.activeThreadId,
+    workId: env.workId,
     scheme: env.scheme,
     path,
     currentName,
@@ -312,7 +317,7 @@ function CreateRow({
   const env = useTreeEnv();
   const form = useCreateEntryForm({
     projectId: env.projectId,
-    activeThreadId: env.activeThreadId,
+    workId: env.workId,
     scheme: env.scheme,
     kind,
     parent,

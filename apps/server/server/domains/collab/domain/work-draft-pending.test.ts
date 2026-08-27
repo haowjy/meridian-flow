@@ -28,6 +28,7 @@ describe("pending Work drafts", () => {
         { branch: content, rows: rows.get("content") ?? [] },
         { branch: manifest, rows: rows.get("manifest") ?? [] },
       ]),
+      countPendingByWorkIds: vi.fn(async () => new Map([[WORK_ID, 1]])),
     });
 
     await expect(pending.list(WORK_ID)).resolves.toEqual([
@@ -40,7 +41,20 @@ describe("pending Work drafts", () => {
         },
       },
     ]);
-    await expect(pending.count(WORK_ID)).resolves.toBe(1);
+    await expect(pending.countPendingByWorkIds([WORK_ID])).resolves.toEqual(
+      new Map([[WORK_ID, 1]]),
+    );
+  });
+
+  it("does not call persistence for an empty Work set", async () => {
+    const countPendingByWorkIds = vi.fn();
+    const pending = createWorkDraftPending({
+      listReviewableEvidenceForWork: vi.fn(),
+      countPendingByWorkIds,
+    });
+
+    await expect(pending.countPendingByWorkIds([])).resolves.toEqual(new Map());
+    expect(countPendingByWorkIds).not.toHaveBeenCalled();
   });
 });
 

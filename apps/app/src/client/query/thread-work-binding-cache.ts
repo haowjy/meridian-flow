@@ -10,6 +10,7 @@ import type {
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
 import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
+import { invalidateProjectHomeFeed } from "./project-invalidation";
 import {
   isProjectContextTreeKey,
   isProjectWorkDerivedKey,
@@ -18,6 +19,7 @@ import {
 } from "./project-query-keys";
 import { patchThreadInProjectCaches } from "./project-thread-cache";
 import { threadQueryKeys } from "./thread-query-keys";
+import { convergeWorkProjection } from "./work-projection-cache";
 
 export type ThreadWorkProjectionCursor = { seq: string; workId: string };
 
@@ -53,6 +55,7 @@ export function invalidateThreadProjectionDependencies(
 ): void {
   const ids = input.workIds === "all" ? undefined : input.workIds;
   void client.invalidateQueries({ queryKey: threadQueryKeys.thread(input.threadId) });
+  void invalidateProjectHomeFeed(client, input.projectId);
   if (input.refreshLists) {
     void client.invalidateQueries({
       queryKey: projectQueryKeys.threads(input.projectId),
@@ -105,10 +108,11 @@ export function convergeThreadWorkBinding(
       invalidateThreadProjectionDependencies(client, {
         threadId: signal.threadId,
         projectId: signal.projectId,
-        refreshLists: true,
+        refreshLists: false,
         workIds: "all",
         contextTrees: "work-scoped",
       });
+      convergeWorkProjection(client, { kind: "binding", projectId: signal.projectId });
     });
     return;
   }
@@ -129,7 +133,6 @@ export function convergeThreadWorkBinding(
         const known = current.works.some(({ id }) => id === result.work.id);
         return {
           ...current,
-          defaultWorkId: result.preferenceChanged ? result.work.id : current.defaultWorkId,
           works: known
             ? current.works.map((work) => (work.id === result.work.id ? result.work : work))
             : [...current.works, result.work],
@@ -138,10 +141,11 @@ export function convergeThreadWorkBinding(
       invalidateThreadProjectionDependencies(client, {
         threadId,
         projectId,
-        refreshLists: true,
+        refreshLists: false,
         workIds: new Set([result.previousWorkId, result.work.id]),
         contextTrees: "work-scoped",
       });
+      convergeWorkProjection(client, { kind: "binding", projectId });
       return;
     }
 
@@ -157,6 +161,7 @@ export function convergeThreadWorkBinding(
       workIds: ids.size ? ids : "all",
       contextTrees: "work-scoped",
     });
+    convergeWorkProjection(client, { kind: "binding", projectId });
   });
 }
 

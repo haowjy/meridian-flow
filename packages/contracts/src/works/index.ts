@@ -44,7 +44,6 @@ export interface UpdateWorkRequest {
   name?: string;
   goal?: string;
   description?: string;
-  status?: WorkStatus;
 }
 
 /** Strict body for changing the Work bound to an existing thread. */
@@ -60,7 +59,6 @@ export interface RebindThreadWorkResult {
   previousWorkId: WorkId;
   work: Work;
   changed: boolean;
-  preferenceChanged: boolean;
   receipt: WorkReceipt;
 }
 

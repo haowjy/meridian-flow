@@ -7,6 +7,7 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const createProjectThread = vi.fn();
 const invalidateProjectThreadData = vi.fn();
+const invalidateWorkThreads = vi.fn();
 
 vi.mock("@lingui/core/macro", () => ({
   msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
@@ -17,11 +18,14 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("@/client/api/projects-api", () => ({ createProjectThread }));
-vi.mock("@/client/query/project-invalidation", () => ({ invalidateProjectThreadData }));
+vi.mock("@/client/query/project-invalidation", () => ({
+  invalidateProjectThreadData,
+  invalidateWorkThreads,
+}));
 vi.mock("@/client/stores", () => ({
   useThreadStore: (selector: (state: { now: number }) => unknown) => selector({ now: 0 }),
 }));
-vi.mock("@/features/project/data/dashboard-data", () => ({
+vi.mock("@/features/project/data/project-thread-groups", () => ({
   useProjectThreadGroups: () => ({
     workItems: [],
     primaryThreads: [],
@@ -51,16 +55,18 @@ function buttonNamed(name: string) {
 afterEach(() => {
   createProjectThread.mockReset();
   invalidateProjectThreadData.mockReset();
+  invalidateWorkThreads.mockReset();
 });
 
 describe("thread switcher New chat", () => {
   it("stays expanded through failure and closes and selects only after retry succeeds", async () => {
-    const firstCreate = deferred<{ id: string }>();
-    const retryCreate = deferred<{ id: string }>();
+    const firstCreate = deferred<{ id: string; workId: string }>();
+    const retryCreate = deferred<{ id: string; workId: string }>();
     createProjectThread
       .mockImplementationOnce(() => firstCreate.promise)
       .mockImplementationOnce(() => retryCreate.promise);
     invalidateProjectThreadData.mockResolvedValue(undefined);
+    invalidateWorkThreads.mockResolvedValue(undefined);
     const onSelectThread = vi.fn();
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
 
@@ -118,10 +124,11 @@ describe("thread switcher New chat", () => {
           expect(onSelectThread).not.toHaveBeenCalled();
 
           await act(async () => {
-            retryCreate.resolve({ id: "thread-1" });
+            retryCreate.resolve({ id: "thread-1", workId: "work-1" });
             await vi.waitFor(() => {
               expect(onSelectThread).toHaveBeenCalledOnce();
               expect(onSelectThread).toHaveBeenCalledWith("thread-1");
+              expect(invalidateWorkThreads).toHaveBeenCalledWith(client, "project-1", "work-1");
               expect(trigger?.getAttribute("aria-expanded")).toBe("false");
               expect(document.body.textContent).not.toContain("Could not create chat");
             });

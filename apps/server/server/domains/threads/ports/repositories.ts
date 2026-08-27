@@ -15,6 +15,7 @@ import type {
   JsonValue,
   ModelResponse,
   PriceSource,
+  ProjectChatItem,
   SpawnStatus,
   Thread,
   ThreadKind,
@@ -23,6 +24,7 @@ import type {
   Turn,
   TurnRole,
   TurnStatus,
+  UpdateThreadUserStateResponse,
   WorkingState,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -126,13 +128,17 @@ export interface ThreadRepository {
   findById(id: ThreadId): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
+  /** Locks and returns the thread lifecycle row, including soft-deleted threads. */
+  lockByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Threads in a project (excludes soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
-  /** Threads in a work, ordered by update time (excludes soft-deleted threads). */
-  listByWork(projectId: ProjectId, workId: WorkId): Promise<ThreadListItem[]>;
-  getLastOpenedAt(id: ThreadId, userId: UserId): Promise<string | null>;
-  markOpened(id: ThreadId, userId: UserId): Promise<string>;
+  /** Hard-bounded model-facing summary of chats historically associated with a Work. */
+  listRecentByWork(
+    projectId: ProjectId,
+    workId: WorkId,
+    limit: number,
+  ): Promise<WorkThreadSummary[]>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
   /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
   updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;
@@ -149,12 +155,58 @@ export interface ThreadRepository {
   // reversible intent that needs wiring here:
   //   - archive(id)/unarchive(id) — set/clear status:"archived" (or fold into
   //     updateStatus) so a chat can be filed away and brought back.
-  //   - exclude status:"archived" from listByProject / listByWork by default, and
+  //   - exclude status:"archived" from listByProject / Work feeds by default, and
   //     add a listing path for the "Archived" view to read them back.
-  /** Sets `deletedAt`; idempotent if already soft-deleted. */
-  softDelete(id: ThreadId): Promise<Thread>;
-  /** Clears `deletedAt`; idempotent if already active. */
-  restore(id: ThreadId): Promise<Thread>;
+  /** Applies a changed trash state; lifecycle commands must first hold the thread row lock. */
+  setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
+}
+
+export interface WorkThreadSummary {
+  title: string | null;
+  updatedAt: string;
+  status: ThreadStatus;
+}
+
+export interface ProjectChatCursorKey {
+  sortAt: string;
+  threadId: ThreadId;
+}
+
+export interface WorkChatFeedRow {
+  item: ProjectChatItem;
+  updatedAt: string;
+}
+
+export interface WorkChatFeedRepository {
+  queryPage(input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    userId: UserId;
+    after: ProjectChatCursorKey | null;
+    limit: number;
+  }): Promise<WorkChatFeedRow[]>;
+}
+
+export interface HomeChatFeedRepository {
+  queryPage(input: {
+    projectId: ProjectId;
+    userId: UserId;
+    after: ProjectChatCursorKey | null;
+    recentLimit: number;
+    includeFeatured: boolean;
+  }): Promise<{
+    continueChat: ProjectChatItem | null;
+    favorites: ProjectChatItem[];
+    recent: ProjectChatItem[];
+  }>;
+}
+
+export interface ThreadUserStateRepository {
+  update(input: {
+    threadId: ThreadId;
+    userId: UserId;
+    isFavorite: boolean;
+  }): Promise<UpdateThreadUserStateResponse>;
 }
 
 /**
@@ -239,7 +291,7 @@ export interface ThreadDocumentRepository {
 export interface ThreadWorksRepository {
   /** When primary, demotes the old primary and upserts this membership atomically. */
   addMembership(threadId: ThreadId, workId: WorkId, isPrimary: boolean): Promise<void>;
-  /** Replaces the primary membership in place under the thread row lock. */
+  /** Demotes the previous membership and promotes/upserts the target under the thread row lock. */
   rebindPrimary(
     threadId: ThreadId,
     workId: WorkId,
@@ -285,6 +337,9 @@ export interface WorkContextDeliveryRepository {
 
 export type ThreadRepositories = {
   threads: ThreadRepository;
+  homeFeed: HomeChatFeedRepository;
+  workChatFeed: WorkChatFeedRepository;
+  threadUserState: ThreadUserStateRepository;
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;
   blocks: BlockRepository;

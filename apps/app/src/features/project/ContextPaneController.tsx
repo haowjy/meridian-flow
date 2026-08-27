@@ -6,17 +6,20 @@
  * for the Editor destination. The project sidebar owns the file tree; this
  * controller owns only the persistent tab/document surface.
  */
-import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+  type WorkingSetRoute,
+} from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { useDefaultWorkId } from "@/client/query/useWorks";
 import { useContextTabs, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   clearRoutes,
   promoteRoute,
   readRecentRoutes,
+  recentRouteForEditorWork,
   removeRoute,
 } from "@/client/working-set";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -34,11 +37,12 @@ import { untitledDocumentIsEmpty } from "./context/untitled-reconciler";
 import { appendPendingUntitled, isUntitledPending } from "./context/untitled-reconciler-browser";
 import { identityCommitMayNavigate } from "./context/use-identity-commit";
 import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
+import type { ContextRouteTarget } from "./routing/project-route";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
-  activeThreadId: string | null;
+  editorWorkId: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectContextPath: (
@@ -46,6 +50,7 @@ export type ContextViewerSurfaceControllerProps = {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
+  onOpenContextTarget: (target: ContextRouteTarget, options?: { replace?: boolean }) => void;
   /**
    * Clears the routed destination entirely (no scheme/path in the URL) —
    * closing the LAST tab must leave a fresh-entry URL so a reload runs
@@ -61,23 +66,28 @@ export type ContextViewerSurfaceControllerProps = {
 
 export function ContextViewerSurfaceController({
   projectId,
-  activeThreadId,
+  editorWorkId,
   activeContextScheme,
   activeContextPath,
   active,
   sidebarToggle,
   dockToggle,
   onSelectContextPath,
+  onOpenContextTarget,
   onClearContextDestination,
 }: ContextViewerSurfaceControllerProps) {
-  const workId = useContextWorkId(projectId, activeThreadId);
-  const defaultWorkId = useDefaultWorkId(projectId);
-  const routeWorkId = workId ?? defaultWorkId;
+  const routeWorkId = editorWorkId;
 
   const { tabs, activeTabId } = useContextTabs(projectId);
   const { openTab, closeTab, updateTrackedTab, pruneWorkScopedTabs, selectTab } =
     useContextTabsActions();
   const serverTabs = tabs.filter((tab) => tab.kind !== "new");
+  const hasEditorWorkTab = tabs.some(
+    (tab) =>
+      tab.kind === "new" ||
+      !isWorkScopedProjectContextScheme(tab.scheme) ||
+      tab.workId === routeWorkId,
+  );
   const activeTab = findContextTabForRoute(
     tabs,
     activeContextScheme,
@@ -85,10 +95,12 @@ export function ContextViewerSurfaceController({
     routeWorkId,
   );
   const [rememberedRoute, setRememberedRoute] = useState<{
-    projectId: string;
+    scopeKey: string;
     route: WorkingSetRoute;
   } | null>(null);
-  const lastContextRoute = rememberedRoute?.projectId === projectId ? rememberedRoute.route : null;
+  const editorScopeKey = `${projectId}:${routeWorkId ?? "no-work"}`;
+  const lastContextRoute =
+    rememberedRoute?.scopeKey === editorScopeKey ? rememberedRoute.route : null;
   const lastActiveTabIdRef = useRef<string | null>(null);
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   if (activeTabId) lastActiveTabIdRef.current = activeTabId;
@@ -105,7 +117,6 @@ export function ContextViewerSurfaceController({
     isFetching: routeTreeIsFetching,
   } = useProjectContextTree(projectId, activeContextScheme ?? "kb", {
     enabled: activeContextScheme !== null && activeContextPath !== null,
-    activeThreadId,
     workId: routeWorkId,
   });
 
@@ -122,7 +133,7 @@ export function ContextViewerSurfaceController({
 
   useEffect(() => {
     previousRouteStateRef.current = { tabs: serverTabs, activeTab };
-  }, [projectId, workId]);
+  }, [projectId, routeWorkId]);
 
   useEffect(() => {
     pruneWorkScopedTabs(projectId, routeWorkId);
@@ -135,9 +146,9 @@ export function ContextViewerSurfaceController({
   // Device-local routes are unavailable during SSR. Read after hydration so
   // the server and first client render agree, then keep the resume label current.
   useEffect(() => {
-    const route = readRecentRoutes(projectId)[0];
-    setRememberedRoute(route ? { projectId, route } : null);
-  }, [projectId]);
+    const route = recentRouteForEditorWork(readRecentRoutes(projectId), routeWorkId);
+    setRememberedRoute(route ? { scopeKey: editorScopeKey, route } : null);
+  }, [editorScopeKey, projectId, routeWorkId]);
 
   // Remember the last-opened file (device-local) once its tab actually
   // resolves — a tree-validated open or a launcher-synthesized draft tab
@@ -150,8 +161,8 @@ export function ContextViewerSurfaceController({
     const route = buildWorkingSetRoute(activeTab.scheme, activeTab.path, routeWorkId);
     if (!route) return;
     promoteRoute(projectId, route);
-    setRememberedRoute({ projectId, route });
-  }, [activeTab, projectId, routeWorkId]);
+    setRememberedRoute({ scopeKey: editorScopeKey, route });
+  }, [activeTab, editorScopeKey, projectId, routeWorkId]);
 
   // Restore, once per SCREEN ENTRY (user call 2026-07-16 — "the last opened
   // thing"): entering Context with no destination replays the remembered
@@ -163,7 +174,17 @@ export function ContextViewerSurfaceController({
   // already forgets the route, and the ref stays spent while you stay here.
   const restoreAttemptedRef = useRef(false);
   const [wantsDefaultOpen, setWantsDefaultOpen] = useState(false);
+  const restoreScopeRef = useRef(editorScopeKey);
   useLayoutEffect(() => {
+    if (restoreScopeRef.current !== editorScopeKey) {
+      restoreScopeRef.current = editorScopeKey;
+      restoreAttemptedRef.current = false;
+      openedKeyRef.current = null;
+      lastActiveTabIdRef.current = null;
+      scrollPositionsRef.current.clear();
+      previousRouteStateRef.current = { tabs: serverTabs, activeTab };
+      setWantsDefaultOpen(false);
+    }
     if (!active) {
       restoreAttemptedRef.current = false;
       setWantsDefaultOpen(false);
@@ -172,7 +193,7 @@ export function ContextViewerSurfaceController({
     if (restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
     if (activeContextScheme !== null || activeContextPath !== null) return;
-    const last = readRecentRoutes(projectId)[0];
+    const last = recentRouteForEditorWork(readRecentRoutes(projectId), routeWorkId);
     if (last) {
       onSelectContextPath(last.path, last.scheme, { replace: true });
       return;
@@ -181,8 +202,19 @@ export function ContextViewerSurfaceController({
     // emptied (no tabs): land on words instead of the empty state — arm the
     // default open, resolved below once the manuscript tree arrives (user
     // call 2026-07-16: "there should always be documents loaded").
-    if (tabs.length === 0) setWantsDefaultOpen(true);
-  }, [active]);
+    if (!hasEditorWorkTab) setWantsDefaultOpen(true);
+  }, [
+    active,
+    activeContextPath,
+    activeContextScheme,
+    activeTab,
+    editorScopeKey,
+    onSelectContextPath,
+    projectId,
+    routeWorkId,
+    serverTabs,
+    hasEditorWorkTab,
+  ]);
 
   // Untitled tabs are store-owned until materialization gives them a server
   // route. Their activation must not depend on search-param validation.
@@ -212,7 +244,6 @@ export function ContextViewerSurfaceController({
 
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
     enabled: wantsDefaultOpen,
-    activeThreadId,
     workId: routeWorkId,
   });
   useEffect(() => {
@@ -220,10 +251,17 @@ export function ContextViewerSurfaceController({
     setWantsDefaultOpen(false);
     // The writer (or a late restore) may have opened something while the
     // tree loaded — an explicit destination always wins over the default.
-    if (activeContextScheme !== null || activeContextPath !== null || tabs.length > 0) return;
+    if (activeContextScheme !== null || activeContextPath !== null || hasEditorWorkTab) return;
     const file = firstContextFile(defaultOpenTree);
     if (file) onSelectContextPath(file.path, "manuscript", { replace: true });
-  }, [wantsDefaultOpen, defaultOpenTree]);
+  }, [
+    activeContextPath,
+    activeContextScheme,
+    defaultOpenTree,
+    hasEditorWorkTab,
+    onSelectContextPath,
+    wantsDefaultOpen,
+  ]);
 
   useEffect(() => {
     const previous = previousRouteStateRef.current;
@@ -357,7 +395,7 @@ export function ContextViewerSurfaceController({
   }
 
   function handleResumeDocument() {
-    const last = readRecentRoutes(projectId)[0];
+    const last = recentRouteForEditorWork(readRecentRoutes(projectId), routeWorkId);
     if (!last) return;
     onSelectContextPath(last.path, last.scheme);
   }
@@ -417,19 +455,21 @@ export function ContextViewerSurfaceController({
 
   const handleUntitledBecameNonEmpty = useCallback(
     (documentId: string) => {
-      appendPendingUntitled({ documentId, projectId });
+      appendPendingUntitled({
+        documentId,
+        projectId,
+        ...(routeWorkId ? { home: { scheme: "scratch" as const, workId: routeWorkId } } : {}),
+      });
     },
-    [projectId],
+    [projectId, routeWorkId],
   );
 
-  useUntitledTabBridge({ projectId, tabs, defaultWorkId, onSelectContextPath });
+  useUntitledTabBridge({ projectId, tabs, onOpenContextTarget });
 
   return (
     <ContextViewer
       projectId={projectId}
-      activeThreadId={activeThreadId}
-      defaultWorkId={defaultWorkId}
-      activeWorkId={routeWorkId}
+      editorWorkId={routeWorkId}
       tabs={tabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}
@@ -472,7 +512,11 @@ export function ContextViewerSurfaceController({
           });
         }
         if (identityCommitMayNavigate(ownership, liveSlice?.activeTabId, documentId)) {
-          onSelectContextPath(next.path, next.scheme);
+          onOpenContextTarget({
+            path: next.path,
+            scheme: next.scheme,
+            workId: next.routeWorkId,
+          });
         }
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}

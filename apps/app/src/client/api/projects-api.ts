@@ -9,7 +9,7 @@
  */
 
 import type { Project } from "@meridian/contracts/projects";
-import type { HomeProjectResponse } from "@meridian/contracts/protocol";
+import type { HomeChatFeedPage, HomeProjectResponse } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectContextCreatePath,
@@ -19,12 +19,14 @@ import {
   apiProjectContextReadPath,
   apiProjectContextRenamePath,
   apiProjectContextTreePath,
+  apiProjectHomeFeedPath,
   apiProjectPath,
   apiProjectsHomePath,
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
   apiProjectWorkWriteModePath,
+  apiWorkThreadsPath,
   type ContextReadResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
@@ -36,6 +38,7 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
+  type ListWorkThreadsResponse,
   type MoveContextEntryRequest,
   type MoveContextEntryResult,
   type ProjectContextRequestOptions,
@@ -64,6 +67,11 @@ type ListProjectWorksOptions = RequestInitOptions & {
   status?: "active" | "archived" | "all";
 };
 
+type ListWorkThreadsOptions = RequestInitOptions & {
+  cursor?: string | null;
+  signal?: AbortSignal;
+};
+
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
@@ -72,6 +80,14 @@ export async function getHomeProject(init?: RequestInitOptions): Promise<HomePro
   return getJson<HomeProjectResponse>(urlFor(apiProjectsHomePath(), init), {
     headers: init?.headers,
   });
+}
+
+export function getProjectHomeFeed(
+  projectId: string,
+  cursor?: string | null,
+  signal?: AbortSignal,
+): Promise<HomeChatFeedPage> {
+  return getJson<HomeChatFeedPage>(apiProjectHomeFeedPath(projectId, cursor), { signal });
 }
 
 export async function listProjects(init?: RequestInitOptions): Promise<Project[]> {
@@ -90,6 +106,19 @@ export async function listProjectThreads(
     { headers: init?.headers },
   );
   return response.threads;
+}
+
+export async function listWorkThreads(
+  workId: string,
+  options?: ListWorkThreadsOptions,
+): Promise<ListWorkThreadsResponse> {
+  return getJson<ListWorkThreadsResponse>(
+    urlFor(apiWorkThreadsPath(workId, options?.cursor), options),
+    {
+      headers: options?.headers,
+      signal: options?.signal,
+    },
+  );
 }
 
 export async function listProjectWorks(
@@ -111,20 +140,6 @@ export function createProjectWork(
   return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
     headers: init?.headers,
   });
-}
-
-export function setCurrentWork(
-  projectId: string,
-  workId: string,
-  init?: RequestInitOptions,
-): Promise<Work> {
-  return putJson<Work>(
-    urlFor(`${apiProjectPath(projectId)}/current-work`, init),
-    { workId },
-    {
-      headers: init?.headers,
-    },
-  );
 }
 
 export function updateWork(

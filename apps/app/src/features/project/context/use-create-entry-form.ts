@@ -20,7 +20,7 @@ import { type InlineNameForm, useInlineNameForm } from "./use-inline-name-form";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
-  activeThreadId: string | null;
+  workId: string | null;
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
   /** Parent folder path. Defaults to `""` (scheme root). */
@@ -41,7 +41,7 @@ export type CreateEntryForm = InlineNameForm & {
 
 export function useCreateEntryForm({
   projectId,
-  activeThreadId,
+  workId,
   scheme,
   kind,
   parent = "",
@@ -49,15 +49,15 @@ export function useCreateEntryForm({
   onDone,
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
-  const mutation = useCreateContextEntry(projectId, { activeThreadId });
+  const mutation = useCreateContextEntry(projectId);
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
-      await mutation.mutateAsync({ scheme, type: kind, path });
+      await mutation.mutateAsync({ scheme, type: kind, path, workId });
       onCreated?.(path);
     },
-    [mutation, scheme, kind, parent, onCreated],
+    [mutation, scheme, kind, parent, onCreated, workId],
   );
 
   const form = useInlineNameForm({

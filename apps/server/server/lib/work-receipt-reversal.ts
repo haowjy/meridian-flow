@@ -10,7 +10,6 @@ import {
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import type { WorkContextDelivery, WorkRepository } from "../domains/projects/index.js";
 import type {
   BlockRepository,
@@ -22,7 +21,6 @@ type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
   turns: Pick<TurnRepository, "findById">;
   threads: Pick<ThreadRepository, "findById">;
-  preferences: Pick<ProjectPreferencesRepository, "setCurrentWorkId">;
   works: WorkRepository;
   workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
@@ -78,13 +76,26 @@ export async function reverseWorkReceipts(
       const applied: WorkReceiptReversal[] = [];
       for (const step of plan) {
         if (!step.executable) {
-          applied.push(result(step.receipt, step.command, "unavailable", step.message));
+          applied.push(
+            result(
+              step.receipt,
+              context.thread.projectId,
+              step.command,
+              "unavailable",
+              step.message,
+            ),
+          );
           continue;
         }
-        await applyStep(deps, context.thread, step.receipt, input.direction);
+        await applyStep(deps, step.receipt, input.direction);
         changedProjects.add(context.thread.projectId);
         applied.push(
-          result(step.receipt, step.command, input.direction === "undo" ? "reversed" : "redone"),
+          result(
+            step.receipt,
+            context.thread.projectId,
+            step.command,
+            input.direction === "undo" ? "reversed" : "redone",
+          ),
         );
       }
       await Promise.all(
@@ -96,7 +107,13 @@ export async function reverseWorkReceipts(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
-      result(receipt, commandFor(receipt, input.direction), "failed", message),
+      result(
+        receipt,
+        context.thread.projectId,
+        commandFor(receipt, input.direction),
+        "failed",
+        message,
+      ),
     );
   }
 }
@@ -231,22 +248,15 @@ async function planReceipts(
 }
 
 async function applyStep(
-  deps: Pick<WorkReceiptReversalDeps, "preferences" | "works">,
-  thread: Thread,
+  deps: Pick<WorkReceiptReversalDeps, "works">,
   receipt: WorkMutationReceipt,
   direction: Direction,
 ): Promise<void> {
   if (receipt.operation === "create") {
     if (direction === "undo") {
       await deps.works.softDelete(receipt.workId);
-      const previous =
-        receipt.inverse?.command === "delete" ? receipt.inverse.previousCurrentWorkId : null;
-      if (previous) {
-        await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, previous);
-      }
     } else {
       await deps.works.restore(receipt.workId);
-      await deps.preferences.setCurrentWorkId(thread.userId, thread.projectId, receipt.workId);
     }
   } else if (receipt.operation === "update") {
     const state = direction === "undo" ? receipt.before : receipt.after;
@@ -284,12 +294,14 @@ function commandFor(
 
 function result(
   receipt: WorkMutationReceipt,
+  projectId: string,
   command: WorkReversalResult["command"],
   status: WorkReversalResult["status"],
   message?: string,
 ): WorkReceiptReversal {
   return {
     command,
+    projectId,
     workId: receipt.workId,
     name: receipt.workName,
     status,

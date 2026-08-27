@@ -35,6 +35,10 @@ if (!enabled || !databaseUrl) {
         "0069_multi_work_v1",
         "0070_opposite_white_queen",
         "0071_shallow_karnak",
+        "0072_aberrant_callisto",
+        "0073_mean_silver_surfer",
+        "0074_cute_domino",
+        "0075_bumpy_golden_guardian",
       ]);
       for (let index = 1; index < tail.length; index += 1) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
@@ -70,6 +74,19 @@ if (!enabled || !databaseUrl) {
           {
             event_object_table: "branch_write_journal",
             trigger_name: "enlist_turn_trail_work",
+          },
+        ]);
+        const indexes = await target<{ indexdef: string; indexname: string }[]>`
+          SELECT indexname, indexdef
+          FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND indexname = 'document_branches_active_work_draft_by_work'
+        `;
+        expect(indexes).toEqual([
+          {
+            indexname: "document_branches_active_work_draft_by_work",
+            indexdef:
+              "CREATE INDEX document_branches_active_work_draft_by_work ON public.document_branches USING btree (work_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
           },
         ]);
       } finally {
