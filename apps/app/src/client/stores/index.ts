@@ -7,8 +7,10 @@
 export {
   type ContextTab,
   flushContextDesks,
+  type ProjectTabsSlice,
   rehydrateContextDesks,
   type ServerContextTab,
+  serverContextTabLocatorKey,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,

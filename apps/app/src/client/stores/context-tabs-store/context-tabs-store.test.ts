@@ -28,6 +28,56 @@ describe("context tabs draft-only lifecycle", () => {
   });
 });
 
+describe("context tab identity and removal commits", () => {
+  beforeEach(() => {
+    useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
+  });
+
+  it("replaces a server identity at an occupied canonical locator in place", () => {
+    const store = useContextTabsStore.getState();
+    store.openTab("project-1", trackedAt("old", "/same.md"));
+    store.openTab("project-1", trackedAt("other", "/other.md"));
+    store.selectTab("project-1", "old");
+
+    store.openTab("project-1", trackedAt("replacement", "/same.md"));
+
+    expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
+      tabs: [{ documentId: "replacement" }, { documentId: "other" }],
+      activeTabId: "replacement",
+    });
+    expect(
+      store.commitContextRemoval("project-1", {
+        documentIds: ["old"],
+        activeTabId: "replacement",
+      }),
+    ).toEqual([]);
+    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs[0]?.documentId).toBe(
+      "replacement",
+    );
+  });
+
+  it("commits an exact multi-id removal and final selection once", () => {
+    const store = useContextTabsStore.getState();
+    store.replaceTabs("project-1", [
+      trackedAt("a", "/a.md"),
+      trackedAt("b", "/b.md"),
+      trackedAt("c", "/c.md"),
+    ]);
+    store.selectTab("project-1", "b");
+
+    const removed = store.commitContextRemoval("project-1", {
+      documentIds: ["a", "b"],
+      activeTabId: "c",
+    });
+
+    expect(removed.map((tab) => tab.documentId)).toEqual(["a", "b"]);
+    expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
+      tabs: [{ documentId: "c" }],
+      activeTabId: "c",
+    });
+  });
+});
+
 function trackedTab(draftOnly: boolean) {
   return {
     kind: "tracked" as const,
@@ -39,5 +89,14 @@ function trackedTab(draftOnly: boolean) {
     filetype: "markdown" as const,
     schemaType: "document" as const,
     ...(draftOnly ? { draftOnly: true, reviewWorkId: "work-a" } : {}),
+  };
+}
+
+function trackedAt(documentId: string, path: string) {
+  return {
+    ...trackedTab(false),
+    documentId,
+    path,
+    name: path.slice(1),
   };
 }

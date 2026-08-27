@@ -1,6 +1,7 @@
 import type { Work } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import {
+  applyContextRepairIfCurrent,
   applyNormalizationIfCurrent,
   openContextRouteSearch,
   parseExplicitWork,
@@ -9,6 +10,43 @@ import {
   resolveRouteWork,
   transitionProjectSearch,
 } from "./project-route";
+
+describe("guarded context route repair", () => {
+  const repair = {
+    expected: {
+      screen: "context" as const,
+      work: undefined,
+      scheme: "manuscript" as const,
+      path: "/deleted.md",
+      selectionRevision: 4,
+      selectionDocumentId: "document-a",
+    },
+    next: { scheme: "manuscript" as const, path: "/next.md", workId: null },
+  };
+
+  it("repairs the exact latest search and preserves unrelated params", () => {
+    expect(
+      applyContextRepairIfCurrent(repair, {
+        screen: "context",
+        thread: "thread-1",
+        scheme: "manuscript",
+        path: "/deleted.md",
+      }),
+    ).toEqual({
+      screen: "context",
+      thread: "thread-1",
+      scheme: "manuscript",
+      path: "/next.md",
+    });
+  });
+
+  it.each([
+    { screen: "home" as const },
+    { screen: "context" as const, scheme: "manuscript" as const, path: "/newer.md" },
+  ])("lets newer navigation defeat delayed repair", (latest) => {
+    expect(applyContextRepairIfCurrent(repair, latest)).toEqual(latest);
+  });
+});
 
 const LOWER = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const UPPER = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";

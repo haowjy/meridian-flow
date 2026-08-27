@@ -52,6 +52,24 @@ export type ContextRouteTarget = {
   workId: string | null;
 };
 
+export type ContextRouteRepair = {
+  expected: {
+    screen: ScreenKey;
+    work: string | undefined;
+    scheme: ProjectContextTreeScheme;
+    path: string;
+    selectionRevision: number;
+    selectionDocumentId: string;
+  };
+  next: ContextRouteTarget | { kind: "clear" };
+};
+
+function isClearContextRouteTarget(
+  target: ContextRouteRepair["next"],
+): target is { kind: "clear" } {
+  return "kind" in target && target.kind === "clear";
+}
+
 export function openContextRouteSearch(
   search: ProjectSearch,
   target: ContextRouteTarget,
@@ -267,4 +285,30 @@ export function applyNormalizationIfCurrent(
   return plan.kind === "canonicalize"
     ? stripEmptySearch({ ...latest, work: plan.next.work })
     : transitionProjectSearch(latest, { kind: "work-collection" });
+}
+
+/** Latest-search compare-and-swap for a removal planned against a bound route. */
+export function applyContextRepairIfCurrent(
+  repair: ContextRouteRepair,
+  latest: ProjectSearch,
+): ProjectSearch {
+  const expected = repair.expected;
+  if (
+    latest.screen !== expected.screen ||
+    latest.work !== expected.work ||
+    latest.scheme !== expected.scheme ||
+    latest.path !== expected.path
+  ) {
+    return latest;
+  }
+  if (isClearContextRouteTarget(repair.next)) {
+    return stripEmptySearch({
+      ...latest,
+      scheme: undefined,
+      folder: undefined,
+      path: undefined,
+      results: undefined,
+    });
+  }
+  return openContextRouteSearch(latest, repair.next);
 }

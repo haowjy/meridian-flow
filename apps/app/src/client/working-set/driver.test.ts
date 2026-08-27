@@ -1,7 +1,31 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { canSweepWorkingSet, getWorkingSetStorage, WorkingSetSyncDriver } from "./driver";
-import { DeviceWorkingSetStore, type WorkingSetSnapshot } from "./store";
+import {
+  DeviceWorkingSetStore,
+  reconcileSnapshotContextRoutes,
+  type WorkingSetSnapshot,
+} from "./store";
+
+describe("atomic context-route reconciliation", () => {
+  it("removes only unowned locators and promotes in one snapshot result", () => {
+    const same = { scheme: "kb" as const, path: "/same.md" };
+    const removed = { scheme: "kb" as const, path: "/removed.md" };
+    const promoted = { scheme: "manuscript" as const, path: "/next.md" };
+
+    expect(
+      reconcileSnapshotContextRoutes(
+        { recentRoutes: [removed, same, promoted], lastThreadId: "thread-1" },
+        {
+          removedLocators: [removed, same],
+          survivingOwnedLocators: [same, promoted],
+          promote: promoted,
+          clearAll: false,
+        },
+      ),
+    ).toEqual({ recentRoutes: [promoted, same], lastThreadId: "thread-1" });
+  });
+});
 
 const pendingRecord = {
   snapshot: { recentRoutes: [], lastThreadId: null },

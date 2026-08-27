@@ -13,6 +13,8 @@ import {
   DeviceWorkingSetStore,
   type ProjectWorkingSetRecord,
   promoteSnapshotRoute,
+  type ReconcileContextRoutesInput,
+  reconcileSnapshotContextRoutes,
   removeSnapshotRoute,
   setSnapshotThread,
   type WorkingSetStorage,
@@ -127,6 +129,11 @@ export class WorkingSetSyncDriver {
 
   removeRoute(projectId: string, route: WorkingSetRoute): void {
     this.report(projectId, (snapshot) => removeSnapshotRoute(snapshot, route));
+  }
+
+  reconcileContextRoutes(projectId: string, input: ReconcileContextRoutesInput): WorkingSetRoute[] {
+    this.report(projectId, (snapshot) => reconcileSnapshotContextRoutes(snapshot, input));
+    return this.readRecentRoutes(projectId);
   }
 
   setThread(projectId: string, threadId: string): void {
@@ -304,6 +311,15 @@ export function clearRoutes(projectId: string): void {
 
 export function removeRoute(projectId: string, route: WorkingSetRoute): void {
   browserDriver()?.removeRoute(projectId, route);
+}
+
+export function reconcileContextRoutes(
+  projectId: string,
+  input: ReconcileContextRoutesInput,
+): WorkingSetRoute[] {
+  const activeDriver = browserDriver();
+  if (!activeDriver) return [];
+  return activeDriver.reconcileContextRoutes(projectId, input);
 }
 
 export function setThread(projectId: string, threadId: string): void {

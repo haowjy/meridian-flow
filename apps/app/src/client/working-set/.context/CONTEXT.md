@@ -5,6 +5,11 @@ document routes and remembered thread. `DeviceWorkingSetStore` owns the
 user-stamped persisted record; `WorkingSetSyncDriver` owns server baselines,
 pending reports, hydration, and serialized sweeps.
 
+Live context removal uses `reconcileContextRoutes`: one snapshot transform removes
+only locators with no surviving tab owner, optionally promotes the resulting
+active route, and clears all routes only for a genuinely empty desk. Callers must
+not compose public remove/promote operations for one removal transition.
+
 ## Hydration contract
 
 `ProjectView`, keyed by project ID, invokes hydration synchronously in its state

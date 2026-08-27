@@ -45,9 +45,13 @@ level at a time via route params.
 
 ## Editor tabs and untitled documents
 
-The writer-facing destination is **Editor**. `ContextPaneController` owns route
-reconciliation, tab selection/close behavior, last-route restore, work-scoped
-pruning, and scroll restoration. `ContextTab` has three variants: `tracked`,
+The writer-facing destination is **Editor**. `ContextPaneController` currently
+owns the mounted route/tab effects and scroll restoration. The framework-independent
+`ContextRemovalCoordinator` is the next ownership boundary: its exact-ID transition,
+revisioned route selection, guarded route repair, and working-set reconciliation
+are implemented, but live React callers have not yet been switched to it. Until
+that convergence change lands, do not add another removal effect or infer removal
+from context-tree cache state. `ContextTab` has three variants: `tracked`,
 `viewer`, and the in-memory `{ kind: "new", documentId }` placeholder. A new tab
 uses an ordinary `DocumentSession` from its first render, created detached so
 Y.Doc + IndexedDB exist without opening an unauthorized server room.
@@ -224,9 +228,10 @@ replaces a pending one; Escape/blur semantics are the shared
 
 ## Tree query invalidation
 
-Deleting a file in `manuscript://` only refetches that scheme's tree. The
-last-opened route (`context-last-route`) is also cleared on delete to prevent a
-dead tab reference.
+Deleting a file in `manuscript://` only refetches that scheme's tree for
+presentation metadata. Tree absence never proves document removal. The exact
+successful mutation result is the deletion evidence that the removal coordinator
+will consume when live callers converge.
 
 ## Downlinks
 

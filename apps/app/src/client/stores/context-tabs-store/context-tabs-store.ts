@@ -30,6 +30,7 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 import { DeviceContextDeskStore } from "./context-desk-storage";
+import { sameServerContextTabLocator } from "./context-tab-locator";
 export type ContextTab =
   | {
       kind: "tracked";
@@ -64,7 +65,7 @@ export type ContextTab =
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
 
-type ProjectTabsSlice = {
+export type ProjectTabsSlice = {
   tabs: ContextTab[];
   activeTabId: string | null;
 };
@@ -89,6 +90,11 @@ type ContextTabsActions = {
    * caller closed the currently route-active tab, or `null` if no tabs remain.
    */
   closeTab: (projectId: string, documentId: string) => ContextTab | null;
+  /** Commit one already-planned live removal without an intermediate desk state. */
+  commitContextRemoval: (
+    projectId: string,
+    input: { documentIds: readonly string[]; activeTabId: string | null },
+  ) => ContextTab[];
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
   selectTab: (projectId: string, documentId: string | null) => void;
   /**
@@ -104,6 +110,12 @@ type ContextTabsActions = {
     reviewWorkId: string,
     documentId: string,
     outcome: "committed" | "discarded",
+  ) => void;
+  /** Draft apply is a metadata transition; discard belongs to the removal coordinator. */
+  resolveDraftOnlyTabCommitted: (
+    projectId: string,
+    reviewWorkId: string,
+    documentId: string,
   ) => void;
   /** Drop work-scoped tabs that belong to a different active work. */
   pruneWorkScopedTabs: (projectId: string, activeWorkId: string | null) => void;
@@ -140,6 +152,57 @@ function mergeTabMetadata(existing: ContextTab, incoming: ContextTab): ContextTa
     ...liveTab
   } = merged as ServerContextTab;
   return liveTab as ContextTab;
+}
+
+function upsertTab(slice: ProjectTabsSlice, incoming: ContextTab): ProjectTabsSlice {
+  const sameDocumentIndex = slice.tabs.findIndex(
+    (candidate) => candidate.documentId === incoming.documentId,
+  );
+  const occupiedLocatorIndex =
+    incoming.kind === "new"
+      ? -1
+      : slice.tabs.findIndex(
+          (candidate) =>
+            candidate.kind !== "new" &&
+            candidate.documentId !== incoming.documentId &&
+            sameServerContextTabLocator(candidate, incoming),
+        );
+
+  if (sameDocumentIndex >= 0) {
+    const tabs = slice.tabs
+      .filter((_candidate, index) => index !== occupiedLocatorIndex)
+      .map((candidate) =>
+        candidate.documentId === incoming.documentId
+          ? mergeTabMetadata(candidate, incoming)
+          : candidate,
+      );
+    return {
+      tabs,
+      activeTabId:
+        occupiedLocatorIndex >= 0 &&
+        slice.tabs[occupiedLocatorIndex]?.documentId === slice.activeTabId
+          ? incoming.documentId
+          : slice.activeTabId,
+    };
+  }
+
+  if (occupiedLocatorIndex >= 0) {
+    const replacedId = slice.tabs[occupiedLocatorIndex]?.documentId;
+    return {
+      tabs: slice.tabs.map((candidate, index) =>
+        index === occupiedLocatorIndex ? incoming : candidate,
+      ),
+      activeTabId: slice.activeTabId === replacedId ? incoming.documentId : slice.activeTabId,
+    };
+  }
+  return { ...slice, tabs: [...slice.tabs, incoming] };
+}
+
+function canonicalizeTabs(tabs: readonly ContextTab[]): ContextTab[] {
+  return tabs.reduce<ContextTab[]>(
+    (canonical, tab) => upsertTab({ tabs: canonical, activeTabId: null }, tab).tabs,
+    [],
+  );
 }
 
 function sliceFor(state: ContextTabsState, projectId: string): ProjectTabsSlice {
@@ -195,6 +258,23 @@ function removeTabs(
   };
 }
 
+function resolveCommittedDraftMetadata(
+  slice: ProjectTabsSlice,
+  reviewWorkId: string,
+  documentId: string,
+): ProjectTabsSlice | null {
+  const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
+  if (tab?.kind !== "tracked" || !tab.draftOnly || tab.reviewWorkId !== reviewWorkId) return null;
+  return {
+    ...slice,
+    tabs: slice.tabs.map((candidate) => {
+      if (candidate.documentId !== documentId || candidate.kind !== "tracked") return candidate;
+      const { draftOnly: _draftOnly, reviewWorkId: _reviewWorkId, ...committed } = candidate;
+      return committed;
+    }),
+  };
+}
+
 export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>()(
   devtools(
     (set, get) => ({
@@ -204,15 +284,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
       openTab: (projectId, tab) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
-          const exists = slice.tabs.some((t) => t.documentId === tab.documentId);
-          const nextTabs = exists
-            ? slice.tabs.map((t) =>
-                // Refresh metadata for an already-open tab — file may have been
-                // renamed (or appear in a new scheme) since it was first opened.
-                t.documentId === tab.documentId ? mergeTabMetadata(t, tab) : t,
-              )
-            : [...slice.tabs, tab];
-          return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
+          return patchSlice(state, projectId, upsertTab(slice, tab));
         });
       },
 
@@ -240,26 +312,24 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         set((state) => {
           const slice = sliceFor(state, projectId);
           if (!slice.tabs.some((candidate) => candidate.documentId === documentId)) return state;
-          return patchSlice(state, projectId, {
-            ...slice,
-            tabs: slice.tabs.map((candidate) =>
-              candidate.documentId === documentId ? tab : candidate,
-            ),
-          });
+          const withoutNew = {
+            tabs: slice.tabs.filter((candidate) => candidate.documentId !== documentId),
+            activeTabId: slice.activeTabId === documentId ? tab.documentId : slice.activeTabId,
+          };
+          return patchSlice(state, projectId, upsertTab(withoutNew, tab));
         });
       },
 
       updateTrackedTab: (projectId, documentId, metadata) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
-          return patchSlice(state, projectId, {
-            ...slice,
-            tabs: slice.tabs.map((candidate) =>
-              candidate.kind === "tracked" && candidate.documentId === documentId
-                ? { ...candidate, ...metadata }
-                : candidate,
-            ),
-          });
+          const tab = slice.tabs.find(
+            (candidate): candidate is Extract<ContextTab, { kind: "tracked" }> =>
+              candidate.kind === "tracked" && candidate.documentId === documentId,
+          );
+          return tab
+            ? patchSlice(state, projectId, upsertTab(slice, { ...tab, ...metadata }))
+            : state;
         });
       },
 
@@ -269,6 +339,22 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         if (!removed.changed) return null;
         set((state) => patchSlice(state, projectId, removed.slice));
         return removed.fallback;
+      },
+
+      commitContextRemoval: (projectId, input) => {
+        const documentIds = new Set(input.documentIds);
+        const slice = sliceFor(get(), projectId);
+        const removed = slice.tabs.filter((tab) => documentIds.has(tab.documentId));
+        if (removed.length === 0 && slice.activeTabId === input.activeTabId) return [];
+        set((state) => {
+          const current = sliceFor(state, projectId);
+          const tabs = current.tabs.filter((tab) => !documentIds.has(tab.documentId));
+          const activeTabId = tabs.some((tab) => tab.documentId === input.activeTabId)
+            ? input.activeTabId
+            : null;
+          return patchSlice(state, projectId, { tabs, activeTabId });
+        });
+        return removed;
       },
 
       resolveDraftOnlyTab: (projectId, reviewWorkId, documentId, outcome) => {
@@ -284,10 +370,19 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               removeTabs(slice, (candidate) => candidate.documentId === documentId).slice,
             );
           }
-          const nextTabs = slice.tabs.map((candidate) =>
-            candidate.documentId === documentId ? { ...candidate, draftOnly: false } : candidate,
+          const resolved = resolveCommittedDraftMetadata(slice, reviewWorkId, documentId);
+          return resolved ? patchSlice(state, projectId, resolved) : state;
+        });
+      },
+
+      resolveDraftOnlyTabCommitted: (projectId, reviewWorkId, documentId) => {
+        set((state) => {
+          const resolved = resolveCommittedDraftMetadata(
+            sliceFor(state, projectId),
+            reviewWorkId,
+            documentId,
           );
-          return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
+          return resolved ? patchSlice(state, projectId, resolved) : state;
         });
       },
 
@@ -341,29 +436,34 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
       replaceTabs: (projectId, tabs) => {
         set((state) => {
           const current = sliceFor(state, projectId);
-          const activeTabId = tabs.some((tab) => tab.documentId === current.activeTabId)
+          const canonicalTabs = canonicalizeTabs(tabs);
+          const activeTabId = canonicalTabs.some((tab) => tab.documentId === current.activeTabId)
             ? current.activeTabId
             : null;
           if (
             current.activeTabId === activeTabId &&
-            current.tabs.length === tabs.length &&
-            current.tabs.every((tab, index) => contextTabEquals(tab, tabs[index] as ContextTab))
+            current.tabs.length === canonicalTabs.length &&
+            current.tabs.every((tab, index) =>
+              contextTabEquals(tab, canonicalTabs[index] as ContextTab),
+            )
           ) {
             return state;
           }
-          return patchSlice(state, projectId, { tabs: [...tabs], activeTabId });
+          return patchSlice(state, projectId, { tabs: canonicalTabs, activeTabId });
         });
       },
 
       reconcileTabs: (projectId, restoredDocumentIds, tabs) => {
         set((state) => {
           const current = sliceFor(state, projectId);
-          const validated = new Map(tabs.map((tab) => [tab.documentId, tab]));
-          const nextTabs = current.tabs.flatMap((tab) => {
-            if (!restoredDocumentIds.has(tab.documentId)) return [tab];
-            const replacement = validated.get(tab.documentId);
-            return replacement ? [replacement] : [];
-          });
+          const validated = new Map(canonicalizeTabs(tabs).map((tab) => [tab.documentId, tab]));
+          const nextTabs = canonicalizeTabs(
+            current.tabs.flatMap((tab) => {
+              if (!restoredDocumentIds.has(tab.documentId)) return [tab];
+              const replacement = validated.get(tab.documentId);
+              return replacement ? [replacement] : [];
+            }),
+          );
           const activeTabId = nextTabs.some((tab) => tab.documentId === current.activeTabId)
             ? current.activeTabId
             : null;
@@ -416,9 +516,11 @@ export function useContextTabsActions(): ContextTabsActions {
       materializeNewTab: s.materializeNewTab,
       updateTrackedTab: s.updateTrackedTab,
       closeTab: s.closeTab,
+      commitContextRemoval: s.commitContextRemoval,
       reorderTabs: s.reorderTabs,
       selectTab: s.selectTab,
       resolveDraftOnlyTab: s.resolveDraftOnlyTab,
+      resolveDraftOnlyTabCommitted: s.resolveDraftOnlyTabCommitted,
       pruneWorkScopedTabs: s.pruneWorkScopedTabs,
       clearProject: s.clearProject,
       replaceTabs: s.replaceTabs,
