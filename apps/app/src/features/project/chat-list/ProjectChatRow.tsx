@@ -7,6 +7,7 @@ import type { ThreadUserStateCommandView } from "@/client/query/thread-user-stat
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { formatProjectChatActivity } from "./project-chat-activity-date";
 
@@ -18,6 +19,22 @@ export type ProjectChatRowProps = {
   favorite: ThreadUserStateCommandView;
   onActiveChange?: (id: string, active: boolean) => void;
 };
+
+/** Loading anatomy kept with the real row so their three lanes cannot drift. */
+export function ProjectChatRowSkeleton() {
+  return (
+    <li data-project-chat-row-layout className="project-chat-row-layout grid px-2 py-1.5">
+      <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
+      <div data-project-chat-row-work className="px-1">
+        <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+      </div>
+      <Skeleton className="col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />
+      <div className="col-start-3 row-span-2 row-start-1 grid place-items-center [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11">
+        <Skeleton className="h-3 w-12 motion-reduce:animate-none" />
+      </div>
+    </li>
+  );
+}
 
 export function ProjectChatRow({
   item,

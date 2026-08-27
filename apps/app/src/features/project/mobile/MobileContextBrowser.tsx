@@ -24,18 +24,20 @@ import { useWorks } from "@/client/query/useWorks";
 import { cn } from "@/lib/utils";
 import {
   DeleteConfirmationDialog,
+  type EntryAction,
   type EntryActionTarget,
+  EntryKebabButton,
   useDeleteConfirmation,
 } from "../context/ContextEntryActions";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
+import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextDir } from "../context/context-tree";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import type { ResolvedProjectViewProps } from "../ProjectView";
-import { MobileEntryActionsMenu } from "./MobileEntryActionsMenu";
 
 export type MobileContextBrowserProps = Pick<
   ResolvedProjectViewProps,
@@ -61,6 +63,18 @@ export type MobileContextBrowserProps = Pick<
   /** Closes the create row (after commit, cancel, or empty blur). */
   onCreateDone: () => void;
 };
+
+function MobileEntryActionsMenu({ onAction }: { onAction: (action: EntryAction) => void }) {
+  return (
+    <EntryKebabButton
+      allowCreate={false}
+      align="end"
+      sideOffset={6}
+      className={mobileContextTreeOverflowTriggerClassName}
+      onAction={onAction}
+    />
+  );
+}
 
 export function MobileContextBrowser({
   projectId,

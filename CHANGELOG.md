@@ -7,6 +7,9 @@
 
 - `apps/app`: normalize Work status, lifecycle, loading, error, and resource-section
   presentation onto the shared Badge, overflow trigger, Card, and inline-error primitives.
+- `apps/app`: delete obsolete and single-owner Project UI surface, narrow Card
+  and overflow-menu APIs, and make the shared project chat row own its loading
+  geometry.
 
 - `apps/app`: converge live and snapshot `actionRequired` lifecycle changes
   across project thread lists, Home, and every cached Work chat feed.

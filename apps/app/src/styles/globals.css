@@ -379,18 +379,6 @@
   @apply text-base leading-relaxed md:text-[15px];
 }
 
-@utility home-composer-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-@utility home-composer-inner {
-  width: 100%;
-  max-width: 48rem;
-  margin-inline: auto;
-}
-
 @container project-home (min-width: 42rem) {
   .home-composer-heading {
     font-size: var(--text-headline-hero);

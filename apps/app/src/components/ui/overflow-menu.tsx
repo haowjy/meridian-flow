@@ -17,12 +17,10 @@ type OverflowMenuTriggerAttributes = Omit<
   "aria-label" | "children" | "className" | "onClick" | "onKeyDown" | "size" | "variant"
 > & { [key: `data-${string}`]: string | number | boolean | undefined };
 
-export type OverflowMenuProps = Pick<DropdownRootProps, "open" | "defaultOpen" | "onOpenChange"> & {
+export type OverflowMenuProps = Pick<DropdownRootProps, "open" | "onOpenChange"> & {
   children: React.ReactNode;
   label: string;
   align?: DropdownContentProps["align"];
-  side?: DropdownContentProps["side"];
-  alignOffset?: DropdownContentProps["alignOffset"];
   sideOffset?: DropdownContentProps["sideOffset"];
   onCloseAutoFocus?: DropdownContentProps["onCloseAutoFocus"];
   /** Layout-only visibility and hit-area adjustments; visual chrome stays canonical. */
@@ -58,25 +56,20 @@ export function OverflowMenu({
   children,
   label,
   align = "end",
-  side,
-  alignOffset,
   sideOffset,
   onCloseAutoFocus,
   triggerClassName,
   triggerProps,
   open,
-  defaultOpen,
   onOpenChange,
 }: OverflowMenuProps) {
   return (
-    <DropdownMenu open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <OverflowMenuTrigger {...triggerProps} aria-label={label} className={triggerClassName} />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align={align}
-        side={side}
-        alignOffset={alignOffset}
         sideOffset={sideOffset}
         onClick={(event) => event.stopPropagation()}
         onCloseAutoFocus={onCloseAutoFocus}
