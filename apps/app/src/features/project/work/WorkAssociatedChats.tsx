@@ -7,10 +7,10 @@ import { useEffect, useState } from "react";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { useWorkThreads } from "@/client/query/useWorkThreads";
 import { useAnnouncement } from "@/client/stores";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { ProjectChatRow } from "../chat-list/ProjectChatRow";
 import { useExternalScrollVirtualList } from "./useExternalScrollVirtualList";
-import { WorkResourceError } from "./WorkResourceState";
 
 const chatKey = (item: ProjectChatItem) => item.id;
 const estimateChatRow = () => 52;
@@ -42,10 +42,13 @@ export function WorkAssociatedChats({
     return () => clearInterval(timer);
   }, []);
   return (
-    <section className="min-w-0 space-y-3">
-      <h2 className="text-base font-semibold">{t`Associated chats`}</h2>
+    <>
       {query.isError ? (
-        <WorkResourceError label={t`Associated chats`} retry={query.refetch} />
+        <InlineErrorRow
+          message={t`Associated chats couldn’t load`}
+          onRetry={query.refetch}
+          actionLabel={t`Retry Associated chats`}
+        />
       ) : query.threads === null ? (
         <p role="status" className="text-sm text-muted-foreground">
           <Trans>Loading…</Trans>
@@ -112,7 +115,7 @@ export function WorkAssociatedChats({
           <Trans>No chats are associated with this Work.</Trans>
         </p>
       )}
-    </section>
+    </>
   );
 }
 

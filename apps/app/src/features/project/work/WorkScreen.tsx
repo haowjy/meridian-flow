@@ -7,13 +7,14 @@ import { ChevronDown, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { WorkCard } from "./WorkCard";
 import { WorkDetailScreen } from "./WorkDetailScreen";
 import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
-import { WorkResourceError } from "./WorkResourceState";
 import {
   focusAfterDelete,
   takeWorkCollectionFocus,
@@ -38,7 +39,11 @@ export function WorkScreen(props: WorkScreenProps) {
     return (
       <div className="app-scroll">
         <div className="project-screen-column">
-          <WorkResourceError label={t`Work`} retry={catalog.refetch} />
+          <InlineErrorRow
+            message={t`Work couldn’t load`}
+            onRetry={catalog.refetch}
+            actionLabel={t`Retry Work`}
+          />
         </div>
       </div>
     );
@@ -143,7 +148,11 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
           </Button>
         </div>
         {isError ? (
-          <WorkResourceError label={t`Work`} retry={refetch} />
+          <InlineErrorRow
+            message={t`Work couldn’t load`}
+            onRetry={refetch}
+            actionLabel={t`Retry Work`}
+          />
         ) : works === null ? (
           <LoadingCards />
         ) : (
@@ -322,10 +331,10 @@ function LoadingCards() {
       className="grid gap-4 @2xl/project-home:grid-cols-2"
     >
       {[0, 1].map((key) => (
-        <div key={key} className="surface-card rounded-lg border p-5">
+        <Card key={key} className="gap-3 px-5 py-5">
           <Skeleton className="h-4 w-2/5" />
-          <Skeleton className="mt-3 h-3 w-4/5" />
-        </div>
+          <Skeleton className="h-3 w-4/5" />
+        </Card>
       ))}
     </div>
   );

@@ -18,6 +18,8 @@ import { useEffect, useRef, useState } from "react";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useWorkMutations } from "@/client/query/useWorks";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,7 +36,6 @@ import {
   WorkMetadata,
   type WorkMetadataController,
 } from "./WorkMetadata";
-import { WorkResourceError } from "./WorkResourceState";
 import { focusAfterDelete, holdWorkCollectionFocus } from "./work-focus-intent";
 
 export type WorkDetailScreenProps = {
@@ -81,13 +82,13 @@ export function WorkDetailScreen({
           identityChrome={
             <div className="min-w-0 space-y-3">
               <div className="flex items-center gap-2">
-                <span className="rounded-full border border-border-subtle px-2 py-0.5 text-meta text-muted-foreground">
+                <Badge>
                   {controller.work.status === "archived" ? (
                     <Trans>Archived</Trans>
                   ) : (
                     <Trans>Active</Trans>
                   )}
-                </span>
+                </Badge>
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-3 sm:justify-between">
                 <Button
@@ -152,14 +153,16 @@ export function WorkDetailScreen({
             controller={controller}
           />
         </div>
-        <WorkAssociatedChats
-          projectId={projectId}
-          work={controller.work}
-          scrollOwner={scrollOwner}
-          requestOpen={(item) =>
-            controller.request({ label: t`Open chat`, run: () => onOpenThread(item.id) })
-          }
-        />
+        <ResourceSection title={t`Associated chats`}>
+          <WorkAssociatedChats
+            projectId={projectId}
+            work={controller.work}
+            scrollOwner={scrollOwner}
+            requestOpen={(item) =>
+              controller.request({ label: t`Open chat`, run: () => onOpenThread(item.id) })
+            }
+          />
+        </ResourceSection>
         {manage ? (
           <WorkDialog
             work={controller.work}
@@ -214,7 +217,11 @@ function Drafts({
       {query.status === "loading" ? (
         <Loading />
       ) : query.status === "error" ? (
-        <WorkResourceError label={t`Pending drafts`} retry={query.refetch} />
+        <InlineErrorRow
+          message={t`Pending drafts couldn’t load`}
+          onRetry={query.refetch}
+          actionLabel={t`Retry Pending drafts`}
+        />
       ) : groups.length ? (
         <ul className="min-w-0 divide-y divide-border-subtle rounded-lg border">
           {groups.map((group) => (
@@ -285,7 +292,11 @@ function TreeSummary({
   return (
     <ResourceSection title={label}>
       {query.isError ? (
-        <WorkResourceError label={label} retry={query.refetch} />
+        <InlineErrorRow
+          message={t`${label} couldn’t load`}
+          onRetry={query.refetch}
+          actionLabel={t`Retry ${label}`}
+        />
       ) : !query.tree ? (
         <Loading />
       ) : (
