@@ -40,6 +40,33 @@ export type ContextDeskReconciliationScope = {
 
 type ContextDeskReconciliationGuard = (scope: ContextDeskReconciliationScope) => boolean;
 
+type SeededRoute = { tab: ContextTab | null; removedRoute: WorkingSetRoute | null };
+
+export function settleSeededRoutes(
+  routes: readonly WorkingSetRoute[],
+  restored: readonly ContextTab[],
+  results: readonly PromiseSettledResult<SeededRoute>[],
+): SeededRoute[] {
+  const settled: SeededRoute[] = [];
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      settled.push(result.value);
+      return;
+    }
+    const route = routes[index];
+    if (!route) return;
+    const preserved = restored.find(
+      (tab) =>
+        tab.kind !== "new" &&
+        tab.scheme === route.scheme &&
+        tab.path === route.path &&
+        (tab.workId ?? null) === (route.workId ?? null),
+    );
+    if (preserved) settled.push({ tab: preserved, removedRoute: null });
+  });
+  return settled;
+}
+
 export async function seedWorkingSetTabs({
   queryClient,
   routes,
@@ -52,6 +79,7 @@ export async function seedWorkingSetTabs({
   isLiveScope: ContextDeskReconciliationGuard;
 }): Promise<void> {
   const { projectId } = scope;
+  const restored = useContextTabsStore.getState().byProject[projectId]?.tabs ?? [];
   const results = await Promise.allSettled(
     routes.map(async (route) => {
       const workScoped = isWorkScopedProjectContextScheme(route.scheme);
@@ -72,15 +100,13 @@ export async function seedWorkingSetTabs({
       return { tab: contextTabFromFile(route.scheme, file, workId), removedRoute: null };
     }),
   );
-  const fulfilled = results.flatMap((result) =>
-    result.status === "fulfilled" ? [result.value] : [],
-  );
+  const settled = settleSeededRoutes(routes, restored, results);
   if (!isLiveScope(scope)) return;
-  const tabs = fulfilled.flatMap(({ tab }) => (tab ? [tab] : []));
+  const tabs = settled.flatMap(({ tab }) => (tab ? [tab] : []));
   reconcileContextRoutes(projectId, {
-    removedLocators: fulfilled.flatMap(({ removedRoute }) => removedRoute ?? []),
-    survivingOwnedLocators: tabs.flatMap(
-      (tab) => buildWorkingSetRoute(tab.scheme, tab.path, tab.workId) ?? [],
+    removedLocators: settled.flatMap(({ removedRoute }) => removedRoute ?? []),
+    survivingOwnedLocators: tabs.flatMap((tab) =>
+      tab.kind === "new" ? [] : (buildWorkingSetRoute(tab.scheme, tab.path, tab.workId) ?? []),
     ),
     promote: null,
     clearAll: false,

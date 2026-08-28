@@ -16,7 +16,7 @@ import type { AcknowledgedContextDeleteCommand } from "./context-removal-protoco
 
 const projectId = "project-1";
 
-function tracked(documentId: string, path: string): ContextTab {
+function tracked(documentId: string, path: string): Extract<ContextTab, { kind: "tracked" }> {
   return {
     kind: "tracked",
     documentId,
@@ -252,7 +252,8 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     else if (cause === "work-prune") rig.coordinator.pruneWork(projectId, "work-2");
     else rig.coordinator.discardDraft(projectId, "work-1", "a");
     expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toEqual([]);
-    expect(rig.routes()).not.toEqual([]);
+    if (cause === "work-prune") expect(rig.routes()).toEqual([]);
+    else expect(rig.routes()).not.toEqual([]);
 
     rig.coordinator.bindRouteSelection(projectId, revision, {
       kind: "server",
@@ -563,7 +564,165 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       path: "/phone.md",
       workId: "work-1",
     });
-    expect(rig.routes()).toEqual([{ scheme: "kb", path: "/phone.md" }]);
+    expect(rig.routes()).toEqual([]);
+  });
+
+  it.each([
+    "home",
+    "chat",
+    "work",
+  ])("keeps a registered host live through %s selection leave and retires a fence on return", () => {
+    setDesk([tracked("a", "/a.md"), tracked("b", "/b.md")], "a");
+    const rig = scenario();
+    rig.coordinator.registerRoutePort(
+      projectId,
+      { readSearch: rig.search, updateSearch: () => undefined },
+      "work-1",
+    );
+    const first = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    rig.coordinator.bindRouteSelection(projectId, first, identityFor("a"));
+    rig.coordinator.writerClose(projectId, "a");
+    rig.coordinator.clearRouteSelection(projectId);
+
+    const returned = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/b.md",
+      workId: "work-1",
+    });
+    rig.coordinator.bindRouteSelection(projectId, returned, identityFor("b"));
+    const snapshot = rig.coordinator.getProjectSnapshot(projectId);
+
+    expect(snapshot.live).toBe(true);
+    expect(
+      rig.coordinator.activate({
+        projectId,
+        selectionRevision: returned,
+        transitionRevision: snapshot.transitionRevision,
+        locator: { scheme: "manuscript", path: "/b.md", workId: "work-1" },
+        identity: identityFor("b"),
+      }),
+    ).toBe(true);
+    expect(rig.coordinator.getProjectSnapshot(projectId).removalFence).toBeNull();
+  });
+
+  it("prunes phone-only old-Work continuity before promoting the new Work route", () => {
+    setDesk([], null);
+    const rig = scenario();
+    rig.setRoutes([{ scheme: "scratch", path: "/old.md", workId: "work-old" }]);
+    const oldRevision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "scratch",
+      path: "/old.md",
+      workId: "work-old",
+    });
+    rig.coordinator.bindRouteSelection(projectId, oldRevision, identityFor("old"));
+
+    const next = rig.coordinator.changeWorkSelection(projectId, "work-new", {
+      scheme: "scratch",
+      path: "/new.md",
+      workId: "work-new",
+    });
+
+    expect(next).toBeTypeOf("number");
+    expect(rig.routes()).toEqual([{ scheme: "scratch", path: "/new.md", workId: "work-new" }]);
+    expect(rig.coordinator.getProjectSnapshot(projectId)).toMatchObject({
+      selection: { status: "pending", locator: { workId: "work-new", path: "/new.md" } },
+      rememberedRoute: { workId: "work-new", path: "/new.md" },
+    });
+  });
+
+  it("makes a disposed coordinator inert against delayed commands and global ports", () => {
+    const deskCommits: string[][] = [];
+    const routeCommits: ReconcileContextRoutesInput[] = [];
+    const coordinator = new ContextRemovalCoordinator("account-a", {
+      desk: {
+        read: () => ({ tabs: [tracked("a", "/a.md")], activeTabId: "a" }),
+        commit: (_id, input) => {
+          deskCommits.push([...input.documentIds]);
+          return [];
+        },
+        resolveDraftApply: () => deskCommits.push(["draft"]),
+      },
+      workingSet: {
+        readRecentRoutes: () => [{ scheme: "manuscript", path: "/a.md" }],
+        reconcileContextRoutes: (_id, input) => {
+          routeCommits.push(input);
+          return [];
+        },
+      },
+    });
+    const revision = coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    coordinator.bindRouteSelection(projectId, revision, identityFor("a"));
+    const capture = coordinator.captureDeleteInitiation(projectId, {
+      kind: "file",
+      locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
+      documentId: "a",
+    });
+    coordinator.dispose();
+    routeCommits.length = 0;
+
+    expect(
+      coordinator.acceptAcknowledgedDelete({
+        ...capture,
+        cause: "acknowledged-delete",
+        confirmed: { status: "deleted", deletedDocumentIds: ["a"] },
+      }),
+    ).toEqual({ status: "rejected", reason: "coordinator_disposed" });
+    expect(coordinator.discardDraft(projectId, "work-1", "a")).toEqual({ kind: "noop" });
+    coordinator.applyDraftMetadata(projectId, "work-1", "a");
+    expect(deskCommits).toEqual([]);
+    expect(routeCommits).toEqual([]);
+  });
+
+  it("allows writer-closed identity to reopen but keeps discarded drafts terminal", () => {
+    setDesk([tracked("a", "/a.md")], "a");
+    const writerRig = scenario();
+    const writerRevision = writerRig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    writerRig.coordinator.bindRouteSelection(projectId, writerRevision, identityFor("a"));
+    writerRig.coordinator.writerClose(projectId, "a");
+    setDesk([tracked("a", "/a.md")], "a");
+    const reopened = writerRig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    writerRig.coordinator.bindRouteSelection(projectId, reopened, identityFor("a"));
+    expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toHaveLength(1);
+
+    setDesk(
+      [{ ...tracked("draft", "/draft.md"), draftOnly: true, reviewWorkId: "work-1" }],
+      "draft",
+    );
+    const draftRig = scenario();
+    const draftRevision = draftRig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/draft.md",
+      workId: "work-1",
+    });
+    draftRig.coordinator.bindRouteSelection(projectId, draftRevision, identityFor("draft"));
+    draftRig.coordinator.discardDraft(projectId, "work-1", "draft");
+    setDesk(
+      [{ ...tracked("draft", "/draft.md"), draftOnly: true, reviewWorkId: "work-1" }],
+      "draft",
+    );
+    const stale = draftRig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/draft.md",
+      workId: "work-1",
+    });
+    draftRig.coordinator.bindRouteSelection(projectId, stale, identityFor("draft"));
+    expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toEqual([]);
   });
 });
 

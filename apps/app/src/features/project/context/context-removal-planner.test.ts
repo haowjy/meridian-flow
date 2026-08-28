@@ -80,7 +80,7 @@ describe("context removal planner", () => {
 
     expect(plan.outcome.kind).toBe("route-only-removal");
     expect(plan.workingSet).toMatchObject({
-      clearAll: true,
+      clearAll: false,
       removedLocators: [{ scheme: "kb", path: "/phone.md" }],
     });
     expect(plan.rememberedRoute).toBeNull();

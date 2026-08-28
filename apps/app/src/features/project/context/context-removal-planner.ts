@@ -288,7 +288,9 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       removedLocators,
       survivingOwnedLocators,
       promote,
-      clearAll: remaining.length === 0 && survivingBoundRoute === null,
+      // Exact locator removal is sufficient. A broad clear would erase unrelated
+      // account-owned continuity that is intentionally not represented in this desk.
+      clearAll: false,
     },
   };
 }

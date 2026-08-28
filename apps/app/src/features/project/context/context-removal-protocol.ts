@@ -97,7 +97,10 @@ export type CommandAdmissionRecord = {
 export type AcknowledgedDeleteAdmission =
   | { status: "accepted"; outcome: "executed" | "obligated" }
   | { status: "replayed"; outcome: "executed" | "obligated" }
-  | { status: "rejected"; reason: "command_conflict" | "invalid_proof" };
+  | {
+      status: "rejected";
+      reason: "command_conflict" | "invalid_proof" | "coordinator_disposed";
+    };
 
 export type AcknowledgedDeleteTransition = {
   admission: AcknowledgedDeleteAdmission;

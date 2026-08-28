@@ -220,7 +220,11 @@ Two rules keep this stable:
 
 Related: the project removal coordinator publishes a revisioned auto-open block.
 `ContextPaneController` consumes that external-store snapshot, so a removal blocks
-same-render resurrection and a later route revision re-arms ordinary opening.
+same-render and delayed cached-tree resurrection. A registered route host stays
+live while the writer visits another project screen; only host release or Work
+readiness suspension disables activation. Writer close and Work pruning are
+reversible, while acknowledged deletion and draft discard keep exact re-entry
+guards against stale resurrection.
 
 ## Screen routing & controllers
 
@@ -245,7 +249,7 @@ name. It owns route-validated opens, temporary-tab projection, scroll restoratio
 and screen-entry defaults. The platform-neutral project adapter owns revision
 startup and dispatches Work pruning only after Work authority is ready. Project-entry
 desk seed/validation is hydration-scoped and never re-runs on a Work change. The
-removal coordinator owns close fallback, continuity,
+removal coordinator owns close fallback, atomic old/new Work continuity,
 remembered destination, and route repair:
 entering with no destination replays the remembered last file
 (`client/working-set/`; replay re-arms every entry because the controller is

@@ -39,18 +39,16 @@ export function ProjectContextRemovalController({
   useLayoutEffect(() => {
     const registration = coordinator.registerRoutePort(projectId, stableRoute, editorWorkId);
     registrationRef.current = registration;
-    coordinator.pruneWork(projectId, editorWorkId);
     return () => registration.release();
   }, [coordinator, projectId, stableRoute]);
 
   useLayoutEffect(() => {
     if (!registrationRef.current) return;
-    coordinator.pruneWork(projectId, editorWorkId);
     if (activeScreen !== "context" || activeContextScheme === null || activeContextPath === null) {
-      coordinator.clearRouteSelection(projectId);
+      coordinator.changeWorkSelection(projectId, editorWorkId, null);
       return;
     }
-    coordinator.beginRouteSelection(projectId, {
+    coordinator.changeWorkSelection(projectId, editorWorkId, {
       scheme: activeContextScheme,
       path: activeContextPath,
       workId: editorWorkId,

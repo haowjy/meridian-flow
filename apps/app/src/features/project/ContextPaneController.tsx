@@ -152,6 +152,11 @@ export function ContextViewerSurfaceController({
     activeContextScheme !== null && activeContextPath !== null
       ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, routeWorkId)
       : null;
+  const routeMaterializationFenced =
+    removalState.removalFence?.selectionRevision === removalState.selection.revision &&
+    removalState.removalFence?.locator?.scheme === activeContextScheme &&
+    removalState.removalFence.locator.path === activeContextPath &&
+    removalState.removalFence.locator.workId === routeWorkId;
   useEffect(() => {
     if (activeTab) selectTab(projectId, activeTab.documentId);
   }, [activeTab, projectId, selectTab]);
@@ -253,11 +258,7 @@ export function ContextViewerSurfaceController({
     isError: routeTreeIsError,
     // Closing stamps this fence before removing the tab. Sharing it prevents
     // the loading projection from resurrecting the removed route.
-    removalFenced:
-      removalState.removalFence?.selectionRevision === removalState.selection.revision &&
-      removalState.removalFence?.locator?.scheme === activeContextScheme &&
-      removalState.removalFence.locator.path === activeContextPath &&
-      removalState.removalFence.locator.workId === routeWorkId,
+    removalFenced: routeMaterializationFenced,
   });
 
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {
@@ -302,7 +303,7 @@ export function ContextViewerSurfaceController({
   ]);
 
   useEffect(() => {
-    if (!needsRouteTab) return;
+    if (!needsRouteTab || routeMaterializationFenced) return;
     if (activeContextScheme === null || activeContextPath === null || !routeTree) return;
     const file = findContextFile(routeTree, activeContextPath);
     if (!file) return;
@@ -315,6 +316,7 @@ export function ContextViewerSurfaceController({
     openTabKey,
     projectId,
     routeTree,
+    routeMaterializationFenced,
     routeWorkId,
   ]);
 
