@@ -17,7 +17,7 @@ import {
   workingSetRouteEquals,
 } from "@/client/working-set";
 import { contextTabFromFile } from "./context/context-tab-from-file";
-import { findContextFile } from "./context/context-tree";
+import { findContextFile, findContextFileByDocumentId } from "./context/context-tree";
 
 export function contextDeskReconciliation(
   hydration: WorkingSetHydrationPlan,
@@ -75,7 +75,7 @@ async function validateDeviceOwnedTabs(
       const result = await queryClient.fetchQuery(
         projectContextTreeQueryOptions(projectId, tab.scheme, workId),
       );
-      const file = findContextFile(result.tree, tab.path);
+      const file = findContextFileByDocumentId(result.tree, tab.documentId);
       if (!file) return null;
       const refreshed = contextTabFromFile(tab.scheme, file, workId);
       return refreshed.kind === "tracked" ? { ...refreshed, origin: "local-untitled" } : null;
@@ -186,10 +186,13 @@ export async function validateContextDeskTabs({
         const result = await queryClient.fetchQuery(
           projectContextTreeQueryOptions(projectId, tab.scheme, workId),
         );
-        const file = findContextFile(result.tree, tab.path);
+        const file =
+          tab.kind === "tracked" && tab.origin === "local-untitled"
+            ? findContextFileByDocumentId(result.tree, tab.documentId)
+            : findContextFile(result.tree, tab.path);
         if (!file) {
-          // Validated-missing (fresh tree lacks the path): drop the tab and its
-          // remembered route so a dead route doesn't occupy a synced slot.
+          // Local provenance is validated by exact document identity; ordinary
+          // restored server tabs remain route records and validate by locator.
           return {
             tab: null,
             removedRoute: buildWorkingSetRoute(tab.scheme, tab.path, tab.workId),

@@ -1,11 +1,9 @@
 /**
- * Context tabs store — per-project open-file working set for the Context
- * destination.
+ * Context tabs store — each Project's ordered device-local Context desk.
  *
- * The browser route (`?scheme=` / `?path=`) owns which context file is active.
- * This store deliberately keeps only the open tabs and their server-derived
- * display metadata so the tab strip can render a working set without creating a
- * second selection source of truth.
+ * The browser route remains candidate/navigation state. This store owns open
+ * tab metadata and one exact selected document ID per Work so local empty
+ * documents can retain identity without becoming server working-set routes.
  *
  * Lifecycle:
  *  - `openTab` adds the tab if missing (idempotent — clicking a tree row that

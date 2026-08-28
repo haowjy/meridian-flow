@@ -4,6 +4,7 @@ import {
   classifyFiletype,
   type DocumentFileType,
   isProjectContextTreeScheme,
+  isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
@@ -55,7 +56,10 @@ function parseTab(value: unknown): ContextTab | null {
     (tab.kind !== "tracked" && tab.kind !== "viewer") ||
     !isProjectContextTreeScheme(tab.scheme) ||
     typeof tab.path !== "string" ||
-    !optionalString(tab.workId)
+    tab.path.length === 0 ||
+    !optionalString(tab.workId) ||
+    (isWorkScopedProjectContextScheme(tab.scheme) &&
+      (typeof tab.workId !== "string" || tab.workId.length === 0))
   )
     return null;
   if (tab.kind === "tracked" && tab.editable === true) {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
-import { planCandidateRejection, planContextRemoval } from "./context-removal-planner";
+import {
+  planCandidateRejection,
+  planContextRemoval,
+  workingSetRouteForTab,
+} from "./context-removal-planner";
 
 function tracked(documentId: string, path: string): ContextTab {
   return {
@@ -23,6 +27,23 @@ const phoneSelection = {
 };
 
 describe("context removal planner", () => {
+  it("does not project a tracked empty-Scratch tab into the working set", () => {
+    expect(
+      workingSetRouteForTab({
+        kind: "tracked",
+        documentId: "illegal-empty",
+        scheme: "scratch",
+        path: "",
+        name: "Untitled",
+        workId: "work-a",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+        origin: "local-untitled",
+      }),
+    ).toBeNull();
+  });
+
   it("retains local origin for Work pruning but not explicit close", () => {
     const localOrigin = {
       ...tracked("local", "/Untitled.md"),

@@ -1,10 +1,24 @@
-import { describe, expect, it } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import { QueryClient } from "@tanstack/react-query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import {
   contextDeskReconciliation,
   mergeBootstrapDeskTabs,
+  seedWorkingSetTabs,
   settleSeededRoutes,
+  validateContextDeskTabs,
 } from "./working-set-tab-seeding";
+
+const mocks = vi.hoisted(() => ({ readTree: vi.fn() }));
+vi.mock("@/client/api/projects-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/api/projects-api")>()),
+  getProjectContextTree: mocks.readTree,
+}));
+
+beforeEach(() => {
+  mocks.readTree.mockReset();
+  useContextTabsStore.setState({ byProject: {}, _deskHydrated: true });
+});
 
 describe("Context desk bootstrap source", () => {
   it("replaces from authoritative server hydration and preserves degraded local state", () => {
@@ -117,5 +131,122 @@ describe("device-local bootstrap ownership", () => {
     expect(mergeBootstrapDeskTabs([refreshed], [local])).toEqual([
       { ...refreshed, origin: "local-untitled" },
     ]);
+  });
+
+  it.each([
+    ["server working-set bootstrap", "seed"],
+    ["device-desk validation", "validate"],
+  ] as const)("drops an absent local origin instead of transferring it by pathname during %s", async (_label, operation) => {
+    const local: ContextTab = {
+      kind: "tracked",
+      documentId: "old-id",
+      scheme: "scratch",
+      path: "/Untitled.md",
+      name: "Untitled.md",
+      workId: "work-a",
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+      origin: "local-untitled",
+    };
+    useContextTabsStore.setState({
+      byProject: {
+        project: { tabs: [local], selectedTabIdByWork: { "work-a": local.documentId } },
+      },
+    });
+    mocks.readTree.mockResolvedValue({
+      tree: {
+        kind: "dir",
+        name: "Scratch",
+        path: "",
+        children: [
+          {
+            kind: "file",
+            documentId: "replacement-id",
+            name: "Untitled.md",
+            path: "/Untitled.md",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+          },
+        ],
+      },
+      capabilities: null,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const scope = { projectId: "project", editorWorkId: "work-a", generation: 1 };
+
+    if (operation === "seed") {
+      await seedWorkingSetTabs({ queryClient, routes: [], scope, isLiveScope: () => true });
+    } else {
+      await validateContextDeskTabs({ queryClient, scope, isLiveScope: () => true });
+    }
+
+    expect(useContextTabsStore.getState().byProject.project).toEqual({
+      tabs: [],
+      selectedTabIdByWork: {},
+    });
+  });
+
+  it.each([
+    ["server working-set bootstrap", "seed"],
+    ["device-desk validation", "validate"],
+  ] as const)("refreshes a same-ID local origin after a rename during %s", async (_label, operation) => {
+    const local: ContextTab = {
+      kind: "tracked",
+      documentId: "same-id",
+      scheme: "scratch",
+      path: "/Untitled.md",
+      name: "Untitled.md",
+      workId: "work-a",
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+      origin: "local-untitled",
+    };
+    useContextTabsStore.setState({
+      byProject: {
+        project: { tabs: [local], selectedTabIdByWork: { "work-a": local.documentId } },
+      },
+    });
+    mocks.readTree.mockResolvedValue({
+      tree: {
+        kind: "dir",
+        name: "Scratch",
+        path: "",
+        children: [
+          {
+            kind: "file",
+            documentId: "same-id",
+            name: "Renamed.md",
+            path: "/Renamed.md",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+          },
+        ],
+      },
+      capabilities: null,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const scope = { projectId: "project", editorWorkId: "work-a", generation: 1 };
+
+    if (operation === "seed") {
+      await seedWorkingSetTabs({ queryClient, routes: [], scope, isLiveScope: () => true });
+    } else {
+      await validateContextDeskTabs({ queryClient, scope, isLiveScope: () => true });
+    }
+
+    expect(useContextTabsStore.getState().byProject.project).toEqual({
+      tabs: [
+        expect.objectContaining({
+          documentId: "same-id",
+          path: "/Renamed.md",
+          name: "Renamed.md",
+          origin: "local-untitled",
+        }),
+      ],
+      selectedTabIdByWork: { "work-a": "same-id" },
+    });
   });
 });

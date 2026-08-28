@@ -105,4 +105,35 @@ describe("context desk V2 persistence", () => {
       expect(memory.read()).toBeNull();
     }
   });
+
+  it("rejects and removes a tracked empty-Scratch row", () => {
+    const memory = memoryStorage(
+      JSON.stringify({
+        version: 2,
+        userId: "user-1",
+        projects: {
+          project: {
+            tabs: [
+              {
+                kind: "tracked",
+                documentId: "illegal-empty",
+                scheme: "scratch",
+                path: "",
+                name: "Untitled",
+                workId: "work-a",
+                editable: true,
+                filetype: "markdown",
+                schemaType: "document",
+                origin: "local-untitled",
+              },
+            ],
+            selectedTabIdByWork: { "work-a": "illegal-empty" },
+          },
+        },
+      }),
+    );
+
+    expect(new DeviceContextDeskStore(memory.storage).setUser("user-1")).toEqual({});
+    expect(memory.read()).toBeNull();
+  });
 });

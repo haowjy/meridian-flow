@@ -42,14 +42,15 @@ const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: nul
 
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
- * when a work-scoped scheme lacks its required workId — the one illegal shape
- * the discriminated union forbids.
+ * for empty paths or when a work-scoped scheme lacks its required Work. Empty
+ * Scratch belongs only to the device desk and coordinator, never recency.
  */
 export function buildWorkingSetRoute(
   scheme: ProjectContextTreeScheme,
   path: string,
   workId: string | null | undefined,
 ): WorkingSetRoute | null {
+  if (path.length === 0) return null;
   if (isWorkScopedProjectContextScheme(scheme)) {
     return workId ? { scheme, path, workId } : null;
   }
