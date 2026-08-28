@@ -3001,6 +3001,10 @@ msgstr ""
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr ""
 
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "The entry changed. Refresh the tree and try again."
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."
 msgstr ""
