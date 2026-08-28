@@ -215,7 +215,14 @@ export function ProjectView(props: ProjectViewProps) {
         bootstrapGenerationRef.current += 1;
       }
     };
-  }, [deskHydrated, editorScope, props.projectId, queryClient, workingSetHydration]);
+  }, [
+    deskHydrated,
+    editorScope.status,
+    editorWorkId,
+    props.projectId,
+    queryClient,
+    workingSetHydration,
+  ]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
     props.onSelectThread(resolvedThreadId);
