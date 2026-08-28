@@ -115,6 +115,16 @@ export type RenameContextEntrySuccess = { status: "renamed" };
 export type RenameContextEntryConflict = { status: "conflict" };
 export type RenameContextEntryResult = RenameContextEntrySuccess | RenameContextEntryConflict;
 
+/** Exact identities committed by one successful context-tree deletion. */
+export type DeleteContextEntryResult = {
+  status: "deleted";
+  deletedDocumentIds: string[];
+};
+
+export type DeleteContextEntryRequest =
+  | { path: string; expected: { kind: "file"; documentId: string } }
+  | { path: string; expected: { kind: "folder" } };
+
 export type MoveContextEntryRequest = {
   path: string;
   destinationScheme: ProjectContextTreeScheme;

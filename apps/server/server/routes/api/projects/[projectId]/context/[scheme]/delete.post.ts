@@ -1,31 +1,47 @@
 /**
  * POST /api/projects/:projectId/context/:scheme/delete
  *
- * Deletes a file or folder (and its children) from a context scheme.
+ * Deletes a file or empty folder from a context scheme.
  * Uses the ContextPort.delete primitive which performs CAS deletion via
  * ContextTreeMover.
  */
+import type { DeleteContextEntryRequest } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
+import { requireRequestId } from "../../../../../../lib/request-id.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
-interface DeleteBody {
-  /** Path of the entry to delete (e.g. "chapter-1.md" or "notes"). */
-  path: string;
-}
-
-function parseBody(raw: unknown): DeleteBody {
+function parseBody(raw: unknown): DeleteContextEntryRequest {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
-  const body = raw as Partial<DeleteBody>;
-  return { path: parseContextMutationPath(body.path, "path") };
+  const body = raw as { path?: unknown; expected?: unknown };
+  if (!body.expected || typeof body.expected !== "object") {
+    throw createError({ statusCode: 400, message: "expected target is required" });
+  }
+  const expected = body.expected as { kind?: unknown; documentId?: unknown };
+  if (expected.kind === "folder") {
+    return { path: parseContextMutationPath(body.path, "path"), expected: { kind: "folder" } };
+  }
+  if (expected.kind !== "file") {
+    throw createError({ statusCode: 400, message: "expected file identity is required" });
+  }
+  return {
+    path: parseContextMutationPath(body.path, "path"),
+    expected: {
+      kind: "file",
+      documentId: requireRequestId(expected.documentId, "expected.documentId"),
+    },
+  };
 }
 
 export default defineEventHandler(async (event) => {
   const { userId, scheme, workId, port } = await resolveContextRoute(event);
   const body = parseBody(await readBody(event));
   const uri = toUri(scheme, body.path, workId);
-  const result = await port.delete(uri, { origin: { type: "human", userId } });
+  const result = await port.delete(uri, {
+    origin: { type: "human", userId },
+    expected: body.expected,
+  });
   if (!result.ok) contextErrorToHttp(result.error);
-  return { ok: true as const };
+  return result.value;
 });

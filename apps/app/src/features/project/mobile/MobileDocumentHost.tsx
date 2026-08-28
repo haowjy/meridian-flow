@@ -15,14 +15,16 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo } from "react";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { useContextRemovalCoordinator } from "../context/ContextRemovalAccountProvider";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { findContextFile } from "../context/context-tree";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
 
 const EditorView = lazy(() =>
   import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
@@ -44,6 +46,8 @@ export function MobileDocumentHost({
   activeContextPath,
 }: MobileDocumentHostProps) {
   const workId = editorWorkId;
+  const contextRemoval = useContextRemovalCoordinator();
+  const removalState = useContextRemovalProject(projectId);
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
   const { tree, isError, isFetching } = useProjectContextTree(
@@ -59,6 +63,55 @@ export function MobileDocumentHost({
     const file = findContextFile(tree, activeContextPath);
     return file ? contextTabFromFile(activeContextScheme, file, workId) : null;
   }, [activeContextPath, activeContextScheme, hasRouteDocument, tree, workId]);
+
+  useLayoutEffect(() => {
+    if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null) return;
+    const selection = removalState.selection;
+    if (selection.status === "none") return;
+    if (
+      selection.locator.scheme !== activeContextScheme ||
+      selection.locator.path !== activeContextPath ||
+      selection.locator.workId !== workId
+    )
+      return;
+    if (activeTab && !isFetching && !isError) {
+      contextRemoval.bindRouteSelection(projectId, selection.revision, {
+        kind: "server",
+        documentId: activeTab.documentId,
+      });
+    } else if (selection.status === "candidate" && tree && !isFetching && !isError) {
+      contextRemoval.rejectRouteCandidate(projectId, selection.revision);
+    }
+  }, [
+    activeContextPath,
+    activeContextScheme,
+    activeTab,
+    contextRemoval,
+    hasRouteDocument,
+    isFetching,
+    isError,
+    projectId,
+    removalState.selection,
+    tree,
+    workId,
+  ]);
+
+  useLayoutEffect(() => {
+    if (
+      !activeTab ||
+      removalState.selection.status !== "bound" ||
+      activeTab.documentId !== removalState.selection.identity.documentId
+    )
+      return;
+    contextRemoval.activate({
+      projectId,
+      selectionRevision: removalState.selection.revision,
+      transitionRevision: removalState.transitionRevision,
+      locator: removalState.selection.locator,
+      identity: removalState.selection.identity,
+      owner: { kind: "route-only" },
+    });
+  }, [activeTab, contextRemoval, projectId, removalState]);
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
   useEffect(() => {

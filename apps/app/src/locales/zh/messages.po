@@ -14,6 +14,11 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/routes/_authenticated/project/$projectId.tsx
+msgid "Loading project…"
+msgstr ""
+
+#. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
 msgid "Added a passage"
 msgstr "新增了一段内容"
@@ -889,6 +894,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't delete that Work"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Couldn't delete this entry. Try again."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -2999,6 +3008,10 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "The entry changed. Refresh the tree and try again."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts

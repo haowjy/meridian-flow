@@ -27,10 +27,10 @@ import {
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
+import { ContextRemovalAccountProvider } from "@/features/project/context/ContextRemovalAccountProvider";
 import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
 import {
   getUntitledReconciler,
-  isUntitledPending,
   syncUntitledReceiptOwners,
 } from "@/features/project/context/untitled-reconciler-browser";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
@@ -143,7 +143,9 @@ function AuthenticatedLayout() {
   // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
-      <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
+      <ContextRemovalAccountProvider key={user.userId} accountId={user.userId}>
+        <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
+      </ContextRemovalAccountProvider>
     </AppQueryProvider>
   );
 }
@@ -172,7 +174,7 @@ function AuthenticatedProviderTree({
     if (!untitledReconciler) return;
     untitledReconciler.rehydrate();
     untitledReconciler.start();
-    rehydrateContextDesks(user.userId, isUntitledPending);
+    rehydrateContextDesks(user.userId);
     syncUntitledReceiptOwners();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();

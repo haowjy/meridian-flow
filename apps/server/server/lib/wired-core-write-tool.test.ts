@@ -12,7 +12,10 @@ import { createInMemoryEventSink } from "../domains/observability/index.js";
 import { createInMemoryWorkRepository } from "../domains/projects/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import { Ok } from "../shared/result.js";
-import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createWiredCoreToolRegistrations,
+} from "./wired-core-tools.js";
 
 type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unknown>;
 function noopResponseFinalizer() {
@@ -29,6 +32,49 @@ function noopResponseFinalizer() {
   };
 }
 describe("wired write tool", () => {
+  it("does not delete a replacement that occupies a discarded staged-create path", async () => {
+    const stagedDocumentId = "00000000-0000-4000-8000-000000000041";
+    const replacementDocumentId = "00000000-0000-4000-8000-000000000042";
+    const path = "manuscript://chapter.md";
+    let occupant: string | null = stagedDocumentId;
+    const port = {
+      ...contextPortFor(stagedDocumentId, path),
+      delete: vi.fn(async (_uri: string, options) => {
+        if (occupant === stagedDocumentId) occupant = replacementDocumentId;
+        if (
+          !occupant ||
+          (options.expected.kind === "file" && options.expected.documentId !== occupant)
+        ) {
+          return { ok: false as const, error: { code: "stale_target" as const, uri: path } };
+        }
+        const deletedDocumentId = occupant;
+        occupant = null;
+        return Ok({ status: "deleted" as const, deletedDocumentIds: [deletedDocumentId] });
+      }),
+    } satisfies ContextPort;
+    const lifecycle = createAgentEditResponseWriteLifecycle({
+      documentSync: {
+        ...noopResponseFinalizer(),
+        finalizeResponseRollback: async () => ({
+          stagedCreates: { committed: [], discarded: [stagedDocumentId] },
+        }),
+      } as never,
+    });
+    lifecycle.trackStagedCreate({
+      responseId: "response-a",
+      documentId: stagedDocumentId,
+      path,
+      port,
+    });
+
+    await lifecycle.rollbackResponse("response-a", { threadId: "thread-a", turnId: "turn-a" });
+
+    expect(occupant).toBe(replacementDocumentId);
+    expect(port.delete).toHaveBeenCalledWith(path, {
+      expected: { kind: "file", documentId: stagedDocumentId },
+    });
+  });
+
   it("enforces reserved @ names through the model write path", async () => {
     const ensureTrackedDocument = vi.fn(async () =>
       Ok({ documentId: "00000000-0000-4000-8000-000000000031" }),
@@ -407,7 +453,10 @@ function contextPortFor(documentId: string, filePath: string): ContextPort {
       ok: true,
       value: { status: "created", documentId, path: filePath, name: filePath },
     }),
-    delete: async () => ({ ok: true, value: undefined }),
+    delete: async () => ({
+      ok: true,
+      value: { status: "deleted", deletedDocumentIds: [documentId] },
+    }),
     list: async () => ({ ok: true, value: [] }),
     search: async () => ({ ok: true, value: [] }),
     read: async () => ({ ok: false, error: { code: "not_found", uri: filePath } }),

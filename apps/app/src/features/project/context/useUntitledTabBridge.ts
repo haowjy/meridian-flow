@@ -1,7 +1,6 @@
 /** Bridges background untitled reconciliation receipts into the open-tab store. */
 import { useEffect } from "react";
 import { type ContextTab, useContextTabsActions, useContextTabsStore } from "@/client/stores";
-import type { ContextRouteTarget } from "../routing/project-route";
 import {
   isUntitledPending,
   registerUntitledCandidate,
@@ -11,11 +10,9 @@ import {
 export function useUntitledTabBridge({
   projectId,
   tabs,
-  onOpenContextTarget,
 }: {
   projectId: string;
   tabs: ContextTab[];
-  onOpenContextTarget: (target: ContextRouteTarget) => void;
 }): void {
   const { remintNewTab, materializeNewTab, updateTrackedTab } = useContextTabsActions();
 
@@ -54,19 +51,11 @@ export function useUntitledTabBridge({
                 provisionalName: false,
               });
             }
-            if (slice.activeTabId === tab.documentId) {
-              const settled = identity ?? result;
-              onOpenContextTarget({
-                path: settled.path,
-                scheme: settled.scheme,
-                workId: identity?.routeWorkId ?? result.workId ?? null,
-              });
-            }
           },
         }),
       );
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [materializeNewTab, onOpenContextTarget, projectId, remintNewTab, tabs, updateTrackedTab]);
+  }, [materializeNewTab, projectId, remintNewTab, tabs, updateTrackedTab]);
 }

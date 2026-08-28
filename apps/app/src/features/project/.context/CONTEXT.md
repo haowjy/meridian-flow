@@ -218,10 +218,13 @@ Two rules keep this stable:
   (`useProjectLayout`). Do not add a second whole-prefs subscription — that
   redundant subscription was part of the original cascade.
 
-Related: `ContextPaneController`'s route-tab auto-open guard **re-arms** once the
-route stops needing a tab (`openedKeyRef` cleared when `!needsRouteTab`), so
-close-then-reopen of the same file works and the guard can't re-enter the
-hydration cascade.
+Related: the project removal coordinator publishes a revisioned auto-open block.
+`ContextPaneController` consumes that external-store snapshot, so a removal blocks
+same-render and delayed cached-tree resurrection. A registered route host stays
+live while the writer visits another project screen; only host release or Work
+readiness suspension disables activation. Writer close and Work pruning are
+reversible, while acknowledged deletion and draft discard keep exact re-entry
+guards against stale resurrection.
 
 ## Screen routing & controllers
 
@@ -241,9 +244,20 @@ and publishes awaitable typed commands. The route component remains the only
 TanStack Router adapter. Collection/detail leaves receive targets and commands
 rather than parsing or mutating search themselves.
 
+A genuinely cold cross-project loader replaces the old project shell immediately
+with the route's inert pending surface. It must not leave the previous project's
+Context publishers mounted while the next project's Work authority is unresolved.
+This is a route-lifetime boundary, not a query-refresh policy: once Work data has
+successfully seeded the mounted project, a background `isFetching` refresh keeps
+that project's Context host and mutation publishers live.
+
 The **Editor** destination retains `ContextPaneController` as its implementation
-name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
-projection, close fallbacks, scroll restoration, and screen-entry defaults:
+name. It owns route-validated opens, temporary-tab projection, scroll restoration,
+and screen-entry defaults. The platform-neutral project adapter owns revision
+startup and dispatches Work pruning only after Work authority is ready. Project-entry
+desk seed/validation is hydration-scoped and never re-runs on a Work change. The
+removal coordinator owns close fallback, atomic old/new Work continuity,
+remembered destination, and route repair:
 entering with no destination replays the remembered last file
 (`client/working-set/`; replay re-arms every entry because the controller is
 persistent). Replay and the default-open ladder also re-arm when Editor Work

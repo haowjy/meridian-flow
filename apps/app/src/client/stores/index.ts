@@ -6,9 +6,11 @@
 
 export {
   type ContextTab,
-  flushContextDesks,
+  contextTabMayBeSelectedForWork,
+  type ProjectTabsSlice,
   rehydrateContextDesks,
   type ServerContextTab,
+  serverContextTabLocatorKey,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,

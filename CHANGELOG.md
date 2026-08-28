@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+- `apps/app`: separate ordinary Editor screen continuity from atomic Work
+  supersession, keep guarded deleted routes out of obligation settlement and
+  durable reconstruction,
+  synchronously revoke replaced account coordinators, and preserve unrelated
+  remembered routes through represented removals.
+
+- `apps/server`: require expected file identity or folder kind at the Context
+  deletion port, so staged-create rollback cannot delete a path replacement.
+
+- `apps/server`, `apps/app`: preserve Context deletion `stale_target` conflicts
+  through the structured HTTP error wire and show distinct refresh recovery.
+
+- `apps/app`: keep Context removal authoritative across delayed route repair,
+  screen and Work transitions, account disposal, and degraded desk hydration.
+
+- `contracts`, `apps/server`, `apps/app`: make Context deletion prove the
+  initiating target identity, admit exact removal effects before invalidation,
+  and reconcile route continuity through account-scoped, Work-gated protocol state.
+
+- `contracts`, `apps/server`: acknowledge context deletion with the exact
+  committed document IDs while preserving empty-folder and non-recursive folder semantics.
+
 - `apps/server`: serialize concurrent authenticated-user provisioning so one
   WorkOS principal converges on one local account and cross-principal email
   collisions return the structured account-link conflict.

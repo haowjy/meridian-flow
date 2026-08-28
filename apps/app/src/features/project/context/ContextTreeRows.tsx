@@ -203,7 +203,12 @@ function FileRow({
     else if (action === "new-folder") env.onRequestCreate("folder", parentPath);
     else if (action === "rename") setRenaming(true);
     else if (action === "delete")
-      env.onRequestDelete({ name: file.name, path: file.path, kind: "file" });
+      env.onRequestDelete({
+        name: file.name,
+        path: file.path,
+        kind: "file",
+        documentId: file.documentId,
+      });
   }
 
   if (renaming) {

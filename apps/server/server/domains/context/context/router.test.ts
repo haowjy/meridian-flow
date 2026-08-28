@@ -1,6 +1,6 @@
 /** Context router metadata propagation at the adapter-to-public-port boundary. */
 import { describe, expect, it, vi } from "vitest";
-import { Ok } from "../../../shared/result.js";
+import { Err, Ok } from "../../../shared/result.js";
 import { type ContextSchemeAdapter, schemeCapabilities } from "../ports/context-adapter.js";
 import type { ContextScheme } from "../ports/context-port.js";
 import { createContextPortRouter } from "./router.js";
@@ -23,6 +23,14 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
             filetype: "markdown",
           });
         }
+        if (path === "empty") {
+          return Ok({
+            kind: "directory" as const,
+            nodeId: "folder-empty",
+            sourceId: `${scheme}-source`,
+            path,
+          });
+        }
         if (path === "") {
           return Ok({
             kind: "directory" as const,
@@ -37,7 +45,9 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
       commitPreparedMove: vi.fn(async (prepared) =>
         Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
       ),
-      commitPreparedDelete: vi.fn(async (token) => Ok({ deletedNodeId: token.nodeId })),
+      commitPreparedDelete: vi.fn(async (token) =>
+        Ok({ deletedDocumentIds: token.kind === "file" ? [token.nodeId] : [] }),
+      ),
     },
   } as unknown as ContextSchemeAdapter;
 }
@@ -67,6 +77,75 @@ describe("context router listings", () => {
     await expect(port.list("manuscript://")).resolves.toMatchObject({
       ok: true,
       value: [{ documentId: "document-1", provisionalName: true }],
+    });
+  });
+});
+
+describe("context router deletion receipts", () => {
+  it.each([
+    [{ kind: "file" as const, documentId: "different-document" }, "old.md"],
+    [{ kind: "folder" as const }, "old.md"],
+    [{ kind: "file" as const, documentId: "document-old" }, "empty"],
+  ])("rejects a stale initiating target %#", async (expected, path) => {
+    const adapter = writableAdapter("manuscript");
+    const port = createContextPortRouter({ adapters: new Map([["manuscript", adapter]]) });
+
+    await expect(port.delete(`manuscript://${path}`, { expected })).resolves.toEqual({
+      ok: false,
+      error: { code: "stale_target", uri: `manuscript://${path}` },
+    });
+    expect(adapter.tree?.commitPreparedDelete).not.toHaveBeenCalled();
+  });
+
+  it("reports a replacement that wins after inspection as a stale target", async () => {
+    const adapter = writableAdapter("manuscript");
+    if (!adapter.tree) throw new Error("writable test adapter must provide tree mutations");
+    vi.spyOn(adapter.tree, "commitPreparedDelete").mockResolvedValueOnce(
+      Err({ code: "stale_source" }),
+    );
+    const port = createContextPortRouter({ adapters: new Map([["manuscript", adapter]]) });
+
+    await expect(
+      port.delete("manuscript://old.md", {
+        expected: { kind: "file", documentId: "document-old" },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: "stale_target", uri: "manuscript://old.md" },
+    });
+  });
+
+  it("preserves the committed file identity", async () => {
+    const port = createContextPortRouter({
+      adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
+    });
+
+    await expect(
+      port.delete("manuscript://old.md", {
+        expected: { kind: "file", documentId: "document-old" },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        status: "deleted",
+        deletedDocumentIds: ["document-old"],
+      },
+    });
+  });
+
+  it("acknowledges an empty-folder deletion without document identities", async () => {
+    const port = createContextPortRouter({
+      adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
+    });
+
+    await expect(
+      port.delete("manuscript://empty", { expected: { kind: "folder" } }),
+    ).resolves.toEqual({
+      ok: true,
+      value: {
+        status: "deleted",
+        deletedDocumentIds: [],
+      },
     });
   });
 });

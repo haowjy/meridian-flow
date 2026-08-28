@@ -1,6 +1,8 @@
+export { sameServerContextTabLocator, serverContextTabLocatorKey } from "./context-tab-locator";
 export {
   type ContextTab,
-  flushContextDesks,
+  contextTabMayBeSelectedForWork,
+  type ProjectTabsSlice,
   rehydrateContextDesks,
   type ServerContextTab,
   useContextTabs,

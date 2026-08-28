@@ -29,8 +29,9 @@ ContextPaneController
 ```
 
 `useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.
-Mutations (`create`, `rename`, `move`, `delete`, `upload`) invalidate the tree
-cache on success. Invalidation is scheme-scoped. Foreground identity saves and
+Mutations invalidate the scheme-scoped tree cache on success. Delete admits its
+exact evidence to live removal authority first; cache absence never supplies
+deletion evidence. Foreground identity saves and
 background untitled create/move reconciliation share
 `context-identity-mutation.ts`; every successful receipt invalidates its
 materialized tree or both move endpoints, even when no tab is open.
@@ -45,12 +46,61 @@ level at a time via route params.
 
 ## Editor tabs and untitled documents
 
-The writer-facing destination is **Editor**. `ContextPaneController` owns route
-reconciliation, tab selection/close behavior, last-route restore, work-scoped
-pruning, and scroll restoration. `ContextTab` has three variants: `tracked`,
-`viewer`, and the in-memory `{ kind: "new", documentId }` placeholder. A new tab
-uses an ordinary `DocumentSession` from its first render, created detached so
+The writer-facing destination is **Editor**. One account-scoped,
+framework-independent `ContextRemovalCoordinator` owns every live removal
+transition: explicit close, locally acknowledged delete, Work pruning, and draft
+discard. Account construction precedes authenticated descendants. A project becomes
+live only after desk hydration, concrete Editor Work readiness, and one raw
+bootstrap/validation operation. Strict replay and pre-live Work interruption adopt
+that operation with fresh attempt tokens; after first completion, Work interruption
+only suspends the live host and can never restore raw bootstrap authority.
+The leaf route host registers first, then the rendered desktop or phone document host
+settles revisioned route identity in layout phase.
+
+Acknowledged delete carries the server-confirmed exact ID batch plus a request-time
+discriminated target and same-locator route witness. Admission is synchronous and
+idempotent by `commandId`, including terminal invalid first use, and precedes tree
+invalidation. Candidate identity is a pure typed selection/obligation protocol:
+browser locators own only their revision while admitted continuity independently owns
+memory and persistence. Receipt cardinality supplies no identity, and late or
+superseded settlement cannot repair a newer route. The protocol emits exact planning
+or one typed candidate rejection, never a generic promotion.
+The pure `context-removal-planner.ts` keeps eligibility and desk/route continuity
+policy separate from browser lifecycle and effects. Bound selection anchors visible
+identity and exact removal; only revision-checked desk or route-only activation admits
+ordinary continuity. Work change chooses a compatible admitted fallback independently
+from its new route candidate. Same-Work screen leave discards selection while retaining
+admitted continuity. Fulfilled absence runs one coordinator-owned rejection plan that
+atomically selects a desk fallback, reconciles the working set, updates admitted memory,
+publishes, and then issues guarded replace-navigation. Project-host release drops only
+the detachable route adapter and mounted selection. Account-owned revision, terminal
+exact removal, admitted memory, and fence authority survive re-entry; a matching
+terminal removal blocks stale identity re-entry until exact rejection or a different
+identity is proven. Account disposal destroys it.
+The account provider owns one reversible coordinator lifetime lease. Cleanup
+suspends command authority synchronously; Strict effect replay resumes that same
+coordinator before child layout work, while a deferred step only finalizes a lease
+that remained suspended.
+Activation uses selection and transition revision tickets in layout phase. Desktop
+validates live desk membership; phone validates the exact registered route without
+fabricating a tab. `ContextPaneController`
+remains a view/activation controller and owns no lifecycle-removal policy. Later ready
+Work changes use the coordinator's supersession transition. Draft apply only resolves tab metadata. Context-tree
+cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
+`viewer`, and the local `{ kind: "new", documentId, workId }` placeholder. A new tab captures its
+canonical Work owner at creation; projection, activation, fallback, pending materialization, and Work
+pruning read that stored fact rather than the currently selected Work. Empty-path Scratch remains local-only
+and is never a working-set route. A new tab uses an ordinary `DocumentSession` from its first render, created detached so
 Y.Doc + IndexedDB exist without opening an unauthorized server room.
+
+The device Context desk persists one exact `selectedTabIdByWork` entry per Work.
+There is no project-wide active-tab slot. One pure desk-route resolver supplies
+render, bind, activation, and guarded materialization redirect identity; desk
+selection is not admission. Every non-draft local `new` tab is persisted
+immediately. Materialization retains `origin: "local-untitled"` across reload and
+Work navigation, while explicit close/deletion and fulfilled bootstrap absence
+still remove it. Server working-set bootstrap merges validated device-owned
+`new` and local-origin tabs by document ID without promoting them into recency.
 
 `untitled-reconciler.ts` is the browser-independent materialization engine;
 `untitled-reconciler-browser.ts` binds localStorage, APIs, editor sessions, and
@@ -224,9 +274,10 @@ replaces a pending one; Escape/blur semantics are the shared
 
 ## Tree query invalidation
 
-Deleting a file in `manuscript://` only refetches that scheme's tree. The
-last-opened route (`context-last-route`) is also cleared on delete to prevent a
-dead tab reference.
+Deleting a file in `manuscript://` only refetches that scheme's tree for
+presentation metadata. Tree absence never proves document removal. The exact
+successful mutation result is the deletion evidence that the removal coordinator
+consumes before the tree invalidation can affect presentation.
 
 ## Downlinks
 

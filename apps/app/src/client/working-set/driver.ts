@@ -9,11 +9,10 @@ import {
   type WorkingSetHydrationPlan,
 } from "./hydration";
 import {
-  clearSnapshotRoutes,
   DeviceWorkingSetStore,
   type ProjectWorkingSetRecord,
-  promoteSnapshotRoute,
-  removeSnapshotRoute,
+  type ReconcileContextRoutesInput,
+  reconcileSnapshotContextRoutes,
   setSnapshotThread,
   type WorkingSetStorage,
 } from "./store";
@@ -117,16 +116,9 @@ export class WorkingSetSyncDriver {
     return this.store.read(projectId);
   }
 
-  promoteRoute(projectId: string, route: WorkingSetRoute): void {
-    this.report(projectId, (snapshot) => promoteSnapshotRoute(snapshot, route));
-  }
-
-  clearRoutes(projectId: string): void {
-    this.report(projectId, clearSnapshotRoutes);
-  }
-
-  removeRoute(projectId: string, route: WorkingSetRoute): void {
-    this.report(projectId, (snapshot) => removeSnapshotRoute(snapshot, route));
+  reconcileContextRoutes(projectId: string, input: ReconcileContextRoutesInput): WorkingSetRoute[] {
+    this.report(projectId, (snapshot) => reconcileSnapshotContextRoutes(snapshot, input));
+    return this.readRecentRoutes(projectId);
   }
 
   setThread(projectId: string, threadId: string): void {
@@ -294,16 +286,13 @@ export function readRememberedThread(projectId: string): string | null {
   return browserDriver()?.readRecord(projectId)?.snapshot.lastThreadId ?? null;
 }
 
-export function promoteRoute(projectId: string, route: WorkingSetRoute): void {
-  browserDriver()?.promoteRoute(projectId, route);
-}
-
-export function clearRoutes(projectId: string): void {
-  browserDriver()?.clearRoutes(projectId);
-}
-
-export function removeRoute(projectId: string, route: WorkingSetRoute): void {
-  browserDriver()?.removeRoute(projectId, route);
+export function reconcileContextRoutes(
+  projectId: string,
+  input: ReconcileContextRoutesInput,
+): WorkingSetRoute[] {
+  const activeDriver = browserDriver();
+  if (!activeDriver) return [];
+  return activeDriver.reconcileContextRoutes(projectId, input);
 }
 
 export function setThread(projectId: string, threadId: string): void {

@@ -22,7 +22,7 @@ function derive(overrides: Partial<Parameters<typeof deriveContextPaneState>[0]>
     tree: emptyTree,
     isFetching: false,
     isError: false,
-    autoOpenBlocked: false,
+    removalFenced: false,
     ...overrides,
   });
 }

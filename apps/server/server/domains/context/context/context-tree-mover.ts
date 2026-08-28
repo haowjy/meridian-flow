@@ -6,14 +6,15 @@
  * adapter capability.
  */
 
+import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type {
+  ContextDeleteOptions,
   ContextError,
   ContextMoveOptions,
   ContextMoveResult,
   ContextScheme,
-  ContextWriteOptions,
 } from "../ports/context-port.js";
 import type {
   ContextLocationToken,
@@ -157,8 +158,8 @@ export class ContextTreeMover {
 
   async delete(
     target: ContextTreeDispatch,
-    _options?: ContextWriteOptions,
-  ): Promise<Result<void, ContextError>> {
+    options: ContextDeleteOptions,
+  ): Promise<Result<DeleteContextEntryResult, ContextError>> {
     if (!target.adapter.capabilities.writable || !target.adapter.tree) {
       return Err({ code: "permission_denied", uri: target.canonical });
     }
@@ -166,6 +167,13 @@ export class ContextTreeMover {
     const token = await this.inspect(target);
     if (!token.ok) return token;
     if (token.value === null) return Err({ code: "not_found", uri: target.canonical });
+    if (
+      options.expected.kind === "folder"
+        ? token.value.kind !== "directory"
+        : token.value.kind !== "file" || token.value.nodeId !== options.expected.documentId
+    ) {
+      return Err({ code: "stale_target", uri: target.canonical });
+    }
 
     const result = await callAdapter(
       target.canonical,
@@ -173,8 +181,12 @@ export class ContextTreeMover {
         target.adapter.tree?.commitPreparedDelete(token.value as ContextLocationToken) ??
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
-    if (!result.ok) return result;
-    return Ok(undefined);
+    if (!result.ok) {
+      return result.error.code === "stale_source"
+        ? Err({ code: "stale_target", uri: target.canonical })
+        : result;
+    }
+    return Ok({ status: "deleted", deletedDocumentIds: result.value.deletedDocumentIds });
   }
 
   private async prepareMove(

@@ -161,26 +161,27 @@ is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
 never stored. Local disposition events and remote membership reconciliation
-both route through
-`resolveDraftOnlyTab(projectId, reviewWorkId, documentId, "committed" | "discarded")`.
+both route through narrow coordinator commands. Apply calls
+`applyDraftMetadata(projectId, reviewWorkId, documentId)`; discard calls
+`discardDraft(projectId, reviewWorkId, documentId)`. The coordinator checks the
+owning Work before changing the desk.
 The synthesized tab carries that transient `reviewWorkId`; it is not document
 location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.
 
-- Every Apply path materializes the whole branch and resolves `"committed"` —
+- Every Apply path materializes the whole branch and clears draft metadata —
   keep the tab, drop the marker — after the awaited draft-list refresh but while
   the disposition lock remains held. Controls must not re-enable before that
   local resolution; draft-group absence alone cannot distinguish Apply from
   Discard.
-- Whole-draft Discard resolves `"discarded"` — close the tab.
+- Whole-draft Discard removes the owning draft-only tab through the coordinator.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
-  `"committed"`; absence means `"discarded"`. A failed read leaves the tab
+  Apply metadata resolution; absence means coordinator discard. A failed read leaves the tab
   intact, and a replacement active draft for that document cancels resolution.
 - A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
   skips draftOnly tabs so a discarded path can't replay on the next visit;
-  `ContextPaneController` repairs the route when a lifecycle resolve removes
-  the route-active tab.
+  the coordinator repairs the route when disposition removes the route-active tab.
 
 Server-side twin: discarding a new-document draft also removes its entry from
 the work manifest branch. Later Apply operations publish the manifest as well as

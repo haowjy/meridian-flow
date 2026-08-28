@@ -70,15 +70,19 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        actions={trailingAction(props, (kind) => {
-          if (!props.activeContextScheme) return;
-          setCreating({
-            scheme: props.activeContextScheme,
-            kind,
-            parentPath: props.activeContextFolder ?? "",
-            workId: props.editorWorkId,
-          });
-        })}
+        actions={
+          props.contextLive
+            ? trailingAction(props, (kind) => {
+                if (!props.activeContextScheme) return;
+                setCreating({
+                  scheme: props.activeContextScheme,
+                  kind,
+                  parentPath: props.activeContextFolder ?? "",
+                  workId: props.editorWorkId,
+                });
+              })
+            : undefined
+        }
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
         {renderActiveView(props, creating, () => setCreating(null))}
@@ -89,6 +93,7 @@ export function MobileProject(props: MobileProjectProps) {
         projectId={props.projectId}
         activeScreen={props.activeScreen}
         editorWorkId={props.editorWorkId}
+        contextLive={props.contextLive}
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
         onSelectScreen={props.onSelectScreen}
@@ -183,6 +188,7 @@ function renderActiveView(
           />
         );
       }
+      if (!props.contextLive) return null;
       return (
         <DraftReviewBoundary value={props.editorReview}>
           <EditorReviewIntentClaimant

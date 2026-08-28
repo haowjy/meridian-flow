@@ -1,7 +1,32 @@
+import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { canSweepWorkingSet, getWorkingSetStorage, WorkingSetSyncDriver } from "./driver";
-import { DeviceWorkingSetStore, type WorkingSetSnapshot } from "./store";
+import {
+  DeviceWorkingSetStore,
+  reconcileSnapshotContextRoutes,
+  type WorkingSetSnapshot,
+} from "./store";
+
+describe("atomic context-route reconciliation", () => {
+  it("removes only unowned locators and promotes in one snapshot result", () => {
+    const same = { scheme: "kb" as const, path: "/same.md" };
+    const removed = { scheme: "kb" as const, path: "/removed.md" };
+    const promoted = { scheme: "manuscript" as const, path: "/next.md" };
+
+    expect(
+      reconcileSnapshotContextRoutes(
+        { recentRoutes: [removed, same, promoted], lastThreadId: "thread-1" },
+        {
+          removedLocators: [removed, same],
+          survivingOwnedLocators: [same, promoted],
+          promote: promoted,
+          clearAll: false,
+        },
+      ),
+    ).toEqual({ recentRoutes: [promoted, same], lastThreadId: "thread-1" });
+  });
+});
 
 const pendingRecord = {
   snapshot: { recentRoutes: [], lastThreadId: null },
@@ -38,6 +63,19 @@ async function disposeDriver(driver: WorkingSetSyncDriver | undefined): Promise<
     await vi.runAllTimersAsync();
     vi.clearAllTimers();
   }
+}
+
+function promoteRoute(
+  driver: WorkingSetSyncDriver,
+  projectId: string,
+  route: WorkingSetRoute,
+): void {
+  driver.reconcileContextRoutes(projectId, {
+    removedLocators: [],
+    survivingOwnedLocators: [route],
+    promote: route,
+    clearAll: false,
+  });
 }
 
 describe("working-set sweep eligibility", () => {
@@ -249,7 +287,7 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
     expect(store.read("project-1")?.pending).toMatchObject({ baseRevision: 22, localVersion: 1 });
 
     driver.markSuspectOnReconnect();
@@ -264,7 +302,7 @@ describe("suspect baseline recovery", () => {
       path: "/rev-23.md",
     });
 
-    driver.promoteRoute("project-1", { scheme: "kb", path: "/after-reconcile.md" });
+    promoteRoute(driver, "project-1", { scheme: "kb", path: "/after-reconcile.md" });
     driver.flush();
     await vi.runAllTimersAsync();
     expect(put).toHaveBeenCalledTimes(1);
@@ -287,7 +325,7 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
 
     driver.markSuspectOnReconnect();
     driver.flush();
@@ -317,7 +355,7 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
     driver.flush();
     await vi.advanceTimersByTimeAsync(0);
     expect(put).toHaveBeenCalledTimes(1);
@@ -346,7 +384,7 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    driver.promoteRoute("project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
     driver.markSuspectOnReconnect();
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
 

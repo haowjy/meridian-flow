@@ -3,7 +3,8 @@ import { act, useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
-const resolveDraftOnlyTabMock = vi.fn();
+const applyDraftMetadataMock = vi.fn();
+const discardDraftTabMock = vi.fn(async () => ({ kind: "noop" as const }));
 const wholeDraftResponse: unknown = null;
 let wholeDraftResponses: unknown[] = [];
 let applyPromise: Promise<{ status: "applied"; draftId: string }> | null = null;
@@ -46,13 +47,19 @@ vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: (_projectId: string, _workId: string, _documentId: string, draftId: string) =>
     Promise.resolve(draftPreviews.get(draftId) ?? draftPreview),
 }));
+vi.mock("@/features/project/context/ContextRemovalAccountProvider", () => ({
+  useContextRemovalCoordinator: () => ({
+    applyDraftMetadata: applyDraftMetadataMock,
+    discardDraft: discardDraftTabMock,
+  }),
+}));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
   useApplyDraft: () => ({ mutateAsync: applyMutateMock }),
   useDiscardDraft: () => ({ mutateAsync: discardMutateMock }),
 }));
 vi.mock("@/client/stores", () => ({
   useContextTabsStore: {
-    getState: () => ({ resolveDraftOnlyTab: resolveDraftOnlyTabMock }),
+    getState: () => ({}),
   },
 }));
 
@@ -62,7 +69,7 @@ describe("useDraftReviewController", () => {
   it("applies by product draft identity without rendered operation cards", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     applyMutateMock.mockClear();
-    resolveDraftOnlyTabMock.mockClear();
+    applyDraftMetadataMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -85,12 +92,7 @@ describe("useDraftReviewController", () => {
       expect(applyMutateMock).not.toHaveBeenCalledWith(
         expect.objectContaining({ operationIds: expect.anything() }),
       );
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
-        "project-1",
-        "work-1",
-        "document-1",
-        "committed",
-      );
+      expect(applyDraftMetadataMock).toHaveBeenCalledWith("project-1", "work-1", "document-1");
     });
   });
 
@@ -247,12 +249,7 @@ describe("useDraftReviewController", () => {
         await controller?.discard("document-2", "draft-2");
       });
       expect(discardMutateMock).toHaveBeenCalledTimes(2);
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
-        "project-1",
-        "work-1",
-        "document-2",
-        "discarded",
-      );
+      expect(discardDraftTabMock).toHaveBeenCalledWith("project-1", "work-1", "document-2");
     });
   });
 

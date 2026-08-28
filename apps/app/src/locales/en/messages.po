@@ -14,6 +14,11 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/routes/_authenticated/project/$projectId.tsx
+msgid "Loading project…"
+msgstr "Loading project…"
+
+#. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
 msgid "Added a passage"
 msgstr "Added a passage"
@@ -890,6 +895,10 @@ msgstr "Couldn't create a Work"
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't delete that Work"
 msgstr "Couldn't delete that Work"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Couldn't delete this entry. Try again."
+msgstr "Couldn't delete this entry. Try again."
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -3000,6 +3009,10 @@ msgstr "The document could not be created. Try again."
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "The entry changed. Refresh the tree and try again."
+msgstr "The entry changed. Refresh the tree and try again."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."

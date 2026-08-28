@@ -13,7 +13,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabsStore } from "@/client/stores";
@@ -35,6 +35,8 @@ import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { resolveCatalogWork } from "./catalog-work-resolution";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { useResolvedChatThread } from "./chat/chat-thread-resolution";
+import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
 import {
@@ -63,13 +65,8 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
+import { useContextProjectAuthority } from "./use-context-project-authority";
 import { WorkPaneController } from "./WorkPaneController";
-import {
-  type ContextDeskReconciliationScope,
-  contextDeskReconciliation,
-  seedWorkingSetTabs,
-  validateContextDeskTabs,
-} from "./working-set-tab-seeding";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -88,6 +85,8 @@ export type ProjectViewProps = {
   routeWork: RouteWorkResolution;
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
+  /** Browser route adapter for atomic removal repairs. */
+  contextRemovalRoute: ContextRemovalRoutePort;
   /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
   activeContextScheme: ProjectContextTreeScheme | null;
   /** Active context folder, when `screen=context`. */
@@ -142,15 +141,13 @@ export function ProjectView(props: ProjectViewProps) {
   const editorScope = resolveEditorWorkScope(props.routeWork, chatWorkId, catalogWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
-  const reconciledDeskRef = useRef<string | null>(null);
-  const deskReconciliationGenerationRef = useRef(0);
-  const liveDeskReconciliationRef = useRef<ContextDeskReconciliationScope | null>(null);
-  useEffect(
-    () => () => {
-      liveDeskReconciliationRef.current = null;
-    },
-    [],
-  );
+  const contextPhase = useContextProjectAuthority({
+    projectId: props.projectId,
+    deskHydrated,
+    editorScope,
+    workingSetHydration,
+    queryClient,
+  });
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -160,37 +157,6 @@ export function ProjectView(props: ProjectViewProps) {
     return () => window.removeEventListener("online", retry);
   }, [props.projectId, workingSetHydration.status]);
 
-  useEffect(() => {
-    if (!deskHydrated || works === null) return;
-    const reconciliation = contextDeskReconciliation(workingSetHydration);
-    const reconciliationKey = `${props.projectId}:${reconciliation}:${editorWorkId ?? "no-work"}`;
-    if (reconciledDeskRef.current === reconciliationKey) return;
-    reconciledDeskRef.current = reconciliationKey;
-    const scope = {
-      projectId: props.projectId,
-      editorWorkId,
-      generation: ++deskReconciliationGenerationRef.current,
-    };
-    liveDeskReconciliationRef.current = scope;
-    const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
-      liveDeskReconciliationRef.current?.projectId === candidate.projectId &&
-      liveDeskReconciliationRef.current.editorWorkId === candidate.editorWorkId &&
-      liveDeskReconciliationRef.current.generation === candidate.generation;
-    if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
-      void seedWorkingSetTabs({
-        queryClient,
-        routes: workingSetHydration.row.recentRoutes,
-        scope,
-        isLiveScope,
-      });
-      return;
-    }
-    void validateContextDeskTabs({
-      queryClient,
-      scope,
-      isLiveScope,
-    });
-  }, [editorWorkId, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
     props.onSelectThread(resolvedThreadId);
@@ -216,16 +182,29 @@ export function ProjectView(props: ProjectViewProps) {
     editorScope,
     editorWorkId,
     retryEditorWork: worksQuery.refetch,
+    contextLive: contextPhase.status === "live" && editorScope.status === "ready",
     onOpenThread: (threadId: string) => void props.onSelectThread(threadId),
   };
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <HydratedReviewProject
-          {...resolvedProps}
-          chatWorkId={chatWorkId}
-          chatThreadId={resolvedThreadId}
-        />
+        <>
+          {resolvedProps.contextLive && editorWorkId ? (
+            <ProjectContextRemovalController
+              projectId={props.projectId}
+              activeScreen={props.activeScreen}
+              activeContextScheme={props.activeContextScheme}
+              activeContextPath={props.activeContextPath}
+              editorWorkId={editorWorkId}
+              route={props.contextRemovalRoute}
+            />
+          ) : null}
+          <HydratedReviewProject
+            {...resolvedProps}
+            chatWorkId={chatWorkId}
+            chatThreadId={resolvedThreadId}
+          />
+        </>
       ) : null}
     </div>
   );
@@ -242,6 +221,7 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   editorWorkId: string | null;
   retryEditorWork: () => void;
   onOpenThread: (threadId: string) => void;
+  contextLive: boolean;
 };
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps & {
@@ -357,6 +337,7 @@ function DesktopProject(props: ReviewScopedProjectProps) {
           projectId={props.projectId}
           activeScreen={props.activeScreen}
           editorWorkId={props.editorWorkId}
+          contextLive={props.contextLive}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           onSelectScreen={props.onSelectScreen}
@@ -380,7 +361,7 @@ function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "context-viewer",
       children:
-        props.editorScope.status === "ready" ? (
+        props.editorScope.status === "ready" && props.contextLive ? (
           <DraftReviewBoundary value={props.editorReview}>
             <EditorReviewIntentClaimant
               editorWorkId={props.editorWorkId}
@@ -397,16 +378,15 @@ function DesktopProject(props: ReviewScopedProjectProps) {
               dockToggle={surfaceToggle("chat", t`Expand chat`)}
               onSelectContextPath={props.onSelectContextPath}
               onOpenContextTarget={props.onOpenContextTarget}
-              onClearContextDestination={props.onExitContextScheme}
             />
           </DraftReviewBoundary>
-        ) : (
+        ) : props.editorScope.status !== "ready" ? (
           <EditorWorkRecovery
             scope={props.editorScope}
             onRetry={props.retryEditorWork}
             onOpenWork={() => props.onSelectScreen("work")}
           />
-        ),
+        ) : null,
     },
     {
       id: "chat",

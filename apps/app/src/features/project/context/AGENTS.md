@@ -9,9 +9,9 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 
 ## Mental model
 
-A **browse surface** over the server's context port. Reads from `useContextTree`
-(React Query), writes through mutation hooks, invalidates the tree cache on
-success.
+A **browse surface** over the server's context port. Reads come from React Query.
+Ordinary writes invalidate on success; delete is the exception because its exact
+evidence must enter the account-scoped removal coordinator before invalidation.
 
 `ContextTreePanel` renders the full tree recursively. `MobileContextBrowser`
 renders the phone Files destination one level at a time (scheme → folder → file),
@@ -31,7 +31,8 @@ Shared across both shells:
 ## Rules
 
 - Use `IconButton` / `Button` / `PhoneIconButton` for all interactive controls.
-- Use `EntryActionTarget` (`{ name, path, kind }`) as the shared action payload.
+- Use discriminated `EntryActionTarget`; file targets retain `documentId`
+  through confirmation, while folders carry no document identity.
 - Mobile `DrillRow`: `trailing: ReactNode` separates the tap target from action
   buttons. Never a `drillsIn` boolean.
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only
@@ -47,9 +48,9 @@ Shared across both shells:
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
   `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)
 - **Tab/route**: `ContextTabBar.tsx`, `context-tab-identity.ts`,
-  `context-tab-from-file.ts`, `context-tab-from-draft.ts`; the parent
-  `../ContextPaneController.tsx` owns reconciliation and selection, while
-  `../../../client/working-set/` owns device-local route memory
+  `context-tab-from-file.ts`, `context-tab-from-draft.ts`; the browser-level
+  removal coordinator owns live removal, route identity, and continuity, while
+  `../ContextPaneController.tsx` owns ordinary view activation
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
   `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
   (the universal breadcrumb band — placement, rename, and move share one inline

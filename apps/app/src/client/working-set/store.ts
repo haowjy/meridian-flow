@@ -14,6 +14,13 @@ export type WorkingSetSnapshot = {
   lastThreadId: string | null;
 };
 
+export type ReconcileContextRoutesInput = {
+  removedLocators: readonly WorkingSetRoute[];
+  survivingOwnedLocators: readonly WorkingSetRoute[];
+  promote: WorkingSetRoute | null;
+  clearAll: boolean;
+};
+
 export type PendingWorkingSet = {
   baseRevision: number | null;
   localVersion: number;
@@ -35,14 +42,15 @@ const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: nul
 
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
- * when a work-scoped scheme lacks its required workId — the one illegal shape
- * the discriminated union forbids.
+ * for empty paths or when a work-scoped scheme lacks its required Work. Empty
+ * Scratch belongs only to the device desk and coordinator, never recency.
  */
 export function buildWorkingSetRoute(
   scheme: ProjectContextTreeScheme,
   path: string,
   workId: string | null | undefined,
 ): WorkingSetRoute | null {
+  if (path.length === 0) return null;
   if (isWorkScopedProjectContextScheme(scheme)) {
     return workId ? { scheme, path, workId } : null;
   }
@@ -274,6 +282,22 @@ export function removeSnapshotRoute(
   return recentRoutes.length === snapshot.recentRoutes.length
     ? snapshot
     : { ...snapshot, recentRoutes };
+}
+
+/** Applies a complete context-route transition at one snapshot boundary. */
+export function reconcileSnapshotContextRoutes(
+  snapshot: WorkingSetSnapshot,
+  input: ReconcileContextRoutesInput,
+): WorkingSetSnapshot {
+  if (input.clearAll) return clearSnapshotRoutes(snapshot);
+  const isOwned = (route: WorkingSetRoute) =>
+    input.survivingOwnedLocators.some((owner) => workingSetRouteEquals(owner, route));
+  const isRemoved = (route: WorkingSetRoute) =>
+    input.removedLocators.some((removed) => workingSetRouteEquals(removed, route));
+  const recentRoutes = snapshot.recentRoutes.filter((route) => !isRemoved(route) || isOwned(route));
+  const reconciled =
+    recentRoutes.length === snapshot.recentRoutes.length ? snapshot : { ...snapshot, recentRoutes };
+  return input.promote ? promoteSnapshotRoute(reconciled, input.promote) : reconciled;
 }
 
 export function setSnapshotThread(

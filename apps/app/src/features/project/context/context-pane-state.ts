@@ -9,15 +9,6 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
 
-export function findActiveUntitledTab(
-  tabs: readonly ContextTab[],
-  activeTabId: string | null,
-): Extract<ContextTab, { kind: "new" }> | null {
-  if (!activeTabId) return null;
-  const tab = tabs.find((candidate) => candidate.documentId === activeTabId);
-  return tab?.kind === "new" ? tab : null;
-}
-
 import { findContextFile } from "./context-tree";
 
 export type OptimisticContextTab = { id: string; name: string };
@@ -42,7 +33,7 @@ export function deriveContextPaneState({
   tree,
   isFetching,
   isError,
-  autoOpenBlocked,
+  removalFenced,
 }: {
   activeTab: ContextTab | null;
   destination: {
@@ -53,10 +44,10 @@ export function deriveContextPaneState({
   tree: ProjectContextTreeDirectory | null;
   isFetching: boolean;
   isError: boolean;
-  autoOpenBlocked: boolean;
+  removalFenced: boolean;
 }): ContextPaneState {
   if (activeTab) return { kind: "document", tab: activeTab };
-  if (!destination || autoOpenBlocked) return { kind: "empty-desk" };
+  if (!destination || removalFenced) return { kind: "empty-desk" };
 
   const routeExists = tree !== null && findContextFile(tree, destination.path) !== null;
   if (routeExists || isFetching || (!tree && !isError)) {

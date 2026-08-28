@@ -272,9 +272,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(userMembership.members).toContain(userDocumentId);
 
-      await expect(port.delete("user://user.md")).resolves.toEqual({
+      await expect(
+        port.delete("user://user.md", {
+          expected: { kind: "file", documentId: userDocumentId },
+        }),
+      ).resolves.toEqual({
         ok: true,
-        value: undefined,
+        value: { status: "deleted", deletedDocumentIds: [userDocumentId] },
       });
       await collab.drainHocuspocusPersistence();
       const deletedMembership = await collab.resolveManifestMembership({
@@ -344,9 +348,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
       ).resolves.toBe(PROJECT_ID);
 
-      await expect(port.delete(`scratch://@current-work/notes.md`)).resolves.toEqual({
+      await expect(
+        port.delete(`scratch://@current-work/notes.md`, {
+          expected: { kind: "file", documentId: created.documentId },
+        }),
+      ).resolves.toEqual({
         ok: true,
-        value: undefined,
+        value: { status: "deleted", deletedDocumentIds: [created.documentId] },
       });
       await collab.drainHocuspocusPersistence();
       const membershipAfterDelete = await collab.resolveManifestMembership({
