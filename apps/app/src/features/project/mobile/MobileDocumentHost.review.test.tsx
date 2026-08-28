@@ -9,6 +9,7 @@ import {
   type DraftReviewContextValue,
 } from "@/features/chat/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { ContextRemovalAccountProvider } from "../context/ContextRemovalAccountProvider";
 import type { AiDraftLaunchTarget } from "../dock/editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
@@ -166,21 +167,26 @@ describe("MobileDocumentHost review binding", () => {
 
   it("claims a committed Chat-to-Editor handoff and renders its review room", async () => {
     const navigate = vi.fn().mockResolvedValue(undefined);
-    await withReactRoot(<PhoneRouteHarness navigate={navigate} />, async () => {
-      await act(async () => {
-        await openReview?.(target);
-      });
+    await withReactRoot(
+      <ContextRemovalAccountProvider accountId="account-1">
+        <PhoneRouteHarness navigate={navigate} />
+      </ContextRemovalAccountProvider>,
+      async () => {
+        await act(async () => {
+          await openReview?.(target);
+        });
 
-      expect(mocks.enterInlineReview).toHaveBeenCalledOnce();
-      expect(mocks.enterInlineReview).toHaveBeenCalledWith(target.documentId, target.draftId);
-      expect(mocks.editorProps.at(-1)).toMatchObject({
-        documentId: target.documentId,
-        workId: target.workId,
-        reviewDraftId: target.draftId,
-        reviewRoomName: "review-room-b",
-        reviewWorkId: target.workId,
-        editable: false,
-      });
-    });
+        expect(mocks.enterInlineReview).toHaveBeenCalledOnce();
+        expect(mocks.enterInlineReview).toHaveBeenCalledWith(target.documentId, target.draftId);
+        expect(mocks.editorProps.at(-1)).toMatchObject({
+          documentId: target.documentId,
+          workId: target.workId,
+          reviewDraftId: target.draftId,
+          reviewRoomName: "review-room-b",
+          reviewWorkId: target.workId,
+          editable: false,
+        });
+      },
+    );
   });
 });
