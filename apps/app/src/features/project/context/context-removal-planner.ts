@@ -1,6 +1,9 @@
 /** Pure eligibility and continuity planning for one exact context-removal intent. */
 
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type WorkingSetRoute,
+} from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
 import { buildWorkingSetRoute, type ReconcileContextRoutesInput } from "@/client/working-set";
 import type { ContextRouteTarget } from "../routing/project-route";
@@ -62,6 +65,13 @@ export type ContextRemovalOutcome =
       removed: readonly [];
       routedDocumentRemoved: true;
       remaining: readonly ContextTab[];
+    }
+  | {
+      kind: "exact-route-cleanup";
+      removed: readonly [];
+      deskActiveRemoved: false;
+      routedDocumentRemoved: false;
+      remaining: readonly ContextTab[];
     };
 
 export type ContextRemovalPlan = {
@@ -75,8 +85,17 @@ export type ContextRemovalPlan = {
 export type ContextRemovalPlannerInput = {
   tabs: readonly ContextTab[];
   activeTabId: string | null;
-  routeContinuity: RouteContinuityVerdict;
+  route: {
+    cleanup: ExactRouteCleanup | null;
+    current: RouteContinuityVerdict;
+  };
   intent: ContextRemovalIntent;
+};
+
+export type ExactRouteCleanup = {
+  revision: number;
+  locator: ContextRouteTarget;
+  identity: ContextRouteIdentity;
 };
 
 export function contextTabEligibleForRemoval(
@@ -138,16 +157,17 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const removedIds = new Set(removed.map((tab) => tab.documentId));
   const remaining = input.tabs.filter((tab) => !removedIds.has(tab.documentId));
   const deskActiveRemoved = input.activeTabId !== null && removedIds.has(input.activeTabId);
-  const boundSelection = input.routeContinuity.kind === "bound" ? input.routeContinuity : null;
-  const provenRemoved =
-    input.routeContinuity.kind === "proven-removed" ? input.routeContinuity : null;
+  const boundSelection = input.route.current.kind === "bound" ? input.route.current : null;
+  const provenRemoved = input.route.current.kind === "proven-removed" ? input.route.current : null;
   const routedDocumentRemoved =
     provenRemoved !== null && requested.has(provenRemoved.identity.documentId);
+  const exactCleanup =
+    input.route.cleanup !== null && requested.has(input.route.cleanup.identity.documentId);
 
   const continuity =
     boundSelection ??
     provenRemoved ??
-    (input.routeContinuity.kind === "preserved-unknown" ? input.routeContinuity : null);
+    (input.route.current.kind === "preserved-unknown" ? input.route.current : null);
   const boundRoute = continuity
     ? buildWorkingSetRoute(
         continuity.locator.scheme,
@@ -157,7 +177,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     : null;
   const survivingBoundRoute = continuity && !routedDocumentRemoved ? boundRoute : null;
 
-  if (removed.length === 0 && !routedDocumentRemoved) {
+  if (removed.length === 0 && !routedDocumentRemoved && !exactCleanup) {
     return {
       outcome: { kind: "noop" },
       nextActiveTabId: input.activeTabId,
@@ -199,7 +219,11 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       ? (fallback?.documentId ?? null)
       : input.activeTabId;
   const removedLocators = removed.flatMap((tab) => workingSetRouteForTab(tab) ?? []);
-  if (routedDocumentRemoved && boundRoute) removedLocators.push(boundRoute);
+  const cleanup = input.route.cleanup;
+  if (cleanup && exactCleanup) {
+    const cleanupRoute = workingSetRouteForTarget(cleanup.locator);
+    if (cleanupRoute) removedLocators.push(cleanupRoute);
+  }
   const survivingOwnedLocators = [
     ...remaining.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
     ...(survivingBoundRoute ? [survivingBoundRoute] : []),
@@ -213,8 +237,16 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     : null;
 
   let outcome: ContextRemovalOutcome;
-  if (removed.length === 0) {
+  if (removed.length === 0 && routedDocumentRemoved) {
     outcome = { kind: "route-only-removal", removed: [], routedDocumentRemoved: true, remaining };
+  } else if (removed.length === 0) {
+    outcome = {
+      kind: "exact-route-cleanup",
+      removed: [],
+      deskActiveRemoved: false,
+      routedDocumentRemoved: false,
+      remaining,
+    };
   } else if (!deskActiveRemoved && !routedDocumentRemoved) {
     outcome = {
       kind: "inactive-removal",
@@ -259,4 +291,13 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       clearAll: remaining.length === 0 && survivingBoundRoute === null,
     },
   };
+}
+
+function workingSetRouteForTarget(locator: ContextRouteTarget): WorkingSetRoute | null {
+  if (locator.scheme === "scratch" || locator.scheme === "uploads") {
+    return locator.workId
+      ? { scheme: locator.scheme, path: locator.path, workId: locator.workId }
+      : null;
+  }
+  return { scheme: locator.scheme, path: locator.path };
 }

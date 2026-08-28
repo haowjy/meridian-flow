@@ -30,11 +30,14 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
-      routeContinuity: {
-        kind: "preserved-unknown",
-        revision: 1,
-        locator: phoneSelection.locator,
-        observed,
+      route: {
+        cleanup: null,
+        current: {
+          kind: "preserved-unknown",
+          revision: 1,
+          locator: phoneSelection.locator,
+          observed,
+        },
       },
       intent: { cause: "writer-close", documentIds: ["desktop"] },
     });
@@ -47,7 +50,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
-      routeContinuity: phoneSelection,
+      route: { cleanup: null, current: phoneSelection },
       intent: { cause: "acknowledged-delete", documentIds: ["desktop"] },
     });
 
@@ -64,7 +67,14 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [],
       activeTabId: null,
-      routeContinuity: { ...phoneSelection, kind: "proven-removed" },
+      route: {
+        cleanup: {
+          revision: 1,
+          locator: phoneSelection.locator,
+          identity: phoneSelection.identity,
+        },
+        current: { ...phoneSelection, kind: "proven-removed" },
+      },
       intent: { cause: "acknowledged-delete", documentIds: ["phone"] },
     });
 
@@ -82,10 +92,66 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [local, draft],
       activeTabId: "local",
-      routeContinuity: { kind: "none" },
+      route: { cleanup: null, current: { kind: "none" } },
       intent: { cause: "acknowledged-delete", documentIds: ["local", "draft"] },
     });
 
     expect(plan.outcome.kind).toBe("noop");
+  });
+
+  it.each([
+    [
+      "different locator",
+      { ...phoneSelection, locator: { ...phoneSelection.locator, path: "/c.md" } },
+    ],
+    ["same locator", { ...phoneSelection, identity: { kind: "server" as const, documentId: "b" } }],
+  ])("cleans exact old A while %s current continuity owns planning", (_case, current) => {
+    const cleanup = {
+      revision: 1,
+      locator: phoneSelection.locator,
+      identity: { kind: "server" as const, documentId: "a" },
+    };
+    const plan = planContextRemoval({
+      tabs: [],
+      activeTabId: null,
+      route: { cleanup, current },
+      intent: { cause: "acknowledged-delete", documentIds: ["a"] },
+    });
+
+    expect(plan.nextActiveTabId).toBeNull();
+    expect(plan.routeRepairTarget).toBeNull();
+    expect(plan.rememberedRoute).toEqual(current.locator);
+    expect(plan.workingSet.clearAll).toBe(false);
+    expect(plan.workingSet.promote).toEqual({
+      scheme: current.locator.scheme,
+      path: current.locator.path,
+    });
+  });
+
+  it("keeps current C desk-active when delayed exact A is removed", () => {
+    const tabs = [tracked("a", "/a.md"), tracked("d", "/d.md"), tracked("c", "/c.md")];
+    const current = {
+      kind: "bound" as const,
+      revision: 2,
+      locator: { scheme: "manuscript" as const, path: "/c.md", workId: null },
+      identity: { kind: "server" as const, documentId: "c" },
+    };
+    const plan = planContextRemoval({
+      tabs,
+      activeTabId: "c",
+      route: {
+        cleanup: {
+          revision: 1,
+          locator: { scheme: "manuscript", path: "/a.md", workId: null },
+          identity: { kind: "server", documentId: "a" },
+        },
+        current,
+      },
+      intent: { cause: "acknowledged-delete", documentIds: ["a"] },
+    });
+
+    expect(plan.nextActiveTabId).toBe("c");
+    expect(plan.rememberedRoute).toEqual(current.locator);
+    expect(plan.routeRepairTarget).toBeNull();
   });
 });

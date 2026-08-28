@@ -1,17 +1,30 @@
 import { describe, expect, it } from "vitest";
+import type { ContextTab } from "@/client/stores";
 import {
   type AcknowledgedContextDeleteCommand,
-  admitCommand,
-  attachObligation,
   beginSelection,
   bindSelection,
   type ContextRouteSelection,
-  commandFingerprint,
   confirmSelectionUnbound,
-  deleteProof,
+  leaveSelection,
+  reduceAcknowledgedDelete,
+  reduceRepresentedRemoval,
+  type TerminalRouteRemoval,
 } from "./context-removal-protocol";
 
 const locator = { scheme: "kb" as const, path: "/phone.md", workId: "work-1" };
+const identity = { kind: "server" as const, documentId: "phone" };
+
+function pending(overrides: Partial<Extract<ContextRouteSelection, { status: "pending" }>> = {}) {
+  return {
+    status: "pending" as const,
+    revision: 1,
+    locator,
+    obligations: [],
+    reentryGuard: null,
+    ...overrides,
+  };
+}
 
 function command(id = "command-1"): AcknowledgedContextDeleteCommand {
   return {
@@ -24,102 +37,135 @@ function command(id = "command-1"): AcknowledgedContextDeleteCommand {
   };
 }
 
+function tracked(documentId: string, path = "/phone.md"): ContextTab {
+  return {
+    kind: "tracked",
+    documentId,
+    scheme: "kb",
+    path,
+    name: path.slice(1),
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+  };
+}
+
 describe("context removal protocol", () => {
-  it("preserves an unknown superseded locator without assigning a receipt identity", () => {
-    const pending: ContextRouteSelection = {
-      status: "pending",
-      revision: 1,
-      locator,
-      obligations: [],
-    };
-    const next = beginSelection(pending, { ...locator, path: "/new.md" });
-    expect(next.preserve).toEqual([
-      expect.objectContaining({ kind: "preserved-unknown", locator, observed: "superseded" }),
-    ]);
-    expect(next.settled).toEqual([]);
-  });
+  it("emits old cleanup and newer continuity in one supersession transition", () => {
+    const admitted = reduceAcknowledgedDelete(new Map(), pending(), command());
+    const nextLocator = { ...locator, path: "/new.md" };
+    const next = beginSelection(admitted.selection, nextLocator);
 
-  it("settles an exact obligation only against the witnessed revision", () => {
-    const proof = deleteProof(command());
-    expect(proof).not.toBeNull();
-    let selection: ContextRouteSelection = {
-      status: "pending",
-      revision: 1,
-      locator,
-      obligations: [],
-    };
-    if (!proof) throw new Error("expected proof");
-    selection = attachObligation(selection, proof, 1);
-    const bound = bindSelection(selection, 1, { kind: "server", documentId: "phone" });
-    expect(bound?.settled).toEqual([
-      expect.objectContaining({ continuity: expect.objectContaining({ kind: "proven-removed" }) }),
+    expect(next.planning).toEqual([
+      expect.objectContaining({
+        cleanup: expect.objectContaining({ locator, identity }),
+        current: expect.objectContaining({ kind: "preserved-unknown", locator: nextLocator }),
+        repair: "never",
+      }),
     ]);
   });
 
-  it("keeps a bound-other identity and advances same-locator replacement revision", () => {
-    const pending: ContextRouteSelection = {
-      status: "pending",
-      revision: 1,
-      locator,
-      obligations: [],
-    };
-    const first = bindSelection(pending, 1, { kind: "server", documentId: "a" });
-    if (!first) throw new Error("expected first bind");
-    const replacement = bindSelection(first.selection, 1, {
-      kind: "server",
-      documentId: "b",
+  it.each([
+    ["same", "phone", "proven-removed"],
+    ["other", "replacement", "bound"],
+    ["unbound", null, "proven-removed"],
+  ])("settles a pending exact obligation as %s evidence", (_case, documentId, kind) => {
+    const admitted = reduceAcknowledgedDelete(new Map(), pending(), command());
+    const transition = documentId
+      ? bindSelection(admitted.selection, 1, { kind: "server", documentId })
+      : confirmSelectionUnbound(admitted.selection, 1);
+    expect(transition?.planning[0]).toMatchObject({
+      cleanup: { identity },
+      current: { kind },
+      repair: "allow",
     });
-    expect(replacement?.selection).toMatchObject({
-      status: "bound",
-      revision: 2,
-      identity: { documentId: "b" },
-    });
-    const unbound = confirmSelectionUnbound(pending, 1);
-    if (!unbound) throw new Error("expected unbound settlement");
-    expect(
-      bindSelection(unbound.selection, 1, { kind: "server", documentId: "b" })?.selection,
-    ).toMatchObject({ status: "bound", revision: 2, identity: { documentId: "b" } });
   });
 
-  it("requires exact membership and never creates folder proof", () => {
-    const missing = command();
-    missing.confirmed = { status: "deleted", deletedDocumentIds: ["other"] };
-    expect(deleteProof(missing)).toBeNull();
-    const folder: AcknowledgedContextDeleteCommand = {
-      ...command(),
-      initiated: { kind: "folder", locator },
-      routeWitness: null,
-      confirmed: { status: "deleted", deletedDocumentIds: [] },
-    };
-    expect(deleteProof(folder)).toBeNull();
+  it.each([
+    ["pending", pending()],
+    ["bound", { status: "bound" as const, revision: 1, locator, identity }],
+    [
+      "bound-other",
+      {
+        status: "bound" as const,
+        revision: 1,
+        locator,
+        identity: { kind: "server" as const, documentId: "replacement" },
+      },
+    ],
+    ["confirmed-unbound", { status: "confirmed-unbound" as const, revision: 1, locator }],
+    ["none", { status: "none" as const, revision: 1 }],
+  ])("reduces represented removal for %s selection", (_case, selection) => {
+    const result = reduceRepresentedRemoval(
+      selection,
+      [tracked("phone")],
+      { cause: "writer-close", documentIds: ["phone"] },
+      "represented-1",
+    );
+    expect(result.planning.cleanup?.identity.documentId).toBe("phone");
+    expect(result.planning.current.kind).toBe(
+      selection.status === "bound" && selection.identity.documentId === "phone"
+        ? "proven-removed"
+        : selection.status === "confirmed-unbound"
+          ? "proven-removed"
+          : selection.status === "none"
+            ? "none"
+            : selection.status === "bound"
+              ? "bound"
+              : "preserved-unknown",
+    );
   });
 
-  it("preserves bare confirmed-unbound continuity", () => {
-    const pending: ContextRouteSelection = {
-      status: "pending",
-      revision: 1,
-      locator,
-      obligations: [],
-    };
-    const settled = confirmSelectionUnbound(pending, 1);
-    expect(settled?.selection.status).toBe("confirmed-unbound");
-    expect(settled?.settled).toEqual([]);
-  });
+  it("reserves the first invalid command use and rejects changed valid reuse", () => {
+    const invalid = command();
+    invalid.confirmed = { status: "deleted", deletedDocumentIds: ["other"] };
+    const first = reduceAcknowledgedDelete(new Map(), pending(), invalid);
+    expect(first.admission).toEqual({ status: "rejected", reason: "invalid_proof" });
+    expect(first.planning).toBeNull();
 
-  it("replays identical command IDs and rejects conflicting reuse before effects", () => {
-    const accepted = { status: "accepted" as const, outcome: "obligated" as const };
-    const first = admitCommand(new Map(), command(), accepted);
-    expect(first.admission).toEqual(accepted);
-    expect(admitCommand(first.records, command(), accepted).admission).toEqual({
-      status: "replayed",
-      outcome: "obligated",
-    });
-    const conflict = command();
-    conflict.confirmed = { status: "deleted", deletedDocumentIds: ["phone", "other"] };
-    expect(commandFingerprint(conflict)).not.toBe(commandFingerprint(command()));
-    expect(admitCommand(first.records, conflict, accepted).admission).toEqual({
+    const changed = command();
+    const reuse = reduceAcknowledgedDelete(first.records, pending(), changed);
+    expect(reuse.admission).toEqual({ status: "rejected", reason: "command_conflict" });
+    expect(reuse.planning).toBeNull();
+    expect(reduceAcknowledgedDelete(first.records, pending(), invalid).admission).toEqual({
       status: "rejected",
-      reason: "command_conflict",
+      reason: "invalid_proof",
     });
+  });
+
+  it("replays accepted command IDs without a second planning effect", () => {
+    const first = reduceAcknowledgedDelete(new Map(), pending(), command());
+    const replay = reduceAcknowledgedDelete(first.records, first.selection, command());
+    expect(replay.admission).toEqual({ status: "replayed", outcome: "obligated" });
+    expect(replay.planning).toBeNull();
+  });
+
+  it("withholds guarded re-entry until exact unbound settlement or a new identity binds", () => {
+    const terminal: TerminalRouteRemoval = {
+      cleanup: { revision: 1, locator, identity },
+      intent: { cause: "acknowledged-delete", documentIds: ["phone"] },
+    };
+    const guarded = beginSelection({ status: "none", revision: 2 }, locator, terminal);
+    expect(guarded.promote).toEqual([]);
+    expect(confirmSelectionUnbound(guarded.selection, 3)?.planning[0]?.current.kind).toBe(
+      "proven-removed",
+    );
+
+    const replacement = bindSelection(guarded.selection, 3, {
+      kind: "server",
+      documentId: "replacement",
+    });
+    expect(replacement?.promote[0]).toMatchObject({
+      kind: "bound",
+      identity: { documentId: "replacement" },
+    });
+    expect(replacement?.retireReentryGuard).toBe(true);
+  });
+
+  it("preserves proof-less unbound continuity and unknown continuity on leave", () => {
+    expect(confirmSelectionUnbound(pending(), 1)?.planning).toEqual([]);
+    expect(leaveSelection(pending()).promote).toEqual([
+      expect.objectContaining({ kind: "preserved-unknown", locator }),
+    ]);
   });
 });
