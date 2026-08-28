@@ -1,4 +1,4 @@
-import { act, useLayoutEffect } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -113,6 +113,19 @@ describe("ProjectContextRemovalController", () => {
     let coordinator: ContextRemovalCoordinator | null = null;
     function Capture() {
       coordinator = useContextRemovalCoordinator();
+      useLayoutEffect(() => {
+        const revision = coordinator?.beginRouteSelection("project-1", {
+          scheme: "manuscript",
+          path: "/chapter.md",
+          workId: "work-1",
+        });
+        if (revision !== undefined) {
+          coordinator?.bindRouteSelection("project-1", revision, {
+            kind: "server",
+            documentId: "document-1",
+          });
+        }
+      }, []);
       return null;
     }
     await withReactRoot(
@@ -127,6 +140,50 @@ describe("ProjectContextRemovalController", () => {
     ).toEqual({
       status: "none",
       revision: 0,
+    });
+  });
+
+  it("releases the host without destroying account-owned project revision", async () => {
+    let coordinator: ContextRemovalCoordinator | null = null;
+    let setHostVisible: ((visible: boolean) => void) | null = null;
+    function Capture() {
+      coordinator = useContextRemovalCoordinator();
+      return null;
+    }
+    function Harness() {
+      const [hostVisible, updateHostVisible] = useState(true);
+      setHostVisible = updateHostVisible;
+      return (
+        <ContextRemovalAccountProvider accountId="account-1">
+          <Capture />
+          {hostVisible ? (
+            <>
+              <ProjectContextRemovalController
+                projectId="project-1"
+                activeScreen="context"
+                activeContextScheme="manuscript"
+                activeContextPath="/chapter.md"
+                editorWorkId="work-1"
+                route={route}
+              />
+              <SettlingHost projectId="project-1" />
+            </>
+          ) : null}
+        </ContextRemovalAccountProvider>
+      );
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      const before = coordinator?.getProjectSnapshot("project-1").selection.revision ?? 0;
+      expect(before).toBeGreaterThan(0);
+      await act(async () => setHostVisible?.(false));
+      expect(coordinator?.getProjectSnapshot("project-1")).toMatchObject({
+        selection: { status: "none", revision: expect.any(Number) },
+        live: false,
+      });
+      expect(coordinator?.getProjectSnapshot("project-1").selection.revision).toBeGreaterThan(
+        before,
+      );
     });
   });
 });

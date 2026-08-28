@@ -29,11 +29,13 @@ describe("ContextRemovalAccountProvider", () => {
       _deskHydrated: true,
     });
     const instances: ContextRemovalCoordinator[] = [];
+    const entrySnapshots: ReturnType<ContextRemovalCoordinator["getProjectSnapshot"]>[] = [];
     let setAccount: ((accountId: string) => void) | null = null;
     function Child() {
       const coordinator = useContextRemovalCoordinator();
       useLayoutEffect(() => {
         instances.push(coordinator);
+        entrySnapshots.push(coordinator.getProjectSnapshot("project-1"));
         coordinator.registerRoutePort(
           "project-1",
           { readSearch: () => ({ screen: "context" }), updateSearch: () => undefined },
@@ -76,6 +78,18 @@ describe("ContextRemovalAccountProvider", () => {
       expect(instances[0]).not.toBe(instances[2]);
       expect(instances[1]?.accountId).toBe("account-b");
       expect(instances[2]?.accountId).toBe("account-a");
+      expect(entrySnapshots.slice(1)).toEqual([
+        expect.objectContaining({
+          selection: { status: "none", revision: 0 },
+          rememberedRoute: null,
+          removalFence: null,
+        }),
+        expect.objectContaining({
+          selection: { status: "none", revision: 0 },
+          rememberedRoute: null,
+          removalFence: null,
+        }),
+      ]);
     });
   });
 });

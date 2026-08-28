@@ -13,7 +13,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabsStore } from "@/client/stores";
@@ -38,14 +38,6 @@ import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
-import {
-  type ContextProjectAuthority,
-  cancelContextProjectAttempt,
-  contextProjectPhase,
-  INITIAL_CONTEXT_PROJECT_AUTHORITY,
-  settleContextProjectBootstrap,
-  updateContextProjectReadiness,
-} from "./context-project-phase";
 import { useDockViewStore } from "./dock/dock-view-store";
 import {
   EditorReviewHandoffProvider,
@@ -73,13 +65,8 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
+import { useContextProjectAuthority } from "./use-context-project-authority";
 import { WorkPaneController } from "./WorkPaneController";
-import {
-  type ContextDeskReconciliationScope,
-  contextDeskReconciliation,
-  seedWorkingSetTabs,
-  validateContextDeskTabs,
-} from "./working-set-tab-seeding";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -154,20 +141,13 @@ export function ProjectView(props: ProjectViewProps) {
   const editorScope = resolveEditorWorkScope(props.routeWork, chatWorkId, catalogWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
-  const [contextAuthority, setContextAuthority] = useState<ContextProjectAuthority>(
-    INITIAL_CONTEXT_PROJECT_AUTHORITY,
-  );
-  const contextAuthorityRef = useRef(contextAuthority);
-  const rawBootstrapRef = useRef<Promise<void> | null>(null);
-  const rawOperationRef = useRef(0);
-  const mountedRef = useRef(true);
-  const contextPhase = contextProjectPhase(contextAuthority);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const contextPhase = useContextProjectAuthority({
+    projectId: props.projectId,
+    deskHydrated,
+    editorScope,
+    workingSetHydration,
+    queryClient,
+  });
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -177,61 +157,6 @@ export function ProjectView(props: ProjectViewProps) {
     return () => window.removeEventListener("online", retry);
   }, [props.projectId, workingSetHydration.status]);
 
-  useEffect(() => {
-    const updateAuthority = (next: ContextProjectAuthority) => {
-      contextAuthorityRef.current = next;
-      if (mountedRef.current) setContextAuthority(next);
-    };
-    const transition = updateContextProjectReadiness(
-      contextAuthorityRef.current,
-      deskHydrated,
-      editorScope,
-    );
-    updateAuthority(transition.authority);
-    if (!transition.effect) return;
-    const { attempt, raw } = transition.effect;
-    if (raw === "start") {
-      const operation = rawOperationRef.current + 1;
-      rawOperationRef.current = operation;
-      const scope: ContextDeskReconciliationScope = {
-        projectId: props.projectId,
-        editorWorkId: attempt.workId,
-        generation: operation,
-      };
-      const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
-        mountedRef.current && rawOperationRef.current === candidate.generation;
-      const reconciliation = contextDeskReconciliation(workingSetHydration);
-      const bootstrap =
-        reconciliation === "server-replace" && workingSetHydration.status === "server"
-          ? seedWorkingSetTabs({
-              queryClient,
-              routes: workingSetHydration.row.recentRoutes,
-              scope,
-              isLiveScope,
-            })
-          : validateContextDeskTabs({ queryClient, scope, isLiveScope });
-      rawBootstrapRef.current = bootstrap.then(
-        () => undefined,
-        () => undefined,
-      );
-    }
-    const bootstrap = rawBootstrapRef.current;
-    if (!bootstrap) throw new Error("Context bootstrap adoption requires the raw operation");
-    void bootstrap.then(() => {
-      if (!mountedRef.current) return;
-      updateAuthority(settleContextProjectBootstrap(contextAuthorityRef.current, attempt.token));
-    });
-    return () => {
-      updateAuthority(cancelContextProjectAttempt(contextAuthorityRef.current, attempt.token));
-    };
-  }, [
-    deskHydrated,
-    editorScope.status,
-    editorWorkId,
-    props.projectId,
-    queryClient,
-    workingSetHydration,
-  ]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
     props.onSelectThread(resolvedThreadId);

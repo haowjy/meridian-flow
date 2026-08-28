@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/http-client";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextRemovalAccountProvider } from "./ContextRemovalAccountProvider";
@@ -109,11 +110,9 @@ it("submits the Work captured when delete confirmation was requested", async () 
     { workId: "work-a" },
   );
   expect(invalidation).toHaveBeenCalledOnce();
-  expect(useContextTabsStore.getState().byProject.project?.tabs).toMatchObject([
-    { documentId: "document-b" },
-  ]);
-
-  queryClient.setQueryData(["projects", "project", "context-tree"], { tree: null });
+  expect(invalidation).toHaveBeenCalledWith({
+    queryKey: projectQueryKeys.contextTree("project", "scratch", "work-a"),
+  });
   expect(useContextTabsStore.getState().byProject.project?.tabs).toMatchObject([
     { documentId: "document-b" },
   ]);

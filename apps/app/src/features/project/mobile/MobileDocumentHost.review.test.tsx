@@ -2,14 +2,18 @@
 /** Phone document hosting publishes and renders the Editor review scope. */
 
 import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
-import { act, useCallback, useMemo, useState } from "react";
+import { act, StrictMode, useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
 } from "@/features/chat/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { ContextRemovalAccountProvider } from "../context/ContextRemovalAccountProvider";
+import {
+  ContextRemovalAccountProvider,
+  useContextRemovalCoordinator,
+} from "../context/ContextRemovalAccountProvider";
+import { ProjectContextRemovalController } from "../context/ProjectContextRemovalController";
 import type { AiDraftLaunchTarget } from "../dock/editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
@@ -28,6 +32,15 @@ const mocks = vi.hoisted(() => ({
     release: vi.fn(),
     get: vi.fn(() => ({ suspendPresence: vi.fn(), resumePresence: vi.fn() })),
   },
+  desk: {
+    byProject: {
+      "project-1": {
+        tabs: [],
+        activeTabId: null,
+      },
+    },
+    _deskHydrated: true,
+  },
 }));
 
 vi.mock("@lingui/core/macro", () => ({ t: (parts: TemplateStringsArray) => parts.join("") }));
@@ -36,6 +49,7 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@/client/stores", () => ({
   useContextTabsActions: () => ({ openTab: mocks.openTab }),
+  useContextTabsStore: Object.assign(() => null, { getState: () => mocks.desk }),
 }));
 vi.mock("@/core/editor/document-session-registry", () => ({
   getDocumentSessionRegistry: () => mocks.registry,
@@ -83,9 +97,19 @@ vi.mock("@/client/query/useProjectContextTree", () => ({
 }));
 
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
+let settledDocumentId: string | null = null;
 
 function CommandCapture() {
   openReview = useOpenEditorReview();
+  return null;
+}
+
+function RemovalObserver() {
+  const coordinator = useContextRemovalCoordinator();
+  useLayoutEffect(() => {
+    const selection = coordinator.getProjectSnapshot("project-1").selection;
+    settledDocumentId = selection.status === "bound" ? selection.identity.documentId : null;
+  });
   return null;
 }
 
@@ -138,6 +162,14 @@ function PhoneRouteHarness({ navigate }: { navigate: OpenContextRoute }) {
       <CommandCapture />
       {route ? (
         <DraftReviewBoundary value={editorReview}>
+          <ProjectContextRemovalController
+            projectId="project-1"
+            activeScreen="context"
+            activeContextScheme="manuscript"
+            activeContextPath={route.contextPath}
+            editorWorkId={route.workId}
+            route={{ readSearch: () => ({ screen: "context" }), updateSearch: () => undefined }}
+          />
           <EditorReviewIntentClaimant
             editorWorkId={route.workId}
             activeScheme="manuscript"
@@ -149,6 +181,7 @@ function PhoneRouteHarness({ navigate }: { navigate: OpenContextRoute }) {
             activeContextScheme="manuscript"
             activeContextPath={route.contextPath}
           />
+          <RemovalObserver />
         </DraftReviewBoundary>
       ) : null}
     </EditorReviewHandoffProvider>
@@ -163,20 +196,24 @@ describe("MobileDocumentHost review binding", () => {
     mocks.openTab.mockClear();
     mocks.registry.retain.mockClear();
     mocks.registry.release.mockClear();
+    settledDocumentId = null;
   });
 
   it("claims a committed Chat-to-Editor handoff and renders its review room", async () => {
     const navigate = vi.fn().mockResolvedValue(undefined);
     await withReactRoot(
-      <ContextRemovalAccountProvider accountId="account-1">
-        <PhoneRouteHarness navigate={navigate} />
-      </ContextRemovalAccountProvider>,
+      <StrictMode>
+        <ContextRemovalAccountProvider accountId="account-1">
+          <PhoneRouteHarness navigate={navigate} />
+        </ContextRemovalAccountProvider>
+      </StrictMode>,
       async () => {
         await act(async () => {
           await openReview?.(target);
         });
 
         expect(mocks.enterInlineReview).toHaveBeenCalledOnce();
+        expect(settledDocumentId).toBe(target.documentId);
         expect(mocks.enterInlineReview).toHaveBeenCalledWith(target.documentId, target.draftId);
         expect(mocks.editorProps.at(-1)).toMatchObject({
           documentId: target.documentId,

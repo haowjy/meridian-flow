@@ -50,23 +50,32 @@ The writer-facing destination is **Editor**. One account-scoped,
 framework-independent `ContextRemovalCoordinator` owns every live removal
 transition: explicit close, locally acknowledged delete, Work pruning, and draft
 discard. Account construction precedes authenticated descendants. A project becomes
-live only after desk hydration, concrete Editor Work readiness, and one guarded
-bootstrap/validation generation; bootstrap and live removal authority never overlap.
+live only after desk hydration, concrete Editor Work readiness, and one raw
+bootstrap/validation operation. Strict replay and pre-live Work interruption adopt
+that operation with fresh attempt tokens; after first completion, Work interruption
+only suspends the live host and can never restore raw bootstrap authority.
 The leaf route host registers first, then the rendered desktop or phone document host
 settles revisioned route identity in layout phase.
 
 Acknowledged delete carries the server-confirmed exact ID batch plus a request-time
 discriminated target and same-locator route witness. Admission is synchronous and
-idempotent by `commandId`, and precedes tree invalidation. Pending identity is a pure
+idempotent by `commandId`, including terminal invalid first use, and precedes tree
+invalidation. Pending identity is a pure
 typed selection/obligation protocol: unknown locators own continuity, receipt
 cardinality supplies no identity, and late or superseded settlement cannot repair a
-newer route.
+newer route. The protocol emits one complete planning effect that separates exact old
+cleanup from current continuity. Current continuity alone controls active/fallback,
+memory, repair, and clearing.
 The pure `context-removal-planner.ts` keeps eligibility and desk/route continuity
 policy separate from browser lifecycle and effects. A surviving bound route owns
 continuity even when phone has no desktop tab; `clearAll` requires neither a desk
 owner nor a surviving bound route. The transition commits desk selection, working-set
 routes, remembered destination, a typed removal fence, and guarded route repair before
-navigation. Activation uses selection and transition revision tickets in layout phase
+navigation. Project-host release drops only the detachable route adapter and mounted
+selection. Account-owned revision, terminal exact removal, memory, and fence authority
+survive re-entry; a matching terminal removal withholds unknown promotion until a new
+identity binds or exact unbound settlement completes. Account disposal destroys it.
+Activation uses selection and transition revision tickets in layout phase
 and validates live desk membership before mutating continuity. `ContextPaneController`
 remains a view/activation controller and owns no lifecycle-removal policy. Later ready
 Work changes use only coordinator pruning. Draft apply only resolves tab metadata. Context-tree

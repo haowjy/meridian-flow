@@ -9,13 +9,10 @@ import {
   type WorkingSetHydrationPlan,
 } from "./hydration";
 import {
-  clearSnapshotRoutes,
   DeviceWorkingSetStore,
   type ProjectWorkingSetRecord,
-  promoteSnapshotRoute,
   type ReconcileContextRoutesInput,
   reconcileSnapshotContextRoutes,
-  removeSnapshotRoute,
   setSnapshotThread,
   type WorkingSetStorage,
 } from "./store";
@@ -117,18 +114,6 @@ export class WorkingSetSyncDriver {
 
   readRecord(projectId: string): ProjectWorkingSetRecord | undefined {
     return this.store.read(projectId);
-  }
-
-  promoteRoute(projectId: string, route: WorkingSetRoute): void {
-    this.report(projectId, (snapshot) => promoteSnapshotRoute(snapshot, route));
-  }
-
-  clearRoutes(projectId: string): void {
-    this.report(projectId, clearSnapshotRoutes);
-  }
-
-  removeRoute(projectId: string, route: WorkingSetRoute): void {
-    this.report(projectId, (snapshot) => removeSnapshotRoute(snapshot, route));
   }
 
   reconcileContextRoutes(projectId: string, input: ReconcileContextRoutesInput): WorkingSetRoute[] {
@@ -299,18 +284,6 @@ export function readRecentRoutes(projectId: string): WorkingSetRoute[] {
 
 export function readRememberedThread(projectId: string): string | null {
   return browserDriver()?.readRecord(projectId)?.snapshot.lastThreadId ?? null;
-}
-
-export function promoteRoute(projectId: string, route: WorkingSetRoute): void {
-  browserDriver()?.promoteRoute(projectId, route);
-}
-
-export function clearRoutes(projectId: string): void {
-  browserDriver()?.clearRoutes(projectId);
-}
-
-export function removeRoute(projectId: string, route: WorkingSetRoute): void {
-  browserDriver()?.removeRoute(projectId, route);
 }
 
 export function reconcileContextRoutes(

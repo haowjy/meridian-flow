@@ -1,14 +1,11 @@
 /** Public client working-set store and sync-driver surface. */
 
 export {
-  clearRoutes,
   configureWorkingSetSync,
   hydrateWorkingSet,
-  promoteRoute,
   readRecentRoutes,
   readRememberedThread,
   reconcileContextRoutes,
-  removeRoute,
   retryWorkingSetHydration,
   setThread,
 } from "./driver";

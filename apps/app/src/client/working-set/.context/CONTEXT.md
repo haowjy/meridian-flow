@@ -8,7 +8,8 @@ pending reports, hydration, and serialized sweeps.
 Live context removal uses `reconcileContextRoutes`: one snapshot transform removes
 only locators with no surviving tab owner, optionally promotes the resulting
 active route, and clears all routes only for a genuinely empty desk. Callers must
-not compose public remove/promote operations for one removal transition.
+not compose remove/promote operations for one removal transition; the sequential
+driver surface is intentionally absent.
 
 ## Hydration contract
 
@@ -21,12 +22,11 @@ state but never navigates; restore remains owned by the existing context and
 chat controllers.
 
 Server-adopted routes are a seeding plan, not navigation instructions. The
-project layer resolves each against its live context tree, opens it inactive,
+project layer resolves each against its own stored Work's context tree, opens it inactive,
 and checks that the route remains desired immediately before the async commit.
-Work-scoped routes are meaningful only when their stored work matches the live
-route work. Every asynchronous seed or validation commit is guarded by the live
-Project, Editor Work, and reconciliation generation so a repeated A to B to A
-transition cannot admit the first A request after the second A has won.
+One project-entry raw operation owns seed/validation. Strict replay or a pre-live
+readiness interruption adopts that operation; after it completes, Work changes use
+the removal coordinator and never reopen raw tree-absence pruning.
 
 ## Suspect baseline (recovery sweep errata)
 
