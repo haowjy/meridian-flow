@@ -38,6 +38,37 @@ export type ContextDeskReconciliationScope = {
   generation: number;
 };
 
+/** Entry/hydration gate: a live Work change can cancel bootstrap, never restart it. */
+export class ContextDeskBootstrapGate {
+  private hydration: WorkingSetHydrationPlan | null = null;
+  private scope: ContextDeskReconciliationScope | null = null;
+  private generation = 0;
+
+  begin(
+    hydration: WorkingSetHydrationPlan,
+    projectId: string,
+    editorWorkId: string,
+  ): ContextDeskReconciliationScope | null {
+    if (this.hydration === hydration) return null;
+    this.hydration = hydration;
+    this.scope = { projectId, editorWorkId, generation: ++this.generation };
+    return this.scope;
+  }
+
+  isLive(scope: ContextDeskReconciliationScope, currentEditorWorkId: string | null): boolean {
+    return (
+      this.scope?.projectId === scope.projectId &&
+      this.scope.editorWorkId === scope.editorWorkId &&
+      this.scope.generation === scope.generation &&
+      currentEditorWorkId === scope.editorWorkId
+    );
+  }
+
+  dispose(): void {
+    this.scope = null;
+  }
+}
+
 type ContextDeskReconciliationGuard = (scope: ContextDeskReconciliationScope) => boolean;
 
 export async function seedWorkingSetTabs({

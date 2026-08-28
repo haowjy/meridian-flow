@@ -243,7 +243,9 @@ rather than parsing or mutating search themselves.
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns route-validated opens, temporary-tab projection, scroll restoration,
 and screen-entry defaults. The platform-neutral project adapter owns revision
-startup and Work pruning; the removal coordinator owns close fallback, continuity,
+startup and dispatches Work pruning only after Work authority is ready. Project-entry
+desk seed/validation is hydration-scoped and never re-runs on a Work change. The
+removal coordinator owns close fallback, continuity,
 remembered destination, and route repair:
 entering with no destination replays the remembered last file
 (`client/working-set/`; replay re-arms every entry because the controller is

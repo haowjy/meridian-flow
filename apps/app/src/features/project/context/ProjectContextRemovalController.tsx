@@ -62,6 +62,7 @@ export function ProjectContextRemovalController({
   }, [activeContextPath, activeContextScheme, activeScreen, editorWorkId, projectId]);
 
   useEffect(() => {
+    if (editorWorkId === null) return;
     void contextRemovalCoordinator.pruneWork(projectId, editorWorkId);
   }, [editorWorkId, projectId]);
 

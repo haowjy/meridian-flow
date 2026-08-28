@@ -2,12 +2,17 @@ import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
-import { reconcileSnapshotContextRoutes } from "@/client/working-set/store";
+import type { ReconcileContextRoutesInput } from "@/client/working-set";
+import { WorkingSetSyncDriver } from "@/client/working-set/driver";
+import {
+  DeviceWorkingSetStore,
+  reconcileSnapshotContextRoutes,
+  WORKING_SET_STORAGE_KEY,
+} from "@/client/working-set/store";
 import type { ProjectSearch } from "../routing/project-route";
 import {
   ContextRemovalCoordinator,
   type ContextRemovalRoutePort,
-  type ContextRemovalWorkingSetPort,
 } from "./context-removal-coordinator";
 
 const projectId = "project-1";
@@ -47,9 +52,9 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
       search = update(search);
     },
   };
-  const workingSet: ContextRemovalWorkingSetPort = {
+  const workingSet = {
     readRecentRoutes: () => routes,
-    reconcileContextRoutes: (_projectId, input) => {
+    reconcileContextRoutes: (_projectId: string, input: ReconcileContextRoutesInput) => {
       routes = reconcileSnapshotContextRoutes(
         { recentRoutes: routes, lastThreadId: null },
         input,
@@ -178,6 +183,111 @@ describe("ContextRemovalCoordinator production-state convergence", () => {
     expect(rig.routes()).toEqual([]);
   });
 
+  it("persists route-only cleanup through the production working-set driver and reconstruction", async () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    };
+    const store = new DeviceWorkingSetStore(storage);
+    const driver = new WorkingSetSyncDriver(store, async () => ({ revision: 1 }));
+    driver.configure("account-1", false);
+    store.adopt(projectId, {
+      recentRoutes: [{ scheme: "kb", path: "/phone.md" }],
+      lastThreadId: null,
+    });
+    let search: ProjectSearch = {
+      screen: "context",
+      work: "work-1",
+      scheme: "kb",
+      path: "/phone.md",
+    };
+    const coordinator = new ContextRemovalCoordinator({
+      workingSet: driver,
+      route: {
+        readSearch: () => search,
+        updateSearch: (_id, update) => {
+          search = update(search);
+        },
+      },
+    });
+    bind(coordinator, "/phone.md", "phone", { scheme: "kb", workId: "work-1" });
+
+    await coordinator.acknowledgedDelete(projectId, ["phone"]);
+    expect(values.get(WORKING_SET_STORAGE_KEY)).not.toContain("/phone.md");
+
+    const reconstructed = new DeviceWorkingSetStore(storage);
+    reconstructed.setUser("account-1");
+    expect(reconstructed.read(projectId)?.snapshot.recentRoutes).toEqual([]);
+  });
+
+  it("retains a phone-only delete obligation until its exact pending revision binds", async () => {
+    setDesk(projectId, [], null);
+    const rig = scenario({ screen: "context", work: "work-1", scheme: "kb", path: "/phone.md" });
+    rig.setRoutes([{ scheme: "kb", path: "/phone.md" }]);
+    const revision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "kb",
+      path: "/phone.md",
+      workId: "work-1",
+    });
+
+    const removal = rig.coordinator.acknowledgedDelete(projectId, ["phone"]);
+    expect(rig.coordinator.getProjectSnapshot(projectId).autoOpenBlock).toMatchObject({
+      selectionRevision: revision,
+      documentIds: ["phone"],
+    });
+    expect(rig.routes()).toEqual([{ scheme: "kb", path: "/phone.md" }]);
+
+    rig.coordinator.bindRouteSelection(projectId, revision, {
+      kind: "server",
+      documentId: "phone",
+    });
+    expect(await removal).toMatchObject({ kind: "route-only-removal" });
+    expect(rig.search()).toEqual({ screen: "context", work: "work-1" });
+    expect(rig.routes()).toEqual([]);
+  });
+
+  it("keeps a surviving phone route as continuity owner when an unrelated desk tab is removed", async () => {
+    setDesk(projectId, [tracked("desktop", "/desktop.md")], "desktop");
+    const rig = scenario({ screen: "context", work: "work-1", scheme: "kb", path: "/phone.md" });
+    rig.setRoutes([
+      { scheme: "manuscript", path: "/desktop.md" },
+      { scheme: "kb", path: "/phone.md" },
+    ]);
+    bind(rig.coordinator, "/phone.md", "phone", { scheme: "kb", workId: "work-1" });
+
+    expect((await rig.coordinator.acknowledgedDelete(projectId, ["desktop"])).kind).toBe(
+      "empty-desk",
+    );
+    expect(rig.routes()).toEqual([{ scheme: "kb", path: "/phone.md" }]);
+    expect(rig.coordinator.getProjectSnapshot(projectId).rememberedRoute).toEqual({
+      scheme: "kb",
+      path: "/phone.md",
+      workId: "work-1",
+    });
+    expect(rig.search()).toMatchObject({ screen: "context", path: "/phone.md" });
+  });
+
+  it("promotes a surviving phone route over an unrelated remaining desk tab", async () => {
+    setDesk(
+      projectId,
+      [tracked("removed", "/removed.md"), tracked("desktop", "/desktop.md")],
+      "desktop",
+    );
+    const rig = scenario({ screen: "context", work: "work-1", scheme: "kb", path: "/phone.md" });
+    rig.setRoutes([
+      { scheme: "manuscript", path: "/removed.md" },
+      { scheme: "manuscript", path: "/desktop.md" },
+      { scheme: "kb", path: "/phone.md" },
+    ]);
+    bind(rig.coordinator, "/phone.md", "phone", { scheme: "kb", workId: "work-1" });
+
+    await rig.coordinator.acknowledgedDelete(projectId, ["removed"]);
+    expect(rig.routes()[0]).toEqual({ scheme: "kb", path: "/phone.md" });
+    expect(rig.coordinator.getProjectSnapshot(projectId).rememberedRoute?.path).toBe("/phone.md");
+  });
+
   it("preserves a same-locator replacement when the old identity receipt arrives", async () => {
     setDesk(projectId, [tracked("old", "/same.md")], "old");
     useContextTabsStore.getState().openTab(projectId, tracked("replacement", "/same.md"));
@@ -205,6 +315,93 @@ describe("ContextRemovalCoordinator production-state convergence", () => {
     });
     expect((await removal).kind).toBe("empty-desk");
     expect(rig.search()).toEqual({ screen: "context" });
+  });
+
+  it.each([
+    [
+      "writer close",
+      (coordinator: ContextRemovalCoordinator) => coordinator.writerClose(projectId, "a"),
+    ],
+    [
+      "Work prune",
+      (coordinator: ContextRemovalCoordinator) => coordinator.pruneWork(projectId, "work-2"),
+    ],
+    [
+      "draft discard",
+      (coordinator: ContextRemovalCoordinator) =>
+        coordinator.discardDraft(projectId, "work-1", "a"),
+    ],
+  ])("retains pending route responsibility for %s", async (_label, remove) => {
+    const extras =
+      _label === "Work prune"
+        ? { scheme: "scratch" as const, workId: "work-1" }
+        : _label === "draft discard"
+          ? { draftOnly: true, reviewWorkId: "work-1" }
+          : {};
+    setDesk(projectId, [tracked("a", "/a.md", extras)], "a");
+    const scheme = _label === "Work prune" ? "scratch" : "manuscript";
+    const rig = scenario({
+      screen: "context",
+      work: "work-1",
+      scheme,
+      path: "/a.md",
+    });
+    const revision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme,
+      path: "/a.md",
+      workId: "work-1",
+    });
+
+    const removal = remove(rig.coordinator);
+    expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toHaveLength(1);
+    rig.coordinator.bindRouteSelection(projectId, revision, { kind: "server", documentId: "a" });
+
+    expect((await removal).kind).toBe("empty-desk");
+    expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toHaveLength(0);
+    expect(rig.search()).toEqual({ screen: "context", work: "work-1" });
+  });
+
+  it("settles an exact pending receipt without removal when the revision confirms unbound", async () => {
+    setDesk(projectId, [], null);
+    const rig = scenario({ screen: "context", scheme: "manuscript", path: "/missing.md" });
+    const revision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/missing.md",
+      workId: null,
+    });
+    const removal = rig.coordinator.acknowledgedDelete(projectId, ["deleted"]);
+    rig.coordinator.confirmRouteUnbound(projectId, revision);
+    expect((await removal).kind).toBe("noop");
+  });
+
+  it("settles pending cleanup without overwriting newer navigation", async () => {
+    setDesk(projectId, [tracked("a", "/a.md"), tracked("b", "/b.md")], "a");
+    const rig = scenario({ screen: "context", scheme: "manuscript", path: "/a.md" });
+    const oldRevision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: null,
+    });
+    const removal = rig.coordinator.acknowledgedDelete(projectId, ["a"]);
+
+    rig.setSearch({ screen: "context", scheme: "manuscript", path: "/b.md" });
+    const newRevision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/b.md",
+      workId: null,
+    });
+    expect(newRevision).toBeGreaterThan(oldRevision);
+    rig.coordinator.bindRouteSelection(projectId, newRevision, {
+      kind: "server",
+      documentId: "b",
+    });
+
+    expect((await removal).kind).not.toBe("noop");
+    expect(useContextTabsStore.getState().byProject[projectId]).toMatchObject({
+      tabs: [{ documentId: "b" }],
+      activeTabId: "b",
+    });
+    expect(rig.search()).toMatchObject({ path: "/b.md" });
   });
 
   it("retains the route when its surface is inactive", async () => {
@@ -315,5 +512,55 @@ describe("ContextRemovalCoordinator production-state convergence", () => {
     expect((await pending).kind).toBe("noop");
     expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toHaveLength(1);
     expect(rig.coordinator.getProjectSnapshot(projectId).selection.status).toBe("none");
+  });
+
+  it("resets registered route authority on account change and hydration reset", async () => {
+    setDesk(projectId, [tracked("a", "/a.md")], "a");
+    const rig = scenario({ screen: "context", scheme: "manuscript", path: "/a.md" });
+    const registration = rig.coordinator.registerRoutePort(projectId, rig.route, "work-1");
+    const firstRevision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    const pending = rig.coordinator.writerClose(projectId, "a");
+
+    rig.coordinator.configureAccount("account-2");
+    expect((await pending).kind).toBe("noop");
+    expect(rig.coordinator.getProjectSnapshot(projectId).selection).toMatchObject({
+      status: "pending",
+      revision: firstRevision + 1,
+      locator: { path: "/a.md" },
+    });
+
+    rig.coordinator.resetForHydration();
+    expect(rig.coordinator.getProjectSnapshot(projectId).selection).toMatchObject({
+      status: "pending",
+      revision: firstRevision + 2,
+    });
+    registration.release();
+  });
+
+  it("reconstructs project A cleanly after an A to B to A registration cycle", () => {
+    const rig = scenario();
+    const firstA = rig.coordinator.registerRoutePort("project-a", rig.route, "work-1");
+    rig.coordinator.beginRouteSelection("project-a", {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    firstA.release();
+    const projectB = rig.coordinator.registerRoutePort("project-b", rig.route, "work-1");
+    projectB.release();
+    const secondA = rig.coordinator.registerRoutePort("project-a", rig.route, "work-1");
+
+    expect(rig.coordinator.getProjectSnapshot("project-a").selection).toEqual({
+      status: "none",
+      revision: 0,
+    });
+    secondA.release();
+    expect(rig.coordinator.getProjectSnapshot("project-a")).toBe(
+      rig.coordinator.getProjectSnapshot("absent"),
+    );
   });
 });

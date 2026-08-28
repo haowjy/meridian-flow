@@ -138,8 +138,10 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
-  configureContextRemovalAccount(user.userId);
   configureDocumentSessionUser(user.userId);
+  useEffect(() => {
+    configureContextRemovalAccount(user.userId);
+  }, [user.userId]);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // One unconditional provider tree for every authenticated route — the settings

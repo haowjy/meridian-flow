@@ -67,6 +67,7 @@ import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { WorkPaneController } from "./WorkPaneController";
 import {
+  ContextDeskBootstrapGate,
   type ContextDeskReconciliationScope,
   contextDeskReconciliation,
   seedWorkingSetTabs,
@@ -146,12 +147,12 @@ export function ProjectView(props: ProjectViewProps) {
   const editorScope = resolveEditorWorkScope(props.routeWork, chatWorkId, catalogWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
-  const reconciledDeskRef = useRef<string | null>(null);
-  const deskReconciliationGenerationRef = useRef(0);
-  const liveDeskReconciliationRef = useRef<ContextDeskReconciliationScope | null>(null);
+  const deskBootstrapRef = useRef(new ContextDeskBootstrapGate());
+  const currentEditorWorkRef = useRef(editorWorkId);
+  currentEditorWorkRef.current = editorWorkId;
   useEffect(
     () => () => {
-      liveDeskReconciliationRef.current = null;
+      deskBootstrapRef.current.dispose();
     },
     [],
   );
@@ -165,21 +166,16 @@ export function ProjectView(props: ProjectViewProps) {
   }, [props.projectId, workingSetHydration.status]);
 
   useEffect(() => {
-    if (!deskHydrated || works === null) return;
+    if (!deskHydrated || editorScope.status !== "ready") return;
     const reconciliation = contextDeskReconciliation(workingSetHydration);
-    const reconciliationKey = `${props.projectId}:${reconciliation}:${editorWorkId ?? "no-work"}`;
-    if (reconciledDeskRef.current === reconciliationKey) return;
-    reconciledDeskRef.current = reconciliationKey;
-    const scope = {
-      projectId: props.projectId,
-      editorWorkId,
-      generation: ++deskReconciliationGenerationRef.current,
-    };
-    liveDeskReconciliationRef.current = scope;
+    const scope = deskBootstrapRef.current.begin(
+      workingSetHydration,
+      props.projectId,
+      editorScope.workId,
+    );
+    if (!scope) return;
     const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
-      liveDeskReconciliationRef.current?.projectId === candidate.projectId &&
-      liveDeskReconciliationRef.current.editorWorkId === candidate.editorWorkId &&
-      liveDeskReconciliationRef.current.generation === candidate.generation;
+      deskBootstrapRef.current.isLive(candidate, currentEditorWorkRef.current);
     if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
       void seedWorkingSetTabs({
         queryClient,
@@ -194,7 +190,7 @@ export function ProjectView(props: ProjectViewProps) {
       scope,
       isLiveScope,
     });
-  }, [editorWorkId, deskHydrated, props.projectId, queryClient, workingSetHydration, works]);
+  }, [deskHydrated, editorScope, props.projectId, queryClient, workingSetHydration]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
     props.onSelectThread(resolvedThreadId);

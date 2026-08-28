@@ -15,7 +15,8 @@ const queryClientMock = {
   getQueryData: getQueryDataMock,
   invalidateQueries: invalidateQueriesMock,
 };
-const resolveDraftOnlyTabMock = vi.fn();
+const applyDraftMetadataMock = vi.fn();
+const discardDraftMock = vi.fn(async () => ({ kind: "noop" as const }));
 const exitReviewMock = vi.fn();
 let currentGroups: ThreadDraftGroup[] = [];
 let currentInlineReview: { documentId: string; draftId: string } | null = null;
@@ -50,17 +51,13 @@ vi.mock("@/client/stores", () => ({
             : [],
         },
       },
-      resolveDraftOnlyTab: resolveDraftOnlyTabMock,
     }),
   },
 }));
 vi.mock("@/features/project/context/context-removal-coordinator", () => ({
   contextRemovalCoordinator: {
-    applyDraftMetadata: (...args: unknown[]) => resolveDraftOnlyTabMock(...args, "committed"),
-    discardDraft: (_projectId: string, reviewWorkId: string, documentId: string) => {
-      resolveDraftOnlyTabMock(_projectId, reviewWorkId, documentId, "discarded");
-      return Promise.resolve({ kind: "noop" });
-    },
+    applyDraftMetadata: applyDraftMetadataMock,
+    discardDraft: discardDraftMock,
   },
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
@@ -191,7 +188,8 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     cancelQueriesMock.mockResolvedValue(undefined);
     fetchQueryMock.mockReset();
     getQueryDataMock.mockReset();
-    resolveDraftOnlyTabMock.mockClear();
+    applyDraftMetadataMock.mockClear();
+    discardDraftMock.mockClear();
     exitReviewMock.mockClear();
     docUpdateHandlers.clear();
     currentGroups = [];
@@ -273,12 +271,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
-        "project-1",
-        "work-1",
-        "doc-terminal",
-        "committed",
-      );
+      expect(applyDraftMetadataMock).toHaveBeenCalledWith("project-1", "work-1", "doc-terminal");
     });
   });
 
@@ -293,12 +286,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
-        "project-1",
-        "work-1",
-        "doc-terminal",
-        "discarded",
-      );
+      expect(discardDraftMock).toHaveBeenCalledWith("project-1", "work-1", "doc-terminal");
     });
   });
 
@@ -313,7 +301,8 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
+      expect(applyDraftMetadataMock).not.toHaveBeenCalled();
+      expect(discardDraftMock).not.toHaveBeenCalled();
     });
   });
 
@@ -328,7 +317,8 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(resolveDraftOnlyTabMock).not.toHaveBeenCalled();
+      expect(applyDraftMetadataMock).not.toHaveBeenCalled();
+      expect(discardDraftMock).not.toHaveBeenCalled();
     });
   });
 

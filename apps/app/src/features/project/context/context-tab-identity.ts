@@ -10,11 +10,7 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 
-import {
-  type ContextTab,
-  type ServerContextTab,
-  serverContextTabLocatorKey,
-} from "@/client/stores";
+import type { ContextTab, ServerContextTab } from "@/client/stores";
 
 export function contextTabMatchesRoute(
   tab: ContextTab,
@@ -39,8 +35,6 @@ export function contextTabRouteKey(
   }
   return `${projectId}:${scheme}:${path}`;
 }
-
-export { serverContextTabLocatorKey };
 
 export function findContextTabForRoute(
   tabs: ContextTab[],

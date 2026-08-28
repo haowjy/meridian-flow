@@ -2,11 +2,20 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
+import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
-const deleted = vi.fn(async () => ({ status: "deleted" as const, deletedDocumentIds: [] }));
+const { deleted } = vi.hoisted(() => ({
+  deleted: vi.fn(async () => ({
+    status: "deleted" as const,
+    deletedDocumentIds: ["document-a"],
+  })),
+}));
 
-vi.mock("@/client/api/projects-api", () => ({ deleteContextEntry: deleted }));
+vi.mock("@/client/api/projects-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/api/projects-api")>()),
+  deleteContextEntry: deleted,
+}));
 
 const { useDeleteConfirmation } = await import("./ContextEntryActions");
 
@@ -23,6 +32,38 @@ function Harness() {
 
 it("submits the Work captured when delete confirmation was requested", async () => {
   const queryClient = new QueryClient();
+  useContextTabsStore.setState({
+    byProject: {
+      project: {
+        tabs: [
+          {
+            kind: "tracked",
+            documentId: "document-a",
+            scheme: "scratch",
+            path: "/same.md",
+            name: "same.md",
+            workId: "work-a",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+          },
+          {
+            kind: "tracked",
+            documentId: "document-b",
+            scheme: "scratch",
+            path: "/other.md",
+            name: "other.md",
+            workId: "work-a",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+          },
+        ],
+        activeTabId: "document-b",
+      },
+    },
+    _deskHydrated: true,
+  });
   await withReactRoot(
     <QueryClientProvider client={queryClient}>
       <Harness />
@@ -40,4 +81,12 @@ it("submits the Work captured when delete confirmation was requested", async () 
     { path: "/same.md", workId: "work-a" },
     { workId: "work-a" },
   );
+  expect(useContextTabsStore.getState().byProject.project?.tabs).toMatchObject([
+    { documentId: "document-b" },
+  ]);
+
+  queryClient.setQueryData(["projects", "project", "context-tree"], { tree: null });
+  expect(useContextTabsStore.getState().byProject.project?.tabs).toMatchObject([
+    { documentId: "document-b" },
+  ]);
 });
