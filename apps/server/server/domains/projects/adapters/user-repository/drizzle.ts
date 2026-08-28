@@ -3,32 +3,12 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { users } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   AccountLinkConflictError,
   type EnsureUserInput,
   type UserRepository,
 } from "../../ports/user-repository.js";
-
-/**
- * `onConflictDoUpdate` arbitrates external_id only. A different principal that
- * claims an existing email therefore raises users_email_unique outside that
- * update path and must fail closed rather than adopting the email owner's row.
- */
-function isEmailUniqueViolation(error: unknown): boolean {
-  let cause: unknown = error;
-  while (cause) {
-    if (
-      typeof cause === "object" &&
-      (cause as { code?: unknown }).code === "23505" &&
-      (cause as { constraint_name?: unknown }).constraint_name === "users_email_unique"
-    ) {
-      return true;
-    }
-    cause = (cause as { cause?: unknown }).cause;
-  }
-  return false;
-}
 
 export interface DrizzleUserRepositoryDeps {
   db: Database;
@@ -40,9 +20,24 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
 
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
-      const now = new Date().toISOString();
-      try {
-        const [row] = await db
+      return db.transaction(async (tx) => {
+        // The lock serializes exact database email keys only; unique indexes
+        // remain integrity backstops rather than expected control flow.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-email:${input.email}`}, 0))`,
+        );
+
+        const [emailOwner] = await tx
+          .select({ externalId: users.externalId })
+          .from(users)
+          .where(eq(users.email, input.email))
+          .limit(1);
+        if (emailOwner && emailOwner.externalId !== input.externalId) {
+          throw new AccountLinkConflictError();
+        }
+
+        const now = new Date().toISOString();
+        const [row] = await tx
           .insert(users)
           .values({
             externalId: input.externalId,
@@ -65,19 +60,7 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
           throw new Error("User provisioning did not return an internal user id");
         }
         return row.id as UserId;
-      } catch (error) {
-        if (!isEmailUniqueViolation(error)) throw error;
-        const [existing] = await db
-          .select({ externalId: users.externalId })
-          .from(users)
-          .where(eq(users.email, input.email))
-          .limit(1);
-        if (!existing) throw error;
-        if (existing.externalId !== input.externalId) {
-          throw new AccountLinkConflictError();
-        }
-        throw error;
-      }
+      });
     },
 
     async getLastActiveProjectId(userId: UserId): Promise<ProjectId | null> {

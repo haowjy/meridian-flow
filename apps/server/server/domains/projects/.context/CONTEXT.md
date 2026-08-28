@@ -44,7 +44,9 @@ This domain is not the full project CRUD surface; that lives in
   second personal project, manuscript source, chapter document, or editing
   thread.
 - WorkOS `external_id` is the sole automatic user identity key. Email collisions
-  across external IDs fail closed and never merge local accounts.
+  across external IDs fail closed and never merge local accounts. Provisioning
+  serializes the exact email key before inspecting its owner; it does not define
+  additional email canonicalization.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
   never from `markdown_projection`. Any admission or checkpoint means initialized.
 - The project, chapter row, initialize-only canonical seed, live manifest
