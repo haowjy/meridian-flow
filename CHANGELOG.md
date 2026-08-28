@@ -5,7 +5,8 @@
 
 ## [Unreleased]
 
-- `apps/app`: make Editor Work supersession prune old phone continuity atomically,
+- `apps/app`: separate ordinary Editor screen continuity from atomic Work
+  supersession, keep guarded deleted routes out of durable reconstruction,
   synchronously revoke replaced account coordinators, and preserve unrelated
   remembered routes through represented removals.
 

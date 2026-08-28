@@ -34,25 +34,32 @@ export function ProjectContextRemovalController({
     }),
     [],
   );
-  const registrationRef = useRef<{ token: symbol; release: () => void } | null>(null);
+  const registrationRef = useRef<{
+    token: symbol;
+    release: () => void;
+    editorWorkId: string;
+  } | null>(null);
 
   useLayoutEffect(() => {
     const registration = coordinator.registerRoutePort(projectId, stableRoute, editorWorkId);
-    registrationRef.current = registration;
+    registrationRef.current = { ...registration, editorWorkId };
     return () => registration.release();
   }, [coordinator, projectId, stableRoute]);
 
   useLayoutEffect(() => {
-    if (!registrationRef.current) return;
-    if (activeScreen !== "context" || activeContextScheme === null || activeContextPath === null) {
-      coordinator.changeWorkSelection(projectId, editorWorkId, null);
+    const registration = registrationRef.current;
+    if (!registration) return;
+    const locator =
+      activeScreen === "context" && activeContextScheme !== null && activeContextPath !== null
+        ? { scheme: activeContextScheme, path: activeContextPath, workId: editorWorkId }
+        : null;
+    if (registration.editorWorkId !== editorWorkId) {
+      coordinator.changeWorkSelection(projectId, editorWorkId, locator);
+      registration.editorWorkId = editorWorkId;
       return;
     }
-    coordinator.changeWorkSelection(projectId, editorWorkId, {
-      scheme: activeContextScheme,
-      path: activeContextPath,
-      workId: editorWorkId,
-    });
+    if (locator) coordinator.beginRouteSelection(projectId, locator);
+    else coordinator.clearRouteSelection(projectId);
   }, [activeContextPath, activeContextScheme, activeScreen, coordinator, editorWorkId, projectId]);
 
   return null;

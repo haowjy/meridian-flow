@@ -72,8 +72,12 @@ continuity even when phone has no desktop tab; `clearAll` requires neither a des
 owner nor a surviving bound route. Selection-none planning receives remembered
 continuity as an independent owner and removes it only when exact locator evidence
 matches. Work change is an explicit supersession transition: old-Work pending
-continuity is prune evidence, never generic superseded continuity. The transition
-commits desk selection, working-set
+continuity is prune evidence, never generic superseded continuity. Same-Work screen
+leave uses the ordinary leave transition and keeps remembered continuity; a Work
+change with no active route restores that Work's eligible recent route. The pure
+transition's promotion output is authoritative, so a terminally guarded locator
+cannot enter memory or persistence before identity settlement. The transition commits
+desk selection, working-set
 routes, remembered destination, a typed removal fence, and guarded route repair before
 navigation. Project-host release drops only the detachable route adapter and mounted
 selection. Account-owned revision, terminal exact removal, memory, and fence authority

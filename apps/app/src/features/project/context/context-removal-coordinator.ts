@@ -45,7 +45,6 @@ import {
   type ContextDeleteInitiator,
   type ContextRouteSelection,
   confirmSelectionUnbound,
-  continuityForSelection,
   type InitiatingRouteWitness,
   leaveSelection,
   type RemovalPlanningEffect,
@@ -92,6 +91,7 @@ export type ContextActivation = {
 };
 
 type CoordinatorProjectState = {
+  activeWorkId: string | null;
   selection: ContextRouteSelection;
   rememberedRoute: ContextRouteTarget | null;
   removalFence: RemovalFence | null;
@@ -262,19 +262,9 @@ export class ContextRemovalCoordinator {
     const token = Symbol(projectId);
     this.routePorts.set(projectId, { token, port });
     state.live = true;
-    const recent = recentRouteForEditorWork(
-      this.workingSet.readRecentRoutes(projectId),
-      activeWorkId,
-    );
-    state.rememberedRoute = recent
-      ? {
-          scheme: recent.scheme,
-          path: recent.path,
-          workId: isWorkScopedProjectContextScheme(recent.scheme)
-            ? (recent.workId ?? null)
-            : activeWorkId,
-        }
-      : null;
+    if (activeWorkId !== null && state.activeWorkId !== activeWorkId) {
+      this.changeWorkSelection(projectId, activeWorkId, null);
+    }
     this.publish(state);
     return {
       token,
@@ -418,6 +408,10 @@ export class ContextRemovalCoordinator {
   ): number | null {
     if (this.unavailable()) return null;
     const state = this.project(projectId);
+    if (state.activeWorkId === activeWorkId) {
+      throw new Error("changeWorkSelection requires an actual Editor Work transition");
+    }
+    state.activeWorkId = activeWorkId;
     const previousSelection = state.selection;
     const tabs = this.desk.read(projectId).tabs;
     const { documentIds, obsoleteRoutes } = this.readWorkPruneEvidence(
@@ -425,14 +419,29 @@ export class ContextRemovalCoordinator {
       activeWorkId,
       previousSelection,
     );
+    const recent = recentRouteForEditorWork(
+      this.workingSet.readRecentRoutes(projectId),
+      activeWorkId,
+    );
+    const nextLocator =
+      locator ??
+      (recent
+        ? {
+            scheme: recent.scheme,
+            path: recent.path,
+            workId: isWorkScopedProjectContextScheme(recent.scheme)
+              ? (recent.workId ?? null)
+              : activeWorkId,
+          }
+        : null);
     const transition = supersedeSelectionForWorkChange(
       previousSelection,
-      locator,
-      locator ? (state.terminalRemovals.get(locatorKey(locator)) ?? null) : null,
+      nextLocator,
+      nextLocator ? (state.terminalRemovals.get(locatorKey(nextLocator)) ?? null) : null,
     );
-    const current = continuityForSelection(transition.selection);
+    const current = transition.promote.at(-1) ?? { kind: "none" as const };
     state.selection = transition.selection;
-    state.rememberedRoute = locator;
+    state.rememberedRoute = current.kind === "none" ? null : current.locator;
 
     if (documentIds.length > 0) {
       const represented = reduceRepresentedRemoval(
@@ -447,19 +456,23 @@ export class ContextRemovalCoordinator {
         obsoleteRoutes,
       );
     } else {
-      const nextRoute = locator ? workingSetRouteForTarget(locator) : null;
+      const promotedRoutes = transition.promote.flatMap((continuity) => {
+        if (continuity.kind === "none") return [];
+        const route = workingSetRouteForTarget(continuity.locator);
+        return route ? [route] : [];
+      });
+      const promotedRoute = promotedRoutes.at(-1) ?? null;
       this.workingSet.reconcileContextRoutes(projectId, {
         removedLocators: obsoleteRoutes,
         survivingOwnedLocators: [
           ...tabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
-          ...(nextRoute ? [nextRoute] : []),
+          ...promotedRoutes,
         ].filter(
           (route) => !obsoleteRoutes.some((removed) => workingSetRouteEquals(route, removed)),
         ),
-        promote: nextRoute,
+        promote: promotedRoute,
         clearAll: false,
       });
-      state.rememberedRoute = locator;
     }
     for (const planning of transition.planning) this.executePlanning(projectId, planning);
     this.publish(state);
@@ -724,6 +737,7 @@ export class ContextRemovalCoordinator {
     let state = this.projects.get(projectId);
     if (!state) {
       state = {
+        activeWorkId: null,
         selection: { status: "none", revision: 0 },
         rememberedRoute: null,
         removalFence: null,

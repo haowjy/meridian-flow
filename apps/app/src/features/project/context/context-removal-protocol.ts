@@ -223,7 +223,7 @@ export function supersedeSelectionForWorkChange(
   const next: ContextRouteSelection = locator
     ? { status: "pending", revision, locator, obligations: [], reentryGuard }
     : { status: "none", revision };
-  const current = continuityForSelection(next);
+  const current = reentryGuard ? ({ kind: "none" } as const) : continuityForSelection(next);
   return {
     selection: next,
     planning:

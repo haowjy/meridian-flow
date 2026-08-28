@@ -109,6 +109,106 @@ describe("ProjectContextRemovalController", () => {
     );
   });
 
+  it.each([
+    "home",
+    "chat",
+    "work",
+  ] as const)("uses an ordinary same-Work leave and return through %s", async (offScreen) => {
+    useContextTabsStore.setState({
+      byProject: {
+        "project-1": {
+          tabs: [
+            {
+              kind: "tracked",
+              documentId: "document-1",
+              scheme: "manuscript",
+              path: "/chapter.md",
+              name: "chapter.md",
+              editable: true,
+              filetype: "markdown",
+              schemaType: "document",
+            },
+            {
+              kind: "tracked",
+              documentId: "removed",
+              scheme: "manuscript",
+              path: "/removed.md",
+              name: "removed.md",
+              editable: true,
+              filetype: "markdown",
+              schemaType: "document",
+            },
+          ],
+          activeTabId: "document-1",
+        },
+      },
+      _deskHydrated: true,
+    });
+    let coordinator: ContextRemovalCoordinator | null = null;
+    let setScreen: ((screen: "context" | typeof offScreen) => void) | null = null;
+    function Capture() {
+      coordinator = useContextRemovalCoordinator();
+      return null;
+    }
+    function Harness() {
+      const [screen, updateScreen] = useState<"context" | typeof offScreen>("context");
+      setScreen = updateScreen;
+      return (
+        <ContextRemovalAccountProvider accountId="account-1">
+          <Capture />
+          <ProjectContextRemovalController
+            projectId="project-1"
+            activeScreen={screen}
+            activeContextScheme={screen === "context" ? "manuscript" : null}
+            activeContextPath={screen === "context" ? "/chapter.md" : null}
+            editorWorkId="work-1"
+            route={route}
+          />
+          <SettlingHost projectId="project-1" />
+        </ContextRemovalAccountProvider>
+      );
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      const initial = coordinator?.getProjectSnapshot("project-1");
+      expect(initial).toMatchObject({
+        selection: { status: "bound" },
+        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        live: true,
+      });
+
+      await act(async () => setScreen?.(offScreen));
+      const left = coordinator?.getProjectSnapshot("project-1");
+      expect(left).toMatchObject({
+        selection: { status: "none" },
+        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        live: true,
+      });
+      coordinator?.writerClose("project-1", "removed");
+      const removed = coordinator?.getProjectSnapshot("project-1");
+      expect(removed).toMatchObject({
+        selection: { status: "none" },
+        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        removalFence: { removedDocumentIds: ["removed"] },
+        live: true,
+      });
+
+      await act(async () => setScreen?.("context"));
+      expect(coordinator?.getProjectSnapshot("project-1")).toMatchObject({
+        selection: {
+          status: "bound",
+          revision: expect.any(Number),
+          locator: { path: "/chapter.md", workId: "work-1" },
+        },
+        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        live: true,
+      });
+      expect(coordinator?.getProjectSnapshot("project-1").selection.revision).toBeGreaterThan(
+        left?.selection.revision ?? 0,
+      );
+    });
+  });
+
   it("disposes account state on provider release", async () => {
     let coordinator: ContextRemovalCoordinator | null = null;
     function Capture() {
