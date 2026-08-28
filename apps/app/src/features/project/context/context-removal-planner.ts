@@ -85,6 +85,7 @@ export type ContextRemovalPlan = {
 export type ContextRemovalPlannerInput = {
   tabs: readonly ContextTab[];
   activeTabId: string | null;
+  rememberedRoute: ContextRouteTarget | null;
   route: {
     cleanup: ExactRouteCleanup | null;
     current: RouteContinuityVerdict;
@@ -181,7 +182,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     return {
       outcome: { kind: "noop" },
       nextActiveTabId: input.activeTabId,
-      rememberedRoute: continuity ? continuity.locator : null,
+      rememberedRoute: continuity ? continuity.locator : input.rememberedRoute,
       routeRepairTarget: null,
       workingSet: {
         removedLocators: [],
@@ -230,6 +231,10 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   ];
   const promotedTab = survivingRoutedTab ?? fallback;
   const promote = survivingBoundRoute ?? (promotedTab ? workingSetRouteForTab(promotedTab) : null);
+  const remembered = input.rememberedRoute;
+  const rememberedWasRemoved =
+    remembered !== null &&
+    removedLocators.some((route) => workingSetRouteMatchesTarget(route, remembered));
   const routeRepairTarget = routedDocumentRemoved
     ? fallback
       ? routeTargetForTab(fallback, continuity?.locator.workId ?? null)
@@ -282,7 +287,9 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
         ? continuity.locator
         : promotedTab
           ? routeTargetForTab(promotedTab, continuity?.locator.workId ?? null)
-          : null,
+          : rememberedWasRemoved
+            ? null
+            : input.rememberedRoute,
     routeRepairTarget,
     workingSet: {
       removedLocators,
@@ -293,6 +300,14 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       clearAll: false,
     },
   };
+}
+
+function workingSetRouteMatchesTarget(route: WorkingSetRoute, target: ContextRouteTarget): boolean {
+  return (
+    route.scheme === target.scheme &&
+    route.path === target.path &&
+    (!isWorkScopedProjectContextScheme(route.scheme) || (route.workId ?? null) === target.workId)
+  );
 }
 
 function workingSetRouteForTarget(locator: ContextRouteTarget): WorkingSetRoute | null {

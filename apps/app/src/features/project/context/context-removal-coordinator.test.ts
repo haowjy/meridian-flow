@@ -634,6 +634,112 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     });
   });
 
+  it.each([
+    ["pending", null, "/old.md"],
+    ["pending", null, "/new.md"],
+    ["bound", "old", "/old.md"],
+    ["bound", "old", "/new.md"],
+    ["confirmed-unbound", false, "/old.md"],
+    ["confirmed-unbound", false, "/new.md"],
+    ["none", "none", "/old.md"],
+    ["none", "none", "/new.md"],
+  ])("makes the new Work route the sole durable owner from %s phone continuity", (_case, settlement, nextPath) => {
+    setDesk([], null);
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    };
+    const store = new DeviceWorkingSetStore(storage);
+    store.setUser("account-1");
+    store.adopt(projectId, {
+      recentRoutes: [{ scheme: "scratch", path: "/old.md", workId: "work-old" }],
+      lastThreadId: null,
+    });
+    const coordinator = new ContextRemovalCoordinator("account-1", {
+      workingSet: {
+        readRecentRoutes: () => store.read(projectId)?.snapshot.recentRoutes ?? [],
+        reconcileContextRoutes: (_id, input) => {
+          const snapshot = reconcileSnapshotContextRoutes(
+            store.read(projectId)?.snapshot ?? { recentRoutes: [], lastThreadId: null },
+            input,
+          );
+          store.adopt(projectId, snapshot);
+          return snapshot.recentRoutes;
+        },
+      },
+    });
+    if (settlement !== "none") {
+      const oldRevision = coordinator.beginRouteSelection(projectId, {
+        scheme: "scratch",
+        path: "/old.md",
+        workId: "work-old",
+      });
+      if (settlement === false) coordinator.confirmRouteUnbound(projectId, oldRevision);
+      else if (typeof settlement === "string")
+        coordinator.bindRouteSelection(projectId, oldRevision, identityFor(settlement));
+    }
+
+    coordinator.changeWorkSelection(projectId, "work-new", {
+      scheme: "scratch",
+      path: nextPath,
+      workId: "work-new",
+    });
+
+    const reconstructed = new DeviceWorkingSetStore(storage);
+    reconstructed.setUser("account-1");
+    expect(reconstructed.read(projectId)?.snapshot.recentRoutes).toEqual([
+      { scheme: "scratch", path: nextPath, workId: "work-new" },
+    ]);
+    expect(coordinator.getProjectSnapshot(projectId).rememberedRoute).toEqual({
+      scheme: "scratch",
+      path: nextPath,
+      workId: "work-new",
+    });
+  });
+
+  it.each([
+    "work-prune",
+    "draft-discard",
+    "writer-close",
+  ] as const)("keeps unrelated remembered continuity through selection-none %s and registration reload", (cause) => {
+    const tab = {
+      ...tracked("removed", "/removed.md"),
+      ...(cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-old" } : {}),
+      ...(cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-old" } : {}),
+    };
+    setDesk([tab], null);
+    const rig = scenario();
+    rig.setRoutes([
+      { scheme: "kb", path: "/keep.md" },
+      ...(cause === "work-prune"
+        ? [{ scheme: "scratch" as const, path: "/removed.md", workId: "work-old" }]
+        : [{ scheme: "manuscript" as const, path: "/removed.md" }]),
+    ]);
+    const registration = rig.coordinator.registerRoutePort(
+      projectId,
+      { readSearch: rig.search, updateSearch: () => undefined },
+      "work-new",
+    );
+    rig.coordinator.clearRouteSelection(projectId);
+
+    if (cause === "work-prune") rig.coordinator.pruneWork(projectId, "work-new");
+    else if (cause === "draft-discard")
+      rig.coordinator.discardDraft(projectId, "work-old", "removed");
+    else rig.coordinator.writerClose(projectId, "removed");
+
+    expect(rig.coordinator.getProjectSnapshot(projectId).rememberedRoute?.path).toBe("/keep.md");
+    expect(rig.routes()[0]).toEqual({ scheme: "kb", path: "/keep.md" });
+    registration.release();
+    rig.coordinator.registerRoutePort(
+      projectId,
+      { readSearch: rig.search, updateSearch: () => undefined },
+      "work-new",
+    );
+    expect(rig.coordinator.getProjectSnapshot(projectId).rememberedRoute?.path).toBe("/keep.md");
+  });
+
   it("makes a disposed coordinator inert against delayed commands and global ports", () => {
     const deskCommits: string[][] = [];
     const routeCommits: ReconcileContextRoutesInput[] = [];

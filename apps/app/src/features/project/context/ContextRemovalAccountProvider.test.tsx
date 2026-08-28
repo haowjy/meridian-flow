@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useLayoutEffect, useState } from "react";
+import { act, StrictMode, useLayoutEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -23,6 +23,102 @@ function tracked(documentId: string, path: string) {
 }
 
 describe("ContextRemovalAccountProvider", () => {
+  it("reuses one coordinator through Strict effect replay", async () => {
+    const instances: ContextRemovalCoordinator[] = [];
+    function Child() {
+      const coordinator = useContextRemovalCoordinator();
+      useLayoutEffect(() => {
+        instances.push(coordinator);
+        coordinator.beginRouteSelection("project-1", {
+          scheme: "kb",
+          path: "/strict.md",
+          workId: "work-1",
+        });
+      }, [coordinator]);
+      return null;
+    }
+    await withReactRoot(
+      <StrictMode>
+        <ContextRemovalAccountProvider accountId="account-a">
+          <Child />
+        </ContextRemovalAccountProvider>
+      </StrictMode>,
+      async () => {
+        expect(instances).toHaveLength(2);
+        expect(instances[0]).toBe(instances[1]);
+        expect(instances[0]?.getProjectSnapshot("project-1").selection).toMatchObject({
+          status: "pending",
+          revision: 2,
+        });
+      },
+    );
+  });
+
+  it("synchronously revokes A before an already-queued response runs during keyed A to B", async () => {
+    let setAccount: ((accountId: string) => void) | null = null;
+    let admission: ReturnType<ContextRemovalCoordinator["acceptAcknowledgedDelete"]> | null = null;
+    let layoutAdmission: ReturnType<ContextRemovalCoordinator["acceptAcknowledgedDelete"]> | null =
+      null;
+    let oldCoordinator: ContextRemovalCoordinator | null = null;
+    let command: Parameters<ContextRemovalCoordinator["acceptAcknowledgedDelete"]>[0] | null = null;
+    const childLayouts: string[] = [];
+    function Child({ accountId }: { accountId: string }) {
+      const coordinator = useContextRemovalCoordinator();
+      useLayoutEffect(() => {
+        childLayouts.push(accountId);
+        if (accountId === "account-b") {
+          if (!oldCoordinator || !command) throw new Error("old response was not captured");
+          layoutAdmission = oldCoordinator.acceptAcknowledgedDelete(command);
+          return;
+        }
+        oldCoordinator = coordinator;
+        const revision = coordinator.beginRouteSelection("project-1", {
+          scheme: "manuscript",
+          path: "/a.md",
+          workId: "work-1",
+        });
+        coordinator.bindRouteSelection("project-1", revision, {
+          kind: "server",
+          documentId: "a",
+        });
+        command = {
+          ...coordinator.captureDeleteInitiation("project-1", {
+            kind: "file",
+            locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
+            documentId: "a",
+          }),
+          cause: "acknowledged-delete",
+          confirmed: { status: "deleted", deletedDocumentIds: ["a"] },
+        };
+      }, [accountId, coordinator]);
+      return null;
+    }
+    function Harness() {
+      const [accountId, updateAccount] = useState("account-a");
+      setAccount = updateAccount;
+      return (
+        <ContextRemovalAccountProvider key={accountId} accountId={accountId}>
+          <Child accountId={accountId} />
+        </ContextRemovalAccountProvider>
+      );
+    }
+    useContextTabsStore.setState({
+      byProject: { "project-1": { tabs: [tracked("a", "/a.md")], activeTabId: "a" } },
+      _deskHydrated: true,
+    });
+    await withReactRoot(<Harness />, async () => {
+      const queued = Promise.resolve().then(() => {
+        if (!oldCoordinator || !command) throw new Error("old response was not captured");
+        admission = oldCoordinator.acceptAcknowledgedDelete(command);
+      });
+      act(() => setAccount?.("account-b"));
+      await queued;
+      expect(childLayouts).toEqual(["account-a", "account-b"]);
+      expect(layoutAdmission).toEqual({ status: "rejected", reason: "coordinator_disposed" });
+      expect(admission).toEqual({ status: "rejected", reason: "coordinator_disposed" });
+    });
+  });
+
   it("constructs authority before descendants and isolates A to B to A", async () => {
     useContextTabsStore.setState({
       byProject: { "project-1": { tabs: [tracked("a", "/a.md")], activeTabId: "a" } },

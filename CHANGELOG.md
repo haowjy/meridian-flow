@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: make Editor Work supersession prune old phone continuity atomically,
+  synchronously revoke replaced account coordinators, and preserve unrelated
+  remembered routes through represented removals.
+
 - `apps/server`: require expected file identity or folder kind at the Context
   deletion port, so staged-create rollback cannot delete a path replacement.
 

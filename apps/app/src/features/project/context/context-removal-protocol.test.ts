@@ -9,6 +9,7 @@ import {
   leaveSelection,
   reduceAcknowledgedDelete,
   reduceRepresentedRemoval,
+  supersedeSelectionForWorkChange,
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
 
@@ -51,6 +52,22 @@ function tracked(documentId: string, path = "/phone.md"): ContextTab {
 }
 
 describe("context removal protocol", () => {
+  it.each([
+    ["pending", pending()],
+    ["bound", { status: "bound" as const, revision: 1, locator, identity }],
+    ["confirmed-unbound", { status: "confirmed-unbound" as const, revision: 1, locator }],
+    ["none", { status: "none" as const, revision: 1 }],
+  ])("supersedes %s old-Work selection without promoting old continuity", (_case, selection) => {
+    const nextLocator = { scheme: "scratch" as const, path: "/next.md", workId: "work-2" };
+    const transition = supersedeSelectionForWorkChange(selection, nextLocator);
+
+    expect(transition.selection).toMatchObject({ status: "pending", locator: nextLocator });
+    expect(transition.promote).toEqual([
+      expect.objectContaining({ kind: "preserved-unknown", locator: nextLocator }),
+    ]);
+    expect(transition.promote).not.toContainEqual(expect.objectContaining({ locator }));
+  });
+
   it("emits old cleanup and newer continuity in one supersession transition", () => {
     const admitted = reduceAcknowledgedDelete(new Map(), pending(), command());
     const nextLocator = { ...locator, path: "/new.md" };

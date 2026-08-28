@@ -213,6 +213,26 @@ export function beginSelection(
   };
 }
 
+/** Supersedes old-Work continuity without ever offering it for promotion. */
+export function supersedeSelectionForWorkChange(
+  selection: ContextRouteSelection,
+  locator: ContextRouteTarget | null,
+  reentryGuard: TerminalRouteRemoval | null = null,
+): SelectionTransition {
+  const revision = selection.revision + 1;
+  const next: ContextRouteSelection = locator
+    ? { status: "pending", revision, locator, obligations: [], reentryGuard }
+    : { status: "none", revision };
+  const current = continuityForSelection(next);
+  return {
+    selection: next,
+    planning:
+      selection.status === "pending" ? settleObligations(selection, null, current, "never") : [],
+    promote: locator && !reentryGuard ? [current] : [],
+    retireReentryGuard: false,
+  };
+}
+
 export function bindSelection(
   selection: ContextRouteSelection,
   revision: number,

@@ -24,12 +24,61 @@ const phoneSelection = {
 
 describe("context removal planner", () => {
   it.each([
+    ["writer-close", { cause: "writer-close" as const, documentIds: ["removed"] }],
+    ["work-prune", { cause: "work-prune" as const, documentIds: ["removed"] }],
+    ["draft-discard", { cause: "draft-discard" as const, documentIds: ["removed"] }],
+  ])("preserves unrelated remembered continuity for selection-none %s", (_case, intent) => {
+    const removed = {
+      ...tracked("removed", "/removed.md"),
+      ...(intent.cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-old" } : {}),
+      ...(intent.cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-old" } : {}),
+    };
+    const rememberedRoute = { scheme: "kb" as const, path: "/keep.md", workId: "work-new" };
+    const plan = planContextRemoval({
+      tabs: [removed],
+      activeTabId: null,
+      route: { cleanup: null, current: { kind: "none" } },
+      rememberedRoute,
+      intent,
+    });
+
+    expect(plan.rememberedRoute).toEqual(rememberedRoute);
+    expect(plan.workingSet.removedLocators).not.toContainEqual({ scheme: "kb", path: "/keep.md" });
+  });
+
+  it.each([
+    ["writer-close", { cause: "writer-close" as const, documentIds: ["removed"] }],
+    ["work-prune", { cause: "work-prune" as const, documentIds: ["removed"] }],
+    ["draft-discard", { cause: "draft-discard" as const, documentIds: ["removed"] }],
+  ])("clears related remembered continuity for selection-none %s", (_case, intent) => {
+    const removed = {
+      ...tracked("removed", "/removed.md"),
+      ...(intent.cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-old" } : {}),
+      ...(intent.cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-old" } : {}),
+    };
+    const plan = planContextRemoval({
+      tabs: [removed],
+      activeTabId: null,
+      route: { cleanup: null, current: { kind: "none" } },
+      rememberedRoute: {
+        scheme: intent.cause === "work-prune" ? "scratch" : "manuscript",
+        path: "/removed.md",
+        workId: intent.cause === "work-prune" ? "work-old" : "work-new",
+      },
+      intent,
+    });
+
+    expect(plan.rememberedRoute).toBeNull();
+  });
+
+  it.each([
     "pending",
     "confirmed-unbound",
   ] as const)("preserves a %s locator when an unrelated removal empties the desk", (observed) => {
     const plan = planContextRemoval({
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
+      rememberedRoute: null,
       route: {
         cleanup: null,
         current: {
@@ -50,6 +99,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
+      rememberedRoute: null,
       route: { cleanup: null, current: phoneSelection },
       intent: { cause: "acknowledged-delete", documentIds: ["desktop"] },
     });
@@ -67,6 +117,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [],
       activeTabId: null,
+      rememberedRoute: null,
       route: {
         cleanup: {
           revision: 1,
@@ -92,6 +143,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [local, draft],
       activeTabId: "local",
+      rememberedRoute: null,
       route: { cleanup: null, current: { kind: "none" } },
       intent: { cause: "acknowledged-delete", documentIds: ["local", "draft"] },
     });
@@ -114,6 +166,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [],
       activeTabId: null,
+      rememberedRoute: null,
       route: { cleanup, current },
       intent: { cause: "acknowledged-delete", documentIds: ["a"] },
     });
@@ -139,6 +192,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs,
       activeTabId: "c",
+      rememberedRoute: null,
       route: {
         cleanup: {
           revision: 1,

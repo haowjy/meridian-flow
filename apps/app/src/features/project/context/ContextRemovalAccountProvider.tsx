@@ -1,6 +1,6 @@
 /** Authenticated-account scope for the context removal coordinator. */
 
-import { createContext, useContext, useLayoutEffect, useMemo, useRef } from "react";
+import { createContext, useContext, useInsertionEffect, useMemo } from "react";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
@@ -12,20 +12,21 @@ export function ContextRemovalAccountProvider({
   accountId: string;
   children: React.ReactNode;
 }) {
-  const coordinator = useMemo(() => new ContextRemovalCoordinator(accountId), [accountId]);
-  const lifetimeRef = useRef(0);
-  useLayoutEffect(() => {
-    lifetimeRef.current += 1;
-    const lifetime = lifetimeRef.current;
+  const lifetime = useMemo(() => {
+    const coordinator = new ContextRemovalCoordinator(accountId);
+    return { coordinator, lease: coordinator.createLifetimeLease() };
+  }, [accountId]);
+  useInsertionEffect(() => {
+    lifetime.lease.resume();
     return () => {
+      lifetime.lease.suspend();
       queueMicrotask(() => {
-        // React Strict Mode replays effects on the same mounted instance.
-        if (lifetimeRef.current === lifetime) coordinator.dispose();
+        lifetime.lease.disposeIfSuspended();
       });
     };
-  }, [coordinator]);
+  }, [lifetime]);
   return (
-    <ContextRemovalAccountContext.Provider value={coordinator}>
+    <ContextRemovalAccountContext.Provider value={lifetime.coordinator}>
       {children}
     </ContextRemovalAccountContext.Provider>
   );

@@ -69,16 +69,24 @@ memory, repair, and clearing.
 The pure `context-removal-planner.ts` keeps eligibility and desk/route continuity
 policy separate from browser lifecycle and effects. A surviving bound route owns
 continuity even when phone has no desktop tab; `clearAll` requires neither a desk
-owner nor a surviving bound route. The transition commits desk selection, working-set
+owner nor a surviving bound route. Selection-none planning receives remembered
+continuity as an independent owner and removes it only when exact locator evidence
+matches. Work change is an explicit supersession transition: old-Work pending
+continuity is prune evidence, never generic superseded continuity. The transition
+commits desk selection, working-set
 routes, remembered destination, a typed removal fence, and guarded route repair before
 navigation. Project-host release drops only the detachable route adapter and mounted
 selection. Account-owned revision, terminal exact removal, memory, and fence authority
 survive re-entry; a matching terminal removal withholds unknown promotion until a new
 identity binds or exact unbound settlement completes. Account disposal destroys it.
+The account provider owns one reversible coordinator lifetime lease. Cleanup
+suspends command authority synchronously; Strict effect replay resumes that same
+coordinator before child layout work, while a deferred step only finalizes a lease
+that remained suspended.
 Activation uses selection and transition revision tickets in layout phase
 and validates live desk membership before mutating continuity. `ContextPaneController`
 remains a view/activation controller and owns no lifecycle-removal policy. Later ready
-Work changes use only coordinator pruning. Draft apply only resolves tab metadata. Context-tree
+Work changes use the coordinator's supersession transition. Draft apply only resolves tab metadata. Context-tree
 cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
 `viewer`, and the in-memory `{ kind: "new", documentId }` placeholder. A new tab
 uses an ordinary `DocumentSession` from its first render, created detached so
