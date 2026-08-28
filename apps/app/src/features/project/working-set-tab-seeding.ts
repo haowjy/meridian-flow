@@ -42,6 +42,55 @@ type ContextDeskReconciliationGuard = (scope: ContextDeskReconciliationScope) =>
 
 type SeededRoute = { tab: ContextTab | null; removedRoute: WorkingSetRoute | null };
 
+function deviceOwnedTab(tab: ContextTab): boolean {
+  return tab.kind === "new" || (tab.kind === "tracked" && tab.origin === "local-untitled");
+}
+
+export function mergeBootstrapDeskTabs(
+  serverTabs: readonly ContextTab[],
+  localResults: readonly ContextTab[],
+): ContextTab[] {
+  const byId = new Map(serverTabs.map((tab) => [tab.documentId, tab]));
+  for (const local of localResults) {
+    const server = byId.get(local.documentId);
+    byId.set(
+      local.documentId,
+      server && local.kind === "tracked" && server.kind === "tracked"
+        ? { ...server, origin: local.origin }
+        : local,
+    );
+  }
+  return [...byId.values()];
+}
+
+async function validateDeviceOwnedTabs(
+  queryClient: QueryClient,
+  projectId: string,
+  tabs: readonly ContextTab[],
+): Promise<ContextTab[]> {
+  const results = await Promise.allSettled(
+    tabs.filter(deviceOwnedTab).map(async (tab): Promise<ContextTab | null> => {
+      if (tab.kind === "new") return tab;
+      const workId = isWorkScopedProjectContextScheme(tab.scheme) ? (tab.workId ?? null) : null;
+      const result = await queryClient.fetchQuery(
+        projectContextTreeQueryOptions(projectId, tab.scheme, workId),
+      );
+      const file = findContextFile(result.tree, tab.path);
+      if (!file) return null;
+      const refreshed = contextTabFromFile(tab.scheme, file, workId);
+      return refreshed.kind === "tracked" ? { ...refreshed, origin: "local-untitled" } : null;
+    }),
+  );
+  const owned = tabs.filter(deviceOwnedTab);
+  return results.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [owned[index] as ContextTab]
+      : result.value
+        ? [result.value]
+        : [],
+  );
+}
+
 export function settleSeededRoutes(
   routes: readonly WorkingSetRoute[],
   restored: readonly ContextTab[],
@@ -101,8 +150,10 @@ export async function seedWorkingSetTabs({
     }),
   );
   const settled = settleSeededRoutes(routes, restored, results);
+  const localTabs = await validateDeviceOwnedTabs(queryClient, projectId, restored);
   if (!isLiveScope(scope)) return;
-  const tabs = settled.flatMap(({ tab }) => (tab ? [tab] : []));
+  const serverTabs = settled.flatMap(({ tab }) => (tab ? [tab] : []));
+  const tabs = mergeBootstrapDeskTabs(serverTabs, localTabs);
   reconcileContextRoutes(projectId, {
     removedLocators: settled.flatMap(({ removedRoute }) => removedRoute ?? []),
     survivingOwnedLocators: tabs.flatMap((tab) =>
@@ -144,7 +195,16 @@ export async function validateContextDeskTabs({
             removedRoute: buildWorkingSetRoute(tab.scheme, tab.path, tab.workId),
           };
         }
-        return { tab: contextTabFromFile(tab.scheme, file, workId), removedRoute: null };
+        const refreshed = contextTabFromFile(tab.scheme, file, workId);
+        return {
+          tab:
+            tab.kind === "tracked" &&
+            tab.origin === "local-untitled" &&
+            refreshed.kind === "tracked"
+              ? { ...refreshed, origin: "local-untitled" }
+              : refreshed,
+          removedRoute: null,
+        };
       },
     ),
   );

@@ -68,7 +68,7 @@ it("submits the Work captured when delete confirmation was requested", async () 
             schemaType: "document",
           },
         ],
-        activeTabId: "document-b",
+        selectedTabIdByWork: { "work-1": "document-b" },
       },
     },
     _deskHydrated: true,

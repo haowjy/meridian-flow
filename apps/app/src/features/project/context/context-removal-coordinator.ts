@@ -72,7 +72,10 @@ type DeskPort = {
   read(projectId: string): ProjectTabsSlice;
   commit(
     projectId: string,
-    input: { documentIds: readonly string[]; activeTabId: string | null },
+    input: {
+      documentIds: readonly string[];
+      deskSelection?: { workId: string; documentId: string | null };
+    },
   ): ContextTab[];
   resolveDraftApply(projectId: string, reviewWorkId: string, documentId: string): void;
 };
@@ -116,7 +119,7 @@ export type ContextRemovalLifetimeLease = {
   disposeIfSuspended(): void;
 };
 
-const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], activeTabId: null };
+const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], selectedTabIdByWork: {} };
 const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   selection: { status: "none", revision: 0 },
   admitted: null,
@@ -274,6 +277,60 @@ export class ContextRemovalCoordinator {
     return true;
   }
 
+  /** Guarded route repair for a selected local Untitled whose server locator arrived. */
+  redirectMaterializedLocal(
+    projectId: string,
+    selectionRevision: number,
+    documentId: string,
+    target: ContextRouteTarget,
+  ): boolean {
+    if (this.unavailable()) return false;
+    const state = this.project(projectId);
+    const selection = state.selection;
+    const workId = state.activeWorkId;
+    const tab = this.desk
+      .read(projectId)
+      .tabs.find((candidate) => candidate.documentId === documentId);
+    if (
+      !state.live ||
+      !workId ||
+      selection.status === "none" ||
+      selection.revision !== selectionRevision ||
+      selection.locator.scheme !== "scratch" ||
+      selection.locator.path !== "" ||
+      selection.locator.workId !== workId ||
+      this.desk.read(projectId).selectedTabIdByWork[workId] !== documentId ||
+      tab?.kind !== "tracked" ||
+      tab.origin !== "local-untitled" ||
+      (isWorkScopedProjectContextScheme(tab.scheme) && tab.workId !== workId) ||
+      !sameLocator(routeTargetForTab(tab, workId), target)
+    ) {
+      return false;
+    }
+    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
+    const search = route?.readSearch(projectId);
+    if (!route || search?.screen !== "context") return false;
+    const repair: ContextRouteRepair = {
+      expectedSearch: {
+        screen: "context",
+        work: search.work,
+        scheme: "scratch",
+        path: "",
+      },
+      expectedSelection: { kind: "materialized-local", revision: selectionRevision, documentId },
+      next: target,
+    };
+    route.updateSearch(projectId, (latest) => {
+      const current = this.project(projectId);
+      return current.selection.status !== "none" &&
+        current.selection.revision === selectionRevision &&
+        this.desk.read(projectId).selectedTabIdByWork[workId] === documentId
+        ? applyContextRepairIfCurrent(repair, latest)
+        : latest;
+    });
+    return true;
+  }
+
   registerRoutePort(
     projectId: string,
     port: ContextRemovalRoutePort,
@@ -417,13 +474,15 @@ export class ContextRemovalCoordinator {
     );
     const recentRoutes = this.workingSet.readRecentRoutes(projectId);
     const remainingTabs = tabs.filter((tab) => !documentIds.includes(tab.documentId));
+    const targetSelection = this.desk.read(projectId).selectedTabIdByWork[activeWorkId] ?? null;
     const fallback = chooseAdmittedFallback({
       activeWorkId,
       tabs: remainingTabs,
-      activeTabId: this.desk.read(projectId).activeTabId,
+      selectedTabId: null,
       admitted: state.admitted,
       recentRoutes,
       excluded: null,
+      allowDeskFallback: false,
     });
     const transition = supersedeSelectionForWorkChange(
       previousSelection,
@@ -446,22 +505,23 @@ export class ContextRemovalCoordinator {
         obsoleteRoutes,
       );
     } else {
-      const activeTabId = this.desk.read(projectId).activeTabId;
-      const activeTab = remainingTabs.find((tab) => tab.documentId === activeTabId) ?? null;
-      const activeTarget = activeTab ? routeTargetForTab(activeTab, activeWorkId) : null;
-      if (
-        !activeTarget ||
-        (isWorkScopedProjectContextScheme(activeTarget.scheme) &&
-          activeTarget.workId !== activeWorkId)
-      ) {
-        const fallbackTab = fallback
-          ? remainingTabs.find((tab) => sameLocator(routeTargetForTab(tab, activeWorkId), fallback))
+      const selectedTab = remainingTabs.find((tab) => tab.documentId === targetSelection) ?? null;
+      const compatibleSelected =
+        selectedTab &&
+        (!isWorkScopedProjectContextScheme(routeTargetForTab(selectedTab, activeWorkId).scheme) ||
+          routeTargetForTab(selectedTab, activeWorkId).workId === activeWorkId)
+          ? selectedTab
           : null;
-        this.desk.commit(projectId, {
-          documentIds: [],
-          activeTabId: fallbackTab?.documentId ?? null,
-        });
-      }
+      const fallbackTab = fallback
+        ? remainingTabs.find((tab) => sameLocator(routeTargetForTab(tab, activeWorkId), fallback))
+        : null;
+      this.desk.commit(projectId, {
+        documentIds: [],
+        deskSelection: {
+          workId: activeWorkId,
+          documentId: compatibleSelected?.documentId ?? fallbackTab?.documentId ?? null,
+        },
+      });
       const promotedRoute = fallback ? workingSetRouteForTarget(fallback) : null;
       this.workingSet.reconcileContextRoutes(projectId, {
         removedLocators: obsoleteRoutes,
@@ -552,6 +612,7 @@ export class ContextRemovalCoordinator {
       .tabs.filter(
         (tab): tab is ServerContextTab =>
           tab.kind !== "new" &&
+          (tab.kind !== "tracked" || tab.origin !== "local-untitled") &&
           isWorkScopedProjectContextScheme(tab.scheme) &&
           tab.workId !== activeWorkId,
       )
@@ -561,6 +622,14 @@ export class ContextRemovalCoordinator {
       selection.identity.kind === "server" &&
       isWorkScopedProjectContextScheme(selection.locator.scheme) &&
       selection.locator.workId !== activeWorkId &&
+      !this.desk
+        .read(projectId)
+        .tabs.some(
+          (tab) =>
+            tab.kind === "tracked" &&
+            tab.origin === "local-untitled" &&
+            tab.documentId === selection.identity.documentId,
+        ) &&
       !documentIds.includes(selection.identity.documentId)
     ) {
       documentIds.push(selection.identity.documentId);
@@ -584,10 +653,14 @@ export class ContextRemovalCoordinator {
     const { intent, current, cleanup, repair } = effect;
     if (intent.documentIds.length === 0) return { kind: "noop" };
     const slice = this.desk.read(projectId);
+    const state = this.project(projectId);
     const plan = planContextRemoval({
-      activeWorkId: this.project(projectId).activeWorkId,
-      ...slice,
-      admitted: this.project(projectId).admitted,
+      activeWorkId: state.activeWorkId,
+      tabs: slice.tabs,
+      selectedTabId: state.activeWorkId
+        ? (slice.selectedTabIdByWork[state.activeWorkId] ?? null)
+        : null,
+      admitted: state.admitted,
       route: { cleanup, current },
       intent,
     });
@@ -614,7 +687,14 @@ export class ContextRemovalCoordinator {
 
     this.desk.commit(projectId, {
       documentIds: plan.outcome.removed.map((tab) => tab.documentId),
-      activeTabId: plan.nextActiveTabId,
+      ...(this.project(projectId).activeWorkId
+        ? {
+            deskSelection: {
+              workId: this.project(projectId).activeWorkId as string,
+              documentId: plan.nextSelectedTabId,
+            },
+          }
+        : {}),
     });
     this.workingSet.reconcileContextRoutes(projectId, {
       ...plan.workingSet,
@@ -632,7 +712,6 @@ export class ContextRemovalCoordinator {
           : plan.workingSet.promote,
     });
 
-    const state = this.project(projectId);
     state.transitionRevision += 1;
     state.admitted = plan.admitted;
     state.removalFence = {
@@ -730,12 +809,22 @@ export class ContextRemovalCoordinator {
       rejected: rejection.locator,
       activeWorkId: state.activeWorkId,
       tabs: slice.tabs,
-      activeTabId: slice.activeTabId,
+      selectedTabId: state.activeWorkId
+        ? (slice.selectedTabIdByWork[state.activeWorkId] ?? null)
+        : null,
       admitted: state.admitted,
       recentRoutes: this.workingSet.readRecentRoutes(projectId),
     });
     if (plan.deskSelection.kind === "select") {
-      this.desk.commit(projectId, { documentIds: [], activeTabId: plan.deskSelection.documentId });
+      if (state.activeWorkId) {
+        this.desk.commit(projectId, {
+          documentIds: [],
+          deskSelection: {
+            workId: state.activeWorkId,
+            documentId: plan.deskSelection.documentId,
+          },
+        });
+      }
     }
     this.workingSet.reconcileContextRoutes(projectId, plan.workingSet);
     state.transitionRevision += 1;

@@ -25,9 +25,11 @@ function tracked(documentId: string, path: string): Extract<ContextTab, { kind: 
   };
 }
 
-function setDesk(tabs: ContextTab[], activeTabId: string | null) {
+function setDesk(tabs: ContextTab[], selectedTabId: string | null) {
   useContextTabsStore.setState({
-    byProject: { [projectId]: { tabs, activeTabId } },
+    byProject: {
+      [projectId]: { tabs, selectedTabIdByWork: selectedTabId ? { "work-1": selectedTabId } : {} },
+    },
     _deskHydrated: false,
   });
 }

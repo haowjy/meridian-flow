@@ -58,7 +58,7 @@ const disabledHydration = { status: "disabled" as const };
 
 beforeEach(() => {
   useContextTabsStore.setState({
-    byProject: { project: { tabs: [restored], activeTabId: "restored" } },
+    byProject: { project: { tabs: [restored], selectedTabIdByWork: { "work-1": "restored" } } },
     _deskHydrated: true,
   });
 });
@@ -109,7 +109,7 @@ it("withholds live hosts through one held raw bootstrap and never restores raw a
       expect(useContextTabsStore.getState().byProject.project?.tabs).toEqual([]);
 
       useContextTabsStore.setState({
-        byProject: { project: { tabs: [restored], activeTabId: "restored" } },
+        byProject: { project: { tabs: [restored], selectedTabIdByWork: { "work-1": "restored" } } },
       });
       await act(async () => setWork?.({ status: "loading", workId: "work-1" }));
       expect(document.querySelector("[data-phase]")?.getAttribute("data-phase")).toBe("suspended");
@@ -130,7 +130,9 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
     name: "knowledge.md",
   };
   useContextTabsStore.setState({
-    byProject: { project: { tabs: [deleted, knowledge], activeTabId: "deleted" } },
+    byProject: {
+      project: { tabs: [deleted, knowledge], selectedTabIdByWork: { "work-1": "deleted" } },
+    },
     _deskHydrated: true,
   });
   const read = deferred<{
@@ -269,7 +271,7 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
         expect(document.querySelector("[data-phase]")?.textContent).toBe("live");
         expect(useContextTabsStore.getState().byProject.project).toMatchObject({
           tabs: [expect.objectContaining({ documentId: "knowledge" })],
-          activeTabId: "knowledge",
+          selectedTabIdByWork: { "work-1": "knowledge" },
         });
         expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
           selection: { status: "rejected", locator: { path: "/deleted.md" } },

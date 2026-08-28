@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
-import { contextDeskReconciliation, settleSeededRoutes } from "./working-set-tab-seeding";
+import {
+  contextDeskReconciliation,
+  mergeBootstrapDeskTabs,
+  settleSeededRoutes,
+} from "./working-set-tab-seeding";
 
 describe("Context desk bootstrap source", () => {
   it("replaces from authoritative server hydration and preserves degraded local state", () => {
@@ -66,6 +70,52 @@ describe("server hydration route settlement", () => {
     ).toEqual([
       { tab: refreshed, removedRoute: null },
       { tab: null, removedRoute: { scheme: "kb", path: "/missing.md" } },
+    ]);
+  });
+});
+
+describe("device-local bootstrap ownership", () => {
+  it("merges empty tabs without turning them into server recency", () => {
+    const chapter: ContextTab = {
+      kind: "tracked",
+      documentId: "chapter",
+      scheme: "manuscript",
+      path: "/chapter.md",
+      name: "chapter.md",
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+    };
+    const local: ContextTab = {
+      kind: "new",
+      documentId: "local",
+      name: "Untitled",
+      workId: "work-a",
+    };
+    expect(mergeBootstrapDeskTabs([chapter], [local])).toEqual([chapter, local]);
+  });
+
+  it("preserves local origin while accepting refreshed server metadata by exact ID", () => {
+    const refreshed: ContextTab = {
+      kind: "tracked",
+      documentId: "local",
+      scheme: "scratch",
+      path: "/Renamed.md",
+      name: "Renamed.md",
+      workId: "work-a",
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+      provisionalName: false,
+    };
+    const local: ContextTab = {
+      ...refreshed,
+      path: "/Untitled.md",
+      name: "Untitled.md",
+      origin: "local-untitled",
+    };
+    expect(mergeBootstrapDeskTabs([refreshed], [local])).toEqual([
+      { ...refreshed, origin: "local-untitled" },
     ]);
   });
 });

@@ -35,14 +35,14 @@ export type ContextRemovalOutcome =
   | {
       kind: "inactive-removal";
       removed: readonly ContextTab[];
-      deskActiveRemoved: false;
+      deskSelectedRemoved: false;
       routedDocumentRemoved: false;
       remaining: readonly ContextTab[];
     }
   | {
       kind: "active-fallback";
       removed: readonly ContextTab[];
-      deskActiveRemoved: boolean;
+      deskSelectedRemoved: boolean;
       routedDocumentRemoved: boolean;
       fallback: ContextTab;
       remaining: readonly ContextTab[];
@@ -50,7 +50,7 @@ export type ContextRemovalOutcome =
   | {
       kind: "empty-desk";
       removed: readonly ContextTab[];
-      deskActiveRemoved: boolean;
+      deskSelectedRemoved: boolean;
       routedDocumentRemoved: boolean;
       remaining: readonly ContextTab[];
     }
@@ -63,14 +63,14 @@ export type ContextRemovalOutcome =
   | {
       kind: "exact-route-cleanup";
       removed: readonly [];
-      deskActiveRemoved: false;
+      deskSelectedRemoved: false;
       routedDocumentRemoved: false;
       remaining: readonly ContextTab[];
     };
 
 export type ContextRemovalPlan = {
   outcome: ContextRemovalOutcome;
-  nextActiveTabId: string | null;
+  nextSelectedTabId: string | null;
   admitted: ContextRouteTarget | null;
   routeRepairTarget: ContextRouteTarget | { kind: "clear" } | null;
   workingSet: ReconcileContextRoutesInput;
@@ -79,7 +79,7 @@ export type ContextRemovalPlan = {
 export type ContextRemovalPlannerInput = {
   activeWorkId: string | null;
   tabs: readonly ContextTab[];
-  activeTabId: string | null;
+  selectedTabId: string | null;
   admitted: ContextRouteTarget | null;
   route: {
     cleanup: ExactRouteCleanup | null;
@@ -107,7 +107,7 @@ export function planCandidateRejection(input: {
   rejected: ContextRouteTarget;
   activeWorkId: string | null;
   tabs: readonly ContextTab[];
-  activeTabId: string | null;
+  selectedTabId: string | null;
   admitted: ContextRouteTarget | null;
   recentRoutes: readonly WorkingSetRoute[];
 }): CandidateRejectionPlan {
@@ -121,7 +121,7 @@ export function planCandidateRejection(input: {
     expected: { revision: input.revision, locator: input.rejected },
     fallback,
     deskSelection:
-      fallbackTab && fallbackTab.documentId !== input.activeTabId
+      fallbackTab && fallbackTab.documentId !== input.selectedTabId
         ? { kind: "select", documentId: fallbackTab.documentId }
         : { kind: "preserve" },
     workingSet: {
@@ -157,7 +157,11 @@ export function contextTabEligibleForRemoval(
     case "acknowledged-delete":
       return tab.kind !== "new" && !tab.draftOnly;
     case "work-prune":
-      return tab.kind !== "new" && isWorkScopedProjectContextScheme(tab.scheme);
+      return (
+        tab.kind !== "new" &&
+        (tab.kind !== "tracked" || tab.origin !== "local-untitled") &&
+        isWorkScopedProjectContextScheme(tab.scheme)
+      );
     case "draft-discard":
       return tab.kind !== "new" && tab.draftOnly === true;
   }
@@ -204,18 +208,18 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const removed = input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
   const removedIds = new Set(removed.map((tab) => tab.documentId));
   const remaining = input.tabs.filter((tab) => !removedIds.has(tab.documentId));
-  const deskActiveRemoved = input.activeTabId !== null && removedIds.has(input.activeTabId);
-  const deskActiveTab = input.tabs.find((tab) => tab.documentId === input.activeTabId) ?? null;
-  const deskActiveIneligibleForWork =
+  const deskSelectedRemoved = input.selectedTabId !== null && removedIds.has(input.selectedTabId);
+  const deskSelectedTab = input.tabs.find((tab) => tab.documentId === input.selectedTabId) ?? null;
+  const deskSelectedIneligibleForWork =
     input.intent.cause === "work-prune" &&
-    deskActiveTab !== null &&
+    deskSelectedTab !== null &&
     (() => {
-      const target = routeTargetForTab(deskActiveTab, input.activeWorkId);
+      const target = routeTargetForTab(deskSelectedTab, input.activeWorkId);
       return (
         isWorkScopedProjectContextScheme(target.scheme) && target.workId !== input.activeWorkId
       );
     })();
-  const deskSelectionNeedsFallback = deskActiveRemoved || deskActiveIneligibleForWork;
+  const deskSelectionNeedsFallback = deskSelectedRemoved || deskSelectedIneligibleForWork;
   const boundSelection = input.route.current.kind === "bound" ? input.route.current : null;
   const provenRemoved = input.route.current.kind === "proven-removed" ? input.route.current : null;
   const routedDocumentRemoved =
@@ -243,7 +247,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   if (removed.length === 0 && !routedDocumentRemoved && !exactCleanup) {
     return {
       outcome: { kind: "noop" },
-      nextActiveTabId: input.activeTabId,
+      nextSelectedTabId: input.selectedTabId,
       admitted: input.admitted,
       routeRepairTarget: null,
       workingSet: {
@@ -269,7 +273,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const anchorDocumentId = routedDocumentRemoved
     ? (routedTab?.documentId ?? null)
     : deskSelectionNeedsFallback
-      ? input.activeTabId
+      ? input.selectedTabId
       : null;
   const eligibleRemaining =
     input.intent.cause === "work-prune"
@@ -284,12 +288,13 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     routedDocumentRemoved || deskSelectionNeedsFallback
       ? adjacentSurvivor(input.tabs, eligibleRemaining, anchorDocumentId)
       : null;
-  const selectedFallback = deskActiveRemoved && survivingRoutedTab ? survivingRoutedTab : fallback;
-  const nextActiveTabId = deskSelectionNeedsFallback
+  const selectedFallback =
+    deskSelectedRemoved && survivingRoutedTab ? survivingRoutedTab : fallback;
+  const nextSelectedTabId = deskSelectionNeedsFallback
     ? (selectedFallback?.documentId ?? null)
     : routedDocumentRemoved
       ? (fallback?.documentId ?? null)
-      : input.activeTabId;
+      : input.selectedTabId;
   const removedLocators = [...removedTabRoutes];
   const cleanup = input.route.cleanup;
   if (cleanup && exactCleanup) {
@@ -324,7 +329,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     outcome = {
       kind: "exact-route-cleanup",
       removed: [],
-      deskActiveRemoved: false,
+      deskSelectedRemoved: false,
       routedDocumentRemoved: false,
       remaining,
     };
@@ -332,7 +337,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     outcome = {
       kind: "inactive-removal",
       removed,
-      deskActiveRemoved: false,
+      deskSelectedRemoved: false,
       routedDocumentRemoved: false,
       remaining,
     };
@@ -340,7 +345,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     outcome = {
       kind: "empty-desk",
       removed,
-      deskActiveRemoved,
+      deskSelectedRemoved,
       routedDocumentRemoved,
       remaining,
     };
@@ -348,7 +353,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     outcome = {
       kind: "active-fallback",
       removed,
-      deskActiveRemoved,
+      deskSelectedRemoved,
       routedDocumentRemoved,
       fallback: selectedFallback ?? (remaining[0] as ContextTab),
       remaining,
@@ -357,7 +362,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
 
   return {
     outcome,
-    nextActiveTabId,
+    nextSelectedTabId,
     admitted: input.admitted && !admittedWasRemoved ? input.admitted : admittedFallback,
     routeRepairTarget,
     workingSet: {
@@ -396,10 +401,11 @@ export function workingSetRouteForTarget(locator: ContextRouteTarget): WorkingSe
 export function chooseAdmittedFallback(input: {
   activeWorkId: string | null;
   tabs: readonly ContextTab[];
-  activeTabId: string | null;
+  selectedTabId: string | null;
   admitted: ContextRouteTarget | null;
   recentRoutes: readonly WorkingSetRoute[];
   excluded: ContextRouteTarget | null;
+  allowDeskFallback?: boolean;
 }): ContextRouteTarget | null {
   const eligible = (target: ContextRouteTarget | null): target is ContextRouteTarget =>
     target !== null &&
@@ -407,7 +413,7 @@ export function chooseAdmittedFallback(input: {
     (!input.excluded || !sameContinuityLocator(target, input.excluded));
   const activeTab =
     input.tabs.find(
-      (tab) => tab.documentId === input.activeTabId && (tab.kind === "new" || !tab.draftOnly),
+      (tab) => tab.documentId === input.selectedTabId && (tab.kind === "new" || !tab.draftOnly),
     ) ?? null;
   const activeTarget = activeTab ? routeTargetForTab(activeTab, input.activeWorkId) : null;
   if (eligible(activeTarget)) return activeTarget;
@@ -417,10 +423,12 @@ export function chooseAdmittedFallback(input: {
     const target = contextualizeWorkingSetRoute(route, input.activeWorkId);
     if (eligible(target)) return target;
   }
-  for (const tab of input.tabs) {
-    if (tab.kind !== "new" && tab.draftOnly) continue;
-    const target = routeTargetForTab(tab, input.activeWorkId);
-    if (eligible(target)) return target;
+  if (input.allowDeskFallback !== false) {
+    for (const tab of input.tabs) {
+      if (tab.kind !== "new" && tab.draftOnly) continue;
+      const target = routeTargetForTab(tab, input.activeWorkId);
+      if (eligible(target)) return target;
+    }
   }
   return null;
 }

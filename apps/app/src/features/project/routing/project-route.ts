@@ -61,7 +61,8 @@ export type ContextRouteRepair = {
   };
   expectedSelection:
     | { kind: "removed-binding"; revision: number; documentId: string }
-    | { kind: "rejected-candidate"; revision: number };
+    | { kind: "rejected-candidate"; revision: number }
+    | { kind: "materialized-local"; revision: number; documentId: string };
   next: ContextRouteTarget | { kind: "clear" };
 };
 

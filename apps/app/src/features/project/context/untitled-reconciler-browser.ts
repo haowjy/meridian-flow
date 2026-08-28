@@ -7,7 +7,7 @@ import {
   getProjectContextTree,
   listProjectWorks,
 } from "@/client/api/projects-api";
-import { flushContextDesks, useContextTabsStore } from "@/client/stores";
+import { useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { resolveCatalogWork } from "../catalog-work-resolution";
 import type { ContextIdentityMutationService } from "./context-identity-mutation";
@@ -128,7 +128,6 @@ export function appendPendingUntitled(entry: PendingUntitled): void {
   getUntitledReconciler().append(entry);
   // The new tab is opened before this append. Flush after the reconciler has
   // made it eligible for desk persistence so a same-tick reload cannot lose it.
-  flushContextDesks();
 }
 
 export function isUntitledPending(documentId: string): boolean {
@@ -168,5 +167,4 @@ export function clearQueuedIdentityFailure(documentId: string): void {
 
 export function queueUntitledIdentity(entry: PendingUntitled, desired: DesiredIdentity): void {
   getUntitledReconciler().queueIdentity(entry, desired);
-  flushContextDesks();
 }

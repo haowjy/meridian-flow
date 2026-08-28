@@ -34,13 +34,15 @@ afterEach(() => {
   useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
 });
 
-it("settles a queued identity once under the initiating Editor Work", async () => {
+it.each([
+  "receipt-after-transition",
+  "receipt-before-transition",
+] as const)("settles a queued identity once under the initiating Editor Work with %s", async (ordering) => {
   const rig = new UntitledLifecycleRig();
   reconcilerState.rig = rig;
   rig.home.setFallback(async () => ({ scheme: "scratch", workId: "work-b" }));
   rig.seedTab(NEW_TAB);
   rig.start();
-  const routeTargets: unknown[] = [];
   let commit!: ReturnType<typeof useIdentityCommit>;
   let showWorkB!: () => void;
 
@@ -55,11 +57,7 @@ it("settles a queued identity once under the initiating Editor Work", async () =
       identityMutations: rig.identityMutations,
       onCommitted: () => {},
     });
-    useUntitledTabBridge({
-      projectId: "project-1",
-      tabs,
-      onOpenContextTarget: (target) => routeTargets.push(target),
-    });
+    useUntitledTabBridge({ projectId: "project-1", tabs });
     return null;
   }
 
@@ -73,9 +71,10 @@ it("settles a queued identity once under the initiating Editor Work", async () =
           name: "Opening.md",
           destination: { scheme: "manuscript", folderPath: "/Act 1" },
         });
+        if (ordering === "receipt-before-transition") await rig.advance();
         showWorkB();
       });
-      await act(async () => rig.advance());
+      if (ordering === "receipt-after-transition") await act(async () => rig.advance());
     },
   );
 
@@ -88,9 +87,10 @@ it("settles a queued identity once under the initiating Editor Work", async () =
       path: "/Act 1/Opening.md",
       workId: undefined,
       provisionalName: false,
+      origin: "local-untitled",
     }),
   ]);
-  expect(routeTargets).toEqual([
-    { scheme: "manuscript", path: "/Act 1/Opening.md", workId: "work-a" },
-  ]);
+  expect(useContextTabsStore.getState().byProject["project-1"]?.selectedTabIdByWork).toEqual({
+    "work-1": "doc-1",
+  });
 });

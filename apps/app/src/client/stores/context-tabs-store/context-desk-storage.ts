@@ -1,30 +1,25 @@
-/** Device-local persistence for each project's ordered context-tab desk. */
+/** Strict V2 device-local persistence for each Project's context desk. */
 
 import {
   classifyFiletype,
   type DocumentFileType,
   isProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-
-import type { ContextTab } from "./context-tabs-store";
+import {
+  type ContextTab,
+  contextTabMayBeSelectedForWork,
+  type ProjectTabsSlice,
+} from "./context-tabs-store";
 
 export const CONTEXT_DESK_STORAGE_KEY = "meridian:context-desk";
-
-export type PersistedProjectDesk = {
-  tabs: ContextTab[];
-  activeTabId: string | null;
-};
-
-type PersistedContextDesks = {
+export type PersistedProjectDesk = ProjectTabsSlice;
+type PersistedContextDesksV2 = {
+  version: 2;
   userId: string;
   projects: Record<string, PersistedProjectDesk>;
 };
-
 export type ContextDeskStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-// Typed against the contracts union so the compiler forces this table to
-// track DocumentFileType — a drifted literal set here would silently reject
-// whole persisted desks.
 const DOCUMENT_FILE_TYPES = {
   docx: true,
   image: true,
@@ -35,7 +30,6 @@ const DOCUMENT_FILE_TYPES = {
 function optionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
 }
-
 function baseTab(value: Record<string, unknown>): boolean {
   return (
     typeof value.documentId === "string" &&
@@ -43,12 +37,12 @@ function baseTab(value: Record<string, unknown>): boolean {
     (value.draftOnly === undefined || typeof value.draftOnly === "boolean")
   );
 }
-
 function parseTab(value: unknown): ContextTab | null {
   if (!value || typeof value !== "object") return null;
   const tab = value as Record<string, unknown>;
   if (!baseTab(tab)) return null;
-  if (tab.kind === "new" && typeof tab.workId === "string") {
+  if (tab.kind === "new") {
+    if (typeof tab.workId !== "string" || tab.origin !== undefined) return null;
     return {
       kind: "new",
       documentId: tab.documentId as string,
@@ -62,129 +56,131 @@ function parseTab(value: unknown): ContextTab | null {
     !isProjectContextTreeScheme(tab.scheme) ||
     typeof tab.path !== "string" ||
     !optionalString(tab.workId)
-  ) {
+  )
     return null;
-  }
   if (tab.kind === "tracked" && tab.editable === true) {
-    // The contracts registry is the single validator: the filetype must be a
-    // known tracked type AND carry the schemaType the registry assigns it.
     const classification = classifyFiletype(typeof tab.filetype === "string" ? tab.filetype : null);
     if (
-      classification.kind === "tracked" &&
-      classification.schemaType === tab.schemaType &&
-      (tab.provisionalName === undefined || typeof tab.provisionalName === "boolean")
-    ) {
-      return value as ContextTab;
-    }
-    return null;
+      classification.kind !== "tracked" ||
+      classification.schemaType !== tab.schemaType ||
+      (tab.provisionalName !== undefined && typeof tab.provisionalName !== "boolean") ||
+      (tab.origin !== undefined && tab.origin !== "local-untitled")
+    )
+      return null;
+    return value as ContextTab;
   }
+  if (tab.origin !== undefined) return null;
   if (
     tab.kind === "viewer" &&
     tab.editable === false &&
     typeof tab.fileType === "string" &&
     tab.fileType in DOCUMENT_FILE_TYPES &&
     optionalString(tab.mimeType)
-  ) {
+  )
     return value as ContextTab;
-  }
   return null;
 }
 
 function parseProjectDesk(value: unknown): PersistedProjectDesk | null {
-  if (!value || typeof value !== "object") return null;
-  const { tabs, activeTabId } = value as Partial<PersistedProjectDesk>;
-  if (!Array.isArray(tabs) || (activeTabId !== null && typeof activeTabId !== "string"))
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    "activeTabId" in record ||
+    !Array.isArray(record.tabs) ||
+    !record.selectedTabIdByWork ||
+    typeof record.selectedTabIdByWork !== "object" ||
+    Array.isArray(record.selectedTabIdByWork)
+  )
     return null;
-  const parsedTabs = tabs.map(parseTab);
-  if (parsedTabs.some((tab) => tab === null)) return null;
-  const uniqueIds = new Set(parsedTabs.map((tab) => tab?.documentId));
-  if (uniqueIds.size !== parsedTabs.length) return null;
-  return { tabs: parsedTabs as ContextTab[], activeTabId: activeTabId as string | null };
+  const tabs = record.tabs.map(parseTab);
+  if (tabs.some((tab) => tab === null)) return null;
+  const parsedTabs = tabs as ContextTab[];
+  if (parsedTabs.some((tab) => tab.draftOnly)) return null;
+  if (new Set(parsedTabs.map((tab) => tab.documentId)).size !== parsedTabs.length) return null;
+  const selections: Record<string, string> = {};
+  const byId = new Map(parsedTabs.map((tab) => [tab.documentId, tab]));
+  for (const [workId, documentId] of Object.entries(record.selectedTabIdByWork)) {
+    if (typeof documentId !== "string") return null;
+    const tab = byId.get(documentId);
+    if (!tab || !contextTabMayBeSelectedForWork(tab, workId)) return null;
+    selections[workId] = documentId;
+  }
+  return { tabs: parsedTabs, selectedTabIdByWork: selections };
 }
 
-function parsePersisted(raw: string | null): PersistedContextDesks | null {
+function parsePersisted(raw: string | null): PersistedContextDesksV2 | null {
   if (!raw) return null;
   try {
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== "object") return null;
-    const { userId, projects } = value as Partial<PersistedContextDesks>;
-    if (typeof userId !== "string" || !projects || typeof projects !== "object") return null;
-    const validProjects: Record<string, PersistedProjectDesk> = {};
-    for (const [projectId, desk] of Object.entries(projects)) {
+    const record = value as Record<string, unknown>;
+    if (
+      record.version !== 2 ||
+      typeof record.userId !== "string" ||
+      !record.projects ||
+      typeof record.projects !== "object" ||
+      Array.isArray(record.projects)
+    )
+      return null;
+    const projects: Record<string, PersistedProjectDesk> = {};
+    for (const [projectId, desk] of Object.entries(record.projects)) {
       const parsed = parseProjectDesk(desk);
-      if (parsed) validProjects[projectId] = parsed;
+      if (!parsed) return null;
+      projects[projectId] = parsed;
     }
-    return { userId, projects: validProjects };
+    return { version: 2, userId: record.userId, projects };
   } catch {
     return null;
   }
 }
 
-export class DeviceContextDeskStore {
-  private state: PersistedContextDesks | null = null;
+function persistedProjects(projects: Record<string, PersistedProjectDesk>) {
+  const filtered: Record<string, PersistedProjectDesk> = {};
+  for (const [projectId, desk] of Object.entries(projects)) {
+    const tabs = desk.tabs
+      .filter((tab) => !tab.draftOnly)
+      .map((tab) => {
+        if (tab.kind === "new" || tab.reviewWorkId === undefined) return tab;
+        const { reviewWorkId: _reviewWorkId, ...persisted } = tab;
+        return persisted as ContextTab;
+      });
+    const retained = new Set(tabs.map((tab) => tab.documentId));
+    filtered[projectId] = {
+      tabs,
+      selectedTabIdByWork: Object.fromEntries(
+        Object.entries(desk.selectedTabIdByWork).filter(([, id]) => retained.has(id)),
+      ),
+    };
+  }
+  return filtered;
+}
 
+export class DeviceContextDeskStore {
+  private state: PersistedContextDesksV2 | null = null;
   constructor(private readonly storage: ContextDeskStorage) {}
 
-  setUser(
-    userId: string,
-    isUntitledPending: (documentId: string) => boolean,
-  ): Record<string, PersistedProjectDesk> {
-    if (this.state?.userId === userId) return this.filteredProjects(isUntitledPending);
-    let persisted: PersistedContextDesks | null = null;
+  setUser(userId: string): Record<string, PersistedProjectDesk> {
+    if (this.state?.userId === userId) return persistedProjects(this.state.projects);
+    let persisted: PersistedContextDesksV2 | null = null;
     try {
       persisted = parsePersisted(this.storage.getItem(CONTEXT_DESK_STORAGE_KEY));
-    } catch {
-      // Storage may be unavailable while the rest of the workspace remains usable.
-    }
+    } catch {}
     if (persisted?.userId === userId) {
       this.state = persisted;
-      return this.filteredProjects(isUntitledPending);
+      return persistedProjects(persisted.projects);
     }
     try {
       this.storage.removeItem(CONTEXT_DESK_STORAGE_KEY);
-    } catch {
-      // The in-memory identity boundary still prevents a cross-user read.
-    }
-    this.state = { userId, projects: {} };
-    return this.state.projects;
+    } catch {}
+    this.state = { version: 2, userId, projects: {} };
+    return {};
   }
 
-  replace(
-    projects: Record<string, PersistedProjectDesk>,
-    isUntitledPending: (documentId: string) => boolean,
-  ): void {
+  replace(projects: Record<string, PersistedProjectDesk>): void {
     if (!this.state) return;
-    this.state = { ...this.state, projects };
-    const persistedProjects = this.filteredProjects(isUntitledPending);
-    this.state = { ...this.state, projects: persistedProjects };
+    this.state = { ...this.state, projects: persistedProjects(projects) };
     try {
       this.storage.setItem(CONTEXT_DESK_STORAGE_KEY, JSON.stringify(this.state));
-    } catch {
-      // Persistence is best-effort; the live desk remains authoritative.
-    }
-  }
-
-  private filteredProjects(
-    isUntitledPending: (documentId: string) => boolean,
-  ): Record<string, PersistedProjectDesk> {
-    const projects: Record<string, PersistedProjectDesk> = {};
-    for (const [projectId, desk] of Object.entries(this.state?.projects ?? {})) {
-      const tabs = desk.tabs
-        .filter(
-          (tab) => !tab.draftOnly && (tab.kind !== "new" || isUntitledPending(tab.documentId)),
-        )
-        .map((tab) => {
-          if (tab.kind === "new" || tab.reviewWorkId === undefined) return tab;
-          const { reviewWorkId: _reviewWorkId, ...persisted } = tab;
-          return persisted as ContextTab;
-        });
-      projects[projectId] = {
-        tabs,
-        activeTabId: tabs.some((tab) => tab.documentId === desk.activeTabId)
-          ? desk.activeTabId
-          : null,
-      };
-    }
-    return projects;
+    } catch {}
   }
 }

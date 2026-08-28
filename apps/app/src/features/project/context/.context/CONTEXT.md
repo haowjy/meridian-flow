@@ -93,6 +93,15 @@ pruning read that stored fact rather than the currently selected Work. Empty-pat
 and is never a working-set route. A new tab uses an ordinary `DocumentSession` from its first render, created detached so
 Y.Doc + IndexedDB exist without opening an unauthorized server room.
 
+The device Context desk persists one exact `selectedTabIdByWork` entry per Work.
+There is no project-wide active-tab slot. One pure desk-route resolver supplies
+render, bind, activation, and guarded materialization redirect identity; desk
+selection is not admission. Every non-draft local `new` tab is persisted
+immediately. Materialization retains `origin: "local-untitled"` across reload and
+Work navigation, while explicit close/deletion and fulfilled bootstrap absence
+still remove it. Server working-set bootstrap merges validated device-owned
+`new` and local-origin tabs by document ID without promoting them into recency.
+
 `untitled-reconciler.ts` is the browser-independent materialization engine;
 `untitled-reconciler-browser.ts` binds localStorage, APIs, editor sessions, and
 React hooks. The localStorage registry (`meridian:pending-untitled`) stores one

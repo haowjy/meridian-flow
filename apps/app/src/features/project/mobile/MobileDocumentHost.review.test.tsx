@@ -37,7 +37,7 @@ const mocks = vi.hoisted(() => ({
     byProject: {
       "project-1": {
         tabs: [],
-        activeTabId: null,
+        selectedTabIdByWork: {},
       },
     },
     _deskHydrated: true,

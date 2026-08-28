@@ -42,6 +42,8 @@ export type ContextTab =
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
       provisionalName?: boolean;
+      /** Device provenance retained after a local Untitled materializes. */
+      origin?: "local-untitled";
     }
   | {
       kind: "viewer";
@@ -70,7 +72,7 @@ export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" 
 
 export type ProjectTabsSlice = {
   tabs: ContextTab[];
-  activeTabId: string | null;
+  selectedTabIdByWork: Record<string, string>;
 };
 
 type ContextTabsState = {
@@ -82,14 +84,18 @@ type ContextTabsState = {
 type ContextTabsActions = {
   openTab: (projectId: string, tab: ContextTab) => void;
   remintNewTab: (projectId: string, documentId: string, replacementId: string) => void;
-  materializeNewTab: (projectId: string, documentId: string, tab: ServerContextTab) => void;
+  materializeNewTab: (
+    projectId: string,
+    documentId: string,
+    tab: Extract<ContextTab, { kind: "tracked" }>,
+  ) => void;
   updateTrackedTab: (
     projectId: string,
     documentId: string,
     metadata: Partial<Extract<ContextTab, { kind: "tracked" }>>,
   ) => void;
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
-  selectTab: (projectId: string, documentId: string | null) => void;
+  selectTab: (projectId: string, workId: string, documentId: string | null) => void;
   /** Replace a project's desk without selecting a tab. */
   replaceTabs: (projectId: string, tabs: ContextTab[]) => void;
   /** Reconcile an async validation snapshot without clobbering tabs opened meanwhile. */
@@ -104,7 +110,7 @@ type ContextTabsActions = {
 // here defeats `useShallow` in `useContextTabs`: a new `tabs: []` identity every
 // call makes the snapshot unequal on every render -> "getSnapshot should be
 // cached" -> infinite render loop. Never mutated (all updates are immutable).
-const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], activeTabId: null };
+const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], selectedTabIdByWork: {} };
 
 function emptySlice(): ProjectTabsSlice {
   return EMPTY_SLICE;
@@ -112,6 +118,13 @@ function emptySlice(): ProjectTabsSlice {
 
 function mergeTabMetadata(existing: ContextTab, incoming: ContextTab): ContextTab {
   const merged = { ...existing, ...incoming } as ContextTab;
+  if (
+    existing.kind === "tracked" &&
+    existing.origin === "local-untitled" &&
+    merged.kind === "tracked"
+  ) {
+    merged.origin = "local-untitled";
+  }
   if (incoming.kind !== "tracked" || incoming.draftOnly) return merged;
   // A tracked tab from the live context tree proves that a draft-created
   // document was committed; omitted optional fields must not retain the marker.
@@ -147,11 +160,11 @@ function upsertTab(slice: ProjectTabsSlice, incoming: ContextTab): ProjectTabsSl
       );
     return {
       tabs,
-      activeTabId:
-        occupiedLocatorIndex >= 0 &&
-        slice.tabs[occupiedLocatorIndex]?.documentId === slice.activeTabId
-          ? incoming.documentId
-          : slice.activeTabId,
+      selectedTabIdByWork: rewriteSelectionValues(
+        slice.selectedTabIdByWork,
+        occupiedLocatorIndex >= 0 ? slice.tabs[occupiedLocatorIndex]?.documentId : undefined,
+        incoming.documentId,
+      ),
     };
   }
 
@@ -161,7 +174,11 @@ function upsertTab(slice: ProjectTabsSlice, incoming: ContextTab): ProjectTabsSl
       tabs: slice.tabs.map((candidate, index) =>
         index === occupiedLocatorIndex ? incoming : candidate,
       ),
-      activeTabId: slice.activeTabId === replacedId ? incoming.documentId : slice.activeTabId,
+      selectedTabIdByWork: rewriteSelectionValues(
+        slice.selectedTabIdByWork,
+        replacedId,
+        incoming.documentId,
+      ),
     };
   }
   return { ...slice, tabs: [...slice.tabs, incoming] };
@@ -169,9 +186,49 @@ function upsertTab(slice: ProjectTabsSlice, incoming: ContextTab): ProjectTabsSl
 
 function canonicalizeTabs(tabs: readonly ContextTab[]): ContextTab[] {
   return tabs.reduce<ContextTab[]>(
-    (canonical, tab) => upsertTab({ tabs: canonical, activeTabId: null }, tab).tabs,
+    (canonical, tab) => upsertTab({ tabs: canonical, selectedTabIdByWork: {} }, tab).tabs,
     [],
   );
+}
+
+export function contextTabMayBeSelectedForWork(tab: ContextTab, workId: string): boolean {
+  return tab.kind === "new" || tab.scheme === "scratch" || tab.scheme === "uploads"
+    ? tab.workId === workId
+    : true;
+}
+
+function rewriteSelectionValues(
+  selections: Record<string, string>,
+  from: string | undefined,
+  to: string,
+): Record<string, string> {
+  if (!from || from === to) return selections;
+  return Object.fromEntries(
+    Object.entries(selections).map(([workId, documentId]) => [
+      workId,
+      documentId === from ? to : documentId,
+    ]),
+  );
+}
+
+function normalizeSelections(
+  tabs: readonly ContextTab[],
+  selections: Record<string, string>,
+): Record<string, string> {
+  const byId = new Map(tabs.map((tab) => [tab.documentId, tab]));
+  return Object.fromEntries(
+    Object.entries(selections).filter(([workId, documentId]) => {
+      const tab = byId.get(documentId);
+      return tab !== undefined && contextTabMayBeSelectedForWork(tab, workId);
+    }),
+  );
+}
+
+function normalizeSlice(slice: ProjectTabsSlice): ProjectTabsSlice {
+  return {
+    ...slice,
+    selectedTabIdByWork: normalizeSelections(slice.tabs, slice.selectedTabIdByWork),
+  };
 }
 
 function sliceFor(state: ContextTabsState, projectId: string): ProjectTabsSlice {
@@ -222,7 +279,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
       openTab: (projectId, tab) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
-          return patchSlice(state, projectId, upsertTab(slice, tab));
+          return patchSlice(state, projectId, normalizeSlice(upsertTab(slice, tab)));
         });
       },
 
@@ -241,7 +298,11 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 ? { ...candidate, documentId: replacementId }
                 : candidate,
             ),
-            activeTabId: slice.activeTabId === documentId ? replacementId : slice.activeTabId,
+            selectedTabIdByWork: rewriteSelectionValues(
+              slice.selectedTabIdByWork,
+              documentId,
+              replacementId,
+            ),
           });
         });
       },
@@ -250,11 +311,19 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         set((state) => {
           const slice = sliceFor(state, projectId);
           if (!slice.tabs.some((candidate) => candidate.documentId === documentId)) return state;
-          const withoutNew = {
+          const withoutNew: ProjectTabsSlice = {
             tabs: slice.tabs.filter((candidate) => candidate.documentId !== documentId),
-            activeTabId: slice.activeTabId === documentId ? tab.documentId : slice.activeTabId,
+            selectedTabIdByWork: rewriteSelectionValues(
+              slice.selectedTabIdByWork,
+              documentId,
+              tab.documentId,
+            ),
           };
-          return patchSlice(state, projectId, upsertTab(withoutNew, tab));
+          return patchSlice(
+            state,
+            projectId,
+            normalizeSlice(upsertTab(withoutNew, { ...tab, origin: "local-untitled" })),
+          );
         });
       },
 
@@ -266,7 +335,11 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               candidate.kind === "tracked" && candidate.documentId === documentId,
           );
           return tab
-            ? patchSlice(state, projectId, upsertTab(slice, { ...tab, ...metadata }))
+            ? patchSlice(
+                state,
+                projectId,
+                normalizeSlice(upsertTab(slice, { ...tab, ...metadata })),
+              )
             : state;
         });
       },
@@ -290,10 +363,18 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         });
       },
 
-      selectTab: (projectId, documentId) => {
+      selectTab: (projectId, workId, documentId) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
-          return patchSlice(state, projectId, { ...slice, activeTabId: documentId });
+          const next = { ...slice.selectedTabIdByWork };
+          if (documentId === null) delete next[workId];
+          else {
+            const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
+            if (!tab || !contextTabMayBeSelectedForWork(tab, workId)) return state;
+            next[workId] = documentId;
+          }
+          if (slice.selectedTabIdByWork[workId] === next[workId]) return state;
+          return patchSlice(state, projectId, { ...slice, selectedTabIdByWork: next });
         });
       },
 
@@ -301,11 +382,12 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         set((state) => {
           const current = sliceFor(state, projectId);
           const canonicalTabs = canonicalizeTabs(tabs);
-          const activeTabId = canonicalTabs.some((tab) => tab.documentId === current.activeTabId)
-            ? current.activeTabId
-            : null;
+          const selectedTabIdByWork = normalizeSelections(
+            canonicalTabs,
+            current.selectedTabIdByWork,
+          );
           if (
-            current.activeTabId === activeTabId &&
+            JSON.stringify(current.selectedTabIdByWork) === JSON.stringify(selectedTabIdByWork) &&
             current.tabs.length === canonicalTabs.length &&
             current.tabs.every((tab, index) =>
               contextTabEquals(tab, canonicalTabs[index] as ContextTab),
@@ -313,7 +395,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           ) {
             return state;
           }
-          return patchSlice(state, projectId, { tabs: canonicalTabs, activeTabId });
+          return patchSlice(state, projectId, { tabs: canonicalTabs, selectedTabIdByWork });
         });
       },
 
@@ -328,10 +410,10 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               return replacement ? [replacement] : [];
             }),
           );
-          const activeTabId = nextTabs.some((tab) => tab.documentId === current.activeTabId)
-            ? current.activeTabId
-            : null;
-          return patchSlice(state, projectId, { tabs: nextTabs, activeTabId });
+          return patchSlice(state, projectId, {
+            tabs: nextTabs,
+            selectedTabIdByWork: normalizeSelections(nextTabs, current.selectedTabIdByWork),
+          });
         });
       },
     }),
@@ -342,19 +424,27 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
 /** Coordinator-only atomic desk commit. Live feature callers use named coordinator commands. */
 export function commitPlannedContextRemoval(
   projectId: string,
-  input: { documentIds: readonly string[]; activeTabId: string | null },
+  input: {
+    documentIds: readonly string[];
+    deskSelection?: { workId: string; documentId: string | null };
+  },
 ): ContextTab[] {
   const documentIds = new Set(input.documentIds);
   const slice = sliceFor(useContextTabsStore.getState(), projectId);
   const removed = slice.tabs.filter((tab) => documentIds.has(tab.documentId));
-  if (removed.length === 0 && slice.activeTabId === input.activeTabId) return [];
   useContextTabsStore.setState((state) => {
     const current = sliceFor(state, projectId);
     const tabs = current.tabs.filter((tab) => !documentIds.has(tab.documentId));
-    const activeTabId = tabs.some((tab) => tab.documentId === input.activeTabId)
-      ? input.activeTabId
-      : null;
-    return patchSlice(state, projectId, { tabs, activeTabId });
+    const selections = { ...current.selectedTabIdByWork };
+    if (input.deskSelection) {
+      const { workId, documentId } = input.deskSelection;
+      if (documentId === null) delete selections[workId];
+      else selections[workId] = documentId;
+    }
+    return patchSlice(state, projectId, {
+      tabs,
+      selectedTabIdByWork: normalizeSelections(tabs, selections),
+    });
   });
   return removed;
 }
@@ -381,31 +471,20 @@ export function useContextTabs(projectId: string): ProjectTabsSlice {
 }
 
 let deviceDesk: DeviceContextDeskStore | null = null;
-let pendingUntitled: ((documentId: string) => boolean) | null = null;
 
 useContextTabsStore.subscribe((state, previous) => {
   if (!state._deskHydrated || state.byProject === previous.byProject) return;
-  deviceDesk?.replace(state.byProject, pendingUntitled ?? (() => false));
+  deviceDesk?.replace(state.byProject);
 });
 
 /** Loads every project desk before the authenticated workspace is revealed. */
-export function rehydrateContextDesks(
-  userId: string,
-  isUntitledPending: (documentId: string) => boolean,
-): void {
+export function rehydrateContextDesks(userId: string): void {
   if (typeof window === "undefined") return;
   deviceDesk ??= new DeviceContextDeskStore(localStorage);
-  pendingUntitled = isUntitledPending;
-  const byProject = deviceDesk.setUser(userId, isUntitledPending);
+  const byProject = deviceDesk.setUser(userId);
   useContextTabsStore.setState({ byProject, _deskHydrated: true });
   // Rewrites stale exclusions immediately, including completed untitleds.
-  deviceDesk.replace(byProject, isUntitledPending);
-}
-
-/** Persists a non-tab lifecycle transition, such as an untitled becoming pending. */
-export function flushContextDesks(): void {
-  if (!deviceDesk || !pendingUntitled) return;
-  deviceDesk.replace(useContextTabsStore.getState().byProject, pendingUntitled);
+  deviceDesk.replace(byProject);
 }
 
 export function useContextTabsActions(): ContextTabsActions {

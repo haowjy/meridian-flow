@@ -64,7 +64,7 @@ it("keeps a terminally guarded production entry absent until replacement identit
             schemaType: "document",
           },
         ],
-        activeTabId: "a",
+        selectedTabIdByWork: { "work-1": "a" },
       },
     },
     _deskHydrated: true,
@@ -214,7 +214,7 @@ it("keeps a terminally guarded production entry absent until replacement identit
               schemaType: "document",
             },
           ],
-          activeTabId: "replacement-a",
+          selectedTabIdByWork: { "work-1": "replacement-a" },
         },
       },
     }));
@@ -293,7 +293,7 @@ it("never restamps a Work-scoped route candidate during a production Work transi
             schemaType: "document",
           },
         ],
-        activeTabId: "work-2-document",
+        selectedTabIdByWork: { "work-1": "work-2-document" },
       },
     },
     _deskHydrated: true,
@@ -392,7 +392,7 @@ it("never restamps a Work-scoped route candidate during a production Work transi
       await act(async () => switchWork?.());
 
       expect(useContextTabsStore.getState().byProject[projectId]).toMatchObject({
-        activeTabId: "knowledge",
+        selectedTabIdByWork: { "work-1": "knowledge" },
         tabs: [expect.objectContaining({ documentId: "knowledge" })],
       });
       expect(coordinator?.getProjectSnapshot(projectId)).toMatchObject({

@@ -31,7 +31,6 @@ import { ContextRemovalAccountProvider } from "@/features/project/context/Contex
 import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
 import {
   getUntitledReconciler,
-  isUntitledPending,
   syncUntitledReceiptOwners,
 } from "@/features/project/context/untitled-reconciler-browser";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
@@ -175,7 +174,7 @@ function AuthenticatedProviderTree({
     if (!untitledReconciler) return;
     untitledReconciler.rehydrate();
     untitledReconciler.start();
-    rehydrateContextDesks(user.userId, isUntitledPending);
+    rehydrateContextDesks(user.userId);
     syncUntitledReceiptOwners();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();

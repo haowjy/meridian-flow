@@ -263,8 +263,11 @@ export class UntitledLifecycleRig {
   }
 
   seedTab(tab: ContextTab = UNTITLED_TAB, projectId = "project-1"): ContextTab {
+    const workId = tab.workId ?? "work-1";
     useContextTabsStore.setState({
-      byProject: { [projectId]: { tabs: [tab], activeTabId: tab.documentId } },
+      byProject: {
+        [projectId]: { tabs: [tab], selectedTabIdByWork: { [workId]: tab.documentId } },
+      },
     });
     return tab;
   }

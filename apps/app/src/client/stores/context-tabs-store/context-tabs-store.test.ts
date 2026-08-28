@@ -43,18 +43,18 @@ describe("context tab identity and removal commits", () => {
     const store = useContextTabsStore.getState();
     store.openTab("project-1", trackedAt("old", "/same.md"));
     store.openTab("project-1", trackedAt("other", "/other.md"));
-    store.selectTab("project-1", "old");
+    store.selectTab("project-1", "work-1", "old");
 
     store.openTab("project-1", trackedAt("replacement", "/same.md"));
 
     expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
       tabs: [{ documentId: "replacement" }, { documentId: "other" }],
-      activeTabId: "replacement",
+      selectedTabIdByWork: { "work-1": "replacement" },
     });
     expect(
       commitPlannedContextRemoval("project-1", {
         documentIds: ["old"],
-        activeTabId: "replacement",
+        deskSelection: { workId: "work-1", documentId: "replacement" },
       }),
     ).toEqual([]);
     expect(useContextTabsStore.getState().byProject["project-1"]?.tabs[0]?.documentId).toBe(
@@ -69,17 +69,66 @@ describe("context tab identity and removal commits", () => {
       trackedAt("b", "/b.md"),
       trackedAt("c", "/c.md"),
     ]);
-    store.selectTab("project-1", "b");
+    store.selectTab("project-1", "work-1", "b");
 
     const removed = commitPlannedContextRemoval("project-1", {
       documentIds: ["a", "b"],
-      activeTabId: "c",
+      deskSelection: { workId: "work-1", documentId: "c" },
     });
 
     expect(removed.map((tab) => tab.documentId)).toEqual(["a", "b"]);
     expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
       tabs: [{ documentId: "c" }],
-      activeTabId: "c",
+      selectedTabIdByWork: { "work-1": "c" },
+    });
+  });
+
+  it("keeps independent Work selections and rewrites every reference on remint", () => {
+    const store = useContextTabsStore.getState();
+    store.openTab("project-1", { kind: "new", documentId: "local", name: "Untitled", workId: "a" });
+    store.openTab("project-1", trackedAt("chapter", "/chapter.md"));
+    store.selectTab("project-1", "a", "local");
+    store.selectTab("project-1", "b", "chapter");
+    store.remintNewTab("project-1", "local", "reminted");
+    expect(useContextTabsStore.getState().byProject["project-1"]?.selectedTabIdByWork).toEqual({
+      a: "reminted",
+      b: "chapter",
+    });
+  });
+
+  it("materializes in place with durable local origin and scrubs incompatible metadata", () => {
+    const store = useContextTabsStore.getState();
+    store.openTab("project-1", { kind: "new", documentId: "local", name: "Untitled", workId: "a" });
+    store.selectTab("project-1", "a", "local");
+    store.materializeNewTab("project-1", "local", {
+      kind: "tracked",
+      documentId: "local",
+      scheme: "scratch",
+      path: "/Untitled.md",
+      name: "Untitled.md",
+      workId: "a",
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+    });
+    expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
+      tabs: [{ documentId: "local", origin: "local-untitled" }],
+      selectedTabIdByWork: { a: "local" },
+    });
+
+    store.updateTrackedTab("project-1", "local", { workId: "b" });
+    expect(useContextTabsStore.getState().byProject["project-1"]?.selectedTabIdByWork).toEqual({});
+  });
+
+  it("removes every dangling selection atomically", () => {
+    const store = useContextTabsStore.getState();
+    store.openTab("project-1", trackedAt("chapter", "/chapter.md"));
+    store.selectTab("project-1", "a", "chapter");
+    store.selectTab("project-1", "b", "chapter");
+    commitPlannedContextRemoval("project-1", { documentIds: ["chapter"] });
+    expect(useContextTabsStore.getState().byProject["project-1"]).toEqual({
+      tabs: [],
+      selectedTabIdByWork: {},
     });
   });
 });

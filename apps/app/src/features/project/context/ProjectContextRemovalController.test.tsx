@@ -14,12 +14,24 @@ function SettlingHost({ projectId }: { projectId: string }) {
   const snapshot = useContextRemovalProject(projectId);
   const coordinator = useContextRemovalCoordinator();
   useLayoutEffect(() => {
-    if (snapshot.selection.status !== "candidate") return;
-    coordinator.bindRouteSelection(projectId, snapshot.selection.revision, {
-      kind: "server",
-      documentId: "document-1",
-    });
-  }, [coordinator, projectId, snapshot.selection]);
+    if (snapshot.selection.status === "candidate") {
+      coordinator.bindRouteSelection(projectId, snapshot.selection.revision, {
+        kind: "server",
+        documentId: "document-1",
+      });
+      return;
+    }
+    if (snapshot.selection.status === "bound") {
+      coordinator.activate({
+        projectId,
+        selectionRevision: snapshot.selection.revision,
+        transitionRevision: snapshot.transitionRevision,
+        locator: snapshot.selection.locator,
+        identity: snapshot.selection.identity,
+        owner: { kind: "desk", documentId: "document-1" },
+      });
+    }
+  }, [coordinator, projectId, snapshot]);
   return null;
 }
 
@@ -86,7 +98,7 @@ describe("ProjectContextRemovalController", () => {
               schemaType: "document",
             },
           ],
-          activeTabId: "scratch-1",
+          selectedTabIdByWork: { "work-1": "scratch-1" },
         },
       },
       _deskHydrated: true,
@@ -139,7 +151,7 @@ describe("ProjectContextRemovalController", () => {
               schemaType: "document",
             },
           ],
-          activeTabId: "document-1",
+          selectedTabIdByWork: { "work-1": "document-1" },
         },
       },
       _deskHydrated: true,

@@ -103,7 +103,9 @@ describe("ContextRemovalAccountProvider", () => {
       );
     }
     useContextTabsStore.setState({
-      byProject: { "project-1": { tabs: [tracked("a", "/a.md")], activeTabId: "a" } },
+      byProject: {
+        "project-1": { tabs: [tracked("a", "/a.md")], selectedTabIdByWork: { "work-1": "a" } },
+      },
       _deskHydrated: true,
     });
     await withReactRoot(<Harness />, async () => {
@@ -121,7 +123,9 @@ describe("ContextRemovalAccountProvider", () => {
 
   it("constructs authority before descendants and isolates A to B to A", async () => {
     useContextTabsStore.setState({
-      byProject: { "project-1": { tabs: [tracked("a", "/a.md")], activeTabId: "a" } },
+      byProject: {
+        "project-1": { tabs: [tracked("a", "/a.md")], selectedTabIdByWork: { "work-1": "a" } },
+      },
       _deskHydrated: true,
     });
     const instances: ContextRemovalCoordinator[] = [];
@@ -236,13 +240,17 @@ describe("ContextRemovalAccountProvider", () => {
     }
 
     useContextTabsStore.setState({
-      byProject: { "project-1": { tabs: [tracked("a", "/a.md")], activeTabId: "a" } },
+      byProject: {
+        "project-1": { tabs: [tracked("a", "/a.md")], selectedTabIdByWork: { "work-1": "a" } },
+      },
       _deskHydrated: true,
     });
     await withReactRoot(<Harness />, async () => {
       await act(async () => setAccount?.("account-b"));
       useContextTabsStore.setState({
-        byProject: { "project-1": { tabs: [tracked("b", "/b.md")], activeTabId: "b" } },
+        byProject: {
+          "project-1": { tabs: [tracked("b", "/b.md")], selectedTabIdByWork: { "work-1": "b" } },
+        },
         _deskHydrated: true,
       });
       oldListener.mockClear();
@@ -257,7 +265,7 @@ describe("ContextRemovalAccountProvider", () => {
       service.applyDraftMetadata("project-1", "work-1", "b");
       expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
         tabs: [{ documentId: "b" }],
-        activeTabId: "b",
+        selectedTabIdByWork: { "work-1": "b" },
       });
       expect(oldListener).not.toHaveBeenCalled();
     });

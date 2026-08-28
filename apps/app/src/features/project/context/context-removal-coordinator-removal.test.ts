@@ -29,9 +29,11 @@ function tracked(documentId: string, path: string): Extract<ContextTab, { kind: 
   };
 }
 
-function setDesk(tabs: ContextTab[], activeTabId: string | null) {
+function setDesk(tabs: ContextTab[], selectedTabId: string | null) {
   useContextTabsStore.setState({
-    byProject: { [projectId]: { tabs, activeTabId } },
+    byProject: {
+      [projectId]: { tabs, selectedTabIdByWork: selectedTabId ? { "work-1": selectedTabId } : {} },
+    },
     _deskHydrated: false,
   });
 }
@@ -482,7 +484,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     const routeCommits: ReconcileContextRoutesInput[] = [];
     const coordinator = new ContextRemovalCoordinator("account-a", {
       desk: {
-        read: () => ({ tabs: [tracked("a", "/a.md")], activeTabId: "a" }),
+        read: () => ({ tabs: [tracked("a", "/a.md")], selectedTabIdByWork: { "work-1": "a" } }),
         commit: (_id, input) => {
           deskCommits.push([...input.documentIds]);
           return [];

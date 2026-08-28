@@ -23,6 +23,29 @@ const phoneSelection = {
 };
 
 describe("context removal planner", () => {
+  it("retains local origin for Work pruning but not explicit close", () => {
+    const localOrigin = {
+      ...tracked("local", "/Untitled.md"),
+      scheme: "scratch" as const,
+      workId: "work-a",
+      origin: "local-untitled" as const,
+    };
+    const input = {
+      activeWorkId: "work-b",
+      tabs: [localOrigin],
+      selectedTabId: null,
+      route: { cleanup: null, current: { kind: "none" as const } },
+      admitted: null,
+    };
+    expect(
+      planContextRemoval({ ...input, intent: { cause: "work-prune", documentIds: ["local"] } })
+        .outcome.kind,
+    ).toBe("noop");
+    expect(
+      planContextRemoval({ ...input, intent: { cause: "writer-close", documentIds: ["local"] } })
+        .outcome.kind,
+    ).not.toBe("noop");
+  });
   it("plans candidate rejection from the desk-active admitted fallback atomically", () => {
     const knowledge = { ...tracked("knowledge", "/knowledge.md"), scheme: "kb" as const };
     const rejected = { scheme: "scratch" as const, path: "/wrong.md", workId: "work-1" };
@@ -31,7 +54,7 @@ describe("context removal planner", () => {
       rejected,
       activeWorkId: "work-1",
       tabs: [knowledge],
-      activeTabId: "knowledge",
+      selectedTabId: "knowledge",
       admitted: { scheme: "scratch", path: "/old.md", workId: "work-1" },
       recentRoutes: [
         { scheme: "scratch", path: "/wrong.md", workId: "work-1" },
@@ -61,7 +84,7 @@ describe("context removal planner", () => {
       rejected,
       activeWorkId: "work-1",
       tabs: [{ ...tracked("draft", "/draft.md"), draftOnly: true }],
-      activeTabId: null,
+      selectedTabId: null,
       admitted: { scheme: "scratch", path: "/work-2.md", workId: "work-2" },
       recentRoutes: [{ scheme: "uploads", path: "/work-2.bin", workId: "work-2" }],
     });
@@ -89,13 +112,13 @@ describe("context removal planner", () => {
       [],
       "/survivor.md",
     ],
-  ])("uses the %s candidate-rejection fallback tier", (_case, tabs, activeTabId, admitted, recentRoutes, path) => {
+  ])("uses the %s candidate-rejection fallback tier", (_case, tabs, selectedTabId, admitted, recentRoutes, path) => {
     const plan = planCandidateRejection({
       revision: 3,
       rejected: { scheme: "scratch", path: "/missing.md", workId: "work-1" },
       activeWorkId: "work-1",
       tabs,
-      activeTabId,
+      selectedTabId,
       admitted,
       recentRoutes,
     });
@@ -116,7 +139,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [removed],
-      activeTabId: null,
+      selectedTabId: null,
       route: { cleanup: null, current: { kind: "none" } },
       admitted: admitted,
       intent,
@@ -139,7 +162,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [removed],
-      activeTabId: null,
+      selectedTabId: null,
       route: { cleanup: null, current: { kind: "none" } },
       admitted: {
         scheme: intent.cause === "work-prune" ? "scratch" : "manuscript",
@@ -156,7 +179,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [tracked("desktop", "/desktop.md")],
-      activeTabId: "desktop",
+      selectedTabId: "desktop",
       admitted: phoneSelection.locator,
       route: { cleanup: null, current: { kind: "none" } },
       intent: { cause: "writer-close", documentIds: ["desktop"] },
@@ -170,7 +193,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [tracked("desktop", "/desktop.md")],
-      activeTabId: "desktop",
+      selectedTabId: "desktop",
       admitted: null,
       route: { cleanup: null, current: phoneSelection },
       intent: { cause: "acknowledged-delete", documentIds: ["desktop"] },
@@ -191,7 +214,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [replacement],
-      activeTabId: "replacement",
+      selectedTabId: "replacement",
       admitted: prior,
       route: {
         cleanup: {
@@ -221,7 +244,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [],
-      activeTabId: null,
+      selectedTabId: null,
       admitted: phoneSelection.locator,
       route: {
         cleanup: {
@@ -253,7 +276,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [local, draft],
-      activeTabId: "local",
+      selectedTabId: "local",
       admitted: null,
       route: { cleanup: null, current: { kind: "none" } },
       intent: { cause: "acknowledged-delete", documentIds: ["local", "draft"] },
@@ -277,13 +300,13 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs: [],
-      activeTabId: null,
+      selectedTabId: null,
       admitted: current.locator,
       route: { cleanup, current },
       intent: { cause: "acknowledged-delete", documentIds: ["a"] },
     });
 
-    expect(plan.nextActiveTabId).toBeNull();
+    expect(plan.nextSelectedTabId).toBeNull();
     expect(plan.routeRepairTarget).toBeNull();
     expect(plan.admitted).toEqual(current.locator);
     expect(plan.workingSet.clearAll).toBe(false);
@@ -304,7 +327,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       activeWorkId: "work-1",
       tabs,
-      activeTabId: "c",
+      selectedTabId: "c",
       admitted: current.locator,
       route: {
         cleanup: {
@@ -317,7 +340,7 @@ describe("context removal planner", () => {
       intent: { cause: "acknowledged-delete", documentIds: ["a"] },
     });
 
-    expect(plan.nextActiveTabId).toBe("c");
+    expect(plan.nextSelectedTabId).toBe("c");
     expect(plan.admitted).toEqual(current.locator);
     expect(plan.routeRepairTarget).toBeNull();
   });
