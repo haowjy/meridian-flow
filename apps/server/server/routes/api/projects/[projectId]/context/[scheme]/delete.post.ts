@@ -8,6 +8,7 @@
 import type { DeleteContextEntryRequest } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
+import { requireRequestId } from "../../../../../../lib/request-id.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 function parseBody(raw: unknown): DeleteContextEntryRequest {
@@ -21,16 +22,15 @@ function parseBody(raw: unknown): DeleteContextEntryRequest {
   if (expected.kind === "folder") {
     return { path: parseContextMutationPath(body.path, "path"), expected: { kind: "folder" } };
   }
-  if (
-    expected.kind !== "file" ||
-    typeof expected.documentId !== "string" ||
-    expected.documentId.length === 0
-  ) {
+  if (expected.kind !== "file") {
     throw createError({ statusCode: 400, message: "expected file identity is required" });
   }
   return {
     path: parseContextMutationPath(body.path, "path"),
-    expected: { kind: "file", documentId: expected.documentId },
+    expected: {
+      kind: "file",
+      documentId: requireRequestId(expected.documentId, "expected.documentId"),
+    },
   };
 }
 

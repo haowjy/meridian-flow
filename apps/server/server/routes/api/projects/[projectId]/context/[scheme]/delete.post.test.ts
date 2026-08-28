@@ -4,6 +4,8 @@ import { Err, Ok } from "../../../../../../shared/result.js";
 import { resolveContextRoute } from "./_helpers.js";
 import handler from "./delete.post.js";
 
+const DOCUMENT_ID = "00000000-0000-4000-8000-000000000002";
+
 vi.mock("./_helpers.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./_helpers.js")>()),
   resolveContextRoute: vi.fn(),
@@ -16,7 +18,7 @@ describe("POST context delete", () => {
 
   it("returns the exact successful deletion result", async () => {
     const deleteEntry = vi.fn(async () =>
-      Ok({ status: "deleted" as const, deletedDocumentIds: ["document-1"] }),
+      Ok({ status: "deleted" as const, deletedDocumentIds: [DOCUMENT_ID] }),
     );
     vi.mocked(resolveContextRoute).mockResolvedValue({
       userId: "00000000-0000-4000-8000-000000000001",
@@ -29,7 +31,7 @@ describe("POST context delete", () => {
         method: "POST",
         body: JSON.stringify({
           path: "chapter.md",
-          expected: { kind: "file", documentId: "document-1" },
+          expected: { kind: "file", documentId: DOCUMENT_ID },
         }),
         headers: { "content-type": "application/json" },
       }),
@@ -38,11 +40,11 @@ describe("POST context delete", () => {
 
     await expect(handler(event as never)).resolves.toEqual({
       status: "deleted",
-      deletedDocumentIds: ["document-1"],
+      deletedDocumentIds: [DOCUMENT_ID],
     });
     expect(deleteEntry).toHaveBeenCalledWith(
       "manuscript://chapter.md",
-      expect.objectContaining({ expected: { kind: "file", documentId: "document-1" } }),
+      expect.objectContaining({ expected: { kind: "file", documentId: DOCUMENT_ID } }),
     );
   });
 
@@ -59,7 +61,7 @@ describe("POST context delete", () => {
         method: "POST",
         body: JSON.stringify({
           path: "chapter.md",
-          expected: { kind: "file", documentId: "document-1" },
+          expected: { kind: "file", documentId: DOCUMENT_ID },
         }),
         headers: { "content-type": "application/json" },
       }),
@@ -81,7 +83,7 @@ describe("POST context delete", () => {
         method: "POST",
         body: JSON.stringify({
           path: "chapter.md",
-          expected: { kind: "file", documentId: "document-1" },
+          expected: { kind: "file", documentId: DOCUMENT_ID },
         }),
         headers: { "content-type": "application/json" },
       }),
@@ -101,5 +103,29 @@ describe("POST context delete", () => {
         },
       },
     });
+  });
+
+  it("rejects a malformed expected document ID before deletion", async () => {
+    const deleteEntry = vi.fn();
+    vi.mocked(resolveContextRoute).mockResolvedValue({
+      userId: "00000000-0000-4000-8000-000000000001",
+      scheme: "manuscript",
+      workId: null,
+      port: { delete: deleteEntry },
+    } as never);
+    const event = {
+      req: new Request("https://server.local/delete", {
+        method: "POST",
+        body: JSON.stringify({
+          path: "chapter.md",
+          expected: { kind: "file", documentId: "not-a-uuid" },
+        }),
+        headers: { "content-type": "application/json" },
+      }),
+      res: { status: 200 },
+    };
+
+    await expect(handler(event as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(deleteEntry).not.toHaveBeenCalled();
   });
 });
