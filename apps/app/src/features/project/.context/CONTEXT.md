@@ -244,6 +244,13 @@ and publishes awaitable typed commands. The route component remains the only
 TanStack Router adapter. Collection/detail leaves receive targets and commands
 rather than parsing or mutating search themselves.
 
+A genuinely cold cross-project loader replaces the old project shell immediately
+with the route's inert pending surface. It must not leave the previous project's
+Context publishers mounted while the next project's Work authority is unresolved.
+This is a route-lifetime boundary, not a query-refresh policy: once Work data has
+successfully seeded the mounted project, a background `isFetching` refresh keeps
+that project's Context host and mutation publishers live.
+
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns route-validated opens, temporary-tab projection, scroll restoration,
 and screen-entry defaults. The platform-neutral project adapter owns revision
