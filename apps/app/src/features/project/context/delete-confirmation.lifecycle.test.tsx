@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { MeridianApiError } from "@/client/api/http-client";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextRemovalAccountProvider } from "./ContextRemovalAccountProvider";
@@ -119,7 +120,13 @@ it("submits the Work captured when delete confirmation was requested", async () 
 });
 
 it("keeps a stale-target confirmation open with a retry error", async () => {
-  deleted.mockRejectedValueOnce(new Error("stale_target"));
+  const staleTarget = new MeridianApiError({
+    code: "stale_target",
+    message: "The context entry changed. Refresh and try again.",
+    retryable: true,
+    source: "system",
+  });
+  deleted.mockRejectedValueOnce(staleTarget);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -140,7 +147,7 @@ it("keeps a stale-target confirmation open with a retry error", async () => {
       );
       await act(async () => confirmation?.confirm());
       expect(confirmation?.target).toMatchObject({ documentId: "old-document" });
-      await vi.waitFor(() => expect(confirmation?.error).toBe(true));
+      await vi.waitFor(() => expect(confirmation?.error).toBe(staleTarget));
     },
   );
 });

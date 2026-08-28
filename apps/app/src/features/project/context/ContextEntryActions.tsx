@@ -16,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
+import { isMeridianApiError } from "@/client/api/http-client";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
@@ -253,18 +254,26 @@ export function useDeleteConfirmation({
   scheme: ProjectContextTreeScheme;
 }) {
   const [target, setTarget] = useState<DeleteTarget | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const mutation = useDeleteContextEntry(projectId, scheme);
   const contextRemoval = useContextRemovalCoordinator();
   const queryClient = useQueryClient();
 
   const requestDelete = useCallback(
-    (t: EntryActionTarget) => setTarget({ ...t, workId }),
+    (t: EntryActionTarget) => {
+      setError(null);
+      setTarget({ ...t, workId });
+    },
     [workId],
   );
-  const cancel = useCallback(() => setTarget(null), []);
+  const cancel = useCallback(() => {
+    setError(null);
+    setTarget(null);
+  }, []);
 
   const confirm = useCallback(async () => {
     if (!target) return;
+    setError(null);
     try {
       const locator = { scheme, path: target.path, workId: target.workId };
       const initiation = contextRemoval.captureDeleteInitiation(
@@ -296,15 +305,16 @@ export function useDeleteConfirmation({
           isWorkScopedProjectContextScheme(scheme) ? target.workId : undefined,
         ),
       });
-    } catch {
+    } catch (cause) {
       // Keep the target visible so the writer can refresh and retry.
+      setError(cause instanceof Error ? cause : new Error("Context deletion failed"));
     }
   }, [contextRemoval, projectId, queryClient, scheme, target, mutation]);
 
   return {
     target,
     isPending: mutation.isPending,
-    error: mutation.isError,
+    error,
     requestDelete,
     cancel,
     confirm,
@@ -320,7 +330,7 @@ export function DeleteConfirmationDialog({
 }: {
   target: EntryActionTarget | null;
   isPending: boolean;
-  error?: boolean;
+  error?: Error | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -347,7 +357,11 @@ export function DeleteConfirmationDialog({
         </DialogHeader>
         {error ? (
           <p className="text-sm text-destructive">
-            <Trans>The entry changed. Refresh the tree and try again.</Trans>
+            {isMeridianApiError(error) && error.code === "stale_target" ? (
+              <Trans>The entry changed. Refresh the tree and try again.</Trans>
+            ) : (
+              <Trans>Couldn't delete this entry. Try again.</Trans>
+            )}
           </p>
         ) : null}
         <DialogFooter className="gap-2 sm:gap-0">

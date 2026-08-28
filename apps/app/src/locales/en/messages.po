@@ -891,6 +891,10 @@ msgstr "Couldn't create a Work"
 msgid "Couldn't delete that Work"
 msgstr "Couldn't delete that Work"
 
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Couldn't delete this entry. Try again."
+msgstr "Couldn't delete this entry. Try again."
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx

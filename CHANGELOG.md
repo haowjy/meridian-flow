@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- `apps/server`, `apps/app`: preserve Context deletion `stale_target` conflicts
+  through the structured HTTP error wire and show distinct refresh recovery.
+
 - `contracts`, `apps/server`, `apps/app`: make Context deletion prove the
   initiating target identity, admit exact removal effects before invalidation,
   and reconcile route continuity through account-scoped, Work-gated protocol state.

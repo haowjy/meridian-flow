@@ -1,6 +1,6 @@
 /** Delete route coverage for exact acknowledged document identities. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Ok } from "../../../../../../shared/result.js";
+import { Err, Ok } from "../../../../../../shared/result.js";
 import { resolveContextRoute } from "./_helpers.js";
 import handler from "./delete.post.js";
 
@@ -67,5 +67,39 @@ describe("POST context delete", () => {
     };
 
     await expect(handler(event as never)).rejects.toBe(callbackFailure);
+  });
+
+  it("preserves stale_target as a named structured conflict", async () => {
+    vi.mocked(resolveContextRoute).mockResolvedValue({
+      userId: "00000000-0000-4000-8000-000000000001",
+      scheme: "manuscript",
+      workId: null,
+      port: { delete: vi.fn(async () => Err({ code: "stale_target" as const, uri: "x" })) },
+    } as never);
+    const event = {
+      req: new Request("https://server.local/delete", {
+        method: "POST",
+        body: JSON.stringify({
+          path: "chapter.md",
+          expected: { kind: "file", documentId: "document-1" },
+        }),
+        headers: { "content-type": "application/json" },
+      }),
+      res: { status: 200 },
+    };
+
+    await expect(handler(event as never)).rejects.toMatchObject({
+      statusCode: 409,
+      data: {
+        __meridianInterruptEnvelope: {
+          kind: "error",
+          error: {
+            code: "stale_target",
+            retryable: true,
+            source: "system",
+          },
+        },
+      },
+    });
   });
 });
