@@ -1,6 +1,6 @@
 /** Context router metadata propagation at the adapter-to-public-port boundary. */
 import { describe, expect, it, vi } from "vitest";
-import { Ok } from "../../../shared/result.js";
+import { Err, Ok } from "../../../shared/result.js";
 import { type ContextSchemeAdapter, schemeCapabilities } from "../ports/context-adapter.js";
 import type { ContextScheme } from "../ports/context-port.js";
 import { createContextPortRouter } from "./router.js";
@@ -97,12 +97,34 @@ describe("context router deletion receipts", () => {
     expect(adapter.tree?.commitPreparedDelete).not.toHaveBeenCalled();
   });
 
+  it("reports a replacement that wins after inspection as a stale target", async () => {
+    const adapter = writableAdapter("manuscript");
+    if (!adapter.tree) throw new Error("writable test adapter must provide tree mutations");
+    vi.spyOn(adapter.tree, "commitPreparedDelete").mockResolvedValueOnce(
+      Err({ code: "stale_source" }),
+    );
+    const port = createContextPortRouter({ adapters: new Map([["manuscript", adapter]]) });
+
+    await expect(
+      port.delete("manuscript://old.md", {
+        expected: { kind: "file", documentId: "document-old" },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: "stale_target", uri: "manuscript://old.md" },
+    });
+  });
+
   it("preserves the committed file identity", async () => {
     const port = createContextPortRouter({
       adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
     });
 
-    await expect(port.delete("manuscript://old.md")).resolves.toEqual({
+    await expect(
+      port.delete("manuscript://old.md", {
+        expected: { kind: "file", documentId: "document-old" },
+      }),
+    ).resolves.toEqual({
       ok: true,
       value: {
         status: "deleted",
@@ -116,7 +138,9 @@ describe("context router deletion receipts", () => {
       adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
     });
 
-    await expect(port.delete("manuscript://empty")).resolves.toEqual({
+    await expect(
+      port.delete("manuscript://empty", { expected: { kind: "folder" } }),
+    ).resolves.toEqual({
       ok: true,
       value: {
         status: "deleted",

@@ -67,7 +67,7 @@ router resolves to a stable Work ID before dispatch.
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, `delete`, `list`, `mkdir`, and `search`. No errors cross as throws. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. No errors cross as throws. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration. The tree HTTP response exposes the same object used by router enforcement. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
@@ -192,9 +192,10 @@ router resolves to a stable Work ID before dispatch.
   through store, adapter, port, and HTTP route; only proven occupation is a
   `conflict` with an Open-existing locator.
 - Successful HTTP deletion acknowledges `{ status: "deleted", deletedDocumentIds }`.
-  The request names the expected entry kind and, for a file, its initiating
-  `documents.id`; mismatch or CAS replacement is `stale_target` and acknowledges
-  nothing.
+  Every `ContextPort.delete` caller names the expected entry kind and, for a file,
+  its initiating `documents.id`; mismatch or CAS replacement is `stale_target`
+  and acknowledges nothing. This is the same CAS boundary for HTTP deletion and
+  internal exact-file cleanup; there is no path-only file-delete contract.
   Files contribute their one committed `documents.id`; empty folders contribute
   none. Non-empty folders remain invalid operations, and post-commit membership
   delivery failure prevents a successful acknowledgement.

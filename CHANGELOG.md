@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- `apps/server`: require expected file identity or folder kind at the Context
+  deletion port, so staged-create rollback cannot delete a path replacement.
+
 - `apps/server`, `apps/app`: preserve Context deletion `stale_target` conflicts
   through the structured HTTP error wire and show distinct refresh recovery.
 

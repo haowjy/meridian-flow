@@ -432,15 +432,10 @@ async function deleteCreatedTrackedDocument(input: {
   path: string;
   documentId: string;
 }): Promise<void> {
-  const ref = await input.port.stat(input.path);
-  if (!ref.ok) {
-    if (ref.error.code === "not_found") return;
-    throw new Error(contextErrorMessage(ref.error));
-  }
-  if (ref.value.kind !== "tracked" || ref.value.documentId !== input.documentId) return;
-
-  const deleted = await input.port.delete(input.path);
-  if (!deleted.ok && deleted.error.code !== "not_found") {
+  const deleted = await input.port.delete(input.path, {
+    expected: { kind: "file", documentId: input.documentId },
+  });
+  if (!deleted.ok && deleted.error.code !== "not_found" && deleted.error.code !== "stale_target") {
     throw new Error(contextErrorMessage(deleted.error));
   }
 }

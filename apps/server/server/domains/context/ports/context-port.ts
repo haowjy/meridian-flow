@@ -201,7 +201,7 @@ export interface ContextMoveOptions extends ContextWriteOptions {
 }
 
 export interface ContextDeleteOptions extends ContextWriteOptions {
-  expected?: DeleteContextEntryRequest["expected"];
+  expected: DeleteContextEntryRequest["expected"];
 }
 
 export interface ContextMoveResult {
@@ -289,9 +289,10 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
+  /** Delete only the initiating file identity or folder kind at this URI. */
   delete(
     uri: string,
-    options?: ContextDeleteOptions,
+    options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
   list(uri?: string): Promise<Result<ContextListEntry[], ContextError>>;

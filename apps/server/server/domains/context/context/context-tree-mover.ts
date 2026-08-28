@@ -158,7 +158,7 @@ export class ContextTreeMover {
 
   async delete(
     target: ContextTreeDispatch,
-    options?: ContextDeleteOptions,
+    options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>> {
     if (!target.adapter.capabilities.writable || !target.adapter.tree) {
       return Err({ code: "permission_denied", uri: target.canonical });
@@ -168,10 +168,9 @@ export class ContextTreeMover {
     if (!token.ok) return token;
     if (token.value === null) return Err({ code: "not_found", uri: target.canonical });
     if (
-      options?.expected &&
-      (options.expected.kind === "folder"
+      options.expected.kind === "folder"
         ? token.value.kind !== "directory"
-        : token.value.kind !== "file" || token.value.nodeId !== options.expected.documentId)
+        : token.value.kind !== "file" || token.value.nodeId !== options.expected.documentId
     ) {
       return Err({ code: "stale_target", uri: target.canonical });
     }
@@ -183,7 +182,7 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) {
-      return result.error.code === "stale_source" && options?.expected
+      return result.error.code === "stale_source"
         ? Err({ code: "stale_target", uri: target.canonical })
         : result;
     }

@@ -17,6 +17,7 @@ import type {
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentResult,
+  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextMoveOptions,
@@ -438,7 +439,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
     async delete(
       uri: string,
-      options?: ContextWriteOptions,
+      options: ContextDeleteOptions,
     ): Promise<Result<DeleteContextEntryResult, ContextError>> {
       const r = await resolveMutation(uri);
       if (!r.ok) return r;
