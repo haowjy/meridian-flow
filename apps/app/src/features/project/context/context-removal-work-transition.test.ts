@@ -96,8 +96,8 @@ describe("ContextRemovalCoordinator Work transitions", () => {
     });
     expect(rig.routes()).toEqual([{ scheme: "scratch", path: "/new.md", workId: "work-new" }]);
     expect(rig.coordinator.getProjectSnapshot(projectId)).toMatchObject({
-      selection: { status: "pending", locator: { path: "/new.md", workId: "work-new" } },
-      rememberedRoute: { path: "/new.md", workId: "work-new" },
+      selection: { status: "none" },
+      admitted: { path: "/new.md", workId: "work-new" },
       live: true,
     });
   });
@@ -117,12 +117,37 @@ describe("ContextRemovalCoordinator Work transitions", () => {
 
     const revision = rig.coordinator.changeWorkSelection(projectId, "work-new", null);
 
-    expect(revision).toBeTypeOf("number");
+    expect(revision).toBeNull();
     expect(rig.routes()).toEqual([{ scheme: "manuscript", path: "/new.md" }]);
     expect(rig.coordinator.getProjectSnapshot(projectId)).toMatchObject({
-      selection: { status: "pending", locator: { path: "/new.md", workId: "work-new" } },
-      rememberedRoute: { path: "/new.md", workId: "work-new" },
+      selection: { status: "none" },
+      admitted: { path: "/new.md", workId: "work-new" },
     });
+  });
+
+  it("keeps project-scoped admitted fallback independent of the same route candidate", () => {
+    setDesk([tracked("knowledge", "/knowledge.md")], "knowledge");
+    const rig = scenario({
+      screen: "context",
+      work: "work-2",
+      scheme: "manuscript",
+      path: "/knowledge.md",
+    });
+    rig.setRoutes([{ scheme: "manuscript", path: "/knowledge.md" }]);
+    rig.coordinator.changeWorkSelection(projectId, "work-1", null);
+
+    const revision = rig.coordinator.changeWorkSelection(projectId, "work-2", {
+      scheme: "manuscript",
+      path: "/knowledge.md",
+      workId: "work-2",
+    });
+
+    expect(revision).toBeTypeOf("number");
+    expect(rig.coordinator.getProjectSnapshot(projectId)).toMatchObject({
+      selection: { status: "candidate", locator: { path: "/knowledge.md", workId: "work-2" } },
+      admitted: { path: "/knowledge.md", workId: "work-2" },
+    });
+    expect(rig.routes()).toEqual([{ scheme: "manuscript", path: "/knowledge.md" }]);
   });
 
   it("withholds a guarded deleted route from memory and durable reconstruction", () => {
@@ -176,16 +201,16 @@ describe("ContextRemovalCoordinator Work transitions", () => {
     });
 
     expect(coordinator.getProjectSnapshot(projectId)).toMatchObject({
-      selection: { status: "pending", reentryGuard: expect.any(Object) },
-      rememberedRoute: null,
+      selection: { status: "candidate", reentryGuard: expect.any(Object) },
+      admitted: null,
     });
     expect(store.read(projectId)?.snapshot.recentRoutes).toEqual([]);
     const reconstructed = new DeviceWorkingSetStore(storage);
     reconstructed.setUser("account-1");
     expect(reconstructed.read(projectId)?.snapshot.recentRoutes).toEqual([]);
 
-    coordinator.confirmRouteUnbound(projectId, guardedRevision as number);
-    expect(coordinator.getProjectSnapshot(projectId).rememberedRoute).toBeNull();
+    coordinator.rejectRouteCandidate(projectId, guardedRevision as number);
+    expect(coordinator.getProjectSnapshot(projectId).admitted).toBeNull();
     expect(store.read(projectId)?.snapshot.recentRoutes).toEqual([]);
   });
 
@@ -220,9 +245,18 @@ describe("ContextRemovalCoordinator Work transitions", () => {
       kind: "server",
       documentId: "replacement",
     });
+    const snapshot = rig.coordinator.getProjectSnapshot(projectId);
+    rig.coordinator.activate({
+      projectId,
+      selectionRevision: snapshot.selection.revision,
+      transitionRevision: snapshot.transitionRevision,
+      locator: { scheme: "manuscript", path: "/deleted.md", workId: "work-old" },
+      identity: { kind: "server", documentId: "replacement" },
+      owner: { kind: "desk", documentId: "replacement" },
+    });
 
     expect(rig.routes()).toEqual([{ scheme: "manuscript", path: "/deleted.md" }]);
-    expect(rig.coordinator.getProjectSnapshot(projectId).rememberedRoute).toEqual({
+    expect(rig.coordinator.getProjectSnapshot(projectId).admitted).toEqual({
       scheme: "manuscript",
       path: "/deleted.md",
       workId: "work-old",

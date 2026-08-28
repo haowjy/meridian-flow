@@ -5,7 +5,7 @@ import type { ContextRemovalProjectSnapshot } from "./context-removal-coordinato
 
 const EMPTY_SNAPSHOT: ContextRemovalProjectSnapshot = {
   selection: { status: "none", revision: 0 },
-  rememberedRoute: null,
+  admitted: null,
   removalFence: null,
   transitionRevision: 0,
   live: false,

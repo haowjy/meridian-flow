@@ -17,7 +17,7 @@ export type ContextDeleteInitiator =
   | { kind: "folder"; locator: ContextRouteTarget };
 
 export type InitiatingRouteWitness =
-  | { status: "pending"; revision: number; locator: ContextRouteTarget }
+  | { status: "candidate"; revision: number; locator: ContextRouteTarget }
   | {
       status: "bound";
       revision: number;
@@ -57,7 +57,7 @@ export type TerminalRouteRemoval = {
 export type ContextRouteSelection =
   | { status: "none"; revision: number }
   | {
-      status: "pending";
+      status: "candidate";
       revision: number;
       locator: ContextRouteTarget;
       obligations: readonly PendingRouteObligation[];
@@ -69,7 +69,12 @@ export type ContextRouteSelection =
       locator: ContextRouteTarget;
       identity: ContextRouteIdentity;
     }
-  | { status: "confirmed-unbound"; revision: number; locator: ContextRouteTarget };
+  | {
+      status: "rejected";
+      revision: number;
+      locator: ContextRouteTarget;
+      reason: "fulfilled-absence" | "missing-local-owner";
+    };
 
 export type RemovalPlanningEffect = {
   intent: ContextRemovalIntent;
@@ -81,7 +86,7 @@ export type RemovalPlanningEffect = {
 export type SelectionTransition = {
   selection: ContextRouteSelection;
   planning: readonly RemovalPlanningEffect[];
-  promote: readonly RouteContinuityVerdict[];
+  rejection: Extract<ContextRouteSelection, { status: "rejected" }> | null;
   retireReentryGuard: boolean;
 };
 
@@ -114,31 +119,14 @@ export function sameLocator(a: ContextRouteTarget, b: ContextRouteTarget): boole
 }
 
 export function continuityForSelection(selection: ContextRouteSelection): RouteContinuityVerdict {
-  switch (selection.status) {
-    case "none":
-      return { kind: "none" };
-    case "pending":
-      return {
-        kind: "preserved-unknown",
-        revision: selection.revision,
-        locator: selection.locator,
-        observed: "pending",
-      };
-    case "confirmed-unbound":
-      return {
-        kind: "preserved-unknown",
-        revision: selection.revision,
-        locator: selection.locator,
-        observed: "confirmed-unbound",
-      };
-    case "bound":
-      return {
+  return selection.status === "bound"
+    ? {
         kind: "bound",
         revision: selection.revision,
         locator: selection.locator,
         identity: selection.identity,
-      };
-  }
+      }
+    : { kind: "none" };
 }
 
 function cleanupForProof(proof: RouteRemovalProof): ExactRouteCleanup {
@@ -150,7 +138,7 @@ function cleanupForProof(proof: RouteRemovalProof): ExactRouteCleanup {
 }
 
 function settleObligations(
-  selection: Extract<ContextRouteSelection, { status: "pending" }>,
+  selection: Extract<ContextRouteSelection, { status: "candidate" }>,
   observed: ContextRouteIdentity | null,
   current: RouteContinuityVerdict,
   repair: "allow" | "never",
@@ -172,14 +160,6 @@ function settleObligations(
   }));
 }
 
-function continuityForEntry(
-  selection: ContextRouteSelection,
-  reentryGuard: TerminalRouteRemoval | null,
-): { current: RouteContinuityVerdict; promote: readonly RouteContinuityVerdict[] } {
-  const current = reentryGuard ? ({ kind: "none" } as const) : continuityForSelection(selection);
-  return { current, promote: reentryGuard ? [] : [current] };
-}
-
 export function beginSelection(
   selection: ContextRouteSelection,
   locator: ContextRouteTarget,
@@ -187,36 +167,24 @@ export function beginSelection(
 ): SelectionTransition {
   const revision = selection.revision + 1;
   const next: ContextRouteSelection = {
-    status: "pending",
+    status: "candidate",
     revision,
     locator,
     obligations: [],
     reentryGuard,
   };
-  const entry = continuityForEntry(next, reentryGuard);
-  if (selection.status !== "pending") {
+  if (selection.status !== "candidate") {
     return {
       selection: next,
       planning: [],
-      promote: entry.promote,
+      rejection: null,
       retireReentryGuard: false,
     };
   }
   return {
     selection: next,
-    planning: settleObligations(selection, null, entry.current, "never"),
-    promote:
-      reentryGuard || selection.obligations.length > 0
-        ? []
-        : [
-            {
-              kind: "preserved-unknown",
-              revision: selection.revision,
-              locator: selection.locator,
-              observed: "superseded",
-            },
-            ...entry.promote,
-          ],
+    planning: settleObligations(selection, null, { kind: "none" }, "never"),
+    rejection: null,
     retireReentryGuard: false,
   };
 }
@@ -229,16 +197,15 @@ export function supersedeSelectionForWorkChange(
 ): SelectionTransition {
   const revision = selection.revision + 1;
   const next: ContextRouteSelection = locator
-    ? { status: "pending", revision, locator, obligations: [], reentryGuard }
+    ? { status: "candidate", revision, locator, obligations: [], reentryGuard }
     : { status: "none", revision };
-  const entry = continuityForEntry(next, reentryGuard);
   return {
     selection: next,
     planning:
-      selection.status === "pending"
-        ? settleObligations(selection, null, entry.current, "never")
+      selection.status === "candidate"
+        ? settleObligations(selection, null, { kind: "none" }, "never")
         : [],
-    promote: locator ? entry.promote : [],
+    rejection: null,
     retireReentryGuard: false,
   };
 }
@@ -249,7 +216,7 @@ export function bindSelection(
   identity: ContextRouteIdentity,
 ): SelectionTransition | null {
   if (selection.revision !== revision) return null;
-  if (selection.status === "pending") {
+  if (selection.status === "candidate") {
     const bound: Extract<ContextRouteSelection, { status: "bound" }> = {
       status: "bound",
       revision,
@@ -279,7 +246,7 @@ export function bindSelection(
             ]
           : []),
       ],
-      promote: guard && !guardMatches ? [current] : [],
+      rejection: null,
       retireReentryGuard: Boolean(guard && !guardMatches),
     };
   }
@@ -288,35 +255,37 @@ export function bindSelection(
       selection.identity.kind === identity.kind &&
       selection.identity.documentId === identity.documentId
     ) {
-      return { selection, planning: [], promote: [], retireReentryGuard: false };
+      return { selection, planning: [], rejection: null, retireReentryGuard: false };
     }
     return {
       selection: { ...selection, revision: revision + 1, identity },
       planning: [],
-      promote: [],
+      rejection: null,
       retireReentryGuard: false,
     };
   }
-  if (selection.status === "confirmed-unbound") {
+  if (selection.status === "rejected") {
     return {
       selection: { status: "bound", revision: revision + 1, locator: selection.locator, identity },
       planning: [],
-      promote: [],
+      rejection: null,
       retireReentryGuard: false,
     };
   }
   return null;
 }
 
-export function confirmSelectionUnbound(
+export function rejectSelection(
   selection: ContextRouteSelection,
   revision: number,
+  reason: "fulfilled-absence" | "missing-local-owner" = "fulfilled-absence",
 ): SelectionTransition | null {
-  if (selection.status !== "pending" || selection.revision !== revision) return null;
+  if (selection.status !== "candidate" || selection.revision !== revision) return null;
   const next: ContextRouteSelection = {
-    status: "confirmed-unbound",
+    status: "rejected",
     revision,
     locator: selection.locator,
+    reason,
   };
   const guard = selection.reentryGuard;
   const current = guard
@@ -335,30 +304,20 @@ export function confirmSelectionUnbound(
         ? [{ intent: guard.intent, cleanup: guard.cleanup, current, repair: "allow" as const }]
         : []),
     ],
-    promote: [],
+    rejection: guard || selection.obligations.length > 0 ? null : next,
     retireReentryGuard: false,
   };
 }
 
 export function leaveSelection(selection: ContextRouteSelection): SelectionTransition {
   const next: ContextRouteSelection = { status: "none", revision: selection.revision + 1 };
-  if (selection.status !== "pending") {
-    return { selection: next, planning: [], promote: [], retireReentryGuard: false };
+  if (selection.status !== "candidate") {
+    return { selection: next, planning: [], rejection: null, retireReentryGuard: false };
   }
   return {
     selection: next,
     planning: settleObligations(selection, null, { kind: "none" }, "never"),
-    promote:
-      selection.obligations.length === 0 && selection.reentryGuard === null
-        ? [
-            {
-              kind: "preserved-unknown",
-              revision: selection.revision,
-              locator: selection.locator,
-              observed: "superseded",
-            },
-          ]
-        : [],
+    rejection: null,
     retireReentryGuard: false,
   };
 }
@@ -435,7 +394,7 @@ export function reduceAcknowledgedDelete(
   const proof = deleteProof(command);
   const obligated =
     proof !== null &&
-    selection.status === "pending" &&
+    selection.status === "candidate" &&
     selection.revision === proof.witnessedRevision &&
     sameLocator(selection.locator, proof.locator);
   const first: Extract<FirstCommandResult, { status: "accepted" }> = {
@@ -450,7 +409,7 @@ export function reduceAcknowledgedDelete(
   let nextSelection = selection;
   let current = continuityForSelection(selection);
   let repair: "allow" | "never" = "allow";
-  if (proof && obligated && selection.status === "pending") {
+  if (proof && obligated && selection.status === "candidate") {
     nextSelection = {
       ...selection,
       obligations: [...selection.obligations, { selectionRevision: selection.revision, proof }],
@@ -467,7 +426,7 @@ export function reduceAcknowledgedDelete(
       selection.identity.documentId === proof.identity.documentId
     ) {
       current = { kind: "proven-removed", ...cleanupForProof(proof) };
-    } else if (witnessIsCurrent && selection.status === "confirmed-unbound") {
+    } else if (witnessIsCurrent && selection.status === "rejected") {
       current = { kind: "proven-removed", ...cleanupForProof(proof) };
     } else if (!witnessIsCurrent) {
       repair = "never";
@@ -477,12 +436,17 @@ export function reduceAcknowledgedDelete(
   return {
     ...terminal,
     selection: nextSelection,
-    planning: {
-      intent: { cause: "acknowledged-delete", documentIds: command.confirmed.deletedDocumentIds },
-      cleanup: proof ? cleanupForProof(proof) : null,
-      current,
-      repair,
-    },
+    planning: obligated
+      ? null
+      : {
+          intent: {
+            cause: "acknowledged-delete",
+            documentIds: command.confirmed.deletedDocumentIds,
+          },
+          cleanup: proof ? cleanupForProof(proof) : null,
+          current,
+          repair,
+        },
   };
 }
 
@@ -550,7 +514,7 @@ export function reduceRepresentedRemoval(
   let nextSelection = selection;
   let current = continuityForSelection(selection);
   let repair: "allow" | "never" = selection.status === "none" ? "never" : "allow";
-  if (selection.status === "pending" && sameLocator(selection.locator, locator)) {
+  if (selection.status === "candidate" && sameLocator(selection.locator, locator)) {
     nextSelection = {
       ...selection,
       obligations: [...selection.obligations, { selectionRevision: selection.revision, proof }],
@@ -562,7 +526,7 @@ export function reduceRepresentedRemoval(
     selection.identity.documentId === identity.documentId
   ) {
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
-  } else if (selection.status === "confirmed-unbound" && sameLocator(selection.locator, locator)) {
+  } else if (selection.status === "rejected" && sameLocator(selection.locator, locator)) {
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
   } else if (selection.status !== "none" && !sameLocator(selection.locator, locator)) {
     repair = "never";

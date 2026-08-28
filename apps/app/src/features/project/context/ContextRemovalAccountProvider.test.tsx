@@ -47,7 +47,7 @@ describe("ContextRemovalAccountProvider", () => {
         expect(instances).toHaveLength(2);
         expect(instances[0]).toBe(instances[1]);
         expect(instances[0]?.getProjectSnapshot("project-1").selection).toMatchObject({
-          status: "pending",
+          status: "candidate",
           revision: 2,
         });
       },
@@ -152,6 +152,7 @@ describe("ContextRemovalAccountProvider", () => {
           transitionRevision: coordinator.getProjectSnapshot("project-1").transitionRevision,
           locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
           identity: { kind: "server", documentId: "a" },
+          owner: { kind: "desk", documentId: "a" },
         });
       }, [coordinator]);
       return null;
@@ -167,7 +168,7 @@ describe("ContextRemovalAccountProvider", () => {
     }
 
     await withReactRoot(<Harness />, async () => {
-      expect(instances[0]?.getProjectSnapshot("project-1").rememberedRoute?.path).toBe("/a.md");
+      expect(instances[0]?.getProjectSnapshot("project-1").admitted?.path).toBe("/a.md");
       await act(async () => setAccount?.("account-b"));
       await act(async () => setAccount?.("account-a"));
       expect(instances).toHaveLength(3);
@@ -177,12 +178,12 @@ describe("ContextRemovalAccountProvider", () => {
       expect(entrySnapshots.slice(1)).toEqual([
         expect.objectContaining({
           selection: { status: "none", revision: 0 },
-          rememberedRoute: null,
+          admitted: null,
           removalFence: null,
         }),
         expect.objectContaining({
           selection: { status: "none", revision: 0 },
-          rememberedRoute: null,
+          admitted: null,
           removalFence: null,
         }),
       ]);

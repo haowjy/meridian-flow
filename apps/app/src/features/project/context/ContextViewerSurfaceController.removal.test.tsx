@@ -33,14 +33,16 @@ const tree = {
   ],
 };
 
+const queryState = {
+  tree,
+  capabilities: null,
+  isError: false,
+  isFetching: false,
+  refetch: vi.fn(),
+};
+
 vi.mock("@/client/query/useProjectContextTree", () => ({
-  useProjectContextTree: () => ({
-    tree,
-    capabilities: null,
-    isError: false,
-    isFetching: false,
-    refetch: vi.fn(),
-  }),
+  useProjectContextTree: () => queryState,
 }));
 vi.mock("./ContextViewer", () => ({ ContextViewer: () => null }));
 vi.mock("./useUntitledTabBridge", () => ({ useUntitledTabBridge: () => undefined }));
@@ -54,6 +56,9 @@ function CaptureCoordinator() {
 
 beforeEach(() => {
   coordinator = null;
+  queryState.tree = tree;
+  queryState.isError = false;
+  queryState.isFetching = false;
   useContextTabsStore.setState({
     byProject: {
       project: {
@@ -74,6 +79,55 @@ beforeEach(() => {
     },
     _deskHydrated: true,
   });
+});
+
+it.each([
+  ["loading", false, true],
+  ["error with cached absence", true, false],
+] as const)("preserves a route candidate during %s", async (_case, isError, isFetching) => {
+  queryState.isError = isError;
+  queryState.isFetching = isFetching;
+  const route: ContextRemovalRoutePort = {
+    readSearch: () => ({
+      screen: "context",
+      work: "work-1",
+      scheme: "manuscript",
+      path: "/missing.md",
+    }),
+    updateSearch: () => undefined,
+  };
+
+  await withReactRoot(
+    <ContextRemovalAccountProvider accountId={`account-${_case}`}>
+      <CaptureCoordinator />
+      <ProjectContextRemovalController
+        projectId="project"
+        activeScreen="context"
+        activeContextScheme="manuscript"
+        activeContextPath="/missing.md"
+        editorWorkId="work-1"
+        route={route}
+      />
+      <ContextViewerSurfaceController
+        projectId="project"
+        editorWorkId="work-1"
+        activeContextScheme="manuscript"
+        activeContextPath="/missing.md"
+        active
+        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
+        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
+        onSelectContextPath={vi.fn()}
+        onOpenContextTarget={vi.fn()}
+      />
+    </ContextRemovalAccountProvider>,
+    () => {
+      if (!coordinator) throw new Error("coordinator did not mount");
+      expect(coordinator.getProjectSnapshot("project")).toMatchObject({
+        selection: { status: "candidate", locator: { path: "/missing.md" } },
+        admitted: { path: "/a.md" },
+      });
+    },
+  );
 });
 
 it.each([
@@ -142,7 +196,7 @@ it.each([
       expect(service.getProjectSnapshot("project")).toMatchObject({
         live: true,
         removalFence: { removedDocumentIds: ["a"] },
-        rememberedRoute: null,
+        admitted: null,
       });
     },
   );

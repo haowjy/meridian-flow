@@ -17,6 +17,7 @@ import {
 } from "./ContextRemovalAccountProvider";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
+import { useContextRemovalProject } from "./use-context-removal-project";
 
 it("keeps a terminally guarded production entry absent until replacement identity binds", async () => {
   const projectId = "guarded-entry-project";
@@ -126,7 +127,7 @@ it("keeps a terminally guarded production entry absent until replacement identit
 
   function expectAAbsent() {
     if (!coordinator) throw new Error("expected coordinator");
-    expect(coordinator.getProjectSnapshot(projectId).rememberedRoute?.path).not.toBe("/a.md");
+    expect(coordinator.getProjectSnapshot(projectId).admitted?.path).not.toBe("/a.md");
     expect(readRecentRoutes(projectId)).not.toContainEqual(
       expect.objectContaining({ path: "/a.md" }),
     );
@@ -154,7 +155,7 @@ it("keeps a terminally guarded production entry absent until replacement identit
     revision = coordinator.beginRouteSelection(projectId, locatorC);
     admitExact(locatorC, "c");
     expect(coordinator.getProjectSnapshot(projectId).selection).toMatchObject({
-      status: "pending",
+      status: "candidate",
       revision,
       locator: locatorC,
       obligations: [expect.any(Object)],
@@ -165,8 +166,8 @@ it("keeps a terminally guarded production entry absent until replacement identit
 
     const guarded = coordinator.getProjectSnapshot(projectId);
     expect(guarded).toMatchObject({
-      selection: { status: "pending", locator: locatorA },
-      rememberedRoute: null,
+      selection: { status: "candidate", locator: locatorA },
+      admitted: null,
       removalFence: { removedDocumentIds: ["c"] },
     });
     expect(search).toEqual({
@@ -178,13 +179,43 @@ it("keeps a terminally guarded production entry absent until replacement identit
     expectAAbsent();
 
     const guardedRevision = guarded.selection.revision;
-    coordinator.confirmRouteUnbound(projectId, guardedRevision);
+    coordinator.rejectRouteCandidate(projectId, guardedRevision);
     expectAAbsent();
 
     const replacementRevision = coordinator.beginRouteSelection(projectId, locatorA);
+    useContextTabsStore.setState((state) => ({
+      ...state,
+      byProject: {
+        ...state.byProject,
+        [projectId]: {
+          tabs: [
+            {
+              kind: "tracked",
+              documentId: "replacement-a",
+              scheme: "manuscript",
+              path: "/a.md",
+              name: "a.md",
+              editable: true,
+              filetype: "markdown",
+              schemaType: "document",
+            },
+          ],
+          activeTabId: "replacement-a",
+        },
+      },
+    }));
     coordinator.bindRouteSelection(projectId, replacementRevision, {
       kind: "server",
       documentId: "replacement-a",
+    });
+    const replacementSnapshot = coordinator.getProjectSnapshot(projectId);
+    coordinator.activate({
+      projectId,
+      selectionRevision: replacementSnapshot.selection.revision,
+      transitionRevision: replacementSnapshot.transitionRevision,
+      locator: locatorA,
+      identity: { kind: "server", documentId: "replacement-a" },
+      owner: { kind: "desk", documentId: "replacement-a" },
     });
     expect(coordinator.getProjectSnapshot(projectId)).toMatchObject({
       selection: {
@@ -192,7 +223,7 @@ it("keeps a terminally guarded production entry absent until replacement identit
         locator: locatorA,
         identity: { documentId: "replacement-a" },
       },
-      rememberedRoute: locatorA,
+      admitted: locatorA,
     });
     expect(readRecentRoutes(projectId)).toContainEqual({
       scheme: "manuscript",
@@ -205,5 +236,124 @@ it("keeps a terminally guarded production entry absent until replacement identit
       scheme: "manuscript",
       path: "/a.md",
     });
+  });
+});
+
+function RejectingMaterializer({ projectId }: { projectId: string }) {
+  const coordinator = useContextRemovalCoordinator();
+  const snapshot = useContextRemovalProject(projectId);
+  useLayoutEffect(() => {
+    if (snapshot.selection.status !== "candidate") return;
+    coordinator.rejectRouteCandidate(projectId, snapshot.selection.revision);
+  }, [coordinator, projectId, snapshot.selection]);
+  return null;
+}
+
+it("never restamps a Work-scoped route candidate during a production Work transition", async () => {
+  const projectId = "work-restamp-project";
+  const accountId = "work-restamp-account";
+  const wrongPath = "/work-2.md";
+  useContextTabsStore.setState({
+    byProject: {
+      [projectId]: {
+        tabs: [
+          {
+            kind: "tracked",
+            documentId: "knowledge",
+            scheme: "kb",
+            path: "/knowledge.md",
+            name: "knowledge.md",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+          },
+          {
+            kind: "tracked",
+            documentId: "work-2-document",
+            scheme: "scratch",
+            path: wrongPath,
+            name: "work-2.md",
+            workId: "work-2",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+          },
+        ],
+        activeTabId: "work-2-document",
+      },
+    },
+    _deskHydrated: true,
+  });
+  let coordinator: ContextRemovalCoordinator | null = null;
+  let switchWork: (() => void) | null = null;
+  let search: ProjectSearch = {
+    screen: "context",
+    work: "work-2",
+    scheme: "scratch",
+    path: wrongPath,
+  };
+  const route = {
+    readSearch: () => search,
+    updateSearch: (_projectId: string, update: (latest: ProjectSearch) => ProjectSearch) => {
+      search = update(search);
+    },
+  };
+  function Capture() {
+    coordinator = useContextRemovalCoordinator();
+    return null;
+  }
+  function Harness() {
+    const [workId, setWorkId] = useState("work-2");
+    switchWork = () => {
+      search = { ...search, work: "work-1" };
+      setWorkId("work-1");
+    };
+    return (
+      <ContextRemovalAccountProvider accountId={accountId}>
+        <Capture />
+        <ProjectContextRemovalController
+          projectId={projectId}
+          activeScreen="context"
+          activeContextScheme="scratch"
+          activeContextPath={wrongPath}
+          editorWorkId={workId}
+          route={route}
+        />
+        {workId === "work-1" ? <RejectingMaterializer projectId={projectId} /> : null}
+      </ContextRemovalAccountProvider>
+    );
+  }
+
+  await withReactRoot(<Harness />, async () => {
+    window.localStorage.removeItem(WORKING_SET_STORAGE_KEY);
+    configureWorkingSetSync(accountId, false);
+    reconcileContextRoutes(projectId, {
+      removedLocators: [],
+      survivingOwnedLocators: [
+        { scheme: "kb", path: "/knowledge.md" },
+        { scheme: "scratch", path: wrongPath, workId: "work-2" },
+      ],
+      promote: { scheme: "scratch", path: wrongPath, workId: "work-2" },
+      clearAll: false,
+    });
+    reconcileContextRoutes(projectId, {
+      removedLocators: [],
+      survivingOwnedLocators: [{ scheme: "kb", path: "/knowledge.md" }],
+      promote: { scheme: "kb", path: "/knowledge.md" },
+      clearAll: false,
+    });
+    await act(async () => switchWork?.());
+
+    expect(useContextTabsStore.getState().byProject[projectId]).toMatchObject({
+      activeTabId: "knowledge",
+      tabs: [expect.objectContaining({ documentId: "knowledge" })],
+    });
+    expect(coordinator?.getProjectSnapshot(projectId)).toMatchObject({
+      selection: { status: "rejected" },
+      admitted: { scheme: "kb", path: "/knowledge.md", workId: "work-1" },
+    });
+    expect(readRecentRoutes(projectId)).toEqual([{ scheme: "kb", path: "/knowledge.md" }]);
+    expect(search).toMatchObject({ screen: "context", scheme: "kb", path: "/knowledge.md" });
+    expect(window.localStorage.getItem(WORKING_SET_STORAGE_KEY) ?? "").not.toContain(wrongPath);
   });
 });

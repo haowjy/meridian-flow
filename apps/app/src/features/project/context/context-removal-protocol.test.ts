@@ -5,10 +5,10 @@ import {
   beginSelection,
   bindSelection,
   type ContextRouteSelection,
-  confirmSelectionUnbound,
   leaveSelection,
   reduceAcknowledgedDelete,
   reduceRepresentedRemoval,
+  rejectSelection,
   supersedeSelectionForWorkChange,
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
@@ -16,9 +16,9 @@ import {
 const locator = { scheme: "kb" as const, path: "/phone.md", workId: "work-1" };
 const identity = { kind: "server" as const, documentId: "phone" };
 
-function pending(overrides: Partial<Extract<ContextRouteSelection, { status: "pending" }>> = {}) {
+function pending(overrides: Partial<Extract<ContextRouteSelection, { status: "candidate" }>> = {}) {
   return {
-    status: "pending" as const,
+    status: "candidate" as const,
     revision: 1,
     locator,
     obligations: [],
@@ -33,7 +33,7 @@ function command(id = "command-1"): AcknowledgedContextDeleteCommand {
     cause: "acknowledged-delete",
     projectId: "project-1",
     initiated: { kind: "file", locator, documentId: "phone" },
-    routeWitness: { status: "pending", revision: 1, locator },
+    routeWitness: { status: "candidate", revision: 1, locator },
     confirmed: { status: "deleted", deletedDocumentIds: ["phone"] },
   };
 }
@@ -53,19 +53,20 @@ function tracked(documentId: string, path = "/phone.md"): ContextTab {
 
 describe("context removal protocol", () => {
   it.each([
-    ["pending", pending()],
+    ["candidate", pending()],
     ["bound", { status: "bound" as const, revision: 1, locator, identity }],
-    ["confirmed-unbound", { status: "confirmed-unbound" as const, revision: 1, locator }],
+    [
+      "rejected",
+      { status: "rejected" as const, revision: 1, locator, reason: "fulfilled-absence" as const },
+    ],
     ["none", { status: "none" as const, revision: 1 }],
   ])("supersedes %s old-Work selection without promoting old continuity", (_case, selection) => {
     const nextLocator = { scheme: "scratch" as const, path: "/next.md", workId: "work-2" };
     const transition = supersedeSelectionForWorkChange(selection, nextLocator);
 
-    expect(transition.selection).toMatchObject({ status: "pending", locator: nextLocator });
-    expect(transition.promote).toEqual([
-      expect.objectContaining({ kind: "preserved-unknown", locator: nextLocator }),
-    ]);
-    expect(transition.promote).not.toContainEqual(expect.objectContaining({ locator }));
+    expect(transition.selection).toMatchObject({ status: "candidate", locator: nextLocator });
+    expect(transition.rejection).toBeNull();
+    expect(transition.planning).toEqual([]);
   });
 
   it("emits old cleanup and newer continuity in one supersession transition", () => {
@@ -76,7 +77,7 @@ describe("context removal protocol", () => {
     expect(next.planning).toEqual([
       expect.objectContaining({
         cleanup: expect.objectContaining({ locator, identity }),
-        current: expect.objectContaining({ kind: "preserved-unknown", locator: nextLocator }),
+        current: { kind: "none" },
         repair: "never",
       }),
     ]);
@@ -90,7 +91,7 @@ describe("context removal protocol", () => {
     const admitted = reduceAcknowledgedDelete(new Map(), pending(), command());
     const transition = documentId
       ? bindSelection(admitted.selection, 1, { kind: "server", documentId })
-      : confirmSelectionUnbound(admitted.selection, 1);
+      : rejectSelection(admitted.selection, 1);
     expect(transition?.planning[0]).toMatchObject({
       cleanup: { identity },
       current: { kind },
@@ -99,7 +100,7 @@ describe("context removal protocol", () => {
   });
 
   it.each([
-    ["pending", pending()],
+    ["candidate", pending()],
     ["bound", { status: "bound" as const, revision: 1, locator, identity }],
     [
       "bound-other",
@@ -110,7 +111,10 @@ describe("context removal protocol", () => {
         identity: { kind: "server" as const, documentId: "replacement" },
       },
     ],
-    ["confirmed-unbound", { status: "confirmed-unbound" as const, revision: 1, locator }],
+    [
+      "rejected",
+      { status: "rejected" as const, revision: 1, locator, reason: "fulfilled-absence" as const },
+    ],
     ["none", { status: "none" as const, revision: 1 }],
   ])("reduces represented removal for %s selection", (_case, selection) => {
     const result = reduceRepresentedRemoval(
@@ -123,13 +127,13 @@ describe("context removal protocol", () => {
     expect(result.planning.current.kind).toBe(
       selection.status === "bound" && selection.identity.documentId === "phone"
         ? "proven-removed"
-        : selection.status === "confirmed-unbound"
+        : selection.status === "rejected"
           ? "proven-removed"
           : selection.status === "none"
             ? "none"
             : selection.status === "bound"
               ? "bound"
-              : "preserved-unknown",
+              : "none",
     );
   });
 
@@ -163,19 +167,14 @@ describe("context removal protocol", () => {
       intent: { cause: "acknowledged-delete", documentIds: ["phone"] },
     };
     const guarded = beginSelection({ status: "none", revision: 2 }, locator, terminal);
-    expect(guarded.promote).toEqual([]);
-    expect(confirmSelectionUnbound(guarded.selection, 3)?.planning[0]?.current.kind).toBe(
-      "proven-removed",
-    );
+    expect(guarded.rejection).toBeNull();
+    expect(rejectSelection(guarded.selection, 3)?.planning[0]?.current.kind).toBe("proven-removed");
 
     const replacement = bindSelection(guarded.selection, 3, {
       kind: "server",
       documentId: "replacement",
     });
-    expect(replacement?.promote[0]).toMatchObject({
-      kind: "bound",
-      identity: { documentId: "replacement" },
-    });
+    expect(replacement?.rejection).toBeNull();
     expect(replacement?.retireReentryGuard).toBe(true);
   });
 
@@ -200,13 +199,14 @@ describe("context removal protocol", () => {
         repair: "never",
       }),
     ]);
-    expect(transition.promote).toEqual([]);
+    expect(transition.rejection).toBeNull();
   });
 
-  it("preserves proof-less unbound continuity and unknown continuity on leave", () => {
-    expect(confirmSelectionUnbound(pending(), 1)?.planning).toEqual([]);
-    expect(leaveSelection(pending()).promote).toEqual([
-      expect.objectContaining({ kind: "preserved-unknown", locator }),
-    ]);
+  it("emits one proof-less rejection and no candidate effect on leave", () => {
+    expect(rejectSelection(pending(), 1)).toMatchObject({
+      planning: [],
+      rejection: { status: "rejected", revision: 1, locator },
+    });
+    expect(leaveSelection(pending())).toMatchObject({ planning: [], rejection: null });
   });
 });

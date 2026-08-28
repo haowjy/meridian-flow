@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
-import { planContextRemoval } from "./context-removal-planner";
+import { planCandidateRejection, planContextRemoval } from "./context-removal-planner";
 
 function tracked(documentId: string, path: string): ContextTab {
   return {
@@ -23,6 +23,85 @@ const phoneSelection = {
 };
 
 describe("context removal planner", () => {
+  it("plans candidate rejection from the desk-active admitted fallback atomically", () => {
+    const knowledge = { ...tracked("knowledge", "/knowledge.md"), scheme: "kb" as const };
+    const rejected = { scheme: "scratch" as const, path: "/wrong.md", workId: "work-1" };
+    const plan = planCandidateRejection({
+      revision: 4,
+      rejected,
+      activeWorkId: "work-1",
+      tabs: [knowledge],
+      activeTabId: "knowledge",
+      admitted: { scheme: "scratch", path: "/old.md", workId: "work-1" },
+      recentRoutes: [
+        { scheme: "scratch", path: "/wrong.md", workId: "work-1" },
+        { scheme: "kb", path: "/recent.md" },
+      ],
+    });
+
+    expect(plan).toMatchObject({
+      expected: { revision: 4, locator: rejected },
+      fallback: { scheme: "kb", path: "/knowledge.md", workId: "work-1" },
+      deskSelection: { kind: "preserve" },
+      workingSet: {
+        removedLocators: [{ scheme: "scratch", path: "/wrong.md", workId: "work-1" }],
+        promote: { scheme: "kb", path: "/knowledge.md" },
+      },
+      repair: {
+        expectedSelection: { kind: "rejected-candidate", revision: 4 },
+        next: { scheme: "kb", path: "/knowledge.md", workId: "work-1" },
+      },
+    });
+  });
+
+  it("excludes wrong-Work admitted and recent routes from rejection fallback", () => {
+    const rejected = { scheme: "scratch" as const, path: "/wrong.md", workId: "work-1" };
+    const plan = planCandidateRejection({
+      revision: 2,
+      rejected,
+      activeWorkId: "work-1",
+      tabs: [{ ...tracked("draft", "/draft.md"), draftOnly: true }],
+      activeTabId: null,
+      admitted: { scheme: "scratch", path: "/work-2.md", workId: "work-2" },
+      recentRoutes: [{ scheme: "uploads", path: "/work-2.bin", workId: "work-2" }],
+    });
+
+    expect(plan.fallback).toBeNull();
+    expect(plan.workingSet.promote).toBeNull();
+    expect(plan.repair.next).toEqual({ kind: "clear" });
+  });
+
+  it.each([
+    [
+      "admitted",
+      [],
+      null,
+      { scheme: "manuscript" as const, path: "/admitted.md", workId: "work-old" },
+      [],
+      "/admitted.md",
+    ],
+    ["recent", [], null, null, [{ scheme: "kb" as const, path: "/recent.md" }], "/recent.md"],
+    [
+      "surviving desk",
+      [{ ...tracked("survivor", "/survivor.md"), scheme: "kb" as const }],
+      null,
+      null,
+      [],
+      "/survivor.md",
+    ],
+  ])("uses the %s candidate-rejection fallback tier", (_case, tabs, activeTabId, admitted, recentRoutes, path) => {
+    const plan = planCandidateRejection({
+      revision: 3,
+      rejected: { scheme: "scratch", path: "/missing.md", workId: "work-1" },
+      activeWorkId: "work-1",
+      tabs,
+      activeTabId,
+      admitted,
+      recentRoutes,
+    });
+    expect(plan.fallback).toMatchObject({ path, workId: "work-1" });
+  });
+
   it.each([
     ["writer-close", { cause: "writer-close" as const, documentIds: ["removed"] }],
     ["work-prune", { cause: "work-prune" as const, documentIds: ["removed"] }],
@@ -33,16 +112,16 @@ describe("context removal planner", () => {
       ...(intent.cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-old" } : {}),
       ...(intent.cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-old" } : {}),
     };
-    const rememberedRoute = { scheme: "kb" as const, path: "/keep.md", workId: "work-new" };
+    const admitted = { scheme: "kb" as const, path: "/keep.md", workId: "work-new" };
     const plan = planContextRemoval({
       tabs: [removed],
       activeTabId: null,
       route: { cleanup: null, current: { kind: "none" } },
-      rememberedRoute,
+      admitted: admitted,
       intent,
     });
 
-    expect(plan.rememberedRoute).toEqual(rememberedRoute);
+    expect(plan.admitted).toEqual(admitted);
     expect(plan.workingSet.removedLocators).not.toContainEqual({ scheme: "kb", path: "/keep.md" });
   });
 
@@ -60,7 +139,7 @@ describe("context removal planner", () => {
       tabs: [removed],
       activeTabId: null,
       route: { cleanup: null, current: { kind: "none" } },
-      rememberedRoute: {
+      admitted: {
         scheme: intent.cause === "work-prune" ? "scratch" : "manuscript",
         path: "/removed.md",
         workId: intent.cause === "work-prune" ? "work-old" : "work-new",
@@ -68,38 +147,27 @@ describe("context removal planner", () => {
       intent,
     });
 
-    expect(plan.rememberedRoute).toBeNull();
+    expect(plan.admitted).toBeNull();
   });
 
-  it.each([
-    "pending",
-    "confirmed-unbound",
-  ] as const)("preserves a %s locator when an unrelated removal empties the desk", (observed) => {
+  it("keeps admitted continuity when a candidate is not a planner owner", () => {
     const plan = planContextRemoval({
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
-      rememberedRoute: null,
-      route: {
-        cleanup: null,
-        current: {
-          kind: "preserved-unknown",
-          revision: 1,
-          locator: phoneSelection.locator,
-          observed,
-        },
-      },
+      admitted: phoneSelection.locator,
+      route: { cleanup: null, current: { kind: "none" } },
       intent: { cause: "writer-close", documentIds: ["desktop"] },
     });
     expect(plan.workingSet.clearAll).toBe(false);
     expect(plan.workingSet.promote).toEqual({ scheme: "kb", path: "/phone.md" });
-    expect(plan.rememberedRoute).toEqual(phoneSelection.locator);
+    expect(plan.admitted).toEqual(phoneSelection.locator);
   });
 
-  it("treats a surviving bound route without a desk tab as the canonical continuity owner", () => {
+  it("does not let an unactivated bound route replace admitted continuity", () => {
     const plan = planContextRemoval({
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
-      rememberedRoute: null,
+      admitted: null,
       route: { cleanup: null, current: phoneSelection },
       intent: { cause: "acknowledged-delete", documentIds: ["desktop"] },
     });
@@ -107,17 +175,48 @@ describe("context removal planner", () => {
     expect(plan.outcome.kind).toBe("empty-desk");
     expect(plan.workingSet).toMatchObject({
       clearAll: false,
-      promote: { scheme: "kb", path: "/phone.md" },
-      survivingOwnedLocators: [{ scheme: "kb", path: "/phone.md" }],
+      promote: null,
+      survivingOwnedLocators: [],
     });
-    expect(plan.rememberedRoute).toEqual(phoneSelection.locator);
+    expect(plan.admitted).toBeNull();
+  });
+
+  it("does not admit a bound replacement while delayed cleanup removes the prior admission", () => {
+    const replacement = tracked("replacement", "/replacement.md");
+    const prior = { scheme: "manuscript" as const, path: "/removed.md", workId: "work-1" };
+    const plan = planContextRemoval({
+      tabs: [replacement],
+      activeTabId: "replacement",
+      admitted: prior,
+      route: {
+        cleanup: {
+          revision: 1,
+          locator: prior,
+          identity: { kind: "server", documentId: "removed" },
+        },
+        current: {
+          kind: "bound",
+          revision: 2,
+          locator: {
+            scheme: "manuscript",
+            path: "/replacement.md",
+            workId: "work-1",
+          },
+          identity: { kind: "server", documentId: "replacement" },
+        },
+      },
+      intent: { cause: "acknowledged-delete", documentIds: ["removed"] },
+    });
+
+    expect(plan.admitted).toBeNull();
+    expect(plan.workingSet.promote).toBeNull();
   });
 
   it("removes a bound phone-only identity and clears continuity", () => {
     const plan = planContextRemoval({
       tabs: [],
       activeTabId: null,
-      rememberedRoute: null,
+      admitted: phoneSelection.locator,
       route: {
         cleanup: {
           revision: 1,
@@ -134,7 +233,7 @@ describe("context removal planner", () => {
       clearAll: false,
       removedLocators: [{ scheme: "kb", path: "/phone.md" }],
     });
-    expect(plan.rememberedRoute).toBeNull();
+    expect(plan.admitted).toBeNull();
   });
 
   it("preserves local and draft-only tabs from server delete eligibility", () => {
@@ -143,7 +242,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [local, draft],
       activeTabId: "local",
-      rememberedRoute: null,
+      admitted: null,
       route: { cleanup: null, current: { kind: "none" } },
       intent: { cause: "acknowledged-delete", documentIds: ["local", "draft"] },
     });
@@ -166,14 +265,14 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [],
       activeTabId: null,
-      rememberedRoute: null,
+      admitted: current.locator,
       route: { cleanup, current },
       intent: { cause: "acknowledged-delete", documentIds: ["a"] },
     });
 
     expect(plan.nextActiveTabId).toBeNull();
     expect(plan.routeRepairTarget).toBeNull();
-    expect(plan.rememberedRoute).toEqual(current.locator);
+    expect(plan.admitted).toEqual(current.locator);
     expect(plan.workingSet.clearAll).toBe(false);
     expect(plan.workingSet.promote).toEqual({
       scheme: current.locator.scheme,
@@ -192,7 +291,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs,
       activeTabId: "c",
-      rememberedRoute: null,
+      admitted: current.locator,
       route: {
         cleanup: {
           revision: 1,
@@ -205,7 +304,7 @@ describe("context removal planner", () => {
     });
 
     expect(plan.nextActiveTabId).toBe("c");
-    expect(plan.rememberedRoute).toEqual(current.locator);
+    expect(plan.admitted).toEqual(current.locator);
     expect(plan.routeRepairTarget).toBeNull();
   });
 });

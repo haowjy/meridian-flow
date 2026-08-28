@@ -53,14 +53,15 @@ export type ContextRouteTarget = {
 };
 
 export type ContextRouteRepair = {
-  expected: {
-    screen: ScreenKey;
+  expectedSearch: {
+    screen: "context";
     work: string | undefined;
     scheme: ProjectContextTreeScheme;
     path: string;
-    selectionRevision: number;
-    selectionDocumentId: string;
   };
+  expectedSelection:
+    | { kind: "removed-binding"; revision: number; documentId: string }
+    | { kind: "rejected-candidate"; revision: number };
   next: ContextRouteTarget | { kind: "clear" };
 };
 
@@ -292,7 +293,7 @@ export function applyContextRepairIfCurrent(
   repair: ContextRouteRepair,
   latest: ProjectSearch,
 ): ProjectSearch {
-  const expected = repair.expected;
+  const expected = repair.expectedSearch;
   if (
     latest.screen !== expected.screen ||
     latest.work !== expected.work ||

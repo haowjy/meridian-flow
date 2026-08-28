@@ -65,6 +65,7 @@ export function ContextViewerSurfaceController({
   const contextRemoval = useContextRemovalCoordinator();
 
   const { tabs, activeTabId } = useContextTabs(projectId);
+  const deskHydrated = useContextTabsStore((state) => state._deskHydrated);
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const hasEditorWorkTab = tabs.some(
     (tab) =>
@@ -80,7 +81,7 @@ export function ContextViewerSurfaceController({
   );
   const removalState = useContextRemovalProject(projectId);
   const editorScopeKey = `${projectId}:${routeWorkId ?? "no-work"}`;
-  const lastContextRoute = removalState.rememberedRoute;
+  const lastContextRoute = removalState.admitted;
   const lastActiveTabIdRef = useRef<string | null>(null);
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   if (activeTabId) lastActiveTabIdRef.current = activeTabId;
@@ -121,19 +122,32 @@ export function ContextViewerSurfaceController({
         kind: routedTab.kind === "new" ? "local" : "server",
         documentId: routedTab.documentId,
       });
-    } else if (routedFile) {
+    } else if (routedFile && !routeTreeIsFetching && !routeTreeIsError) {
       contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: "server",
         documentId: routedFile.documentId,
       });
-    } else if (selection.status === "pending" && routeTree && !routeTreeIsFetching) {
-      contextRemoval.confirmRouteUnbound(projectId, selection.revision);
+    } else if (
+      selection.status === "candidate" &&
+      activeContextScheme === "scratch" &&
+      activeContextPath === "" &&
+      deskHydrated
+    ) {
+      contextRemoval.rejectRouteCandidate(projectId, selection.revision, "missing-local-owner");
+    } else if (
+      selection.status === "candidate" &&
+      routeTree &&
+      !routeTreeIsFetching &&
+      !routeTreeIsError
+    ) {
+      contextRemoval.rejectRouteCandidate(projectId, selection.revision);
     }
   }, [
     active,
     activeContextPath,
     activeContextScheme,
     contextRemoval,
+    deskHydrated,
     activeTab,
     activeTabId,
     projectId,
@@ -181,6 +195,7 @@ export function ContextViewerSurfaceController({
       transitionRevision: removalState.transitionRevision,
       locator: removalState.selection.locator,
       identity: removalState.selection.identity,
+      owner: { kind: "desk", documentId: activeTab.documentId },
     });
   }, [activeTab, contextRemoval, projectId, removalState]);
 
@@ -211,7 +226,7 @@ export function ContextViewerSurfaceController({
     if (restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
     if (activeContextScheme !== null || activeContextPath !== null) return;
-    const last = removalState.rememberedRoute;
+    const last = removalState.admitted;
     if (last) {
       void onOpenContextTarget(last, { replace: true });
       return;
@@ -231,7 +246,7 @@ export function ContextViewerSurfaceController({
     projectId,
     routeWorkId,
     hasEditorWorkTab,
-    removalState.rememberedRoute,
+    removalState.admitted,
     onOpenContextTarget,
   ]);
 
@@ -344,7 +359,7 @@ export function ContextViewerSurfaceController({
   }
 
   function handleResumeDocument() {
-    const last = removalState.rememberedRoute;
+    const last = removalState.admitted;
     if (!last) return;
     void onOpenContextTarget(last);
   }

@@ -13,14 +13,13 @@ import {
 
 describe("guarded context route repair", () => {
   const repair = {
-    expected: {
+    expectedSearch: {
       screen: "context" as const,
       work: undefined,
       scheme: "manuscript" as const,
       path: "/deleted.md",
-      selectionRevision: 4,
-      selectionDocumentId: "document-a",
     },
+    expectedSelection: { kind: "removed-binding" as const, revision: 4, documentId: "document-a" },
     next: { scheme: "manuscript" as const, path: "/next.md", workId: null },
   };
 

@@ -14,7 +14,7 @@ function SettlingHost({ projectId }: { projectId: string }) {
   const snapshot = useContextRemovalProject(projectId);
   const coordinator = useContextRemovalCoordinator();
   useLayoutEffect(() => {
-    if (snapshot.selection.status !== "pending") return;
+    if (snapshot.selection.status !== "candidate") return;
     coordinator.bindRouteSelection(projectId, snapshot.selection.revision, {
       kind: "server",
       documentId: "document-1",
@@ -173,7 +173,7 @@ describe("ProjectContextRemovalController", () => {
       const initial = coordinator?.getProjectSnapshot("project-1");
       expect(initial).toMatchObject({
         selection: { status: "bound" },
-        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        admitted: { path: "/chapter.md", workId: "work-1" },
         live: true,
       });
 
@@ -181,14 +181,14 @@ describe("ProjectContextRemovalController", () => {
       const left = coordinator?.getProjectSnapshot("project-1");
       expect(left).toMatchObject({
         selection: { status: "none" },
-        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        admitted: { path: "/chapter.md", workId: "work-1" },
         live: true,
       });
       coordinator?.writerClose("project-1", "removed");
       const removed = coordinator?.getProjectSnapshot("project-1");
       expect(removed).toMatchObject({
         selection: { status: "none" },
-        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        admitted: { path: "/chapter.md", workId: "work-1" },
         removalFence: { removedDocumentIds: ["removed"] },
         live: true,
       });
@@ -200,7 +200,7 @@ describe("ProjectContextRemovalController", () => {
           revision: expect.any(Number),
           locator: { path: "/chapter.md", workId: "work-1" },
         },
-        rememberedRoute: { path: "/chapter.md", workId: "work-1" },
+        admitted: { path: "/chapter.md", workId: "work-1" },
         live: true,
       });
       expect(coordinator?.getProjectSnapshot("project-1").selection.revision).toBeGreaterThan(

@@ -74,13 +74,13 @@ export function MobileDocumentHost({
       selection.locator.workId !== workId
     )
       return;
-    if (activeTab) {
+    if (activeTab && !isFetching && !isError) {
       contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: "server",
         documentId: activeTab.documentId,
       });
-    } else if (selection.status === "pending" && tree && !isFetching) {
-      contextRemoval.confirmRouteUnbound(projectId, selection.revision);
+    } else if (selection.status === "candidate" && tree && !isFetching && !isError) {
+      contextRemoval.rejectRouteCandidate(projectId, selection.revision);
     }
   }, [
     activeContextPath,
@@ -89,6 +89,7 @@ export function MobileDocumentHost({
     contextRemoval,
     hasRouteDocument,
     isFetching,
+    isError,
     projectId,
     removalState.selection,
     tree,
@@ -108,6 +109,7 @@ export function MobileDocumentHost({
       transitionRevision: removalState.transitionRevision,
       locator: removalState.selection.locator,
       identity: removalState.selection.identity,
+      owner: { kind: "route-only" },
     });
   }, [activeTab, contextRemoval, projectId, removalState]);
 

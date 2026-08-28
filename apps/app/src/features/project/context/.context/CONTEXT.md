@@ -60,35 +60,30 @@ settles revisioned route identity in layout phase.
 Acknowledged delete carries the server-confirmed exact ID batch plus a request-time
 discriminated target and same-locator route witness. Admission is synchronous and
 idempotent by `commandId`, including terminal invalid first use, and precedes tree
-invalidation. Pending identity is a pure
-typed selection/obligation protocol: unknown locators own continuity, receipt
-cardinality supplies no identity, and late or superseded settlement cannot repair a
-newer route. The protocol emits one complete planning effect that separates exact old
-cleanup from current continuity. Current continuity alone controls active/fallback,
-memory, repair, and clearing.
+invalidation. Candidate identity is a pure typed selection/obligation protocol:
+browser locators own only their revision while admitted continuity independently owns
+memory and persistence. Receipt cardinality supplies no identity, and late or
+superseded settlement cannot repair a newer route. The protocol emits exact planning
+or one typed candidate rejection, never a generic promotion.
 The pure `context-removal-planner.ts` keeps eligibility and desk/route continuity
-policy separate from browser lifecycle and effects. A surviving bound route owns
-continuity even when phone has no desktop tab; `clearAll` requires neither a desk
-owner nor a surviving bound route. Selection-none planning receives remembered
-continuity as an independent owner and removes it only when exact locator evidence
-matches. Work change is an explicit supersession transition: old-Work pending
-continuity is prune evidence, never generic superseded continuity. Same-Work screen
-leave uses the ordinary leave transition and keeps remembered continuity; a Work
-change with no active route restores that Work's eligible recent route. The pure
-transition's promotion output is authoritative, so a terminally guarded locator
-cannot enter memory or persistence before identity settlement. The transition commits
-desk selection, working-set
-routes, remembered destination, a typed removal fence, and guarded route repair before
-navigation. Project-host release drops only the detachable route adapter and mounted
-selection. Account-owned revision, terminal exact removal, memory, and fence authority
-survive re-entry; a matching terminal removal withholds unknown promotion until a new
-identity binds or exact unbound settlement completes. Account disposal destroys it.
+policy separate from browser lifecycle and effects. Bound selection anchors visible
+identity and exact removal; only revision-checked desk or route-only activation admits
+ordinary continuity. Work change chooses a compatible admitted fallback independently
+from its new route candidate. Same-Work screen leave discards selection while retaining
+admitted continuity. Fulfilled absence runs one coordinator-owned rejection plan that
+atomically selects a desk fallback, reconciles the working set, updates admitted memory,
+publishes, and then issues guarded replace-navigation. Project-host release drops only
+the detachable route adapter and mounted selection. Account-owned revision, terminal
+exact removal, admitted memory, and fence authority survive re-entry; a matching
+terminal removal blocks stale identity re-entry until exact rejection or a different
+identity is proven. Account disposal destroys it.
 The account provider owns one reversible coordinator lifetime lease. Cleanup
 suspends command authority synchronously; Strict effect replay resumes that same
 coordinator before child layout work, while a deferred step only finalizes a lease
 that remained suspended.
-Activation uses selection and transition revision tickets in layout phase
-and validates live desk membership before mutating continuity. `ContextPaneController`
+Activation uses selection and transition revision tickets in layout phase. Desktop
+validates live desk membership; phone validates the exact registered route without
+fabricating a tab. `ContextPaneController`
 remains a view/activation controller and owns no lifecycle-removal policy. Later ready
 Work changes use the coordinator's supersession transition. Draft apply only resolves tab metadata. Context-tree
 cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,

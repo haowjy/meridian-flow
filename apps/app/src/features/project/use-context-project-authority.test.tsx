@@ -1,10 +1,24 @@
 // @vitest-environment jsdom
 import { QueryClient } from "@tanstack/react-query";
-import { act, StrictMode, useState } from "react";
+import { act, StrictMode, useLayoutEffect, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
+import {
+  configureWorkingSetSync,
+  readRecentRoutes,
+  reconcileContextRoutes,
+} from "@/client/working-set/driver";
+import { DeviceWorkingSetStore, WORKING_SET_STORAGE_KEY } from "@/client/working-set/store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import {
+  ContextRemovalAccountProvider,
+  useContextRemovalCoordinator,
+} from "./context/ContextRemovalAccountProvider";
+import type { ContextRemovalCoordinator } from "./context/context-removal-coordinator";
+import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
+import { useContextRemovalProject } from "./context/use-context-removal-project";
 import type { EditorWorkScope } from "./editor-work-scope";
+import type { ProjectSearch } from "./routing/project-route";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 
 const mocks = vi.hoisted(() => ({ readTree: vi.fn() }));
@@ -94,6 +108,154 @@ it("withholds live hosts through one held raw bootstrap and never restores raw a
       expect(document.querySelector("[data-phase]")?.getAttribute("data-phase")).toBe("live");
       expect(mocks.readTree).toHaveBeenCalledOnce();
       expect(useContextTabsStore.getState().byProject.project?.tabs).toEqual([restored]);
+    },
+  );
+});
+
+it("keeps a fulfilled bootstrap removal authoritative when the explicit live route starts", async () => {
+  const deleted = { ...restored, documentId: "deleted", path: "/deleted.md", name: "deleted.md" };
+  const knowledge = {
+    ...restored,
+    documentId: "knowledge",
+    path: "/knowledge.md",
+    name: "knowledge.md",
+  };
+  useContextTabsStore.setState({
+    byProject: { project: { tabs: [deleted, knowledge], activeTabId: "deleted" } },
+    _deskHydrated: true,
+  });
+  const read = deferred<{
+    tree: {
+      kind: "dir";
+      path: string;
+      name: string;
+      children: Array<{
+        kind: "file";
+        path: string;
+        name: string;
+        documentId: string;
+        editable: true;
+        filetype: "markdown";
+        schemaType: "document";
+      }>;
+    };
+    capabilities: null;
+  }>();
+  mocks.readTree.mockImplementation(() => read.promise);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  let coordinator: ContextRemovalCoordinator | null = null;
+  let search: ProjectSearch = {
+    screen: "context" as const,
+    work: "work-1",
+    scheme: "kb" as const,
+    path: "/deleted.md",
+  };
+
+  function SeedWorkingSet() {
+    useLayoutEffect(() => {
+      window.localStorage.removeItem(WORKING_SET_STORAGE_KEY);
+      configureWorkingSetSync("bootstrap-account", false);
+      reconcileContextRoutes("project", {
+        removedLocators: [],
+        survivingOwnedLocators: [
+          { scheme: "kb", path: "/deleted.md" },
+          { scheme: "kb", path: "/knowledge.md" },
+        ],
+        promote: { scheme: "kb", path: "/deleted.md" },
+        clearAll: false,
+      });
+    }, []);
+    return null;
+  }
+  function RejectingMaterializer() {
+    const service = useContextRemovalCoordinator();
+    const snapshot = useContextRemovalProject("project");
+    useLayoutEffect(() => {
+      if (snapshot.selection.status !== "candidate") return;
+      service.rejectRouteCandidate("project", snapshot.selection.revision);
+    }, [service, snapshot.selection]);
+    return null;
+  }
+  function Harness() {
+    coordinator = useContextRemovalCoordinator();
+    const phase = useContextProjectAuthority({
+      projectId: "project",
+      deskHydrated: true,
+      editorScope: { status: "ready", workId: "work-1", source: "route" },
+      workingSetHydration: disabledHydration,
+      queryClient,
+    });
+    if (phase.status !== "live") return <div data-phase={phase.status}>withheld</div>;
+    return (
+      <>
+        <div data-phase="live">live</div>
+        <ProjectContextRemovalController
+          projectId="project"
+          activeScreen="context"
+          activeContextScheme="kb"
+          activeContextPath="/deleted.md"
+          editorWorkId="work-1"
+          route={{
+            readSearch: () => search,
+            updateSearch: (_projectId, update) => {
+              search = update(search);
+            },
+          }}
+        />
+        <RejectingMaterializer />
+      </>
+    );
+  }
+
+  await withReactRoot(
+    <ContextRemovalAccountProvider accountId="bootstrap-account">
+      <SeedWorkingSet />
+      <Harness />
+    </ContextRemovalAccountProvider>,
+    async () => {
+      expect(document.querySelector("[data-phase]")?.textContent).toBe("withheld");
+      expect(useContextTabsStore.getState().byProject.project?.tabs).toHaveLength(2);
+
+      await act(async () =>
+        read.resolve({
+          tree: {
+            kind: "dir",
+            path: "/",
+            name: "Knowledge Base",
+            children: [
+              {
+                kind: "file",
+                path: "/knowledge.md",
+                name: "knowledge.md",
+                documentId: "knowledge",
+                editable: true,
+                filetype: "markdown",
+                schemaType: "document",
+              },
+            ],
+          },
+          capabilities: null,
+        }),
+      );
+
+      expect(document.querySelector("[data-phase]")?.textContent).toBe("live");
+      expect(useContextTabsStore.getState().byProject.project).toMatchObject({
+        tabs: [expect.objectContaining({ documentId: "knowledge" })],
+        activeTabId: "knowledge",
+      });
+      expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
+        selection: { status: "rejected", locator: { path: "/deleted.md" } },
+        admitted: { path: "/knowledge.md" },
+      });
+      expect(readRecentRoutes("project")).toEqual([{ scheme: "kb", path: "/knowledge.md" }]);
+      expect(search).toMatchObject({ scheme: "kb", path: "/knowledge.md" });
+      const restoredStore = new DeviceWorkingSetStore(window.localStorage);
+      restoredStore.setUser("bootstrap-account");
+      expect(restoredStore.read("project")?.snapshot.recentRoutes ?? []).not.toContainEqual(
+        expect.objectContaining({ path: "/deleted.md" }),
+      );
     },
   );
 });
