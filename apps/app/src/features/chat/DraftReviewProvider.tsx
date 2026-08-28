@@ -21,7 +21,7 @@ import {
 } from "@/client/query/useWorkDrafts";
 import { useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { contextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
+import { useContextRemovalCoordinator } from "@/features/project/context/ContextRemovalAccountProvider";
 import { findContextFileByDocumentId } from "@/features/project/context/context-tree";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
@@ -79,6 +79,7 @@ function useDraftReviewScopeOwner(
   threadId: string | null,
 ): DraftReviewContextValue {
   const queryClient = useQueryClient();
+  const contextRemoval = useContextRemovalCoordinator();
   const effectiveProjectId = projectId ?? "";
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
@@ -150,23 +151,16 @@ function useDraftReviewScopeOwner(
           ) ?? [];
         if (currentDrafts.some((draft) => draft.documentId === activeSelection.documentId)) return;
         if (findContextFileByDocumentId(tree, activeSelection.documentId)) {
-          contextRemovalCoordinator.applyDraftMetadata(
-            projectId,
-            workId,
-            activeSelection.documentId,
-          );
+          contextRemoval.applyDraftMetadata(projectId, workId, activeSelection.documentId);
         } else {
-          void contextRemovalCoordinator.discardDraft(
-            projectId,
-            workId,
-            activeSelection.documentId,
-          );
+          void contextRemoval.discardDraft(projectId, workId, activeSelection.documentId);
         }
       })
       // A failed membership check must leave the tab intact rather than guess
       // that a remotely applied document was discarded.
       .catch(() => undefined);
   }, [
+    contextRemoval,
     controller.exitReview,
     controller.inlineReview,
     controller.isDisposing,

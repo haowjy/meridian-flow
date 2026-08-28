@@ -1,23 +1,25 @@
-import { act, StrictMode, useLayoutEffect, useState } from "react";
+import { act, useLayoutEffect } from "react";
 import { describe, expect, it } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
-  configureContextRemovalAccount,
-  contextRemovalCoordinator,
-} from "./context-removal-coordinator";
+  ContextRemovalAccountProvider,
+  useContextRemovalCoordinator,
+} from "./ContextRemovalAccountProvider";
+import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
 import { useContextRemovalProject } from "./use-context-removal-project";
 
 function SettlingHost({ projectId }: { projectId: string }) {
   const snapshot = useContextRemovalProject(projectId);
+  const coordinator = useContextRemovalCoordinator();
   useLayoutEffect(() => {
     if (snapshot.selection.status !== "pending") return;
-    contextRemovalCoordinator.bindRouteSelection(projectId, snapshot.selection.revision, {
+    coordinator.bindRouteSelection(projectId, snapshot.selection.revision, {
       kind: "server",
       documentId: "document-1",
     });
-  }, [projectId, snapshot.selection]);
+  }, [coordinator, projectId, snapshot.selection]);
   return null;
 }
 
@@ -31,43 +33,46 @@ const route = {
   updateSearch: () => undefined,
 };
 
-describe.each([
-  ["normal", (node: React.ReactNode) => node],
-  ["Strict Mode", (node: React.ReactNode) => <StrictMode>{node}</StrictMode>],
-])("ProjectContextRemovalController in %s", (_label, wrap) => {
-  it("publishes the parent-started revision so the child settles on first mount", async () => {
-    configureContextRemovalAccount(`account-${_label}`);
-    const projectId = `project-${_label}`;
+describe("ProjectContextRemovalController", () => {
+  it("registers and begins before its later sibling settles", async () => {
+    let observed: ReturnType<
+      ReturnType<typeof useContextRemovalCoordinator>["getProjectSnapshot"]
+    > | null = null;
+    function Observer() {
+      const coordinator = useContextRemovalCoordinator();
+      observed = useContextRemovalProject("project-1");
+      useLayoutEffect(() => {
+        observed = coordinator.getProjectSnapshot("project-1");
+      });
+      return null;
+    }
     await withReactRoot(
-      wrap(
+      <ContextRemovalAccountProvider accountId="account-1">
         <ProjectContextRemovalController
-          projectId={projectId}
+          projectId="project-1"
           activeScreen="context"
           activeContextScheme="manuscript"
           activeContextPath="/chapter.md"
           editorWorkId="work-1"
           route={route}
-        >
-          <SettlingHost projectId={projectId} />
-        </ProjectContextRemovalController>,
-      ),
+        />
+        <SettlingHost projectId="project-1" />
+        <Observer />
+      </ContextRemovalAccountProvider>,
       () => {
-        expect(contextRemovalCoordinator.getProjectSnapshot(projectId).selection).toMatchObject({
+        expect(observed?.selection).toMatchObject({
           status: "bound",
           locator: { path: "/chapter.md", workId: "work-1" },
-          selection: { documentId: "document-1" },
+          identity: { documentId: "document-1" },
         });
       },
     );
   });
-});
 
-describe("ProjectContextRemovalController lifecycle", () => {
-  it("does not prune Work tabs until a ready non-null Work exists", async () => {
-    const projectId = "project-work-readiness";
+  it("prunes Work tabs during the live layout transition", async () => {
     useContextTabsStore.setState({
       byProject: {
-        [projectId]: {
+        "project-1": {
           tabs: [
             {
               kind: "tracked",
@@ -86,54 +91,42 @@ describe("ProjectContextRemovalController lifecycle", () => {
       },
       _deskHydrated: true,
     });
-    let setWork: ((workId: string | null) => void) | null = null;
-    function Harness() {
-      const [workId, updateWork] = useState<string | null>(null);
-      setWork = updateWork;
-      return (
+    await withReactRoot(
+      <ContextRemovalAccountProvider accountId="account-1">
         <ProjectContextRemovalController
-          projectId={projectId}
+          projectId="project-1"
           activeScreen="home"
           activeContextScheme={null}
           activeContextPath={null}
-          editorWorkId={workId}
+          editorWorkId="work-2"
           route={route}
-        >
-          <div />
-        </ProjectContextRemovalController>
-      );
-    }
-
-    await withReactRoot(<Harness />, async () => {
-      expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toHaveLength(1);
-      await act(async () => setWork?.("work-2"));
-      expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toHaveLength(0);
-    });
+        />
+      </ContextRemovalAccountProvider>,
+      async () => {
+        await act(async () => undefined);
+        expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toHaveLength(0);
+      },
+    );
   });
 
-  it("fully disposes a subscribed project and does not allocate snapshots for absences", async () => {
-    const projectId = "project-subscribed-disposal";
-    function Subscriber() {
-      useContextRemovalProject(projectId);
+  it("disposes account state on provider release", async () => {
+    let coordinator: ContextRemovalCoordinator | null = null;
+    function Capture() {
+      coordinator = useContextRemovalCoordinator();
       return null;
     }
-
     await withReactRoot(
-      <ProjectContextRemovalController
-        projectId={projectId}
-        activeScreen="home"
-        activeContextScheme={null}
-        activeContextPath={null}
-        editorWorkId="work-1"
-        route={route}
-      >
-        <Subscriber />
-      </ProjectContextRemovalController>,
+      <ContextRemovalAccountProvider accountId="account-1">
+        <Capture />
+      </ContextRemovalAccountProvider>,
+      () => undefined,
     );
-
-    const disposed = contextRemovalCoordinator.getProjectSnapshot(projectId);
-    expect(disposed).toBe(contextRemovalCoordinator.getProjectSnapshot("never-mounted"));
-    configureContextRemovalAccount("account-after-disposal");
-    expect(contextRemovalCoordinator.getProjectSnapshot(projectId)).toBe(disposed);
+    if (!coordinator) throw new Error("expected coordinator");
+    expect(
+      (coordinator as ContextRemovalCoordinator).getProjectSnapshot("project-1").selection,
+    ).toEqual({
+      status: "none",
+      revision: 0,
+    });
   });
 });

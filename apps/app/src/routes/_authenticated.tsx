@@ -27,11 +27,8 @@ import {
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
+import { ContextRemovalAccountProvider } from "@/features/project/context/ContextRemovalAccountProvider";
 import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
-import {
-  configureContextRemovalAccount,
-  resetContextRemovalForHydration,
-} from "@/features/project/context/context-removal-coordinator";
 import {
   getUntitledReconciler,
   isUntitledPending,
@@ -139,9 +136,6 @@ function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
   configureDocumentSessionUser(user.userId);
-  useEffect(() => {
-    configureContextRemovalAccount(user.userId);
-  }, [user.userId]);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // One unconditional provider tree for every authenticated route — the settings
@@ -150,7 +144,9 @@ function AuthenticatedLayout() {
   // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
-      <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
+      <ContextRemovalAccountProvider key={user.userId} accountId={user.userId}>
+        <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
+      </ContextRemovalAccountProvider>
     </AppQueryProvider>
   );
 }
@@ -180,7 +176,6 @@ function AuthenticatedProviderTree({
     untitledReconciler.rehydrate();
     untitledReconciler.start();
     rehydrateContextDesks(user.userId, isUntitledPending);
-    resetContextRemovalForHydration();
     syncUntitledReceiptOwners();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();

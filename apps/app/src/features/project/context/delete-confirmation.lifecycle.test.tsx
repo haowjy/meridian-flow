@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { ContextRemovalAccountProvider } from "./ContextRemovalAccountProvider";
 
 const { deleted } = vi.hoisted(() => ({
   deleted: vi.fn(async () => ({
@@ -22,6 +23,12 @@ const { useDeleteConfirmation } = await import("./ContextEntryActions");
 type Confirmation = ReturnType<typeof useDeleteConfirmation>;
 let confirmation: Confirmation | null = null;
 let changeWork: ((workId: string) => void) | null = null;
+
+beforeEach(() => {
+  confirmation = null;
+  changeWork = null;
+  deleted.mockClear();
+});
 
 function Harness() {
   const [workId, setWorkId] = useState("work-a");
@@ -64,9 +71,18 @@ it("submits the Work captured when delete confirmation was requested", async () 
     },
     _deskHydrated: true,
   });
+  const invalidation = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => {
+    expect(
+      useContextTabsStore
+        .getState()
+        .byProject.project?.tabs.some((tab) => tab.documentId === "document-a"),
+    ).toBe(false);
+  });
   await withReactRoot(
     <QueryClientProvider client={queryClient}>
-      <Harness />
+      <ContextRemovalAccountProvider accountId="account-1">
+        <Harness />
+      </ContextRemovalAccountProvider>
     </QueryClientProvider>,
     async () => {
       act(() =>
@@ -74,7 +90,7 @@ it("submits the Work captured when delete confirmation was requested", async () 
           name: "same.md",
           path: "/same.md",
           kind: "file",
-          documentId: "document-same",
+          documentId: "document-a",
         }),
       );
       await act(async () => changeWork?.("work-b"));
@@ -87,10 +103,11 @@ it("submits the Work captured when delete confirmation was requested", async () 
     "scratch",
     {
       path: "/same.md",
-      expected: { kind: "file", documentId: "document-same" },
+      expected: { kind: "file", documentId: "document-a" },
     },
     { workId: "work-a" },
   );
+  expect(invalidation).toHaveBeenCalledOnce();
   expect(useContextTabsStore.getState().byProject.project?.tabs).toMatchObject([
     { documentId: "document-b" },
   ]);
@@ -99,4 +116,31 @@ it("submits the Work captured when delete confirmation was requested", async () 
   expect(useContextTabsStore.getState().byProject.project?.tabs).toMatchObject([
     { documentId: "document-b" },
   ]);
+});
+
+it("keeps a stale-target confirmation open with a retry error", async () => {
+  deleted.mockRejectedValueOnce(new Error("stale_target"));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  await withReactRoot(
+    <QueryClientProvider client={queryClient}>
+      <ContextRemovalAccountProvider accountId="account-1">
+        <Harness />
+      </ContextRemovalAccountProvider>
+    </QueryClientProvider>,
+    async () => {
+      act(() =>
+        confirmation?.requestDelete({
+          name: "changed.md",
+          path: "/changed.md",
+          kind: "file",
+          documentId: "old-document",
+        }),
+      );
+      await act(async () => confirmation?.confirm());
+      expect(confirmation?.target).toMatchObject({ documentId: "old-document" });
+      await vi.waitFor(() => expect(confirmation?.error).toBe(true));
+    },
+  );
 });

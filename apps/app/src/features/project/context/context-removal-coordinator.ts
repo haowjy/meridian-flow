@@ -1,10 +1,9 @@
-/** Exact-identity desk, continuity, and route reconciliation for live removals. */
+/** Account-lifetime effect shell for exact context removal transitions. */
 
 import {
   isWorkScopedProjectContextScheme,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-
 import {
   type ContextTab,
   type ProjectTabsSlice,
@@ -16,7 +15,6 @@ import {
   commitPlannedContextRemoval,
 } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
-  buildWorkingSetRoute,
   type ReconcileContextRoutesInput,
   readRecentRoutes,
   recentRouteForEditorWork,
@@ -31,12 +29,32 @@ import {
 import {
   type ContextRemovalIntent,
   type ContextRemovalOutcome,
-  type ContextRouteSelection,
+  type ContextRouteIdentity,
   contextTabEligibleForRemoval,
   planContextRemoval,
+  type RouteContinuityVerdict,
   routeTargetForTab,
   workingSetRouteForTab,
 } from "./context-removal-planner";
+import {
+  type AcknowledgedContextDeleteCommand,
+  type AcknowledgedDeleteAdmission,
+  admitCommand,
+  attachObligation,
+  beginSelection,
+  bindSelection,
+  type CommandAdmissionRecord,
+  type ContextDeleteInitiator,
+  type ContextRouteSelection,
+  confirmSelectionUnbound,
+  continuityForSelection,
+  deleteProof,
+  type InitiatingRouteWitness,
+  type RouteRemovalProof,
+  type SelectionTransition,
+  type SettledObligation,
+  sameLocator,
+} from "./context-removal-protocol";
 import { contextTabMatchesRoute } from "./context-tab-identity";
 
 type ContextRemovalWorkingSetPort = {
@@ -58,34 +76,44 @@ type DeskPort = {
   resolveDraftApply(projectId: string, reviewWorkId: string, documentId: string): void;
 };
 
-type DeferredRemoval = {
-  intent: ContextRemovalIntent;
-  resolve: (outcome: ContextRemovalOutcome) => void;
+type RemovalFence = {
+  selectionRevision: number;
+  transitionRevision: number;
+  locator: ContextRouteTarget | null;
+  removedDocumentIds: readonly string[];
+};
+
+export type ContextActivation = {
+  projectId: string;
+  selectionRevision: number;
+  transitionRevision: number;
+  locator: ContextRouteTarget;
+  identity: ContextRouteIdentity;
 };
 
 type CoordinatorProjectState = {
   selection: ContextRouteSelection;
   rememberedRoute: ContextRouteTarget | null;
-  autoOpenBlock: {
-    selectionRevision: number;
-    locator: ContextRouteTarget | null;
-    documentIds: readonly string[];
-  } | null;
-  deferred: Map<number, DeferredRemoval[]>;
+  removalFence: RemovalFence | null;
+  transitionRevision: number;
+  live: boolean;
   listeners: Set<() => void>;
   snapshot: ContextRemovalProjectSnapshot;
 };
 
 export type ContextRemovalProjectSnapshot = Pick<
   CoordinatorProjectState,
-  "selection" | "rememberedRoute" | "autoOpenBlock"
->;
+  "selection" | "rememberedRoute" | "removalFence" | "transitionRevision" | "live"
+> & { autoOpenBlock: RemovalFence | null };
 
 const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], activeTabId: null };
 const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   selection: { status: "none", revision: 0 },
   rememberedRoute: null,
+  removalFence: null,
   autoOpenBlock: null,
+  transitionRevision: 0,
+  live: false,
 };
 
 const productionDesk: DeskPort = {
@@ -99,51 +127,89 @@ const productionWorkingSet: ContextRemovalWorkingSetPort = {
   reconcileContextRoutes,
 };
 
+function newCommandId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `delete-${Date.now()}-${Math.random()}`;
+}
+
 export class ContextRemovalCoordinator {
   private readonly projects = new Map<string, CoordinatorProjectState>();
   private readonly routePorts = new Map<string, { token: symbol; port: ContextRemovalRoutePort }>();
-  private accountId: string | null = null;
+  private commandAdmissions: ReadonlyMap<string, CommandAdmissionRecord> = new Map();
   private readonly fallbackRoute: ContextRemovalRoutePort | null;
   private readonly desk: DeskPort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
 
+  readonly accountId: string | null;
+
   constructor(
-    dependencies: {
+    accountOrDependencies:
+      | string
+      | {
+          desk?: DeskPort;
+          workingSet?: ContextRemovalWorkingSetPort;
+          route?: ContextRemovalRoutePort;
+        }
+      | null = null,
+    explicitDependencies: {
       desk?: DeskPort;
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
     } = {},
   ) {
+    const dependencies =
+      typeof accountOrDependencies === "object" && accountOrDependencies !== null
+        ? accountOrDependencies
+        : explicitDependencies;
+    this.accountId = typeof accountOrDependencies === "string" ? accountOrDependencies : null;
     this.desk = dependencies.desk ?? productionDesk;
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
   }
 
-  configureAccount(accountId: string): void {
-    if (this.accountId === accountId) return;
-    this.accountId = accountId;
-    this.resetForHydration();
-  }
-
-  resetForHydration(): void {
-    for (const [projectId, state] of this.projects) {
-      for (const commands of state.deferred.values()) {
-        for (const command of commands) command.resolve({ kind: "noop" });
-      }
-      state.deferred.clear();
-      state.rememberedRoute = null;
-      state.autoOpenBlock = null;
-      if (!this.routePorts.has(projectId)) {
-        this.disposeProject(projectId);
-        continue;
-      }
-      const revision = state.selection.revision + 1;
-      state.selection =
-        state.selection.status === "none"
-          ? { status: "none", revision }
-          : { status: "pending", revision, locator: state.selection.locator };
-      this.publish(state);
+  activate(activation: ContextActivation): boolean {
+    const state = this.project(activation.projectId);
+    const selection = state.selection;
+    if (
+      !state.live ||
+      selection.status !== "bound" ||
+      selection.revision !== activation.selectionRevision ||
+      !sameLocator(selection.locator, activation.locator) ||
+      selection.identity.kind !== activation.identity.kind ||
+      selection.identity.documentId !== activation.identity.documentId ||
+      state.transitionRevision !== activation.transitionRevision
+    ) {
+      return false;
     }
+    const tab = this.desk
+      .read(activation.projectId)
+      .tabs.find((candidate) => candidate.documentId === activation.identity.documentId);
+    if (!tab || tab.draftOnly) return false;
+    const tabLocator = routeTargetForTab(tab, activation.locator.workId);
+    if (!sameLocator(tabLocator, activation.locator)) return false;
+    const fence = state.removalFence;
+    if (
+      fence?.removedDocumentIds.includes(activation.identity.documentId) &&
+      fence.selectionRevision === activation.selectionRevision &&
+      fence.locator &&
+      sameLocator(fence.locator, activation.locator)
+    ) {
+      return false;
+    }
+    const route = workingSetRouteForTab(tab);
+    if (route) {
+      this.workingSet.reconcileContextRoutes(activation.projectId, {
+        removedLocators: [],
+        survivingOwnedLocators: this.desk
+          .read(activation.projectId)
+          .tabs.flatMap((item) => workingSetRouteForTab(item) ?? []),
+        promote: route,
+        clearAll: false,
+      });
+    }
+    state.rememberedRoute = activation.locator;
+    state.removalFence = null;
+    this.publish(state);
+    return true;
   }
 
   registerRoutePort(
@@ -152,14 +218,9 @@ export class ContextRemovalCoordinator {
     activeWorkId: string | null,
   ): { token: symbol; release: () => void } {
     const state = this.project(projectId);
-    for (const commands of state.deferred.values()) {
-      for (const command of commands) command.resolve({ kind: "noop" });
-    }
-    state.deferred.clear();
-    state.selection = { status: "none", revision: 0 };
-    state.autoOpenBlock = null;
     const token = Symbol(projectId);
     this.routePorts.set(projectId, { token, port });
+    state.live = true;
     const recent = recentRouteForEditorWork(
       this.workingSet.readRecentRoutes(projectId),
       activeWorkId,
@@ -178,6 +239,7 @@ export class ContextRemovalCoordinator {
       token,
       release: () => {
         if (this.routePorts.get(projectId)?.token !== token) return;
+        this.leaveSelection(projectId);
         this.disposeProject(projectId);
       },
     };
@@ -185,48 +247,28 @@ export class ContextRemovalCoordinator {
 
   beginRouteSelection(projectId: string, locator: ContextRouteTarget): number {
     const state = this.project(projectId);
-    const previous = state.selection;
-    const revision = state.selection.revision + 1;
-    state.selection = { status: "pending", revision, locator };
-    if (previous.status === "pending") {
-      this.settleSupersededSelection(projectId, previous, state.selection);
-    }
-    this.publish(state);
-    return revision;
+    const transition = beginSelection(state.selection, locator);
+    this.applySelectionTransition(projectId, transition);
+    this.promoteUnknown(projectId, locator);
+    return transition.selection.revision;
   }
 
-  bindRouteSelection(
-    projectId: string,
-    revision: number,
-    selection: { kind: "server" | "local"; documentId: string },
-  ): boolean {
-    const state = this.project(projectId);
-    if (state.selection.status !== "pending" || state.selection.revision !== revision) return false;
-    state.selection = { ...state.selection, status: "bound", selection };
-    this.publish(state);
-    this.drainDeferred(projectId, revision);
+  bindRouteSelection(projectId: string, revision: number, identity: ContextRouteIdentity): boolean {
+    const transition = bindSelection(this.project(projectId).selection, revision, identity);
+    if (!transition) return false;
+    this.applySelectionTransition(projectId, transition);
     return true;
   }
 
   confirmRouteUnbound(projectId: string, revision: number): boolean {
-    const state = this.project(projectId);
-    if (state.selection.status !== "pending" || state.selection.revision !== revision) return false;
-    state.selection = { ...state.selection, status: "confirmed-unbound" };
-    this.publish(state);
-    this.drainDeferred(projectId, revision);
+    const transition = confirmSelectionUnbound(this.project(projectId).selection, revision);
+    if (!transition) return false;
+    this.applySelectionTransition(projectId, transition);
     return true;
   }
 
   clearRouteSelection(projectId: string): void {
-    const state = this.project(projectId);
-    const previous = state.selection;
-    const revision = previous.revision + 1;
-    state.selection = { status: "none", revision };
-    state.autoOpenBlock = null;
-    if (previous.status === "pending") {
-      this.settleSupersededSelection(projectId, previous, state.selection);
-    }
-    this.publish(state);
+    this.leaveSelection(projectId);
   }
 
   subscribe(projectId: string, listener: () => void): () => void {
@@ -239,25 +281,113 @@ export class ContextRemovalCoordinator {
     return this.projects.get(projectId)?.snapshot ?? EMPTY_PROJECT_SNAPSHOT;
   }
 
+  captureDeleteInitiation(
+    projectId: string,
+    initiated: ContextDeleteInitiator,
+  ): Omit<AcknowledgedContextDeleteCommand, "cause" | "confirmed"> {
+    const selection = this.project(projectId).selection;
+    let routeWitness: InitiatingRouteWitness = null;
+    if (selection.status === "pending" && sameLocator(selection.locator, initiated.locator)) {
+      routeWitness = {
+        status: "pending",
+        revision: selection.revision,
+        locator: selection.locator,
+      };
+    } else if (selection.status === "bound" && sameLocator(selection.locator, initiated.locator)) {
+      routeWitness = {
+        status: "bound",
+        revision: selection.revision,
+        locator: selection.locator,
+        identity: selection.identity,
+      };
+    }
+    return { commandId: newCommandId(), projectId, initiated, routeWitness };
+  }
+
+  acceptAcknowledgedDelete(command: AcknowledgedContextDeleteCommand): AcknowledgedDeleteAdmission {
+    const state = this.project(command.projectId);
+    const proof = deleteProof(command);
+    if (
+      command.initiated.kind === "file" &&
+      !command.confirmed.deletedDocumentIds.includes(command.initiated.documentId)
+    ) {
+      return { status: "rejected", reason: "invalid_proof" };
+    }
+    const obligated =
+      proof?.kind === "acknowledged-delete" &&
+      state.selection.status === "pending" &&
+      state.selection.revision === proof.witnessedRevision &&
+      sameLocator(state.selection.locator, proof.locator);
+    const first: Extract<AcknowledgedDeleteAdmission, { status: "accepted" }> = {
+      status: "accepted",
+      outcome: obligated ? "obligated" : "executed",
+    };
+    const admitted = admitCommand(this.commandAdmissions, command, first);
+    if (admitted.admission.status !== "accepted") return admitted.admission;
+    this.commandAdmissions = admitted.records;
+
+    let continuity = continuityForSelection(state.selection);
+    let repair: "allow" | "never" = "allow";
+    if (proof) {
+      const witness = command.routeWitness;
+      if (obligated) {
+        state.selection = attachObligation(state.selection, proof, proof.witnessedRevision);
+        continuity = continuityForSelection(state.selection);
+      } else if (
+        witness &&
+        witness.revision === state.selection.revision &&
+        sameLocator(witness.locator, proof.locator)
+      ) {
+        if (state.selection.status === "bound") {
+          continuity =
+            state.selection.identity.documentId === proof.documentId
+              ? {
+                  kind: "proven-removed",
+                  revision: state.selection.revision,
+                  locator: state.selection.locator,
+                  identity: state.selection.identity,
+                }
+              : continuityForSelection(state.selection);
+        } else if (state.selection.status === "confirmed-unbound") {
+          continuity = {
+            kind: "proven-removed",
+            revision: state.selection.revision,
+            locator: state.selection.locator,
+            identity: { kind: "server", documentId: proof.documentId },
+          };
+        }
+      } else if (witness) {
+        continuity = {
+          kind: "proven-removed",
+          revision: witness.revision,
+          locator: witness.locator,
+          identity: { kind: "server", documentId: proof.documentId },
+        };
+        repair = "never";
+      }
+    }
+    this.executeNow(
+      command.projectId,
+      { cause: "acknowledged-delete", documentIds: command.confirmed.deletedDocumentIds },
+      continuity,
+      repair,
+    );
+    this.publish(state);
+    return first;
+  }
+
   applyDraftMetadata(projectId: string, reviewWorkId: string, documentId: string): void {
     this.desk.resolveDraftApply(projectId, reviewWorkId, documentId);
   }
 
-  writerClose(projectId: string, documentId: string): Promise<ContextRemovalOutcome> {
-    return this.executeContextRemoval(projectId, {
+  writerClose(projectId: string, documentId: string): ContextRemovalOutcome {
+    return this.executeRepresented(projectId, {
       cause: "writer-close",
       documentIds: [documentId],
     });
   }
 
-  acknowledgedDelete(
-    projectId: string,
-    documentIds: readonly string[],
-  ): Promise<ContextRemovalOutcome> {
-    return this.executeContextRemoval(projectId, { cause: "acknowledged-delete", documentIds });
-  }
-
-  pruneWork(projectId: string, activeWorkId: string): Promise<ContextRemovalOutcome> {
+  pruneWork(projectId: string, activeWorkId: string): ContextRemovalOutcome {
     const documentIds = this.desk
       .read(projectId)
       .tabs.filter(
@@ -282,18 +412,14 @@ export class ContextRemovalCoordinator {
         }
       : null;
     this.publish(state);
-    return this.executeContextRemoval(projectId, { cause: "work-prune", documentIds });
+    return this.executeRepresented(projectId, { cause: "work-prune", documentIds });
   }
 
-  discardDraft(
-    projectId: string,
-    reviewWorkId: string,
-    documentId: string,
-  ): Promise<ContextRemovalOutcome> {
+  discardDraft(projectId: string, reviewWorkId: string, documentId: string): ContextRemovalOutcome {
     const tab = this.desk
       .read(projectId)
       .tabs.find((candidate) => candidate.documentId === documentId);
-    return this.executeContextRemoval(projectId, {
+    return this.executeRepresented(projectId, {
       cause: "draft-discard",
       documentIds:
         tab !== undefined &&
@@ -305,79 +431,77 @@ export class ContextRemovalCoordinator {
     });
   }
 
-  activateRoute(projectId: string, tab: ContextTab, activeWorkId: string | null): void {
-    if (tab.draftOnly) return;
-    const route = workingSetRouteForTab(tab);
-    if (route) {
-      this.workingSet.reconcileContextRoutes(projectId, {
-        removedLocators: [],
-        survivingOwnedLocators: this.desk
-          .read(projectId)
-          .tabs.flatMap((item) => workingSetRouteForTab(item) ?? []),
-        promote: route,
-        clearAll: false,
-      });
-    }
-    const state = this.project(projectId);
-    state.rememberedRoute = routeTargetForTab(tab, activeWorkId);
-    const block = state.autoOpenBlock;
-    if (
-      !block?.locator ||
-      block.locator.scheme !== state.rememberedRoute.scheme ||
-      block.locator.path !== state.rememberedRoute.path ||
-      block.locator.workId !== state.rememberedRoute.workId ||
-      !block.documentIds.includes(tab.documentId)
-    ) {
-      state.autoOpenBlock = null;
-    }
-    this.publish(state);
+  dispose(): void {
+    for (const projectId of [...this.projects.keys()]) this.disposeProject(projectId);
+    this.commandAdmissions = new Map();
   }
 
   disposeProject(projectId: string): void {
     const state = this.projects.get(projectId);
-    if (state) {
-      for (const commands of state.deferred.values()) {
-        for (const command of commands) command.resolve({ kind: "noop" });
-      }
-      state.deferred.clear();
-      state.listeners.clear();
-      this.projects.delete(projectId);
-    }
+    state?.listeners.clear();
+    this.projects.delete(projectId);
     this.routePorts.delete(projectId);
   }
 
-  private executeContextRemoval(
+  private executeRepresented(
     projectId: string,
     intent: ContextRemovalIntent,
-  ): Promise<ContextRemovalOutcome> {
-    if (intent.documentIds.length === 0) return Promise.resolve({ kind: "noop" });
+  ): ContextRemovalOutcome {
     const state = this.project(projectId);
-    if (
-      state.selection.status === "pending" &&
-      this.pendingLocatorMayOwnRemoval(projectId, state.selection, intent)
-    ) {
-      state.autoOpenBlock = {
-        selectionRevision: state.selection.revision,
-        locator: state.selection.locator,
-        documentIds: [...intent.documentIds],
-      };
-      this.publish(state);
-      return new Promise((resolve) => {
-        const commands = state.deferred.get(state.selection.revision) ?? [];
-        commands.push({ intent, resolve });
-        state.deferred.set(state.selection.revision, commands);
+    if (intent.documentIds.length === 0) return { kind: "noop" };
+    if (state.selection.status === "pending") {
+      const represented = this.desk.read(projectId).tabs.find((tab) => {
+        if (!contextTabEligibleForRemoval(tab, intent)) return false;
+        if (tab.kind === "new")
+          return (
+            state.selection.status === "pending" &&
+            state.selection.locator.scheme === "scratch" &&
+            state.selection.locator.path === ""
+          );
+        return (
+          state.selection.status === "pending" &&
+          contextTabMatchesRoute(
+            tab,
+            state.selection.locator.scheme,
+            state.selection.locator.path,
+            state.selection.locator.workId,
+          )
+        );
       });
+      if (represented) {
+        const proof: RouteRemovalProof = {
+          kind: "represented-tab",
+          commandId: newCommandId(),
+          cause: intent.cause as "writer-close" | "work-prune" | "draft-discard",
+          locator: state.selection.locator,
+          documentId: represented.documentId,
+        };
+        state.selection = attachObligation(state.selection, proof, state.selection.revision);
+      }
     }
-    return this.executeNow(projectId, intent, state.selection);
+    const outcome = this.executeNow(
+      projectId,
+      intent,
+      continuityForSelection(state.selection),
+      "allow",
+    );
+    this.publish(state);
+    return outcome;
   }
 
-  private async executeNow(
+  private executeNow(
     projectId: string,
     intent: ContextRemovalIntent,
-    routeSelection: ContextRouteSelection,
-  ): Promise<ContextRemovalOutcome> {
+    continuity: RouteContinuityVerdict,
+    repair: "allow" | "never",
+  ): ContextRemovalOutcome {
+    if (intent.documentIds.length === 0) return { kind: "noop" };
     const slice = this.desk.read(projectId);
-    const plan = planContextRemoval({ ...slice, routeSelection, intent });
+    const plan = planContextRemoval({
+      ...slice,
+      routeContinuity: continuity,
+      intent,
+    });
     if (plan.outcome.kind === "noop") return plan.outcome;
 
     this.desk.commit(projectId, {
@@ -387,60 +511,44 @@ export class ContextRemovalCoordinator {
     this.workingSet.reconcileContextRoutes(projectId, plan.workingSet);
 
     const state = this.project(projectId);
+    state.transitionRevision += 1;
     state.rememberedRoute = plan.rememberedRoute;
-    const removedOwnsSelection =
-      routeSelection.status !== "none" &&
-      plan.outcome.removed.some((tab) =>
-        tab.kind === "new"
-          ? routeSelection.locator.scheme === "scratch" &&
-            routeSelection.locator.path === "" &&
-            slice.activeTabId === tab.documentId
-          : contextTabMatchesRoute(
-              tab,
-              routeSelection.locator.scheme,
-              routeSelection.locator.path,
-              routeSelection.locator.workId,
-            ),
-      );
-    state.autoOpenBlock = {
-      selectionRevision: routeSelection.revision,
+    state.removalFence = {
+      selectionRevision:
+        continuity.kind === "none" ? state.selection.revision : continuity.revision,
+      transitionRevision: state.transitionRevision,
       locator:
-        routeSelection.status !== "none" &&
-        (plan.outcome.routedDocumentRemoved || removedOwnsSelection)
-          ? routeSelection.locator
-          : null,
-      documentIds: [...intent.documentIds],
+        continuity.kind === "none" || !plan.outcome.routedDocumentRemoved
+          ? null
+          : continuity.locator,
+      removedDocumentIds: [...intent.documentIds],
     };
     this.publish(state);
 
-    if (
-      plan.routeRepairTarget &&
-      routeSelection.status === "bound" &&
-      this.selectionStillCurrent(projectId, routeSelection)
-    ) {
+    if (repair === "allow" && plan.routeRepairTarget && continuity.kind === "proven-removed") {
       const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
       const search = route?.readSearch(projectId);
       if (
         route &&
         search?.screen === "context" &&
-        search.scheme === routeSelection.locator.scheme &&
-        search.path === routeSelection.locator.path &&
-        (search.work ?? null) === routeSelection.locator.workId
+        search.scheme === continuity.locator.scheme &&
+        search.path === continuity.locator.path &&
+        (search.work ?? null) === continuity.locator.workId
       ) {
-        const repair: ContextRouteRepair = {
+        const repairPlan: ContextRouteRepair = {
           expected: {
             screen: "context",
             work: search.work,
-            scheme: routeSelection.locator.scheme,
-            path: routeSelection.locator.path,
-            selectionRevision: routeSelection.revision,
-            selectionDocumentId: routeSelection.selection.documentId,
+            scheme: continuity.locator.scheme,
+            path: continuity.locator.path,
+            selectionRevision: continuity.revision,
+            selectionDocumentId: continuity.identity.documentId,
           },
           next: plan.routeRepairTarget,
         };
         route.updateSearch(projectId, (latest) =>
-          this.selectionStillCurrent(projectId, routeSelection)
-            ? applyContextRepairIfCurrent(repair, latest)
+          this.removalStillCurrent(projectId, continuity)
+            ? applyContextRepairIfCurrent(repairPlan, latest)
             : latest,
         );
       }
@@ -448,119 +556,71 @@ export class ContextRemovalCoordinator {
     return plan.outcome;
   }
 
-  private pendingLocatorMayOwnRemoval(
+  private removalStillCurrent(
     projectId: string,
-    pending: Extract<ContextRouteSelection, { status: "pending" }>,
-    intent: ContextRemovalIntent,
+    removal: Extract<RouteContinuityVerdict, { kind: "proven-removed" }>,
   ): boolean {
-    const tabs = this.desk.read(projectId).tabs;
-    const representedIds = new Set(tabs.map((tab) => tab.documentId));
-    const matchingTab = tabs.some((tab) => {
-      if (!contextTabEligibleForRemoval(tab, intent)) return false;
-      if (tab.kind === "new") {
-        return (
-          pending.locator.scheme === "scratch" &&
-          pending.locator.path === "" &&
-          this.desk.read(projectId).activeTabId === tab.documentId
-        );
-      }
-      return contextTabMatchesRoute(
-        tab,
-        pending.locator.scheme,
-        pending.locator.path,
-        pending.locator.workId,
-      );
-    });
-    if (matchingTab) return true;
-    // An exact delete receipt can identify a phone-only route with no desktop tab.
-    return (
-      intent.cause === "acknowledged-delete" &&
-      intent.documentIds.some((documentId) => !representedIds.has(documentId))
-    );
-  }
-
-  private selectionStillCurrent(
-    projectId: string,
-    expected: Extract<ContextRouteSelection, { status: "bound" }>,
-  ): boolean {
-    const current = this.project(projectId).selection;
-    return (
-      current.status === "bound" &&
-      current.revision === expected.revision &&
-      current.selection.documentId === expected.selection.documentId
-    );
-  }
-
-  private drainDeferred(projectId: string, revision: number): void {
-    const state = this.project(projectId);
-    const commands = state.deferred.get(revision);
-    if (!commands) return;
-    state.deferred.delete(revision);
-    for (const command of commands) {
-      this.executeNow(projectId, command.intent, state.selection).then(command.resolve);
+    const selection = this.project(projectId).selection;
+    if (
+      selection.status === "none" ||
+      selection.revision !== removal.revision ||
+      !sameLocator(selection.locator, removal.locator)
+    ) {
+      return false;
     }
+    return (
+      selection.status === "confirmed-unbound" ||
+      (selection.status === "bound" &&
+        selection.identity.kind === removal.identity.kind &&
+        selection.identity.documentId === removal.identity.documentId)
+    );
   }
 
-  private settleSupersededSelection(
-    projectId: string,
-    pending: Extract<ContextRouteSelection, { status: "pending" }>,
-    current: ContextRouteSelection,
-  ): void {
+  private applySelectionTransition(projectId: string, transition: SelectionTransition): void {
     const state = this.project(projectId);
-    const commands = state.deferred.get(pending.revision);
-    if (!commands) return;
-    state.deferred.delete(pending.revision);
-    for (const command of commands) {
-      const represented = this.desk.read(projectId).tabs.find((tab) => {
-        if (!contextTabEligibleForRemoval(tab, command.intent)) return false;
-        if (tab.kind === "new") {
-          return pending.locator.scheme === "scratch" && pending.locator.path === "";
-        }
-        return contextTabMatchesRoute(
-          tab,
-          pending.locator.scheme,
-          pending.locator.path,
-          pending.locator.workId,
-        );
+    state.selection = transition.selection;
+    for (const preserved of transition.preserve) {
+      if (preserved.kind !== "none") this.promoteUnknown(projectId, preserved.locator);
+    }
+    for (const settled of transition.settled) this.executeSettled(projectId, settled);
+    this.publish(state);
+  }
+
+  private executeSettled(projectId: string, settled: SettledObligation): void {
+    this.executeNow(projectId, settled.intent, settled.continuity, settled.repair);
+  }
+
+  private promoteUnknown(projectId: string, locator: ContextRouteTarget): void {
+    const route = workingSetRouteForTarget(locator);
+    if (route) {
+      this.workingSet.reconcileContextRoutes(projectId, {
+        removedLocators: [],
+        survivingOwnedLocators: [
+          ...this.desk.read(projectId).tabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
+          route,
+        ],
+        promote: route,
+        clearAll: false,
       });
-      const documentId =
-        represented?.documentId ??
-        (command.intent.cause === "acknowledged-delete" && command.intent.documentIds.length === 1
-          ? command.intent.documentIds[0]
-          : undefined);
-      const settledSelection: ContextRouteSelection = documentId
-        ? {
-            status: "bound",
-            revision: pending.revision,
-            locator: pending.locator,
-            selection: {
-              kind: represented?.kind === "new" ? "local" : "server",
-              documentId,
-            },
-          }
-        : { ...pending, status: "confirmed-unbound" };
-      void this.executeNow(projectId, command.intent, settledSelection).then(command.resolve);
     }
-    if (current.status === "pending") {
-      const currentRoute = buildWorkingSetRoute(
-        current.locator.scheme,
-        current.locator.path,
-        current.locator.workId,
-      );
-      if (currentRoute) {
-        this.workingSet.reconcileContextRoutes(projectId, {
-          removedLocators: [],
-          survivingOwnedLocators: [
-            ...this.desk.read(projectId).tabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
-            currentRoute,
-          ],
-          promote: currentRoute,
-          clearAll: false,
-        });
+    const state = this.project(projectId);
+    state.rememberedRoute = locator;
+    this.publish(state);
+  }
+
+  private leaveSelection(projectId: string): void {
+    const state = this.projects.get(projectId);
+    if (!state) return;
+    if (state.selection.status === "pending") {
+      const leaving = beginSelection(state.selection, state.selection.locator);
+      for (const settled of leaving.settled) this.executeSettled(projectId, settled);
+      for (const preserved of leaving.preserve) {
+        if (preserved.kind !== "none") this.promoteUnknown(projectId, preserved.locator);
       }
-      state.rememberedRoute = current.locator;
-      state.autoOpenBlock = null;
     }
+    state.selection = { status: "none", revision: state.selection.revision + 1 };
+    state.live = false;
+    this.publish(state);
   }
 
   private project(projectId: string): CoordinatorProjectState {
@@ -569,14 +629,11 @@ export class ContextRemovalCoordinator {
       state = {
         selection: { status: "none", revision: 0 },
         rememberedRoute: null,
-        autoOpenBlock: null,
-        deferred: new Map(),
+        removalFence: null,
+        transitionRevision: 0,
+        live: false,
         listeners: new Set(),
-        snapshot: {
-          selection: { status: "none", revision: 0 },
-          rememberedRoute: null,
-          autoOpenBlock: null,
-        },
+        snapshot: EMPTY_PROJECT_SNAPSHOT,
       };
       this.projects.set(projectId, state);
     }
@@ -587,20 +644,20 @@ export class ContextRemovalCoordinator {
     state.snapshot = {
       selection: state.selection,
       rememberedRoute: state.rememberedRoute,
-      autoOpenBlock: state.autoOpenBlock,
+      removalFence: state.removalFence,
+      autoOpenBlock: state.removalFence,
+      transitionRevision: state.transitionRevision,
+      live: state.live,
     };
     for (const listener of state.listeners) listener();
   }
 }
 
-export const contextRemovalCoordinator = new ContextRemovalCoordinator();
-
-export function configureContextRemovalAccount(accountId: string): void {
-  if (typeof window === "undefined") return;
-  contextRemovalCoordinator.configureAccount(accountId);
-}
-
-export function resetContextRemovalForHydration(): void {
-  if (typeof window === "undefined") return;
-  contextRemovalCoordinator.resetForHydration();
+function workingSetRouteForTarget(locator: ContextRouteTarget): WorkingSetRoute | null {
+  if (locator.scheme === "scratch" || locator.scheme === "uploads") {
+    return locator.workId
+      ? { scheme: locator.scheme, path: locator.path, workId: locator.workId }
+      : null;
+  }
+  return { scheme: locator.scheme, path: locator.path };
 }

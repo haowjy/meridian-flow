@@ -1,20 +1,22 @@
 /** React subscription adapter for the framework-independent removal coordinator. */
 import { useSyncExternalStore } from "react";
-import {
-  type ContextRemovalProjectSnapshot,
-  contextRemovalCoordinator,
-} from "./context-removal-coordinator";
+import { useContextRemovalCoordinator } from "./ContextRemovalAccountProvider";
+import type { ContextRemovalProjectSnapshot } from "./context-removal-coordinator";
 
 const EMPTY_SNAPSHOT: ContextRemovalProjectSnapshot = {
   selection: { status: "none", revision: 0 },
   rememberedRoute: null,
+  removalFence: null,
   autoOpenBlock: null,
+  transitionRevision: 0,
+  live: false,
 };
 
 export function useContextRemovalProject(projectId: string): ContextRemovalProjectSnapshot {
+  const coordinator = useContextRemovalCoordinator();
   return useSyncExternalStore(
-    (listener) => contextRemovalCoordinator.subscribe(projectId, listener),
-    () => contextRemovalCoordinator.getProjectSnapshot(projectId),
+    (listener) => coordinator.subscribe(projectId, listener),
+    () => coordinator.getProjectSnapshot(projectId),
     () => EMPTY_SNAPSHOT,
   );
 }

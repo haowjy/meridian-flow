@@ -32,6 +32,7 @@ export type LeftSidebarProps = {
   projectId: string;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
+  contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -44,6 +45,7 @@ export function LeftSidebar({
   projectId,
   activeScreen,
   editorWorkId,
+  contextLive,
   activeContextScheme,
   activeContextPath,
   onSelectScreen,
@@ -80,13 +82,15 @@ export function LeftSidebar({
         onSelectScreen={onSelectScreen}
         presentation="desktop"
       >
-        <ContextTreePanel
-          projectId={projectId}
-          editorWorkId={editorWorkId}
-          activeScheme={activeContextScheme}
-          activePath={activeContextPath}
-          onSelectFile={handleSelectFile}
-        />
+        {contextLive ? (
+          <ContextTreePanel
+            projectId={projectId}
+            editorWorkId={editorWorkId}
+            activeScheme={activeContextScheme}
+            activePath={activeContextPath}
+            onSelectFile={handleSelectFile}
+          />
+        ) : null}
       </WorkspaceNavBody>
     </nav>
   );

@@ -20,6 +20,7 @@ export type NavigationDrawerProps = {
   projectId: string;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
+  contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -32,6 +33,7 @@ export function NavigationDrawer({
   projectId,
   activeScreen,
   editorWorkId,
+  contextLive,
   activeContextScheme,
   activeContextPath,
   onSelectScreen,
@@ -119,16 +121,18 @@ export function NavigationDrawer({
               }}
               presentation="phone"
             >
-              <ContextTreePanel
-                projectId={projectId}
-                editorWorkId={editorWorkId}
-                activeScheme={activeContextScheme}
-                activePath={activeContextPath}
-                onSelectFile={handleSelectFile}
-                creating={creating}
-                onRequestCreate={setCreating}
-                onCreateDone={() => setCreating(null)}
-              />
+              {contextLive ? (
+                <ContextTreePanel
+                  projectId={projectId}
+                  editorWorkId={editorWorkId}
+                  activeScheme={activeContextScheme}
+                  activePath={activeContextPath}
+                  onSelectFile={handleSelectFile}
+                  creating={creating}
+                  onRequestCreate={setCreating}
+                  onCreateDone={() => setCreating(null)}
+                />
+              ) : null}
             </WorkspaceNavBody>
           </nav>
         </div>

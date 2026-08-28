@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
-import { contextRemovalCoordinator } from "./context-removal-coordinator";
+import { useContextRemovalCoordinator } from "./ContextRemovalAccountProvider";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -254,6 +254,7 @@ export function useDeleteConfirmation({
 }) {
   const [target, setTarget] = useState<DeleteTarget | null>(null);
   const mutation = useDeleteContextEntry(projectId, scheme);
+  const contextRemoval = useContextRemovalCoordinator();
   const queryClient = useQueryClient();
 
   const requestDelete = useCallback(
@@ -265,6 +266,13 @@ export function useDeleteConfirmation({
   const confirm = useCallback(async () => {
     if (!target) return;
     try {
+      const locator = { scheme, path: target.path, workId: target.workId };
+      const initiation = contextRemoval.captureDeleteInitiation(
+        projectId,
+        target.kind === "file"
+          ? { kind: "file", locator, documentId: target.documentId }
+          : { kind: "folder", locator },
+      );
       const result = await mutation.mutateAsync(
         target.kind === "file"
           ? {
@@ -274,7 +282,12 @@ export function useDeleteConfirmation({
             }
           : { path: target.path, workId: target.workId, expected: { kind: "folder" } },
       );
-      await contextRemovalCoordinator.acknowledgedDelete(projectId, result.deletedDocumentIds);
+      const admission = contextRemoval.acceptAcknowledgedDelete({
+        ...initiation,
+        cause: "acknowledged-delete",
+        confirmed: { status: "deleted", deletedDocumentIds: result.deletedDocumentIds },
+      });
+      if (admission.status === "rejected") throw new Error(admission.reason);
       setTarget(null);
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.contextTree(
@@ -286,12 +299,12 @@ export function useDeleteConfirmation({
     } catch {
       // Keep the target visible so the writer can refresh and retry.
     }
-  }, [projectId, queryClient, scheme, target, mutation]);
+  }, [contextRemoval, projectId, queryClient, scheme, target, mutation]);
 
   return {
     target,
     isPending: mutation.isPending,
-    error: mutation.isError ? t`The entry changed. Refresh the tree and try again.` : null,
+    error: mutation.isError,
     requestDelete,
     cancel,
     confirm,
@@ -307,7 +320,7 @@ export function DeleteConfirmationDialog({
 }: {
   target: EntryActionTarget | null;
   isPending: boolean;
-  error?: string | null;
+  error?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -332,7 +345,11 @@ export function DeleteConfirmationDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <p className="text-sm text-destructive">
+            <Trans>The entry changed. Refresh the tree and try again.</Trans>
+          </p>
+        ) : null}
         <DialogFooter className="gap-2 sm:gap-0">
           <DialogClose asChild>
             <Button variant="outline" size="sm" disabled={isPending}>

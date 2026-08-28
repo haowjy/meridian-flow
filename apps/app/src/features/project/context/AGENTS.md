@@ -9,9 +9,9 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 
 ## Mental model
 
-A **browse surface** over the server's context port. Reads from `useContextTree`
-(React Query), writes through mutation hooks, invalidates the tree cache on
-success.
+A **browse surface** over the server's context port. Reads come from React Query.
+Ordinary writes invalidate on success; delete is the exception because its exact
+evidence must enter the account-scoped removal coordinator before invalidation.
 
 `ContextTreePanel` renders the full tree recursively. `MobileContextBrowser`
 renders the phone Files destination one level at a time (scheme → folder → file),
@@ -31,7 +31,8 @@ Shared across both shells:
 ## Rules
 
 - Use `IconButton` / `Button` / `PhoneIconButton` for all interactive controls.
-- Use `EntryActionTarget` (`{ name, path, kind }`) as the shared action payload.
+- Use discriminated `EntryActionTarget`; file targets retain `documentId`
+  through confirmation, while folders carry no document identity.
 - Mobile `DrillRow`: `trailing: ReactNode` separates the tap target from action
   buttons. Never a `drillsIn` boolean.
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only

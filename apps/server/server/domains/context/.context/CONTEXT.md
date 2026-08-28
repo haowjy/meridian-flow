@@ -192,6 +192,9 @@ router resolves to a stable Work ID before dispatch.
   through store, adapter, port, and HTTP route; only proven occupation is a
   `conflict` with an Open-existing locator.
 - Successful HTTP deletion acknowledges `{ status: "deleted", deletedDocumentIds }`.
+  The request names the expected entry kind and, for a file, its initiating
+  `documents.id`; mismatch or CAS replacement is `stale_target` and acknowledges
+  nothing.
   Files contribute their one committed `documents.id`; empty folders contribute
   none. Non-empty folders remain invalid operations, and post-commit membership
   delivery failure prevents a successful acknowledgement.

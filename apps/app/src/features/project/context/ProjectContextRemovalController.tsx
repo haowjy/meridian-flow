@@ -1,20 +1,18 @@
-/** Platform-neutral project adapter for context removal lifecycle and route identity. */
+/** Live project removal host; mounted only after Work/bootstrap readiness. */
+
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ScreenKey } from "../shell/screens";
-import {
-  type ContextRemovalRoutePort,
-  contextRemovalCoordinator,
-} from "./context-removal-coordinator";
+import { useContextRemovalCoordinator } from "./ContextRemovalAccountProvider";
+import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
 
 export type ProjectContextRemovalControllerProps = {
   projectId: string;
   activeScreen: ScreenKey;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
-  editorWorkId: string | null;
+  editorWorkId: string;
   route: ContextRemovalRoutePort;
-  children: React.ReactNode;
 };
 
 export function ProjectContextRemovalController({
@@ -24,8 +22,8 @@ export function ProjectContextRemovalController({
   activeContextPath,
   editorWorkId,
   route,
-  children,
 }: ProjectContextRemovalControllerProps) {
+  const coordinator = useContextRemovalCoordinator();
   const latestRouteRef = useRef(route);
   latestRouteRef.current = route;
   const stableRoute = useMemo<ContextRemovalRoutePort>(
@@ -39,32 +37,25 @@ export function ProjectContextRemovalController({
   const registrationRef = useRef<{ token: symbol; release: () => void } | null>(null);
 
   useLayoutEffect(() => {
-    const registration = contextRemovalCoordinator.registerRoutePort(
-      projectId,
-      stableRoute,
-      editorWorkId,
-    );
+    const registration = coordinator.registerRoutePort(projectId, stableRoute, editorWorkId);
     registrationRef.current = registration;
+    coordinator.pruneWork(projectId, editorWorkId);
     return () => registration.release();
-  }, [projectId, stableRoute]);
+  }, [coordinator, projectId, stableRoute]);
 
   useLayoutEffect(() => {
     if (!registrationRef.current) return;
+    coordinator.pruneWork(projectId, editorWorkId);
     if (activeScreen !== "context" || activeContextScheme === null || activeContextPath === null) {
-      contextRemovalCoordinator.clearRouteSelection(projectId);
+      coordinator.clearRouteSelection(projectId);
       return;
     }
-    contextRemovalCoordinator.beginRouteSelection(projectId, {
+    coordinator.beginRouteSelection(projectId, {
       scheme: activeContextScheme,
       path: activeContextPath,
       workId: editorWorkId,
     });
-  }, [activeContextPath, activeContextScheme, activeScreen, editorWorkId, projectId]);
+  }, [activeContextPath, activeContextScheme, activeScreen, coordinator, editorWorkId, projectId]);
 
-  useEffect(() => {
-    if (editorWorkId === null) return;
-    void contextRemovalCoordinator.pruneWork(projectId, editorWorkId);
-  }, [editorWorkId, projectId]);
-
-  return children;
+  return null;
 }

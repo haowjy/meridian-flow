@@ -54,11 +54,11 @@ vi.mock("@/client/stores", () => ({
     }),
   },
 }));
-vi.mock("@/features/project/context/context-removal-coordinator", () => ({
-  contextRemovalCoordinator: {
+vi.mock("@/features/project/context/ContextRemovalAccountProvider", () => ({
+  useContextRemovalCoordinator: () => ({
     applyDraftMetadata: applyDraftMetadataMock,
     discardDraft: discardDraftMock,
-  },
+  }),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: (_projectId: string | null, workId: string | null) => {

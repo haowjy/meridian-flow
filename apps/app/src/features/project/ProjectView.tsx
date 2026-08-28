@@ -38,6 +38,11 @@ import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import {
+  type ContextProjectPhase,
+  contextProjectPhaseForReadiness,
+  settleContextProjectBootstrap,
+} from "./context-project-phase";
 import { useDockViewStore } from "./dock/dock-view-store";
 import {
   EditorReviewHandoffProvider,
@@ -67,7 +72,6 @@ import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { WorkPaneController } from "./WorkPaneController";
 import {
-  ContextDeskBootstrapGate,
   type ContextDeskReconciliationScope,
   contextDeskReconciliation,
   seedWorkingSetTabs,
@@ -147,15 +151,15 @@ export function ProjectView(props: ProjectViewProps) {
   const editorScope = resolveEditorWorkScope(props.routeWork, chatWorkId, catalogWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
-  const deskBootstrapRef = useRef(new ContextDeskBootstrapGate());
+  const [contextPhase, setContextPhase] = useState<ContextProjectPhase>({
+    status: "waiting-for-desk",
+    generation: 0,
+  });
+  const contextPhaseRef = useRef(contextPhase);
+  contextPhaseRef.current = contextPhase;
+  const bootstrapGenerationRef = useRef(0);
   const currentEditorWorkRef = useRef(editorWorkId);
   currentEditorWorkRef.current = editorWorkId;
-  useEffect(
-    () => () => {
-      deskBootstrapRef.current.dispose();
-    },
-    [],
-  );
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -166,30 +170,51 @@ export function ProjectView(props: ProjectViewProps) {
   }, [props.projectId, workingSetHydration.status]);
 
   useEffect(() => {
-    if (!deskHydrated || editorScope.status !== "ready") return;
-    const reconciliation = contextDeskReconciliation(workingSetHydration);
-    const scope = deskBootstrapRef.current.begin(
-      workingSetHydration,
-      props.projectId,
-      editorScope.workId,
-    );
-    if (!scope) return;
-    const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
-      deskBootstrapRef.current.isLive(candidate, currentEditorWorkRef.current);
-    if (reconciliation === "server-replace" && workingSetHydration.status === "server") {
-      void seedWorkingSetTabs({
-        queryClient,
-        routes: workingSetHydration.row.recentRoutes,
-        scope,
-        isLiveScope,
-      });
+    const previous = contextPhaseRef.current;
+    const desired = contextProjectPhaseForReadiness(previous, deskHydrated, editorScope);
+    contextPhaseRef.current = desired;
+    setContextPhase(desired);
+    if (
+      desired.status !== "bootstrapping" ||
+      (previous.status === "bootstrapping" &&
+        previous.generation === desired.generation &&
+        previous.workId === desired.workId)
+    )
       return;
-    }
-    void validateContextDeskTabs({
-      queryClient,
-      scope,
-      isLiveScope,
+    bootstrapGenerationRef.current = desired.generation;
+    const reconciliation = contextDeskReconciliation(workingSetHydration);
+    const scope: ContextDeskReconciliationScope = {
+      projectId: props.projectId,
+      editorWorkId: desired.workId,
+      generation: desired.generation,
+    };
+    const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
+      bootstrapGenerationRef.current === candidate.generation &&
+      currentEditorWorkRef.current === candidate.editorWorkId;
+    const bootstrap =
+      reconciliation === "server-replace" && workingSetHydration.status === "server"
+        ? seedWorkingSetTabs({
+            queryClient,
+            routes: workingSetHydration.row.recentRoutes,
+            scope,
+            isLiveScope,
+          })
+        : validateContextDeskTabs({ queryClient, scope, isLiveScope });
+    void bootstrap.finally(() => {
+      if (!isLiveScope(scope)) return;
+      const live = settleContextProjectBootstrap(
+        contextPhaseRef.current,
+        scope.generation,
+        scope.editorWorkId ?? "",
+      );
+      contextPhaseRef.current = live;
+      setContextPhase(live);
     });
+    return () => {
+      if (bootstrapGenerationRef.current === desired.generation) {
+        bootstrapGenerationRef.current += 1;
+      }
+    };
   }, [deskHydrated, editorScope, props.projectId, queryClient, workingSetHydration]);
   useEffect(() => {
     if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
@@ -216,25 +241,29 @@ export function ProjectView(props: ProjectViewProps) {
     editorScope,
     editorWorkId,
     retryEditorWork: worksQuery.refetch,
+    contextLive: contextPhase.status === "live" && editorScope.status === "ready",
     onOpenThread: (threadId: string) => void props.onSelectThread(threadId),
   };
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <ProjectContextRemovalController
-          projectId={props.projectId}
-          activeScreen={props.activeScreen}
-          activeContextScheme={props.activeContextScheme}
-          activeContextPath={props.activeContextPath}
-          editorWorkId={editorWorkId}
-          route={props.contextRemovalRoute}
-        >
+        <>
+          {resolvedProps.contextLive && editorWorkId ? (
+            <ProjectContextRemovalController
+              projectId={props.projectId}
+              activeScreen={props.activeScreen}
+              activeContextScheme={props.activeContextScheme}
+              activeContextPath={props.activeContextPath}
+              editorWorkId={editorWorkId}
+              route={props.contextRemovalRoute}
+            />
+          ) : null}
           <HydratedReviewProject
             {...resolvedProps}
             chatWorkId={chatWorkId}
             chatThreadId={resolvedThreadId}
           />
-        </ProjectContextRemovalController>
+        </>
       ) : null}
     </div>
   );
@@ -251,6 +280,7 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   editorWorkId: string | null;
   retryEditorWork: () => void;
   onOpenThread: (threadId: string) => void;
+  contextLive: boolean;
 };
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps & {
@@ -366,6 +396,7 @@ function DesktopProject(props: ReviewScopedProjectProps) {
           projectId={props.projectId}
           activeScreen={props.activeScreen}
           editorWorkId={props.editorWorkId}
+          contextLive={props.contextLive}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           onSelectScreen={props.onSelectScreen}
@@ -389,7 +420,7 @@ function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "context-viewer",
       children:
-        props.editorScope.status === "ready" ? (
+        props.editorScope.status === "ready" && props.contextLive ? (
           <DraftReviewBoundary value={props.editorReview}>
             <EditorReviewIntentClaimant
               editorWorkId={props.editorWorkId}
@@ -408,13 +439,13 @@ function DesktopProject(props: ReviewScopedProjectProps) {
               onOpenContextTarget={props.onOpenContextTarget}
             />
           </DraftReviewBoundary>
-        ) : (
+        ) : props.editorScope.status !== "ready" ? (
           <EditorWorkRecovery
             scope={props.editorScope}
             onRetry={props.retryEditorWork}
             onOpenWork={() => props.onSelectScreen("work")}
           />
-        ),
+        ) : null,
     },
     {
       id: "chat",

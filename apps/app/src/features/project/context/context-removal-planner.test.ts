@@ -16,18 +16,38 @@ function tracked(documentId: string, path: string): ContextTab {
 }
 
 const phoneSelection = {
-  status: "bound" as const,
+  kind: "bound" as const,
   revision: 1,
   locator: { scheme: "kb" as const, path: "/phone.md", workId: "work-1" },
-  selection: { kind: "server" as const, documentId: "phone" },
+  identity: { kind: "server" as const, documentId: "phone" },
 };
 
 describe("context removal planner", () => {
+  it.each([
+    "pending",
+    "confirmed-unbound",
+  ] as const)("preserves a %s locator when an unrelated removal empties the desk", (observed) => {
+    const plan = planContextRemoval({
+      tabs: [tracked("desktop", "/desktop.md")],
+      activeTabId: "desktop",
+      routeContinuity: {
+        kind: "preserved-unknown",
+        revision: 1,
+        locator: phoneSelection.locator,
+        observed,
+      },
+      intent: { cause: "writer-close", documentIds: ["desktop"] },
+    });
+    expect(plan.workingSet.clearAll).toBe(false);
+    expect(plan.workingSet.promote).toEqual({ scheme: "kb", path: "/phone.md" });
+    expect(plan.rememberedRoute).toEqual(phoneSelection.locator);
+  });
+
   it("treats a surviving bound route without a desk tab as the canonical continuity owner", () => {
     const plan = planContextRemoval({
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
-      routeSelection: phoneSelection,
+      routeContinuity: phoneSelection,
       intent: { cause: "acknowledged-delete", documentIds: ["desktop"] },
     });
 
@@ -44,7 +64,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [],
       activeTabId: null,
-      routeSelection: phoneSelection,
+      routeContinuity: { ...phoneSelection, kind: "proven-removed" },
       intent: { cause: "acknowledged-delete", documentIds: ["phone"] },
     });
 
@@ -62,7 +82,7 @@ describe("context removal planner", () => {
     const plan = planContextRemoval({
       tabs: [local, draft],
       activeTabId: "local",
-      routeSelection: { status: "none", revision: 0 },
+      routeContinuity: { kind: "none" },
       intent: { cause: "acknowledged-delete", documentIds: ["local", "draft"] },
     });
 

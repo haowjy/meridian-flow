@@ -47,11 +47,11 @@ vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: (_projectId: string, _workId: string, _documentId: string, draftId: string) =>
     Promise.resolve(draftPreviews.get(draftId) ?? draftPreview),
 }));
-vi.mock("@/features/project/context/context-removal-coordinator", () => ({
-  contextRemovalCoordinator: {
+vi.mock("@/features/project/context/ContextRemovalAccountProvider", () => ({
+  useContextRemovalCoordinator: () => ({
     applyDraftMetadata: applyDraftMetadataMock,
     discardDraft: discardDraftTabMock,
-  },
+  }),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
   useApplyDraft: () => ({ mutateAsync: applyMutateMock }),

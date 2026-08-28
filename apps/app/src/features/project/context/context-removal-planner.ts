@@ -10,16 +10,28 @@ export type ContextRemovalIntent = {
   documentIds: readonly string[];
 };
 
-export type ContextRouteSelection =
-  | { status: "none"; revision: number }
-  | { status: "pending"; revision: number; locator: ContextRouteTarget }
+export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
+
+export type RouteContinuityVerdict =
+  | { kind: "none" }
   | {
-      status: "bound";
+      kind: "preserved-unknown";
       revision: number;
       locator: ContextRouteTarget;
-      selection: { kind: "server" | "local"; documentId: string };
+      observed: "pending" | "confirmed-unbound" | "superseded";
     }
-  | { status: "confirmed-unbound"; revision: number; locator: ContextRouteTarget };
+  | {
+      kind: "bound";
+      revision: number;
+      locator: ContextRouteTarget;
+      identity: ContextRouteIdentity;
+    }
+  | {
+      kind: "proven-removed";
+      revision: number;
+      locator: ContextRouteTarget;
+      identity: ContextRouteIdentity;
+    };
 
 export type ContextRemovalOutcome =
   | { kind: "noop" }
@@ -63,7 +75,7 @@ export type ContextRemovalPlan = {
 export type ContextRemovalPlannerInput = {
   tabs: readonly ContextTab[];
   activeTabId: string | null;
-  routeSelection: ContextRouteSelection;
+  routeContinuity: RouteContinuityVerdict;
   intent: ContextRemovalIntent;
 };
 
@@ -126,29 +138,30 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const removedIds = new Set(removed.map((tab) => tab.documentId));
   const remaining = input.tabs.filter((tab) => !removedIds.has(tab.documentId));
   const deskActiveRemoved = input.activeTabId !== null && removedIds.has(input.activeTabId);
-  const boundSelection = input.routeSelection.status === "bound" ? input.routeSelection : null;
+  const boundSelection = input.routeContinuity.kind === "bound" ? input.routeContinuity : null;
+  const provenRemoved =
+    input.routeContinuity.kind === "proven-removed" ? input.routeContinuity : null;
   const routedDocumentRemoved =
-    boundSelection !== null &&
-    requested.has(boundSelection.selection.documentId) &&
-    (removedIds.has(boundSelection.selection.documentId) ||
-      (input.intent.cause === "acknowledged-delete" &&
-        boundSelection.selection.kind === "server" &&
-        !input.tabs.some((tab) => tab.documentId === boundSelection.selection.documentId)));
+    provenRemoved !== null && requested.has(provenRemoved.identity.documentId);
 
-  const boundRoute = boundSelection
+  const continuity =
+    boundSelection ??
+    provenRemoved ??
+    (input.routeContinuity.kind === "preserved-unknown" ? input.routeContinuity : null);
+  const boundRoute = continuity
     ? buildWorkingSetRoute(
-        boundSelection.locator.scheme,
-        boundSelection.locator.path,
-        boundSelection.locator.workId,
+        continuity.locator.scheme,
+        continuity.locator.path,
+        continuity.locator.workId,
       )
     : null;
-  const survivingBoundRoute = boundSelection && !routedDocumentRemoved ? boundRoute : null;
+  const survivingBoundRoute = continuity && !routedDocumentRemoved ? boundRoute : null;
 
   if (removed.length === 0 && !routedDocumentRemoved) {
     return {
       outcome: { kind: "noop" },
       nextActiveTabId: input.activeTabId,
-      rememberedRoute: boundSelection ? boundSelection.locator : null,
+      rememberedRoute: continuity ? continuity.locator : null,
       routeRepairTarget: null,
       workingSet: {
         removedLocators: [],
@@ -162,12 +175,13 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     };
   }
 
-  const routedTab = boundSelection
-    ? (input.tabs.find((tab) => tab.documentId === boundSelection.selection.documentId) ?? null)
+  const routedIdentity = boundSelection?.identity ?? provenRemoved?.identity ?? null;
+  const routedTab = routedIdentity
+    ? (input.tabs.find((tab) => tab.documentId === routedIdentity.documentId) ?? null)
     : null;
   const survivingRoutedTab =
     boundSelection && !routedDocumentRemoved
-      ? (remaining.find((tab) => tab.documentId === boundSelection.selection.documentId) ?? null)
+      ? (remaining.find((tab) => tab.documentId === boundSelection.identity.documentId) ?? null)
       : null;
   const anchorDocumentId = routedDocumentRemoved
     ? (routedTab?.documentId ?? null)
@@ -194,7 +208,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const promote = survivingBoundRoute ?? (promotedTab ? workingSetRouteForTab(promotedTab) : null);
   const routeRepairTarget = routedDocumentRemoved
     ? fallback
-      ? routeTargetForTab(fallback, boundSelection?.locator.workId ?? null)
+      ? routeTargetForTab(fallback, continuity?.locator.workId ?? null)
       : ({ kind: "clear" } as const)
     : null;
 
@@ -232,10 +246,10 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     outcome,
     nextActiveTabId,
     rememberedRoute:
-      boundSelection && !routedDocumentRemoved
-        ? boundSelection.locator
+      continuity && !routedDocumentRemoved
+        ? continuity.locator
         : promotedTab
-          ? routeTargetForTab(promotedTab, boundSelection?.locator.workId ?? null)
+          ? routeTargetForTab(promotedTab, continuity?.locator.workId ?? null)
           : null,
     routeRepairTarget,
     workingSet: {

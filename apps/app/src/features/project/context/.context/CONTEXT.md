@@ -29,8 +29,9 @@ ContextPaneController
 ```
 
 `useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.
-Mutations (`create`, `rename`, `move`, `delete`, `upload`) invalidate the tree
-cache on success. Invalidation is scheme-scoped. Foreground identity saves and
+Mutations invalidate the scheme-scoped tree cache on success. Delete admits its
+exact evidence to live removal authority first; cache absence never supplies
+deletion evidence. Foreground identity saves and
 background untitled create/move reconciliation share
 `context-identity-mutation.ts`; every successful receipt invalidates its
 materialized tree or both move endpoints, even when no tab is open.
@@ -45,21 +46,30 @@ level at a time via route params.
 
 ## Editor tabs and untitled documents
 
-The writer-facing destination is **Editor**. One framework-independent
-`ContextRemovalCoordinator` owns every live removal transition: explicit close,
-locally acknowledged delete, Work pruning, and draft discard. `ProjectView` mounts
-its platform-neutral route adapter above the phone/desktop split; both document hosts
-settle revisioned route identity. Commands that may own a pending selection remain
-attached to that exact revision until it binds, is replaced, or confirms unbound.
+The writer-facing destination is **Editor**. One account-scoped,
+framework-independent `ContextRemovalCoordinator` owns every live removal
+transition: explicit close, locally acknowledged delete, Work pruning, and draft
+discard. Account construction precedes authenticated descendants. A project becomes
+live only after desk hydration, concrete Editor Work readiness, and one guarded
+bootstrap/validation generation; bootstrap and live removal authority never overlap.
+The leaf route host registers first, then the rendered desktop or phone document host
+settles revisioned route identity in layout phase.
+
+Acknowledged delete carries the server-confirmed exact ID batch plus a request-time
+discriminated target and same-locator route witness. Admission is synchronous and
+idempotent by `commandId`, and precedes tree invalidation. Pending identity is a pure
+typed selection/obligation protocol: unknown locators own continuity, receipt
+cardinality supplies no identity, and late or superseded settlement cannot repair a
+newer route.
 The pure `context-removal-planner.ts` keeps eligibility and desk/route continuity
 policy separate from browser lifecycle and effects. A surviving bound route owns
 continuity even when phone has no desktop tab; `clearAll` requires neither a desk
 owner nor a surviving bound route. The transition commits desk selection, working-set
-routes, remembered destination, auto-open blocking, and guarded route repair before
-navigation. `ContextPaneController` remains a view/activation controller and owns no
-passive lifecycle-removal policy. Work pruning starts only from a ready, concrete
-Editor Work. Desk seed/validation runs once per entry hydration generation after that
-authority is ready; later Work changes use only coordinator pruning. Draft apply only resolves tab metadata. Context-tree
+routes, remembered destination, a typed removal fence, and guarded route repair before
+navigation. Activation uses selection and transition revision tickets in layout phase
+and validates live desk membership before mutating continuity. `ContextPaneController`
+remains a view/activation controller and owns no lifecycle-removal policy. Later ready
+Work changes use only coordinator pruning. Draft apply only resolves tab metadata. Context-tree
 cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
 `viewer`, and the in-memory `{ kind: "new", documentId }` placeholder. A new tab
 uses an ordinary `DocumentSession` from its first render, created detached so

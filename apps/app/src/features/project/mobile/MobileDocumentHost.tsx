@@ -15,13 +15,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo } from "react";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { useContextRemovalCoordinator } from "../context/ContextRemovalAccountProvider";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
-import { contextRemovalCoordinator } from "../context/context-removal-coordinator";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { findContextFile } from "../context/context-tree";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
@@ -46,6 +46,7 @@ export function MobileDocumentHost({
   activeContextPath,
 }: MobileDocumentHostProps) {
   const workId = editorWorkId;
+  const contextRemoval = useContextRemovalCoordinator();
   const removalState = useContextRemovalProject(projectId);
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
@@ -63,10 +64,10 @@ export function MobileDocumentHost({
     return file ? contextTabFromFile(activeContextScheme, file, workId) : null;
   }, [activeContextPath, activeContextScheme, hasRouteDocument, tree, workId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null) return;
     const selection = removalState.selection;
-    if (selection.status !== "pending") return;
+    if (selection.status === "none") return;
     if (
       selection.locator.scheme !== activeContextScheme ||
       selection.locator.path !== activeContextPath ||
@@ -74,17 +75,18 @@ export function MobileDocumentHost({
     )
       return;
     if (activeTab) {
-      contextRemovalCoordinator.bindRouteSelection(projectId, selection.revision, {
+      contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: "server",
         documentId: activeTab.documentId,
       });
-    } else if (tree && !isFetching) {
-      contextRemovalCoordinator.confirmRouteUnbound(projectId, selection.revision);
+    } else if (selection.status === "pending" && tree && !isFetching) {
+      contextRemoval.confirmRouteUnbound(projectId, selection.revision);
     }
   }, [
     activeContextPath,
     activeContextScheme,
     activeTab,
+    contextRemoval,
     hasRouteDocument,
     isFetching,
     projectId,
@@ -92,6 +94,22 @@ export function MobileDocumentHost({
     tree,
     workId,
   ]);
+
+  useLayoutEffect(() => {
+    if (
+      !activeTab ||
+      removalState.selection.status !== "bound" ||
+      activeTab.documentId !== removalState.selection.identity.documentId
+    )
+      return;
+    contextRemoval.activate({
+      projectId,
+      selectionRevision: removalState.selection.revision,
+      transitionRevision: removalState.transitionRevision,
+      locator: removalState.selection.locator,
+      identity: removalState.selection.identity,
+    });
+  }, [activeTab, contextRemoval, projectId, removalState]);
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
   useEffect(() => {

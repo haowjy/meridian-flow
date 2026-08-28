@@ -14,10 +14,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabs, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-
+import { useContextRemovalCoordinator } from "./context/ContextRemovalAccountProvider";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState, findActiveUntitledTab } from "./context/context-pane-state";
-import { contextRemovalCoordinator } from "./context/context-removal-coordinator";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import {
@@ -63,6 +62,7 @@ export function ContextViewerSurfaceController({
   onOpenContextTarget,
 }: ContextViewerSurfaceControllerProps) {
   const routeWorkId = editorWorkId;
+  const contextRemoval = useContextRemovalCoordinator();
 
   const { tabs, activeTabId } = useContextTabs(projectId);
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
@@ -103,7 +103,7 @@ export function ContextViewerSurfaceController({
   useLayoutEffect(() => {
     if (!active || activeContextScheme === null || activeContextPath === null) return;
     const selection = removalState.selection;
-    if (selection.status !== "pending") return;
+    if (selection.status === "none") return;
     if (
       selection.locator.scheme !== activeContextScheme ||
       selection.locator.path !== activeContextPath ||
@@ -117,22 +117,23 @@ export function ContextViewerSurfaceController({
         : null);
     const routedFile = routeTree ? findContextFile(routeTree, activeContextPath) : null;
     if (routedTab) {
-      contextRemovalCoordinator.bindRouteSelection(projectId, selection.revision, {
+      contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: routedTab.kind === "new" ? "local" : "server",
         documentId: routedTab.documentId,
       });
     } else if (routedFile) {
-      contextRemovalCoordinator.bindRouteSelection(projectId, selection.revision, {
+      contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: "server",
         documentId: routedFile.documentId,
       });
-    } else if (routeTree && !routeTreeIsFetching) {
-      contextRemovalCoordinator.confirmRouteUnbound(projectId, selection.revision);
+    } else if (selection.status === "pending" && routeTree && !routeTreeIsFetching) {
+      contextRemoval.confirmRouteUnbound(projectId, selection.revision);
     }
   }, [
     active,
     activeContextPath,
     activeContextScheme,
+    contextRemoval,
     activeTab,
     activeTabId,
     projectId,
@@ -161,10 +162,22 @@ export function ContextViewerSurfaceController({
   // don't count until Apply clears the marker: their path dies if the
   // draft is discarded, and a remembered dead route would replay on the
   // next visit.
-  useEffect(() => {
-    if (!activeTab || activeTab.draftOnly) return;
-    contextRemovalCoordinator.activateRoute(projectId, activeTab, routeWorkId);
-  }, [activeTab, projectId, routeWorkId]);
+  useLayoutEffect(() => {
+    if (
+      !activeTab ||
+      activeTab.draftOnly ||
+      removalState.selection.status !== "bound" ||
+      activeTab.documentId !== removalState.selection.identity.documentId
+    )
+      return;
+    contextRemoval.activate({
+      projectId,
+      selectionRevision: removalState.selection.revision,
+      transitionRevision: removalState.transitionRevision,
+      locator: removalState.selection.locator,
+      identity: removalState.selection.identity,
+    });
+  }, [activeTab, contextRemoval, projectId, removalState]);
 
   // Restore, once per SCREEN ENTRY (user call 2026-07-16 — "the last opened
   // thing"): entering Context with no destination replays the remembered
@@ -318,7 +331,7 @@ export function ContextViewerSurfaceController({
 
   function handleCloseTab(documentId: string) {
     const tab = tabs.find((candidate) => candidate.documentId === documentId);
-    void contextRemovalCoordinator.writerClose(projectId, documentId);
+    void contextRemoval.writerClose(projectId, documentId);
     if (tab?.kind === "new" && !isUntitledPending(documentId)) {
       const registry = getDocumentSessionRegistry();
       const session = registry.getDetached(documentId);

@@ -21,7 +21,7 @@ import {
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
-import { contextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
+import { useContextRemovalCoordinator } from "@/features/project/context/ContextRemovalAccountProvider";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -108,6 +108,7 @@ export function useDraftReviewController(
   threadId: string | null = null,
 ): DraftReviewController {
   const queryClient = useQueryClient();
+  const contextRemoval = useContextRemovalCoordinator();
   const applyMutation = useApplyDraft();
   const discardMutation = useDiscardDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
@@ -236,14 +237,14 @@ export function useDraftReviewController(
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
-      contextRemovalCoordinator.applyDraftMetadata(projectId, workId, documentId);
+      contextRemoval.applyDraftMetadata(projectId, workId, documentId);
     },
     draftFailed: (selection, code) => {
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
       dispatch({ type: "discardSucceeded", draftId });
-      void contextRemovalCoordinator.discardDraft(projectId, workId, documentId);
+      void contextRemoval.discardDraft(projectId, workId, documentId);
     },
   };
 
