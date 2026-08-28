@@ -102,6 +102,178 @@ describe("ContextRemovalCoordinator Work transitions", () => {
     });
   });
 
+  it.each([
+    "empty",
+    "pending",
+  ] as const)("keeps the Work-A %s untitled across A to B to A without persisting scratch root", (state) => {
+    const storageValues = new Map<string, string>();
+    const storageWrites: string[] = [];
+    const storage = {
+      getItem: (key: string) => storageValues.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storageValues.set(key, value);
+        storageWrites.push(value);
+      },
+      removeItem: (key: string) => storageValues.delete(key),
+    };
+    const workingSet = new DeviceWorkingSetStore(storage);
+    workingSet.setUser("account-1");
+    workingSet.adopt(projectId, {
+      recentRoutes: [{ scheme: "kb", path: "/knowledge.md" }],
+      lastThreadId: null,
+    });
+    storageWrites.length = 0;
+    const reports: WorkingSetRoute[][] = [];
+    const untitled = {
+      kind: "new",
+      documentId: "untitled-a",
+      name: "Untitled",
+      workId: "work-a",
+    } as ContextTab;
+    const oldWorkTab = {
+      ...tracked("old-work-document", "/old-work.md"),
+      scheme: "scratch" as const,
+      workId: "work-a",
+    };
+    const knowledge = { ...tracked("knowledge", "/knowledge.md"), scheme: "kb" as const };
+    setDesk([untitled, oldWorkTab, knowledge], untitled.documentId);
+    const pendingOwner =
+      state === "pending"
+        ? {
+            documentId: untitled.documentId,
+            projectId,
+            home: { scheme: "scratch", workId: "work-a" },
+          }
+        : null;
+    let search: ProjectSearch = {
+      screen: "context",
+      work: "work-a",
+      scheme: "scratch",
+      path: "",
+    };
+    const coordinator = new ContextRemovalCoordinator("account-1", {
+      workingSet: {
+        readRecentRoutes: () => workingSet.read(projectId)?.snapshot.recentRoutes ?? [],
+        reconcileContextRoutes: (_id, input) => {
+          workingSet.report(projectId, null, (snapshot) =>
+            reconcileSnapshotContextRoutes(snapshot, input),
+          );
+          const routes = workingSet.read(projectId)?.snapshot.recentRoutes ?? [];
+          reports.push(routes);
+          return routes;
+        },
+      },
+    });
+    coordinator.registerRoutePort(
+      projectId,
+      {
+        readSearch: () => search,
+        updateSearch: (_id, update) => {
+          search = update(search);
+        },
+      },
+      "work-a",
+    );
+
+    expect(coordinator.getProjectSnapshot(projectId).admitted).toEqual({
+      scheme: "scratch",
+      path: "",
+      workId: "work-a",
+    });
+    expect(reports).toEqual([[{ scheme: "kb", path: "/knowledge.md" }]]);
+    const initialRevision = coordinator.beginRouteSelection(projectId, {
+      scheme: "scratch",
+      path: "",
+      workId: "work-a",
+    });
+    coordinator.bindRouteSelection(projectId, initialRevision, {
+      kind: "local",
+      documentId: untitled.documentId,
+    });
+    const initialSnapshot = coordinator.getProjectSnapshot(projectId);
+    expect(
+      coordinator.activate({
+        projectId,
+        selectionRevision: initialRevision,
+        transitionRevision: initialSnapshot.transitionRevision,
+        locator: { scheme: "scratch", path: "", workId: "work-a" },
+        identity: { kind: "local", documentId: untitled.documentId },
+        owner: { kind: "desk", documentId: untitled.documentId },
+      }),
+    ).toBe(true);
+
+    search = { screen: "context", work: "work-b", scheme: "scratch", path: "" };
+    coordinator.changeWorkSelection(projectId, "work-b", null);
+
+    expect(coordinator.getProjectSnapshot(projectId).admitted).toEqual({
+      scheme: "kb",
+      path: "/knowledge.md",
+      workId: "work-b",
+    });
+    expect(useContextTabsStore.getState().byProject[projectId]).toEqual({
+      tabs: [untitled, knowledge],
+      activeTabId: knowledge.documentId,
+    });
+    expect(pendingOwner?.home.workId ?? "work-a").toBe("work-a");
+
+    search = { screen: "context", work: "work-a", scheme: "scratch", path: "" };
+    coordinator.changeWorkSelection(projectId, "work-a", null);
+    useContextTabsStore.getState().selectTab(projectId, untitled.documentId);
+    const revision = coordinator.beginRouteSelection(projectId, {
+      scheme: "scratch",
+      path: "",
+      workId: "work-a",
+    });
+    expect(
+      coordinator.bindRouteSelection(projectId, revision, {
+        kind: "local",
+        documentId: untitled.documentId,
+      }),
+    ).toBe(true);
+    const snapshot = coordinator.getProjectSnapshot(projectId);
+    expect(
+      coordinator.activate({
+        projectId,
+        selectionRevision: revision,
+        transitionRevision: snapshot.transitionRevision,
+        locator: { scheme: "scratch", path: "", workId: "work-a" },
+        identity: { kind: "local", documentId: untitled.documentId },
+        owner: { kind: "desk", documentId: untitled.documentId },
+      }),
+    ).toBe(true);
+    expect(coordinator.getProjectSnapshot(projectId).admitted).toEqual({
+      scheme: "scratch",
+      path: "",
+      workId: "work-a",
+    });
+
+    const everyRoute = [
+      ...reports,
+      ...storageWrites
+        .map((raw) => JSON.parse(raw))
+        .flatMap(
+          (record: {
+            projects: Record<string, { snapshot: { recentRoutes: WorkingSetRoute[] } }>;
+          }) => [record.projects[projectId]?.snapshot.recentRoutes ?? []],
+        ),
+    ].flat();
+    expect(everyRoute).not.toContainEqual({
+      scheme: "scratch",
+      path: "",
+      workId: "work-a",
+    });
+    expect(everyRoute).not.toContainEqual({
+      scheme: "scratch",
+      path: "",
+      workId: "work-b",
+    });
+    const reconstructed = new DeviceWorkingSetStore(storage);
+    reconstructed.setUser("account-1");
+    expect(reconstructed.read(projectId)?.snapshot.recentRoutes).toEqual([
+      { scheme: "kb", path: "/knowledge.md" },
+    ]);
+  });
+
   it("restores the new Work recent route when Work changes off Context", () => {
     const rig = scenario({ screen: "home", work: "work-old" });
     rig.setRoutes([

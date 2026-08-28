@@ -57,7 +57,14 @@ export type ContextTab =
       fileType: DocumentFileType;
       mimeType?: string;
     }
-  | { kind: "new"; documentId: string; name: string; draftOnly?: boolean };
+  | {
+      kind: "new";
+      documentId: string;
+      name: string;
+      /** Canonical Work owner captured when the local Scratch document is created. */
+      workId: string;
+      draftOnly?: boolean;
+    };
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
 

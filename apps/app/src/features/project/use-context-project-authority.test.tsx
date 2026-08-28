@@ -5,6 +5,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import {
   configureWorkingSetSync,
+  hydrateWorkingSet,
   readRecentRoutes,
   reconcileContextRoutes,
 } from "@/client/working-set/driver";
@@ -21,11 +22,19 @@ import type { EditorWorkScope } from "./editor-work-scope";
 import type { ProjectSearch } from "./routing/project-route";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 
-const mocks = vi.hoisted(() => ({ readTree: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  readTree: vi.fn(),
+  updateWorkingSet: vi.fn(),
+  localSnapshots: [] as Array<{ projectId: string; snapshot: unknown; raw: string | null }>,
+}));
 vi.mock("@/client/api/projects-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/client/api/projects-api")>()),
   getProjectContextTree: mocks.readTree,
+  updateProjectWorkingSet: mocks.updateWorkingSet,
 }));
+
+const workingSetStorage = window.localStorage;
+configureWorkingSetSync("project-authority-bootstrap", false);
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => undefined;
@@ -152,23 +161,40 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
     scheme: "kb" as const,
     path: "/deleted.md",
   };
-
-  function SeedWorkingSet() {
-    useLayoutEffect(() => {
-      window.localStorage.removeItem(WORKING_SET_STORAGE_KEY);
-      configureWorkingSetSync("bootstrap-account", false);
-      reconcileContextRoutes("project", {
-        removedLocators: [],
-        survivingOwnedLocators: [
-          { scheme: "kb", path: "/deleted.md" },
-          { scheme: "kb", path: "/knowledge.md" },
-        ],
-        promote: { scheme: "kb", path: "/deleted.md" },
-        clearAll: false,
+  const emittedReports: Array<{ recentRoutes: unknown[] }> = [];
+  let serverRevision = 0;
+  mocks.updateWorkingSet.mockImplementation(
+    async (_projectId: string, snapshot: { recentRoutes: unknown[] }) => {
+      emittedReports.push(structuredClone(snapshot));
+      serverRevision += 1;
+      return { revision: serverRevision };
+    },
+  );
+  workingSetStorage.removeItem(WORKING_SET_STORAGE_KEY);
+  configureWorkingSetSync("bootstrap-account", true);
+  hydrateWorkingSet("project", { status: "absent" }, true);
+  reconcileContextRoutes("project", {
+    removedLocators: [],
+    survivingOwnedLocators: [
+      { scheme: "kb", path: "/deleted.md" },
+      { scheme: "kb", path: "/knowledge.md" },
+    ],
+    promote: { scheme: "kb", path: "/deleted.md" },
+    clearAll: false,
+  });
+  mocks.localSnapshots.length = 0;
+  const originalReport = DeviceWorkingSetStore.prototype.report;
+  const reportSpy = vi
+    .spyOn(DeviceWorkingSetStore.prototype, "report")
+    .mockImplementation(function (this: DeviceWorkingSetStore, ...args) {
+      const changed = originalReport.apply(this, args);
+      mocks.localSnapshots.push({
+        projectId: args[0],
+        snapshot: structuredClone(this.read(args[0])?.snapshot),
+        raw: workingSetStorage.getItem(WORKING_SET_STORAGE_KEY),
       });
-    }, []);
-    return null;
-  }
+      return changed;
+    });
   function RejectingMaterializer() {
     const service = useContextRemovalCoordinator();
     const snapshot = useContextRemovalProject("project");
@@ -209,53 +235,72 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
     );
   }
 
-  await withReactRoot(
-    <ContextRemovalAccountProvider accountId="bootstrap-account">
-      <SeedWorkingSet />
-      <Harness />
-    </ContextRemovalAccountProvider>,
-    async () => {
-      expect(document.querySelector("[data-phase]")?.textContent).toBe("withheld");
-      expect(useContextTabsStore.getState().byProject.project?.tabs).toHaveLength(2);
+  try {
+    await withReactRoot(
+      <ContextRemovalAccountProvider accountId="bootstrap-account">
+        <Harness />
+      </ContextRemovalAccountProvider>,
+      async () => {
+        expect(document.querySelector("[data-phase]")?.textContent).toBe("withheld");
+        expect(useContextTabsStore.getState().byProject.project?.tabs).toHaveLength(2);
 
-      await act(async () =>
-        read.resolve({
-          tree: {
-            kind: "dir",
-            path: "/",
-            name: "Knowledge Base",
-            children: [
-              {
-                kind: "file",
-                path: "/knowledge.md",
-                name: "knowledge.md",
-                documentId: "knowledge",
-                editable: true,
-                filetype: "markdown",
-                schemaType: "document",
-              },
-            ],
-          },
-          capabilities: null,
-        }),
-      );
+        await act(async () =>
+          read.resolve({
+            tree: {
+              kind: "dir",
+              path: "/",
+              name: "Knowledge Base",
+              children: [
+                {
+                  kind: "file",
+                  path: "/knowledge.md",
+                  name: "knowledge.md",
+                  documentId: "knowledge",
+                  editable: true,
+                  filetype: "markdown",
+                  schemaType: "document",
+                },
+              ],
+            },
+            capabilities: null,
+          }),
+        );
 
-      expect(document.querySelector("[data-phase]")?.textContent).toBe("live");
-      expect(useContextTabsStore.getState().byProject.project).toMatchObject({
-        tabs: [expect.objectContaining({ documentId: "knowledge" })],
-        activeTabId: "knowledge",
-      });
-      expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
-        selection: { status: "rejected", locator: { path: "/deleted.md" } },
-        admitted: { path: "/knowledge.md" },
-      });
-      expect(readRecentRoutes("project")).toEqual([{ scheme: "kb", path: "/knowledge.md" }]);
-      expect(search).toMatchObject({ scheme: "kb", path: "/knowledge.md" });
-      const restoredStore = new DeviceWorkingSetStore(window.localStorage);
-      restoredStore.setUser("bootstrap-account");
-      expect(restoredStore.read("project")?.snapshot.recentRoutes ?? []).not.toContainEqual(
-        expect.objectContaining({ path: "/deleted.md" }),
-      );
-    },
-  );
+        expect(document.querySelector("[data-phase]")?.textContent).toBe("live");
+        expect(useContextTabsStore.getState().byProject.project).toMatchObject({
+          tabs: [expect.objectContaining({ documentId: "knowledge" })],
+          activeTabId: "knowledge",
+        });
+        expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
+          selection: { status: "rejected", locator: { path: "/deleted.md" } },
+          admitted: { path: "/knowledge.md" },
+        });
+        expect(readRecentRoutes("project")).toEqual([{ scheme: "kb", path: "/knowledge.md" }]);
+        expect(search).toMatchObject({ scheme: "kb", path: "/knowledge.md" });
+        const rawWorkingSet = workingSetStorage.getItem(WORKING_SET_STORAGE_KEY);
+        expect(rawWorkingSet).not.toBeNull();
+        expect(rawWorkingSet).not.toContain("/deleted.md");
+        const restoredStore = new DeviceWorkingSetStore(workingSetStorage);
+        restoredStore.setUser("bootstrap-account");
+        expect(restoredStore.read("project")?.snapshot.recentRoutes ?? []).not.toContainEqual(
+          expect.objectContaining({ path: "/deleted.md" }),
+        );
+        expect(mocks.localSnapshots.length).toBeGreaterThan(0);
+        expect(mocks.localSnapshots.every((sample) => sample.raw !== null)).toBe(true);
+        expect(
+          mocks.localSnapshots.every(
+            (snapshot) => !JSON.stringify(snapshot).includes("/deleted.md"),
+          ),
+        ).toBe(true);
+        await new Promise((resolve) => setTimeout(resolve, 3_100));
+        expect(emittedReports.length).toBeGreaterThan(0);
+        expect(
+          emittedReports.every((report) => !JSON.stringify(report).includes("/deleted.md")),
+        ).toBe(true);
+      },
+    );
+  } finally {
+    reportSpy.mockRestore();
+    configureWorkingSetSync("bootstrap-account", false);
+  }
 });

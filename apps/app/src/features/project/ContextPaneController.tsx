@@ -67,12 +67,11 @@ export function ContextViewerSurfaceController({
   const { tabs, activeTabId } = useContextTabs(projectId);
   const deskHydrated = useContextTabsStore((state) => state._deskHydrated);
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
-  const hasEditorWorkTab = tabs.some(
-    (tab) =>
-      tab.kind === "new" ||
-      !isWorkScopedProjectContextScheme(tab.scheme) ||
-      tab.workId === routeWorkId,
-  );
+  const visibleTabs = tabs.filter((tab) => {
+    if (tab.kind === "new") return tab.workId === routeWorkId;
+    return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === routeWorkId;
+  });
+  const hasEditorWorkTab = visibleTabs.length > 0;
   const activeTab = findContextTabForRoute(
     tabs,
     activeContextScheme,
@@ -87,7 +86,7 @@ export function ContextViewerSurfaceController({
   if (activeTabId) lastActiveTabIdRef.current = activeTabId;
   const retainedActiveTabId =
     activeTabId ??
-    (tabs.some((tab) => tab.documentId === lastActiveTabIdRef.current)
+    (visibleTabs.some((tab) => tab.documentId === lastActiveTabIdRef.current)
       ? lastActiveTabIdRef.current
       : null);
 
@@ -114,7 +113,10 @@ export function ContextViewerSurfaceController({
     const routedTab =
       activeTab ??
       (activeContextScheme === "scratch" && activeContextPath === ""
-        ? tabs.find((tab) => tab.kind === "new" && tab.documentId === activeTabId)
+        ? tabs.find(
+            (tab) =>
+              tab.kind === "new" && tab.documentId === activeTabId && tab.workId === routeWorkId,
+          )
         : null);
     const routedFile = routeTree ? findContextFile(routeTree, activeContextPath) : null;
     if (routedTab) {
@@ -252,7 +254,7 @@ export function ContextViewerSurfaceController({
 
   // Untitled tabs are store-owned until materialization gives them a server
   // route. Their activation must not depend on search-param validation.
-  const selectedUntitledTab = findActiveUntitledTab(tabs, retainedActiveTabId);
+  const selectedUntitledTab = findActiveUntitledTab(tabs, retainedActiveTabId, routeWorkId);
   const paneState = deriveContextPaneState({
     activeTab: activeTab ?? selectedUntitledTab,
     destination:
@@ -338,6 +340,7 @@ export function ContextViewerSurfaceController({
   function handleSelectTab(documentId: string) {
     const tab = tabs.find((candidate) => candidate.documentId === documentId);
     if (!tab) return;
+    if (tab.kind === "new" && tab.workId !== routeWorkId) return;
     selectTab(projectId, documentId);
     if (tab.kind === "new") {
       onSelectContextPath("", "scratch");
@@ -419,13 +422,17 @@ export function ContextViewerSurfaceController({
 
   const handleUntitledBecameNonEmpty = useCallback(
     (documentId: string) => {
+      const tab = useContextTabsStore
+        .getState()
+        .byProject[projectId]?.tabs.find((candidate) => candidate.documentId === documentId);
+      if (tab?.kind !== "new") return;
       appendPendingUntitled({
         documentId,
         projectId,
-        ...(routeWorkId ? { home: { scheme: "scratch" as const, workId: routeWorkId } } : {}),
+        home: { scheme: "scratch", workId: tab.workId },
       });
     },
-    [projectId, routeWorkId],
+    [projectId],
   );
 
   useUntitledTabBridge({ projectId, tabs, onOpenContextTarget });
@@ -434,7 +441,7 @@ export function ContextViewerSurfaceController({
     <ContextViewer
       projectId={projectId}
       editorWorkId={routeWorkId}
-      tabs={tabs}
+      tabs={visibleTabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}
       onCloseTab={handleCloseTab}
@@ -444,9 +451,10 @@ export function ContextViewerSurfaceController({
       resumeDocumentName={lastContextRoute ? contextRouteFileName(lastContextRoute.path) : null}
       onResumeDocument={handleResumeDocument}
       onNewDocument={() => {
+        if (!routeWorkId) return;
         const documentId = crypto.randomUUID();
         getDocumentSessionRegistry().getDetached(documentId);
-        openTab(projectId, { kind: "new", documentId, name: "Untitled" });
+        openTab(projectId, { kind: "new", documentId, name: "Untitled", workId: routeWorkId });
         selectTab(projectId, documentId);
         onSelectContextPath("", "scratch");
       }}

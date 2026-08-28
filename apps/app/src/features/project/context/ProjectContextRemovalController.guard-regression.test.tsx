@@ -1,10 +1,12 @@
+// @vitest-environment jsdom
 /** Production-controller guard regression over the browser working-set adapter. */
 
 import { act, useLayoutEffect, useState } from "react";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import {
   configureWorkingSetSync,
+  hydrateWorkingSet,
   readRecentRoutes,
   reconcileContextRoutes,
 } from "@/client/working-set/driver";
@@ -18,6 +20,18 @@ import {
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
 import { useContextRemovalProject } from "./use-context-removal-project";
+
+const workingSetSync = vi.hoisted(() => ({
+  put: vi.fn(),
+  localSnapshots: [] as Array<{ projectId: string; snapshot: unknown; raw: string | null }>,
+}));
+vi.mock("@/client/api/projects-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/api/projects-api")>()),
+  updateProjectWorkingSet: workingSetSync.put,
+}));
+
+const workingSetStorage = window.localStorage;
+configureWorkingSetSync("guard-regression-bootstrap", false);
 
 it("keeps a terminally guarded production entry absent until replacement identity binds", async () => {
   const projectId = "guarded-entry-project";
@@ -68,7 +82,7 @@ it("keeps a terminally guarded production entry absent until replacement identit
   };
   function SeedWorkingSet() {
     useLayoutEffect(() => {
-      window.localStorage.removeItem(WORKING_SET_STORAGE_KEY);
+      workingSetStorage.removeItem(WORKING_SET_STORAGE_KEY);
       configureWorkingSetSync(accountId, false);
       reconcileContextRoutes(projectId, {
         removedLocators: [],
@@ -131,10 +145,10 @@ it("keeps a terminally guarded production entry absent until replacement identit
     expect(readRecentRoutes(projectId)).not.toContainEqual(
       expect.objectContaining({ path: "/a.md" }),
     );
-    const raw = window.localStorage.getItem(WORKING_SET_STORAGE_KEY);
+    const raw = workingSetStorage.getItem(WORKING_SET_STORAGE_KEY);
     expect(raw).not.toBeNull();
     expect(raw).not.toContain("/a.md");
-    const reconstructed = new DeviceWorkingSetStore(window.localStorage);
+    const reconstructed = new DeviceWorkingSetStore(workingSetStorage);
     reconstructed.setUser(accountId);
     expect(reconstructed.read(projectId)?.snapshot.recentRoutes ?? []).not.toContainEqual(
       expect.objectContaining({ path: "/a.md" }),
@@ -147,7 +161,7 @@ it("keeps a terminally guarded production entry absent until replacement identit
       { scheme: "manuscript", path: "/a.md" },
       { scheme: "manuscript", path: "/c.md" },
     ]);
-    expect(window.localStorage.getItem(WORKING_SET_STORAGE_KEY)).toContain("/a.md");
+    expect(workingSetStorage.getItem(WORKING_SET_STORAGE_KEY)).toContain("/a.md");
     let revision = coordinator.beginRouteSelection(projectId, locatorA);
     coordinator.bindRouteSelection(projectId, revision, { kind: "server", documentId: "a" });
     admitExact(locatorA, "a");
@@ -229,8 +243,8 @@ it("keeps a terminally guarded production entry absent until replacement identit
       scheme: "manuscript",
       path: "/a.md",
     });
-    expect(window.localStorage.getItem(WORKING_SET_STORAGE_KEY)).toContain("/a.md");
-    const reconstructed = new DeviceWorkingSetStore(window.localStorage);
+    expect(workingSetStorage.getItem(WORKING_SET_STORAGE_KEY)).toContain("/a.md");
+    const reconstructed = new DeviceWorkingSetStore(workingSetStorage);
     reconstructed.setUser(accountId);
     expect(reconstructed.read(projectId)?.snapshot.recentRoutes).toContainEqual({
       scheme: "manuscript",
@@ -298,8 +312,54 @@ it("never restamps a Work-scoped route candidate during a production Work transi
       search = update(search);
     },
   };
+  const emittedReports: Array<{ recentRoutes: unknown[] }> = [];
+  let serverRevision = 0;
+  let reportSpy: ReturnType<typeof vi.spyOn> | null = null;
+  workingSetSync.put.mockImplementation(
+    async (_projectId: string, snapshot: { recentRoutes: unknown[] }) => {
+      emittedReports.push(structuredClone(snapshot));
+      serverRevision += 1;
+      return { revision: serverRevision };
+    },
+  );
   function Capture() {
     coordinator = useContextRemovalCoordinator();
+    return null;
+  }
+  function SeedWorkingSet() {
+    useLayoutEffect(() => {
+      workingSetStorage.removeItem(WORKING_SET_STORAGE_KEY);
+      configureWorkingSetSync(accountId, true);
+      hydrateWorkingSet(projectId, { status: "absent" }, true);
+      reconcileContextRoutes(projectId, {
+        removedLocators: [],
+        survivingOwnedLocators: [
+          { scheme: "kb", path: "/knowledge.md" },
+          { scheme: "scratch", path: wrongPath, workId: "work-2" },
+        ],
+        promote: { scheme: "scratch", path: wrongPath, workId: "work-2" },
+        clearAll: false,
+      });
+      const originalReport = DeviceWorkingSetStore.prototype.report;
+      reportSpy = vi.spyOn(DeviceWorkingSetStore.prototype, "report").mockImplementation(function (
+        this: DeviceWorkingSetStore,
+        ...args
+      ) {
+        const changed = originalReport.apply(this, args);
+        workingSetSync.localSnapshots.push({
+          projectId: args[0],
+          snapshot: structuredClone(this.read(args[0])?.snapshot),
+          raw: workingSetStorage.getItem(WORKING_SET_STORAGE_KEY),
+        });
+        return changed;
+      });
+      reconcileContextRoutes(projectId, {
+        removedLocators: [],
+        survivingOwnedLocators: [{ scheme: "kb", path: "/knowledge.md" }],
+        promote: { scheme: "kb", path: "/knowledge.md" },
+        clearAll: false,
+      });
+    }, []);
     return null;
   }
   function Harness() {
@@ -310,6 +370,7 @@ it("never restamps a Work-scoped route candidate during a production Work transi
     };
     return (
       <ContextRemovalAccountProvider accountId={accountId}>
+        <SeedWorkingSet />
         <Capture />
         <ProjectContextRemovalController
           projectId={projectId}
@@ -324,36 +385,46 @@ it("never restamps a Work-scoped route candidate during a production Work transi
     );
   }
 
-  await withReactRoot(<Harness />, async () => {
-    window.localStorage.removeItem(WORKING_SET_STORAGE_KEY);
-    configureWorkingSetSync(accountId, false);
-    reconcileContextRoutes(projectId, {
-      removedLocators: [],
-      survivingOwnedLocators: [
-        { scheme: "kb", path: "/knowledge.md" },
-        { scheme: "scratch", path: wrongPath, workId: "work-2" },
-      ],
-      promote: { scheme: "scratch", path: wrongPath, workId: "work-2" },
-      clearAll: false,
-    });
-    reconcileContextRoutes(projectId, {
-      removedLocators: [],
-      survivingOwnedLocators: [{ scheme: "kb", path: "/knowledge.md" }],
-      promote: { scheme: "kb", path: "/knowledge.md" },
-      clearAll: false,
-    });
-    await act(async () => switchWork?.());
+  try {
+    await withReactRoot(<Harness />, async () => {
+      workingSetSync.localSnapshots.length = 0;
+      emittedReports.length = 0;
+      await act(async () => switchWork?.());
 
-    expect(useContextTabsStore.getState().byProject[projectId]).toMatchObject({
-      activeTabId: "knowledge",
-      tabs: [expect.objectContaining({ documentId: "knowledge" })],
+      expect(useContextTabsStore.getState().byProject[projectId]).toMatchObject({
+        activeTabId: "knowledge",
+        tabs: [expect.objectContaining({ documentId: "knowledge" })],
+      });
+      expect(coordinator?.getProjectSnapshot(projectId)).toMatchObject({
+        selection: { status: "rejected" },
+        admitted: { scheme: "kb", path: "/knowledge.md", workId: "work-1" },
+      });
+      expect(readRecentRoutes(projectId)).toEqual([{ scheme: "kb", path: "/knowledge.md" }]);
+      expect(search).toMatchObject({ screen: "context", scheme: "kb", path: "/knowledge.md" });
+      const rawWorkingSet = workingSetStorage.getItem(WORKING_SET_STORAGE_KEY);
+      expect(rawWorkingSet).not.toBeNull();
+      expect(rawWorkingSet).not.toContain(wrongPath);
+      expect(workingSetSync.localSnapshots.length).toBeGreaterThan(0);
+      expect(workingSetSync.localSnapshots.every((sample) => sample.raw !== null)).toBe(true);
+      expect(
+        workingSetSync.localSnapshots.every(
+          (snapshot) => !JSON.stringify(snapshot).includes(wrongPath),
+        ),
+      ).toBe(true);
+      reconcileContextRoutes(projectId, {
+        removedLocators: [],
+        survivingOwnedLocators: [{ scheme: "kb", path: "/knowledge.md" }],
+        promote: { scheme: "kb", path: "/knowledge.md" },
+        clearAll: false,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 3_100));
+      expect(emittedReports.length).toBeGreaterThan(0);
+      expect(emittedReports.every((report) => !JSON.stringify(report).includes(wrongPath))).toBe(
+        true,
+      );
     });
-    expect(coordinator?.getProjectSnapshot(projectId)).toMatchObject({
-      selection: { status: "rejected" },
-      admitted: { scheme: "kb", path: "/knowledge.md", workId: "work-1" },
-    });
-    expect(readRecentRoutes(projectId)).toEqual([{ scheme: "kb", path: "/knowledge.md" }]);
-    expect(search).toMatchObject({ screen: "context", scheme: "kb", path: "/knowledge.md" });
-    expect(window.localStorage.getItem(WORKING_SET_STORAGE_KEY) ?? "").not.toContain(wrongPath);
-  });
+  } finally {
+    reportSpy?.mockRestore();
+    configureWorkingSetSync(accountId, false);
+  }
 });

@@ -22,7 +22,12 @@ const { UntitledLifecycleRig } = await import("./test-support/UntitledLifecycleR
 const { useIdentityCommit } = await import("./use-identity-commit");
 const { useUntitledTabBridge } = await import("./useUntitledTabBridge");
 
-const NEW_TAB = { kind: "new", documentId: "doc-1", name: "Untitled" } as const;
+const NEW_TAB = {
+  kind: "new",
+  documentId: "doc-1",
+  name: "Untitled",
+  workId: "work-1",
+} as const;
 
 afterEach(() => {
   reconcilerState.rig = null;

@@ -114,6 +114,7 @@ describe("context removal planner", () => {
     };
     const admitted = { scheme: "kb" as const, path: "/keep.md", workId: "work-new" };
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [removed],
       activeTabId: null,
       route: { cleanup: null, current: { kind: "none" } },
@@ -136,6 +137,7 @@ describe("context removal planner", () => {
       ...(intent.cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-old" } : {}),
     };
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [removed],
       activeTabId: null,
       route: { cleanup: null, current: { kind: "none" } },
@@ -152,6 +154,7 @@ describe("context removal planner", () => {
 
   it("keeps admitted continuity when a candidate is not a planner owner", () => {
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
       admitted: phoneSelection.locator,
@@ -165,6 +168,7 @@ describe("context removal planner", () => {
 
   it("does not let an unactivated bound route replace admitted continuity", () => {
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [tracked("desktop", "/desktop.md")],
       activeTabId: "desktop",
       admitted: null,
@@ -185,6 +189,7 @@ describe("context removal planner", () => {
     const replacement = tracked("replacement", "/replacement.md");
     const prior = { scheme: "manuscript" as const, path: "/removed.md", workId: "work-1" };
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [replacement],
       activeTabId: "replacement",
       admitted: prior,
@@ -214,6 +219,7 @@ describe("context removal planner", () => {
 
   it("removes a bound phone-only identity and clears continuity", () => {
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [],
       activeTabId: null,
       admitted: phoneSelection.locator,
@@ -237,9 +243,15 @@ describe("context removal planner", () => {
   });
 
   it("preserves local and draft-only tabs from server delete eligibility", () => {
-    const local: ContextTab = { kind: "new", documentId: "local", name: "Untitled" };
+    const local: ContextTab = {
+      kind: "new",
+      documentId: "local",
+      name: "Untitled",
+      workId: "work-1",
+    };
     const draft = { ...tracked("draft", "/draft.md"), draftOnly: true };
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [local, draft],
       activeTabId: "local",
       admitted: null,
@@ -263,6 +275,7 @@ describe("context removal planner", () => {
       identity: { kind: "server" as const, documentId: "a" },
     };
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs: [],
       activeTabId: null,
       admitted: current.locator,
@@ -289,6 +302,7 @@ describe("context removal planner", () => {
       identity: { kind: "server" as const, documentId: "c" },
     };
     const plan = planContextRemoval({
+      activeWorkId: "work-1",
       tabs,
       activeTabId: "c",
       admitted: current.locator,

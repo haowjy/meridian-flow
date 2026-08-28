@@ -87,8 +87,10 @@ fabricating a tab. `ContextPaneController`
 remains a view/activation controller and owns no lifecycle-removal policy. Later ready
 Work changes use the coordinator's supersession transition. Draft apply only resolves tab metadata. Context-tree
 cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
-`viewer`, and the in-memory `{ kind: "new", documentId }` placeholder. A new tab
-uses an ordinary `DocumentSession` from its first render, created detached so
+`viewer`, and the local `{ kind: "new", documentId, workId }` placeholder. A new tab captures its
+canonical Work owner at creation; projection, activation, fallback, pending materialization, and Work
+pruning read that stored fact rather than the currently selected Work. Empty-path Scratch remains local-only
+and is never a working-set route. A new tab uses an ordinary `DocumentSession` from its first render, created detached so
 Y.Doc + IndexedDB exist without opening an unauthorized server room.
 
 `untitled-reconciler.ts` is the browser-independent materialization engine;

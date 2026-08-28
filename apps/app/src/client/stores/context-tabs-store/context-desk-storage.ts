@@ -48,11 +48,12 @@ function parseTab(value: unknown): ContextTab | null {
   if (!value || typeof value !== "object") return null;
   const tab = value as Record<string, unknown>;
   if (!baseTab(tab)) return null;
-  if (tab.kind === "new") {
+  if (tab.kind === "new" && typeof tab.workId === "string") {
     return {
       kind: "new",
       documentId: tab.documentId as string,
       name: tab.name as string,
+      workId: tab.workId,
       ...(tab.draftOnly === true ? { draftOnly: true } : {}),
     };
   }

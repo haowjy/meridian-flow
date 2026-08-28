@@ -36,6 +36,7 @@ import {
   type RouteContinuityVerdict,
   routeTargetForTab,
   workingSetRouteForTab,
+  workingSetRouteForTarget,
 } from "./context-removal-planner";
 import {
   type AcknowledgedContextDeleteCommand,
@@ -445,6 +446,22 @@ export class ContextRemovalCoordinator {
         obsoleteRoutes,
       );
     } else {
+      const activeTabId = this.desk.read(projectId).activeTabId;
+      const activeTab = remainingTabs.find((tab) => tab.documentId === activeTabId) ?? null;
+      const activeTarget = activeTab ? routeTargetForTab(activeTab, activeWorkId) : null;
+      if (
+        !activeTarget ||
+        (isWorkScopedProjectContextScheme(activeTarget.scheme) &&
+          activeTarget.workId !== activeWorkId)
+      ) {
+        const fallbackTab = fallback
+          ? remainingTabs.find((tab) => sameLocator(routeTargetForTab(tab, activeWorkId), fallback))
+          : null;
+        this.desk.commit(projectId, {
+          documentIds: [],
+          activeTabId: fallbackTab?.documentId ?? null,
+        });
+      }
       const promotedRoute = fallback ? workingSetRouteForTarget(fallback) : null;
       this.workingSet.reconcileContextRoutes(projectId, {
         removedLocators: obsoleteRoutes,
@@ -541,6 +558,7 @@ export class ContextRemovalCoordinator {
       .map((tab) => tab.documentId);
     if (
       selection.status === "bound" &&
+      selection.identity.kind === "server" &&
       isWorkScopedProjectContextScheme(selection.locator.scheme) &&
       selection.locator.workId !== activeWorkId &&
       !documentIds.includes(selection.identity.documentId)
@@ -567,6 +585,7 @@ export class ContextRemovalCoordinator {
     if (intent.documentIds.length === 0) return { kind: "noop" };
     const slice = this.desk.read(projectId);
     const plan = planContextRemoval({
+      activeWorkId: this.project(projectId).activeWorkId,
       ...slice,
       admitted: this.project(projectId).admitted,
       route: { cleanup, current },
@@ -789,15 +808,6 @@ export class ContextRemovalCoordinator {
     };
     for (const listener of state.listeners) listener();
   }
-}
-
-function workingSetRouteForTarget(locator: ContextRouteTarget): WorkingSetRoute | null {
-  if (locator.scheme === "scratch" || locator.scheme === "uploads") {
-    return locator.workId
-      ? { scheme: locator.scheme, path: locator.path, workId: locator.workId }
-      : null;
-  }
-  return { scheme: locator.scheme, path: locator.path };
 }
 
 function locatorKey(locator: ContextRouteTarget): string {
