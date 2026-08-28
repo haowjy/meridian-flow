@@ -121,6 +121,10 @@ export type DeleteContextEntryResult = {
   deletedDocumentIds: string[];
 };
 
+export type DeleteContextEntryRequest =
+  | { path: string; expected: { kind: "file"; documentId: string } }
+  | { path: string; expected: { kind: "folder" } };
+
 export type MoveContextEntryRequest = {
   path: string;
   destinationScheme: ProjectContextTreeScheme;

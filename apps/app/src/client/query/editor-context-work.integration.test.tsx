@@ -98,7 +98,11 @@ it("sends scratch tree, read, and mutation requests with explicit Editor Work A"
           newName: "new.md",
           workId: "work-a",
         });
-        await commands?.delete.mutateAsync({ path: "/gone.md", workId: "work-a" });
+        await commands?.delete.mutateAsync({
+          path: "/gone.md",
+          workId: "work-a",
+          expected: { kind: "file", documentId: "document-gone" },
+        });
         releaseCreate?.();
         await create;
       });

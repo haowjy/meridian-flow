@@ -69,7 +69,14 @@ it("submits the Work captured when delete confirmation was requested", async () 
       <Harness />
     </QueryClientProvider>,
     async () => {
-      act(() => confirmation?.requestDelete({ name: "same.md", path: "/same.md", kind: "file" }));
+      act(() =>
+        confirmation?.requestDelete({
+          name: "same.md",
+          path: "/same.md",
+          kind: "file",
+          documentId: "document-same",
+        }),
+      );
       await act(async () => changeWork?.("work-b"));
       await act(async () => confirmation?.confirm());
     },
@@ -78,7 +85,10 @@ it("submits the Work captured when delete confirmation was requested", async () 
   expect(deleted).toHaveBeenCalledWith(
     "project",
     "scratch",
-    { path: "/same.md", workId: "work-a" },
+    {
+      path: "/same.md",
+      expected: { kind: "file", documentId: "document-same" },
+    },
     { workId: "work-a" },
   );
   expect(useContextTabsStore.getState().byProject.project?.tabs).toMatchObject([

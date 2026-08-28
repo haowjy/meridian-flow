@@ -344,6 +344,7 @@ function SchemeSection({
       <DeleteConfirmationDialog
         target={deleteConfirm.target}
         isPending={deleteConfirm.isPending}
+        error={deleteConfirm.error}
         onCancel={deleteConfirm.cancel}
         onConfirm={deleteConfirm.confirm}
       />

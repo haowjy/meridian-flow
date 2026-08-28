@@ -35,6 +35,7 @@ import {
   type CreateUntitledContextDocumentRequest,
   type CreateUntitledContextDocumentResponse,
   type CreateUntitledContextDocumentResult,
+  type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
@@ -318,7 +319,7 @@ export async function moveContextEntry(
 export async function deleteContextEntry(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  body: { path: string },
+  body: DeleteContextEntryRequest,
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
 ): Promise<DeleteContextEntryResult> {

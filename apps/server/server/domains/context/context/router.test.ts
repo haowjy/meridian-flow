@@ -82,6 +82,21 @@ describe("context router listings", () => {
 });
 
 describe("context router deletion receipts", () => {
+  it.each([
+    [{ kind: "file" as const, documentId: "different-document" }, "old.md"],
+    [{ kind: "folder" as const }, "old.md"],
+    [{ kind: "file" as const, documentId: "document-old" }, "empty"],
+  ])("rejects a stale initiating target %#", async (expected, path) => {
+    const adapter = writableAdapter("manuscript");
+    const port = createContextPortRouter({ adapters: new Map([["manuscript", adapter]]) });
+
+    await expect(port.delete(`manuscript://${path}`, { expected })).resolves.toEqual({
+      ok: false,
+      error: { code: "stale_target", uri: `manuscript://${path}` },
+    });
+    expect(adapter.tree?.commitPreparedDelete).not.toHaveBeenCalled();
+  });
+
   it("preserves the committed file identity", async () => {
     const port = createContextPortRouter({
       adapters: new Map([["manuscript", writableAdapter("manuscript")]]),

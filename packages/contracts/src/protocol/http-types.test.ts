@@ -1,9 +1,15 @@
 /** Working-set route parsing protects the scheme/work authority wire invariant. */
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { DeleteContextEntryResult } from "./http-types.js";
+import type { DeleteContextEntryRequest, DeleteContextEntryResult } from "./http-types.js";
 import { parseWorkingSetRoute, parseWorkingSetRouteList } from "./http-types.js";
 
 describe("context deletion result", () => {
+  it("requires the initiating kind and file identity", () => {
+    expectTypeOf<DeleteContextEntryRequest>().toEqualTypeOf<
+      | { path: string; expected: { kind: "file"; documentId: string } }
+      | { path: string; expected: { kind: "folder" } }
+    >();
+  });
   it("carries an exact batch of committed document identities", () => {
     expectTypeOf<DeleteContextEntryResult>().toEqualTypeOf<{
       status: "deleted";

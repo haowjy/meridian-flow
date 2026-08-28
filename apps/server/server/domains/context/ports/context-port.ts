@@ -9,6 +9,7 @@ import type {
   WorkScopedContextUriScheme,
 } from "@meridian/contracts/context-uri";
 import type {
+  DeleteContextEntryRequest,
   DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
@@ -199,6 +200,10 @@ export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
 }
 
+export interface ContextDeleteOptions extends ContextWriteOptions {
+  expected?: DeleteContextEntryRequest["expected"];
+}
+
 export interface ContextMoveResult {
   movedNodeId?: string;
   /** Scheme-relative path durably committed by the tree mutation. */
@@ -286,7 +291,7 @@ export interface ContextPort {
 
   delete(
     uri: string,
-    options?: ContextWriteOptions,
+    options?: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
   list(uri?: string): Promise<Result<ContextListEntry[], ContextError>>;

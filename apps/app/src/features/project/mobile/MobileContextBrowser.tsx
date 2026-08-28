@@ -214,6 +214,7 @@ function MobileFolderListing({
       <DeleteConfirmationDialog
         target={deleteConfirm.target}
         isPending={deleteConfirm.isPending}
+        error={deleteConfirm.error}
         onCancel={deleteConfirm.cancel}
         onConfirm={deleteConfirm.confirm}
       />
@@ -506,7 +507,13 @@ function MobileFileRow({
           <MobileEntryActionsMenu
             onAction={(action) => {
               if (action === "rename") setRenaming(true);
-              else onRequestDelete({ name: file.name, path: file.path, kind: "file" });
+              else
+                onRequestDelete({
+                  name: file.name,
+                  path: file.path,
+                  kind: "file",
+                  documentId: file.documentId,
+                });
             }}
           />
         }

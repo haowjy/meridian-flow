@@ -11,10 +11,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
-
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,8 +80,7 @@ export type EntryActionTarget = {
   name: string;
   /** Full scheme-relative path. */
   path: string;
-  kind: "file" | "dir";
-};
+} & ({ kind: "file"; documentId: string } | { kind: "dir" });
 
 type DeleteTarget = EntryActionTarget & { workId: string | null };
 
@@ -253,6 +254,7 @@ export function useDeleteConfirmation({
 }) {
   const [target, setTarget] = useState<DeleteTarget | null>(null);
   const mutation = useDeleteContextEntry(projectId, scheme);
+  const queryClient = useQueryClient();
 
   const requestDelete = useCallback(
     (t: EntryActionTarget) => setTarget({ ...t, workId }),
@@ -263,24 +265,49 @@ export function useDeleteConfirmation({
   const confirm = useCallback(async () => {
     if (!target) return;
     try {
-      const result = await mutation.mutateAsync({ path: target.path, workId: target.workId });
+      const result = await mutation.mutateAsync(
+        target.kind === "file"
+          ? {
+              path: target.path,
+              workId: target.workId,
+              expected: { kind: "file", documentId: target.documentId },
+            }
+          : { path: target.path, workId: target.workId, expected: { kind: "folder" } },
+      );
       await contextRemovalCoordinator.acknowledgedDelete(projectId, result.deletedDocumentIds);
-    } finally {
       setTarget(null);
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.contextTree(
+          projectId,
+          scheme,
+          isWorkScopedProjectContextScheme(scheme) ? target.workId : undefined,
+        ),
+      });
+    } catch {
+      // Keep the target visible so the writer can refresh and retry.
     }
-  }, [projectId, target, mutation]);
+  }, [projectId, queryClient, scheme, target, mutation]);
 
-  return { target, isPending: mutation.isPending, requestDelete, cancel, confirm };
+  return {
+    target,
+    isPending: mutation.isPending,
+    error: mutation.isError ? t`The entry changed. Refresh the tree and try again.` : null,
+    requestDelete,
+    cancel,
+    confirm,
+  };
 }
 
 export function DeleteConfirmationDialog({
   target,
   isPending,
+  error,
   onCancel,
   onConfirm,
 }: {
   target: EntryActionTarget | null;
   isPending: boolean;
+  error?: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -305,6 +332,7 @@ export function DeleteConfirmationDialog({
             )}
           </DialogDescription>
         </DialogHeader>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <DialogFooter className="gap-2 sm:gap-0">
           <DialogClose asChild>
             <Button variant="outline" size="sm" disabled={isPending}>

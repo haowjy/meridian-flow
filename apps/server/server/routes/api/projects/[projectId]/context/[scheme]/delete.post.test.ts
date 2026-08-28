@@ -27,7 +27,10 @@ describe("POST context delete", () => {
     const event = {
       req: new Request("https://server.local/delete", {
         method: "POST",
-        body: JSON.stringify({ path: "chapter.md" }),
+        body: JSON.stringify({
+          path: "chapter.md",
+          expected: { kind: "file", documentId: "document-1" },
+        }),
         headers: { "content-type": "application/json" },
       }),
       res: { status: 200 },
@@ -37,6 +40,10 @@ describe("POST context delete", () => {
       status: "deleted",
       deletedDocumentIds: ["document-1"],
     });
+    expect(deleteEntry).toHaveBeenCalledWith(
+      "manuscript://chapter.md",
+      expect.objectContaining({ expected: { kind: "file", documentId: "document-1" } }),
+    );
   });
 
   it("does not acknowledge a post-commit callback failure", async () => {
@@ -50,7 +57,10 @@ describe("POST context delete", () => {
     const event = {
       req: new Request("https://server.local/delete", {
         method: "POST",
-        body: JSON.stringify({ path: "chapter.md" }),
+        body: JSON.stringify({
+          path: "chapter.md",
+          expected: { kind: "file", documentId: "document-1" },
+        }),
         headers: { "content-type": "application/json" },
       }),
       res: { status: 200 },
