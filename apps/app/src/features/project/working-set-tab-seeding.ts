@@ -51,21 +51,18 @@ export async function seedWorkingSetTabs({
   scope: ContextDeskReconciliationScope;
   isLiveScope: ContextDeskReconciliationGuard;
 }): Promise<void> {
-  const { projectId, editorWorkId } = scope;
+  const { projectId } = scope;
   const results = await Promise.allSettled(
     routes.map(async (route) => {
       const workScoped = isWorkScopedProjectContextScheme(route.scheme);
-      if (workScoped && route.workId !== editorWorkId) return { tab: null, removedRoute: null };
       const workId: string | null = workScoped ? (route.workId ?? null) : null;
       const result = await queryClient.fetchQuery(
         projectContextTreeQueryOptions(projectId, route.scheme, workId),
       );
       const file = findContextFile(result.tree, route.path);
       if (!file) {
-        // Validated-missing on the server-adoption branch too: a fresh tree
-        // lacks the path, so drop the dead route from the working set instead
-        // of letting it occupy a synced slot forever. (Work-scope skips above
-        // never remove — the route may be valid under its own work.)
+        // Each persisted route is validated in its own stored Work. The live
+        // coordinator applies the currently selected Work after bootstrap.
         return { tab: null, removedRoute: route };
       }
       if (!isLiveScope(scope)) return { tab: null, removedRoute: null };
@@ -101,24 +98,21 @@ export async function validateContextDeskTabs({
   scope: ContextDeskReconciliationScope;
   isLiveScope: ContextDeskReconciliationGuard;
 }): Promise<void> {
-  const { projectId, editorWorkId } = scope;
+  const { projectId } = scope;
   const restored = useContextTabsStore.getState().byProject[projectId]?.tabs ?? [];
   const results = await Promise.allSettled(
     restored.map(
       async (tab): Promise<{ tab: ContextTab | null; removedRoute: WorkingSetRoute | null }> => {
         if (tab.kind === "new") return { tab, removedRoute: null };
         const workScoped = isWorkScopedProjectContextScheme(tab.scheme);
-        if (workScoped && tab.workId !== editorWorkId) return { tab: null, removedRoute: null };
         const workId = workScoped ? (tab.workId ?? null) : null;
         const result = await queryClient.fetchQuery(
           projectContextTreeQueryOptions(projectId, tab.scheme, workId),
         );
         const file = findContextFile(result.tree, tab.path);
         if (!file) {
-          // Validated-missing (fresh tree lacks the path): drop the tab AND its
-          // remembered route so a dead route doesn't occupy a synced slot
-          // forever. Work-scope skips above deliberately do NOT remove — the
-          // route may still be valid under its own work.
+          // Validated-missing (fresh tree lacks the path): drop the tab and its
+          // remembered route so a dead route doesn't occupy a synced slot.
           return {
             tab: null,
             removedRoute: buildWorkingSetRoute(tab.scheme, tab.path, tab.workId),

@@ -39,9 +39,12 @@ import type { ContextRemovalRoutePort } from "./context/context-removal-coordina
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import {
-  type ContextProjectPhase,
-  contextProjectPhaseForReadiness,
+  type ContextProjectAuthority,
+  cancelContextProjectAttempt,
+  contextProjectPhase,
+  INITIAL_CONTEXT_PROJECT_AUTHORITY,
   settleContextProjectBootstrap,
+  updateContextProjectReadiness,
 } from "./context-project-phase";
 import { useDockViewStore } from "./dock/dock-view-store";
 import {
@@ -151,15 +154,20 @@ export function ProjectView(props: ProjectViewProps) {
   const editorScope = resolveEditorWorkScope(props.routeWork, chatWorkId, catalogWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
-  const [contextPhase, setContextPhase] = useState<ContextProjectPhase>({
-    status: "waiting-for-desk",
-    generation: 0,
-  });
-  const contextPhaseRef = useRef(contextPhase);
-  contextPhaseRef.current = contextPhase;
-  const bootstrapGenerationRef = useRef(0);
-  const currentEditorWorkRef = useRef(editorWorkId);
-  currentEditorWorkRef.current = editorWorkId;
+  const [contextAuthority, setContextAuthority] = useState<ContextProjectAuthority>(
+    INITIAL_CONTEXT_PROJECT_AUTHORITY,
+  );
+  const contextAuthorityRef = useRef(contextAuthority);
+  const rawBootstrapRef = useRef<Promise<void> | null>(null);
+  const rawOperationRef = useRef(0);
+  const mountedRef = useRef(true);
+  const contextPhase = contextProjectPhase(contextAuthority);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
     const retry = () => {
@@ -170,50 +178,51 @@ export function ProjectView(props: ProjectViewProps) {
   }, [props.projectId, workingSetHydration.status]);
 
   useEffect(() => {
-    const previous = contextPhaseRef.current;
-    const desired = contextProjectPhaseForReadiness(previous, deskHydrated, editorScope);
-    contextPhaseRef.current = desired;
-    setContextPhase(desired);
-    if (
-      desired.status !== "bootstrapping" ||
-      (previous.status === "bootstrapping" &&
-        previous.generation === desired.generation &&
-        previous.workId === desired.workId)
-    )
-      return;
-    bootstrapGenerationRef.current = desired.generation;
-    const reconciliation = contextDeskReconciliation(workingSetHydration);
-    const scope: ContextDeskReconciliationScope = {
-      projectId: props.projectId,
-      editorWorkId: desired.workId,
-      generation: desired.generation,
+    const updateAuthority = (next: ContextProjectAuthority) => {
+      contextAuthorityRef.current = next;
+      if (mountedRef.current) setContextAuthority(next);
     };
-    const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
-      bootstrapGenerationRef.current === candidate.generation &&
-      currentEditorWorkRef.current === candidate.editorWorkId;
-    const bootstrap =
-      reconciliation === "server-replace" && workingSetHydration.status === "server"
-        ? seedWorkingSetTabs({
-            queryClient,
-            routes: workingSetHydration.row.recentRoutes,
-            scope,
-            isLiveScope,
-          })
-        : validateContextDeskTabs({ queryClient, scope, isLiveScope });
-    void bootstrap.finally(() => {
-      if (!isLiveScope(scope)) return;
-      const live = settleContextProjectBootstrap(
-        contextPhaseRef.current,
-        scope.generation,
-        scope.editorWorkId ?? "",
+    const transition = updateContextProjectReadiness(
+      contextAuthorityRef.current,
+      deskHydrated,
+      editorScope,
+    );
+    updateAuthority(transition.authority);
+    if (!transition.effect) return;
+    const { attempt, raw } = transition.effect;
+    if (raw === "start") {
+      const operation = rawOperationRef.current + 1;
+      rawOperationRef.current = operation;
+      const scope: ContextDeskReconciliationScope = {
+        projectId: props.projectId,
+        editorWorkId: attempt.workId,
+        generation: operation,
+      };
+      const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
+        mountedRef.current && rawOperationRef.current === candidate.generation;
+      const reconciliation = contextDeskReconciliation(workingSetHydration);
+      const bootstrap =
+        reconciliation === "server-replace" && workingSetHydration.status === "server"
+          ? seedWorkingSetTabs({
+              queryClient,
+              routes: workingSetHydration.row.recentRoutes,
+              scope,
+              isLiveScope,
+            })
+          : validateContextDeskTabs({ queryClient, scope, isLiveScope });
+      rawBootstrapRef.current = bootstrap.then(
+        () => undefined,
+        () => undefined,
       );
-      contextPhaseRef.current = live;
-      setContextPhase(live);
+    }
+    const bootstrap = rawBootstrapRef.current;
+    if (!bootstrap) throw new Error("Context bootstrap adoption requires the raw operation");
+    void bootstrap.then(() => {
+      if (!mountedRef.current) return;
+      updateAuthority(settleContextProjectBootstrap(contextAuthorityRef.current, attempt.token));
     });
     return () => {
-      if (bootstrapGenerationRef.current === desired.generation) {
-        bootstrapGenerationRef.current += 1;
-      }
+      updateAuthority(cancelContextProjectAttempt(contextAuthorityRef.current, attempt.token));
     };
   }, [
     deskHydrated,
