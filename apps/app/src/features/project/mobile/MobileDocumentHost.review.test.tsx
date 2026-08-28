@@ -2,7 +2,7 @@
 /** Phone document hosting publishes and renders the Editor review scope. */
 
 import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
-import { act, StrictMode, useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { act, StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DraftReviewBoundary,
@@ -14,6 +14,7 @@ import {
   useContextRemovalCoordinator,
 } from "../context/ContextRemovalAccountProvider";
 import { ProjectContextRemovalController } from "../context/ProjectContextRemovalController";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
 import type { AiDraftLaunchTarget } from "../dock/editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
@@ -98,6 +99,12 @@ vi.mock("@/client/query/useProjectContextTree", () => ({
 
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 let settledDocumentId: string | null = null;
+let removalCoordinator: ReturnType<typeof useContextRemovalCoordinator> | null = null;
+
+function CoordinatorCapture() {
+  removalCoordinator = useContextRemovalCoordinator();
+  return null;
+}
 
 function CommandCapture() {
   openReview = useOpenEditorReview();
@@ -105,11 +112,10 @@ function CommandCapture() {
 }
 
 function RemovalObserver() {
-  const coordinator = useContextRemovalCoordinator();
-  useLayoutEffect(() => {
-    const selection = coordinator.getProjectSnapshot("project-1").selection;
+  const selection = useContextRemovalProject("project-1").selection;
+  useEffect(() => {
     settledDocumentId = selection.status === "bound" ? selection.identity.documentId : null;
-  });
+  }, [selection]);
   return null;
 }
 
@@ -204,6 +210,7 @@ describe("MobileDocumentHost review binding", () => {
     await withReactRoot(
       <StrictMode>
         <ContextRemovalAccountProvider accountId="account-1">
+          <CoordinatorCapture />
           <PhoneRouteHarness navigate={navigate} />
         </ContextRemovalAccountProvider>
       </StrictMode>,
@@ -213,6 +220,10 @@ describe("MobileDocumentHost review binding", () => {
         });
 
         expect(mocks.enterInlineReview).toHaveBeenCalledOnce();
+        expect(removalCoordinator?.getProjectSnapshot("project-1").selection).toMatchObject({
+          status: "bound",
+          identity: { documentId: target.documentId },
+        });
         expect(settledDocumentId).toBe(target.documentId);
         expect(mocks.enterInlineReview).toHaveBeenCalledWith(target.documentId, target.draftId);
         expect(mocks.editorProps.at(-1)).toMatchObject({
