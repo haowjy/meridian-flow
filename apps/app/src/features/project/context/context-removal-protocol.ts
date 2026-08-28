@@ -172,6 +172,14 @@ function settleObligations(
   }));
 }
 
+function continuityForEntry(
+  selection: ContextRouteSelection,
+  reentryGuard: TerminalRouteRemoval | null,
+): { current: RouteContinuityVerdict; promote: readonly RouteContinuityVerdict[] } {
+  const current = reentryGuard ? ({ kind: "none" } as const) : continuityForSelection(selection);
+  return { current, promote: reentryGuard ? [] : [current] };
+}
+
 export function beginSelection(
   selection: ContextRouteSelection,
   locator: ContextRouteTarget,
@@ -185,18 +193,18 @@ export function beginSelection(
     obligations: [],
     reentryGuard,
   };
-  const current = continuityForSelection(next);
+  const entry = continuityForEntry(next, reentryGuard);
   if (selection.status !== "pending") {
     return {
       selection: next,
       planning: [],
-      promote: reentryGuard ? [] : [current],
+      promote: entry.promote,
       retireReentryGuard: false,
     };
   }
   return {
     selection: next,
-    planning: settleObligations(selection, null, current, "never"),
+    planning: settleObligations(selection, null, entry.current, "never"),
     promote:
       reentryGuard || selection.obligations.length > 0
         ? []
@@ -207,7 +215,7 @@ export function beginSelection(
               locator: selection.locator,
               observed: "superseded",
             },
-            current,
+            ...entry.promote,
           ],
     retireReentryGuard: false,
   };
@@ -223,12 +231,14 @@ export function supersedeSelectionForWorkChange(
   const next: ContextRouteSelection = locator
     ? { status: "pending", revision, locator, obligations: [], reentryGuard }
     : { status: "none", revision };
-  const current = reentryGuard ? ({ kind: "none" } as const) : continuityForSelection(next);
+  const entry = continuityForEntry(next, reentryGuard);
   return {
     selection: next,
     planning:
-      selection.status === "pending" ? settleObligations(selection, null, current, "never") : [],
-    promote: locator && !reentryGuard ? [current] : [],
+      selection.status === "pending"
+        ? settleObligations(selection, null, entry.current, "never")
+        : [],
+    promote: locator ? entry.promote : [],
     retireReentryGuard: false,
   };
 }

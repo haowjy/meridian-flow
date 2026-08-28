@@ -179,6 +179,30 @@ describe("context removal protocol", () => {
     expect(replacement?.retireReentryGuard).toBe(true);
   });
 
+  it("uses no current continuity when a guarded entry settles a previous obligation", () => {
+    const admitted = reduceAcknowledgedDelete(new Map(), pending(), command());
+    const guardedLocator = { ...locator, path: "/guarded.md" };
+    const terminal: TerminalRouteRemoval = {
+      cleanup: {
+        revision: 2,
+        locator: guardedLocator,
+        identity: { kind: "server", documentId: "guarded" },
+      },
+      intent: { cause: "acknowledged-delete", documentIds: ["guarded"] },
+    };
+
+    const transition = beginSelection(admitted.selection, guardedLocator, terminal);
+
+    expect(transition.planning).toEqual([
+      expect.objectContaining({
+        cleanup: expect.objectContaining({ locator, identity }),
+        current: { kind: "none" },
+        repair: "never",
+      }),
+    ]);
+    expect(transition.promote).toEqual([]);
+  });
+
   it("preserves proof-less unbound continuity and unknown continuity on leave", () => {
     expect(confirmSelectionUnbound(pending(), 1)?.planning).toEqual([]);
     expect(leaveSelection(pending()).promote).toEqual([

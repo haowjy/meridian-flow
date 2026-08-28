@@ -6,7 +6,8 @@
 ## [Unreleased]
 
 - `apps/app`: separate ordinary Editor screen continuity from atomic Work
-  supersession, keep guarded deleted routes out of durable reconstruction,
+  supersession, keep guarded deleted routes out of obligation settlement and
+  durable reconstruction,
   synchronously revoke replaced account coordinators, and preserve unrelated
   remembered routes through represented removals.
 
