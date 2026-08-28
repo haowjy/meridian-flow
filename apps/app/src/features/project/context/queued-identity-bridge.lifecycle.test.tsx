@@ -7,7 +7,7 @@ import { act, useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { type ContextTab, rehydrateContextDesks, useContextTabsStore } from "@/client/stores";
 import { DeviceContextDeskStore } from "@/client/stores/context-tabs-store/context-desk-storage";
-import { configureWorkingSetSync, hydrateWorkingSet } from "@/client/working-set";
+import { configureWorkingSetSync, hydrateWorkingSet, readRecentRoutes } from "@/client/working-set";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextViewerSurfaceController } from "../ContextPaneController";
 import type { ProjectSearch } from "../routing/project-route";
@@ -107,6 +107,7 @@ function CaptureCoordinator() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   reconcilerState.rig = null;
   coordinator = null;
   transportState.reports.length = 0;
@@ -119,6 +120,7 @@ it.each([
   "receipt-after-transition",
   "receipt-before-transition",
 ] as const)("settles and restores the exact local owner through the production composition with %s", async (ordering) => {
+  vi.useFakeTimers();
   const rig = new UntitledLifecycleRig();
   reconcilerState.rig = rig;
   rig.start();
@@ -212,6 +214,16 @@ it.each([
         <Harness />
       </QueryClientProvider>,
       async () => {
+        const openingRoute = { scheme: "manuscript", path: "/Act 1/Opening.md" };
+        const chapterRoute = { scheme: "manuscript", path: "/a.md" };
+        const checkpoint = async (expectedRoutes: (typeof openingRoute)[]) => {
+          expect(readRecentRoutes("project-1")).toEqual(expectedRoutes);
+          const reportCount = transportState.reports.length;
+          await act(async () => vi.advanceTimersByTimeAsync(3_000));
+          expect(transportState.reports.length).toBeGreaterThan(reportCount);
+          expect(transportState.reports.at(-1)?.recentRoutes).toEqual(expectedRoutes);
+        };
+
         expect(coordinator?.getProjectSnapshot("project-1")).toMatchObject({
           selection: { status: "bound", identity: { kind: "local", documentId: "doc-1" } },
           admitted: { scheme: "scratch", path: "", workId: "work-a" },
@@ -234,6 +246,7 @@ it.each([
             selection: { status: "bound", identity: { documentId: "doc-1" } },
             admitted: { scheme: "manuscript", path: "/Act 1/Opening.md", workId: "work-a" },
           });
+          await checkpoint([openingRoute]);
         }
         await act(async () => selectWork("work-b"));
         expect(search).toMatchObject({ work: "work-b", scheme: "manuscript", path: "/a.md" });
@@ -241,8 +254,15 @@ it.each([
           selection: { status: "bound", identity: { documentId: "chapter-b" } },
           admitted: { scheme: "manuscript", path: "/a.md", workId: "work-b" },
         });
+        await checkpoint(
+          ordering === "receipt-before-transition" ? [chapterRoute, openingRoute] : [chapterRoute],
+        );
 
-        if (ordering === "receipt-after-transition") await act(async () => rig.advance());
+        if (ordering === "receipt-after-transition") {
+          await act(async () => rig.advance());
+          expect(readRecentRoutes("project-1")).toEqual([chapterRoute]);
+          expect(readRecentRoutes("project-1")).not.toContainEqual(openingRoute);
+        }
         expect(search).toMatchObject({ work: "work-b", scheme: "manuscript", path: "/a.md" });
         expect(useContextTabsStore.getState().byProject["project-1"]?.selectedTabIdByWork).toEqual({
           "work-a": "doc-1",
@@ -259,6 +279,7 @@ it.each([
           selection: { status: "bound", identity: { kind: "server", documentId: "doc-1" } },
           admitted: { scheme: "manuscript", path: "/Act 1/Opening.md", workId: "work-a" },
         });
+        await checkpoint([openingRoute, chapterRoute]);
 
         const rawDesk = localStorage.getItem("meridian:context-desk");
         expect(rawDesk).not.toBeNull();
@@ -285,18 +306,21 @@ it.each([
             .filter(({ key }) => key === "meridian:working-set")
             .some(({ value }) => value.includes('"path":""')),
         ).toBe(false);
-        const allWorkingSetRoutes = [
-          ...rawWrites
-            .filter(({ key }) => key === "meridian:working-set")
-            .flatMap(({ value }) =>
-              Object.values<{
-                snapshot?: {
-                  recentRoutes?: Array<{ scheme: string; path: string; workId?: string }>;
-                };
-              }>(JSON.parse(value).projects ?? {}).flatMap(
-                (project) => project.snapshot?.recentRoutes ?? [],
-              ),
+        const localWorkingSetRoutes = rawWrites
+          .filter(({ key }) => key === "meridian:working-set")
+          .flatMap(({ value }) =>
+            Object.values<{
+              snapshot?: {
+                recentRoutes?: Array<{ scheme: string; path: string; workId?: string }>;
+              };
+            }>(JSON.parse(value).projects ?? {}).flatMap(
+              (project) => project.snapshot?.recentRoutes ?? [],
             ),
+          );
+        expect(localWorkingSetRoutes.length).toBeGreaterThan(0);
+        expect(transportState.reports.length).toBeGreaterThan(0);
+        const allWorkingSetRoutes = [
+          ...localWorkingSetRoutes,
           ...transportState.reports.flatMap(
             (report) =>
               report.recentRoutes as Array<{ scheme: string; path: string; workId?: string }>,

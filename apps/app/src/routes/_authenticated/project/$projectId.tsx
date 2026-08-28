@@ -3,6 +3,7 @@
  * normalized route state into the controlled ProjectView shell.
  */
 
+import { useLingui } from "@lingui/react";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -38,11 +39,32 @@ import {
 import type { ScreenKey } from "@/features/project/shell/screens";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
 
+const projectRoutePendingOptions = {
+  pendingComponent: PendingProjectRoute,
+  pendingMs: 0,
+  pendingMinMs: 0,
+};
+
 export const Route = createFileRoute("/_authenticated/project/$projectId")({
   loader: async ({ params }) => loadProjectRouteData(params.projectId),
+  ...projectRoutePendingOptions,
   component: RouteComponent,
   validateSearch: parseProjectSearch,
 });
+
+/** Immediate inert boundary for a project route whose blocking loader is pending. */
+function PendingProjectRoute() {
+  const { i18n } = useLingui();
+  return (
+    <main
+      className="flex h-full min-h-0 w-full items-center justify-center bg-background text-muted-foreground"
+      role="status"
+      aria-live="polite"
+    >
+      {i18n._("Loading project…")}
+    </main>
+  );
+}
 
 function RouteComponent() {
   const { projectId } = Route.useParams();
