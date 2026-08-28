@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, useLayoutEffect, useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
@@ -90,6 +90,79 @@ describe("ContextRemovalAccountProvider", () => {
           removalFence: null,
         }),
       ]);
+    });
+  });
+
+  it("makes the disposed account instance inert before delayed callbacks reach global stores", async () => {
+    let setAccount: ((accountId: string) => void) | null = null;
+    let oldCoordinator: ContextRemovalCoordinator | null = null;
+    let delayedCommand:
+      | Parameters<ContextRemovalCoordinator["acceptAcknowledgedDelete"]>[0]
+      | null = null;
+    const oldListener = vi.fn();
+
+    function Child({ accountId }: { accountId: string }) {
+      const coordinator = useContextRemovalCoordinator();
+      useLayoutEffect(() => {
+        if (accountId !== "account-a") return;
+        oldCoordinator = coordinator;
+        coordinator.subscribe("project-1", oldListener);
+        const revision = coordinator.beginRouteSelection("project-1", {
+          scheme: "manuscript",
+          path: "/a.md",
+          workId: "work-1",
+        });
+        coordinator.bindRouteSelection("project-1", revision, {
+          kind: "server",
+          documentId: "a",
+        });
+        delayedCommand = {
+          ...coordinator.captureDeleteInitiation("project-1", {
+            kind: "file",
+            locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
+            documentId: "a",
+          }),
+          cause: "acknowledged-delete",
+          confirmed: { status: "deleted", deletedDocumentIds: ["a"] },
+        };
+      }, [accountId, coordinator]);
+      return null;
+    }
+    function Harness() {
+      const [accountId, updateAccount] = useState("account-a");
+      setAccount = updateAccount;
+      return (
+        <ContextRemovalAccountProvider key={accountId} accountId={accountId}>
+          <Child accountId={accountId} />
+        </ContextRemovalAccountProvider>
+      );
+    }
+
+    useContextTabsStore.setState({
+      byProject: { "project-1": { tabs: [tracked("a", "/a.md")], activeTabId: "a" } },
+      _deskHydrated: true,
+    });
+    await withReactRoot(<Harness />, async () => {
+      await act(async () => setAccount?.("account-b"));
+      useContextTabsStore.setState({
+        byProject: { "project-1": { tabs: [tracked("b", "/b.md")], activeTabId: "b" } },
+        _deskHydrated: true,
+      });
+      oldListener.mockClear();
+      const service = oldCoordinator;
+      const command = delayedCommand;
+      if (!service || !command) throw new Error("old command was not captured");
+
+      expect(service.acceptAcknowledgedDelete(command)).toEqual({
+        status: "rejected",
+        reason: "coordinator_disposed",
+      });
+      service.applyDraftMetadata("project-1", "work-1", "b");
+      expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
+        tabs: [{ documentId: "b" }],
+        activeTabId: "b",
+      });
+      expect(oldListener).not.toHaveBeenCalled();
     });
   });
 });
