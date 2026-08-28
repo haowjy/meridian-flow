@@ -7,7 +7,6 @@ const EMPTY_SNAPSHOT: ContextRemovalProjectSnapshot = {
   selection: { status: "none", revision: 0 },
   rememberedRoute: null,
   removalFence: null,
-  autoOpenBlock: null,
   transitionRevision: 0,
   live: false,
 };

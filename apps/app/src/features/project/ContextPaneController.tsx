@@ -251,13 +251,13 @@ export function ContextViewerSurfaceController({
     tree: routeTree,
     isFetching: routeTreeIsFetching,
     isError: routeTreeIsError,
-    // Closing stamps this key before removing the tab. Sharing the guard
-    // prevents the loading projection from resurrecting the closed route.
-    autoOpenBlocked:
-      removalState.autoOpenBlock?.selectionRevision === removalState.selection.revision &&
-      removalState.autoOpenBlock?.locator?.scheme === activeContextScheme &&
-      removalState.autoOpenBlock.locator.path === activeContextPath &&
-      removalState.autoOpenBlock.locator.workId === routeWorkId,
+    // Closing stamps this fence before removing the tab. Sharing it prevents
+    // the loading projection from resurrecting the removed route.
+    removalFenced:
+      removalState.removalFence?.selectionRevision === removalState.selection.revision &&
+      removalState.removalFence?.locator?.scheme === activeContextScheme &&
+      removalState.removalFence.locator.path === activeContextPath &&
+      removalState.removalFence.locator.workId === routeWorkId,
   });
 
   const { tree: defaultOpenTree } = useProjectContextTree(projectId, "manuscript", {

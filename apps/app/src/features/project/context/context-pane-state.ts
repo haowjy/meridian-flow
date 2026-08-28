@@ -42,7 +42,7 @@ export function deriveContextPaneState({
   tree,
   isFetching,
   isError,
-  autoOpenBlocked,
+  removalFenced,
 }: {
   activeTab: ContextTab | null;
   destination: {
@@ -53,10 +53,10 @@ export function deriveContextPaneState({
   tree: ProjectContextTreeDirectory | null;
   isFetching: boolean;
   isError: boolean;
-  autoOpenBlocked: boolean;
+  removalFenced: boolean;
 }): ContextPaneState {
   if (activeTab) return { kind: "document", tab: activeTab };
-  if (!destination || autoOpenBlocked) return { kind: "empty-desk" };
+  if (!destination || removalFenced) return { kind: "empty-desk" };
 
   const routeExists = tree !== null && findContextFile(tree, destination.path) !== null;
   if (routeExists || isFetching || (!tree && !isError)) {

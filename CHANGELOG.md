@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+- `contracts`, `apps/server`, `apps/app`: make Context deletion prove the
+  initiating target identity, admit exact removal effects before invalidation,
+  and reconcile route continuity through account-scoped, Work-gated protocol state.
+
 - `contracts`, `apps/server`: acknowledge context deletion with the exact
   committed document IDs while preserving empty-folder and non-recursive folder semantics.
 

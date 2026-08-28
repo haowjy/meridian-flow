@@ -104,14 +104,13 @@ type CoordinatorProjectState = {
 export type ContextRemovalProjectSnapshot = Pick<
   CoordinatorProjectState,
   "selection" | "rememberedRoute" | "removalFence" | "transitionRevision" | "live"
-> & { autoOpenBlock: RemovalFence | null };
+>;
 
 const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], activeTabId: null };
 const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   selection: { status: "none", revision: 0 },
   rememberedRoute: null,
   removalFence: null,
-  autoOpenBlock: null,
   transitionRevision: 0,
   live: false,
 };
@@ -645,7 +644,6 @@ export class ContextRemovalCoordinator {
       selection: state.selection,
       rememberedRoute: state.rememberedRoute,
       removalFence: state.removalFence,
-      autoOpenBlock: state.removalFence,
       transitionRevision: state.transitionRevision,
       live: state.live,
     };
